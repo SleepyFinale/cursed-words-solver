@@ -1,0 +1,29 @@
+[project]
+name = "cursed-words-solver"
+version = "0.1.0"
+description = "Screenshot-based solver for Cursed Words: The Word Game That Isn't"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mss>=9.0.0",
+    "opencv-python>=4.8.0",
+    "numpy>=1.24.0",
+    "Pillow>=10.0.0",
+    "keyboard>=0.13.5",
+    "PySide6>=6.6.0",
+    "easyocr>=1.7.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4.0"]
+
+[project.scripts]
+cursed-solver = "cursed_words_solver.app:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cursed_words_solver*"]

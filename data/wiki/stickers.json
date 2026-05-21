@@ -1,0 +1,1721 @@
+{
+  "_meta": {
+    "source": "cursedwords.wiki.gg categories + hand-tuned overrides",
+    "regenerate": "python scripts/build_stickers_json.py"
+  },
+  "aliases": {
+    "stickers": {
+      "stickyplaster": "sticky_plaster",
+      "sticky_plaster_sticker": "sticky_plaster",
+      "voidflip": "void_flip",
+      "redrider": "red_rider",
+      "doublescore": "double_score",
+      "longword": "long_word",
+      "shinychain": "shiny_chain"
+    },
+    "stamps": {
+      "beam_me_up": "beam_me_up"
+    },
+    "bosses": {
+      "robo_eel_boss": "robo_eel",
+      "robo_monkey_boss": "robo_monkey",
+      "yeti": "yeti_crab"
+    },
+    "pins": {
+      "bones": "bones_the_dog",
+      "human_boy": "human_boy",
+      "hayley": "hayley_bayles",
+      "abacus": "hayley_bayles"
+    }
+  },
+  "stickers": {
+    "alembic_flask": {
+      "name": "Alembic Flask",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "ambulance": {
+      "name": "Ambulance",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "amphora": {
+      "name": "Amphora",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "april_shower": {
+      "name": "April Shower",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "arrivals": {
+      "name": "Arrivals",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "artist_s_palette": {
+      "name": "Artist's Palette",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "axe": {
+      "name": "Axe",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "baby_bottle": {
+      "name": "Baby Bottle",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "backpack": {
+      "name": "Backpack",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "base_camp": {
+      "name": "Base Camp",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "birthday_cake": {
+      "name": "Birthday Cake",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "blueberries": {
+      "name": "Blueberries",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "bone": {
+      "name": "Bone",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "boomerang": {
+      "name": "Boomerang",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "brain": {
+      "name": "Brain",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "brick": {
+      "name": "Brick",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "broom": {
+      "name": "Broom",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "burrito": {
+      "name": "Burrito",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "candle": {
+      "name": "Candle",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "carousel_horse": {
+      "name": "Carousel Horse",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "castle": {
+      "name": "Castle",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "celestial_body": {
+      "name": "Celestial Body",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "champagne": {
+      "name": "Champagne",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "chequered_flag": {
+      "name": "Chequered Flag",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "cherries": {
+      "name": "Cherries",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "cherry_pie": {
+      "name": "Cherry Pie",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "chips": {
+      "name": "Chips",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "circus_tent": {
+      "name": "Circus Tent",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "clapper_board": {
+      "name": "Clapper Board",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "cocktail": {
+      "name": "Cocktail",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "coin_purse": {
+      "name": "Coin Purse",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "confetti": {
+      "name": "Confetti",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "creaky_chair": {
+      "name": "Creaky Chair",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "credit_card": {
+      "name": "Credit Card",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "crystal_ball": {
+      "name": "Crystal Ball",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "cursed_vhs": {
+      "name": "Cursed VHS",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "dagger": {
+      "name": "Dagger",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "dancer": {
+      "name": "Dancer",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "dartboard": {
+      "name": "Dartboard",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "deep_sea_horror": {
+      "name": "Deep Sea Horror",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "departures": {
+      "name": "Departures",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "diving_mask": {
+      "name": "Diving Mask",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "doughnut": {
+      "name": "Doughnut",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "down_under": {
+      "name": "Down Under",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "dusty_coffin": {
+      "name": "Dusty Coffin",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "egg": {
+      "name": "Egg",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "electric_guitar": {
+      "name": "Electric Guitar",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "ferris_wheel": {
+      "name": "Ferris Wheel",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "fire_extinguisher": {
+      "name": "Fire Extinguisher",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "fireworks": {
+      "name": "Fireworks",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "fish_cake": {
+      "name": "Fish Cake",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "footprints": {
+      "name": "Footprints",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "fountain": {
+      "name": "Fountain",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "frankenstein": {
+      "name": "Frankenstein",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "game_pad": {
+      "name": "Game Pad",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "ghost": {
+      "name": "Ghost",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "glass_of_milk": {
+      "name": "Glass Of Milk",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "gold_fish": {
+      "name": "Gold Fish",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "gorilla": {
+      "name": "Gorilla",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "graduation_cap": {
+      "name": "Graduation Cap",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "ham_sandwich": {
+      "name": "Ham Sandwich",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "hanafuda": {
+      "name": "Hanafuda",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "hi_vis_jacket": {
+      "name": "Hi Vis Jacket",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "hungry_hippo": {
+      "name": "Hungry Hippo",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "jack_o_lantern": {
+      "name": "Jack-o'-Lantern",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "jigsaw_piece": {
+      "name": "Jigsaw Piece",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "joker": {
+      "name": "Joker",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "kadomatsu": {
+      "name": "Kadomatsu",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "kangaroo": {
+      "name": "Kangaroo",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "lab_coat": {
+      "name": "Lab Coat",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "ladybird": {
+      "name": "Ladybird",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "las_vegas": {
+      "name": "Las Vegas",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "left_hand": {
+      "name": "Left Hand",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "lipstick": {
+      "name": "Lipstick",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "lollipop": {
+      "name": "Lollipop",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "lucky_dice": {
+      "name": "Lucky Dice",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "lucky_scarf": {
+      "name": "Lucky Scarf",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "luffing_jib_crane": {
+      "name": "Luffing Jib Crane",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "magic_8_ball": {
+      "name": "Magic 8 Ball",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "magic_wand": {
+      "name": "Magic Wand",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "maple_leaf": {
+      "name": "Maple Leaf",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "maracas": {
+      "name": "Maracas",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "michael_s_book": {
+      "name": "Michael's Book",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "mischievous_imp": {
+      "name": "Mischievous Imp",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "moai": {
+      "name": "Moai",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "movie_camera": {
+      "name": "Movie Camera",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "musical_notes": {
+      "name": "Musical Notes",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "mysterious_amulet": {
+      "name": "Mysterious Amulet",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "mystery_gift": {
+      "name": "Mystery Gift",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "newspaper": {
+      "name": "Newspaper",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "onigiri": {
+      "name": "Onigiri",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "ornate_key": {
+      "name": "Ornate Key",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "overhand": {
+      "name": "Overhand",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "padlock_sticker": {
+      "name": "Padlock (sticker)",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "pair_of_socks": {
+      "name": "Pair Of Socks",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "parrot": {
+      "name": "Parrot",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "peacock": {
+      "name": "Peacock",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "pear": {
+      "name": "Pear",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "peas_of_a_pod": {
+      "name": "Peas Of A Pod",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "petri_dish": {
+      "name": "Petri Dish",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "pneumonia": {
+      "name": "Pneumonia",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "poker_face": {
+      "name": "Poker Face",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "postal_horn": {
+      "name": "Postal Horn",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "postbox": {
+      "name": "Postbox",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "printer": {
+      "name": "Printer",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "raccoon": {
+      "name": "Raccoon",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "radio": {
+      "name": "Radio",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "rainbow_sprinkles": {
+      "name": "Rainbow Sprinkles",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "retro_raider": {
+      "name": "Retro Raider",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "rex": {
+      "name": "Rex",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "roller_skate": {
+      "name": "Roller Skate",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "rolodex": {
+      "name": "Rolodex",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "scissors": {
+      "name": "Scissors",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "sequoia_sapling": {
+      "name": "Sequoia Sapling",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "shield": {
+      "name": "Shield",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "signal_receiver": {
+      "name": "Signal Receiver",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "slide": {
+      "name": "Slide",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "sly_spy": {
+      "name": "Sly Spy",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "snapshot": {
+      "name": "Snapshot",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "snowman": {
+      "name": "Snowman",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "soaring_kite": {
+      "name": "Soaring Kite",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "stamp_album": {
+      "name": "Stamp Album",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "sticky_plaster": {
+      "name": "Sticky Plaster",
+      "type": "unmodeled",
+      "description": "Number tiles stick; +5/10/15 BASE per level (wiki)"
+    },
+    "stilton": {
+      "name": "Stilton",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "storm_cloud": {
+      "name": "Storm Cloud",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "suitcase": {
+      "name": "Suitcase",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "sunflower": {
+      "name": "Sunflower",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "sushi": {
+      "name": "Sushi",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "telescope": {
+      "name": "Telescope",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "ten_pin_bowling": {
+      "name": "Ten Pin Bowling",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "tombstone": {
+      "name": "Tombstone",
+      "type": "add_word_score",
+      "value": 3
+    },
+    "toolbox": {
+      "name": "Toolbox",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "traffic_lights": {
+      "name": "Traffic Lights",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "under_construction": {
+      "name": "Under Construction",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "wheezy_vixen": {
+      "name": "Wheezy Vixen",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "wind_chime": {
+      "name": "Wind Chime",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "worn_out_jeans": {
+      "name": "Worn-out Jeans",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "wrestlers": {
+      "name": "Wrestlers",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "wriggly_worm": {
+      "name": "Wriggly Worm",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "yellow_glasses": {
+      "name": "Yellow Glasses",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "zebra": {
+      "name": "Zebra",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+    },
+    "red_rider": {
+      "name": "Red Rider",
+      "type": "red_tile_bonus",
+      "value": 10
+    },
+    "void_flip": {
+      "name": "Void Flip",
+      "type": "void_flip",
+      "value": 0
+    },
+    "long_word": {
+      "name": "Long Word",
+      "type": "word_length_bonus",
+      "value": 20,
+      "min_length": 5
+    },
+    "shiny_chain": {
+      "name": "Shiny Chain",
+      "type": "shiny_chain",
+      "value": 25
+    },
+    "double_score": {
+      "name": "Double Score",
+      "type": "multiply",
+      "factor": 2.0
+    }
+  },
+  "stamps": {
+    "akoya_pearl": {
+      "name": "Akoya Pearl",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "angel_investment": {
+      "name": "Angel Investment",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "avocado": {
+      "name": "Avocado",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "banana": {
+      "name": "Banana",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "bank": {
+      "name": "Bank",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "bar_chart": {
+      "name": "Bar Chart",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "bar_of_soap": {
+      "name": "Bar Of Soap",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "beam_me_up": {
+      "name": "Beam Me Up",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "beefeater": {
+      "name": "Beefeater",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "bento_box": {
+      "name": "Bento Box",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "big_bang": {
+      "name": "Big Bang",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "black_hole": {
+      "name": "Black Hole",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "blessing_of_the_fairies": {
+      "name": "Blessing of the Fairies",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "blessing_of_the_shopkeeper": {
+      "name": "Blessing Of The Shopkeeper",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "bomb": {
+      "name": "Bomb",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "book_of_openings": {
+      "name": "Book Of Openings",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "briefcase": {
+      "name": "Briefcase",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "bubble_tea": {
+      "name": "Bubble Tea",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "builder": {
+      "name": "Builder",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "bunch_of_grapes": {
+      "name": "Bunch Of Grapes",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "business_goose": {
+      "name": "Business Goose",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "busy_schedule": {
+      "name": "Busy Schedule",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "cable_car": {
+      "name": "Cable Car",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "card_shark": {
+      "name": "Card Shark",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "cartwheeler": {
+      "name": "Cartwheeler",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "chess_board": {
+      "name": "Chess Board",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "chick": {
+      "name": "Chick",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "chocolate_candy": {
+      "name": "Chocolate Candy",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "christmas_tree": {
+      "name": "Christmas Tree",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "dangerous_summit": {
+      "name": "Dangerous Summit",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "dango": {
+      "name": "Dango",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "delivery_truck": {
+      "name": "Delivery Truck",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "disco_ball": {
+      "name": "Disco Ball",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "diya": {
+      "name": "Diya",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "dove": {
+      "name": "Dove",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "downward_trending_chart": {
+      "name": "Downward Trending Chart",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "dragon": {
+      "name": "Dragon",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "eclipse": {
+      "name": "Eclipse",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "efficient_recycler": {
+      "name": "Efficient Recycler",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "empty_jar": {
+      "name": "Empty Jar",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "eraser": {
+      "name": "Eraser",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "error": {
+      "name": "Error",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "erupting_volcano": {
+      "name": "Erupting Volcano",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "falling_leaf": {
+      "name": "Falling Leaf",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "family_ticket": {
+      "name": "Family Ticket",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "fan": {
+      "name": "Fan",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "filing_cabinet": {
+      "name": "Filing Cabinet",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "flamingo": {
+      "name": "Flamingo",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "flashy_fountain_pen": {
+      "name": "Flashy Fountain Pen",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "fleur_de_lis": {
+      "name": "Fleur De Lis",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "food_poisoning": {
+      "name": "Food Poisoning",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "fortune_cookie": {
+      "name": "Fortune Cookie",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "four_leaf_clover": {
+      "name": "Four Leaf Clover",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "fraction_frog": {
+      "name": "Fraction Frog",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "fried_shrimp": {
+      "name": "Fried Shrimp",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "full_battery": {
+      "name": "Full Battery",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "full_moon": {
+      "name": "Full Moon",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "genie": {
+      "name": "Genie",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "giraffe": {
+      "name": "Giraffe",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "globe_trotter": {
+      "name": "Globe Trotter",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "go_fish": {
+      "name": "Go Fish!",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "golden_record": {
+      "name": "Golden Record",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "golden_scales": {
+      "name": "Golden Scales",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "haunted_house": {
+      "name": "Haunted House",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "haunted_mirror": {
+      "name": "Haunted Mirror",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "head_in_the_clouds": {
+      "name": "Head In The Clouds",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "head_trauma": {
+      "name": "Head Trauma",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "heart_on_fire": {
+      "name": "Heart On Fire",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "honeypot": {
+      "name": "Honeypot",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "hourglass": {
+      "name": "Hourglass",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "hungry_snake": {
+      "name": "Hungry Snake",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "id_card": {
+      "name": "ID Card",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "jellyfish": {
+      "name": "Jellyfish",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "jolly_roger": {
+      "name": "Jolly Roger",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "juice_box": {
+      "name": "Juice Box",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "kimono": {
+      "name": "Kimono",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "king_of_the_bridge": {
+      "name": "King Of The Bridge",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "kokeshi_dolls": {
+      "name": "Kokeshi Dolls",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "limnophila": {
+      "name": "Limnophila",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "magician_s_hat": {
+      "name": "Magician's Hat",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "magnet": {
+      "name": "Magnet",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "martini": {
+      "name": "Martini",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "microphone": {
+      "name": "Microphone",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "microscope": {
+      "name": "Microscope",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "mushroom_upgrade": {
+      "name": "Mushroom Upgrade",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "mutating_dna": {
+      "name": "Mutating DNA",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "neapolitan": {
+      "name": "Neapolitan",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "nest_egg": {
+      "name": "Nest Egg",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "number_factory": {
+      "name": "Number Factory",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "number_go_up": {
+      "name": "Number Go Up",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "oden": {
+      "name": "Oden",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "ogre": {
+      "name": "Ogre",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "padlock_stamp": {
+      "name": "Padlock (stamp)",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "paper_lantern": {
+      "name": "Paper Lantern",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "parachute": {
+      "name": "Parachute",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "piece_of_cake": {
+      "name": "Piece of Cake",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "piggy_bank": {
+      "name": "Piggy Bank",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "pizza_slice": {
+      "name": "Pizza Slice",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "pi_ata": {
+      "name": "Pi\u00f1ata",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "pocket_money": {
+      "name": "Pocket Money",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "queen_bee": {
+      "name": "Queen Bee",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "queenie": {
+      "name": "Queenie",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "receipt": {
+      "name": "Receipt",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "red_balloon": {
+      "name": "Red Balloon",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "red_envelope": {
+      "name": "Red Envelope",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "right_hand": {
+      "name": "Right Hand",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "rollercoaster": {
+      "name": "Rollercoaster",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "rosebud": {
+      "name": "Rosebud",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "ruler": {
+      "name": "Ruler",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "saguaro_seedling": {
+      "name": "Saguaro Seedling",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "saxophone": {
+      "name": "Saxophone",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "sewing_needle": {
+      "name": "Sewing Needle",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "shaved_ice": {
+      "name": "Shaved Ice",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "silly_puppy": {
+      "name": "Silly Puppy",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "slot_machine": {
+      "name": "Slot Machine",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "sluggish_zombie": {
+      "name": "Sluggish Zombie",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "smart_shirt": {
+      "name": "Smart Shirt",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "snail": {
+      "name": "Snail",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "spicy_pepper": {
+      "name": "Spicy Pepper",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "spouting_whale": {
+      "name": "Spouting Whale",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "stack_of_pancakes": {
+      "name": "Stack Of Pancakes",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "stadium": {
+      "name": "Stadium",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "statue_of_liberty": {
+      "name": "Statue Of Liberty",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "steak": {
+      "name": "Steak",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "stethoscope": {
+      "name": "Stethoscope",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "stiletto": {
+      "name": "Stiletto",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "supervillain": {
+      "name": "Supervillain",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "surprise_delivery": {
+      "name": "Surprise Delivery",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "suspension_bridge": {
+      "name": "Suspension Bridge",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "takeout_box": {
+      "name": "Takeout Box",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "teapot": {
+      "name": "Teapot",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "television": {
+      "name": "Television",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "test_tube": {
+      "name": "Test Tube",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "tile_ninja": {
+      "name": "Tile Ninja",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "tin_of_beans": {
+      "name": "Tin Of Beans",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "torii_gate": {
+      "name": "Torii Gate",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "trophy_of_wealth": {
+      "name": "Trophy Of Wealth",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "twinkle_toes": {
+      "name": "Twinkle Toes",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "underhand": {
+      "name": "Underhand",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "unicorn": {
+      "name": "Unicorn",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "valentine_s_day_card": {
+      "name": "Valentine's Day Card",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "waxy_vizor": {
+      "name": "Waxy Vizor",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "weekly_shop": {
+      "name": "Weekly Shop",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "wheel": {
+      "name": "Wheel",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "window": {
+      "name": "Window",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "work_of_art": {
+      "name": "Work of Art",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "xray": {
+      "name": "Xray",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "young_cardinal": {
+      "name": "Young Cardinal",
+      "type": "unmodeled",
+      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+    },
+    "newspaper": {
+      "name": "Newspaper",
+      "type": "add_word_score",
+      "value": 8
+    },
+    "moai": {
+      "name": "Moai",
+      "type": "word_length_bonus",
+      "value": 15,
+      "min_length": 4
+    }
+  },
+  "bosses": {
+    "mole": {
+      "name": "Mole",
+      "type": "custom",
+      "description": "Scatters void tiles; pair with void_flip sticker"
+    },
+    "no_vowels": {
+      "name": "No Vowels Boss",
+      "type": "boss_zero_vowel"
+    },
+    "axolotl": {
+      "name": "Axolotl",
+      "type": "custom"
+    },
+    "badger": {
+      "name": "Badger",
+      "type": "custom"
+    },
+    "bat": {
+      "name": "Bat",
+      "type": "custom"
+    },
+    "bison": {
+      "name": "Bison",
+      "type": "custom"
+    },
+    "capybara": {
+      "name": "Capybara",
+      "type": "custom"
+    },
+    "cobra": {
+      "name": "Cobra",
+      "type": "custom"
+    },
+    "fox": {
+      "name": "Fox",
+      "type": "custom"
+    },
+    "hyena": {
+      "name": "Hyena",
+      "type": "custom"
+    },
+    "robo_eel": {
+      "name": "Robo-Eel",
+      "type": "custom"
+    },
+    "robo_monkey": {
+      "name": "Robo-Monkey",
+      "type": "custom"
+    },
+    "salamander": {
+      "name": "Salamander",
+      "type": "custom"
+    },
+    "toothed_whale": {
+      "name": "Toothed Whale",
+      "type": "custom"
+    },
+    "wolf": {
+      "name": "Wolf",
+      "type": "custom"
+    },
+    "yeti_crab": {
+      "name": "Yeti Crab",
+      "type": "custom"
+    }
+  },
+  "pins": {
+    "beans": {
+      "name": "Beans",
+      "branches": {
+        "left": {
+          "type": "add_word_score",
+          "value": 2
+        },
+        "right": {
+          "type": "multiply",
+          "factor": 1.1
+        }
+      }
+    },
+    "bones_the_dog": {
+      "name": "Bones The Dog",
+      "branches": {
+        "left": {
+          "type": "add_word_score",
+          "value": 2
+        },
+        "right": {
+          "type": "add_word_score",
+          "value": 4
+        }
+      }
+    },
+    "cretaceous_meg": {
+      "name": "Cretaceous Meg",
+      "branches": {
+        "left": {
+          "type": "add_word_score",
+          "value": 2
+        },
+        "right": {
+          "type": "add_word_score",
+          "value": 3
+        }
+      }
+    },
+    "hayley_bayles": {
+      "name": "Hayley Bayles",
+      "type": "unmodeled",
+      "description": "Pin (abacus art); default +2/+3 branches were placeholders, not verified in-game"
+    },
+    "human_boy": {
+      "name": "Human Boy",
+      "branches": {
+        "left": {
+          "type": "add_word_score",
+          "value": 2
+        },
+        "right": {
+          "type": "add_word_score",
+          "value": 3
+        }
+      }
+    },
+    "nat_h4": {
+      "name": "Nat-H4",
+      "branches": {
+        "left": {
+          "type": "add_word_score",
+          "value": 2
+        },
+        "right": {
+          "type": "add_word_score",
+          "value": 3
+        }
+      }
+    },
+    "nina_nix": {
+      "name": "Nina Nix",
+      "branches": {
+        "left": {
+          "type": "add_word_score",
+          "value": 2
+        },
+        "right": {
+          "type": "add_word_score",
+          "value": 3
+        }
+      }
+    },
+    "octacles": {
+      "name": "Octacles",
+      "branches": {
+        "left": {
+          "type": "add_word_score",
+          "value": 2
+        },
+        "right": {
+          "type": "add_word_score",
+          "value": 3
+        }
+      }
+    },
+    "rodman": {
+      "name": "Rodman",
+      "branches": {
+        "left": {
+          "type": "add_word_score",
+          "value": 2
+        },
+        "right": {
+          "type": "add_word_score",
+          "value": 3
+        }
+      }
+    },
+    "sam_gambit": {
+      "name": "Sam Gambit",
+      "branches": {
+        "left": {
+          "type": "add_word_score",
+          "value": 2
+        },
+        "right": {
+          "type": "add_word_score",
+          "value": 3
+        }
+      }
+    },
+    "sandy_saguaro": {
+      "name": "Sandy Saguaro",
+      "branches": {
+        "left": {
+          "type": "add_word_score",
+          "value": 2
+        },
+        "right": {
+          "type": "add_word_score",
+          "value": 3
+        }
+      }
+    }
+  }
+}

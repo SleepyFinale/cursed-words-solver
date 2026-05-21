@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.cursed_words_solver/debug/
+melmod/**/bin/
+melmod/**/obj/

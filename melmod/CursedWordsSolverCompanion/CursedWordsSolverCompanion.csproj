@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>CursedWordsSolverCompanion</AssemblyName>
+    <RootNamespace>CursedWordsSolverCompanion</RootNamespace>
+    <OutputType>Library</OutputType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\</OutputPath>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+    <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Cursed Words</GameDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <MelonLoaderDir>$(GameDir)\MelonLoader</MelonLoaderDir>
+    <ManagedDir>$(GameDir)\Cursed Words_Data\Managed</ManagedDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="MelonLoader">
+      <HintPath>$(MelonLoaderDir)\net35\MelonLoader.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3">
+      <Private>false</Private>
+    </PackageReference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(ManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(ManagedDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="netstandard">
+      <HintPath>$(ManagedDir)\netstandard.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="ValidateGameReferences" BeforeTargets="CoreCompile">
+    <Error Condition="!Exists('$(MelonLoaderDir)\net35\MelonLoader.dll')" Text="MelonLoader not found at $(MelonLoaderDir). Install MelonLoader into the game folder first." />
+    <Error Condition="!Exists('$(ManagedDir)\Assembly-CSharp.dll')" Text="Assembly-CSharp.dll not found at $(ManagedDir)." />
+  </Target>
+</Project>

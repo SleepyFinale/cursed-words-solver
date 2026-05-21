@@ -1,0 +1,8 @@
+{
+  "description": "Synthetic 5x5 — CAT in top row for OCR-free tests",
+  "tiles": [
+    {"row": 0, "col": 0, "letter": "C", "base_score": 3, "color": "colorless"},
+    {"row": 0, "col": 1, "letter": "A", "base_score": 1, "color": "red"},
+    {"row": 0, "col": 2, "letter": "T", "base_score": 1, "color": "colorless"}
+  ]
+}
