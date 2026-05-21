@@ -1,10 +1,43 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-.pytest_cache/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Packaging / distribution
 *.egg-info/
+.eggs/
 dist/
 build/
-.cursed_words_solver/debug/
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Wiki API scratch files (regenerate via README → Sticker rules catalog)
+data/wiki/_*.json
+
+# MelonLoader companion mod (.NET)
 melmod/**/bin/
 melmod/**/obj/
+
+# Local solver data (normally lives in %USERPROFILE%\.cursed_words_solver\)
+.cursed_words_solver/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
