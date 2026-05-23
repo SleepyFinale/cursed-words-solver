@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from cursed_words_solver.loadout import (
+    format_loadout_summary,
     load_run_state,
     loadout_to_dict,
     parse_run_state,
@@ -78,6 +79,33 @@ def test_loadout_roundtrip_preserves_all_fields(tmp_path):
     assert reloaded.pin_branch == "left"
     assert reloaded.boss_name == "Mole"
     assert reloaded.extras == lo.extras
+
+
+def test_format_loadout_summary_boss_name_and_internal_id():
+    lo = parse_run_state(
+        {
+            "character": "Nina Nix",
+            "boss_id": "bossdino",
+            "boss_name": "Cretaceous Meg",
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+    assert "boss=Cretaceous Meg (bossdino)" in format_loadout_summary(lo)
+
+
+def test_format_loadout_summary_boss_id_only_when_name_matches_slug():
+    lo = parse_run_state(
+        {
+            "character": "Test",
+            "boss_id": "wolf",
+            "boss_name": "Wolf",
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+    assert "boss=Wolf" in format_loadout_summary(lo)
+    assert "(wolf)" not in format_loadout_summary(lo)
 
 
 def test_loadout_to_dict_matches_melmod_keys():

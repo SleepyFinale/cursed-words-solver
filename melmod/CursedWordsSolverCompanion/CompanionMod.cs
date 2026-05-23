@@ -1,3 +1,4 @@
+using HarmonyLib;
 using MelonLoader;
 using UnityEngine;
 
@@ -26,6 +27,30 @@ namespace CursedWordsSolverCompanion
             );
             MelonLogger.Msg("Output: " + RunStateExporter.OutputFilePath);
             MelonLogger.Msg("Dictionary: " + DictionaryExporter.WordsFilePath);
+
+            try
+            {
+                var harmony = new HarmonyLib.Harmony("cursed_words_solver.companion.scoring");
+                harmony.PatchAll(System.Reflection.Assembly.GetExecutingAssembly());
+                MelonLogger.Msg(
+                    "Scoring mismatch capture enabled (play F8 suggestion to record diffs)"
+                );
+                MelonLogger.Msg("Mismatch files: " + MismatchExporter.MismatchDir);
+                MelonLogger.Msg(
+                    "Suggestion file: "
+                        + System.IO.Path.Combine(
+                            System.Environment.GetFolderPath(
+                                System.Environment.SpecialFolder.UserProfile
+                            ),
+                            ".cursed_words_solver",
+                            "last_suggestion.json"
+                        )
+                );
+            }
+            catch (System.Exception ex)
+            {
+                MelonLogger.Error("Failed to apply scoring Harmony patches: " + ex);
+            }
         }
 
         public override void OnUpdate()

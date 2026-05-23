@@ -22,6 +22,10 @@
       <HintPath>$(MelonLoaderDir)\net35\MelonLoader.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(MelonLoaderDir)\net35\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3">
       <Private>false</Private>
     </PackageReference>

@@ -318,19 +318,56 @@ def _parse_char_and_score(
     return display, letter, score, curse, conf
 
 
-def format_board_grid(board: Board) -> str:
-    """ASCII 5x5 grid of parsed tile chars."""
+def _format_tile_char(tile: Tile) -> str:
+    ch = tile.char if tile.char and tile.char != "?" else tile.letter
+    if not ch or ch == "?":
+        return "?"
+    if len(ch) == 1:
+        return ch.upper()
+    return ch[:1].upper()
+
+
+def _active_cell_bounds(board: Board) -> tuple[int, int, int, int] | None:
+    """Return (min_row, max_row, min_col, max_col) for active cells, or None."""
+    min_r, max_r, min_c, max_c = 5, -1, 5, -1
+    for r in range(5):
+        for c in range(5):
+            if board.is_active_cell(r, c):
+                min_r = min(min_r, r)
+                max_r = max(max_r, r)
+                min_c = min(min_c, c)
+                max_c = max(max_c, c)
+    if max_r < 0:
+        return None
+    return min_r, max_r, min_c, max_c
+
+
+def format_board_grid(board: Board, *, compact: bool = False) -> str:
+    """ASCII grid of parsed tile chars.
+
+    When *compact* is True and the board is smaller than 5×5, crop to the
+    active-cell bounding box and prefix with playable dimensions.
+    """
+    use_compact = compact and (board.rows < 5 or board.cols < 5)
+    bounds = _active_cell_bounds(board) if use_compact else None
+
+    if bounds is not None:
+        min_r, max_r, min_c, max_c = bounds
+        lines = []
+        for r in range(min_r, max_r + 1):
+            cells = [
+                _format_tile_char(board.tiles[r][c])
+                for c in range(min_c, max_c + 1)
+            ]
+            lines.append(" ".join(cells))
+        h = max_r - min_r + 1
+        w = max_c - min_c + 1
+        header = f"Playable {h}×{w}:"
+        return header + "\n" + "\n".join(lines)
+
     lines = []
     for row in board.tiles:
-        cells = []
-        for t in row:
-            ch = t.char if t.char and t.char != "?" else t.letter
-            if not ch or ch == "?":
-                cells.append("?")
-            elif len(ch) == 1:
-                cells.append(ch.upper())
-            else:
-                cells.append(ch[:1].upper())
+        cells = [_format_tile_char(t) for t in row]
         lines.append(" ".join(cells))
     return "\n".join(lines)
 

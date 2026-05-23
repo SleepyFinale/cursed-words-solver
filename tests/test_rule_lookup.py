@@ -34,57 +34,49 @@ def test_collect_unmapped_items():
     assert "stamp:known" in missing
 
 
-def test_abacus_pin_alias_resolves_to_hayley_unmodeled():
+def test_abacus_pin_alias_resolves_to_scoring_rule():
     rules = {
-        "aliases": {"pins": {"abacus": "hayley_bayles"}},
+        "aliases": {"pins": {"abacus": "abacus", "hayley_bayles": "abacus"}},
         "pins": {
-            "hayley_bayles": {
-                "name": "Hayley Bayles",
-                "type": "unmodeled",
+            "abacus": {
+                "name": "Abacus",
+                "type": "colored_number_tile_bonus",
+                "value": 10,
             }
         },
     }
-    assert resolve_rule_id(rules, "pins", "abacus", "") == "hayley_bayles"
-    assert get_pin_branch_rule(rules, "abacus", "left") is None
+    assert resolve_rule_id(rules, "pins", "abacus", "") == "abacus"
+    assert get_pin_branch_rule(rules, "abacus", "left") is not None
 
 
-def test_hayley_pin_does_not_inflate_virge_score():
+def test_abacus_pin_no_bonus_without_coloured_numbers_on_path():
     pipeline = ScoringPipeline()
-    from cursed_words_solver.loadout import parse_board_from_run_state
-    import json
-    from pathlib import Path
+    from cursed_words_solver.models import Board, Tile, TileColor, CurseType
 
-    path = Path.home() / ".cursed_words_solver" / "debug" / "parse_20260521_160425.json"
-    if not path.exists():
-        return
-    data = json.loads(path.read_text(encoding="utf-8"))
-    run_state = {
-        "board": {
-            "source": "melmod",
-            "row_order": "top_first",
-            "money": 6,
-            "tiles": [
-                {
-                    "row": t["row"],
-                    "col": t["col"],
-                    "char": t["char"],
-                    "letter": t["letter"],
-                    "base_score": t["base_score"],
-                    "color": t["color"],
-                    "curse": t["curse"],
-                }
-                for t in data["tiles"]
-            ],
-        }
-    }
-    board = parse_board_from_run_state(run_state)
+    def tile(ch: str, row: int, col: int) -> Tile:
+        return Tile(
+            row=row,
+            col=col,
+            char=ch,
+            letter=ch,
+            base_score=2,
+            color=TileColor.COLORLESS,
+            curse=CurseType.LETTER,
+            metadata={"source": "melmod"},
+        )
+
+    board = Board(
+        tiles=[[tile("v", r, c) for c in range(5)] for r in range(5)],
+        money=0,
+    )
     loadout = Loadout(
         character="Hayley Bayles",
         pin_branch="left",
         extras={"pin_effect": "abacus"},
     )
-    score, _ = pipeline.score(board, [21, 16, 17, 18, 24], "virge", loadout)
-    assert score == 10.0
+    score, _ = pipeline.score(board, [0, 1, 2, 3, 4], "virge", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2, 3, 4], "virge", Loadout())
+    assert score == base
 
 
 def test_pin_branch_rule_left():
@@ -104,28 +96,28 @@ def test_pin_branch_rule_left():
     assert right["factor"] == 2.0
 
 
-def test_pipeline_pin_branch_affects_score():
+def test_pipeline_brain_level_affects_multiplier():
     pipeline = ScoringPipeline()
-    from cursed_words_solver.models import Board, Tile, TileColor, CurseType
-
-    def tile(ch: str, row: int, col: int) -> Tile:
-        return Tile(
-            row=row,
-            col=col,
-            char=ch,
-            letter=ch,
-            base_score=1,
-            color=TileColor.COLORLESS,
-            curse=CurseType.LETTER,
-        )
+    from cursed_words_solver.models import Board, Tile, CurseType
 
     board = Board(
-        tiles=[[tile("c", r, c) for c in range(5)] for r in range(5)],
+        tiles=[
+            [
+                Tile(0, 0, "4", "4", 4, curse=CurseType.NUMBER, number_value=4),
+                Tile(0, 1, "5", "5", 5, curse=CurseType.NUMBER, number_value=5),
+                Tile(0, 2, "6", "6", 6, curse=CurseType.NUMBER, number_value=6),
+            ]
+            + [Tile(0, c, "A", "A", 1) for c in range(3, 5)]
+        ]
+        + [[Tile(r, c, "T", "T", 1) for c in range(5)] for r in range(1, 5)],
         money=0,
     )
-    loadout_left = Loadout(extras={"pin_effect": "beans"}, pin_branch="left")
-    loadout_right = Loadout(extras={"pin_effect": "beans"}, pin_branch="right")
-
-    score_left, _ = pipeline.score(board, [0, 1, 2], "cat", loadout_left)
-    score_right, _ = pipeline.score(board, [0, 1, 2], "cat", loadout_right)
-    assert score_left != score_right
+    loadout_l1 = Loadout(
+        stickers=[LoadoutItem(id="brain", name="Brain", level=1, kind="sticker")]
+    )
+    loadout_l2 = Loadout(
+        stickers=[LoadoutItem(id="brain", name="Brain", level=2, kind="sticker")]
+    )
+    score_l1, _ = pipeline.score(board, [0, 1, 2], "456", loadout_l1)
+    score_l2, _ = pipeline.score(board, [0, 1, 2], "456", loadout_l2)
+    assert score_l2 > score_l1

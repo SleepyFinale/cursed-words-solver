@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from cursed_words_solver.config import RUN_STATE_PATH
+from cursed_words_solver.rules.rule_lookup import slugify_name
 from cursed_words_solver.models import (
     CURRENCY_MAP,
     Board,
@@ -83,6 +84,7 @@ _CURSE_MAP: dict[str, CurseType] = {
     "chess_queen": CurseType.CHESS_QUEEN,
     "chess_king": CurseType.CHESS_KING,
     "item": CurseType.ITEM,
+    "card": CurseType.CARD,
     "unknown": CurseType.UNKNOWN,
 }
 
@@ -110,6 +112,9 @@ def _resolve_letter_for_word(char: str, letter: str, curse: CurseType) -> str:
         return letter if letter else char
     if curse == CurseType.FRACTION:
         return letter if letter else "?"
+    if curse == CurseType.CARD:
+        ch = (letter or char or "?").strip().upper()
+        return ch[:1] if ch else "?"
     ch = (letter or char or "?").strip().upper()
     if len(ch) == 1 and (ch.isalpha() or ch.isdigit() or ch == "?"):
         return ch
@@ -137,6 +142,15 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
 
     money = mod_money_from_run_state(data)
     grid: list[list[Tile | None]] = [[None] * 5 for _ in range(5)]
+    active = [False] * 25
+
+    try:
+        board_rows = int(board_data.get("rows", 5))
+        board_cols = int(board_data.get("cols", 5))
+    except (TypeError, ValueError):
+        board_rows, board_cols = 5, 5
+    board_rows = max(1, min(5, board_rows))
+    board_cols = max(1, min(5, board_cols))
 
     for entry in tiles_raw:
         if not isinstance(entry, dict):
@@ -146,37 +160,157 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
         if game_row < 0 or game_row > 4 or col < 0 or col > 4:
             return None
         row = _melmod_row_to_solver(board_data, game_row)
+        idx = row * 5 + col
+
+        curse_key = str(entry.get("curse", "letter") or "letter").lower()
+        is_active = entry.get("active", True)
+        if curse_key == "inactive":
+            is_active = False
+        if is_active in (False, "false", "False", "0", 0):
+            is_active = False
+        else:
+            is_active = True
+        active[idx] = bool(is_active)
 
         char = str(entry.get("char", entry.get("char_display", "?")) or "?")
         letter_raw = str(entry.get("letter", char) or char)
         color_key = str(entry.get("color", "colorless") or "colorless").lower()
-        curse_key = str(entry.get("curse", "letter") or "letter").lower()
+        if not is_active:
+            curse_key = "inactive"
+            char = ""
+            letter_raw = ""
+            color_key = "colorless"
+
         color = _COLOR_MAP.get(color_key, TileColor.UNKNOWN)
         curse = _CURSE_MAP.get(curse_key, CurseType.UNKNOWN)
-        letter = _resolve_letter_for_word(char, letter_raw, curse)
+        letter = _resolve_letter_for_word(char, letter_raw, curse) if is_active else ""
 
         number_value = entry.get("number_value")
         fraction_value = entry.get("fraction_value")
+
+        meta: dict[str, Any] = {"source": "melmod"}
+        if not is_active:
+            meta["inactive"] = True
+        if entry.get("consumable"):
+            meta["consumable"] = True
+        if entry.get("take"):
+            meta["take"] = True
+        card_suit = entry.get("card_suit")
+        if card_suit:
+            meta["card_suit"] = str(card_suit).strip().lower()
+        card_rank = entry.get("card_rank")
+        if card_rank is not None:
+            meta["card_rank"] = str(card_rank).strip().upper()[:1]
 
         grid[row][col] = Tile(
             row=row,
             col=col,
             char=char,
             letter=letter,
-            base_score=int(entry.get("base_score", 0)),
+            base_score=float(entry.get("base_score", 0)) if is_active else 0.0,
             color=color,
-            curse=curse,
+            curse=CurseType.ITEM if not is_active else curse,
             number_value=int(number_value) if number_value is not None else None,
             fraction_value=float(fraction_value) if fraction_value is not None else None,
             ocr_confidence=1.0,
-            metadata={"source": "melmod"},
+            metadata=meta,
         )
 
     if any(grid[r][c] is None for r in range(5) for c in range(5)):
         return None
 
     tiles = [[grid[r][c] for c in range(5)] for r in range(5)]
-    return Board(tiles=tiles, money=money)
+    return Board(
+        tiles=tiles,
+        money=money,
+        rows=board_rows,
+        cols=board_cols,
+        active=active,
+    )
+
+
+def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
+    """Parse melmod string extras into structures the scoring pipeline uses."""
+    out = dict(extras)
+    raw_memory = out.get("pin_memory")
+    if isinstance(raw_memory, str):
+        try:
+            parsed = json.loads(raw_memory)
+            out["pin_memory"] = parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            out["pin_memory"] = []
+    elif raw_memory is None:
+        out.setdefault("pin_memory", [])
+    if "cards_submitted" in out:
+        try:
+            out["cards_submitted"] = int(out["cards_submitted"])
+        except (TypeError, ValueError):
+            out["cards_submitted"] = 0
+    for key in (
+        "red_tiles_used_encounter",
+        "consumable_rack_count",
+        "rare_item_count",
+        "target_number",
+        "target_score",
+        "michael_book_bonus",
+        "birthday_cake_bonus",
+        "stamps_shop_price_total",
+        "shop_restock_count",
+        "chess_move_tile_count",
+        "rack_overflow",
+    ):
+        if key in out:
+            try:
+                out[key] = int(out[key])
+            except (TypeError, ValueError):
+                out[key] = 0
+    if "target_chess_piece" in out and out["target_chess_piece"]:
+        out["target_chess_piece"] = str(out["target_chess_piece"]).strip().lower()
+    if "target_curse_type" in out and out["target_curse_type"]:
+        out["target_curse_type"] = str(out["target_curse_type"]).strip().lower()
+    if "is_first_grid_of_encounter" in out:
+        val = out["is_first_grid_of_encounter"]
+        out["is_first_grid_of_encounter"] = val in (
+            True,
+            "true",
+            "True",
+            "1",
+            1,
+        )
+    if "previous_word_first_letter" in out and out["previous_word_first_letter"]:
+        out["previous_word_first_letter"] = (
+            str(out["previous_word_first_letter"]).strip().lower()[:1]
+        )
+    for key in ("boss_area_number", "grids_remaining"):
+        if key in out:
+            try:
+                out[key] = int(out[key])
+            except (TypeError, ValueError):
+                out[key] = 0
+    if "boss_cursed" in out:
+        out["boss_cursed"] = out["boss_cursed"] in (True, "true", "True", "1", 1)
+    if "hyena_blocked" in out:
+        out["hyena_blocked"] = out["hyena_blocked"] in (
+            True,
+            "true",
+            "True",
+            "1",
+            1,
+        )
+    if "tile_ninja_bonus" in out:
+        try:
+            out["tile_ninja_bonus"] = float(out["tile_ninja_bonus"])
+        except (TypeError, ValueError):
+            out["tile_ninja_bonus"] = 0.0
+    if "avocado_mushy" in out:
+        out["avocado_mushy"] = out["avocado_mushy"] in (
+            True,
+            "true",
+            "True",
+            "1",
+            1,
+        )
+    return out
 
 
 def parse_run_state(data: dict[str, Any]) -> Loadout:
@@ -198,16 +332,19 @@ def parse_run_state(data: dict[str, Any]) -> Loadout:
         )
         for s in data.get("stamps", [])
     ]
+    boss = data.get("boss") if isinstance(data.get("boss"), dict) else {}
+    boss_id = str(data.get("boss_id") or boss.get("id") or "")
+    boss_name = str(data.get("boss_name") or boss.get("name") or "")
     return Loadout(
         character=data.get("character", ""),
         pin_branch=data.get("pin_branch", ""),
         stickers=stickers,
         stamps=stamps,
-        boss_id=data.get("boss_id", ""),
-        boss_name=data.get("boss_name", ""),
+        boss_id=boss_id,
+        boss_name=boss_name,
         boss_effect=data.get("boss_effect", ""),
         money=int(data.get("money", 0)),
-        extras=data.get("extras", {}),
+        extras=_normalize_pin_extras(data.get("extras", {}) or {}),
     )
 
 
@@ -277,11 +414,38 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
     if loadout.stamps:
         parts.append(f"{len(loadout.stamps)} stamp(s)")
     if loadout.boss_id or loadout.boss_name:
-        parts.append(f"boss={loadout.boss_id or loadout.boss_name}")
+        bid = (loadout.boss_id or "").strip()
+        bname = (loadout.boss_name or "").strip()
+        if bname and bid and bid.lower() != slugify_name(bname):
+            parts.append(f"boss={bname} ({bid})")
+        else:
+            parts.append(f"boss={bname or bid}")
     pin = loadout.extras.get("pin_effect")
     if pin:
         branch = f" ({loadout.pin_branch})" if loadout.pin_branch else ""
-        parts.append(f"pin={pin}{branch}")
+        left = loadout.extras.get("pin_left_level")
+        right = loadout.extras.get("pin_right_level")
+        levels = ""
+        if left is not None or right is not None:
+            levels = f" L{left or 0}/R{right or 0}"
+        parts.append(f"pin={pin}{levels}{branch}")
+    memory = loadout.extras.get("pin_memory")
+    if isinstance(memory, list) and memory:
+        parts.append(f"RAM={len(memory)}")
+    cards = loadout.extras.get("cards_submitted")
+    if cards:
+        parts.append(f"cards={cards}")
+    has_birthday = any(
+        (s.id or "").lower() == "birthday_cake"
+        or "birthday" in (s.name or "").lower()
+        for s in loadout.stickers
+    )
+    if has_birthday:
+        bday = loadout.extras.get("birthday_cake_bonus")
+        if bday is not None and int(bday) > 0:
+            parts.append(f"Birthday={int(bday)}")
+        else:
+            parts.append("Birthday=? (F7 in-game; rebuild melmod if stuck at 0)")
     if loadout.money:
         parts.append(f"${loadout.money}")
     return "loadout: " + (", ".join(parts) if parts else "empty")

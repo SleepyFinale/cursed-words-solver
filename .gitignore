@@ -24,6 +24,10 @@ htmlcov/
 # Wiki API scratch files (regenerate via README → Sticker rules catalog)
 data/wiki/_*.json
 
+# Agent / one-off debug scratch at repo root
+/_*.txt
+/t.txt
+
 # MelonLoader companion mod (.NET)
 melmod/**/bin/
 melmod/**/obj/

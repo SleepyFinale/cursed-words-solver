@@ -1,0 +1,227 @@
+"""Pin scoring for all 11 character pins."""
+
+from cursed_words_solver.models import (
+    Board,
+    CurseType,
+    Loadout,
+    LoadoutItem,
+    Tile,
+    TileColor,
+)
+from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.rules.rule_lookup import (
+    count_scoring_items,
+    get_pin_scoring_rule,
+    resolve_rule_id,
+)
+
+
+def _tile(
+    row: int,
+    col: int,
+    ch: str,
+    score: int,
+    *,
+    color=TileColor.COLORLESS,
+    curse=CurseType.LETTER,
+    number_value=None,
+    metadata=None,
+) -> Tile:
+    meta = {"source": "melmod"}
+    if metadata:
+        meta.update(metadata)
+    letter = ch if len(ch) == 1 else ch
+    return Tile(
+        row=row,
+        col=col,
+        char=ch,
+        letter=letter,
+        base_score=score,
+        color=color,
+        curse=curse,
+        number_value=number_value,
+        metadata=meta,
+    )
+
+
+def _letter_board(word: str = "aaaaa") -> Board:
+    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
+    for i, ch in enumerate(word[:5]):
+        grid[0][i] = _tile(0, i, ch.upper(), 1)
+    return Board(tiles=grid, money=0)
+
+
+def test_all_pin_aliases_resolve():
+    pipeline = ScoringPipeline()
+    aliases = [
+        ("abacus", "abacus"),
+        ("super_8", "sam_gambit"),
+        ("bicycle", "bones_the_dog"),
+        ("carp_streamers", "rodman"),
+        ("human_hands", "human_boy"),
+        ("wad_of_cash", "cretaceous_meg"),
+    ]
+    for alias, canonical in aliases:
+        assert resolve_rule_id(pipeline.rules, "pins", alias, "") == canonical
+
+
+def test_grid_only_pins_no_word_score_change():
+    pipeline = ScoringPipeline()
+    board = _letter_board()
+    path = [0, 1, 2]
+    base, _ = pipeline.score(board, path, "aaa", Loadout())
+    for pin in ("rodman", "milky_way", "bucket"):
+        lo = Loadout(extras={"pin_effect": pin})
+        score, _ = pipeline.score(board, path, "aaa", lo)
+        assert score == base
+
+
+def test_mahjong_consumable_multiply():
+    pipeline = ScoringPipeline()
+    board = Board(
+        tiles=[
+            [
+                _tile(
+                    0,
+                    0,
+                    "X",
+                    10,
+                    metadata={"consumable": True},
+                ),
+                _tile(0, 1, "A", 1),
+                _tile(0, 2, "B", 1),
+            ]
+            + [_tile(0, c, "C", 1) for c in range(3, 5)]
+        ]
+        + [[_tile(r, c, "D", 1) for c in range(5)] for r in range(1, 5)],
+        money=0,
+    )
+    lo = Loadout(
+        extras={
+            "pin_effect": "mahjong_red_dragon",
+            "pin_right_level": "1",
+        }
+    )
+    score, bd = pipeline.score(board, [0], "X", lo)
+    assert score == 30.0  # 10 base × 3 factor
+    assert any("consumable" in e for e in bd["pipeline"]["effects"])
+
+
+def test_super_8_chess_take_bonus():
+    pipeline = ScoringPipeline()
+    board = Board(
+        tiles=[
+            [
+                _tile(0, 0, "N", 1, curse=CurseType.CHESS_KNIGHT),
+                _tile(0, 1, "A", 1),
+                _tile(0, 2, "B", 1),
+            ]
+            + [_tile(0, c, "C", 1) for c in range(3, 5)]
+        ]
+        + [[_tile(r, c, "D", 1) for c in range(5)] for r in range(1, 5)],
+        money=0,
+    )
+    lo = Loadout(extras={"pin_effect": "sam_gambit", "pin_right_level": "0"})
+    score, bd = pipeline.score(board, [0, 1], "NA", lo)
+    assert bd["pipeline"]["word_score"] == 8
+    assert score == 10.0
+
+    lo2 = Loadout(extras={"pin_effect": "sam_gambit", "pin_right_level": "1"})
+    score2, _ = pipeline.score(board, [0, 1], "NA", lo2)
+    assert score2 == 18.0  # 8+8 on one take, 2 tile base
+
+
+def test_bicycle_cards_submitted():
+    pipeline = ScoringPipeline()
+    board = _letter_board("abc")
+    lo = Loadout(
+        extras={
+            "pin_effect": "bones_the_dog",
+            "pin_right_level": "2",
+            "cards_submitted": "3",
+        }
+    )
+    score, bd = pipeline.score(board, [0, 1, 2], "abc", lo)
+    # per card = 1 + 2 = 3; × 3 cards = 9 word; + 3 tile base
+    assert bd["pipeline"]["word_score"] == 9
+    assert score == 12.0
+
+
+def test_ram_replays_memory_items():
+    pipeline = ScoringPipeline()
+    board = _letter_board("cat")
+    lo = Loadout(
+        extras={
+            "pin_effect": "random_access_memory",
+            "pin_memory": [
+                {"id": "tombstone", "name": "Tombstone", "kind": "sticker", "level": 1},
+            ],
+        }
+    )
+    score, bd = pipeline.score(board, [0, 1, 2], "cat", lo)
+    assert any("RAM" in e for e in bd["pipeline"]["effects"])
+
+
+def test_human_hands_favourite_boost():
+    pipeline = ScoringPipeline()
+    board = Board(
+        tiles=[
+            [
+                _tile(0, 0, "4", 4, curse=CurseType.NUMBER, number_value=4),
+                _tile(0, 1, "5", 5, curse=CurseType.NUMBER, number_value=5),
+                _tile(0, 2, "6", 6, curse=CurseType.NUMBER, number_value=6),
+            ]
+            + [_tile(0, c, "A", 1) for c in range(3, 5)]
+        ]
+        + [[_tile(r, c, "B", 1) for c in range(5)] for r in range(1, 5)],
+        money=0,
+    )
+    lo = Loadout(
+        stickers=[LoadoutItem(id="brain", name="Brain", level=1, kind="sticker")],
+        stamps=[LoadoutItem(id="newspaper", name="Newspaper", kind="stamp")],
+        extras={
+            "pin_effect": "human_boy",
+            "pin_left_level": "0",
+            "pin_right_level": "1",
+            "favourite_sticker_id": "brain",
+            "favourite_stamp_id": "newspaper",
+        },
+    )
+    score, bd = pipeline.score(board, [0, 1, 2], "456", lo)
+    assert bd["pipeline"]["word_score"] >= 8
+    assert any("Human Hands" in e for e in bd["pipeline"]["effects"])
+
+
+def test_pin_scoring_counts_include_scoring_pins():
+    pipeline = ScoringPipeline()
+    lo = Loadout(extras={"pin_effect": "sam_gambit"})
+    scoring, total, grid_only = count_scoring_items(pipeline.rules, lo)
+    assert scoring == 1
+    assert total == 1
+    assert grid_only == 0
+
+    lo_grid = Loadout(extras={"pin_effect": "rodman"})
+    scoring_g, total_g, grid_only_g = count_scoring_items(pipeline.rules, lo_grid)
+    assert scoring_g == 0
+    assert grid_only_g == 1
+
+
+def test_both_pin_tracks_independent_of_branch():
+    """Left/right levels apply together; pin_branch does not gate scoring."""
+    pipeline = ScoringPipeline()
+    rule = get_pin_scoring_rule(pipeline.rules, "bones_the_dog")
+    assert rule is not None
+    assert rule["type"] == "cards_submitted_word_bonus"
+
+    board = _letter_board()
+    lo = Loadout(
+        pin_branch="left",
+        extras={
+            "pin_effect": "bones_the_dog",
+            "pin_left_level": "2",
+            "pin_right_level": "1",
+            "cards_submitted": "2",
+        },
+    )
+    _, bd = pipeline.score(board, [0, 1], "aa", lo)
+    assert bd["pipeline"]["word_score"] == 4  # (1+1)×2 cards

@@ -35,6 +35,7 @@ class CurseType(str, Enum):
     CHESS_KNIGHT = "chess_knight"
     CHESS_QUEEN = "chess_queen"
     CHESS_KING = "chess_king"
+    CARD = "card"
     ITEM = "item"
     UNKNOWN = "unknown"
 
@@ -71,7 +72,7 @@ class Tile:
     col: int
     char: str  # display / primary character
     letter: str  # resolved letter for word building (A-Z or ?)
-    base_score: int
+    base_score: float
     color: TileColor = TileColor.COLORLESS
     curse: CurseType = CurseType.LETTER
     number_value: int | None = None  # for NUMBER curse
@@ -89,12 +90,29 @@ class Tile:
 
 @dataclass
 class Board:
-    tiles: list[list[Tile]]  # 5x5
+    tiles: list[list[Tile]]  # 5x5 storage; inactive cells may be placeholders
     money: int = 0
+    rows: int = 5
+    cols: int = 5
+    active: list[bool] = field(default_factory=lambda: [True] * 25)
+
+    def __post_init__(self) -> None:
+        if len(self.active) != 25:
+            self.active = [True] * 25
 
     @property
     def flat(self) -> list[Tile]:
         return [t for row in self.tiles for t in row]
+
+    def is_active_index(self, idx: int) -> bool:
+        if not (0 <= idx < 25):
+            return False
+        return self.active[idx]
+
+    def is_active_cell(self, row: int, col: int) -> bool:
+        if not (0 <= row < 5 and 0 <= col < 5):
+            return False
+        return self.is_active_index(row * 5 + col)
 
     def get(self, row: int, col: int) -> Tile | None:
         if 0 <= row < 5 and 0 <= col < 5:
@@ -102,6 +120,8 @@ class Board:
         return None
 
     def get_by_index(self, idx: int) -> Tile:
+        if not self.is_active_index(idx):
+            raise IndexError(f"inactive board index {idx}")
         return self.flat[idx]
 
 

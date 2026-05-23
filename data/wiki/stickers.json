@@ -14,725 +14,1263 @@
       "shinychain": "shiny_chain"
     },
     "stamps": {
-      "beam_me_up": "beam_me_up"
+      "beam_me_up": "beam_me_up",
+      "pinata": "pi_ata"
     },
     "bosses": {
       "robo_eel_boss": "robo_eel",
       "robo_monkey_boss": "robo_monkey",
-      "yeti": "yeti_crab"
+      "yeti": "yeti_crab",
+      "bosssmallwords": "wolf",
+      "boss_small_words": "wolf",
+      "five_letter_maximum": "wolf",
+      "bosslongwords": "cobra",
+      "boss_long_words": "cobra",
+      "five_letter_minimum": "cobra",
+      "bosslesspoints": "salamander",
+      "bossmoney": "toothed_whale",
+      "bossnegativemoney": "robo_monkey",
+      "bossdino": "cretaceous_meg",
+      "cretaceous_meg": "cretaceous_meg",
+      "meg": "cretaceous_meg"
     },
     "pins": {
+      "abacus": "abacus",
+      "hayley": "abacus",
+      "hayley_bayles": "abacus",
+      "milky_way": "milky_way",
+      "nina": "milky_way",
+      "nina_nix": "milky_way",
+      "rainbow": "rainbow",
+      "beans": "rainbow",
+      "mahjong_red_dragon": "mahjong_red_dragon",
+      "mahjong": "mahjong_red_dragon",
+      "sandy_saguaro": "mahjong_red_dragon",
+      "bucket": "bucket",
+      "octacles": "bucket",
+      "random_access_memory": "random_access_memory",
+      "ram": "random_access_memory",
+      "nat_h4": "random_access_memory",
+      "rodman": "rodman",
+      "carp_streamers": "rodman",
+      "sam_gambit": "sam_gambit",
+      "sam": "sam_gambit",
+      "super_8": "sam_gambit",
       "bones": "bones_the_dog",
+      "bones_the_dog": "bones_the_dog",
+      "bicycle": "bones_the_dog",
+      "cretaceous_meg": "cretaceous_meg",
+      "meg": "cretaceous_meg",
+      "wad_of_cash": "cretaceous_meg",
       "human_boy": "human_boy",
-      "hayley": "hayley_bayles",
-      "abacus": "hayley_bayles"
+      "human_hands": "human_boy"
     }
   },
   "stickers": {
     "alembic_flask": {
       "name": "Alembic Flask",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "consecutive_number_tile_bonus",
+      "base": 25,
+      "upgrade": 25,
+      "wiki_effect": "Consecutive number tiles on the word path get +25 TILE SCORE",
+      "wiki_page": "Alembic_Flask"
     },
     "ambulance": {
       "name": "Ambulance",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_base_negative",
+      "base": 1.5,
+      "upgrade": 1,
+      "wiki_effect": "If submitted word BASE SCORE was negative, get \u00d7WORD SCORE",
+      "wiki_page": "Ambulance"
     },
     "amphora": {
       "name": "Amphora",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters random cursed tiles",
+      "wiki_effect": "START OF GRID: Scatters random cursed tiles",
+      "wiki_page": "Amphora"
     },
     "april_shower": {
       "name": "April Shower",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF ENCOUNTER: chosen letters become BLUE on each grid",
+      "wiki_effect": "START OF ENCOUNTER: chosen letters become BLUE on each grid",
+      "wiki_page": "April_Shower"
     },
     "arrivals": {
       "name": "Arrivals",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "requires_sticker_slot:first",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "First sticker slot: \u00d7WORD SCORE",
+      "wiki_page": "Arrivals"
     },
     "artist_s_palette": {
       "name": "Artist's Palette",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_tile_score",
+      "target": "colored",
+      "base": 6,
+      "upgrade": 6,
+      "wiki_effect": "Coloured tiles get +6 TILE SCORE",
+      "wiki_page": "Artist's_Palette"
     },
     "axe": {
       "name": "Axe",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "path_length_lte:3",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "Words with 3 or fewer tiles get \u00d7WORD SCORE",
+      "wiki_page": "Axe"
     },
     "baby_bottle": {
       "name": "Baby Bottle",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "wildcard_count_eq:2",
+      "base": 2,
+      "upgrade": 0.5,
+      "wiki_effect": "Exactly 2 ? tiles in word get \u00d7WORD SCORE",
+      "wiki_page": "Baby_Bottle"
     },
     "backpack": {
       "name": "Backpack",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Place RED tiles on their starting ranks",
+      "wiki_effect": "START OF GRID: Place RED tiles on their starting ranks",
+      "wiki_page": "Backpack"
     },
     "base_camp": {
       "name": "Base Camp",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "grid_total_base_times_level",
+      "base": 1,
+      "upgrade": 1,
+      "wiki_effect": "Get WORD SCORE equal to total BASE SCORE on grid \u00d7N",
+      "wiki_page": "Base_Camp"
     },
     "birthday_cake": {
       "name": "Birthday Cake",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "birthday_cake_bonus",
+      "base": 1,
+      "upgrade": 1,
+      "wiki_effect": "Get +X WORD SCORE (accumulated); improved by highest number in word \u00d7 level",
+      "wiki_page": "Birthday_Cake"
     },
     "blueberries": {
       "name": "Blueberries",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "ends_with_color:blue",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "If your word ends with a BLUE tile, get \u00d7WORD SCORE",
+      "wiki_page": "Blueberries"
     },
     "bone": {
       "name": "Bone",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "always",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "Get \u00d7WORD SCORE",
+      "wiki_page": "Bone"
     },
     "boomerang": {
       "name": "Boomerang",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_starts_ends_number",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Word starts and ends on a number tile \u2192 \u00d7WORD SCORE",
+      "wiki_page": "Boomerang"
     },
     "brain": {
       "name": "Brain",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_if_number_sum",
+      "min_sum": 7,
+      "factor_base": 1.0,
+      "factor_per_level": 0.5,
+      "wiki_effect": "If the numbers in your word add to 7 or more get \u00d7WORD SCORE",
+      "wiki_page": "Brain"
     },
     "brick": {
       "name": "Brick",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "rack",
+      "wiki_effect": "Overflowing consumable rack gives consumables +N BASE when added to rack",
+      "wiki_page": "Brick"
     },
     "broom": {
       "name": "Broom",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_starts_ends_different_curse_type",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "Word starts and ends on different curse types: \u00d7WORD SCORE",
+      "wiki_page": "Broom"
     },
     "burrito": {
       "name": "Burrito",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_other_sticker_levels",
+      "base": 0.05,
+      "upgrade": 0.05,
+      "wiki_effect": "\u00d7WORD; +0.05 per level of other stickers (per Burrito level)",
+      "wiki_page": "Burrito"
     },
     "candle": {
       "name": "Candle",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters VOID currencies",
+      "wiki_effect": "START OF GRID: Scatters VOID currencies",
+      "wiki_page": "Candle"
     },
     "carousel_horse": {
       "name": "Carousel Horse",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters checkpoints; destination tiles get \u00d72 BASE SCORE",
+      "wiki_effect": "START OF GRID: Scatters checkpoints; destination tiles get \u00d72 BASE SCORE",
+      "wiki_page": "Carousel_Horse"
     },
     "castle": {
       "name": "Castle",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Set BASE SCORE of all chess pieces to 16",
+      "wiki_effect": "START OF GRID: Set BASE SCORE of all chess pieces to 16",
+      "wiki_page": "Castle"
     },
     "celestial_body": {
       "name": "Celestial Body",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_tile_score",
+      "target": "card",
+      "base": 10,
+      "upgrade": 10,
+      "wiki_effect": "Cards get +N TILE SCORE",
+      "wiki_page": "Celestial_Body"
     },
     "champagne": {
       "name": "Champagne",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: For each 5 coloured tiles, 1 becomes SHINY",
+      "wiki_effect": "START OF GRID: For each 5 coloured tiles, 1 becomes SHINY",
+      "wiki_page": "Champagne"
     },
     "chequered_flag": {
       "name": "Chequered Flag",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "first_grid_of_encounter",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "First grid of each encounter gets \u00d7WORD SCORE",
+      "wiki_page": "Chequered_Flag"
     },
     "cherries": {
       "name": "Cherries",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Each RED tile used scatters RED tiles onto the next grid",
+      "wiki_effect": "Each RED tile used scatters RED tiles onto the next grid",
+      "wiki_page": "Cherries"
     },
     "cherry_pie": {
       "name": "Cherry Pie",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "red_count_gte:3",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "If your word contains 3 or more RED tiles, get \u00d7WORD SCORE",
+      "wiki_page": "Cherry_Pie"
     },
     "chips": {
       "name": "Chips",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_starts_after_previous",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "Word starts later in alphabet than previous word, \u00d7WORD SCORE",
+      "wiki_page": "Chips"
     },
     "circus_tent": {
       "name": "Circus Tent",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "has_blue_red_and_colourless",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "Word with BLUE, RED and COLOURLESS tiles gets \u00d7WORD SCORE",
+      "wiki_page": "Circus_Tent"
     },
     "clapper_board": {
       "name": "Clapper Board",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "chess_takes_gte:2",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Words with 2 or more takes in get \u00d7WORD SCORE",
+      "wiki_page": "Clapper_Board"
     },
     "cocktail": {
       "name": "Cocktail",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "tile_multiply",
+      "target": "first_of_each_colour",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "First tile of each colour on path gets \u00d7N TILE SCORE",
+      "wiki_page": "Cocktail"
     },
     "coin_purse": {
       "name": "Coin Purse",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Spends $3 to scatter 1 SHINY ? tile",
+      "wiki_effect": "START OF GRID: Spends $3 to scatter 1 SHINY ? tile",
+      "wiki_page": "Coin_Purse"
     },
     "confetti": {
       "name": "Confetti",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "unique_colours_eq:5",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Words with 5 different colours get \u00d7WORD SCORE",
+      "wiki_page": "Confetti"
     },
     "creaky_chair": {
       "name": "Creaky Chair",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "curse_types_gte:3",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Words with 3+ curse types get \u00d7WORD SCORE",
+      "wiki_page": "Creaky_Chair"
     },
     "credit_card": {
       "name": "Credit Card",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "per_money",
+      "base": 2,
+      "upgrade": 2,
+      "wiki_effect": "Get +0 WORD SCORE (2 for each $ you have)",
+      "wiki_page": "Credit_Card"
     },
     "crystal_ball": {
       "name": "Crystal Ball",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "if_target_wildcard_on_path",
+      "base": 70,
+      "upgrade": 70,
+      "wiki_effect": "Word with target-curse ? tile gets +N WORD SCORE",
+      "wiki_page": "Crystal_Ball"
     },
     "cursed_vhs": {
       "name": "Cursed VHS",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters cursed pool item per curse type on grid",
+      "wiki_effect": "START OF GRID: Scatters cursed pool item per curse type on grid",
+      "wiki_page": "Cursed_VHS"
     },
     "dagger": {
       "name": "Dagger",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "if_king_take_on_path",
+      "base": 50,
+      "upgrade": 50,
+      "wiki_effect": "Taking a king gives +N WORD SCORE",
+      "wiki_page": "Dagger"
     },
     "dancer": {
       "name": "Dancer",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters 2 of clubs",
+      "wiki_effect": "START OF GRID: Scatters 2 of clubs",
+      "wiki_page": "Dancer"
     },
     "dartboard": {
       "name": "Dartboard",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "if_base_score_eq_target",
+      "base": 101,
+      "upgrade": 100,
+      "wiki_effect": "If BASE SCORE equals target, get +N WORD SCORE",
+      "wiki_page": "Dartboard"
     },
     "deep_sea_horror": {
       "name": "Deep Sea Horror",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_tile_score",
+      "target": "void",
+      "base": -10,
+      "upgrade": -10,
+      "wiki_effect": "VOID tiles get -10 TILE SCORE",
+      "wiki_page": "Deep_Sea_Horror"
     },
     "departures": {
       "name": "Departures",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "if_sticker_slot_last",
+      "base": 100,
+      "upgrade": 50,
+      "wiki_effect": "Last sticker slot: +N WORD SCORE",
+      "wiki_page": "Departures"
     },
     "diving_mask": {
       "name": "Diving Mask",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "target_reduction",
+      "wiki_effect": "Targets are 10% lower per level",
+      "wiki_page": "Diving_Mask"
     },
     "doughnut": {
       "name": "Doughnut",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: +BASE per unique neighbouring colour",
+      "wiki_effect": "START OF GRID: +BASE per unique neighbouring colour",
+      "wiki_page": "Doughnut"
     },
     "down_under": {
       "name": "Down Under",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "tile_multiply",
+      "target": "all",
+      "base": -3,
+      "upgrade": -2,
+      "wiki_effect": "All tiles on path get \u00d7N TILE SCORE (negative)",
+      "wiki_page": "Down_Under"
     },
     "dusty_coffin": {
       "name": "Dusty Coffin",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "per_void_unused",
+      "base": 8,
+      "upgrade": 8,
+      "wiki_effect": "For each VOID tile on grid whose letter is not in your word, +WORD SCORE",
+      "wiki_page": "Dusty_Coffin"
     },
     "egg": {
       "name": "Egg",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_starts_vowel",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "If your word starts with a vowel, get \u00d7WORD SCORE",
+      "wiki_page": "Egg"
     },
     "electric_guitar": {
       "name": "Electric Guitar",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_tile_score",
+      "target": "red_note",
+      "base": 15,
+      "upgrade": 15,
+      "wiki_effect": "RED notes (A-G) get +15 TILE SCORE",
+      "wiki_page": "Electric_Guitar"
     },
     "ferris_wheel": {
       "name": "Ferris Wheel",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_starts_ends_different_color",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "Word starts/ends on different coloured tiles, \u00d7WORD SCORE",
+      "wiki_page": "Ferris_Wheel"
     },
     "fire_extinguisher": {
       "name": "Fire Extinguisher",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "per_unused_red",
+      "base": 5,
+      "upgrade": 5,
+      "wiki_effect": "For each unused RED tile on the grid, get +WORD SCORE",
+      "wiki_page": "Fire_Extinguisher"
     },
     "fireworks": {
       "name": "Fireworks",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF FINAL GRID: Scatters SHINY tiles",
+      "wiki_effect": "START OF FINAL GRID: Scatters SHINY tiles",
+      "wiki_page": "Fireworks",
+      "grid_timing": "final"
     },
     "fish_cake": {
       "name": "Fish Cake",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "tile_multiply",
+      "target": "shiny",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "SHINY tiles get \u00d72 TILE SCORE",
+      "wiki_page": "Fish_Cake"
     },
     "footprints": {
       "name": "Footprints",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "non_adjacent_steps_gte:3",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "3+ non-adjacent moves in word get \u00d7WORD SCORE",
+      "wiki_page": "Footprints"
     },
     "fountain": {
       "name": "Fountain",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters BLUE tiles",
+      "wiki_effect": "START OF GRID: Scatters BLUE tiles",
+      "wiki_page": "Fountain"
     },
     "frankenstein": {
       "name": "Frankenstein",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "unique",
+      "wiki_effect": "The Modern Prometheus (no scoring effect)",
+      "wiki_page": "Frankenstein"
     },
     "game_pad": {
       "name": "Game Pad",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters VOID, RED and BLUE tiles",
+      "wiki_effect": "START OF GRID: Scatters VOID, RED and BLUE tiles",
+      "wiki_page": "Game_Pad"
     },
     "ghost": {
       "name": "Ghost",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Each cursed tile used scatters cursed tile on next grid",
+      "wiki_effect": "Each cursed tile used scatters cursed tile on next grid",
+      "wiki_page": "Ghost"
     },
     "glass_of_milk": {
       "name": "Glass Of Milk",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_tile_score",
+      "target": "wildcard",
+      "base": 15,
+      "upgrade": 15,
+      "wiki_effect": "? tiles get +15 TILE SCORE",
+      "wiki_page": "Glass_Of_Milk"
     },
     "gold_fish": {
       "name": "Gold Fish",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Get currency consumable tile(s)",
+      "wiki_effect": "START OF GRID: Get currency consumable tile(s)",
+      "wiki_page": "Gold_Fish"
     },
     "gorilla": {
       "name": "Gorilla",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters VOID tiles",
+      "wiki_effect": "START OF GRID: Scatters VOID tiles",
+      "wiki_page": "Gorilla"
     },
     "graduation_cap": {
       "name": "Graduation Cap",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "per_path_tile",
+      "base": 3,
+      "upgrade": 3,
+      "wiki_effect": "Get +3 WORD SCORE for each tile in your word",
+      "wiki_page": "Graduation_Cap"
     },
     "ham_sandwich": {
       "name": "Ham Sandwich",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "if_same_start_end",
+      "base": 25,
+      "upgrade": 25,
+      "wiki_effect": "If your word starts and ends with the same letter, +WORD SCORE",
+      "wiki_page": "Ham_Sandwich"
     },
     "hanafuda": {
       "name": "Hanafuda",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "card_hand_word_bonus",
+      "hand": "pair",
+      "word_mode": "per_unused_card",
+      "base": 12,
+      "upgrade": 12,
+      "wiki_effect": "Pair: +WORD per unused card on grid",
+      "wiki_page": "Hanafuda"
     },
     "hi_vis_jacket": {
       "name": "Hi Vis Jacket",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_consumable_rack",
+      "base": 0.2,
+      "upgrade": 0.2,
+      "wiki_effect": "\u00d7WORD SCORE (0.2 larger per consumable on rack); loses consumable on submit",
+      "wiki_page": "Hi_Vis_Jacket"
     },
     "hungry_hippo": {
       "name": "Hungry Hippo",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "scaled_flat",
+      "base": 20,
+      "upgrade": 20,
+      "wiki_effect": "Get +N WORD SCORE (upgrade by eating in shop)",
+      "wiki_page": "Hungry_Hippo"
     },
     "jack_o_lantern": {
       "name": "Jack-o'-Lantern",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_money_on_condition",
+      "condition": "word_all_cursed",
+      "base": 1,
+      "upgrade": 1,
+      "wiki_effect": "Get $N for every cursed word",
+      "wiki_page": "Jack-o%27-Lantern"
     },
     "jigsaw_piece": {
       "name": "Jigsaw Piece",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "if_subtotal_zero",
+      "base": 100,
+      "upgrade": 100,
+      "wiki_effect": "If word score is exactly zero when applied, +WORD SCORE",
+      "wiki_page": "Jigsaw_Piece"
     },
     "joker": {
       "name": "Joker",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters joker cards",
+      "wiki_effect": "START OF GRID: Scatters joker cards",
+      "wiki_page": "Joker"
     },
     "kadomatsu": {
       "name": "Kadomatsu",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "card_hand_word_bonus",
+      "hand": "three_of_a_kind",
+      "base": 80,
+      "upgrade": 80,
+      "wiki_effect": "Three of a kind: +WORD SCORE",
+      "wiki_page": "Kadomatsu"
     },
     "kangaroo": {
       "name": "Kangaroo",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_tile_score",
+      "target": "chess_move_tiles",
+      "base": 5,
+      "upgrade": 5,
+      "wiki_effect": "+N TILE SCORE per chess tile on path in valid chess move",
+      "wiki_page": "Kangaroo"
     },
     "lab_coat": {
       "name": "Lab Coat",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "tile_multiply",
+      "target": "number",
+      "per_level_factor": true,
+      "factor_base": 1.0,
+      "factor_per_level": 1.0,
+      "wiki_effect": "Numbers get \u00d7N TILE SCORE (N = level + 1)",
+      "wiki_page": "Lab_Coat"
     },
     "ladybird": {
       "name": "Ladybird",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: scatter RED even and VOID odd number tiles",
+      "wiki_effect": "START OF GRID: scatter RED even and VOID odd number tiles",
+      "wiki_page": "Ladybird"
     },
     "las_vegas": {
       "name": "Las Vegas",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "distinct_card_suits_gte:2",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Words with 2+ card suits get \u00d7WORD SCORE",
+      "wiki_page": "Las_Vegas"
     },
     "left_hand": {
       "name": "Left Hand",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "Points at your favourite Sticker (Human Hands)",
+      "wiki_page": "Left_Hand"
     },
     "lipstick": {
       "name": "Lipstick",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF ENCOUNTER: Scatters RED tiles",
+      "wiki_effect": "START OF ENCOUNTER: Scatters RED tiles",
+      "wiki_page": "Lipstick"
     },
     "lollipop": {
       "name": "Lollipop",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "per_shop_restock",
+      "base": 5,
+      "upgrade": 5,
+      "wiki_effect": "+N WORD SCORE per shop restock this run",
+      "wiki_page": "Lollipop"
     },
     "lucky_dice": {
       "name": "Lucky Dice",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "if_contains_target_number",
+      "base": 50,
+      "upgrade": 50,
+      "wiki_effect": "Word contains target number \u2192 +50 WORD SCORE",
+      "wiki_page": "Lucky_Dice"
     },
     "lucky_scarf": {
       "name": "Lucky Scarf",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_starts_ends_red",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "If your word starts and ends with a RED tile, get \u00d7WORD SCORE",
+      "wiki_page": "Lucky_Scarf"
     },
     "luffing_jib_crane": {
       "name": "Luffing Jib Crane",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "rack",
+      "wiki_effect": "Consumable tiles get +N BASE SCORE when added to tile rack",
+      "wiki_page": "Luffing_Jib_Crane"
     },
     "magic_8_ball": {
       "name": "Magic 8 Ball",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_tile_score",
+      "target": "chess_piece",
+      "base": 25,
+      "upgrade": 25,
+      "wiki_effect": "Target chess pieces get +N TILE SCORE",
+      "wiki_page": "Magic_8_Ball"
     },
     "magic_wand": {
       "name": "Magic Wand",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: chance for RED or BLUE tile to become SHINY",
+      "wiki_effect": "START OF GRID: chance for RED or BLUE tile to become SHINY",
+      "wiki_page": "Magic_Wand"
     },
     "maple_leaf": {
       "name": "Maple Leaf",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "tile_multiply",
+      "target": "first_n_red",
+      "factor": 3,
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Your first N RED tiles get \u00d73 TILE SCORE",
+      "wiki_page": "Maple_Leaf"
     },
     "maracas": {
       "name": "Maracas",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Each coloured tile used scatters onto the next grid",
+      "wiki_effect": "Each coloured tile used scatters onto the next grid",
+      "wiki_page": "Maracas"
     },
     "michael_s_book": {
       "name": "Michael's Book",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "michael_book_bonus",
+      "wiki_effect": "Get +N WORD SCORE from cumulative target-word progress",
+      "wiki_page": "Michael%27s_Book"
     },
     "mischievous_imp": {
       "name": "Mischievous Imp",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_all_cursed",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Words containing only cursed tiles get \u00d7WORD SCORE",
+      "wiki_page": "Mischievous_Imp"
     },
     "moai": {
       "name": "Moai",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_tile_score",
+      "target": "colourless_cursed",
+      "base": 12,
+      "upgrade": 12,
+      "wiki_effect": "Colourless cursed tiles get +N TILE SCORE",
+      "wiki_page": "Moai"
     },
     "movie_camera": {
       "name": "Movie Camera",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "chess_take_word_bonus",
+      "mode": "piece_value_first_n",
+      "base": 1,
+      "upgrade": 1,
+      "strict_takes": true,
+      "wiki_effect": "+WORD from first N taken piece values (N = level)",
+      "wiki_page": "Movie_Camera"
     },
     "musical_notes": {
       "name": "Musical Notes",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters randomly suited BLUE Es",
+      "wiki_effect": "START OF GRID: Scatters randomly suited BLUE Es",
+      "wiki_page": "Musical_Notes"
     },
     "mysterious_amulet": {
       "name": "Mysterious Amulet",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_tile_score",
+      "target": "cursed",
+      "base": 8,
+      "upgrade": 8,
+      "wiki_effect": "Cursed tiles get +N TILE SCORE",
+      "wiki_page": "Mysterious_Amulet"
     },
     "mystery_gift": {
       "name": "Mystery Gift",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "sell",
+      "wiki_effect": "Sell to get a random level 1 RARE sticker",
+      "wiki_page": "Mystery_Gift"
     },
     "newspaper": {
       "name": "Newspaper",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_all_colourless",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "COLOURLESS words get \u00d7WORD SCORE",
+      "wiki_page": "Newspaper"
     },
     "onigiri": {
       "name": "Onigiri",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "colourless_word_flat",
+      "base": 20,
+      "upgrade": 40,
+      "wiki_effect": "COLOURLESS words get +N WORD SCORE",
+      "wiki_page": "Onigiri"
     },
     "ornate_key": {
       "name": "Ornate Key",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "no_colorless_on_path",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "If your word does not contain COLOURLESS tiles, \u00d7WORD SCORE",
+      "wiki_page": "Ornate_Key"
     },
     "overhand": {
       "name": "Overhand",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "stamp_replay",
+      "wiki_effect": "Executes below Stamp grid and scoring effects again",
+      "wiki_page": "Overhand"
     },
     "padlock_sticker": {
       "name": "Padlock (sticker)",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "sell_cost",
+      "sell_price_base": 8,
+      "sell_price_upgrade": 8,
+      "wiki_effect": "Costs $8 to sell",
+      "wiki_page": "Padlock_(sticker)"
     },
     "pair_of_socks": {
       "name": "Pair Of Socks",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "blue_count_eq:2",
+      "base": 2,
+      "upgrade": 0.5,
+      "wiki_effect": "If your word contains exactly 2 BLUE tiles, get \u00d7WORD SCORE",
+      "wiki_page": "Pair_Of_Socks"
     },
     "parrot": {
       "name": "Parrot",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "colourless_word_per_coloured_on_grid",
+      "base": 8,
+      "upgrade": 8,
+      "wiki_effect": "COLOURLESS words get +N WORD per coloured tile on grid",
+      "wiki_page": "Parrot"
     },
     "peacock": {
       "name": "Peacock",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "card_hand:flush",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Flush (5 matching suits): \u00d7WORD SCORE",
+      "wiki_page": "Peacock"
     },
     "pear": {
       "name": "Pear",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_money_on_hand",
+      "hand": "pair",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Pair: +$N",
+      "wiki_page": "Pear"
     },
     "peas_of_a_pod": {
       "name": "Peas Of A Pod",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "card_hand:four_of_a_kind",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Four of a kind: \u00d7WORD SCORE",
+      "wiki_page": "Peas_Of_A_Pod"
     },
     "petri_dish": {
       "name": "Petri Dish",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: scatter 1, 2, 3",
+      "wiki_effect": "START OF GRID: scatter 1, 2, 3",
+      "wiki_page": "Petri_Dish"
     },
     "pneumonia": {
       "name": "Pneumonia",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "per_unique_vowel",
+      "base": 10,
+      "upgrade": 10,
+      "wiki_effect": "Get +10 WORD SCORE for each unique vowel in your word",
+      "wiki_page": "Pneumonia"
     },
     "poker_face": {
       "name": "Poker Face",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_starts_face_card",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Word starts with suited face card: \u00d7WORD SCORE",
+      "wiki_page": "Poker_Face"
     },
     "postal_horn": {
       "name": "Postal Horn",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters cards",
+      "wiki_effect": "START OF GRID: Scatters cards",
+      "wiki_page": "Postal_Horn"
     },
     "postbox": {
       "name": "Postbox",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_all_uncursed",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Uncursed words get \u00d7WORD SCORE",
+      "wiki_page": "Postbox"
     },
     "printer": {
       "name": "Printer",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters 1 BLUE item from the BLUE pool",
+      "wiki_effect": "START OF GRID: Scatters 1 BLUE item from the BLUE pool",
+      "wiki_page": "Printer"
     },
     "raccoon": {
       "name": "Raccoon",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters chess pieces",
+      "wiki_effect": "START OF GRID: Scatters chess pieces",
+      "wiki_page": "Raccoon"
     },
     "radio": {
       "name": "Radio",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters COLOURLESS pool sticker(s)",
+      "wiki_effect": "START OF GRID: Scatters COLOURLESS pool sticker(s)",
+      "wiki_page": "Radio"
     },
     "rainbow_sprinkles": {
       "name": "Rainbow Sprinkles",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "3+ unique coloured tiles in word scatters SHINY on next grid",
+      "wiki_effect": "3+ unique coloured tiles in word scatters SHINY on next grid",
+      "wiki_page": "Rainbow_Sprinkles"
     },
     "retro_raider": {
       "name": "Retro Raider",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a level 1 item from the VOID pool and 1 adjacent VOID tile",
+      "wiki_effect": "START OF GRID: Scatters a level 1 item from the VOID pool and 1 adjacent VOID tile",
+      "wiki_page": "Retro_Raider"
     },
     "rex": {
       "name": "Rex",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters bones",
+      "wiki_effect": "START OF GRID: Scatters bones",
+      "wiki_page": "Rex"
     },
     "roller_skate": {
       "name": "Roller Skate",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters currency per restock in previous shop",
+      "wiki_effect": "START OF GRID: Scatters currency per restock in previous shop",
+      "wiki_page": "Roller_Skate"
     },
     "rolodex": {
       "name": "Rolodex",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters cards from same-suit pool",
+      "wiki_effect": "START OF GRID: Scatters cards from same-suit pool",
+      "wiki_page": "Rolodex"
     },
     "scissors": {
       "name": "Scissors",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_per_distinct_pair",
+      "base": 1.25,
+      "upgrade": 0.25,
+      "wiki_effect": "\u00d7WORD SCORE per distinct pair in word",
+      "wiki_page": "Scissors"
     },
     "sequoia_sapling": {
       "name": "Sequoia Sapling",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_tile_score",
+      "target": "vowel",
+      "base": 6,
+      "upgrade": 6,
+      "wiki_effect": "Vowels get +6 TILE SCORE",
+      "wiki_page": "Sequoia_Sapling"
     },
     "shield": {
       "name": "Shield",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "blue_tile_base_override",
+      "base": 10,
+      "upgrade": 10,
+      "wiki_effect": "BLUE tiles have base score of N",
+      "wiki_page": "Shield"
     },
     "signal_receiver": {
       "name": "Signal Receiver",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "sell",
+      "wiki_effect": "Sell to get random level N sticker from grid not in inventory",
+      "wiki_page": "Signal_Receiver"
     },
     "slide": {
       "name": "Slide",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "card_hand_word_bonus",
+      "hand": "straight",
+      "base": 150,
+      "upgrade": 150,
+      "wiki_effect": "Straight (5 ascending ranks with suits): +WORD SCORE",
+      "wiki_page": "Slide"
     },
     "sly_spy": {
       "name": "Sly Spy",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "tile_multiply",
+      "target": "consonant",
+      "per_level_factor": true,
+      "factor_base": 1.0,
+      "factor_per_level": 1.0,
+      "wiki_effect": "Consonants get \u00d72 TILE SCORE",
+      "wiki_page": "Sly_Spy"
     },
     "snapshot": {
       "name": "Snapshot",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Becomes copy of random sticker on grid",
+      "wiki_effect": "START OF GRID: Becomes copy of random sticker on grid",
+      "wiki_page": "Snapshot"
     },
     "snowman": {
       "name": "Snowman",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters currency per frozen shop item",
+      "wiki_effect": "START OF GRID: Scatters currency per frozen shop item",
+      "wiki_page": "Snowman"
     },
     "soaring_kite": {
       "name": "Soaring Kite",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: scatter 2 lowest BLUE numbers not on grid",
+      "wiki_effect": "START OF GRID: scatter 2 lowest BLUE numbers not on grid",
+      "wiki_page": "Soaring_Kite"
     },
     "stamp_album": {
       "name": "Stamp Album",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_word_score",
+      "word_mode": "per_stamp_shop_price",
+      "base": 1,
+      "upgrade": 1,
+      "wiki_effect": "+WORD per $ of total shop price of all stamps",
+      "wiki_page": "Stamp_Album"
     },
     "sticky_plaster": {
       "name": "Sticky Plaster",
-      "type": "unmodeled",
-      "description": "Number tiles stick; +5/10/15 BASE per level (wiki)"
+      "type": "custom",
+      "effect_class": "sticky_numbers",
+      "wiki_effect": "Number tiles from previous word stick; +N BASE per level",
+      "wiki_page": "Sticky_Plaster"
     },
     "stilton": {
       "name": "Stilton",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "add_tile_score",
+      "target": "blue",
+      "base": 8,
+      "upgrade": 8,
+      "wiki_effect": "BLUE tiles get +8 TILE SCORE",
+      "wiki_page": "Stilton"
     },
     "storm_cloud": {
       "name": "Storm Cloud",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Get cursed consumable tile(s)",
+      "wiki_effect": "START OF GRID: Get cursed consumable tile(s)",
+      "wiki_page": "Storm_Cloud"
     },
     "suitcase": {
       "name": "Suitcase",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters BLUE tiles",
+      "wiki_effect": "START OF GRID: Scatters BLUE tiles",
+      "wiki_page": "Suitcase"
     },
     "sunflower": {
       "name": "Sunflower",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_money_bonus",
+      "base": 0.01,
+      "upgrade": 0.01,
+      "wiki_effect": "Get \u00d71 WORD SCORE (Extra 0.01 for each $ you have)",
+      "wiki_page": "Sunflower"
     },
     "sushi": {
       "name": "Sushi",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "tile_multiply",
+      "target": "colourless_adjacent_two_colours",
+      "base": 3,
+      "upgrade": 1,
+      "wiki_effect": "COLOURLESS tiles get \u00d7N TILE SCORE if next to 2 uniquely coloured tiles",
+      "wiki_page": "Sushi"
     },
     "telescope": {
       "name": "Telescope",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "red_encounter_tile_bonus",
+      "wiki_effect": "RED tiles get +N TILE SCORE for each RED used this encounter",
+      "wiki_page": "Telescope"
     },
     "ten_pin_bowling": {
       "name": "Ten Pin Bowling",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: scatter 2 adjacent VOID consecutive numbers",
+      "wiki_effect": "START OF GRID: scatter 2 adjacent VOID consecutive numbers",
+      "wiki_page": "Ten_Pin_Bowling"
     },
     "tombstone": {
       "name": "Tombstone",
-      "type": "add_word_score",
-      "value": 3
+      "type": "add_tile_score",
+      "target": "void_adjacent",
+      "base": 5,
+      "upgrade": 5,
+      "wiki_effect": "Tiles get +5 TILE SCORE for each adjacent VOID tile",
+      "wiki_page": "Tombstone"
     },
     "toolbox": {
       "name": "Toolbox",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters 2 RED items from the RED pool (stickers level 1)",
+      "wiki_effect": "START OF GRID: Scatters 2 RED items from the RED pool (stickers level 1)",
+      "wiki_page": "Toolbox"
     },
     "traffic_lights": {
       "name": "Traffic Lights",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: scatter 2 uniquely coloured small numbers",
+      "wiki_effect": "START OF GRID: scatter 2 uniquely coloured small numbers",
+      "wiki_page": "Traffic_Lights"
     },
     "under_construction": {
       "name": "Under Construction",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_starts_ends_consumable",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "Words starting and ending on consumable tiles get \u00d7WORD SCORE",
+      "wiki_page": "Under_Construction"
     },
     "wheezy_vixen": {
       "name": "Wheezy Vixen",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_starts_vwxyz",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "If your word starts with V, W, X, Y or Z, get \u00d7WORD SCORE",
+      "wiki_page": "Wheezy_Vixen"
     },
     "wind_chime": {
       "name": "Wind Chime",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "card_count_eq:5",
+      "base": 2,
+      "upgrade": 1,
+      "wiki_effect": "If word contains exactly 5 cards, get \u00d7WORD SCORE",
+      "wiki_page": "Wind_Chime"
     },
     "worn_out_jeans": {
       "name": "Worn-out Jeans",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: BLUE tiles become ?s",
+      "wiki_effect": "START OF GRID: BLUE tiles become ?s",
+      "wiki_page": "Worn-out_Jeans"
     },
     "wrestlers": {
       "name": "Wrestlers",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_starts_ends_different_suit",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "Word starts and ends on different card suits: \u00d7WORD SCORE",
+      "wiki_page": "Wrestlers"
     },
     "wriggly_worm": {
       "name": "Wriggly Worm",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "path_length_gte:10",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "Words with 10+ tiles get \u00d7WORD SCORE",
+      "wiki_page": "Wriggly_Worm"
     },
     "yellow_glasses": {
       "name": "Yellow Glasses",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "has_double_letter",
+      "base": 1.5,
+      "upgrade": 0.5,
+      "wiki_effect": "If your word contains a double letter, \u00d7WORD SCORE",
+      "wiki_page": "Yellow_Glasses"
     },
     "zebra": {
       "name": "Zebra",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (sticker); scoring not yet modeled"
+      "type": "tile_multiply",
+      "target": "chess_take",
+      "per_level_factor": true,
+      "factor_base": 1.0,
+      "factor_per_level": 2.0,
+      "strict_takes": true,
+      "wiki_effect": "Chess pieces get \u00d7N TILE SCORE if they take another piece",
+      "wiki_page": "Zebra"
     },
     "red_rider": {
       "name": "Red Rider",
@@ -764,958 +1302,1919 @@
   "stamps": {
     "akoya_pearl": {
       "name": "Akoya Pearl",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: If there is a central tile, it becomes SHINY",
+      "wiki_effect": "START OF GRID: If there is a central tile, it becomes SHINY",
+      "wiki_page": "Akoya_Pearl",
+      "shop_price": 12
     },
     "angel_investment": {
       "name": "Angel Investment",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Your first item in each shop is free",
+      "wiki_page": "Angel_Investment",
+      "shop_price": 35
     },
     "avocado": {
       "name": "Avocado",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply",
+      "factor": 2.0,
+      "wiki_effect": "\u00d72 WORD SCORE. Shop prices are doubled. Best served fresh",
+      "wiki_page": "Avocado",
+      "shop_price": 20,
+      "effect_class": "shop"
     },
     "banana": {
       "name": "Banana",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_by_high_letter_count",
+      "min_letter_count": 3,
+      "wiki_effect": "For letters which occur at least 3 times, get WORD SCORE \u00d7 half that letter's count",
+      "wiki_page": "Banana",
+      "shop_price": 16
     },
     "bank": {
       "name": "Bank",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Convert letters to currencies where possible",
+      "wiki_effect": "START OF GRID: Convert letters to currencies where possible",
+      "wiki_page": "Bank",
+      "shop_price": 14
     },
     "bar_chart": {
       "name": "Bar Chart",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "Do nothing (Submit a number's name to improve this)",
+      "wiki_page": "Bar_Chart",
+      "shop_price": 10
     },
     "bar_of_soap": {
       "name": "Bar Of Soap",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "consumable",
+      "wiki_effect": "Each unique tile colour in your word gives a SHINY ? consumable tile",
+      "wiki_page": "Bar_Of_Soap",
+      "shop_price": 41
     },
     "beam_me_up": {
       "name": "Beam Me Up",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a copy of any consumable tile below this",
+      "wiki_effect": "START OF GRID: Scatters a copy of any consumable tile below this",
+      "wiki_page": "Beam_Me_Up",
+      "shop_price": 16
     },
     "beefeater": {
       "name": "Beefeater",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a RED randomly suited J, Q and K",
+      "wiki_effect": "START OF GRID: Scatters a RED randomly suited J, Q and K",
+      "wiki_page": "Beefeater",
+      "shop_price": 15
     },
     "bento_box": {
       "name": "Bento Box",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_starts_same_as_previous",
+      "base": 1.5,
+      "upgrade": 0,
+      "wiki_effect": "If your word starts with the same letter as your previous word, get \u00d71.5 WORD SCORE",
+      "wiki_page": "Bento_Box",
+      "shop_price": 16
     },
     "big_bang": {
       "name": "Big Bang",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "If your word starts with a RED tile, scatters the word's length of RED tiles onto the next grid",
+      "wiki_effect": "If your word starts with a RED tile, scatters the word's length of RED tiles onto the next grid",
+      "wiki_page": "Big_Bang",
+      "grid_timing": "on_submit",
+      "shop_price": 14
     },
     "black_hole": {
       "name": "Black Hole",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Double the number of VOID tiles on the grid",
+      "wiki_effect": "START OF GRID: Double the number of VOID tiles on the grid",
+      "wiki_page": "Black_Hole",
+      "shop_price": 18
     },
     "blessing_of_the_fairies": {
       "name": "Blessing of the Fairies",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "always",
+      "base": 1,
+      "upgrade": 0,
+      "scale_from_extras": "fairy_count",
+      "scale_per_extra": 0.5,
+      "wiki_effect": "Get \u00d71 WORD SCORE (0.5 extra for each fairy)",
+      "wiki_page": "Blessing_of_the_Fairies",
+      "shop_price": 20
     },
     "blessing_of_the_shopkeeper": {
       "name": "Blessing Of The Shopkeeper",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Items in the shop cost $10",
+      "wiki_page": "Blessing_Of_The_Shopkeeper",
+      "shop_price": 35
     },
     "bomb": {
       "name": "Bomb",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a patch of 3-7 VOID tiles",
+      "wiki_effect": "START OF GRID: Scatters a patch of 3-7 VOID tiles",
+      "wiki_page": "Bomb",
+      "shop_price": 16
     },
     "book_of_openings": {
       "name": "Book Of Openings",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "Do nothing (Submit a chess piece name to improve this)",
+      "wiki_page": "Book_Of_Openings",
+      "shop_price": 12
     },
     "briefcase": {
       "name": "Briefcase",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a generally helpful multiplier item for each empty Sticker slot",
+      "wiki_effect": "START OF GRID: Scatters a generally helpful multiplier item for each empty Sticker slot",
+      "wiki_page": "Briefcase",
+      "shop_price": 18
     },
     "bubble_tea": {
       "name": "Bubble Tea",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "tile_multiply_by_letter_count",
+      "wiki_effect": "Tiles get TILE SCORE \u00d7 same letter count",
+      "wiki_page": "Bubble_Tea",
+      "shop_price": 18
     },
     "builder": {
       "name": "Builder",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "tile_multiply",
+      "target": "consumable",
+      "scale_by_consumable_count_on_path": true,
+      "wiki_effect": "Consumable tiles get TILE SCORE \u00d7 number of consumable tiles in the word",
+      "wiki_page": "Builder",
+      "shop_price": 16
     },
     "bunch_of_grapes": {
       "name": "Bunch Of Grapes",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "letter_behavior",
+      "wiki_effect": "START OF GRID: Scatters a 1, a 5 and a 10. 1s, 5s and 10s can be used as I, V and X respectively",
+      "wiki_page": "Bunch_Of_Grapes",
+      "shop_price": 14,
+      "letter_behavior": "number_roman_ivx"
     },
     "business_goose": {
       "name": "Business Goose",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: get randomly promoted",
+      "wiki_effect": "START OF GRID: get randomly promoted",
+      "wiki_page": "Business_Goose",
+      "shop_price": 12
     },
     "busy_schedule": {
       "name": "Busy Schedule",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Fill the grid with ascending numbers",
+      "wiki_effect": "Fill the grid with ascending numbers",
+      "wiki_page": "Busy_Schedule",
+      "shop_price": 18
     },
     "cable_car": {
       "name": "Cable Car",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "Stickers in your word are upgraded when your word is submitted",
+      "wiki_page": "Cable_Car",
+      "shop_price": 18
     },
     "card_shark": {
       "name": "Card Shark",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "letter_behavior",
+      "wiki_effect": "Cards can behave as the first letter of their suit",
+      "wiki_page": "Card_Shark",
+      "shop_price": 10,
+      "letter_behavior": "card_suit_first_letter"
     },
     "cartwheeler": {
       "name": "Cartwheeler",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_per_path_tile",
+      "factor": -1.1,
+      "wiki_effect": "For each tile in your word get \u00d7-1.1 WORD SCORE",
+      "wiki_page": "Cartwheeler",
+      "shop_price": 15
     },
     "chess_board": {
       "name": "Chess Board",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Checkerboards the grid with VOID tiles and random non-VOID coloured tiles",
+      "wiki_effect": "START OF GRID: Checkerboards the grid with VOID tiles and random non-VOID coloured tiles",
+      "wiki_page": "Chess_Board",
+      "shop_price": 16
     },
     "chick": {
       "name": "Chick",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "always",
+      "base": 1,
+      "upgrade": 0,
+      "scale_from_extras": "level_one_sticker_count",
+      "wiki_effect": "Get \u00d71 WORD SCORE (Increased by your level 1 Stickers)",
+      "wiki_page": "Chick",
+      "shop_price": 15
     },
     "chocolate_candy": {
       "name": "Chocolate Candy",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Ms and Ss become random colours",
+      "wiki_effect": "START OF GRID: Ms and Ss become random colours",
+      "wiki_page": "Chocolate_Candy",
+      "shop_price": 10
     },
     "christmas_tree": {
       "name": "Christmas Tree",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a colour that isn't on the grid",
+      "wiki_effect": "START OF GRID: Scatters a colour that isn't on the grid",
+      "wiki_page": "Christmas_Tree",
+      "shop_price": 12
     },
     "dangerous_summit": {
       "name": "Dangerous Summit",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: The 3 highest base value tiles become VOID",
+      "wiki_effect": "START OF GRID: The 3 highest base value tiles become VOID",
+      "wiki_page": "Dangerous_Summit",
+      "shop_price": 12
     },
     "dango": {
       "name": "Dango",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_by_unique_colour_count",
+      "wiki_effect": "Get WORD SCORE \u00d7 unique tile colours used",
+      "wiki_page": "Dango",
+      "shop_price": 18
     },
     "delivery_truck": {
       "name": "Delivery Truck",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Consumable tiles stocked in the shop are all item tiles",
+      "wiki_page": "Delivery_Truck",
+      "shop_price": 12
     },
     "disco_ball": {
       "name": "Disco Ball",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "consumable",
+      "wiki_effect": "Your consumable tiles are SHINY",
+      "wiki_page": "Disco_Ball",
+      "shop_price": 14
     },
     "diya": {
       "name": "Diya",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "encounter",
+      "wiki_effect": "Get 1 extra grid per encounter",
+      "wiki_page": "Diya",
+      "shop_price": 20
     },
     "dove": {
       "name": "Dove",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "add_money_on_condition",
+      "condition": "chess_balanced_colors",
+      "amount_mode": "chess_piece_count_on_path",
+      "wiki_effect": "If your word has the same number of black and white pieces, get $ equal to the number of chess pieces in the word",
+      "wiki_page": "Dove",
+      "shop_price": 18
     },
     "downward_trending_chart": {
       "name": "Downward Trending Chart",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "START OF SHOP: Frozen items get $2 cheaper",
+      "wiki_page": "Downward_Trending_Chart",
+      "shop_price": 8
     },
     "dragon": {
       "name": "Dragon",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "encounter",
+      "wiki_effect": "END OF ENCOUNTER: Earn $1 interest for each $10",
+      "wiki_page": "Dragon",
+      "shop_price": 22
     },
     "eclipse": {
       "name": "Eclipse",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: 1 E becomes SHINY, the rest become VOID",
+      "wiki_effect": "START OF GRID: 1 E becomes SHINY, the rest become VOID",
+      "wiki_page": "Eclipse",
+      "shop_price": 16
     },
     "efficient_recycler": {
       "name": "Efficient Recycler",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Shops restock when you buy a Sticker or a Stamp",
+      "wiki_page": "Efficient_Recycler",
+      "shop_price": 9
     },
     "empty_jar": {
       "name": "Empty Jar",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "money_eq:0",
+      "base": 2,
+      "upgrade": 0,
+      "wiki_effect": "If you have $0, get \u00d72 WORD SCORE",
+      "wiki_page": "Empty_Jar",
+      "shop_price": 12
     },
     "eraser": {
       "name": "Eraser",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Restocking the shop removes all restocked items from the shop pool",
+      "wiki_page": "Eraser",
+      "shop_price": 17
     },
     "error": {
       "name": "Error",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply",
+      "factor": 1,
+      "wiki_effect": "Get \u00d71 WORD SCORE. Using a GLITCH tile improves this by 1 but has a 10% chance to break the item",
+      "wiki_page": "Error",
+      "shop_price": 14
     },
     "erupting_volcano": {
       "name": "Erupting Volcano",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply",
+      "factor": 1.5,
+      "wiki_effect": "Get \u00d71.5 WORD SCORE. Items cannot be frozen",
+      "wiki_page": "Erupting_Volcano",
+      "shop_price": 18,
+      "items_cannot_freeze": true
     },
     "falling_leaf": {
       "name": "Falling Leaf",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Consumable tiles cost $1",
+      "wiki_page": "Falling_Leaf",
+      "shop_price": 12
     },
     "family_ticket": {
       "name": "Family Ticket",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Each tile used with a base value of 4 or more scatters a RED tile onto the next grid",
+      "wiki_effect": "Each tile used with a base value of 4 or more scatters a RED tile onto the next grid",
+      "wiki_page": "Family_Ticket",
+      "grid_timing": "on_submit",
+      "shop_price": 8
     },
     "fan": {
       "name": "Fan",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "SHINY tiles do not get rerolled",
+      "wiki_page": "Fan",
+      "shop_price": 10
     },
     "filing_cabinet": {
       "name": "Filing Cabinet",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: One tile of each colour becomes an item from the RAINBOW pool",
+      "wiki_effect": "START OF GRID: One tile of each colour becomes an item from the RAINBOW pool",
+      "wiki_page": "Filing_Cabinet",
+      "shop_price": 16
     },
     "flamingo": {
       "name": "Flamingo",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "letter_behavior",
+      "wiki_effect": "SHINY tiles can behave as 1s",
+      "wiki_page": "Flamingo",
+      "shop_price": 10,
+      "letter_behavior": "shiny_as_one"
     },
     "flashy_fountain_pen": {
       "name": "Flashy Fountain Pen",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "Do nothing (Submit a tile colour name to improve this)",
+      "wiki_page": "Flashy_Fountain_Pen",
+      "shop_price": 10
     },
     "fleur_de_lis": {
       "name": "Fleur De Lis",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Convert all RED and BLUE tiles into PURPLE tiles",
+      "wiki_effect": "START OF GRID: Convert all RED and BLUE tiles into PURPLE tiles",
+      "wiki_page": "Fleur_De_Lis",
+      "shop_price": 14
     },
     "food_poisoning": {
       "name": "Food Poisoning",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Convert all cursed tiles into GREEN tiles",
+      "wiki_effect": "START OF GRID: Convert all cursed tiles into GREEN tiles",
+      "wiki_page": "Food_Poisoning",
+      "shop_price": 12
     },
     "fortune_cookie": {
       "name": "Fortune Cookie",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Foil Stickers show up 5\u00d7 more often",
+      "wiki_page": "Fortune_Cookie",
+      "shop_price": 16
     },
     "four_leaf_clover": {
       "name": "Four Leaf Clover",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a BLUE, SHINY, RED and VOID of the same suit",
+      "wiki_effect": "START OF GRID: Scatters a BLUE, SHINY, RED and VOID of the same suit",
+      "wiki_page": "Four_Leaf_Clover",
+      "shop_price": 18
     },
     "fraction_frog": {
       "name": "Fraction Frog",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Get a fraction consumable tile equal to previous WORD SCORE / target",
+      "wiki_effect": "START OF GRID: Get a fraction consumable tile equal to previous WORD SCORE / target",
+      "wiki_page": "Fraction_Frog",
+      "shop_price": 18
     },
     "fried_shrimp": {
       "name": "Fried Shrimp",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Restocking the shop costs $1 less",
+      "wiki_page": "Fried_Shrimp",
+      "shop_price": 12
     },
     "full_battery": {
       "name": "Full Battery",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_by_number_count",
+      "wiki_effect": "Words containing only numbers get WORD SCORE \u00d7 number of numbers",
+      "wiki_page": "Full_Battery",
+      "shop_price": 18
     },
     "full_moon": {
       "name": "Full Moon",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "movement",
+      "wiki_effect": "You can double letter teleport",
+      "wiki_page": "Full_Moon",
+      "shop_price": 11
     },
     "genie": {
       "name": "Genie",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Rare and Legendary items are 3\u00d7 as likely to appear in the shop",
+      "wiki_page": "Genie",
+      "shop_price": 25
     },
     "giraffe": {
       "name": "Giraffe",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "tile_multiply",
+      "target": "number",
+      "scale_by_path_position": true,
+      "wiki_effect": "Numbers get TILE SCORE \u00d7 position in word",
+      "wiki_page": "Giraffe",
+      "shop_price": 16
     },
     "globe_trotter": {
       "name": "Globe Trotter",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Convert corner tiles into currencies and give them +10 BASE SCORE",
+      "wiki_effect": "START OF GRID: Convert corner tiles into currencies and give them +10 BASE SCORE",
+      "wiki_page": "Globe_Trotter",
+      "shop_price": 18
     },
     "go_fish": {
       "name": "Go Fish!",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a BLUE Straight Flush (of numbers!)",
+      "wiki_effect": "START OF GRID: Scatters a BLUE Straight Flush (of numbers!)",
+      "wiki_page": "Go_Fish",
+      "shop_price": 16
     },
     "golden_record": {
       "name": "Golden Record",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "consumable",
+      "wiki_effect": "Get a random tile from your word as a consumable tile",
+      "wiki_page": "Golden_Record",
+      "shop_price": 18
     },
     "golden_scales": {
       "name": "Golden Scales",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "encounter",
+      "wiki_effect": "START OF ENCOUNTER: Each empty Sticker slot gives $1",
+      "wiki_page": "Golden_Scales",
+      "shop_price": 10
     },
     "haunted_house": {
       "name": "Haunted House",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a cursed Full House",
+      "wiki_effect": "START OF GRID: Scatters a cursed Full House",
+      "wiki_page": "Haunted_House",
+      "shop_price": 20
     },
     "haunted_mirror": {
       "name": "Haunted Mirror",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Randomly recolour all cursed tiles",
+      "wiki_effect": "START OF GRID: Randomly recolour all cursed tiles",
+      "wiki_page": "Haunted_Mirror",
+      "shop_price": 13
     },
     "head_in_the_clouds": {
       "name": "Head In The Clouds",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "path_all_non_adjacent",
+      "base": 1.5,
+      "upgrade": 0,
+      "wiki_effect": "START OF GRID: Scatters 2 WHITE tiles. Get \u00d71.5 WORD SCORE if your word contains no adjacent moves",
+      "wiki_page": "Head_In_The_Clouds",
+      "grid_effect": "START OF GRID: Scatters 2 WHITE tiles",
+      "shop_price": 16
     },
     "head_trauma": {
       "name": "Head Trauma",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters 2 VOID tiles and 2 BLUE ? tiles",
+      "wiki_effect": "START OF GRID: Scatters 2 VOID tiles and 2 BLUE ? tiles",
+      "wiki_page": "Head_Trauma",
+      "shop_price": 18
     },
     "heart_on_fire": {
       "name": "Heart On Fire",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_by_longest_red_run",
+      "wiki_effect": "Get WORD SCORE \u00d7 longest consecutive run of RED tiles",
+      "wiki_page": "Heart_On_Fire",
+      "shop_price": 18
     },
     "honeypot": {
       "name": "Honeypot",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "movement",
+      "wiki_effect": "You can stick two words together",
+      "wiki_page": "Honeypot",
+      "shop_price": 16
     },
     "hourglass": {
       "name": "Hourglass",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "Items and boss effects trigger backwards",
+      "wiki_page": "Hourglass",
+      "shop_price": 20
     },
     "hungry_snake": {
       "name": "Hungry Snake",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "movement",
+      "wiki_effect": "The grid wraps horizontally",
+      "wiki_page": "Hungry_Snake",
+      "shop_price": 11
     },
     "id_card": {
       "name": "ID Card",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "You can upgrade both sides of your pin after boss encounters",
+      "wiki_page": "ID_Card",
+      "shop_price": 22
     },
     "jellyfish": {
       "name": "Jellyfish",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "letter_behavior",
+      "wiki_effect": "START OF GRID: Js become SHINY. They can behave as an H or a Y",
+      "wiki_page": "Jellyfish",
+      "shop_price": 14,
+      "letter_behavior": "j_as_h_or_y"
     },
     "jolly_roger": {
       "name": "Jolly Roger",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "consumable",
+      "wiki_effect": "Get the first taken chess piece in your word as a consumable tile",
+      "wiki_page": "Jolly_Roger",
+      "shop_price": 16
     },
     "juice_box": {
       "name": "Juice Box",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Scatters each submitted word onto the next grid",
+      "wiki_effect": "Scatters each submitted word onto the next grid",
+      "wiki_page": "Juice_Box",
+      "grid_timing": "on_submit",
+      "shop_price": 16
     },
     "kimono": {
       "name": "Kimono",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Each BLUE tile used scatters a ? onto the next grid",
+      "wiki_effect": "Each BLUE tile used scatters a ? onto the next grid",
+      "wiki_page": "Kimono",
+      "grid_timing": "on_submit",
+      "shop_price": 16
     },
     "king_of_the_bridge": {
       "name": "King Of The Bridge",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "movement",
+      "wiki_effect": "Chess pieces can take their allies",
+      "wiki_page": "King_Of_The_Bridge",
+      "shop_price": 14,
+      "letter_behavior": "chess_allies_can_take"
     },
     "kokeshi_dolls": {
       "name": "Kokeshi Dolls",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "add_money_on_condition",
+      "condition": "currency_on_path",
+      "amount_mode": "currency_value_on_path",
+      "wiki_effect": "Currency tiles give $ equal to their letter value",
+      "wiki_page": "Kokeshi_Dolls",
+      "shop_price": 14
     },
     "limnophila": {
       "name": "Limnophila",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "word_starts_after_previous",
+      "base": 1.5,
+      "upgrade": 0,
+      "wiki_effect": "If your word starts with a letter one later in the alphabet than the previous word, \u00d71.5 WORD SCORE",
+      "wiki_page": "Limnophila",
+      "shop_price": 8
     },
     "magician_s_hat": {
       "name": "Magician's Hat",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Turn all VOID tiles into spades",
+      "wiki_effect": "START OF GRID: Turn all VOID tiles into spades",
+      "wiki_page": "Magician%27s_Hat",
+      "shop_price": 12
     },
     "magnet": {
       "name": "Magnet",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Scattered numbers huddle together",
+      "wiki_effect": "Scattered numbers huddle together",
+      "wiki_page": "Magnet",
+      "shop_price": 12
     },
     "martini": {
       "name": "Martini",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "card_hand_min_size",
+      "min_size": 3,
+      "wiki_effect": "Flushes and Straights only require 3 cards",
+      "wiki_page": "Martini",
+      "shop_price": 13
     },
     "microphone": {
       "name": "Microphone",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "Submit the name of an item to get it",
+      "wiki_page": "Microphone",
+      "shop_price": 18
     },
     "microscope": {
       "name": "Microscope",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "use_base_score_tiles",
+      "wiki_effect": "Tiles can act as their BASE SCORE",
+      "wiki_page": "Microscope",
+      "shop_price": 18
     },
     "mushroom_upgrade": {
       "name": "Mushroom Upgrade",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF ENCOUNTER: Scatters 0 RED tiles onto the grid (Use 5 more RED tiles to improve)",
+      "wiki_effect": "START OF ENCOUNTER: Scatters 0 RED tiles onto the grid (Use 5 more RED tiles to improve)",
+      "wiki_page": "Mushroom_Upgrade",
+      "shop_price": 12
     },
     "mutating_dna": {
       "name": "Mutating DNA",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "Each time you use a letter, tiles with that letter get +1 TILE SCORE whilst you have this item",
+      "wiki_page": "Mutating_DNA",
+      "shop_price": 18
     },
     "neapolitan": {
       "name": "Neapolitan",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "unique_colours_gte:3",
+      "base": 1,
+      "upgrade": 0,
+      "wiki_effect": "Get \u00d71 WORD SCORE (Submit a word with 3 or more unique colours to improve)",
+      "wiki_page": "Neapolitan",
+      "shop_price": 14
     },
     "nest_egg": {
       "name": "Nest Egg",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Sells for $0 (Use a BLUE tile to improve)",
+      "wiki_page": "Nest_Egg",
+      "shop_price": 12
     },
     "number_factory": {
       "name": "Number Factory",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Get the grid number as a consumable tile",
+      "wiki_effect": "START OF GRID: Get the grid number as a consumable tile",
+      "wiki_page": "Number_Factory",
+      "shop_price": 16
     },
     "number_go_up": {
       "name": "Number Go Up",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "letter_behavior",
+      "wiki_effect": "If all numbers in your word are in ascending order, they can be used in any position",
+      "wiki_page": "Number_Go_Up",
+      "shop_price": 18,
+      "letter_behavior": "number_ascending_free_position"
     },
     "oden": {
       "name": "Oden",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_by_unique_curse_type_count",
+      "wiki_effect": "Get WORD SCORE \u00d7 number of unique curse types",
+      "wiki_page": "Oden",
+      "shop_price": 18
     },
     "ogre": {
       "name": "Ogre",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "Curse all bosses, they give double reward money",
+      "wiki_page": "Ogre",
+      "shop_price": 25
     },
     "padlock_stamp": {
       "name": "Padlock (stamp)",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "sell_cost",
+      "sell_price_base": 8,
+      "sell_price_upgrade": 8,
+      "wiki_effect": "Costs $8 to sell",
+      "wiki_page": "Padlock_(stamp)",
+      "unique": true
     },
     "paper_lantern": {
       "name": "Paper Lantern",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Positions which were RED in the previous word turn RED",
+      "wiki_effect": "START OF GRID: Positions which were RED in the previous word turn RED",
+      "wiki_page": "Paper_Lantern",
+      "shop_price": 12
     },
     "parachute": {
       "name": "Parachute",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: If there are currently no RED tiles on the grid, scatters 3 RED tiles",
+      "wiki_effect": "START OF GRID: If there are currently no RED tiles on the grid, scatters 3 RED tiles",
+      "wiki_page": "Parachute",
+      "shop_price": 8
     },
     "piece_of_cake": {
       "name": "Piece of Cake",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "50% chance to not consume a tile on use",
+      "wiki_page": "Piece_Of_Cake",
+      "shop_price": 14
     },
     "piggy_bank": {
       "name": "Piggy Bank",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "always",
+      "base": 1,
+      "upgrade": 0,
+      "scale_from_extras": "money_lost_encounter",
+      "scale_per_extra": 0.01,
+      "wiki_effect": "START OF GRID: Scatters 2 PINK tiles. Get \u00d71 WORD SCORE. Improved by 0.01 each time you lose $",
+      "wiki_page": "Piggy_Bank",
+      "grid_effect": "START OF GRID: Scatters 2 PINK tiles",
+      "shop_price": 16
     },
     "pizza_slice": {
       "name": "Pizza Slice",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Convert your numbers into random fractions",
+      "wiki_effect": "START OF GRID: Convert your numbers into random fractions",
+      "wiki_page": "Pizza_Slice",
+      "shop_price": 14
     },
     "pi_ata": {
       "name": "Pi\u00f1ata",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Words containing 7 or more tiles scatter a SHINY tile onto the next grid",
+      "wiki_effect": "Words containing 7 or more tiles scatter a SHINY tile onto the next grid",
+      "wiki_page": "Pinata",
+      "grid_timing": "on_submit",
+      "shop_price": 10
     },
     "pocket_money": {
       "name": "Pocket Money",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "encounter",
+      "wiki_effect": "Get $ equal to the first number in the word submitted on the first grid of each encounter",
+      "wiki_page": "Pocket_Money",
+      "shop_price": 12
     },
     "queen_bee": {
       "name": "Queen Bee",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a Queen and a black Queen",
+      "wiki_effect": "START OF GRID: Scatters a Queen and a black Queen",
+      "wiki_page": "Queen_Bee",
+      "shop_price": 16
     },
     "queenie": {
       "name": "Queenie",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "tile_multiply",
+      "target": "letter:q",
+      "factor": 5.0,
+      "wiki_effect": "Qs can behave as a QU. Qs get \u00d75 TILE SCORE",
+      "wiki_page": "Queenie",
+      "shop_price": 10,
+      "letter_behavior": "q_as_qu"
     },
     "receipt": {
       "name": "Receipt",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Your other items sell for their full purchase price",
+      "wiki_page": "Receipt",
+      "shop_price": 16
     },
     "red_balloon": {
       "name": "Red Balloon",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a RED 99",
+      "wiki_effect": "START OF GRID: Scatters a RED 99",
+      "wiki_page": "Red_Balloon",
+      "shop_price": 14
     },
     "red_envelope": {
       "name": "Red Envelope",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "letter_behavior",
+      "wiki_effect": "RED tiles can behave as an E",
+      "wiki_page": "Red_Envelope",
+      "shop_price": 12,
+      "letter_substitute": "red_as_e"
     },
     "right_hand": {
       "name": "Right Hand",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "Points at your favourite Stamp",
+      "wiki_page": "Right_Hand",
+      "unique": true
     },
     "rollercoaster": {
       "name": "Rollercoaster",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "10% chance to upgrade a Sticker when you reroll the grid or restock the shop",
+      "wiki_page": "Rollercoaster",
+      "shop_price": 18
     },
     "rosebud": {
       "name": "Rosebud",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "encounter",
+      "wiki_effect": "START OF ENCOUNTER: Add a RED R, E, D, S to your tile rack",
+      "wiki_page": "Rosebud",
+      "shop_price": 17
     },
     "ruler": {
       "name": "Ruler",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "always",
+      "base": 1,
+      "upgrade": 0,
+      "scale_from_path": "non_adjacent_steps",
+      "path_scale": 0.02,
+      "wiki_effect": "Get \u00d71 WORD SCORE. Improved by 0.02 for each non-adjacent move",
+      "wiki_page": "Ruler",
+      "shop_price": 15
     },
     "saguaro_seedling": {
       "name": "Saguaro Seedling",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters 2 CACTUS tiles. CACTUS tiles grow twice as fast as normal",
+      "wiki_effect": "START OF GRID: Scatters 2 CACTUS tiles. CACTUS tiles grow twice as fast as normal",
+      "wiki_page": "Saguaro_Seedling",
+      "shop_price": 14
     },
     "saxophone": {
       "name": "Saxophone",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Scattered BLUE tiles huddle together",
+      "wiki_effect": "Scattered BLUE tiles huddle together",
+      "wiki_page": "Saxophone",
+      "shop_price": 7
     },
     "sewing_needle": {
       "name": "Sewing Needle",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "sell",
+      "wiki_effect": "Sell to stitch two stickers together",
+      "wiki_page": "Sewing_Needle",
+      "shop_price": 16
     },
     "shaved_ice": {
       "name": "Shaved Ice",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply",
+      "factor": 1,
+      "condition": "frozen_in_shop",
+      "wiki_effect": "Get \u00d71 WORD SCORE. Improves while frozen in the shop",
+      "wiki_page": "Shaved_Ice",
+      "shop_price": 12
     },
     "silly_puppy": {
       "name": "Silly Puppy",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "always",
+      "base": 1,
+      "upgrade": 0,
+      "scale_from_extras": "animal_stamp_count",
+      "wiki_effect": "Get \u00d71 WORD SCORE (Increased by your other animals)",
+      "wiki_page": "Silly_Puppy",
+      "shop_price": 14
     },
     "slot_machine": {
       "name": "Slot Machine",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters 2 VOID tiles. 1 extra grid reroll per encounter",
+      "wiki_effect": "START OF GRID: Scatters 2 VOID tiles. 1 extra grid reroll per encounter",
+      "wiki_page": "Slot_Machine",
+      "shop_price": 12
     },
     "sluggish_zombie": {
       "name": "Sluggish Zombie",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Zs can behave as an S. START OF GRID: Ss become Zs",
+      "wiki_effect": "Zs can behave as an S. START OF GRID: Ss become Zs",
+      "wiki_page": "Sluggish_Zombie",
+      "shop_price": 12,
+      "letter_substitute": "z_as_s"
     },
     "smart_shirt": {
       "name": "Smart Shirt",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Turn your coloured tiles into cards",
+      "wiki_effect": "START OF GRID: Turn your coloured tiles into cards",
+      "wiki_page": "Smart_Shirt",
+      "shop_price": 10
     },
     "snail": {
       "name": "Snail",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Rare and Legendary items are \u00d71 as likely to appear in the shop. Improved each time you restock the shop",
+      "wiki_page": "Snail",
+      "shop_price": 14
     },
     "spicy_pepper": {
       "name": "Spicy Pepper",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "letter_behavior",
+      "wiki_effect": "RED tiles can behave as an S",
+      "wiki_page": "Spicy_Pepper",
+      "shop_price": 14,
+      "letter_behavior": "red_as_s"
     },
     "spouting_whale": {
       "name": "Spouting Whale",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Get a BLUE ? consumable tile",
+      "wiki_effect": "START OF GRID: Get a BLUE ? consumable tile",
+      "wiki_page": "Spouting_Whale",
+      "shop_price": 12
     },
     "stack_of_pancakes": {
       "name": "Stack Of Pancakes",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "Stickers can be upgraded 1 additional time",
+      "wiki_page": "Stack_Of_Pancakes",
+      "shop_price": 18
     },
     "stadium": {
       "name": "Stadium",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "You can have up to 10 consumable tiles",
+      "wiki_page": "Stadium",
+      "shop_price": 16
     },
     "statue_of_liberty": {
       "name": "Statue Of Liberty",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters BLUE tiles or ?s until there are the same number of both",
+      "wiki_effect": "START OF GRID: Scatters BLUE tiles or ?s until there are the same number of both",
+      "wiki_page": "Statue_Of_Liberty",
+      "shop_price": 16
     },
     "steak": {
       "name": "Steak",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "condition": "always",
+      "base": 1,
+      "upgrade": 0,
+      "scale_from_extras": "rare_item_count",
+      "wiki_effect": "Get \u00d71 WORD SCORE (Increased by your RARE items)",
+      "wiki_page": "Steak",
+      "shop_price": 15
     },
     "stethoscope": {
       "name": "Stethoscope",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Convert a single-digit number into a Sticker of that level from the number pool",
+      "wiki_effect": "START OF GRID: Convert a single-digit number into a Sticker of that level from the number pool",
+      "wiki_page": "Stethoscope",
+      "shop_price": 18
     },
     "stiletto": {
       "name": "Stiletto",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "tile_multiply",
+      "target": "red",
+      "scale_from_extras": "grid_number_half",
+      "wiki_effect": "RED tiles get TILE SCORE \u00d7 half of grid number",
+      "wiki_page": "Stiletto",
+      "shop_price": 16
     },
     "supervillain": {
       "name": "Supervillain",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a cursed tile of each type that isn't on the grid",
+      "wiki_effect": "START OF GRID: Scatters a cursed tile of each type that isn't on the grid",
+      "wiki_page": "Supervillain",
+      "shop_price": 20
     },
     "surprise_delivery": {
       "name": "Surprise Delivery",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "When you leave the shop get a random common Sticker",
+      "wiki_page": "Surprise_Delivery",
+      "shop_price": 14
     },
     "suspension_bridge": {
       "name": "Suspension Bridge",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "letter_behavior",
+      "wiki_effect": "RED letters can behave as a letter one earlier or later in the alphabet",
+      "wiki_page": "Suspension_Bridge",
+      "shop_price": 14,
+      "letter_behavior": "red_letter_plus_minus_one"
     },
     "takeout_box": {
       "name": "Takeout Box",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "encounter",
+      "wiki_effect": "START OF ENCOUNTER: Removes all your consumable tiles and gives you $1 for each tile removed",
+      "wiki_page": "Takeout_Box",
+      "shop_price": 12
     },
     "teapot": {
       "name": "Teapot",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters a BLUE tile for each grid seen this encounter",
+      "wiki_effect": "START OF GRID: Scatters a BLUE tile for each grid seen this encounter",
+      "wiki_page": "Teapot",
+      "shop_price": 9
     },
     "television": {
       "name": "Television",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "movement",
+      "wiki_effect": "START OF GRID: Scatters an item from the chess pool. King and Queen can always move to any item",
+      "wiki_page": "Television",
+      "shop_price": 18,
+      "letter_behavior": "chess_king_queen_item_movement"
     },
     "test_tube": {
       "name": "Test Tube",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "letter_behavior",
+      "wiki_effect": "Numbers can behave as the number one higher or one lower",
+      "wiki_page": "Test_Tube",
+      "shop_price": 15,
+      "letter_behavior": "number_plus_minus_one"
     },
     "tile_ninja": {
       "name": "Tile Ninja",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "multiply_word_scaled",
+      "base": 1.2,
+      "upgrade": 0,
+      "scale_from_extras": "tile_ninja_bonus",
+      "wiki_effect": "Get \u00d71.2 WORD SCORE (Place a consumable tile to improve)",
+      "wiki_page": "Tile_Ninja",
+      "shop_price": 18
     },
     "tin_of_beans": {
       "name": "Tin Of Beans",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Items stocked in the shop have their colours randomised",
+      "wiki_page": "Tin_Of_Beans",
+      "shop_price": 10
     },
     "torii_gate": {
       "name": "Torii Gate",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "encounter",
+      "wiki_effect": "START OF ENCOUNTER: The left and right edges of the grid become RED",
+      "wiki_page": "Torii_Gate",
+      "shop_price": 14
     },
     "trophy_of_wealth": {
       "name": "Trophy Of Wealth",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Scatters 0 GOLD tiles (One for each $15 you have)",
+      "wiki_effect": "START OF GRID: Scatters 0 GOLD tiles (One for each $15 you have)",
+      "wiki_page": "Trophy_Of_Wealth",
+      "shop_price": 18
     },
     "twinkle_toes": {
       "name": "Twinkle Toes",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "After a grid is generated, choose a pair of tiles to swap positions",
+      "wiki_effect": "After a grid is generated, choose a pair of tiles to swap positions",
+      "wiki_page": "Twinkle_Toes",
+      "shop_price": 16
     },
     "underhand": {
       "name": "Underhand",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "meta",
+      "wiki_effect": "Levels up the Sticker above this 3 times",
+      "wiki_page": "Underhand",
+      "shop_price": 20
     },
     "unicorn": {
       "name": "Unicorn",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "sell",
+      "wiki_effect": "Sell to make one of your Stickers foil",
+      "wiki_page": "Unicorn",
+      "shop_price": 22
     },
     "valentine_s_day_card": {
       "name": "Valentine's Day Card",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Turn all RED tiles into hearts",
+      "wiki_effect": "START OF GRID: Turn all RED tiles into hearts",
+      "wiki_page": "Valentine%27s_Day_Card",
+      "shop_price": 10
     },
     "waxy_vizor": {
       "name": "Waxy Vizor",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Vs, Ws, Xs, Ys and Zs become BLUE",
+      "wiki_effect": "START OF GRID: Vs, Ws, Xs, Ys and Zs become BLUE",
+      "wiki_page": "Waxy_Vizor",
+      "shop_price": 14
     },
     "weekly_shop": {
       "name": "Weekly Shop",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Get 2 COLOURLESS consumable tiles",
+      "wiki_effect": "START OF GRID: Get 2 COLOURLESS consumable tiles",
+      "wiki_page": "Weekly_Shop",
+      "shop_price": 14
     },
     "wheel": {
       "name": "Wheel",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Grid rerolls cost $1. +3 rerolls per encounter",
+      "wiki_page": "Wheel",
+      "shop_price": 14
     },
     "window": {
       "name": "Window",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Using all tiles in a 2x2 area scatters 4 BLUE tiles onto the next grid",
+      "wiki_effect": "Using all tiles in a 2x2 area scatters 4 BLUE tiles onto the next grid",
+      "wiki_page": "Window",
+      "grid_timing": "on_submit",
+      "shop_price": 8
     },
     "work_of_art": {
       "name": "Work of Art",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: Colour your tiles according to their suits",
+      "wiki_effect": "START OF GRID: Colour your tiles according to their suits",
+      "wiki_page": "Work_of_Art",
+      "shop_price": 16
     },
     "xray": {
       "name": "Xray",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "START OF GRID: BLUE vowels become ?s",
+      "wiki_effect": "START OF GRID: BLUE vowels become ?s",
+      "wiki_page": "Xray",
+      "shop_price": 16
     },
     "young_cardinal": {
       "name": "Young Cardinal",
-      "type": "unmodeled",
-      "description": "Wiki catalog entry (stamp); scoring not yet modeled"
+      "type": "custom",
+      "effect_class": "shop",
+      "wiki_effect": "Items with 'red' in their description cost $4 less",
+      "wiki_page": "Young_Cardinal",
+      "shop_price": 8
     },
     "newspaper": {
       "name": "Newspaper",
       "type": "add_word_score",
-      "value": 8
+      "value": 8,
+      "shop_price": 8
     },
     "moai": {
       "name": "Moai",
       "type": "word_length_bonus",
       "value": 15,
-      "min_length": 4
+      "min_length": 4,
+      "shop_price": 12
+    },
+    "pinata": {
+      "name": "Pi\u00f1ata",
+      "type": "custom",
+      "effect_class": "scatter",
+      "grid_effect": "Words containing 7 or more tiles scatter a SHINY tile onto the next grid",
+      "wiki_effect": "Words containing 7 or more tiles scatter a SHINY tile onto the next grid",
+      "wiki_page": "Pinata",
+      "grid_timing": "on_submit",
+      "shop_price": 10
     }
   },
   "bosses": {
-    "mole": {
-      "name": "Mole",
-      "type": "custom",
-      "description": "Scatters void tiles; pair with void_flip sticker"
-    },
-    "no_vowels": {
-      "name": "No Vowels Boss",
-      "type": "boss_zero_vowel"
-    },
     "axolotl": {
       "name": "Axolotl",
-      "type": "custom"
+      "type": "custom",
+      "effect_class": "grid",
+      "wiki_page": "Axolotl",
+      "wiki_effect": "Scatter Q tiles",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 3,
+          "cursed": 5
+        },
+        {
+          "area": 2,
+          "value": 4,
+          "cursed": 6
+        },
+        {
+          "area": 3,
+          "value": 5,
+          "cursed": 8
+        },
+        {
+          "area": 4,
+          "value": 5,
+          "cursed": 8
+        },
+        {
+          "area": 5,
+          "value": 6,
+          "cursed": 10
+        }
+      ]
     },
     "badger": {
       "name": "Badger",
-      "type": "custom"
+      "type": "custom",
+      "effect_class": "encounter",
+      "wiki_page": "Badger",
+      "wiki_effect": "Fewer grids per encounter",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 1,
+          "cursed": 2
+        },
+        {
+          "area": 2,
+          "value": 1,
+          "cursed": 2
+        },
+        {
+          "area": 3,
+          "value": 1,
+          "cursed": 2
+        },
+        {
+          "area": 4,
+          "value": 1,
+          "cursed": 2
+        },
+        {
+          "area": 5,
+          "value": 1,
+          "cursed": 2
+        }
+      ]
     },
     "bat": {
       "name": "Bat",
-      "type": "custom"
+      "type": "custom",
+      "effect_class": "grid",
+      "wiki_page": "Bat",
+      "wiki_effect": "Shrinks playable grid (rows\u00d7cols)",
+      "scaling": [
+        {
+          "area": 1,
+          "rows": 4,
+          "cols": 4,
+          "cursed_rows": 4,
+          "cursed_cols": 3
+        },
+        {
+          "area": 2,
+          "rows": 4,
+          "cols": 4,
+          "cursed_rows": 4,
+          "cursed_cols": 3
+        },
+        {
+          "area": 3,
+          "rows": 4,
+          "cols": 3,
+          "cursed_rows": 3,
+          "cursed_cols": 3
+        },
+        {
+          "area": 4,
+          "rows": 4,
+          "cols": 3,
+          "cursed_rows": 3,
+          "cursed_cols": 3
+        },
+        {
+          "area": 5,
+          "rows": 3,
+          "cols": 3,
+          "cursed_rows": 3,
+          "cursed_cols": 2
+        }
+      ]
     },
     "bison": {
       "name": "Bison",
-      "type": "custom"
+      "type": "custom",
+      "effect_class": "grid",
+      "wiki_page": "Bison",
+      "wiki_effect": "Scatters high number tiles (range scales by area)",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 9,
+          "cursed": 11
+        },
+        {
+          "area": 2,
+          "value": 10,
+          "cursed": 12
+        },
+        {
+          "area": 3,
+          "value": 11,
+          "cursed": 14
+        },
+        {
+          "area": 4,
+          "value": 12,
+          "cursed": 15
+        },
+        {
+          "area": 5,
+          "value": 13,
+          "cursed": 17
+        }
+      ]
     },
     "capybara": {
       "name": "Capybara",
-      "type": "custom"
+      "type": "custom",
+      "effect_class": "encounter",
+      "wiki_page": "Capybara",
+      "wiki_effect": "Randomizes sticker/stamp order on submit",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 1,
+          "cursed": 2
+        },
+        {
+          "area": 2,
+          "value": 1,
+          "cursed": 2
+        },
+        {
+          "area": 3,
+          "value": 1,
+          "cursed": 2
+        },
+        {
+          "area": 4,
+          "value": 1,
+          "cursed": 2
+        },
+        {
+          "area": 5,
+          "value": 1,
+          "cursed": 2
+        }
+      ]
     },
     "cobra": {
       "name": "Cobra",
-      "type": "custom"
+      "type": "boss_word_min_length",
+      "wiki_page": "Cobra",
+      "scaling": [
+        {
+          "area": 1,
+          "min_length": 4,
+          "cursed_min_length": 5
+        },
+        {
+          "area": 2,
+          "min_length": 5,
+          "cursed_min_length": 6
+        },
+        {
+          "area": 3,
+          "min_length": 6,
+          "cursed_min_length": 7
+        },
+        {
+          "area": 4,
+          "min_length": 6,
+          "cursed_min_length": 7
+        },
+        {
+          "area": 5,
+          "min_length": 7,
+          "cursed_min_length": 8
+        }
+      ]
     },
     "fox": {
       "name": "Fox",
-      "type": "custom"
+      "type": "custom",
+      "effect_class": "encounter",
+      "wiki_page": "Fox",
+      "wiki_effect": "Steals money each grid",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 2,
+          "value": 3,
+          "cursed": 5
+        },
+        {
+          "area": 3,
+          "value": 4,
+          "cursed": 6
+        },
+        {
+          "area": 4,
+          "value": 5,
+          "cursed": 8
+        },
+        {
+          "area": 5,
+          "na": true
+        }
+      ]
     },
     "hyena": {
       "name": "Hyena",
-      "type": "custom"
+      "type": "custom",
+      "effect_class": "encounter",
+      "wiki_page": "Hyena",
+      "wiki_effect": "Blocks submissions until a sticker or stamp is sold"
+    },
+    "mole": {
+      "name": "Mole",
+      "type": "custom",
+      "effect_class": "grid",
+      "wiki_page": "Mole",
+      "wiki_effect": "Scatter void tiles (count scales by area)",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 3,
+          "cursed": 5
+        },
+        {
+          "area": 2,
+          "value": 4,
+          "cursed": 6
+        },
+        {
+          "area": 3,
+          "value": 5,
+          "cursed": 8
+        },
+        {
+          "area": 4,
+          "value": 5,
+          "cursed": 8
+        },
+        {
+          "area": 5,
+          "value": 6,
+          "cursed": 10
+        }
+      ]
     },
     "robo_eel": {
       "name": "Robo-Eel",
-      "type": "custom"
+      "type": "custom",
+      "effect_class": "grid",
+      "wiki_page": "Robo-Eel",
+      "wiki_effect": "Eats tiles each grid (board reflects eaten tiles)",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 2,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 3,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 4,
+          "value": 3,
+          "cursed": 4
+        },
+        {
+          "area": 5,
+          "value": 3,
+          "cursed": 5
+        }
+      ]
     },
     "robo_monkey": {
       "name": "Robo-Monkey",
-      "type": "custom"
+      "type": "boss_subtract_word_score_money",
+      "wiki_page": "Robo-Monkey",
+      "scaling": [
+        {
+          "area": 1,
+          "multiplier": 1,
+          "cursed_multiplier": 2
+        },
+        {
+          "area": 2,
+          "multiplier": 5,
+          "cursed_multiplier": 7
+        },
+        {
+          "area": 3,
+          "multiplier": 9,
+          "cursed_multiplier": 12
+        },
+        {
+          "area": 4,
+          "multiplier": 15,
+          "cursed_multiplier": 20
+        },
+        {
+          "area": 5,
+          "na": true
+        }
+      ]
     },
     "salamander": {
       "name": "Salamander",
-      "type": "custom"
+      "type": "boss_tile_penalty",
+      "wiki_page": "Salamander",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 1,
+          "cursed": 2
+        },
+        {
+          "area": 2,
+          "value": 3,
+          "cursed": 4
+        },
+        {
+          "area": 3,
+          "value": 5,
+          "cursed": 7
+        },
+        {
+          "area": 4,
+          "value": 7,
+          "cursed": 9
+        },
+        {
+          "area": 5,
+          "value": 9,
+          "cursed": 12
+        }
+      ]
     },
     "toothed_whale": {
       "name": "Toothed Whale",
-      "type": "custom"
+      "type": "boss_target_score_multiplier",
+      "wiki_page": "Toothed_Whale",
+      "scaling": [
+        {
+          "area": 1,
+          "multiplier": 1.25,
+          "cursed_multiplier": 1.35
+        },
+        {
+          "area": 2,
+          "multiplier": 1.35,
+          "cursed_multiplier": 1.5
+        },
+        {
+          "area": 3,
+          "multiplier": 1.5,
+          "cursed_multiplier": 1.75
+        },
+        {
+          "area": 4,
+          "multiplier": 1.6,
+          "cursed_multiplier": 2.0
+        },
+        {
+          "area": 5,
+          "multiplier": 1.75,
+          "cursed_multiplier": 2.25
+        }
+      ]
     },
     "wolf": {
       "name": "Wolf",
-      "type": "custom"
+      "type": "boss_word_max_length",
+      "wiki_page": "Wolf",
+      "scaling": [
+        {
+          "area": 1,
+          "max_length": 5,
+          "cursed_max_length": 4
+        },
+        {
+          "area": 2,
+          "max_length": 5,
+          "cursed_max_length": 4
+        },
+        {
+          "area": 3,
+          "max_length": 4,
+          "cursed_max_length": 3
+        },
+        {
+          "area": 4,
+          "max_length": 4,
+          "cursed_max_length": 3
+        },
+        {
+          "area": 5,
+          "max_length": 4,
+          "cursed_max_length": 3
+        }
+      ]
     },
     "yeti_crab": {
       "name": "Yeti Crab",
-      "type": "custom"
-    }
-  },
-  "pins": {
-    "beans": {
-      "name": "Beans",
-      "branches": {
-        "left": {
-          "type": "add_word_score",
-          "value": 2
+      "type": "custom",
+      "effect_class": "grid",
+      "wiki_page": "Yeti_Crab",
+      "wiki_effect": "Makes colored tiles colorless",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 2,
+          "cursed": 3
         },
-        "right": {
-          "type": "multiply",
-          "factor": 1.1
-        }
-      }
-    },
-    "bones_the_dog": {
-      "name": "Bones The Dog",
-      "branches": {
-        "left": {
-          "type": "add_word_score",
-          "value": 2
+        {
+          "area": 2,
+          "value": 3,
+          "cursed": 4
         },
-        "right": {
-          "type": "add_word_score",
-          "value": 4
+        {
+          "area": 3,
+          "value": 4,
+          "cursed": 6
+        },
+        {
+          "area": 4,
+          "value": 4,
+          "cursed": 7
+        },
+        {
+          "area": 5,
+          "value": 5,
+          "cursed": 8
         }
-      }
+      ]
     },
     "cretaceous_meg": {
       "name": "Cretaceous Meg",
-      "branches": {
-        "left": {
-          "type": "add_word_score",
-          "value": 2
-        },
-        "right": {
-          "type": "add_word_score",
-          "value": 3
-        }
-      }
+      "type": "custom",
+      "effect_class": "encounter",
+      "wiki_page": "Cretaceous_Meg_(boss)",
+      "wiki_effect": "Strips loadout to special shop ($120/$160/$200 by stage); rebuild before challenge grids"
+    }
+  },
+  "pins": {
+    "abacus": {
+      "name": "Abacus",
+      "character": "hayley_bayles",
+      "type": "colored_number_tile_bonus",
+      "value": 10,
+      "value_per_right_upgrade": 10,
+      "wiki_effect": "Coloured numbers get +N TILE SCORE",
+      "wiki_page": "Abacus",
+      "grid_effect": "START OF GRID: Scatters unique numbers 1-5"
     },
-    "hayley_bayles": {
-      "name": "Hayley Bayles",
-      "type": "unmodeled",
-      "description": "Pin (abacus art); default +2/+3 branches were placeholders, not verified in-game"
+    "milky_way": {
+      "name": "Milky Way",
+      "type": "custom",
+      "wiki_effect": "START OF GRID: Scatters VOID tiles; VOID tiles have a 10% chance to go SHINY",
+      "effect_class": "scatter",
+      "character": "nina_nix",
+      "wiki_page": "Milky_Way"
     },
-    "human_boy": {
-      "name": "Human Boy",
-      "branches": {
-        "left": {
-          "type": "add_word_score",
-          "value": 2
-        },
-        "right": {
-          "type": "add_word_score",
-          "value": 3
-        }
-      }
+    "rainbow": {
+      "name": "Rainbow",
+      "character": "beans",
+      "type": "unique_colour_word_bonus",
+      "value": 5,
+      "value_per_right_upgrade": 5,
+      "wiki_effect": "+5 WORD SCORE per unique tile colour used",
+      "wiki_page": "Rainbow",
+      "grid_effect": "START OF GRID: Scatters unusually coloured tile"
     },
-    "nat_h4": {
-      "name": "Nat-H4",
-      "branches": {
-        "left": {
-          "type": "add_word_score",
-          "value": 2
-        },
-        "right": {
-          "type": "add_word_score",
-          "value": 3
-        }
-      }
+    "mahjong_red_dragon": {
+      "name": "Mahjong Red Dragon",
+      "character": "sandy_saguaro",
+      "type": "tile_multiply",
+      "target": "consumable",
+      "scale_by_pin_right": true,
+      "factor_base": 2.0,
+      "factor_per_pin_right": 1.0,
+      "wiki_effect": "Consumable tiles get \u00d7N TILE SCORE (N = 2 + right upgrades)",
+      "wiki_page": "Mahjong_Red_Dragon",
+      "grid_effect": "START OF ENCOUNTER: Get red consumable tile(s)"
     },
-    "nina_nix": {
-      "name": "Nina Nix",
-      "branches": {
-        "left": {
-          "type": "add_word_score",
-          "value": 2
-        },
-        "right": {
-          "type": "add_word_score",
-          "value": 3
-        }
-      }
+    "bucket": {
+      "name": "Bucket",
+      "type": "custom",
+      "wiki_effect": "START OF GRID: Scatters the tiles in your bucket",
+      "effect_class": "scatter",
+      "character": "octacles",
+      "wiki_page": "Bucket"
     },
-    "octacles": {
-      "name": "Octacles",
-      "branches": {
-        "left": {
-          "type": "add_word_score",
-          "value": 2
-        },
-        "right": {
-          "type": "add_word_score",
-          "value": 3
-        }
-      }
+    "random_access_memory": {
+      "name": "Random Access Memory",
+      "character": "nat_h4",
+      "type": "pin_memory_replay",
+      "wiki_effect": "Behaves as all items stored in pin memory",
+      "wiki_page": "Random_Access_Memory"
     },
     "rodman": {
-      "name": "Rodman",
-      "branches": {
-        "left": {
-          "type": "add_word_score",
-          "value": 2
-        },
-        "right": {
-          "type": "add_word_score",
-          "value": 3
-        }
-      }
+      "name": "Carp Streamers",
+      "type": "custom",
+      "wiki_effect": "START OF GRID: Scatters 1 RED tile and 1 BLUE tile",
+      "effect_class": "scatter",
+      "character": "rodman",
+      "wiki_page": "Carp_Streamers"
     },
     "sam_gambit": {
-      "name": "Sam Gambit",
-      "branches": {
-        "left": {
-          "type": "add_word_score",
-          "value": 2
-        },
-        "right": {
-          "type": "add_word_score",
-          "value": 3
-        }
-      }
+      "name": "Super 8",
+      "character": "sam_gambit",
+      "type": "chess_take_word_bonus",
+      "value": 8,
+      "value_per_right_upgrade": 8,
+      "wiki_effect": "Takes give +N WORD SCORE",
+      "wiki_page": "Super_8",
+      "grid_effect": "START OF GRID: Scatters film/chess items",
+      "effect_class": "scatter"
     },
-    "sandy_saguaro": {
-      "name": "Sandy Saguaro",
-      "branches": {
-        "left": {
-          "type": "add_word_score",
-          "value": 2
-        },
-        "right": {
-          "type": "add_word_score",
-          "value": 3
-        }
-      }
+    "bones_the_dog": {
+      "name": "Bicycle",
+      "character": "bones_the_dog",
+      "type": "cards_submitted_word_bonus",
+      "value": 1,
+      "value_per_right_upgrade": 1,
+      "wiki_effect": "Get +0 WORD SCORE, improved by 1 per submitted card (\u00d7 right upgrades)",
+      "wiki_page": "Bicycle",
+      "grid_effect": "START OF GRID: Scatters cards",
+      "effect_class": "scatter"
+    },
+    "cretaceous_meg": {
+      "name": "Wad of Cash",
+      "character": "cretaceous_meg",
+      "type": "add_tile_score",
+      "target": "currency",
+      "value": 10,
+      "wiki_effect": "Currencies get +10 TILE SCORE",
+      "wiki_page": "Wad_of_Cash",
+      "grid_effect": "START OF GRID: Scatters currency"
+    },
+    "human_boy": {
+      "name": "Human Hands",
+      "character": "human_boy",
+      "type": "human_hands_pin",
+      "wiki_effect": "Boost favourite sticker levels; replay favourite stamp scoring",
+      "wiki_page": "Human_Hands"
     }
   }
 }

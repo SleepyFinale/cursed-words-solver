@@ -21,10 +21,17 @@ namespace CursedWordsSolverCompanion
         [JsonProperty("char")]
         public string char_display = "";
         public string letter = "";
-        public int base_score;
+        public double base_score;
         public string color = "colorless";
         public string curse = "letter";
         public int? number_value;
         public double? fraction_value;
+        public bool consumable;
+        /// <summary>False when Bat (or similar) leaves this slot off the playable grid.</summary>
+        public bool active = true;
+        /// <summary>True when this tile is a chess capture landing square (Movie Camera, Zebra).</summary>
+        public bool take;
+        public string card_suit = "";
+        public string card_rank = "";
     }
 }

@@ -28,14 +28,73 @@ def _board_from_letters(rows: list[str]) -> Board:
     return Board(tiles=tiles)
 
 
-def test_shiny_tile_flat_50():
+def test_shiny_tile_flat_50_ocr():
+    """OCR boards without melmod metadata use wiki flat 50 shiny base."""
     t = Tile(0, 0, "A", "A", 1, TileColor.SHINY, CurseType.LETTER)
     assert tile_base_contribution(t) == 50
+
+
+def test_melmod_shiny_uses_packet_score():
+    t = Tile(
+        0,
+        0,
+        "A",
+        "A",
+        1,
+        TileColor.SHINY,
+        CurseType.LETTER,
+        metadata={"source": "melmod"},
+    )
+    assert tile_base_contribution(t) == 1
+
+
+def test_melmod_red_no_extra_color_bonus_when_base_equals_scrabble():
+    """Melmod packet.Score on colored tile must not get +1 again (BOOH-style bug)."""
+    t = Tile(
+        0,
+        0,
+        "H",
+        "H",
+        4,
+        TileColor.RED,
+        CurseType.LETTER,
+        metadata={"source": "melmod"},
+    )
+    assert tile_base_contribution(t) == 4
 
 
 def test_void_negates_letter():
     t = Tile(0, 0, "E", "E", 1, TileColor.VOID, CurseType.LETTER)
     assert tile_base_contribution(t) == -1
+
+
+def test_melmod_void_letter_zero_base_score():
+    t = Tile(
+        0,
+        0,
+        "O",
+        "O",
+        0,
+        TileColor.VOID,
+        CurseType.LETTER,
+        metadata={"source": "melmod"},
+    )
+    assert tile_base_contribution(t) == -1
+
+
+def test_melmod_void_number_zero_base_score():
+    t = Tile(
+        0,
+        0,
+        "9",
+        "9",
+        0,
+        TileColor.VOID,
+        CurseType.NUMBER,
+        number_value=9,
+        metadata={"source": "melmod"},
+    )
+    assert tile_base_contribution(t) == -9
 
 
 def test_red_bonus():

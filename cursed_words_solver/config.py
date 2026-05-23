@@ -9,7 +9,12 @@ from typing import Any
 
 CONFIG_DIR = Path.home() / ".cursed_words_solver"
 CONFIG_PATH = CONFIG_DIR / "config.json"
+LEGACY_SEARCH_TIME_BUDGET_SEC = 2.0
+PREVIOUS_SEARCH_TIME_BUDGET_SEC = 15.0
+LEGACY_MAX_WORD_LENGTH = 12
 RUN_STATE_PATH = CONFIG_DIR / "run_state.json"
+LAST_SUGGESTION_PATH = CONFIG_DIR / "last_suggestion.json"
+SCORING_MISMATCHES_DIR = CONFIG_DIR / "scoring_mismatches"
 DEBUG_DIR = CONFIG_DIR / "debug"
 WORDLIST_PATH = CONFIG_DIR / "enable1.txt"
 GAME_WORDLIST_PATH = CONFIG_DIR / "game_words.txt"
@@ -49,13 +54,14 @@ class AppConfig:
     money_region: Region | None = None
     hotkey: str = "f8"
     min_word_length: int = 3
-    max_word_length: int = 12
-    search_time_budget_sec: float = 2.0
+    max_word_length: int = 15
+    search_time_budget_sec: float = 30.0
     top_n_results: int = 3
     ocr_use_gpu: bool = False
     cell_inset_ratio: float = 0.1
     debug_ocr: bool = False
     wordlist: str = "game"
+    show_board_highlight: bool = True
 
     def save(self) -> None:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -73,6 +79,7 @@ class AppConfig:
             "cell_inset_ratio": self.cell_inset_ratio,
             "debug_ocr": self.debug_ocr,
             "wordlist": self.wordlist,
+            "show_board_highlight": self.show_board_highlight,
         }
         CONFIG_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -82,19 +89,35 @@ class AppConfig:
             return cls()
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         money = data.get("money_region")
-        return cls(
+        max_word_length = int(data.get("max_word_length", 15))
+        search_time_budget_sec = float(data.get("search_time_budget_sec", 30.0))
+        migrated = False
+        if search_time_budget_sec == LEGACY_SEARCH_TIME_BUDGET_SEC:
+            search_time_budget_sec = 30.0
+            migrated = True
+        elif search_time_budget_sec == PREVIOUS_SEARCH_TIME_BUDGET_SEC:
+            search_time_budget_sec = 30.0
+            migrated = True
+        if max_word_length == LEGACY_MAX_WORD_LENGTH:
+            max_word_length = 15
+            migrated = True
+        cfg = cls(
             board_region=Region.from_dict(data.get("board_region", {})),
             money_region=Region.from_dict(money) if money else None,
             hotkey=data.get("hotkey", "f8"),
             min_word_length=int(data.get("min_word_length", 3)),
-            max_word_length=int(data.get("max_word_length", 12)),
-            search_time_budget_sec=float(data.get("search_time_budget_sec", 2.0)),
+            max_word_length=max_word_length,
+            search_time_budget_sec=search_time_budget_sec,
             top_n_results=int(data.get("top_n_results", 3)),
             ocr_use_gpu=bool(data.get("ocr_use_gpu", False)),
             cell_inset_ratio=float(data.get("cell_inset_ratio", 0.1)),
             debug_ocr=bool(data.get("debug_ocr", False)),
             wordlist=str(data.get("wordlist", "game")),
+            show_board_highlight=bool(data.get("show_board_highlight", True)),
         )
+        if migrated:
+            cfg.save()
+        return cfg
 
 
 def _game_wordlist_usable() -> bool:

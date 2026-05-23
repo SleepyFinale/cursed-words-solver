@@ -21,5 +21,6 @@ namespace CursedWordsSolverCompanion
         public string id = "";
         public string name = "";
         public int level = 1;
+        public string kind = "sticker";
     }
 }

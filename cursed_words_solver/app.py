@@ -8,15 +8,23 @@ import json
 import signal
 import sys
 import threading
+import time
 import traceback
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+import numpy as np
 
 import keyboard
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from cursed_words_solver.capture import capture_region, save_debug_image
+from cursed_words_solver.fingerprints import (
+    board_fingerprint,
+    fingerprints_from_run_state,
+)
 from cursed_words_solver.config import (
     CONFIG_DIR,
     DEBUG_DIR,
@@ -24,7 +32,9 @@ from cursed_words_solver.config import (
     describe_wordlist,
     resolve_wordlist,
 )
+from cursed_words_solver.suggestion import save_last_suggestion
 from cursed_words_solver.dictionary import WordDictionary
+from cursed_words_solver.models import Board, WordResult
 from cursed_words_solver.loadout import (
     format_loadout_summary,
     load_run_state,
@@ -36,11 +46,30 @@ from cursed_words_solver.loadout import (
     save_run_state_template,
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.rules.boss_effects import (
+    boss_area_number,
+    boss_word_constraints,
+)
 from cursed_words_solver.search import WordSearcher
+from cursed_words_solver.ui.board_highlight import BoardHighlightOverlay
 from cursed_words_solver.ui.loadout_dialog import LoadoutDialog
 from cursed_words_solver.ui.overlay import ResultOverlay
 from cursed_words_solver.vision.board_parser import BoardParser, format_board_grid
 from cursed_words_solver.vision.calibrate import run_calibration_wizard
+
+
+@dataclass(frozen=True)
+class _SolveUIUpdate:
+    """Payload for posting solve results to the Qt main thread."""
+
+    board: Board
+    results: list[WordResult]
+    board_bgr: np.ndarray | None
+    warnings_html: str
+    on_game_highlight: bool
+    # Fingerprints from run_state.json at solve time (melmod); used to detect shop/round end.
+    melmod_board_fingerprint: str | None = None
+    melmod_loadout_fingerprint: str | None = None
 
 
 class _HotkeyBridge(QObject):
@@ -50,6 +79,7 @@ class _HotkeyBridge(QObject):
     edit_loadout = Signal()
     hide_overlay = Signal()
     quit_app = Signal()
+    solve_finished = Signal(object)
 
 
 class SolverApp:
@@ -58,6 +88,10 @@ class SolverApp:
         self.calibrate = calibrate
         self.app = QApplication(sys.argv)
         self.overlay = ResultOverlay()
+        self.board_highlight = BoardHighlightOverlay()
+        self._highlight_board_fingerprint: str | None = None
+        self._highlight_loadout_fingerprint: str | None = None
+        self._highlight_watch_run_state = False
         self._loadout_cache = load_run_state()
         self._loadout_source = self._detect_loadout_source()
         self._scoring = ScoringPipeline()
@@ -71,8 +105,9 @@ class SolverApp:
         self._bridge = _HotkeyBridge()
         self._bridge.recalibrate.connect(self._run_recalibrate)
         self._bridge.edit_loadout.connect(self._run_edit_loadout)
-        self._bridge.hide_overlay.connect(self.overlay.hide)
+        self._bridge.hide_overlay.connect(self._hide_overlays)
         self._bridge.quit_app.connect(self._shutdown)
+        self._bridge.solve_finished.connect(self._apply_solve_ui)
         self.overlay.request_quit.connect(self._shutdown)
         atexit.register(keyboard.unhook_all)
 
@@ -152,10 +187,11 @@ class SolverApp:
         )
         self._install_shutdown_handlers()
 
-        self.overlay.title.setText(
-            f"Cursed Words Solver — {hotkey.upper()} solve · F9 loadout · F10 calibrate"
-        )
-        self.overlay.show()
+        self.overlay.show_idle()
+
+        self._run_state_poll_timer = QTimer()
+        self._run_state_poll_timer.timeout.connect(self._maybe_clear_stale_highlights)
+        self._run_state_poll_timer.start(500)
 
         print(
             f"Ready. Press {hotkey.upper()} to solve, F9 loadout, F10 recalibrate.",
@@ -170,11 +206,14 @@ class SolverApp:
             f"Loadout ({self._loadout_source}): {format_loadout_summary(self._loadout_cache)}",
             flush=True,
         )
-        mapped, total, unmapped = self._scoring.loadout_mapping_summary(
+        scoring, total, grid_only, unmapped = self._scoring.loadout_mapping_summary(
             self._loadout_cache
         )
         if total:
-            print(f"  Rules catalog: {mapped}/{total} items recognized", flush=True)
+            msg = f"  Rules: {scoring}/{total} affect score"
+            if grid_only:
+                msg += f" ({grid_only} grid-only)"
+            print(msg, flush=True)
         if unmapped:
             print(
                 f"  Unmapped (no wiki rule): {', '.join(unmapped[:8])}"
@@ -245,8 +284,66 @@ class SolverApp:
         self._shutting_down = True
         print("\nShutting down...", flush=True)
         self._cleanup_keyboard()
-        self.overlay.hide()
+        self._hide_overlays()
         self.app.quit()
+
+    def _hide_overlays(self) -> None:
+        self.overlay.hide()
+        self._clear_highlight_state()
+        self._highlight_watch_run_state = False
+
+    def _clear_highlight_state(self) -> None:
+        self.board_highlight.clear()
+        self._highlight_board_fingerprint = None
+        self._highlight_loadout_fingerprint = None
+        self._highlight_watch_run_state = False
+
+    def _maybe_clear_stale_highlights(self) -> None:
+        """Drop on-board path when melmod reports a new round, shop, or missing board."""
+        if self._highlight_board_fingerprint is None:
+            return
+        if not self._highlight_watch_run_state:
+            return
+        data = load_run_state_raw()
+        if parse_board_from_run_state(data) is None:
+            self._clear_highlight_state()
+            return
+        current_board_fp = ""
+        current_loadout_fp = ""
+        if data:
+            current_board_fp, current_loadout_fp = fingerprints_from_run_state(data)
+        if current_board_fp != self._highlight_board_fingerprint:
+            self._clear_highlight_state()
+            return
+        if (
+            self._highlight_loadout_fingerprint is not None
+            and current_loadout_fp != self._highlight_loadout_fingerprint
+        ):
+            self._clear_highlight_state()
+
+    def _apply_solve_ui(self, update: _SolveUIUpdate) -> None:
+        """Show overlay and board highlights on the Qt GUI thread."""
+        self.overlay.show_results(
+            update.board,
+            update.results,
+            board_bgr=update.board_bgr,
+            warnings_html=update.warnings_html,
+            on_game_highlight=update.on_game_highlight,
+        )
+        if update.on_game_highlight and self.config.board_region.is_valid():
+            if update.melmod_board_fingerprint is not None:
+                self._highlight_board_fingerprint = update.melmod_board_fingerprint
+                self._highlight_loadout_fingerprint = update.melmod_loadout_fingerprint
+                self._highlight_watch_run_state = True
+            else:
+                self._highlight_board_fingerprint = board_fingerprint(update.board)
+                self._highlight_loadout_fingerprint = None
+                self._highlight_watch_run_state = False
+            self.board_highlight.show_path(
+                self.config.board_region, update.results[0].path
+            )
+        else:
+            self._clear_highlight_state()
 
     def _preload_ocr(self) -> None:
         try:
@@ -314,7 +411,7 @@ class SolverApp:
                 if mod_money:
                     print(f"Money: ${mod_money} (mod)", flush=True)
                 print("Parsed board:", flush=True)
-                print(format_board_grid(board), flush=True)
+                print(format_board_grid(board, compact=True), flush=True)
                 if self.config.board_region.is_valid():
                     try:
                         board_img = capture_region(self.config.board_region)
@@ -368,23 +465,82 @@ class SolverApp:
                 elif money_source == "ocr":
                     print(f"Money: ${money} (ocr)", flush=True)
 
-            print("Searching for words...", flush=True)
+            search_budget = self.config.search_time_budget_sec
+            search_started = time.monotonic()
             loadout = merge_loadout_with_board(
                 self._loadout_cache,
                 board.money,
                 mod_money=mod_money if mod_money > 0 else None,
             )
-            mapped, total, unmapped = self._scoring.loadout_mapping_summary(loadout)
+            scoring, total, grid_only, unmapped = self._scoring.loadout_mapping_summary(
+                loadout
+            )
             print(format_loadout_summary(loadout), flush=True)
             if total:
-                print(f"  Rules: {mapped}/{total} recognized", flush=True)
+                msg = f"  Rules: {scoring}/{total} affect score"
+                if grid_only:
+                    msg += f" ({grid_only} grid-only)"
+                print(msg, flush=True)
             if unmapped:
                 print(f"  Unmapped: {', '.join(unmapped[:6])}", flush=True)
+            if board_source == "melmod" and not (loadout.boss_id or loadout.boss_name):
+                print(
+                    "  Boss not in run_state.json — press F7 in-game; "
+                    "rebuild melmod if you are fighting a boss.",
+                    flush=True,
+                )
+            constraints = boss_word_constraints(
+                loadout,
+                self._scoring.rules,
+                default_max_len=self.config.max_word_length,
+            )
+            effective_min = max(
+                self.config.min_word_length, constraints.min_len
+            )
+            effective_max = min(
+                self.config.max_word_length, constraints.max_len
+            )
+            self._searcher.min_len = effective_min
+            self._searcher.max_len = effective_max
+            self._searcher.validator.min_len = self._searcher.min_len
+            self._searcher.blocked = constraints.blocked
+            self._searcher.block_reason = constraints.block_reason
+            search_msg = (
+                f"Searching for words (up to {search_budget:.0f}s, "
+                f"length {effective_min}–{effective_max})"
+            )
+            if loadout.boss_id or loadout.boss_name:
+                boss_label = loadout.boss_name or loadout.boss_id
+                area = boss_area_number(loadout)
+                search_msg += f", boss: {boss_label} area {area}"
+                if loadout.extras.get("boss_cursed"):
+                    search_msg += " (cursed)"
+            print(search_msg + "...", flush=True)
+            if constraints.blocked and constraints.block_reason:
+                print(f"  Boss: {constraints.block_reason}", flush=True)
             results = self._searcher.find_best_words(
                 board,
                 loadout=loadout,
                 top_n=self.config.top_n_results,
             )
+            search_elapsed = time.monotonic() - search_started
+
+            pred_trace: list | None = None
+            if results:
+                top = results[0]
+                pred_score, pred_bd, pred_trace = self._scoring.score_with_trace(
+                    board, top.path, top.word, loadout
+                )
+                top.score = pred_score
+                top.breakdown = pred_bd
+                save_last_suggestion(
+                    board=board,
+                    loadout=loadout,
+                    result=top,
+                    predicted_trace=pred_trace,
+                    run_state_snapshot=run_state_data,
+                    dictionary=self._dictionary,
+                )
 
             self._save_debug(
                 board_img,
@@ -392,19 +548,51 @@ class SolverApp:
                 results,
                 board_source=board_source,
                 money_source=money_source,
+                top_predicted_trace=pred_trace,
             )
             print(f"Board source: {board_source}", flush=True)
 
             if results:
                 top = results[0]
-                print(f"Done. Best: {top.word} ({top.score} pts)", flush=True)
+                print(
+                    f"Done in {search_elapsed:.1f}s. Best: {top.word} ({int(top.score)} pts)",
+                    flush=True,
+                )
+                effects = (top.breakdown or {}).get("pipeline", {}).get("effects")
+                if effects:
+                    print(f"  Score effects: {'; '.join(str(e) for e in effects)}", flush=True)
+                print(
+                    "  Wrote last_suggestion.json for melmod scoring capture.",
+                    flush=True,
+                )
             else:
-                print("Done. No valid words found.", flush=True)
+                print(
+                    f"Done in {search_elapsed:.1f}s. No valid words found.",
+                    flush=True,
+                )
 
-            summary = self._board_summary(board, loadout, unmapped)
-            QTimer.singleShot(
-                0,
-                lambda: self.overlay.show_results(board_img, results, summary),
+            warnings = self._overlay_warnings(board, unmapped)
+            highlight = (
+                self.config.show_board_highlight
+                and self.config.board_region.is_valid()
+                and bool(results)
+            )
+            melmod_board_fp: str | None = None
+            melmod_loadout_fp: str | None = None
+            if board_source == "melmod" and run_state_data:
+                melmod_board_fp, melmod_loadout_fp = fingerprints_from_run_state(
+                    run_state_data
+                )
+            self._bridge.solve_finished.emit(
+                _SolveUIUpdate(
+                    board=board,
+                    results=results,
+                    board_bgr=board_img,
+                    warnings_html=warnings,
+                    on_game_highlight=highlight,
+                    melmod_board_fingerprint=melmod_board_fp,
+                    melmod_loadout_fingerprint=melmod_loadout_fp,
+                )
             )
         except Exception:
             err = traceback.format_exc()
@@ -443,30 +631,20 @@ class SolverApp:
             return "mod"
         return "file"
 
-    def _board_summary(self, board, loadout, unmapped: list[str]) -> str:
+    def _overlay_warnings(self, board, unmapped: list[str]) -> str:
         tiles = board.flat
         low_conf = [t for t in tiles if t.ocr_confidence < 0.4]
         unknown = [t for t in tiles if t.letter == "?" or t.char == "?"]
-        grid = format_board_grid(board).replace(" ", "&nbsp;")
-        lines = [format_loadout_summary(loadout)]
-        lines.append(
-            f"<pre style='margin:4px 0;font-size:12px;color:#ccc'>{grid}</pre>"
-        )
+        lines: list[str] = []
         if unmapped:
             lines.append(
-                f"<span style='color:#fa0'>Unmapped rules: {', '.join(unmapped[:4])}"
-                f"{'…' if len(unmapped) > 4 else ''}</span>"
+                f"Unmapped rules: {', '.join(unmapped[:4])}"
+                f"{'…' if len(unmapped) > 4 else ''}"
             )
         if unknown:
-            lines.append(
-                f"<span style='color:#fa0'>{len(unknown)} tile(s) unread (?)</span>"
-            )
+            lines.append(f"{len(unknown)} tile(s) unread (?)")
         elif low_conf:
-            lines.append(
-                f"<span style='color:#fa0'>Low OCR on {len(low_conf)} tiles</span>"
-            )
-        else:
-            lines.append(f"Parsed 25 tiles · money: {board.money}")
+            lines.append(f"Low OCR on {len(low_conf)} tiles")
         return "<br>".join(lines)
 
     def _save_debug(
@@ -477,6 +655,7 @@ class SolverApp:
         *,
         board_source: str = "ocr",
         money_source: str = "none",
+        top_predicted_trace: list | None = None,
     ) -> None:
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -517,8 +696,13 @@ class SolverApp:
             ],
             "ocr_debug": ocr_debug,
             "results": [
-                {"word": r.word, "score": r.score, "path": r.path}
-                for r in results
+                {
+                    "word": r.word,
+                    "score": r.score,
+                    "path": r.path,
+                    "predicted_trace": top_predicted_trace if i == 0 else None,
+                }
+                for i, r in enumerate(results)
             ],
         }
         (DEBUG_DIR / f"parse_{ts}.json").write_text(
@@ -539,7 +723,7 @@ class SolverApp:
         self._calibrating = True
         try:
             print("Recalibration started (F10)...", flush=True)
-            self.overlay.hide()
+            self._hide_overlays()
             self.config = run_calibration_wizard(self.config)
             self._finish_calibration("Recalibration complete")
             QMessageBox.information(

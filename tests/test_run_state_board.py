@@ -8,6 +8,7 @@ from cursed_words_solver.loadout import (
     parse_board_from_run_state,
     parse_run_state,
 )
+from cursed_words_solver.rules.boss_effects import boss_word_constraints, load_rules_catalog
 from cursed_words_solver.models import CurseType, TileColor
 from cursed_words_solver.vision.board_parser import format_board_grid
 
@@ -143,6 +144,75 @@ def test_tile_color_mapping():
     assert board.get(0, 0).color == TileColor.SHINY
 
 
+def _bat_3x4_run_state() -> dict:
+    """Bat shrunk grid: 3 rows × 4 cols (top_first, anchored at rows 2–4 in 5×5)."""
+    letters = {
+        (2, 0): "A",
+        (2, 1): "E",
+        (2, 2): "T",
+        (2, 3): "W",
+        (3, 0): "R",
+        (3, 1): "H",
+        (3, 2): "E",
+        (3, 3): "N",
+        (4, 0): "O",
+        (4, 1): "O",
+        (4, 2): "T",
+        (4, 3): "T",
+    }
+    tiles = []
+    for row in range(5):
+        for col in range(5):
+            ch = letters.get((row, col))
+            in_play = ch is not None
+            tiles.append(
+                {
+                    "row": row,
+                    "col": col,
+                    "char": ch or "",
+                    "letter": ch or "",
+                    "base_score": 1 if in_play else 0,
+                    "color": "colorless",
+                    "curse": "letter" if in_play else "inactive",
+                    "active": in_play,
+                }
+            )
+    return {
+        "board": {
+            "source": "melmod",
+            "row_order": "top_first",
+            "rows": 3,
+            "cols": 4,
+            "tiles": tiles,
+        }
+    }
+
+
+def test_parse_board_bat_3x4_from_run_state():
+    board = parse_board_from_run_state(_bat_3x4_run_state())
+    assert board is not None
+    assert board.rows == 3
+    assert board.cols == 4
+    assert sum(board.active) == 12
+    assert board.get(2, 3).letter == "W"
+    assert board.get(3, 3).letter == "N"
+    assert board.is_active_index(2 * 5 + 3)
+
+
+def test_format_board_grid_compact_bat_3x4():
+    board = parse_board_from_run_state(_bat_3x4_run_state())
+    assert board is not None
+    grid = format_board_grid(board, compact=True)
+    lines = grid.split("\n")
+    assert lines[0] == "Playable 3×4:"
+    assert len(lines) == 4
+    assert lines[1] == "A E T W"
+    assert lines[2] == "R H E N"
+    assert lines[3] == "O O T T"
+    full = format_board_grid(board, compact=False)
+    assert full.count("\n") == 4
+
+
 def test_load_run_state_raw_with_utf8_bom(tmp_path):
     path = tmp_path / "run_state.json"
     body = json.dumps(
@@ -160,3 +230,80 @@ def test_load_run_state_raw_with_utf8_bom(tmp_path):
     data = load_run_state_raw(path)
     assert data is not None
     assert parse_board_from_run_state(data) is not None
+
+
+def test_parse_run_state_wolf_boss_max_length():
+    data = {
+        "character": "Nina Nix",
+        "boss_id": "wolf",
+        "boss_name": "Wolf",
+        "extras": {"boss_area_number": 5},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    assert loadout.boss_id == "wolf"
+    assert loadout.boss_name == "Wolf"
+    rules = load_rules_catalog()
+    constraints = boss_word_constraints(loadout, rules, default_max_len=15)
+    assert constraints.max_len == 4
+
+
+def test_parse_run_state_bosssmallwords_alias_is_wolf():
+    """In-game Wolf uses MaxWordLength / BossSmallWords / 'Five Letter Maximum'."""
+    data = {
+        "character": "Nina Nix",
+        "boss_id": "bosssmallwords",
+        "boss_name": "Five Letter Maximum",
+        "extras": {"boss_area_number": 3},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import resolve_rule_id
+
+    assert resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name) == "wolf"
+    assert boss_word_constraints(loadout, rules, default_max_len=15).max_len == 4
+
+
+def test_parse_run_state_bossdino_alias_is_cretaceous_meg():
+    """In-game Cretaceous Meg prefab slug is bossdino; no per-word scoring rules."""
+    data = {
+        "character": "Nina Nix",
+        "boss_id": "bossdino",
+        "boss_name": "Cretaceous Meg",
+        "extras": {"boss_area_number": "5"},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "cretaceous_meg"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+    constraints = boss_word_constraints(loadout, rules, default_max_len=15)
+    assert constraints.max_len == 15
+    assert constraints.min_len == 3
+
+
+def test_parse_run_state_nested_boss_object():
+    data = {
+        "character": "Test",
+        "boss": {"id": "wolf", "name": "Wolf"},
+        "extras": {"boss_area_number": "5"},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    assert loadout.boss_id == "wolf"
+    assert loadout.boss_name == "Wolf"
+    rules = load_rules_catalog()
+    assert boss_word_constraints(loadout, rules, default_max_len=15).max_len == 4
