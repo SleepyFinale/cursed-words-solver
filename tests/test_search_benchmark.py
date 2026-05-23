@@ -17,7 +17,7 @@ from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Loadout, LoadoutItem, TileColor
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.search import WordSearcher
-from tests.test_search import _board_cat_horizontal, _make_wordlist
+from tests.helpers.boards import _board_123ifer_fixture, _board_cat_horizontal, _make_wordlist
 
 
 def test_score_total_only_matches_full_score(tmp_path):
@@ -45,6 +45,7 @@ def test_search_finds_cat_under_tight_budget(tmp_path):
     assert results[0].breakdown
 
 
+@pytest.mark.slow
 def test_search_benchmark_cat_board(tmp_path):
     """Regression: cat board should complete quickly with many expansions."""
     wl = _make_wordlist(tmp_path)
@@ -64,9 +65,9 @@ def test_search_benchmark_cat_board(tmp_path):
     assert elapsed < 1.5
 
 
+@pytest.mark.slow
 def test_search_benchmark_game_board_if_available():
     from cursed_words_solver.config import GAME_WORDLIST_PATH
-    from tests.test_search import _board_123ifer_fixture
 
     if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
         pytest.skip("game wordlist not available")

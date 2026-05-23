@@ -1,5 +1,7 @@
 # MelonLoader companion (recommended)
 
+**Python solver setup:** see the [repository README](../README.md#setup) (`pip install -r requirements.txt`, `pip install -e .`, then `python -m cursed_words_solver.app`).
+
 This MelonLoader mod writes files under `%USERPROFILE%\.cursed_words_solver\` while you play:
 
 - **Loadout** — character, stickers, stamps, boss, pin, money (`run_state.json`)
@@ -18,7 +20,7 @@ The Python solver reads `run_state.json` on every **F8** solve. When `board` is 
 
 Do not bind F8 in the mod — that is the solver hotkey.
 
-## Scoring mismatch capture (v1.1+)
+## Scoring mismatch capture (v1.1.6+)
 
 When the solver’s predicted score does not match the game after you play the **F8 suggestion**, the mod writes a debug bundle you can turn into a regression test.
 
@@ -46,11 +48,14 @@ On startup the mod prints the mismatch folder path. After each word submit you s
 
 If you only see a score difference in-game but **no** `scoring_mismatches` file, the mod did not recognize the submit as the F8 suggestion — check the skip message (alternate path vs board changed), press **F8** again, then submit on the **highlighted path** before the board changes.
 
-**Turn a mismatch into pytest**
+**Turn a mismatch into a regression fixture**
 
 ```powershell
 python scripts/mismatch_to_test.py $env:USERPROFILE\.cursed_words_solver\scoring_mismatches\20260523_143022.json
+pytest tests/regression/ -k 20260523_143022
 ```
+
+Writes `tests/fixtures/mismatches/<timestamp>.json`; parametrized tests live in `tests/regression/test_scoring_mismatches.py`.
 
 See [`SCORING_HOOKS.md`](SCORING_HOOKS.md) for hooked game types (`EncounterController.SubmitWord`, `ScoreCalculation.CalculateOverallScore`, etc.).
 
@@ -207,13 +212,17 @@ Playing cards export `curse: "card"` when suit metadata is found.
 
 1. Start a run in Cursed Words (mod auto-exports loadout and board).
 
-2. Run the Python solver: `python -m cursed_words_solver.app`
+2. Run the Python solver: `python -m cursed_words_solver.app` (see [root README](../README.md#setup)).
 
 3. Press **F7** in-game if you want to force an export before solving (also writes `game_words.txt`).
 
 4. Press **F8** in the solver — terminal should show `Word list: game (...)` and `Board from melmod` with the correct grid.
 
-5. Without the mod, the solver uses screenshot OCR (slower); press **F9** to edit loadout manually.
+5. **F10** in the solver recalibrates the screenshot region (for on-board path highlights and OCR fallback).
+
+6. **ESC** hides the solver overlay and board highlights.
+
+7. Without the mod, the solver uses screenshot OCR (slower); press **F9** to edit loadout manually.
 
 ## Troubleshooting
 

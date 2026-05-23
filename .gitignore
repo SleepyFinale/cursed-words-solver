@@ -31,13 +31,24 @@ data/wiki/_*.json
 # MelonLoader companion mod (.NET)
 melmod/**/bin/
 melmod/**/obj/
+**/.vs/
 
 # Local solver data (normally lives in %USERPROFILE%\.cursed_words_solver\)
 .cursed_words_solver/
+/run_state.json
+/last_suggestion.json
+/game_words.txt
+/game_words_meta.json
+
+# Tooling caches
+.ruff_cache/
+.mypy_cache/
 
 # IDE / editor
 .vscode/
 .idea/
+*.user
+*.suo
 *.swp
 *~
 

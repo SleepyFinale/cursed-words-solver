@@ -68,11 +68,9 @@ Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 
 - `min_word_length` — default `3`
 
-- `max_word_length` — default `15` (longest path explored on the 5×5 board; max possible is 25)
+- `max_word_length` — default `15` (longest path explored on the 5×5 board; max possible is 25). Keep at 15 for long number words (e.g. `fu34s6s`); search cost grows quickly with depth and the solver reserves time for digit/void passes on number boards.
 
 - `search_time_budget_sec` — default `30` (seconds spent finding words per **F8** solve; lower for snappier feedback on easy boards). Older installs with `2` / `15` are auto-upgraded on startup.
-
-- `max_word_length` — default `15`; keep at 15 if you rely on long number words (e.g. `fu34s6s`). Search cost grows quickly with depth; the solver uses reserved time for digit/void passes on number boards.
 
 - `money_region` — optional; only used for OCR fallback when melmod money is unavailable
 
@@ -109,14 +107,14 @@ On startup the terminal prints which word list is loaded, e.g. `Word list: game 
 
 ### Scoring calibration (predicted vs in-game)
 
-With melmod **v1.1+** and a current solver build:
+With melmod companion **v1.1.6+** and a current solver build:
 
 1. **F7** in-game, then **F8** in the solver — writes `last_suggestion.json` with a step-by-step `predicted_trace`.
 2. Play the suggested word on the highlighted path before the board changes.
 3. If the game score differs, the mod saves `scoring_mismatches\<timestamp>.json` (predicted vs actual traces + board snapshot).
-4. Generate a regression test: `python scripts/mismatch_to_test.py <path-to-mismatch.json>`.
+4. Add a regression fixture: `python scripts/mismatch_to_test.py <path-to-mismatch.json>` (writes `tests/fixtures/mismatches/<id>.json`).
 
-Rebuild the companion after pulling solver changes: `.\melmod\build.ps1`. Details: [`melmod/README.md`](melmod/README.md#scoring-mismatch-capture-v11).
+Rebuild the companion after pulling solver changes: `.\melmod\build.ps1`. Details: [`melmod/README.md`](melmod/README.md#scoring-mismatch-capture-v116) and [`melmod/SCORING_HOOKS.md`](melmod/SCORING_HOOKS.md).
 
 ## Sticker rules catalog
 
@@ -143,5 +141,7 @@ python scripts/build_stickers_json.py
 ## Tests
 
 ```bash
-pytest tests/
+pip install -e ".[dev]"
+pytest tests/ -m "not slow"
+pytest tests/ -m slow    # search benchmarks only
 ```

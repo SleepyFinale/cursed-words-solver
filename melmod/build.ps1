@@ -25,9 +25,12 @@ if (-not (Test-Path $Dotnet)) { $Dotnet = "dotnet" }
 Write-Host "Building companion mod (GameDir=$GameDir)..."
 & $Dotnet build $Project -c Release -p:GameDir="$GameDir"
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "dotnet build failed; trying Framework csc..."
-    & "$PSScriptRoot\build-csc.ps1" -GameDir $GameDir
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Write-Error @"
+dotnet build failed (exit $LASTEXITCODE).
+
+Install the .NET SDK: https://dotnet.microsoft.com/download
+Then re-run: .\melmod\build.ps1
+"@
 }
 
 $BuiltDll = Join-Path $Root "CursedWordsSolverCompanion\bin\CursedWordsSolverCompanion.dll"

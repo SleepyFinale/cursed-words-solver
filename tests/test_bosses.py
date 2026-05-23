@@ -81,10 +81,11 @@ def _loadout(**kwargs) -> Loadout:
     )
 
 
-def test_catalog_has_fifteen_main_bosses_no_no_vowels():
+def test_catalog_has_sixteen_main_bosses_no_no_vowels():
     bosses = RULES.get("bosses", {})
     assert "no_vowels" not in bosses
-    assert len(bosses) == 15
+    assert len(bosses) == 16
+    assert bosses["axolotl"]["type"] == "custom"
     assert bosses["cobra"]["type"] == "boss_word_min_length"
     assert bosses["salamander"]["type"] == "boss_tile_penalty"
 
@@ -181,7 +182,7 @@ def test_bat_inactive_cells_not_in_search_starts():
 def test_bat_3x4_search_uses_column_four(tmp_path: Path):
     """Col 3 must be active so words like 'wet' / 'went' are reachable."""
     from cursed_words_solver.loadout import parse_board_from_run_state
-    from tests.test_run_state_board import _bat_3x4_run_state
+    from tests.integration.test_run_state_board import _bat_3x4_run_state
 
     board = parse_board_from_run_state(_bat_3x4_run_state())
     assert board is not None

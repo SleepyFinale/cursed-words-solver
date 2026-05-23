@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.achievement_stamps_catalog import ACHIEVEMENT_STAMPS
+from scripts.catalog.achievement_stamps_catalog import ACHIEVEMENT_STAMPS
 
 WIKI_DIR = ROOT / "data" / "wiki"
 OUT_PATH = WIKI_DIR / "stickers.json"

@@ -42,7 +42,7 @@ def test_fingerprints_from_run_state_no_boss_uses_dash():
 
 
 def test_fingerprints_from_12ttee_fixture():
-    fixture = Path(__file__).resolve().parent / "fixtures" / "12ttee_run_state.json"
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "12ttee_run_state.json"
     if not fixture.exists():
         return
     data = json.loads(fixture.read_text(encoding="utf-8"))
@@ -63,7 +63,7 @@ def test_dictionary_word_for_12ttee_path():
     if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
         pytest.skip("game wordlist required")
 
-    fixture = Path(__file__).resolve().parent / "fixtures" / "12ttee_run_state.json"
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "12ttee_run_state.json"
     if not fixture.exists():
         pytest.skip("12ttee_run_state.json fixture required")
 
