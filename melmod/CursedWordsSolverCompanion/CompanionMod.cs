@@ -9,6 +9,7 @@ using UnityEngine;
     CursedWordsSolverCompanion.BuildInfo.Author
 )]
 [assembly: MelonGame(null, null)]
+[assembly: HarmonyDontPatchAll]
 
 namespace CursedWordsSolverCompanion
 {

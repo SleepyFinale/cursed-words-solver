@@ -6,13 +6,16 @@ from collections import Counter
 
 from cursed_words_solver.models import (
     CHESS_CURSES,
+    CURRENCY_MAP,
     Board,
     CurseType,
     Loadout,
     Tile,
     TileColor,
+    normalize_tile_glyph,
 )
-from cursed_words_solver.rules.base_scoring import tile_base_contribution
+from cursed_words_solver.rules.base_scoring import _scrabble_value, tile_base_contribution
+from cursed_words_solver.rules.fraction_tiles import fraction_parts, is_fraction_tile
 
 NON_COLOUR_FOR_NUMBER_BONUS = frozenset(
     {
@@ -118,12 +121,12 @@ def _melmod_number_colour_baked_into_score(tile: Tile) -> bool:
 
 
 def is_colored_number_tile(tile: Tile) -> bool:
-    """NUMBER curse on a tile that counts as a colour (wiki: colourless is not a colour).
+    """NUMBER/FRACTION curse on a tile that counts as a colour (wiki: colourless is not a colour).
 
     VOID numbers are coloured (void is a tile colour). Only colourless/unknown/white
     number tiles are excluded unless melmod baked +2 implies red scatter.
     """
-    if tile.curse != CurseType.NUMBER:
+    if not is_number_like_tile(tile):
         return False
     if tile.color not in NON_COLOUR_FOR_NUMBER_BONUS:
         return True
@@ -371,48 +374,66 @@ def is_number_tile(tile: Tile) -> bool:
     return tile.curse == CurseType.NUMBER
 
 
+def is_number_like_tile(tile: Tile) -> bool:
+    return tile.curse in (CurseType.NUMBER, CurseType.FRACTION)
+
+
+def tile_numeric_value(tile: Tile) -> float:
+    """Face value for sums/ordering: integer for NUMBER, fraction float for FRACTION."""
+    if is_fraction_tile(tile):
+        if tile.fraction_value is not None:
+            return float(tile.fraction_value)
+        parts = fraction_parts(tile)
+        if parts is not None:
+            num, den = parts
+            return num / den if den else 0.0
+        return 0.0
+    return float(tile_number_value(tile))
+
+
 def word_all_numbers_on_path(board: Board, path: list[int]) -> bool:
     if not path:
         return False
-    return all(is_number_tile(board.get_by_index(idx)) for idx in path)
+    return all(is_number_like_tile(board.get_by_index(idx)) for idx in path)
 
 
 def number_tile_count_on_path(board: Board, path: list[int]) -> int:
     return sum(
-        1 for idx in path if is_number_tile(board.get_by_index(idx))
+        1 for idx in path if is_number_like_tile(board.get_by_index(idx))
     )
 
 
-def number_sum_on_path(board: Board, path: list[int]) -> int:
-    total = 0
+def number_sum_on_path(board: Board, path: list[int]) -> float:
+    total = 0.0
     for idx in path:
         tile = board.get_by_index(idx)
-        if is_number_tile(tile):
-            total += tile_number_value(tile)
+        if is_number_like_tile(tile):
+            total += tile_numeric_value(tile)
     return total
 
 
-def highest_number_on_path(board: Board, path: list[int]) -> int:
+def highest_number_on_path(board: Board, path: list[int]) -> float:
     values = [
-        tile_number_value(board.get_by_index(idx))
+        tile_numeric_value(board.get_by_index(idx))
         for idx in path
-        if is_number_tile(board.get_by_index(idx))
+        if is_number_like_tile(board.get_by_index(idx))
     ]
-    return max(values) if values else 0
+    return max(values) if values else 0.0
 
 
 def path_starts_ends_number(board: Board, path: list[int]) -> bool:
     if len(path) < 2:
         return False
-    return is_number_tile(board.get_by_index(path[0])) and is_number_tile(
+    return is_number_like_tile(board.get_by_index(path[0])) and is_number_like_tile(
         board.get_by_index(path[-1])
     )
 
 
 def path_contains_number_value(board: Board, path: list[int], target: int) -> bool:
     for idx in path:
-        if is_number_tile(board.get_by_index(idx)):
-            if tile_number_value(board.get_by_index(idx)) == target:
+        tile = board.get_by_index(idx)
+        if is_number_like_tile(tile):
+            if abs(tile_numeric_value(tile) - float(target)) < 1e-9:
                 return True
     return False
 
@@ -500,15 +521,17 @@ def grid_total_base_score(board: Board) -> int:
 
 
 def consecutive_number_run_path_positions(path: list[int], board: Board) -> list[int]:
-    """Positions along path in runs of >=2 consecutive number tiles."""
+    """Positions along path in runs of >=2 consecutive number-like tiles."""
     qualifying: list[int] = []
     start = 0
     while start < len(path):
-        if not is_number_tile(board.get_by_index(path[start])):
+        if not is_number_like_tile(board.get_by_index(path[start])):
             start += 1
             continue
         end = start
-        while end < len(path) and is_number_tile(board.get_by_index(path[end])):
+        while end < len(path) and is_number_like_tile(
+            board.get_by_index(path[end])
+        ):
             end += 1
         if end - start >= 2:
             qualifying.extend(range(start, end))
@@ -640,9 +663,12 @@ def chess_balanced_colors(board: Board, path: list[int]) -> bool:
 
 
 def currency_letter_value(tile: Tile) -> int:
+    glyph = normalize_tile_glyph(tile.char or tile.letter or "")
+    if glyph in CURRENCY_MAP:
+        return _scrabble_value(CURRENCY_MAP[glyph])
     ch = (tile.letter or "").strip().upper()
     if len(ch) == 1 and ch.isalpha():
-        return ord(ch) - ord("A") + 1
+        return _scrabble_value(ch)
     return 0
 
 
@@ -657,6 +683,11 @@ def currency_value_on_path(board: Board, path: list[int]) -> int:
 
 def currency_on_path(board: Board, path: list[int]) -> bool:
     return any(board.get_by_index(idx).curse == CurseType.CURRENCY for idx in path)
+
+
+def money_for_scoring(board: Board, path: list[int], loadout: Loadout) -> int:
+    """Money for per-$ rules (Credit Card, etc.): in-run bank only, not path tiles."""
+    return max(board.money, loadout.money, 0)
 
 
 def path_all_non_adjacent(path: list[int]) -> bool:
@@ -903,7 +934,81 @@ def sticker_in_slot(loadout: Loadout, applying_sticker_id: str, slot: str) -> bo
     return False
 
 
+def explain_sticker_condition(
+    condition: str,
+    board: Board,
+    path: list[int],
+    word: str,
+    loadout: Loadout,
+    *,
+    applying_sticker_id: str = "",
+) -> tuple[bool, str]:
+    """Evaluate a sticker condition and return (met, human-readable reason)."""
+    if condition == "word_starts_vwxyz":
+        first = word_first_letter(word)
+        path_first = first_letter_on_path(board, path)
+        if not first:
+            return False, "skipped: no word first letter"
+        if first not in VWXYZ:
+            return False, f"skipped: word '{first}' not in vwxyz"
+        if first != path_first:
+            path_label = path_first or "?"
+            return False, f"skipped: word '{first}' != path first letter '{path_label}'"
+        return True, f"applied: word '{first}' matches path first letter '{path_first}'"
+
+    if condition == "word_starts_same_as_previous":
+        prev = _extra_letter(loadout, "previous_word_first_letter")
+        first = _effective_word_start_letter(board, path, word)
+        if not prev or not first:
+            return False, f"skipped: missing previous or word first letter (prev={prev!r}, word={first!r})"
+        if first != prev:
+            return False, f"skipped: word starts '{first}', previous '{prev}'"
+        return True, f"applied: word starts '{first}' same as previous"
+
+    if condition == "word_starts_after_previous":
+        prev = _extra_letter(loadout, "previous_word_first_letter")
+        first = _effective_word_start_letter(board, path, word)
+        if not prev or not first:
+            return False, f"skipped: missing previous or word first letter (prev={prev!r}, word={first!r})"
+        if first <= prev:
+            return False, f"skipped: word starts '{first}', not after previous '{prev}'"
+        return True, f"applied: word starts '{first}' after previous '{prev}'"
+
+    met = _evaluate_sticker_condition(
+        condition,
+        board,
+        path,
+        word,
+        loadout,
+        applying_sticker_id=applying_sticker_id,
+    )
+    if not condition:
+        return False, "skipped: empty condition"
+    if met:
+        return True, f"applied ({condition})"
+    return False, f"skipped ({condition})"
+
+
 def evaluate_sticker_condition(
+    condition: str,
+    board: Board,
+    path: list[int],
+    word: str,
+    loadout: Loadout,
+    *,
+    applying_sticker_id: str = "",
+) -> bool:
+    return explain_sticker_condition(
+        condition,
+        board,
+        path,
+        word,
+        loadout,
+        applying_sticker_id=applying_sticker_id,
+    )[0]
+
+
+def _evaluate_sticker_condition(
     condition: str,
     board: Board,
     path: list[int],
@@ -927,7 +1032,8 @@ def evaluate_sticker_condition(
     if condition == "red_count_gte:3":
         return count_color_on_path(board, path, "red") >= 3
     if condition == "word_starts_vowel":
-        return bool(w) and is_vowel_letter(w[0])
+        first = word_first_letter(word)
+        return bool(first) and is_vowel_letter(first)
     if condition == "word_starts_ends_red":
         if not path:
             return False
@@ -943,21 +1049,26 @@ def evaluate_sticker_condition(
     if condition == "blue_count_eq:2":
         return count_color_on_path(board, path, "blue") == 2
     if condition == "word_starts_vwxyz":
-        return bool(w) and w[0] in VWXYZ
+        first = word_first_letter(word)
+        if not first or first not in VWXYZ:
+            return False
+        return first == first_letter_on_path(board, path)
+    if condition == "word_starts_same_as_previous":
+        prev = _extra_letter(loadout, "previous_word_first_letter")
+        first = _effective_word_start_letter(board, path, word)
+        if not prev or not first:
+            return False
+        return first == prev
+    if condition == "word_starts_after_previous":
+        prev = _extra_letter(loadout, "previous_word_first_letter")
+        first = _effective_word_start_letter(board, path, word)
+        if not prev or not first:
+            return False
+        return first > prev
     if condition == "has_double_letter":
         return has_double_letter(word)
     if condition == "first_grid_of_encounter":
         return _extra_bool(loadout, "is_first_grid_of_encounter")
-    if condition == "word_starts_after_previous":
-        prev = _extra_letter(loadout, "previous_word_first_letter")
-        if not prev or not w:
-            return False
-        return w[0] > prev
-    if condition == "word_starts_same_as_previous":
-        prev = _extra_letter(loadout, "previous_word_first_letter")
-        if not prev or not w:
-            return False
-        return w[0] == prev
     if condition == "word_starts_ends_different_color":
         return word_starts_ends_different_color(board, path)
     if condition.startswith("unique_colours_gte:"):
@@ -1198,6 +1309,33 @@ def path_letter_for_count(tile: Tile) -> str:
     if len(ch) == 1 and ch.isalpha():
         return ch
     return ""
+
+
+def word_first_letter(word: str) -> str:
+    """First alphabetic character of the submitted word (lowercase)."""
+    w = (word or "").strip().lower()
+    return w[0] if w and w[0].isalpha() else ""
+
+
+def first_letter_on_path(board: Board, path: list[int]) -> str:
+    """First A–Z letter tile along the path (skips currency, numbers, symbols)."""
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.curse == CurseType.CURRENCY:
+            continue
+        ch = path_letter_for_count(tile)
+        if ch:
+            return ch
+    return ""
+
+
+def _effective_word_start_letter(board: Board, path: list[int], word: str) -> str:
+    """First letter for Bento/Chips-style conditions: path-first when currency leads."""
+    path_first = first_letter_on_path(board, path)
+    word_first = word_first_letter(word)
+    if path_first and word_first and path_first != word_first:
+        return path_first
+    return word_first or path_first
 
 
 def letter_counts_on_path(board: Board, path: list[int]) -> dict[str, int]:

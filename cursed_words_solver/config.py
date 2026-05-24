@@ -55,7 +55,7 @@ class AppConfig:
     hotkey: str = "f8"
     min_word_length: int = 3
     max_word_length: int = 15
-    search_time_budget_sec: float = 30.0
+    search_time_budget_sec: float = 45.0
     top_n_results: int = 3
     ocr_use_gpu: bool = False
     cell_inset_ratio: float = 0.1

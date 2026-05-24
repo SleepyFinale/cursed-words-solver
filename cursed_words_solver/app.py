@@ -32,7 +32,11 @@ from cursed_words_solver.config import (
     describe_wordlist,
     resolve_wordlist,
 )
-from cursed_words_solver.suggestion import save_last_suggestion
+from cursed_words_solver.suggestion import (
+    dictionary_word_for_path,
+    format_suggestion_word,
+    save_last_suggestion,
+)
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, WordResult
 from cursed_words_solver.loadout import (
@@ -50,11 +54,16 @@ from cursed_words_solver.rules.boss_effects import (
     boss_area_number,
     boss_word_constraints,
 )
+from cursed_words_solver.rules.rule_lookup import boss_display_name
 from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.ui.board_highlight import BoardHighlightOverlay
 from cursed_words_solver.ui.loadout_dialog import LoadoutDialog
 from cursed_words_solver.ui.overlay import ResultOverlay
-from cursed_words_solver.vision.board_parser import BoardParser, format_board_grid
+from cursed_words_solver.vision.board_parser import (
+    BoardParser,
+    format_board_grid,
+    tile_appears_unread,
+)
 from cursed_words_solver.vision.calibrate import run_calibration_wizard
 
 
@@ -340,7 +349,9 @@ class SolverApp:
                 self._highlight_loadout_fingerprint = None
                 self._highlight_watch_run_state = False
             self.board_highlight.show_path(
-                self.config.board_region, update.results[0].path
+                self.config.board_region,
+                update.results[0].path,
+                update.board,
             )
         else:
             self._clear_highlight_state()
@@ -502,6 +513,7 @@ class SolverApp:
             )
             self._searcher.min_len = effective_min
             self._searcher.max_len = effective_max
+            self._searcher.time_budget = search_budget
             self._searcher.validator.min_len = self._searcher.min_len
             self._searcher.blocked = constraints.blocked
             self._searcher.block_reason = constraints.block_reason
@@ -510,9 +522,9 @@ class SolverApp:
                 f"length {effective_min}–{effective_max})"
             )
             if loadout.boss_id or loadout.boss_name:
-                boss_label = loadout.boss_name or loadout.boss_id
+                boss_label = boss_display_name(loadout, self._scoring.rules)
                 area = boss_area_number(loadout)
-                search_msg += f", boss: {boss_label} area {area}"
+                search_msg += f", Boss: {boss_label} (Area {area})"
                 if loadout.extras.get("boss_cursed"):
                     search_msg += " (cursed)"
             print(search_msg + "...", flush=True)
@@ -523,6 +535,15 @@ class SolverApp:
                 loadout=loadout,
                 top_n=self.config.top_n_results,
             )
+            for result in results:
+                result.dictionary_word = dictionary_word_for_path(
+                    board,
+                    result.path,
+                    result.word,
+                    loadout,
+                    self._dictionary,
+                    min_len=effective_min,
+                )
             search_elapsed = time.monotonic() - search_started
 
             pred_trace: list | None = None
@@ -555,7 +576,8 @@ class SolverApp:
             if results:
                 top = results[0]
                 print(
-                    f"Done in {search_elapsed:.1f}s. Best: {top.word} ({int(top.score)} pts)",
+                    f"Done in {search_elapsed:.1f}s. Best: {format_suggestion_word(top)} "
+                    f"({int(top.score)} pts)",
                     flush=True,
                 )
                 effects = (top.breakdown or {}).get("pipeline", {}).get("effects")
@@ -634,7 +656,7 @@ class SolverApp:
     def _overlay_warnings(self, board, unmapped: list[str]) -> str:
         tiles = board.flat
         low_conf = [t for t in tiles if t.ocr_confidence < 0.4]
-        unknown = [t for t in tiles if t.letter == "?" or t.char == "?"]
+        unknown = [t for t in tiles if tile_appears_unread(t)]
         lines: list[str] = []
         if unmapped:
             lines.append(

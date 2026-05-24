@@ -1,5 +1,9 @@
 """Hayley Bayles unlock sticker scoring."""
 
+import json
+from pathlib import Path
+
+from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.models import (
     Board,
     CurseType,
@@ -123,6 +127,20 @@ def test_birthday_cake_accumulated_plus_improve():
     base, _ = pipeline.score(board, [0, 1, 2], "37a", Loadout())
     assert score == base + 29
     assert "Birthday Cake: 22 + 7" in " ".join(bd["pipeline"]["effects"])
+
+
+def test_bordonua_fraction_improve_rounds_to_match_game():
+    """Regression: 0.875×3 must round to 3, not stay 2.625 (1602 not 1601)."""
+    fixture = (
+        Path(__file__).resolve().parents[2] / "fixtures" / "fraction_ov_run_state.json"
+    )
+    run_state = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = [13, 9, 8, 12, 7, 6, 2, 3]
+    score, bd = ScoringPipeline().score(board, path, "bordonua", loadout)
+    assert score == 1602.0
+    assert "Birthday Cake: 139 + 3" in " ".join(bd["pipeline"]["effects"])
 
 
 def test_boomerang_number_start_end_multiply():

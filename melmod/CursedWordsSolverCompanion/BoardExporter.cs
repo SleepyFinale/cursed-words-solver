@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace CursedWordsSolverCompanion
@@ -16,10 +17,6 @@ namespace CursedWordsSolverCompanion
 
             var grid = ResolveActiveGridData();
             if (grid == null)
-                return null;
-
-            var tiles = ExportTiles(grid);
-            if (tiles == null || tiles.Count != DefaultGridSize * DefaultGridSize)
                 return null;
 
             var gridRows = DefaultGridSize;
@@ -38,14 +35,27 @@ namespace CursedWordsSolverCompanion
                 // keep defaults
             }
 
-            return new BoardSnapshot
+            if (gridRows < 1 || gridRows > DefaultGridSize)
+                gridRows = DefaultGridSize;
+            if (gridCols < 1 || gridCols > DefaultGridSize)
+                gridCols = DefaultGridSize;
+
+            var origin = DetectPlayableOrigin(grid, gridRows, gridCols);
+            var tiles = ExportTiles(grid, gridRows, gridCols, origin);
+            if (tiles == null || tiles.Count != DefaultGridSize * DefaultGridSize)
+                return null;
+
+            var snapshot = new BoardSnapshot
             {
                 source = "melmod",
                 money = player.Money,
                 rows = gridRows,
                 cols = gridCols,
+                playable_origin = origin,
                 tiles = tiles,
             };
+            FillPlayableBounds(snapshot);
+            return snapshot;
         }
 
         public static string ComputeBoardFingerprint(BoardSnapshot board)
@@ -130,38 +140,152 @@ namespace CursedWordsSolverCompanion
             return grid.GridTiles != null && grid.GridTiles.Length > 0;
         }
 
-        private static List<BoardTileSnapshot> ExportTiles(GridData grid)
+        private static string DetectPlayableOrigin(GridData grid, int gridRows, int gridCols)
         {
-            var result = new List<BoardTileSnapshot>(DefaultGridSize * DefaultGridSize);
-            var gridRows = DefaultGridSize;
-            var gridCols = DefaultGridSize;
+            if (gridRows >= DefaultGridSize && gridCols >= DefaultGridSize)
+                return "full";
 
+            var bottomCount = 0;
+            var topCount = 0;
+            for (var row = 0; row < DefaultGridSize; row++)
+            {
+                for (var col = 0; col < DefaultGridSize; col++)
+                {
+                    var tile = TryGetTileAt(grid, col, row);
+                    if (tile == null || IsSkippedTile(tile))
+                        continue;
+                    if (IsPlayableBottomLeft(row, col, gridRows, gridCols))
+                        bottomCount++;
+                    if (IsPlayableTopLeft(row, col, gridRows, gridCols))
+                        topCount++;
+                }
+            }
+
+            if (topCount > bottomCount)
+                return "top_left";
+            if (bottomCount > 0)
+                return "bottom_left";
+            return "top_left";
+        }
+
+        private static bool IsPlayableBottomLeft(int row, int col, int gridRows, int gridCols)
+        {
+            return row < gridRows && col < gridCols;
+        }
+
+        private static bool IsPlayableTopLeft(int row, int col, int gridRows, int gridCols)
+        {
+            return row >= DefaultGridSize - gridRows && col < gridCols;
+        }
+
+        private static bool IsPlayableSlot(
+            int row,
+            int col,
+            int gridRows,
+            int gridCols,
+            string origin
+        )
+        {
+            if (gridRows >= DefaultGridSize && gridCols >= DefaultGridSize)
+                return true;
+            switch (origin)
+            {
+                case "top_left":
+                    return IsPlayableTopLeft(row, col, gridRows, gridCols);
+                case "center":
+                {
+                    var rowStart = (DefaultGridSize - gridRows) / 2;
+                    var colStart = (DefaultGridSize - gridCols) / 2;
+                    return row >= rowStart
+                        && row < rowStart + gridRows
+                        && col >= colStart
+                        && col < colStart + gridCols;
+                }
+                case "full":
+                    return true;
+                default:
+                    return IsPlayableBottomLeft(row, col, gridRows, gridCols);
+            }
+        }
+
+        private static Tile TryGetTileAt(GridData grid, int col, int row)
+        {
+            if (grid == null)
+                return null;
+            Tile tile = null;
             try
             {
-                var dims = grid.Dimensions;
-                // Unity Vector2Int: x = width (cols), y = height (rows).
-                if (dims.y > 0)
-                    gridRows = dims.y;
-                if (dims.x > 0)
-                    gridCols = dims.x;
+                tile = grid.GetTileAtCoordinates(col, row);
             }
             catch
             {
-                // keep 5x5
+                try
+                {
+                    tile = grid.GetTileAtCoordinates(new Vector2Int(col, row));
+                }
+                catch
+                {
+                    tile = null;
+                }
             }
 
-            if (gridRows < 1 || gridRows > DefaultGridSize)
-                gridRows = DefaultGridSize;
-            if (gridCols < 1 || gridCols > DefaultGridSize)
-                gridCols = DefaultGridSize;
+            if (tile == null && grid.GridTiles != null)
+            {
+                var idx = row * DefaultGridSize + col;
+                if (idx >= 0 && idx < grid.GridTiles.Length)
+                    tile = grid.GridTiles[idx];
+            }
+
+            return tile;
+        }
+
+        private static void FillPlayableBounds(BoardSnapshot snapshot)
+        {
+            var minR = DefaultGridSize;
+            var maxR = -1;
+            var minC = DefaultGridSize;
+            var maxC = -1;
+            if (snapshot.tiles == null)
+                return;
+
+            foreach (var t in snapshot.tiles)
+            {
+                if (t == null || !t.active)
+                    continue;
+                if (t.row < minR)
+                    minR = t.row;
+                if (t.row > maxR)
+                    maxR = t.row;
+                if (t.col < minC)
+                    minC = t.col;
+                if (t.col > maxC)
+                    maxC = t.col;
+            }
+
+            if (maxR < 0)
+                return;
+
+            snapshot.playable_min_row = minR;
+            snapshot.playable_max_row = maxR;
+            snapshot.playable_min_col = minC;
+            snapshot.playable_max_col = maxC;
+        }
+
+        private static List<BoardTileSnapshot> ExportTiles(
+            GridData grid,
+            int gridRows,
+            int gridCols,
+            string origin
+        )
+        {
+            var result = new List<BoardTileSnapshot>(DefaultGridSize * DefaultGridSize);
 
             for (var row = 0; row < DefaultGridSize; row++)
             {
                 for (var col = 0; col < DefaultGridSize; col++)
                 {
                     var displayRow = DefaultGridSize - 1 - row;
-                    var inPlayable =
-                        row < gridRows && col < gridCols;
+                    var inPlayable = IsPlayableSlot(row, col, gridRows, gridCols, origin);
 
                     if (!inPlayable)
                     {
@@ -169,29 +293,7 @@ namespace CursedWordsSolverCompanion
                         continue;
                     }
 
-                    Tile tile = null;
-                    try
-                    {
-                        tile = grid.GetTileAtCoordinates(col, row);
-                    }
-                    catch
-                    {
-                        try
-                        {
-                            tile = grid.GetTileAtCoordinates(new Vector2Int(col, row));
-                        }
-                        catch
-                        {
-                            tile = null;
-                        }
-                    }
-
-                    if (tile == null && grid.GridTiles != null)
-                    {
-                        var idx = row * DefaultGridSize + col;
-                        if (idx >= 0 && idx < grid.GridTiles.Length)
-                            tile = grid.GridTiles[idx];
-                    }
+                    var tile = TryGetTileAt(grid, col, row);
 
                     if (tile == null || IsSkippedTile(tile))
                     {
@@ -324,7 +426,7 @@ namespace CursedWordsSolverCompanion
             {
                 var s = tile.GetStringRepresentation();
                 if (!string.IsNullOrWhiteSpace(s))
-                    return s.Trim();
+                    return StripRichText(s);
             }
             catch
             {
@@ -335,7 +437,7 @@ namespace CursedWordsSolverCompanion
             {
                 var s = tile.GetValueForDisplay();
                 if (!string.IsNullOrWhiteSpace(s))
-                    return s.Trim();
+                    return StripRichText(s);
             }
             catch
             {
@@ -343,6 +445,21 @@ namespace CursedWordsSolverCompanion
             }
 
             return letter ?? "?";
+        }
+
+        private static string StripRichText(string s)
+        {
+            if (string.IsNullOrEmpty(s))
+                return s;
+            var trimmed = s.Trim();
+            var match = Regex.Match(
+                trimmed,
+                @"<font[^>]*>(.*?)</font>",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline
+            );
+            if (match.Success)
+                return match.Groups[1].Value.Trim();
+            return trimmed;
         }
 
         private static string MapLetter(Tile tile, GlyphType glyph, string curse)
@@ -384,7 +501,7 @@ namespace CursedWordsSolverCompanion
                 {
                     var sym = tile.GetStringRepresentation();
                     if (!string.IsNullOrEmpty(sym))
-                        return sym.Trim();
+                        return StripRichText(sym);
                 }
                 catch
                 {

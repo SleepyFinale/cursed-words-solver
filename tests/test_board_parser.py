@@ -62,6 +62,50 @@ def test_parse_wildcard():
     assert curse == CurseType.WILDCARD
 
 
+def test_fraction_tile_not_marked_unread():
+    from cursed_words_solver.models import Tile
+    from cursed_words_solver.vision.board_parser import tile_appears_unread
+
+    tile = Tile(
+        row=2,
+        col=2,
+        char="⅗",
+        letter="?",
+        base_score=8,
+        curse=CurseType.FRACTION,
+        fraction_value=0.6,
+        metadata={"fraction_num": 3, "fraction_den": 5},
+    )
+    assert not tile_appears_unread(tile)
+
+
+def test_wildcard_tile_not_marked_unread():
+    from cursed_words_solver.models import Tile
+    from cursed_words_solver.vision.board_parser import tile_appears_unread
+
+    tile = Tile(row=0, col=0, char="?", letter="?", base_score=1, curse=CurseType.WILDCARD)
+    assert not tile_appears_unread(tile)
+
+
+def test_unknown_letter_tile_still_unread():
+    from cursed_words_solver.models import Tile
+    from cursed_words_solver.vision.board_parser import tile_appears_unread
+
+    tile = Tile(row=0, col=0, char="?", letter="?", base_score=1, curse=CurseType.LETTER)
+    assert tile_appears_unread(tile)
+    display, letter, score, curse, conf = _parse_char_and_score(["3/5"], [0.9])
+    assert curse == CurseType.FRACTION
+    assert letter == "?"
+    assert score == 8
+
+
+def test_parse_vulgar_fraction():
+    display, letter, score, curse, conf = _parse_char_and_score(["⅗"], [0.9])
+    assert curse == CurseType.FRACTION
+    assert letter == "?"
+    assert score == 8
+
+
 def test_chess_requires_full_word():
     display, letter, score, curse, conf = _parse_char_and_score(
         ["knight"], [0.9]

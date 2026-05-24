@@ -9,21 +9,27 @@ from typing import Callable
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import (
     CHESS_CURSES,
+    CURRENCY_MAP,
     Board,
     CurseType,
     Loadout,
     Tile,
     TileColor,
     WordResult,
+    normalize_tile_glyph,
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.scoring_conditions import (
     CARD_SUIT_FIRST_LETTER,
     card_suit,
     is_card_tile,
+    fraction_parts,
+    is_fraction_tile,
+    is_number_like_tile,
     number_digits_ascending,
     tile_number_value,
 )
+from cursed_words_solver.rules.fraction_tiles import fraction_position_valid
 from cursed_words_solver.rules.stamp_behaviors import StampSearchFlags, stamp_search_flags
 
 # 8 directions
@@ -99,6 +105,8 @@ def resolve_letter(
         return tile.letter if tile.letter != "?" else "?"
     if tile.curse == CurseType.NUMBER:
         return tile.letter
+    if tile.curse == CurseType.FRACTION:
+        return "?"
     if flags and flags.card_suit_first_letter and is_card_tile(tile):
         suit = card_suit(tile)
         if suit and suit in CARD_SUIT_FIRST_LETTER:
@@ -206,15 +214,6 @@ def number_position_valid(
     return pos == nv
 
 
-def fraction_position_valid(
-    tile: Tile, position: int, word_len: int, relaxed: bool = False
-) -> bool:
-    if relaxed or tile.curse != CurseType.FRACTION:
-        return True
-    # Can occur at numerator or denominator position — allow either slot from OCR
-    return True
-
-
 class PathValidator:
     def __init__(
         self,
@@ -268,6 +267,9 @@ class PathValidator:
         word: str,
         stamp_flags: StampSearchFlags | None,
     ) -> bool:
+        relaxed_fractions = self.relaxed_numbers or any(
+            ch.isdigit() for ch in word
+        ) and any(is_fraction_tile(board.get_by_index(idx)) for idx in path)
         for i, idx in enumerate(path):
             tile = board.get_by_index(idx)
             if not number_position_valid(
@@ -278,7 +280,7 @@ class PathValidator:
                 segment=word,
             ):
                 return False
-            if not fraction_position_valid(tile, i, len(word), self.relaxed_numbers):
+            if not fraction_position_valid(tile, i, relaxed_fractions):
                 return False
         return True
 
@@ -289,10 +291,10 @@ class PathValidator:
         word: str,
         stamp_flags: StampSearchFlags | None,
     ) -> bool:
-        if "?" in word:
-            return self._wildcard_valid(word)
         if any(ch.isdigit() for ch in word):
             return self._number_word_valid(board, path, word, stamp_flags)
+        if "?" in word:
+            return self._wildcard_valid(word)
         return self.dictionary.is_valid_word(word, self.min_len)
 
     def _stitched_word_ok(
@@ -328,7 +330,7 @@ class PathValidator:
                     if nbr in visited:
                         continue
                     tile = board.get_by_index(nbr)
-                    if tile.curse == CurseType.NUMBER:
+                    if is_number_like_tile(tile):
                         return True
                     next_frontier.append(nbr)
             if not next_frontier:
@@ -380,6 +382,9 @@ class PathValidator:
                         return False
                     pattern_chars.append("?")
                     continue
+                if is_fraction_tile(tile):
+                    pattern_chars.append("?")
+                    continue
                 if tile.curse != CurseType.NUMBER:
                     return False
                 digit = int(ch)
@@ -406,6 +411,9 @@ class PathValidator:
                     return False
                 pattern_chars.append("?")
             else:
+                if is_fraction_tile(tile):
+                    pattern_chars.append("?")
+                    continue
                 if tile.curse == CurseType.NUMBER:
                     if (
                         stamp_flags
@@ -475,9 +483,11 @@ def neighbors_standard(
 
 def _physical_letter(tile: Tile) -> str:
     """Glyph on tile for Full Moon matching (not word-position transforms like Flamingo)."""
-    letter = (tile.letter or "").upper()
-    if len(letter) == 1 and letter.isalpha():
-        return letter
+    glyph = normalize_tile_glyph(tile.char or "")
+    if tile.curse == CurseType.CURRENCY:
+        return glyph if glyph in CURRENCY_MAP else ""
+    if len(glyph) == 1 and glyph.isalpha():
+        return glyph.upper()
     return ""
 
 
@@ -573,10 +583,23 @@ def _neighbors_sorted_by_base_score(
     flags: StampSearchFlags | None = None,
 ) -> list[int]:
     nbrs = neighbors_from_tile(board, path, visited, flags=flags)
-    nbrs.sort(
-        key=lambda idx: board.get_by_index(idx).base_score,
-        reverse=True,
-    )
+    last = board.get_by_index(path[-1])
+
+    def sort_key(idx: int) -> tuple[int, float, int]:
+        tile = board.get_by_index(idx)
+        base = float(tile.base_score)
+        if is_fraction_tile(last):
+            if tile.curse == CurseType.NUMBER:
+                return (0, -base, idx)
+            return (2, -base, idx)
+        if last.curse == CurseType.NUMBER:
+            if is_fraction_tile(tile):
+                return (0, -base, idx)
+            if is_number_like_tile(tile):
+                return (1, -base, idx)
+        return (3, -base, idx)
+
+    nbrs.sort(key=sort_key)
     return nbrs
 
 
@@ -585,17 +608,19 @@ def _number_tile_start_indices(board: Board) -> list[int]:
     starts = [
         i
         for i in _active_indices(board)
-        if board.get_by_index(i).curse == CurseType.NUMBER
+        if is_number_like_tile(board.get_by_index(i))
     ]
-    return sorted(
-        starts,
-        key=lambda i: (
-            board.get_by_index(i).number_value
-            if board.get_by_index(i).number_value is not None
-            else 99,
-            i,
-        ),
-    )
+    def _face_key(i: int) -> int:
+        tile = board.get_by_index(i)
+        if tile.number_value is not None:
+            return tile.number_value
+        if is_fraction_tile(tile):
+            parts = fraction_parts(tile)
+            if parts is not None:
+                return parts[0]
+        return 99
+
+    return sorted(starts, key=lambda i: (_face_key(i), i))
 
 
 def _is_wildcard_tile(tile: Tile) -> bool:
@@ -613,6 +638,13 @@ def _balanced_start_indices(board: Board) -> list[int]:
         tile = board.get_by_index(i)
         if _is_wildcard_tile(tile):
             return (0, 0.0, 0, i)
+        if is_fraction_tile(tile):
+            return (0, 0.0, 0, i)
+        if tile.curse == CurseType.NUMBER and (
+            float(tile.base_score) >= 40.0 or _adjacent_to_fraction(board, i)
+        ):
+            nv = tile.number_value if tile.number_value is not None else 99
+            return (0, -float(tile.base_score), nv, i)
         if tile.curse == CurseType.LETTER:
             return (1, -float(tile.base_score), 0, i)
         if tile.curse == CurseType.NUMBER:
@@ -628,7 +660,13 @@ def _interleaved_number_starts(board: Board) -> list[int]:
     buckets: dict[int, list[int]] = {}
     for i in _number_tile_start_indices(board):
         tile = board.get_by_index(i)
-        face = tile.number_value if tile.number_value is not None else 99
+        if tile.number_value is not None:
+            face = tile.number_value
+        elif is_fraction_tile(tile):
+            parts = fraction_parts(tile)
+            face = parts[0] if parts is not None else 99
+        else:
+            face = 99
         buckets.setdefault(face, []).append(i)
     faces = sorted(buckets)
     out: list[int] = []
@@ -637,6 +675,32 @@ def _interleaved_number_starts(board: Board) -> list[int]:
             if buckets[face]:
                 out.append(buckets[face].pop(0))
     return out
+
+
+def _adjacent_to_fraction(board: Board, idx: int) -> bool:
+    for nbr in neighbors_from_tile(board, [idx], 1 << idx):
+        if is_fraction_tile(board.get_by_index(nbr)):
+            return True
+    return False
+
+
+def _fraction_cluster_number_starts(board: Board) -> list[int]:
+    """NUMBER tiles touching a fraction tile; high base score first (shiny cluster)."""
+    fraction_indices = [
+        i for i in _active_indices(board) if is_fraction_tile(board.get_by_index(i))
+    ]
+    if not fraction_indices:
+        return []
+    starts: set[int] = set()
+    for fi in fraction_indices:
+        for nbr in neighbors_from_tile(board, [fi], 1 << fi):
+            tile = board.get_by_index(nbr)
+            if tile.curse == CurseType.NUMBER:
+                starts.add(nbr)
+    return sorted(
+        starts,
+        key=lambda i: (-float(board.get_by_index(i).base_score), i),
+    )
 
 
 def _line_neighbors(
@@ -821,7 +885,8 @@ class WordSearcher:
         candidates = _CandidateHeap(heap_k)
         start_time = time.monotonic()
         deadline = start_time + self.time_budget
-        has_number_tiles = any(t.curse == CurseType.NUMBER for t in board.flat)
+        has_number_tiles = any(is_number_like_tile(t) for t in board.flat)
+        has_fraction_tiles = any(is_fraction_tile(t) for t in board.flat)
         void_letter_starts = [
             i
             for i in _active_indices(board)
@@ -830,19 +895,26 @@ class WordSearcher:
         ]
         if has_number_tiles:
             number_reserve = min(10.0, self.time_budget * 0.45)
+            fraction_cluster_reserve = (
+                min(15.0, self.time_budget * 0.35) if has_fraction_tiles else 0.0
+            )
             void_reserve = (
                 min(3.0, self.time_budget * 0.35) if void_letter_starts else 0.0
             )
-            reserved = number_reserve + void_reserve
+            reserved = number_reserve + void_reserve + fraction_cluster_reserve
             cap = self.time_budget * 0.85
             if reserved > cap and reserved > 0:
                 scale = cap / reserved
                 number_reserve *= scale
                 void_reserve *= scale
+                fraction_cluster_reserve *= scale
         else:
             number_reserve = 0.0
             void_reserve = 0.0
-        main_deadline = deadline - number_reserve - void_reserve
+            fraction_cluster_reserve = 0.0
+        main_deadline = (
+            deadline - number_reserve - void_reserve - fraction_cluster_reserve
+        )
 
         letter_starts = _balanced_start_indices(board)
         # Short budgets: one pass at max_len. Longer budgets: deepen so DFS does not
@@ -864,6 +936,33 @@ class WordSearcher:
             )
 
         if has_number_tiles:
+            if fraction_cluster_reserve > 0 and time.monotonic() < deadline:
+                cluster_starts = _fraction_cluster_number_starts(board)
+                if cluster_starts:
+                    cluster_deadline = min(
+                        deadline, time.monotonic() + fraction_cluster_reserve
+                    )
+                    priority_starts = [
+                        i
+                        for i in cluster_starts
+                        if float(board.get_by_index(i).base_score) >= 40.0
+                    ]
+                    if not priority_starts:
+                        priority_starts = cluster_starts[:1]
+                    cluster_cap = min(9, self.max_len)
+                    for cap in range(7, cluster_cap + 1):
+                        if time.monotonic() >= cluster_deadline:
+                            break
+                        self._collect_words_fair_starts(
+                            board,
+                            loadout,
+                            candidates,
+                            cluster_deadline,
+                            cap,
+                            priority_starts,
+                            digits_only=True,
+                        )
+
             if void_letter_starts and time.monotonic() < deadline:
                 void_cap = 7 if self.max_len >= 7 else self.max_len
                 void_deadline = min(deadline, time.monotonic() + void_reserve)

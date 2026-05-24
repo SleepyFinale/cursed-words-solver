@@ -91,7 +91,23 @@ def test_format_loadout_summary_boss_name_and_internal_id():
             "stamps": [],
         }
     )
-    assert "boss=Cretaceous Meg (bossdino)" in format_loadout_summary(lo)
+    assert "boss=bossdino" in format_loadout_summary(lo)
+    assert "Cretaceous Meg" not in format_loadout_summary(lo)
+
+
+def test_format_loadout_summary_bosssmallgrid_shows_id_only():
+    lo = parse_run_state(
+        {
+            "character": "Nina Nix",
+            "boss_id": "bosssmallgrid",
+            "boss_name": "4x4 Grid",
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+    summary = format_loadout_summary(lo)
+    assert "boss=bosssmallgrid" in summary
+    assert "4x4 Grid" not in summary
 
 
 def test_format_loadout_summary_boss_id_only_when_name_matches_slug():

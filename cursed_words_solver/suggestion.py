@@ -32,6 +32,14 @@ SOLVER_VERSION = "0.1.0"
 
 
 
+def format_suggestion_word(result: WordResult) -> str:
+    """Human-readable suggestion: scoring pattern → dictionary word when they differ."""
+    if result.dictionary_word and result.dictionary_word.lower() != result.word.lower():
+        return f"{result.word} → {result.dictionary_word}"
+    return result.word
+
+
+
 
 
 def _fixed_letters_align(scoring_word: str, candidate: str) -> bool:

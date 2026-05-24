@@ -72,12 +72,17 @@ from cursed_words_solver.rules.scoring_conditions import (
     target_chess_curse_from_loadout,
     target_score_from_loadout,
     evaluate_sticker_condition,
+    explain_sticker_condition,
+    first_letter_on_path,
+    word_first_letter,
     detect_card_hand,
     unused_cards_on_board,
     is_colored_number_tile,
+    is_number_like_tile,
     NON_COLOUR_FOR_NUMBER_BONUS,
     is_consumable_tile,
     mahjong_consumable_factor,
+    money_for_scoring,
     money_word_multiplier,
     number_sum_on_path,
     number_tile_count_on_path,
@@ -206,17 +211,32 @@ def _apply_void_path_bonuses(
         )
 
 
-def _queue_word_multiplier(state: dict[str, Any], factor: float) -> None:
+def _pending_multiplier_factor(entry: float | tuple[float, str]) -> float:
+    if isinstance(entry, tuple):
+        return float(entry[0])
+    return float(entry)
+
+
+def _pending_multiplier_rule_id(entry: float | tuple[float, str]) -> str:
+    if isinstance(entry, tuple) and len(entry) > 1:
+        return str(entry[1])
+    return ""
+
+
+def _queue_word_multiplier(
+    state: dict[str, Any], factor: float, rule_id: str = ""
+) -> None:
     """Queue ×WORD SCORE for step 7 (wiki: applied after tile sum + word score)."""
     if factor == 1.0:
         return
-    state["pending_word_multipliers"].append(factor)
+    state["pending_word_multipliers"].append((factor, rule_id))
     state["multiplier"] *= factor
 
 
 def _flush_word_multipliers_to_tiles(state: dict[str, Any]) -> None:
     """Apply queued ×WORD to tile scores only (before later +WORD SCORE adds)."""
-    for factor in state.get("pending_word_multipliers", []):
+    for entry in state.get("pending_word_multipliers", []):
+        factor = _pending_multiplier_factor(entry)
         if factor != 1.0:
             for i in range(len(state["tile_scores"])):
                 state["tile_scores"][i] *= factor
@@ -248,10 +268,64 @@ def _trace_step(state: dict[str, Any], phase: str, **fields: Any) -> None:
     trace.append(entry)
 
 
+def _trace_rule_snapshot(state: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        tuple(state["tile_scores"]),
+        float(state["word_score"]),
+        len(state.get("pending_word_multipliers", [])),
+        int(state.get("money_bonus", 0)),
+    )
+
+
+def _trace_rule_step(
+    state: dict[str, Any],
+    *,
+    rule_id: str,
+    effect_type: str,
+    before: tuple[Any, ...],
+    effects_before: int,
+    rule: dict,
+    trace_context: dict[str, Any] | None = None,
+) -> None:
+    if state.get("_trace") is None:
+        return
+    after = _trace_rule_snapshot(state)
+    applied = before != after
+    effects = state.get("effects") or []
+    ctx = trace_context or {}
+    if ctx.get("condition_explanation"):
+        detail = str(ctx["condition_explanation"])
+    elif applied and len(effects) > effects_before:
+        detail = str(effects[-1])
+    elif applied:
+        detail = effect_type
+    else:
+        condition = rule.get("condition", "")
+        detail = f"skipped ({condition})" if condition else f"skipped ({effect_type})"
+    fields: dict[str, Any] = {
+        "rule_id": rule_id,
+        "effect_type": effect_type,
+        "applied": applied,
+        "detail": detail,
+    }
+    if ctx:
+        for key in (
+            "condition",
+            "condition_met",
+            "word_first_letter",
+            "path_first_letter",
+            "skip_reason",
+        ):
+            if key in ctx:
+                fields[key] = ctx[key]
+    _trace_step(state, "rule", **fields)
+
+
 def _finalize(state: dict[str, Any]) -> float:
     """Sum tile + word scores, then apply queued ×WORD multipliers with floor each step."""
     total = sum(state["tile_scores"]) + state["word_score"]
-    for factor in state.get("pending_word_multipliers", []):
+    for entry in state.get("pending_word_multipliers", []):
+        factor = _pending_multiplier_factor(entry)
         if factor != 1.0:
             total = math.floor(total * factor)
     return float(total)
@@ -264,16 +338,19 @@ def _finalize_with_trace(state: dict[str, Any]) -> tuple[float, list[dict[str, A
     mult_trace: list[dict[str, Any]] = []
     if trace is not None:
         _trace_step(state, "pre_multiply", detail="tile sum + word score")
-    for factor in state.get("pending_word_multipliers", []):
+    for entry in state.get("pending_word_multipliers", []):
+        factor = _pending_multiplier_factor(entry)
+        mult_rule_id = _pending_multiplier_rule_id(entry)
         if factor != 1.0:
             total = math.floor(total * factor)
             if trace is not None:
-                _trace_step(
-                    state,
-                    "multiply",
-                    factor=float(factor),
-                    detail=f"×{factor} word (floor)",
-                )
+                fields: dict[str, Any] = {
+                    "factor": float(factor),
+                    "detail": f"×{factor} word (floor)",
+                }
+                if mult_rule_id:
+                    fields["rule_id"] = mult_rule_id
+                _trace_step(state, "multiply", **fields)
     return float(total), mult_trace
 
 
@@ -703,7 +780,12 @@ class ScoringPipeline:
 
             return state
 
-
+        trace_before = (
+            _trace_rule_snapshot(state) if state.get("_trace") is not None else None
+        )
+        effects_before = len(state.get("effects") or [])
+        rule_trace_context: dict[str, Any] = {}
+        rule_id = applying_sticker_id or str(rule.get("id", "") or rule.get("name", ""))
 
         value = sticker_rule_int(level, rule) if "base" in rule or effect_type in (
             "add_tile_score",
@@ -745,7 +827,7 @@ class ScoringPipeline:
 
                 factor = brain_multiplier(level, rule)
 
-                _queue_word_multiplier(state, factor)
+                _queue_word_multiplier(state, factor, rule_id)
 
                 state["effects"].append(
 
@@ -802,7 +884,7 @@ class ScoringPipeline:
                     if target == "chess_take" and is_take_tile(tile, strict=strict_takes):
                         state["tile_scores"][i] *= factor
                         applied += 1
-                    elif target == "number" and tile.curse == CurseType.NUMBER:
+                    elif target == "number" and is_number_like_tile(tile):
                         mult = factor
                         if rule.get("scale_by_path_position"):
                             mult = float(i + 1)
@@ -891,7 +973,9 @@ class ScoringPipeline:
             if word_mode == "per_path_tile":
                 bonus = sticker_rule_int(level, rule) * len(path)
             elif word_mode == "per_money":
-                bonus = sticker_rule_int(level, rule) * max(board.money, loadout.money, 0)
+                bonus = sticker_rule_int(level, rule) * money_for_scoring(
+                    board, path, loadout
+                )
             elif word_mode == "per_void_unused":
                 n = void_tiles_unused_in_word(board, path)
                 bonus = sticker_rule_int(level, rule) * n
@@ -914,12 +998,14 @@ class ScoringPipeline:
             elif word_mode == "birthday_cake_bonus":
                 high = highest_number_on_path(board, path)
                 accumulated = birthday_cake_accumulated(loadout)
-                improve = sticker_rule_int(level, rule) * high if high else 0
+                level_factor = sticker_rule_int(level, rule)
+                raw_improve = level_factor * high if high else 0.0
+                improve = int(math.floor(raw_improve + 0.5))
                 bonus = accumulated + improve
                 if bonus:
                     state["effects"].append(
                         f"+{bonus} word score (Birthday Cake: {accumulated}"
-                        f" + {high}×{sticker_rule_int(level, rule)})"
+                        f" + {improve})"
                     )
             elif word_mode == "if_contains_target_number":
                 if evaluate_sticker_condition(
@@ -984,14 +1070,26 @@ class ScoringPipeline:
 
         elif effect_type == "multiply_word_scaled":
             condition = rule.get("condition", "")
+            cond_explanation = ""
             if not condition:
                 met = True
+                cond_explanation = "applied: no condition"
             elif condition == "word_base_negative":
                 met = state["base_score"] < 0
+                cond_explanation = (
+                    "applied: negative base"
+                    if met
+                    else "skipped: base score not negative"
+                )
             elif condition == "word_base_eq_target":
                 met = state["base_score"] == target_score_from_loadout(loadout)
+                cond_explanation = (
+                    "applied: base equals target"
+                    if met
+                    else "skipped: base score not equal to target"
+                )
             else:
-                met = evaluate_sticker_condition(
+                met, cond_explanation = explain_sticker_condition(
                     condition,
                     board,
                     path,
@@ -999,9 +1097,23 @@ class ScoringPipeline:
                     loadout,
                     applying_sticker_id=applying_sticker_id,
                 )
+            rule_trace_context = {
+                "condition": condition,
+                "condition_met": met,
+                "condition_explanation": cond_explanation,
+            }
+            if condition == "word_starts_vwxyz":
+                rule_trace_context["word_first_letter"] = word_first_letter(
+                    state["word"]
+                )
+                rule_trace_context["path_first_letter"] = first_letter_on_path(
+                    board, path
+                )
+            if not met:
+                rule_trace_context["skip_reason"] = cond_explanation
             if met:
                 factor = scaled_word_multiplier(level, rule, loadout, path=path)
-                _queue_word_multiplier(state, factor)
+                _queue_word_multiplier(state, factor, rule_id)
                 label = condition or rule.get("scale_from_extras", "scaled")
                 state["effects"].append(f"×{factor} word ({label})")
 
@@ -1023,21 +1135,21 @@ class ScoringPipeline:
             min_count = int(rule.get("min_letter_count", 3))
             factor = max_qualifying_letter_half_multiplier(board, path, min_count)
             if factor > 1.0:
-                _queue_word_multiplier(state, factor)
+                _queue_word_multiplier(state, factor, rule_id)
                 state["effects"].append(f"×{factor} word (letter count ≥{min_count})")
 
         elif effect_type == "multiply_word_by_longest_red_run":
             run = longest_red_run_on_path(board, path)
             if run >= 1:
                 factor = float(run)
-                _queue_word_multiplier(state, factor)
+                _queue_word_multiplier(state, factor, rule_id)
                 state["effects"].append(f"×{factor} word (RED run {run})")
 
         elif effect_type == "multiply_word_per_path_tile":
             per_tile = float(rule.get("factor", -1.1))
             if path:
                 factor = per_tile ** len(path)
-                _queue_word_multiplier(state, factor)
+                _queue_word_multiplier(state, factor, rule_id)
                 state["effects"].append(
                     f"×{factor} word ({len(path)} tile(s) @ {per_tile})"
                 )
@@ -1046,7 +1158,7 @@ class ScoringPipeline:
             n = unique_colour_count_on_path(board, path)
             if n >= 1:
                 factor = float(n)
-                _queue_word_multiplier(state, factor)
+                _queue_word_multiplier(state, factor, rule_id)
                 state["effects"].append(
                     f"×{factor} word ({n} unique colour(s))"
                 )
@@ -1055,7 +1167,7 @@ class ScoringPipeline:
             n = unique_curse_type_count_on_path(board, path)
             if n >= 1:
                 factor = float(n)
-                _queue_word_multiplier(state, factor)
+                _queue_word_multiplier(state, factor, rule_id)
                 state["effects"].append(
                     f"×{factor} word ({n} unique curse type(s))"
                 )
@@ -1065,7 +1177,7 @@ class ScoringPipeline:
                 n = number_tile_count_on_path(board, path)
                 if n >= 1:
                     factor = float(n)
-                    _queue_word_multiplier(state, factor)
+                    _queue_word_multiplier(state, factor, rule_id)
                     state["effects"].append(
                         f"×{factor} word ({n} number tile(s))"
                     )
@@ -1087,27 +1199,29 @@ class ScoringPipeline:
             if pairs:
                 rate = scaled_word_multiplier(level, rule)
                 for _ in range(pairs):
-                    _queue_word_multiplier(state, rate)
+                    _queue_word_multiplier(state, rate, rule_id)
                 state["effects"].append(
                     f"×{rate}^{pairs} word ({pairs} distinct pair(s))"
                 )
 
         elif effect_type == "multiply_money_bonus":
-            factor = money_word_multiplier(level, rule, max(board.money, loadout.money, 0))
+            factor = money_word_multiplier(
+                level, rule, money_for_scoring(board, path, loadout)
+            )
             if factor != 1.0:
-                _queue_word_multiplier(state, factor)
+                _queue_word_multiplier(state, factor, rule_id)
                 state["effects"].append(f"×{factor} word (money bonus)")
 
         elif effect_type == "multiply_consumable_rack":
             factor = consumable_rack_multiplier(level, rule, loadout)
             if factor != 1.0:
-                _queue_word_multiplier(state, factor)
+                _queue_word_multiplier(state, factor, rule_id)
                 state["effects"].append(f"×{factor} word (consumable rack)")
 
         elif effect_type == "multiply_word_other_sticker_levels":
             factor = burrito_word_multiplier(level, rule, loadout)
             if factor != 1.0:
-                _queue_word_multiplier(state, factor)
+                _queue_word_multiplier(state, factor, rule_id)
                 state["effects"].append(f"×{factor} word (other sticker levels)")
 
         elif effect_type == "red_encounter_tile_bonus":
@@ -1127,23 +1241,32 @@ class ScoringPipeline:
 
         elif effect_type == "multiply":
             condition = rule.get("condition", "")
-            if condition and not evaluate_sticker_condition(
-                condition,
-                board,
-                path,
-                state["word"],
-                loadout,
-                applying_sticker_id=applying_sticker_id,
-            ):
-                pass
+            if condition:
+                met, cond_explanation = explain_sticker_condition(
+                    condition,
+                    board,
+                    path,
+                    state["word"],
+                    loadout,
+                    applying_sticker_id=applying_sticker_id,
+                )
+                rule_trace_context = {
+                    "condition": condition,
+                    "condition_met": met,
+                    "condition_explanation": cond_explanation,
+                }
+                if not met:
+                    rule_trace_context["skip_reason"] = cond_explanation
             else:
+                met = True
+            if not condition or met:
                 factor = float(rule.get("factor", 1.0))
                 mushy = (loadout.extras or {}).get("avocado_mushy")
                 if mushy in (True, "true", "True", "1", 1):
                     factor = -2.0
                 if level > 1 and factor > 0:
                     factor = factor**level
-                _queue_word_multiplier(state, factor)
+                _queue_word_multiplier(state, factor, rule_id)
                 state["effects"].append(f"×{factor} multiplier")
 
         elif effect_type == "red_tile_bonus":
@@ -1344,16 +1467,16 @@ class ScoringPipeline:
         elif effect_type in ("boss_word_min_length", "boss_word_max_length"):
             pass
 
-        rule_id = applying_sticker_id or str(rule.get("id", "") or rule.get("name", ""))
-        effects = state.get("effects") or []
-        detail = str(effects[-1]) if effects else effect_type
-        _trace_step(
-            state,
-            "rule",
-            rule_id=rule_id,
-            effect_type=effect_type,
-            detail=detail,
-        )
+        if trace_before is not None:
+            _trace_rule_step(
+                state,
+                rule_id=rule_id,
+                effect_type=effect_type,
+                before=trace_before,
+                effects_before=effects_before,
+                rule=rule,
+                trace_context=rule_trace_context,
+            )
         return state
 
 

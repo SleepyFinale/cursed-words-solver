@@ -48,6 +48,9 @@ namespace CursedWordsSolverCompanion
             var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             var outPath = Path.Combine(MismatchDir, ts + ".json");
 
+            var runStateSnapshot = CloneRunStateSnapshot(suggestion.run_state_snapshot);
+            ScoringContextCapture.MergeExtrasIntoSnapshot(runStateSnapshot, extrasSnapshot);
+
             var payload = new Dictionary<string, object>
             {
                 ["word"] = word,
@@ -58,7 +61,7 @@ namespace CursedWordsSolverCompanion
                 ["board_fingerprint"] = boardFingerprint ?? "",
                 ["loadout_fingerprint"] = loadoutFingerprint ?? "",
                 ["predicted_trace"] = suggestion.predicted_trace ?? new JArray(),
-                ["run_state_snapshot"] = suggestion.run_state_snapshot,
+                ["run_state_snapshot"] = runStateSnapshot,
                 ["actual_trace"] = actualTrace ?? new List<Dictionary<string, object>>(),
                 ["extras_snapshot"] = extrasSnapshot ?? new Dictionary<string, string>(),
                 ["game_types"] = new Dictionary<string, string>
@@ -81,6 +84,21 @@ namespace CursedWordsSolverCompanion
                     + " → "
                     + outPath
             );
+        }
+
+        private static Dictionary<string, object> CloneRunStateSnapshot(object snapshot)
+        {
+            if (snapshot == null)
+                return new Dictionary<string, object>();
+
+            if (snapshot is Dictionary<string, object> dict)
+                return new Dictionary<string, object>(dict);
+
+            if (snapshot is JObject jobj)
+                return jobj.ToObject<Dictionary<string, object>>()
+                    ?? new Dictionary<string, object>();
+
+            return new Dictionary<string, object>();
         }
     }
 }

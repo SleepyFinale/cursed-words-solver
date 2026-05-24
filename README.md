@@ -120,7 +120,7 @@ Pressing **F8** starts `_solve_worker` in [`app.py`](cursed_words_solver/app.py)
 
 Melmod provides *what* is on each tile; calibration tells the solver *where* the board is on screen.
 
-- **Result panel** — [`overlay.py`](cursed_words_solver/ui/overlay.py): frameless, always-on-top widget in the **second column from the left**. Shows the best word and score, alternates, warnings, and an optional thumbnail from the last board capture.
+- **Result panel** — [`overlay.py`](cursed_words_solver/ui/overlay.py): frameless, always-on-top widget in the **second column from the left**. Shows the best word and score, warnings, and an optional thumbnail from the last board capture.
 - **On-board path** — [`board_highlight.py`](cursed_words_solver/ui/board_highlight.py): transparent, click-through window aligned to `board_region`. Numbered green circles and a connecting line mark the click order (`path_geometry`).
 - **Calibration** — **F10** runs [`calibrate.py`](cursed_words_solver/vision/calibrate.py); required for highlights even when using melmod.
 - **Auto-clear** — When melmod is active, highlights watch board/loadout [fingerprints](cursed_words_solver/fingerprints.py) and clear on shop entry or a new round. Press **ESC** to hide manually.

@@ -109,6 +109,55 @@ namespace CursedWordsSolverCompanion
             return result;
         }
 
+        /// <summary>
+        /// Merge post-submit extras into run_state.json so F8 sees updated values (e.g. Birthday Cake).
+        /// </summary>
+        public static void TryMergeExtrasAfterSubmit()
+        {
+            try
+            {
+                if (!File.Exists(OutputPath))
+                    return;
+
+                var freshExtras = BuildExtrasSnapshot();
+                if (freshExtras == null || freshExtras.Count == 0)
+                    return;
+
+                var json = File.ReadAllText(OutputPath, Encoding.UTF8);
+                var root = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
+                if (root == null)
+                    return;
+
+                var merged = new Dictionary<string, string>();
+                object extrasObj;
+                if (root.TryGetValue("extras", out extrasObj) && extrasObj != null)
+                {
+                    var existing = extrasObj as Dictionary<string, string>;
+                    if (existing != null)
+                    {
+                        foreach (var kv in existing)
+                            merged[kv.Key] = kv.Value ?? "";
+                    }
+                    else if (extrasObj is Newtonsoft.Json.Linq.JObject jobj)
+                    {
+                        foreach (var prop in jobj.Properties())
+                            merged[prop.Name] = prop.Value?.ToString() ?? "";
+                    }
+                }
+
+                foreach (var kv in freshExtras)
+                    merged[kv.Key] = kv.Value ?? "";
+
+                root["extras"] = merged;
+                var updated = JsonConvert.SerializeObject(root, Formatting.Indented);
+                File.WriteAllText(OutputPath, updated, new UTF8Encoding(false));
+            }
+            catch
+            {
+                // ignore — F7 full export still available
+            }
+        }
+
         private static Player GetPlayer()
         {
             try
@@ -652,7 +701,7 @@ namespace CursedWordsSolverCompanion
             );
         }
 
-        private static int TryGetBirthdayCakeBonus(Player player)
+        public static int TryGetBirthdayCakeBonus(Player player)
         {
             var fromPlayer = TryGetIntProperty(
                 player,

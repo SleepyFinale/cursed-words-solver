@@ -9,7 +9,7 @@ from cursed_words_solver.loadout import (
     parse_run_state,
 )
 from cursed_words_solver.rules.boss_effects import boss_word_constraints, load_rules_catalog
-from cursed_words_solver.models import CurseType, TileColor
+from cursed_words_solver.models import CurseType, TileColor, normalize_tile_glyph
 from cursed_words_solver.vision.board_parser import format_board_grid
 
 SAMPLE_BOARD_JSON = {
@@ -144,8 +144,50 @@ def test_tile_color_mapping():
     assert board.get(0, 0).color == TileColor.SHINY
 
 
-def _bat_3x4_run_state() -> dict:
-    """Bat shrunk grid: 3 rows × 4 cols (top_first, anchored at rows 2–4 in 5×5)."""
+def _currency_font_wrap_run_state() -> dict:
+    """Melmod exports currency with Unity <font> tags around the symbol."""
+    tiles = [
+        {
+            "row": r,
+            "col": c,
+            "char": "A",
+            "letter": "A",
+            "curse": "letter",
+            "color": "colorless",
+            "base_score": 1,
+        }
+        for r in range(5)
+        for c in range(5)
+    ]
+    for t in tiles:
+        if t["row"] == 1 and t["col"] == 2:
+            t["char"] = "<font=InterBold SDF>₦</font>"
+            t["letter"] = "<font=InterBold SDF>₦</font>"
+            t["curse"] = "currency"
+            t["base_score"] = 0
+    return {"board": {"source": "melmod", "row_order": "top_first", "tiles": tiles}}
+
+
+def test_normalize_tile_glyph_strips_font_tags():
+    wrapped = "<font=InterBold SDF>₦</font>"
+    assert normalize_tile_glyph(wrapped) == "₦"
+
+
+def test_currency_font_wrap_resolves_to_letter_n():
+    board = parse_board_from_run_state(_currency_font_wrap_run_state())
+    assert board is not None
+    tile = board.get(1, 2)
+    assert tile is not None
+    assert tile.curse == CurseType.CURRENCY
+    assert tile.char == "₦"
+    assert tile.letter == "N"
+    grid = format_board_grid(board)
+    assert "<" not in grid
+    assert "₦" in grid
+
+
+def _bat_4x3_run_state() -> dict:
+    """Bat shrunk grid: game 4×3 (4 wide, 3 tall); rows 2–4 in 5×5 storage."""
     letters = {
         (2, 0): "A",
         (2, 1): "E",
@@ -183,13 +225,22 @@ def _bat_3x4_run_state() -> dict:
             "row_order": "top_first",
             "rows": 3,
             "cols": 4,
+            "playable_origin": "bottom_left",
+            "playable_min_row": 2,
+            "playable_max_row": 4,
+            "playable_min_col": 0,
+            "playable_max_col": 3,
             "tiles": tiles,
         }
     }
 
 
-def test_parse_board_bat_3x4_from_run_state():
-    board = parse_board_from_run_state(_bat_3x4_run_state())
+# Backward-compatible alias for imports in other tests
+_bat_3x4_run_state = _bat_4x3_run_state
+
+
+def test_parse_board_bat_4x3_from_run_state():
+    board = parse_board_from_run_state(_bat_4x3_run_state())
     assert board is not None
     assert board.rows == 3
     assert board.cols == 4
@@ -199,12 +250,12 @@ def test_parse_board_bat_3x4_from_run_state():
     assert board.is_active_index(2 * 5 + 3)
 
 
-def test_format_board_grid_compact_bat_3x4():
-    board = parse_board_from_run_state(_bat_3x4_run_state())
+def test_format_board_grid_compact_bat_4x3():
+    board = parse_board_from_run_state(_bat_4x3_run_state())
     assert board is not None
     grid = format_board_grid(board, compact=True)
     lines = grid.split("\n")
-    assert lines[0] == "Playable 3×4:"
+    assert lines[0] == "Playable 4×3:"
     assert len(lines) == 4
     assert lines[1] == "A E T W"
     assert lines[2] == "R H E N"
@@ -265,6 +316,183 @@ def test_parse_run_state_bosssmallwords_alias_is_wolf():
 
     assert resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name) == "wolf"
     assert boss_word_constraints(loadout, rules, default_max_len=15).max_len == 4
+
+
+def test_parse_run_state_bigboss_alias_is_toothed_whale():
+    """In-game Toothed Whale prefab/display name is BigBoss / bigboss."""
+    data = {
+        "character": "Hayley Bayles",
+        "boss_id": "bigboss",
+        "boss_name": "BigBoss",
+        "extras": {"boss_area_number": 4},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        boss_display_name,
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "toothed_whale"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+    assert boss_display_name(loadout, rules) == "Toothed Whale"
+
+
+def test_parse_run_state_bossaddnumbers_alias_is_bison():
+    """In-game Bison prefab/runtime name is AddNumbers / bossaddnumbers."""
+    data = {
+        "character": "Nina Nix",
+        "boss_id": "bossaddnumbers",
+        "boss_name": "AddNumbers",
+        "extras": {"boss_area_number": 3},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        boss_display_name,
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "bison"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+    assert boss_display_name(loadout, rules) == "Bison"
+
+
+def test_parse_run_state_bosssell_alias_is_hyena():
+    """In-game Hyena prefab/runtime name is ForcedSell / bosssell."""
+    data = {
+        "character": "Nina Nix",
+        "boss_id": "bosssell",
+        "boss_name": "ForcedSell",
+        "extras": {"boss_area_number": 5},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        boss_display_name,
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "hyena"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+    assert boss_display_name(loadout, rules) == "Hyena"
+
+
+def test_parse_run_state_bosssmallgrid_alias_is_bat():
+    """In-game Bat prefab/display name is 4x4 Grid / bosssmallgrid."""
+    data = {
+        "character": "Nina Nix",
+        "boss_id": "bosssmallgrid",
+        "boss_name": "4x4 Grid",
+        "extras": {"boss_area_number": 4},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "bat"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+    from cursed_words_solver.rules.rule_lookup import boss_display_name
+
+    assert boss_display_name(loadout, rules) == "Bat"
+
+
+def test_parse_run_state_bossneutralise_alias_is_yeti_crab():
+    """In-game Yeti Crab prefab/display name is DiscolourTiles / bossneutralise."""
+    data = {
+        "character": "Nina Nix",
+        "boss_id": "bossneutralise",
+        "boss_name": "DiscolourTiles",
+        "extras": {"boss_area_number": 3},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "yeti_crab"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+
+
+def test_parse_run_state_bosseats_alias_is_robo_eel():
+    """In-game Robo-Eel prefab/display name is DestroyGrid / bosseats."""
+    data = {
+        "character": "Nina Nix",
+        "boss_id": "bosseats",
+        "boss_name": "DestroyGrid",
+        "extras": {"boss_area_number": 2},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "robo_eel"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+
+
+def test_parse_run_state_bossfewergrids_alias_is_badger():
+    """In-game Badger prefab/display name is FewerGrids / bossfewergrids."""
+    data = {
+        "character": "Nina Nix",
+        "boss_id": "bossfewergrids",
+        "boss_name": "FewerGrids",
+        "extras": {"boss_area_number": 1},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "badger"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
 
 
 def test_parse_run_state_bossdino_alias_is_cretaceous_meg():

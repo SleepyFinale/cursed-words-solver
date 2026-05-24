@@ -134,7 +134,7 @@ def test_brain_level1_multiplier_1_5():
     p = bd["pipeline"]
     assert p["multiplier"] == 1.5
     assert sum(p["tile_scores"]) + p["word_score"] == 15.0
-    assert p["pending_word_multipliers"] == [1.5]
+    assert p["pending_word_multipliers"] == [(1.5, "brain")]
     assert score == 22.0
 
 

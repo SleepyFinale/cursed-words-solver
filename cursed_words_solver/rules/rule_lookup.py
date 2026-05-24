@@ -143,7 +143,12 @@ def get_rule(
     return key, None
 
 
-
+def boss_display_name(loadout: Loadout, rules: dict[str, Any]) -> str:
+    """Wiki/catalog boss name for console (e.g. Bat), not prefab labels like 4x4 Grid."""
+    _, rule = get_rule(rules, "bosses", loadout.boss_id, loadout.boss_name)
+    if rule and rule.get("name"):
+        return str(rule["name"])
+    return (loadout.boss_name or loadout.boss_id or "").strip()
 
 
 def is_scoring_rule(rule: dict[str, Any] | None) -> bool:

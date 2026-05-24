@@ -11,6 +11,10 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCloseEvent, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
+from cursed_words_solver.config import Region
+from cursed_words_solver.suggestion import format_suggestion_word
+from cursed_words_solver.ui.board_highlight import path_geometry
+
 if TYPE_CHECKING:
     from cursed_words_solver.models import Board, WordResult
 
@@ -51,12 +55,6 @@ class ResultOverlay(QWidget):
         self.hero_result.hide()
         layout.addWidget(self.hero_result)
 
-        self.alternates_label = QLabel()
-        self.alternates_label.setWordWrap(True)
-        self.alternates_label.setStyleSheet("font-size: 11px; color: #888;")
-        self.alternates_label.hide()
-        layout.addWidget(self.alternates_label)
-
         self.warnings_label = QLabel()
         self.warnings_label.setWordWrap(True)
         self.warnings_label.setStyleSheet("font-size: 10px; color: #fa0;")
@@ -79,7 +77,6 @@ class ResultOverlay(QWidget):
         self._has_solved = False
         self.idle_label.show()
         self.hero_result.hide()
-        self.alternates_label.hide()
         self.warnings_label.hide()
         self.preview.hide()
         self.resize(200, 56)
@@ -96,7 +93,6 @@ class ResultOverlay(QWidget):
         warnings_html: str = "",
         on_game_highlight: bool = False,
     ) -> None:
-        del board  # letter path no longer shown in panel
         self._has_solved = True
         self.idle_label.hide()
 
@@ -108,35 +104,26 @@ class ResultOverlay(QWidget):
 
         if results:
             top = results[0]
+            word_html = format_suggestion_word(top).upper().replace(
+                " → ", "<span style='color:#8cf'> → </span>"
+            )
             self.hero_result.setText(
                 f"<span style='font-size:22px;font-weight:bold;color:#fff'>"
-                f"{top.word.upper()}</span>"
+                f"{word_html}</span>"
                 f"&nbsp;&nbsp;"
                 f"<span style='font-size:18px;font-weight:bold;color:#0f8'>"
                 f"{top.score:,.0f} pts</span>"
             )
             self.hero_result.show()
-
-            alt_lines = []
-            for i, r in enumerate(results[1:3], start=2):
-                alt_lines.append(
-                    f"#{i} {r.word.upper()} — {r.score:,.0f} pts"
-                )
-            if alt_lines:
-                self.alternates_label.setText("<br>".join(alt_lines))
-                self.alternates_label.show()
-            else:
-                self.alternates_label.hide()
         else:
             self.hero_result.setText(
                 "<span style='font-size:14px;color:#f88'>No valid words</span>"
             )
             self.hero_result.show()
-            self.alternates_label.hide()
 
         best_path = results[0].path if results else []
         if board_bgr is not None and not on_game_highlight:
-            annotated = self._draw_paths(board_bgr, results[:1])
+            annotated = self._draw_paths(board_bgr, results[:1], board)
             self._set_capture_preview(annotated)
         else:
             self.preview.hide()
@@ -174,23 +161,22 @@ class ResultOverlay(QWidget):
             h = 200
         if self.warnings_label.isVisible():
             h += 22
-        if self.alternates_label.isVisible():
-            h += 18 * min(2, self.alternates_label.text().count("<br>") + 1)
         self.resize(w, h)
 
     def _draw_paths(
-        self, board_bgr: np.ndarray, results: list
+        self,
+        board_bgr: np.ndarray,
+        results: list,
+        board: Board | None = None,
     ) -> np.ndarray:
         img = board_bgr.copy()
         h, w = img.shape[:2]
         color = (0, 255, 100)
+        region = Region(0, 0, w, h)
         for result in results[:1]:
-            pts = []
-            for idx in result.path:
-                row, col = idx // 5, idx % 5
-                cy = int((row + 0.5) * h / 5)
-                cx = int((col + 0.5) * w / 5)
-                pts.append((cx, cy))
+            steps = path_geometry(region, result.path, board)
+            pts = [(int(s.x), int(s.y)) for s in steps]
+            for cx, cy in pts:
                 cv2.circle(img, (cx, cy), max(4, min(h, w) // 25), color, -1)
             if len(pts) >= 2:
                 for j in range(len(pts) - 1):

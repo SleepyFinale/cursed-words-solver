@@ -11,6 +11,12 @@ namespace CursedWordsSolverCompanion
         public int money;
         public int rows = 5;
         public int cols = 5;
+        /// <summary>Where the shrunk grid sits in the 5×5 frame: bottom_left, top_left, center, or full.</summary>
+        public string playable_origin = "full";
+        public int playable_min_row;
+        public int playable_max_row = 4;
+        public int playable_min_col;
+        public int playable_max_col = 4;
         public List<BoardTileSnapshot> tiles = new List<BoardTileSnapshot>();
     }
 

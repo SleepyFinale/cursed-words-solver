@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -56,6 +57,25 @@ CURRENCY_MAP: dict[str, str] = {
     "₲": "G",
 }
 
+_UNITY_FONT_RE = re.compile(r"<font[^>]*>(.*?)</font>", re.IGNORECASE | re.DOTALL)
+
+
+def normalize_tile_glyph(s: str) -> str:
+    """Strip Unity rich-text wrappers and extract bare currency symbols."""
+    text = (s or "").strip()
+    if not text:
+        return text
+    match = _UNITY_FONT_RE.search(text)
+    if match:
+        text = match.group(1).strip()
+    if text in CURRENCY_MAP:
+        return text
+    for sym in CURRENCY_MAP:
+        if sym in text:
+            return sym
+    return text
+
+
 CHESS_CURSES = {
     CurseType.CHESS_PAWN,
     CurseType.CHESS_BISHOP,
@@ -95,6 +115,12 @@ class Board:
     rows: int = 5
     cols: int = 5
     active: list[bool] = field(default_factory=lambda: [True] * 25)
+    # Shrunk-grid layout from melmod (top_first row/col); empty origin = full 5×5 slots.
+    playable_origin: str = ""
+    playable_min_row: int = 0
+    playable_max_row: int = 4
+    playable_min_col: int = 0
+    playable_max_col: int = 4
 
     def __post_init__(self) -> None:
         if len(self.active) != 25:
@@ -152,6 +178,13 @@ class WordResult:
     path: list[int]  # tile indices 0-24
     score: float
     breakdown: dict[str, Any] = field(default_factory=dict)
+    dictionary_word: str | None = None
 
     def path_coords(self) -> list[tuple[int, int]]:
         return [(i // 5, i % 5) for i in self.path]
+
+    def display_word(self) -> str:
+        """Word shown in UI: resolved dictionary spelling when available."""
+        if self.dictionary_word and self.dictionary_word.lower() != self.word.lower():
+            return self.dictionary_word
+        return self.word

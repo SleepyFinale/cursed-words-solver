@@ -20,6 +20,7 @@ namespace CursedWordsSolverCompanion
         public static void Postfix()
         {
             ScoringCaptureSession.EndSubmit();
+            RunStateExporter.TryMergeExtrasAfterSubmit();
         }
     }
 
@@ -36,6 +37,7 @@ namespace CursedWordsSolverCompanion
         public static void Postfix()
         {
             ScoringCaptureSession.EndSubmit();
+            RunStateExporter.TryMergeExtrasAfterSubmit();
         }
     }
 
@@ -45,9 +47,13 @@ namespace CursedWordsSolverCompanion
         public static List<ScoreCalcVizInfo> LastCalculatedSteps;
 
         [HarmonyPrefix]
-        public static void Prefix(List<BossModifier> bossModifiers)
+        public static void Prefix(
+            List<BossModifier> bossModifiers,
+            List<HistoricWord> previousWords
+        )
         {
             BossResolver.CacheFromScoring(bossModifiers);
+            ScoringCaptureSession.OnScoringContext(previousWords);
         }
 
         [HarmonyPostfix]

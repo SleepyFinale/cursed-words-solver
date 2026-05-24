@@ -368,3 +368,85 @@ def _board_tobiano_fixture() -> Board:
     grid[4][2] = tile(4, 2, "O", 1, color=TileColor.BLUE)
     return Board(tiles=grid, money=37)
 
+
+def _board_1_fraction_245fe_fixture() -> Board:
+    """Board where 1(3/5)245FE / 1?245fe beats 134pebra (melmod 20260523)."""
+
+    def letter(
+        r: int,
+        c: int,
+        ch: str,
+        base_score: float = 1.0,
+        *,
+        color: TileColor = TileColor.COLORLESS,
+    ) -> Tile:
+        return Tile(
+            row=r,
+            col=c,
+            char=ch.lower(),
+            letter=ch.upper(),
+            base_score=base_score,
+            color=color,
+            curse=CurseType.LETTER,
+            metadata={"source": "melmod"},
+        )
+
+    def number(
+        r: int,
+        c: int,
+        ch: str,
+        face: int,
+        base_score: float,
+        *,
+        color: TileColor = TileColor.COLORLESS,
+    ) -> Tile:
+        return Tile(
+            row=r,
+            col=c,
+            char=ch,
+            letter=ch,
+            base_score=base_score,
+            color=color,
+            curse=CurseType.NUMBER,
+            number_value=face,
+            metadata={"source": "melmod"},
+        )
+
+    grid = [[letter(r, c, "Q") for c in range(5)] for r in range(5)]
+    grid[0][0] = number(0, 0, "1", 1, 1.0)
+    grid[0][1] = letter(0, 1, "T")
+    grid[0][2] = number(0, 2, "4", 4, 4.0)
+    grid[0][3] = number(0, 3, "3", 3, 3.0)
+    grid[0][4] = letter(0, 4, "U")
+    grid[1][0] = letter(1, 0, "C", 3.0)
+    grid[1][1] = letter(1, 1, "P", 3.0)
+    grid[1][2] = letter(1, 2, "S")
+    grid[1][3] = letter(1, 3, "L")
+    grid[1][4] = number(1, 4, "1", 1, 50.0, color=TileColor.SHINY)
+    grid[2][0] = letter(2, 0, "E")
+    grid[2][1] = letter(2, 1, "S")
+    grid[2][2] = letter(2, 2, "E")
+    grid[2][3] = Tile(
+        row=2,
+        col=3,
+        char="0.6",
+        letter="?",
+        base_score=50.0,
+        color=TileColor.SHINY,
+        curse=CurseType.FRACTION,
+        fraction_value=0.6,
+        metadata={"source": "melmod"},
+    )
+    grid[2][4] = letter(2, 4, "R")
+    grid[3][0] = letter(3, 0, "M", 3.0)
+    grid[3][1] = letter(3, 1, "F", 4.0)
+    grid[3][2] = number(3, 2, "2", 2, 2.0)
+    grid[3][3] = letter(3, 3, "B", 3.0)
+    grid[3][4] = number(3, 4, "3", 3, 4.0, color=TileColor.RED)
+    grid[4][0] = letter(4, 0, "I")
+    grid[4][1] = number(4, 1, "4", 4, 5.0, color=TileColor.BLUE)
+    grid[4][2] = number(4, 2, "5", 5, 0.0, color=TileColor.VOID)
+    grid[4][3] = letter(4, 3, "R")
+    grid[4][4] = letter(4, 4, "A")
+    return Board(tiles=grid, money=3)
+

@@ -16,16 +16,14 @@ from cursed_words_solver.models import (
     Board,
     CurseType,
     Tile,
+    normalize_tile_glyph,
 )
+from cursed_words_solver.rules.fraction_tiles import (
+    attach_fraction_metadata,
+    parse_fraction_parts_from_text,
+)
+from cursed_words_solver.letter_values import SCRABBLE_VALUES
 from cursed_words_solver.vision.color_detect import classify_tile_color
-
-# Scrabble letter values fallback
-SCRABBLE_VALUES: dict[str, int] = {
-    "A": 1, "B": 3, "C": 3, "D": 2, "E": 1, "F": 4, "G": 2, "H": 4,
-    "I": 1, "J": 8, "K": 5, "L": 1, "M": 3, "N": 1, "O": 1, "P": 3,
-    "Q": 10, "R": 1, "S": 1, "T": 1, "U": 1, "V": 4, "W": 4, "X": 8,
-    "Y": 4, "Z": 10,
-}
 
 LETTER_ALLOWLIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ?"
 DIGIT_ALLOWLIST = "0123456789"
@@ -266,8 +264,15 @@ def _parse_char_and_score(
     frac = re.search(r"(\d+)\s*/\s*(\d+)", combined)
     if frac:
         num, den = int(frac.group(1)), int(frac.group(2))
-        val = num + den
-        return frac.group(0), str(val), val, CurseType.FRACTION, conf
+        base = num + den
+        return frac.group(0), "?", base, CurseType.FRACTION, conf
+
+    vulgar = parse_fraction_parts_from_text(combined)
+    if vulgar is not None:
+        num, den = vulgar
+        glyph = normalize_tile_glyph(combined.strip())
+        base = num + den
+        return glyph or f"{num}/{den}", "?", base, CurseType.FRACTION, conf
 
     if len(cleaned) == 1:
         resolved = _disambiguate_letter(cleaned, None, score_override)
@@ -318,8 +323,47 @@ def _parse_char_and_score(
     return display, letter, score, curse, conf
 
 
+def tile_appears_unread(tile: Tile) -> bool:
+    """True when a tile looks unidentified (for overlay OCR warnings).
+
+    Fraction, wildcard, and chess tiles use letter ``?`` for search but are not
+    OCR failures when ``char`` carries the display glyph.
+    """
+    if tile.curse in {
+        CurseType.FRACTION,
+        CurseType.WILDCARD,
+        CurseType.CHESS_PAWN,
+        CurseType.CHESS_BISHOP,
+        CurseType.CHESS_ROOK,
+        CurseType.CHESS_KNIGHT,
+        CurseType.CHESS_QUEEN,
+        CurseType.CHESS_KING,
+    }:
+        return False
+    display = normalize_tile_glyph(tile.char or "")
+    if tile.letter == "?" and display and display != "?":
+        if parse_fraction_parts_from_text(display) is not None:
+            return False
+        if tile.curse == CurseType.NUMBER:
+            return False
+    return tile.letter == "?" or tile.char == "?"
+
+
 def _format_tile_char(tile: Tile) -> str:
-    ch = tile.char if tile.char and tile.char != "?" else tile.letter
+    if tile.curse == CurseType.FRACTION:
+        ch = normalize_tile_glyph(tile.char or "")
+        if ch and ch != "?":
+            return ch
+        parts = parse_fraction_parts_from_text(tile.char or tile.letter or "")
+        if parts is not None:
+            return f"{parts[0]}/{parts[1]}"
+    if tile.curse == CurseType.CURRENCY:
+        sym = normalize_tile_glyph(tile.char or tile.letter or "")
+        if sym in CURRENCY_MAP:
+            return sym
+        if tile.letter and len(tile.letter) == 1:
+            return tile.letter.upper()
+    ch = normalize_tile_glyph(tile.char if tile.char and tile.char != "?" else tile.letter)
     if not ch or ch == "?":
         return "?"
     if len(ch) == 1:
@@ -342,6 +386,18 @@ def _active_cell_bounds(board: Board) -> tuple[int, int, int, int] | None:
     return min_r, max_r, min_c, max_c
 
 
+def format_playable_size(board: Board) -> str:
+    """Game convention: width×height (cols×rows), e.g. 4×3 for four wide, three tall."""
+    bounds = _active_cell_bounds(board)
+    if bounds is not None:
+        min_r, max_r, min_c, max_c = bounds
+        width = max_c - min_c + 1
+        height = max_r - min_r + 1
+    else:
+        width, height = board.cols, board.rows
+    return f"{width}×{height}"
+
+
 def format_board_grid(board: Board, *, compact: bool = False) -> str:
     """ASCII grid of parsed tile chars.
 
@@ -360,9 +416,7 @@ def format_board_grid(board: Board, *, compact: bool = False) -> str:
                 for c in range(min_c, max_c + 1)
             ]
             lines.append(" ".join(cells))
-        h = max_r - min_r + 1
-        w = max_c - min_c + 1
-        header = f"Playable {h}×{w}:"
+        header = f"Playable {format_playable_size(board)}:"
         return header + "\n" + "\n".join(lines)
 
     lines = []
@@ -654,15 +708,18 @@ class BoardParser:
 
         number_value = None
         fraction_value = None
+        meta: dict = {}
         if curse == CurseType.NUMBER and letter.isdigit():
             number_value = int(letter)
         if curse == CurseType.FRACTION:
-            try:
-                fraction_value = float(letter)
-            except ValueError:
-                pass
+            parts = parse_fraction_parts_from_text(display)
+            if parts is not None:
+                num, den = parts
+                meta["fraction_num"] = num
+                meta["fraction_den"] = den
+                fraction_value = num / den if den else None
 
-        return Tile(
+        tile = Tile(
             row=row,
             col=col,
             char=display,
@@ -673,7 +730,11 @@ class BoardParser:
             number_value=number_value,
             fraction_value=fraction_value,
             ocr_confidence=conf,
+            metadata=meta,
         )
+        if curse == CurseType.FRACTION:
+            attach_fraction_metadata(tile)
+        return tile
 
     def parse_board(self, board_bgr: np.ndarray, money: int = 0) -> Board:
         self.last_cell_debug = []

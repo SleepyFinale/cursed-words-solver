@@ -8,6 +8,7 @@ from typing import Any
 
 from cursed_words_solver.config import RUN_STATE_PATH
 from cursed_words_solver.rules.rule_lookup import slugify_name
+from cursed_words_solver.rules.fraction_tiles import attach_fraction_metadata
 from cursed_words_solver.models import (
     CURRENCY_MAP,
     Board,
@@ -16,6 +17,7 @@ from cursed_words_solver.models import (
     LoadoutItem,
     Tile,
     TileColor,
+    normalize_tile_glyph,
 )
 
 
@@ -102,7 +104,7 @@ def _resolve_letter_for_word(char: str, letter: str, curse: CurseType) -> str:
     if curse == CurseType.WILDCARD:
         return "?"
     if curse == CurseType.CURRENCY:
-        sym = char or letter
+        sym = normalize_tile_glyph(char or letter)
         if sym in CURRENCY_MAP:
             return CURRENCY_MAP[sym]
         if len(letter) == 1 and letter.isalpha():
@@ -111,7 +113,7 @@ def _resolve_letter_for_word(char: str, letter: str, curse: CurseType) -> str:
     if curse == CurseType.NUMBER:
         return letter if letter else char
     if curse == CurseType.FRACTION:
-        return letter if letter else "?"
+        return "?"
     if curse == CurseType.CARD:
         ch = (letter or char or "?").strip().upper()
         return ch[:1] if ch else "?"
@@ -172,8 +174,10 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
             is_active = True
         active[idx] = bool(is_active)
 
-        char = str(entry.get("char", entry.get("char_display", "?")) or "?")
-        letter_raw = str(entry.get("letter", char) or char)
+        char = normalize_tile_glyph(
+            str(entry.get("char", entry.get("char_display", "?")) or "?")
+        )
+        letter_raw = normalize_tile_glyph(str(entry.get("letter", char) or char))
         color_key = str(entry.get("color", "colorless") or "colorless").lower()
         if not is_active:
             curse_key = "inactive"
@@ -202,7 +206,7 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
         if card_rank is not None:
             meta["card_rank"] = str(card_rank).strip().upper()[:1]
 
-        grid[row][col] = Tile(
+        tile_obj = Tile(
             row=row,
             col=col,
             char=char,
@@ -215,17 +219,55 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
             ocr_confidence=1.0,
             metadata=meta,
         )
+        if is_active and curse == CurseType.FRACTION:
+            attach_fraction_metadata(tile_obj)
+        grid[row][col] = tile_obj
 
     if any(grid[r][c] is None for r in range(5) for c in range(5)):
         return None
 
     tiles = [[grid[r][c] for c in range(5)] for r in range(5)]
+
+    playable_origin = str(board_data.get("playable_origin") or "").strip().lower()
+    has_bounds = "playable_min_row" in board_data
+    try:
+        pmin_r = int(board_data.get("playable_min_row", 0))
+        pmax_r = int(board_data.get("playable_max_row", 4))
+        pmin_c = int(board_data.get("playable_min_col", 0))
+        pmax_c = int(board_data.get("playable_max_col", 4))
+    except (TypeError, ValueError):
+        pmin_r, pmax_r, pmin_c, pmax_c = 0, 4, 0, 4
+
+    if not has_bounds and (board_rows < 5 or board_cols < 5):
+        min_r, max_r, min_c, max_c = 5, -1, 5, -1
+        for r in range(5):
+            for c in range(5):
+                if active[r * 5 + c]:
+                    min_r = min(min_r, r)
+                    max_r = max(max_r, r)
+                    min_c = min(min_c, c)
+                    max_c = max(max_c, c)
+        if max_r >= 0:
+            pmin_r, pmax_r, pmin_c, pmax_c = min_r, max_r, min_c, max_c
+            if not playable_origin:
+                if min_r == 0:
+                    playable_origin = "top_left"
+                elif max_r == 4:
+                    playable_origin = "bottom_left"
+                else:
+                    playable_origin = "bottom_left"
+
     return Board(
         tiles=tiles,
         money=money,
         rows=board_rows,
         cols=board_cols,
         active=active,
+        playable_origin=playable_origin,
+        playable_min_row=pmin_r,
+        playable_max_row=pmax_r,
+        playable_min_col=pmin_c,
+        playable_max_col=pmax_c,
     )
 
 
@@ -416,10 +458,13 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
     if loadout.boss_id or loadout.boss_name:
         bid = (loadout.boss_id or "").strip()
         bname = (loadout.boss_name or "").strip()
-        if bname and bid and bid.lower() != slugify_name(bname):
-            parts.append(f"boss={bname} ({bid})")
-        else:
-            parts.append(f"boss={bname or bid}")
+        if bid:
+            if bname and slugify_name(bname) == bid.lower():
+                parts.append(f"boss={bname}")
+            else:
+                parts.append(f"boss={bid}")
+        elif bname:
+            parts.append(f"boss={bname}")
     pin = loadout.extras.get("pin_effect")
     if pin:
         branch = f" ({loadout.pin_branch})" if loadout.pin_branch else ""

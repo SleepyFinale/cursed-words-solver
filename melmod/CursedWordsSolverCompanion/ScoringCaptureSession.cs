@@ -18,6 +18,8 @@ namespace CursedWordsSolverCompanion
         private static List<Dictionary<string, object>> _actualTrace;
         private static string _boardFingerprint;
         private static string _loadoutFingerprint;
+        private static Dictionary<string, string> _scoringContextExtras =
+            new Dictionary<string, string>();
 
         public static void BeginSubmit(
             string submitMethod,
@@ -27,6 +29,7 @@ namespace CursedWordsSolverCompanion
         {
             _active = false;
             _actualTrace = null;
+            _scoringContextExtras = new Dictionary<string, string>();
             _suggestion = SuggestionMatcher.Load();
             _word = SuggestionMatcher.WordFromSubmit(selections, words);
             _path = SuggestionMatcher.PathFromSelections(selections);
@@ -38,6 +41,10 @@ namespace CursedWordsSolverCompanion
 
             _boardFingerprint = FingerprintUtil.ComputeBoardFingerprint(player);
             _loadoutFingerprint = FingerprintUtil.ComputeLoadoutFingerprint(player);
+
+            var birthdayBonus = RunStateExporter.TryGetBirthdayCakeBonus(player);
+            if (birthdayBonus >= 0)
+                _scoringContextExtras["birthday_cake_bonus"] = birthdayBonus.ToString();
 
             if (
                 SuggestionMatcher.MatchesSuggestion(
@@ -80,6 +87,16 @@ namespace CursedWordsSolverCompanion
             BeginSubmit("PuzzleController.SubmitWord", selections, null);
         }
 
+        public static void OnScoringContext(List<HistoricWord> previousWords)
+        {
+            if (!_active)
+                return;
+
+            var captured = ScoringContextCapture.ExtractFromPreviousWords(previousWords);
+            foreach (var kv in captured)
+                _scoringContextExtras[kv.Key] = kv.Value;
+        }
+
         public static void OnScoreStepsCalculated(List<ScoreCalcVizInfo> steps)
         {
             if (!_active || steps == null)
@@ -104,6 +121,8 @@ namespace CursedWordsSolverCompanion
                 }
 
                 var extras = RunStateExporter.BuildExtrasSnapshot();
+                foreach (var kv in _scoringContextExtras)
+                    extras[kv.Key] = kv.Value;
                 MismatchExporter.ExportIfMismatch(
                     _suggestion,
                     _word,

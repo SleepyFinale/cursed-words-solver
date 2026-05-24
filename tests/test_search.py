@@ -8,6 +8,7 @@ from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 from tests.helpers.boards import (
     _board_123ifer_fixture,
+    _board_1_fraction_245fe_fixture,
     _board_boo4_fixture,
     _board_cat_horizontal,
     _board_fu34s6s_fixture,
@@ -261,6 +262,54 @@ def test_finds_1r3vo_number_word(tmp_path):
     results = searcher.find_best_words(board, top_n=20)
     words = [r.word for r in results]
     assert "1r3vo" in words
+
+
+def test_finds_1_fraction_245fe_above_134pebra(tmp_path):
+    """Regression: mixed digit+fraction words must be discoverable via find_best_words."""
+    from cursed_words_solver.config import GAME_WORDLIST_PATH
+    from cursed_words_solver.rules.pipeline import ScoringPipeline
+
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+
+    board = _board_1_fraction_245fe_fixture()
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="traffic_lights", name="Traffic Lights", level=3, kind="sticker"),
+            LoadoutItem(id="alembic_flask", name="Alembic Flask", level=2, kind="sticker"),
+            LoadoutItem(id="birthday_cake", name="Birthday Cake", level=3, kind="sticker"),
+            LoadoutItem(id="lab_coat", name="Lab Coat", level=2, kind="sticker"),
+            LoadoutItem(id="brain", name="Brain", level=3, kind="sticker"),
+        ],
+        stamps=[
+            LoadoutItem(id="hungry_snake", name="Hungry Snake", level=1, kind="sticker"),
+            LoadoutItem(id="flamingo", name="Flamingo", level=1, kind="sticker"),
+            LoadoutItem(id="test_tube", name="Test Tube", level=1, kind="sticker"),
+            LoadoutItem(id="full_battery", name="Full Battery", level=1, kind="sticker"),
+            LoadoutItem(id="limnophila", name="Limnophila", level=1, kind="sticker"),
+        ],
+        extras={
+            "pin_effect": "abacus",
+            "pin_left_level": "4",
+            "pin_right_level": "1",
+            "birthday_cake_bonus": "106",
+        },
+        money=3,
+    )
+    d = WordDictionary(GAME_WORDLIST_PATH)
+    path = [9, 13, 17, 21, 22, 16, 10]
+    word = "1?245fe"
+    scoring = ScoringPipeline()
+    assert scoring.score_total_only(board, path, word, loadout) >= 3250.0
+
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=15, time_budget=30.0)
+    results = searcher.find_best_words(board, loadout, top_n=10)
+    assert results
+    pebra_score = scoring.score_total_only(
+        board, [9, 3, 2, 6, 12, 18, 23, 24], "134pebra", loadout
+    )
+    assert results[0].score >= 3250.0
+    assert results[0].score > pebra_score
 
 
 

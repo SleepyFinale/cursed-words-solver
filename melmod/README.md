@@ -14,7 +14,7 @@ This MelonLoader mod writes files under `%USERPROFILE%\.cursed_words_solver\` wh
 
 - **F7** in-game forces an immediate refresh (MelonLoader console log)
 
-- **Boss context** — `boss_id`, `boss_name`, plus `extras.boss_area_number` (from `Player.CurrentRunProgress.GetStage()`), `extras.boss_cursed` (from `BossModifier.IsCursed`), `extras.hyena_blocked`. Boss discovery uses live `EncounterController.GetBossModifiers()` (then player `ActiveBossModifiers`); fields are **cleared** when no boss is active (leaving a Wolf fight clears `boss_id` on the next export). Scoring hooks clear their cache when `bossModifiers` is empty. Wolf maps from game type `MaxWordLength` → wiki id `wolf`. **Bat** boards export all 25 slots with `active: false` on unused cells plus `rows`/`cols` (height × width from `GridData.Dimensions`). After rebuilding the companion, press **F7** in-game before **F8** solve so shrunk grids (e.g. 3×4) export with the correct active columns.
+- **Boss context** — `boss_id`, `boss_name`, plus `extras.boss_area_number` (from `Player.CurrentRunProgress.GetStage()`), `extras.boss_cursed` (from `BossModifier.IsCursed`), `extras.hyena_blocked`. Boss discovery uses live `EncounterController.GetBossModifiers()` (then player `ActiveBossModifiers`); fields are **cleared** when no boss is active (leaving a Wolf fight clears `boss_id` on the next export). Scoring hooks clear their cache when `bossModifiers` is empty. Wolf maps from game type `MaxWordLength` → wiki id `wolf`. **Bat** boards export all 25 slots with `active: false` on unused cells plus `rows`/`cols` (height × width from `GridData.Dimensions`), `playable_origin`, and `playable_min_row`…`playable_max_col` for overlay alignment. After rebuilding the companion, press **F7** in-game before **F8** solve so shrunk grids (e.g. game **4×3**) export with the correct active columns.
 
 The Python solver reads `run_state.json` on every **F8** solve. When `board` is present, it skips screenshot OCR entirely. It prefers `game_words.txt` for word validation so suggestions match what the game accepts (ENABLE1 includes many words the game rejects).
 
@@ -30,7 +30,7 @@ When the solver’s predicted score does not match the game after you play the *
 2. Solver writes `%USERPROFILE%\.cursed_words_solver\last_suggestion.json` (`scoring_word` / `word`, `path`, fingerprints, `predicted_trace`; optional `dictionary_word` when the game will spell it differently).
 3. Trace the **exact highlighted path** on the **same board** (before the grid changes) and submit. The game shows the **dictionary** spelling (e.g. `settee`); the solver stores the **scoring** form (e.g. `12ttee` with number/shiny tiles). Capture matches on **path + board fingerprint**, not the word string.
 4. On submit, Harmony hooks read the game’s `ScoreCalculation.CalculateOverallScore` steps.
-5. If totals differ → `scoring_mismatches\<timestamp>.json` with `predicted_trace`, `actual_trace`, and `run_state_snapshot`.
+5. If totals differ → `scoring_mismatches\<timestamp>.json` with `predicted_trace`, `actual_trace`, and `run_state_snapshot`. Submit-time `extras_snapshot` (including `previous_word_first_letter` from `HistoricWord` during scoring) is merged into `run_state_snapshot.extras` so regression replay matches in-game context.
 
 If you play the same dictionary word on a **different valid path** (e.g. another ending tile), capture is skipped — predicted score is only valid for the F8 path.
 

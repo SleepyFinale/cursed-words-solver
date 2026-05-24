@@ -176,6 +176,34 @@ def test_bento_box_same_first_letter():
     assert score == 4 * 1.5
 
 
+def test_bento_box_path_first_letter_not_dictionary_word():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "$", 0, curse=CurseType.CURRENCY)
+    board.tiles[0][1] = _tile(0, 1, "E", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras={"previous_word_first_letter": "e"},
+    )
+    score, bd = pipeline.score(board, [0, 1], "weep", loadout)
+    assert bd["multiplier"] == 1.5
+    assert score == int(1 * 1.5)
+
+
+def test_chips_path_first_letter_not_dictionary_word():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "$", 0, curse=CurseType.CURRENCY)
+    board.tiles[0][1] = _tile(0, 1, "E", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="chips", name="Chips", level=1)],
+        extras={"previous_word_first_letter": "a"},
+    )
+    score, bd = pipeline.score(board, [0, 1], "weep", loadout)
+    assert bd["multiplier"] == 1.5
+    assert score == int(1 * 1.5)
+
+
 def test_limnophila_alphabet_progression():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "C", 4)
@@ -288,6 +316,25 @@ def test_full_moon_double_letter_teleport(tmp_path):
     flags = stamp_search_flags(loadout)
     nbrs = neighbors_from_tile(board, [0], {1 << 0}, flags=flags)
     assert 20 in nbrs  # second 'b' at row 4 col 0
+
+
+def test_full_moon_no_teleport_between_letter_and_currency_e():
+    """€ maps to E for words but Full Moon matches physical glyph only."""
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    grid[0][0] = _tile(0, 0, "E", 1)
+    grid[0][1] = Tile(
+        row=0,
+        col=1,
+        char="€",
+        letter="E",
+        base_score=0,
+        curse=CurseType.CURRENCY,
+    )
+    board = Board(tiles=grid)
+    loadout = _stamp_loadout("full_moon", "Full Moon")
+    flags = stamp_search_flags(loadout)
+    nbrs = neighbors_from_tile(board, [0], {1 << 0}, flags=flags)
+    assert 1 not in nbrs
 
 
 def test_full_moon_flamingo_shiny_e_teleport_matches_physical_letter():

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from cursed_words_solver.models import Board, CurseType, Tile, TileColor
-from cursed_words_solver.vision.board_parser import SCRABBLE_VALUES
+from cursed_words_solver.letter_values import SCRABBLE_VALUES
 
 
 def _scrabble_value(letter: str) -> int:

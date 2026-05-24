@@ -1,0 +1,927 @@
+{
+  "word": "winnows",
+  "path": [
+    17,
+    12,
+    18,
+    7,
+    1,
+    6,
+    10
+  ],
+  "predicted_score": 158,
+  "actual_score": 220,
+  "delta": 62,
+  "board_fingerprint": "4|4,0:N/letter/colorless;4,1:L/letter/colorless;4,2:<font=InterBold SDF>₦</font>/currency/colorless;4,3:N/letter/colorless;4,4:A/letter/colorless;3,0:<font=InterBold SDF>₩</font>/currency/colorless;3,1:<font=InterBold SDF>¥</font>/currency/colorless;3,2:<font=InterBold SDF>₩</font>/currency/colorless;3,3:N/letter/colorless;3,4:E/letter/colorless;2,0:<font=InterBold SDF>$</font>/currency/colorless;2,1:P/letter/colorless;2,2:I/letter/colorless;2,3:I/letter/colorless;2,4:T/letter/colorless;1,0:A/letter/colorless;1,1:<font=InterBold SDF>₩</font>/currency/colorless;1,2:N/letter/colorless;1,3:L/letter/colorless;1,4:C/letter/colorless;0,0:E/letter/colorless;0,1:O/letter/colorless;0,2:U/letter/colorless;0,3:U/letter/colorless;0,4:<font=InterBold SDF>₱</font>/currency/colorless;",
+  "loadout_fingerprint": "Cretaceous Meg|4|roller_skate:2,graduation_cap:2,credit_card:2,sunflower:1,wheezy_vixen:1|golden_scales:0,kokeshi_dolls:0,full_moon:0,efficient_recycler:0,bento_box:0|-|wad_of_cash:left",
+  "predicted_trace": [
+    {
+      "phase": "init",
+      "tile_scores": [
+        0.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "word_score": 0.0,
+      "subtotal": 4.0,
+      "detail": "base tile sum 4.0"
+    },
+    {
+      "phase": "rule",
+      "tile_scores": [
+        10.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        10.0,
+        10.0
+      ],
+      "word_score": 0.0,
+      "subtotal": 34.0,
+      "rule_id": "Wad of Cash",
+      "effect_type": "add_tile_score",
+      "detail": "+30 currency tile score (3)"
+    },
+    {
+      "phase": "pin",
+      "tile_scores": [
+        10.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        10.0,
+        10.0
+      ],
+      "word_score": 0.0,
+      "subtotal": 34.0,
+      "rule_id": "wad_of_cash",
+      "detail": "pin applied"
+    },
+    {
+      "phase": "rule",
+      "tile_scores": [
+        10.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        10.0,
+        10.0
+      ],
+      "word_score": 63.0,
+      "subtotal": 97.0,
+      "rule_id": "graduation_cap",
+      "effect_type": "add_word_score",
+      "detail": "+63 word score (per_path_tile)"
+    },
+    {
+      "phase": "rule",
+      "tile_scores": [
+        10.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        10.0,
+        10.0
+      ],
+      "word_score": 105.0,
+      "subtotal": 139.0,
+      "rule_id": "credit_card",
+      "effect_type": "add_word_score",
+      "detail": "+42 word score (per_money)"
+    },
+    {
+      "phase": "rule",
+      "tile_scores": [
+        10.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        10.0,
+        10.0
+      ],
+      "word_score": 105.0,
+      "subtotal": 139.0,
+      "rule_id": "sunflower",
+      "effect_type": "multiply_money_bonus",
+      "detail": "×1.1400000000000001 word (money bonus)"
+    },
+    {
+      "phase": "rule",
+      "tile_scores": [
+        10.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        10.0,
+        10.0
+      ],
+      "word_score": 105.0,
+      "subtotal": 139.0,
+      "rule_id": "wheezy_vixen",
+      "effect_type": "multiply_word_scaled",
+      "detail": "×1.1400000000000001 word (money bonus)"
+    },
+    {
+      "phase": "rule",
+      "tile_scores": [
+        10.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        10.0,
+        10.0
+      ],
+      "word_score": 105.0,
+      "subtotal": 139.0,
+      "rule_id": "Kokeshi Dolls",
+      "effect_type": "add_money_on_condition",
+      "detail": "+$65 (currency_on_path)"
+    },
+    {
+      "phase": "rule",
+      "tile_scores": [
+        10.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        10.0,
+        10.0
+      ],
+      "word_score": 105.0,
+      "subtotal": 139.0,
+      "rule_id": "Bento Box",
+      "effect_type": "multiply_word_scaled",
+      "detail": "+$65 (currency_on_path)"
+    },
+    {
+      "phase": "pre_multiply",
+      "tile_scores": [
+        10.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        10.0,
+        10.0
+      ],
+      "word_score": 105.0,
+      "subtotal": 139.0,
+      "detail": "tile sum + word score"
+    },
+    {
+      "phase": "multiply",
+      "tile_scores": [
+        10.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        10.0,
+        10.0
+      ],
+      "word_score": 105.0,
+      "subtotal": 139.0,
+      "factor": 1.1400000000000001,
+      "detail": "×1.1400000000000001 word (floor)"
+    }
+  ],
+  "run_state_snapshot": {
+    "character": "Cretaceous Meg",
+    "pin_branch": "left",
+    "money": 4,
+    "stickers": [
+      {
+        "id": "roller_skate",
+        "name": "Roller Skate",
+        "level": 3,
+        "kind": "sticker"
+      },
+      {
+        "id": "graduation_cap",
+        "name": "Graduation Cap",
+        "level": 3,
+        "kind": "sticker"
+      },
+      {
+        "id": "credit_card",
+        "name": "Credit Card",
+        "level": 3,
+        "kind": "sticker"
+      },
+      {
+        "id": "sunflower",
+        "name": "Sunflower",
+        "level": 2,
+        "kind": "sticker"
+      },
+      {
+        "id": "wheezy_vixen",
+        "name": "Wheezy Vixen",
+        "level": 2,
+        "kind": "sticker"
+      }
+    ],
+    "stamps": [
+      {
+        "id": "golden_scales",
+        "name": "Golden Scales",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "kokeshi_dolls",
+        "name": "Kokeshi Dolls",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "full_moon",
+        "name": "Full Moon",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "efficient_recycler",
+        "name": "Efficient Recycler",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "bento_box",
+        "name": "Bento Box",
+        "level": 1,
+        "kind": "sticker"
+      }
+    ],
+    "boss_id": "",
+    "boss_name": "",
+    "boss_effect": "",
+    "extras": {
+      "pin_effect": "wad_of_cash",
+      "pin_left_level": "4",
+      "pin_right_level": "1",
+      "pin_memory": "[]",
+      "cards_submitted": "0"
+    },
+    "board": {
+      "source": "melmod",
+      "row_order": "top_first",
+      "money": 4,
+      "rows": 5,
+      "cols": 5,
+      "tiles": [
+        {
+          "row": 4,
+          "col": 0,
+          "char": "n",
+          "letter": "N",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 4,
+          "col": 1,
+          "char": "l",
+          "letter": "L",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 4,
+          "col": 2,
+          "char": "<font=InterBold SDF>₦</font>",
+          "letter": "<font=InterBold SDF>₦</font>",
+          "base_score": 0.0,
+          "color": "colorless",
+          "curse": "currency",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 4,
+          "col": 3,
+          "char": "n",
+          "letter": "N",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 4,
+          "col": 4,
+          "char": "a",
+          "letter": "A",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 3,
+          "col": 0,
+          "char": "<font=InterBold SDF>₩</font>",
+          "letter": "<font=InterBold SDF>₩</font>",
+          "base_score": 0.0,
+          "color": "colorless",
+          "curse": "currency",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 3,
+          "col": 1,
+          "char": "<font=InterBold SDF>¥</font>",
+          "letter": "<font=InterBold SDF>¥</font>",
+          "base_score": 0.0,
+          "color": "colorless",
+          "curse": "currency",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 3,
+          "col": 2,
+          "char": "<font=InterBold SDF>₩</font>",
+          "letter": "<font=InterBold SDF>₩</font>",
+          "base_score": 0.0,
+          "color": "colorless",
+          "curse": "currency",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 3,
+          "col": 3,
+          "char": "n",
+          "letter": "N",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 3,
+          "col": 4,
+          "char": "e",
+          "letter": "E",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 2,
+          "col": 0,
+          "char": "<font=InterBold SDF>$</font>",
+          "letter": "<font=InterBold SDF>$</font>",
+          "base_score": 0.0,
+          "color": "colorless",
+          "curse": "currency",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 2,
+          "col": 1,
+          "char": "p",
+          "letter": "P",
+          "base_score": 3.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 2,
+          "col": 2,
+          "char": "i",
+          "letter": "I",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 2,
+          "col": 3,
+          "char": "i",
+          "letter": "I",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 2,
+          "col": 4,
+          "char": "t",
+          "letter": "T",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "char": "a",
+          "letter": "A",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "char": "<font=InterBold SDF>₩</font>",
+          "letter": "<font=InterBold SDF>₩</font>",
+          "base_score": 0.0,
+          "color": "colorless",
+          "curse": "currency",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 1,
+          "col": 2,
+          "char": "n",
+          "letter": "N",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 1,
+          "col": 3,
+          "char": "l",
+          "letter": "L",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 1,
+          "col": 4,
+          "char": "c",
+          "letter": "C",
+          "base_score": 3.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 0,
+          "col": 0,
+          "char": "e",
+          "letter": "E",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "char": "o",
+          "letter": "O",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 0,
+          "col": 2,
+          "char": "u",
+          "letter": "U",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 0,
+          "col": 3,
+          "char": "u",
+          "letter": "U",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        },
+        {
+          "row": 0,
+          "col": 4,
+          "char": "<font=InterBold SDF>₱</font>",
+          "letter": "<font=InterBold SDF>₱</font>",
+          "base_score": 0.0,
+          "color": "colorless",
+          "curse": "currency",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "active": true,
+          "take": false,
+          "card_suit": "",
+          "card_rank": ""
+        }
+      ]
+    }
+  },
+  "actual_trace": [
+    {
+      "step_index": 0,
+      "money": 4,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        0,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0
+      ],
+      "poker_hand": "None"
+    },
+    {
+      "step_index": 1,
+      "money": 13,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        0,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0
+      ],
+      "poker_hand": "None"
+    },
+    {
+      "step_index": 2,
+      "money": 13,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        10,
+        1,
+        1,
+        1,
+        1,
+        10,
+        10
+      ],
+      "item_id": "wad_of_cash",
+      "item_name": "Wad of Cash",
+      "poker_hand": "None"
+    },
+    {
+      "step_index": 3,
+      "money": 13,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        10,
+        1,
+        1,
+        1,
+        1,
+        10,
+        10
+      ],
+      "poker_hand": "None"
+    },
+    {
+      "step_index": 4,
+      "money": 13,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        10,
+        1,
+        1,
+        1,
+        1,
+        10,
+        10
+      ],
+      "word_bonus": 63,
+      "word_bonus_multiplicative": false,
+      "word_bonus_poison": false,
+      "item_id": "graduation_cap",
+      "item_name": "Graduation Cap",
+      "poker_hand": "None"
+    },
+    {
+      "step_index": 5,
+      "money": 13,
+      "is_pulsing_whole_word": true,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        10,
+        1,
+        1,
+        1,
+        1,
+        10,
+        10
+      ],
+      "word_bonus": 78,
+      "word_bonus_multiplicative": false,
+      "word_bonus_poison": false,
+      "item_id": "credit_card",
+      "item_name": "Credit Card",
+      "poker_hand": "None"
+    },
+    {
+      "step_index": 6,
+      "money": 13,
+      "is_pulsing_whole_word": true,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        10,
+        1,
+        1,
+        1,
+        1,
+        10,
+        10
+      ],
+      "word_bonus": 126,
+      "word_bonus_multiplicative": true,
+      "word_bonus_poison": false,
+      "item_id": "sunflower",
+      "item_name": "Sunflower",
+      "poker_hand": "None"
+    },
+    {
+      "step_index": 7,
+      "money": 13,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        10,
+        1,
+        1,
+        1,
+        1,
+        10,
+        10
+      ],
+      "poker_hand": "None"
+    },
+    {
+      "step_index": 8,
+      "money": 13,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        10,
+        1,
+        1,
+        1,
+        1,
+        10,
+        10
+      ],
+      "poker_hand": "None"
+    },
+    {
+      "step_index": 9,
+      "money": 13,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        10,
+        1,
+        1,
+        1,
+        1,
+        10,
+        10
+      ],
+      "poker_hand": "None"
+    },
+    {
+      "step_index": 10,
+      "money": 13,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        10,
+        1,
+        1,
+        1,
+        1,
+        10,
+        10
+      ],
+      "poker_hand": "None"
+    },
+    {
+      "step_index": 11,
+      "money": 13,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        10,
+        1,
+        1,
+        1,
+        1,
+        10,
+        10
+      ],
+      "poker_hand": "None"
+    },
+    {
+      "step_index": 12,
+      "money": 13,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "tile_scores": [
+        10,
+        1,
+        1,
+        1,
+        1,
+        10,
+        10
+      ],
+      "poker_hand": "None"
+    }
+  ],
+  "extras_snapshot": {
+    "pin_effect": "wad_of_cash",
+    "pin_left_level": "4",
+    "pin_right_level": "1",
+    "pin_memory": "[]",
+    "cards_submitted": "0"
+  },
+  "game_types": {
+    "submit_method": "EncounterController.SubmitWord",
+    "score_type": "ScoreCalculation.CalculateOverallScore"
+  },
+  "exported_at": "2026-05-23T20:38:23.7496576Z"
+}
