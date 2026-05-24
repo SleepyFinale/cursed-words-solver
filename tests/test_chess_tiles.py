@@ -380,6 +380,15 @@ FALDSTOOL_PATH = [18, 14, 5, 2, 21, 12, 11, 13, 7]
 COANNEXES_FIXTURE = (
     Path(__file__).parent / "fixtures" / "mismatches" / "20260524_005127.json"
 )
+FASCIITIS_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "mismatches" / "20260524_024045.json"
+)
+KNAURRING_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "mismatches" / "20260524_034007.json"
+)
+SKOKIAANS_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "mismatches" / "20260524_035145.json"
+)
 
 
 def _markkaa_board_and_loadout():
@@ -405,6 +414,45 @@ def _faldstool_board_and_loadout():
 
 def _coannexes_board_and_loadout():
     data = json.loads(COANNEXES_FIXTURE.read_text(encoding="utf-8"))
+    run_state = dict(data.get("run_state_snapshot") or {})
+    extras = dict(run_state.get("extras") or {})
+    extras.update(data.get("extras_snapshot") or {})
+    if extras:
+        run_state["extras"] = extras
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    return board, loadout
+
+
+def _fasciitis_board_and_loadout():
+    data = json.loads(FASCIITIS_FIXTURE.read_text(encoding="utf-8"))
+    run_state = dict(data.get("run_state_snapshot") or {})
+    extras = dict(run_state.get("extras") or {})
+    extras.update(data.get("extras_snapshot") or {})
+    if extras:
+        run_state["extras"] = extras
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    return board, loadout
+
+
+def _knaurring_board_and_loadout():
+    data = json.loads(KNAURRING_FIXTURE.read_text(encoding="utf-8"))
+    run_state = dict(data.get("run_state_snapshot") or {})
+    extras = dict(run_state.get("extras") or {})
+    extras.update(data.get("extras_snapshot") or {})
+    if extras:
+        run_state["extras"] = extras
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    return board, loadout
+
+
+def _skokiaans_board_and_loadout():
+    data = json.loads(SKOKIAANS_FIXTURE.read_text(encoding="utf-8"))
     run_state = dict(data.get("run_state_snapshot") or {})
     extras = dict(run_state.get("extras") or {})
     extras.update(data.get("extras_snapshot") or {})
@@ -484,6 +532,51 @@ def test_coannexes_movie_camera_full_moon_chain():
     details = [t.get("detail", "") for t in trace]
     assert any("+9 word (first 2 take piece value)" in d for d in details)
     assert any("+24 word (3 take(s))" in d for d in details)
+
+
+def test_fasciitis_movie_camera_carousel_chess_chain():
+    """Carousel + FM path: rook take and boosted knight FM capture count for Movie Camera L3."""
+    board, loadout = _fasciitis_board_and_loadout()
+    data = json.loads(FASCIITIS_FIXTURE.read_text(encoding="utf-8"))
+    path = data["path"]
+    pipeline = ScoringPipeline()
+    score, _, trace = pipeline.score_with_trace(
+        board, path, "fasciitis", loadout
+    )
+    assert score == 1548.0
+    details = [t.get("detail", "") for t in trace]
+    assert any("+46 word (first 3 take piece value)" in d for d in details)
+    assert any("+24 word (3 take(s))" in d for d in details)
+
+
+def test_knaurring_movie_camera_carousel_first_take():
+    """Queen capture on doubled rook: Movie Camera credits landing base + attacker piece."""
+    board, loadout = _knaurring_board_and_loadout()
+    data = json.loads(KNAURRING_FIXTURE.read_text(encoding="utf-8"))
+    path = data["path"]
+    pipeline = ScoringPipeline()
+    score, _, trace = pipeline.score_with_trace(
+        board, path, "knaurring", loadout
+    )
+    assert score == 3464.0
+    details = [t.get("detail", "") for t in trace]
+    assert any("+80 word (first 3 take piece value)" in d for d in details)
+    assert any("+40 word (5 take(s))" in d for d in details)
+
+
+def test_skokiaans_movie_camera_carousel_chain():
+    """Four captures, Movie Camera L3: sum three largest piece values (FM chain + letter gap)."""
+    board, loadout = _skokiaans_board_and_loadout()
+    data = json.loads(SKOKIAANS_FIXTURE.read_text(encoding="utf-8"))
+    path = data["path"]
+    pipeline = ScoringPipeline()
+    score, _, trace = pipeline.score_with_trace(
+        board, path, "skokiaans", loadout
+    )
+    assert score == 4380.0
+    details = [t.get("detail", "") for t in trace]
+    assert any("+101 word (first 3 take piece value)" in d for d in details)
+    assert any("+32 word (4 take(s))" in d for d in details)
 
 
 @pytest.mark.skipif(

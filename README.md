@@ -7,7 +7,7 @@ The recommended setup uses a [MelonLoader companion mod](melmod/README.md) that 
 **Capabilities**
 
 - Time-budgeted word search with curse-aware paths (teleports, rook/queen lines, wildcards, number tiles)
-- Scoring that follows the official [wiki order](https://cursedwords.wiki.gg/wiki/Scoring) (tiles → pin → stickers → stamps → boss), driven by [`data/wiki/stickers.json`](data/wiki/stickers.json)
+- Scoring that follows the official [wiki order](https://cursedwords.wiki.gg/wiki/Scoring) (tiles → boss tile/word penalties → grid → pin → stickers → stamps), driven by [`data/wiki/stickers.json`](data/wiki/stickers.json)
 - Always-on-top result overlay plus numbered, click-through path highlights on the game board
 - Scoring mismatch capture (melmod v1.1.6+) and regression fixtures from real in-game submits
 
@@ -113,7 +113,7 @@ Pressing **F8** starts `_solve_worker` in [`app.py`](cursed_words_solver/app.py)
 2. **Board** — If melmod exported a valid board, use it and skip OCR. Otherwise capture `board_region` and parse with [`board_parser.py`](cursed_words_solver/vision/board_parser.py) (EasyOCR + color detection). Money prefers melmod; OCR `money_region` is fallback only.
 3. **Dictionary** — [`dictionary.py`](cursed_words_solver/dictionary.py) loads `game_words.txt` when present (from melmod), else ENABLE1 ([`config.py`](cursed_words_solver/config.py) `resolve_wordlist`).
 4. **Search** — [`search.py`](cursed_words_solver/search.py) `WordSearcher.find_best_words` runs DFS over active tiles with curse-specific neighbors (standard adjacency, double-letter teleports, chess piece rules, wildcards). Chess movement follows [wiki rules](https://cursedwords.wiki.gg/wiki/Curses#Chess_pieces): piece-specific rays, same-color blocking, pawn forward/double/capture, en passant, and king cannot move into check — see [`chess_tiles.py`](cursed_words_solver/rules/chess_tiles.py). `PathValidator` prunes invalid prefixes and enforces stamp-specific rules. Search is time-budgeted (`search_time_budget_sec`) with fair per-start slices; extra passes cover void/number words on boards with NUMBER tiles. Boss limits (e.g. Wolf max length, Hyena block) come from [`boss_effects.py`](cursed_words_solver/rules/boss_effects.py).
-5. **Score** — Each candidate is scored by [`ScoringPipeline`](cursed_words_solver/rules/pipeline.py) using rules from [`data/wiki/stickers.json`](data/wiki/stickers.json) ([`rule_lookup.py`](cursed_words_solver/rules/rule_lookup.py)): base tile sum → pin → stickers → stamps → boss, matching wiki order.
+5. **Score** — Each candidate is scored by [`ScoringPipeline`](cursed_words_solver/rules/pipeline.py) using rules from [`data/wiki/stickers.json`](data/wiki/stickers.json) ([`rule_lookup.py`](cursed_words_solver/rules/rule_lookup.py)): base tile sum → Salamander/Robo-Monkey (boss) → grid path bonuses → pin → stickers → stamps, matching [wiki order](https://cursedwords.wiki.gg/wiki/Scoring).
 6. **Output** — Top `top_n_results` words are kept; the best is re-scored with a full trace, written to `last_suggestion.json`, and debug JSON under `debug/parse_*.json`.
 
 ### Display layer (overlays)

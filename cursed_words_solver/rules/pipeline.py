@@ -1,4 +1,4 @@
-"""Full scoring pipeline: pin -> stickers -> stamps -> boss (wiki order)."""
+"""Full scoring pipeline: boss penalties -> grid -> pin -> stickers -> stamps (wiki order)."""
 
 
 
@@ -38,7 +38,16 @@ from cursed_words_solver.rules.rule_lookup import (
 from cursed_words_solver.rules.boss_effects import (
     boss_context,
     boss_rule_applies,
+    get_active_boss_rule,
     resolve_boss_scaling,
+)
+
+# Wiki Scoring step 1: Salamander / Robo-Monkey before pin, stickers, stamps.
+_EARLY_BOSS_EFFECT_TYPES = frozenset(
+    {
+        "boss_tile_penalty",
+        "boss_subtract_word_score_money",
+    }
 )
 from cursed_words_solver.rules.scoring_conditions import (
     abacus_colored_number_bonus,
@@ -410,6 +419,7 @@ class ScoringPipeline:
                 "init",
                 detail=f"base tile sum {state['base_score']}",
             )
+        state = self._apply_early_boss_rules(state, board, path, loadout)
         _apply_void_path_bonuses(board, path, loadout, state)
         pin_effect = str(loadout.extras.get("pin_effect", "") or "").strip()
         if pin_effect:
@@ -437,14 +447,52 @@ class ScoringPipeline:
             self.rules, "pins", pin_effect, pin_effect
         ) == "human_boy":
             state = self._apply_human_hands(loadout, state, board, path)
-        if loadout.boss_id or loadout.boss_name:
-            _key, boss = get_rule(
-                self.rules, "bosses", loadout.boss_id, loadout.boss_name
-            )
-            if boss and boss.get("type") not in ("unmodeled", "custom"):
-                ctx = boss_context(loadout, self.rules)
-                if boss_rule_applies(boss, ctx):
-                    state = self._apply_rule(boss, state, board, path, loadout, 1)
+        state = self._apply_late_boss_rules(state, board, path, loadout)
+        return state
+
+    def _apply_early_boss_rules(
+        self,
+        state: dict[str, Any],
+        board: Board,
+        path: list[int],
+        loadout: Loadout,
+    ) -> dict[str, Any]:
+        """Wiki step 1: Salamander tile penalty / Robo-Monkey word penalty before stickers."""
+        _key, boss = get_active_boss_rule(self.rules, loadout)
+        if boss and boss.get("type") in _EARLY_BOSS_EFFECT_TYPES:
+            ctx = boss_context(loadout, self.rules)
+            if boss_rule_applies(boss, ctx):
+                rule_id = _key or loadout.boss_id or loadout.boss_name or "boss"
+                state = self._apply_rule(
+                    boss,
+                    state,
+                    board,
+                    path,
+                    loadout,
+                    1,
+                    applying_sticker_id=rule_id,
+                )
+                if state.get("_trace") is not None:
+                    _trace_step(state, "boss", rule_id=rule_id, detail="boss applied")
+        return state
+
+    def _apply_late_boss_rules(
+        self,
+        state: dict[str, Any],
+        board: Board,
+        path: list[int],
+        loadout: Loadout,
+    ) -> dict[str, Any]:
+        """Boss effects not handled in wiki step 1 (constraints, vowel zero, custom)."""
+        _key, boss = get_active_boss_rule(self.rules, loadout)
+        if boss and boss.get("type") not in (
+            "unmodeled",
+            "custom",
+            *_EARLY_BOSS_EFFECT_TYPES,
+        ):
+            ctx = boss_context(loadout, self.rules)
+            if boss_rule_applies(boss, ctx):
+                state = self._apply_rule(boss, state, board, path, loadout, 1)
         elif loadout.boss_effect:
             state = self._apply_named_effect(
                 loadout.boss_effect, state, board, path, loadout
@@ -1328,6 +1376,7 @@ class ScoringPipeline:
                     path,
                     n,
                     strict=strict_takes,
+                    loadout=loadout,
                 )
                 if not bonus and level >= 3 and chess_takes_on_path(
                     board, path, strict=strict_takes
@@ -1471,7 +1520,7 @@ class ScoringPipeline:
             if penalty is not None:
                 p = int(penalty)
                 for i in range(len(state["tile_scores"])):
-                    state["tile_scores"][i] = max(0.0, state["tile_scores"][i] - p)
+                    state["tile_scores"][i] -= p
                 state["effects"].append(f"-{p} per tile (boss)")
 
         elif effect_type == "boss_subtract_word_score_money":

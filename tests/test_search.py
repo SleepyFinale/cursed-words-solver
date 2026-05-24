@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.rules.pipeline import ScoringPipeline
@@ -24,6 +25,7 @@ from tests.helpers.boards import (
 from cursed_words_solver.search import (
     PathValidator,
     WordSearcher,
+    _CandidateHeap,
     _balanced_start_indices,
     _wildcard_start_indices,
     neighbors_from_tile,
@@ -453,3 +455,53 @@ def test_red_sticker_bonus(tmp_path):
     pipeline = ScoringPipeline()
     score, _ = pipeline.score(board, [0, 1, 2], "cat", loadout)
     assert score > 3
+
+
+def test_candidate_heap_evicts_worst_not_best():
+    """Regression: mid-score candidates must replace the worst heap entry, not the best."""
+    heap = _CandidateHeap(2)
+    heap.consider(100.0, "low", [1])
+    heap.consider(200.0, "high", [2])
+    heap.consider(150.0, "mid", [3])
+    kept = {word for _, word, _ in heap.best_sorted()}
+    assert kept == {"high", "mid"}
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_twigloo_extension_beats_short_chess_path():
+    """Regression: trailing capture+letter extension must beat 7-tile twigloo (1600 pts)."""
+    import json
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260524_twigloo_extension.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = data["run_state_snapshot"]
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+
+    short_path = data["short_path"]
+    short_score = float(data["short_score"])
+    pipeline = ScoringPipeline()
+    assert pipeline.score_total_only(board, short_path, data["short_word"], loadout) == short_score
+
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=7,
+        max_len=15,
+        time_budget=15.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=5)
+    assert results
+    assert results[0].score > short_score
+    assert results[0].score >= 1900.0
+    assert len(results[0].path) > len(short_path)

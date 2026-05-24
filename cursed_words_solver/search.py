@@ -75,16 +75,16 @@ class _CandidateHeap:
         return len(self._heap)
 
     def consider(self, score: float, word: str, path: list[int]) -> None:
-        entry = (-score, -len(word), word, tuple(path))
+        entry = (score, -len(word), word, tuple(path))
         if len(self._heap) < self._k:
             heapq.heappush(self._heap, entry)
-        elif entry < self._heap[0]:
+        elif entry > self._heap[0]:
             heapq.heapreplace(self._heap, entry)
 
     def best_sorted(self) -> list[tuple[float, str, tuple[int, ...]]]:
         out: list[tuple[float, str, tuple[int, ...]]] = []
-        for neg_score, _neg_len, word, path in sorted(self._heap):
-            out.append((-neg_score, word, path))
+        for score, _neg_len, word, path in sorted(self._heap, reverse=True):
+            out.append((score, word, path))
         out.sort(key=lambda x: (-x[0], -len(x[1]), x[1]))
         return out
 
@@ -1073,15 +1073,13 @@ class WordSearcher:
 
         if len(candidates) > 0:
             chess_seeds = self._chess_prefix_candidates(board, loadout)
-            self._refine_candidates_with_extension(
+            heap_k = self.candidate_heap_size or _candidate_heap_size(top_n)
+            self._extend_top_candidates(
                 board,
                 loadout,
                 candidates,
-                chess_seeds,
-                top_paths=min(
-                    len(candidates),
-                    self.candidate_heap_size or _candidate_heap_size(top_n),
-                ),
+                top_paths=min(30, len(candidates), heap_k),
+                extra_seeds=chess_seeds or None,
             )
 
         seen_words: set[str] = set()

@@ -395,28 +395,179 @@ def _is_full_moon_chess_teleport_step(
     )
 
 
+def _carousel_horse_level(loadout: Loadout | None) -> int:
+    if not loadout:
+        return 0
+    for item in loadout.stickers:
+        key = (item.id or item.name or "").lower().replace(" ", "_")
+        if key == "carousel_horse":
+            return max(int(item.level), 0)
+    return 0
+
+
+def _chess_prefix_score_on_path(board: Board, path: list[int], pos: int) -> int:
+    """Sum chess tile base scores along path[0..pos]."""
+    total = 0
+    for i in range(pos + 1):
+        tile = board.get_by_index(path[i])
+        if is_chess_piece(tile):
+            total += int(tile.base_score)
+    return total
+
+
+def _first_full_moon_path_index(board: Board, path: list[int]) -> int | None:
+    for i in range(1, len(path)):
+        if _is_full_moon_chess_teleport_step(board, path, i):
+            return i
+    return None
+
+
+def _letter_gap_since_prev_take(
+    board: Board, path: list[int], pos: int, take_positions: list[int]
+) -> bool:
+    prev = [t for t in take_positions if t < pos]
+    if not prev:
+        return False
+    start = prev[-1] + 1
+    for p in range(start, pos):
+        if not is_chess_piece(board.get_by_index(path[p])):
+            return True
+    return False
+
+
+def _movie_camera_sticker_level(loadout: Loadout | None) -> int:
+    if not loadout:
+        return 0
+    for item in loadout.stickers:
+        key = (item.id or item.name or "").lower().replace(" ", "_")
+        if key == "movie_camera":
+            return max(int(item.level), 0)
+    return 0
+
+
 def movie_camera_take_piece_value_at(
-    board: Board, path: list[int], pos: int
+    board: Board,
+    path: list[int],
+    pos: int,
+    *,
+    loadout: Loadout | None = None,
+    strict: bool = False,
 ) -> int:
     """Movie Camera piece value for a capture landing at path[pos]."""
     landing = board.get_by_index(path[pos])
-    if pos >= 2 and _is_full_moon_chess_teleport_step(board, path, pos - 1):
-        from_tile = board.get_by_index(path[pos - 1])
-        from_half = int(from_tile.base_score // 2)
-        land_half = int(landing.base_score // 2)
-        return max(from_half, land_half, chess_piece_value(landing))
+    from_tile = board.get_by_index(path[pos - 1])
     piece = chess_piece_value(landing)
+    base = int(landing.base_score)
+    from_piece = chess_piece_value(from_tile) if is_chess_piece(from_tile) else 0
+    from_base = int(from_tile.base_score) if is_chess_piece(from_tile) else 0
+    take_positions = movie_camera_take_path_positions(
+        board, path, strict=strict, loadout=loadout
+    )
+    multi_take = len(take_positions) >= 2
+    carousel = _carousel_horse_level(loadout) >= 3
+    mc_limit = _movie_camera_sticker_level(loadout)
+    overflow = mc_limit > 0 and len(take_positions) > mc_limit
+    if pos >= 2 and _is_full_moon_chess_teleport_step(board, path, pos - 1):
+        if overflow and carousel and multi_take:
+            return _chess_prefix_score_on_path(board, path, pos)
+        if from_base > from_piece * 4:
+            return max(from_base, base, piece)
+        if (
+            not identical_chess_piece(from_tile, landing)
+            and from_base > from_piece * 2
+            and landing.curse
+            in (CurseType.CHESS_QUEEN, CurseType.CHESS_ROOK, CurseType.CHESS_KING)
+        ):
+            return max(from_base, base, piece)
+        from_half = from_base // 2
+        land_half = base // 2
+        fm_val = max(from_half, land_half, piece)
+        if (
+            is_chess_piece(landing)
+            and base == piece * 2
+            and landing.curse in (CurseType.CHESS_ROOK, CurseType.CHESS_QUEEN)
+        ):
+            return max(fm_val, base)
+        return fm_val
+    if strict:
+        return piece
     if is_chess_piece(landing):
-        boosted = int(landing.base_score)
-        if boosted > piece * 2:
-            return boosted
+        if (
+            overflow
+            and carousel
+            and multi_take
+            and _letter_gap_since_prev_take(board, path, pos, take_positions)
+        ):
+            fm_idx = _first_full_moon_path_index(board, path)
+            if fm_idx is not None:
+                gap_val = (
+                    _chess_prefix_score_on_path(board, path, pos)
+                    - _chess_prefix_score_on_path(board, path, fm_idx)
+                    + from_base
+                    - 1
+                )
+                return max(from_base + base, gap_val)
+        if (
+            overflow
+            and carousel
+            and multi_take
+            and is_chess_piece(from_tile)
+            and from_base + base > piece
+        ):
+            if identical_chess_piece(from_tile, landing) and from_base >= base:
+                return from_base
+            return from_base + base
+        if carousel and multi_take and base > piece * 2:
+            if identical_chess_piece(from_tile, landing) and from_base >= base:
+                return from_base
+            return from_base + base
+        if carousel and multi_take and is_chess_piece(from_tile) and base < piece * 2:
+            if identical_chess_piece(from_tile, landing):
+                return from_base
+            if from_base > piece * 2:
+                return from_base + base
+        if base > piece * 2:
+            if multi_take:
+                return min(base, piece * 2 + 4)
+            return base
+        if base == piece * 2 and landing.curse in (
+            CurseType.CHESS_ROOK,
+            CurseType.CHESS_QUEEN,
+        ):
+            if (
+                is_chess_piece(from_tile)
+                and chess_side_known(from_tile)
+                and chess_side_known(landing)
+                and chess_side(from_tile) != chess_side(landing)
+            ):
+                return base + from_piece
+            return base
+        if landing.curse == CurseType.CHESS_ROOK and base == piece:
+            return piece * 2
     return piece
 
 
 def _movie_camera_take_excluded(
-    board: Board, path: list[int], take_pos: int, all_takes: list[int]
+    board: Board,
+    path: list[int],
+    take_pos: int,
+    all_takes: list[int],
+    loadout: Loadout | None = None,
 ) -> bool:
     """Drop a capture superseded by a later take after a Full Moon chain across letter tiles."""
+    landing = board.get_by_index(path[take_pos])
+    if (
+        take_pos == all_takes[-1]
+        and len(all_takes) >= 3
+        and take_pos > 0
+        and landing.curse == CurseType.CHESS_ROOK
+        and int(landing.base_score) == chess_piece_value(landing)
+    ):
+        from_tile = board.get_by_index(path[take_pos - 1])
+        if from_tile.curse == CurseType.CHESS_QUEEN:
+            return True
+    if landing.curse in (CurseType.CHESS_ROOK, CurseType.CHESS_QUEEN):
+        return False
     for fm_pos in range(take_pos + 1, len(path)):
         if not _is_full_moon_chess_teleport_step(board, path, fm_pos):
             continue
@@ -434,14 +585,20 @@ def _movie_camera_take_excluded(
 
 
 def movie_camera_take_path_positions(
-    board: Board, path: list[int], *, strict: bool = False
+    board: Board,
+    path: list[int],
+    *,
+    strict: bool = False,
+    loadout: Loadout | None = None,
 ) -> list[int]:
     """Path indices for captures that count toward Movie Camera's first-N takes."""
     all_takes = chess_take_path_positions(board, path, strict=strict)
     return [
         pos
         for pos in all_takes
-        if not _movie_camera_take_excluded(board, path, pos, all_takes)
+        if not _movie_camera_take_excluded(
+            board, path, pos, all_takes, loadout=loadout
+        )
     ]
 
 
@@ -451,13 +608,23 @@ def first_n_movie_camera_piece_value_sum(
     n: int,
     *,
     strict: bool = False,
+    loadout: Loadout | None = None,
 ) -> int:
-    total = 0
-    for pos in movie_camera_take_path_positions(board, path, strict=strict)[
-        : max(n, 0)
-    ]:
-        total += movie_camera_take_piece_value_at(board, path, pos)
-    return total
+    positions = movie_camera_take_path_positions(
+        board, path, strict=strict, loadout=loadout
+    )
+    if not positions or n <= 0:
+        return 0
+    values = [
+        movie_camera_take_piece_value_at(
+            board, path, pos, loadout=loadout, strict=strict
+        )
+        for pos in positions
+    ]
+    if len(values) > n:
+        values.sort(reverse=True)
+        values = values[:n]
+    return sum(values)
 
 
 def first_n_take_piece_value_sum(
