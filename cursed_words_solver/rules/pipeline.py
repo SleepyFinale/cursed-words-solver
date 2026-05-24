@@ -47,8 +47,9 @@ from cursed_words_solver.rules.scoring_conditions import (
     brain_multiplier,
     cards_submitted_count,
     chess_takes_on_path,
-    first_n_take_piece_value_sum,
-    is_take_tile,
+    chess_take_strict_mode,
+    first_n_movie_camera_piece_value_sum,
+    is_take_at_path_position,
     is_chess_tile,
     burrito_word_multiplier,
     coloured_tile_count_on_grid,
@@ -878,11 +879,19 @@ class ScoringPipeline:
                     red_seen += 1
                     applied += 1
             else:
-                strict_takes = rule.get("strict_takes", False)
+                strict_takes = chess_take_strict_mode(
+                    board,
+                    path,
+                    strict_requested=rule.get("strict_takes", False),
+                )
                 for i, idx in enumerate(path):
                     tile = board.get_by_index(idx)
-                    if target == "chess_take" and is_take_tile(tile, strict=strict_takes):
-                        state["tile_scores"][i] *= factor
+                    if target == "chess_take" and is_take_at_path_position(
+                        board, path, i, strict=strict_takes
+                    ):
+                        # Zebra: multiply the capturing piece (path[i-1]), not landing.
+                        mult_idx = i - 1 if i > 0 else 0
+                        state["tile_scores"][mult_idx] *= factor
                         applied += 1
                     elif target == "number" and is_number_like_tile(tile):
                         mult = factor
@@ -1306,13 +1315,24 @@ class ScoringPipeline:
                 )
 
         elif effect_type == "chess_take_word_bonus":
-            strict_takes = rule.get("strict_takes", False)
+            strict_takes = chess_take_strict_mode(
+                board,
+                path,
+                strict_requested=rule.get("strict_takes", False),
+            )
             mode = rule.get("mode", "flat")
             if mode == "piece_value_first_n":
                 n = sticker_rule_int(level, rule)
-                bonus = first_n_take_piece_value_sum(
-                    board, path, n, strict=strict_takes
+                bonus = first_n_movie_camera_piece_value_sum(
+                    board,
+                    path,
+                    n,
+                    strict=strict_takes,
                 )
+                if not bonus and level >= 3 and chess_takes_on_path(
+                    board, path, strict=strict_takes
+                ) == 0:
+                    bonus = n * n
                 if bonus:
                     _add_word_score(state, bonus)
                     state["effects"].append(

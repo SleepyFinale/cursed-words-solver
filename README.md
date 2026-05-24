@@ -112,7 +112,7 @@ Pressing **F8** starts `_solve_worker` in [`app.py`](cursed_words_solver/app.py)
 1. **Reload state** — Read `run_state.json` via [`loadout.py`](cursed_words_solver/loadout.py) (`load_run_state`, `parse_board_from_run_state`).
 2. **Board** — If melmod exported a valid board, use it and skip OCR. Otherwise capture `board_region` and parse with [`board_parser.py`](cursed_words_solver/vision/board_parser.py) (EasyOCR + color detection). Money prefers melmod; OCR `money_region` is fallback only.
 3. **Dictionary** — [`dictionary.py`](cursed_words_solver/dictionary.py) loads `game_words.txt` when present (from melmod), else ENABLE1 ([`config.py`](cursed_words_solver/config.py) `resolve_wordlist`).
-4. **Search** — [`search.py`](cursed_words_solver/search.py) `WordSearcher.find_best_words` runs DFS over active tiles with curse-specific neighbors (standard adjacency, double-letter teleports, rook/queen lines, wildcards). `PathValidator` prunes invalid prefixes and enforces stamp-specific rules. Search is time-budgeted (`search_time_budget_sec`) with fair per-start slices; extra passes cover void/number words on boards with NUMBER tiles. Boss limits (e.g. Wolf max length, Hyena block) come from [`boss_effects.py`](cursed_words_solver/rules/boss_effects.py).
+4. **Search** — [`search.py`](cursed_words_solver/search.py) `WordSearcher.find_best_words` runs DFS over active tiles with curse-specific neighbors (standard adjacency, double-letter teleports, chess piece rules, wildcards). Chess movement follows [wiki rules](https://cursedwords.wiki.gg/wiki/Curses#Chess_pieces): piece-specific rays, same-color blocking, pawn forward/double/capture, en passant, and king cannot move into check — see [`chess_tiles.py`](cursed_words_solver/rules/chess_tiles.py). `PathValidator` prunes invalid prefixes and enforces stamp-specific rules. Search is time-budgeted (`search_time_budget_sec`) with fair per-start slices; extra passes cover void/number words on boards with NUMBER tiles. Boss limits (e.g. Wolf max length, Hyena block) come from [`boss_effects.py`](cursed_words_solver/rules/boss_effects.py).
 5. **Score** — Each candidate is scored by [`ScoringPipeline`](cursed_words_solver/rules/pipeline.py) using rules from [`data/wiki/stickers.json`](data/wiki/stickers.json) ([`rule_lookup.py`](cursed_words_solver/rules/rule_lookup.py)): base tile sum → pin → stickers → stamps → boss, matching wiki order.
 6. **Output** — Top `top_n_results` words are kept; the best is re-scored with a full trace, written to `last_suggestion.json`, and debug JSON under `debug/parse_*.json`.
 
@@ -194,7 +194,7 @@ Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 | `hotkey` | `f8` | Solve hotkey |
 | `min_word_length` | `3` | Shortest word explored |
 | `max_word_length` | `15` | Longest path explored (max 25 on full grid). Keep 15 for long number words; search cost grows with depth |
-| `search_time_budget_sec` | `30` | Seconds per solve for word search. Legacy values `2` / `15` auto-upgrade on startup |
+| `search_time_budget_sec` | `45` | Seconds per solve for word search. Legacy values `2` / `15` / `30` auto-upgrade on startup |
 | `top_n_results` | `3` | Alternate words shown in the overlay |
 | `money_region` | — | Optional; OCR fallback when melmod money is unavailable |
 | `cell_inset_ratio` | `0.1` | OCR per-tile crop inset |
@@ -208,7 +208,7 @@ On startup the terminal prints the loaded word list, e.g. `Word list: game (1200
 - **Melmod board (F7)** — Exact tiles avoid wasted DFS branches; refresh before **F8**.
 - **Game wordlist** — **F7** exports `game_words.txt` for tighter dictionary pruning than ENABLE1.
 - **`search_time_budget_sec`** — Main knob for more candidates within a time limit.
-- **Curse-heavy boards** — Teleports, rook/queen lines, and wildcards branch heavily; wildcards are searched first. Raise the time budget on dense boards if needed.
+- **Curse-heavy boards** — Teleports, chess pieces, and wildcards branch heavily; wildcards are searched first. Raise the time budget on dense boards if needed.
 
 ### Troubleshooting
 

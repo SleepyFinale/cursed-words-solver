@@ -20,7 +20,7 @@ Harmony prefix parameter names must match the game (`tiles`, not `selections`).
 1. Player selects tiles → `TileSelectionManager` holds `List<TileSelection>`.
 2. Submit → `EncounterController.SubmitWord(selections, words)`.
 3. Inside submit flow, `ScoreCalculation.CalculateOverallScore` runs with:
-   - `List<TileSelection> wordTiles`
+   - `List<TileSelection> tileSelections`
    - `List<string> words`
    - `List<Item> stickers/stamps` (inventory)
    - `List<HistoricWord> previousWords`

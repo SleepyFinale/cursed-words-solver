@@ -11,6 +11,7 @@ CONFIG_DIR = Path.home() / ".cursed_words_solver"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 LEGACY_SEARCH_TIME_BUDGET_SEC = 2.0
 PREVIOUS_SEARCH_TIME_BUDGET_SEC = 15.0
+PREVIOUS_DEFAULT_SEARCH_TIME_BUDGET_SEC = 30.0
 LEGACY_MAX_WORD_LENGTH = 12
 RUN_STATE_PATH = CONFIG_DIR / "run_state.json"
 LAST_SUGGESTION_PATH = CONFIG_DIR / "last_suggestion.json"
@@ -90,13 +91,14 @@ class AppConfig:
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         money = data.get("money_region")
         max_word_length = int(data.get("max_word_length", 15))
-        search_time_budget_sec = float(data.get("search_time_budget_sec", 30.0))
+        search_time_budget_sec = float(data.get("search_time_budget_sec", 45.0))
         migrated = False
-        if search_time_budget_sec == LEGACY_SEARCH_TIME_BUDGET_SEC:
-            search_time_budget_sec = 30.0
-            migrated = True
-        elif search_time_budget_sec == PREVIOUS_SEARCH_TIME_BUDGET_SEC:
-            search_time_budget_sec = 30.0
+        if search_time_budget_sec in (
+            LEGACY_SEARCH_TIME_BUDGET_SEC,
+            PREVIOUS_SEARCH_TIME_BUDGET_SEC,
+            PREVIOUS_DEFAULT_SEARCH_TIME_BUDGET_SEC,
+        ):
+            search_time_budget_sec = 45.0
             migrated = True
         if max_word_length == LEGACY_MAX_WORD_LENGTH:
             max_word_length = 15

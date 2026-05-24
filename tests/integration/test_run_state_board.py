@@ -318,6 +318,32 @@ def test_parse_run_state_bosssmallwords_alias_is_wolf():
     assert boss_word_constraints(loadout, rules, default_max_len=15).max_len == 4
 
 
+def test_parse_run_state_bossqs_alias_is_axolotl():
+    """In-game Axolotl prefab/display name is Extra Qs / bossqs."""
+    data = {
+        "character": "Sam Gambit",
+        "boss_id": "bossqs",
+        "boss_name": "Extra Qs",
+        "extras": {"boss_area_number": 3},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        boss_display_name,
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "axolotl"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+    assert boss_display_name(loadout, rules) == "Axolotl"
+
+
 def test_parse_run_state_bigboss_alias_is_toothed_whale():
     """In-game Toothed Whale prefab/display name is BigBoss / bigboss."""
     data = {

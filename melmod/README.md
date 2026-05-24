@@ -202,9 +202,10 @@ Board tiles may include:
 |-------|---------|
 | `consumable` | Mahjong Red Dragon pin |
 | `take` | Movie Camera, Clapper Board, Zebra (chess capture on the word path) |
+| `chess_color` | Chess movement blocking and Dove balanced-colors scoring (`black` = filled piece, `white` = outlined). Exported from game field `Tile.IsWhitePiece` (`false` = black/filled, `true` = white/outlined). |
 | `card_suit`, `card_rank` | Bones The Dog poker stickers (`hearts`, `spades`, `clubs`, `diamonds` + rank letter) |
 
-When `take` is absent, Sam sticker rules with `strict_takes` stay inactive for captures; the Super 8 pin still treats chess tiles on the path as takes (non-strict fallback).
+When `take` is absent, sticker rules with `strict_takes` stay inactive for captures; the Super 8 pin infers takes from valid chess capture moves along the word path (opponent landing squares and en passant).
 
 Playing cards export `curse: "card"` when suit metadata is found.
 

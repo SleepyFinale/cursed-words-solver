@@ -359,6 +359,115 @@ def test_full_moon_flamingo_shiny_e_teleport_matches_physical_letter():
     assert 9 in nbrs  # blue E at (1,4)
 
 
+def test_full_moon_no_letter_teleport_to_chess_rook_with_same_char():
+    """Melmod keeps underlying letter in char; rook must not match letter T via Full Moon."""
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    grid[3][1] = _tile(3, 1, "T", 2)
+    grid[3][3] = Tile(
+        row=3,
+        col=3,
+        char="t",
+        letter="?",
+        base_score=5,
+        color=TileColor.COLORLESS,
+        curse=CurseType.CHESS_ROOK,
+        metadata={"chess_color": "white"},
+    )
+    board = Board(tiles=grid)
+    loadout = _stamp_loadout("full_moon", "Full Moon")
+    flags = stamp_search_flags(loadout)
+    nbrs = neighbors_from_tile(board, [16], {1 << 16}, flags=flags)
+    assert 18 not in nbrs
+
+
+def test_full_moon_chess_rook_teleport_to_identical_rook():
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    grid[3][1] = Tile(
+        row=3,
+        col=1,
+        char="t",
+        letter="?",
+        base_score=5,
+        color=TileColor.COLORLESS,
+        curse=CurseType.CHESS_ROOK,
+        metadata={"chess_color": "white"},
+    )
+    grid[3][3] = Tile(
+        row=3,
+        col=3,
+        char="t",
+        letter="?",
+        base_score=5,
+        color=TileColor.COLORLESS,
+        curse=CurseType.CHESS_ROOK,
+        metadata={"chess_color": "white"},
+    )
+    board = Board(tiles=grid)
+    loadout = _stamp_loadout("full_moon", "Full Moon")
+    flags = stamp_search_flags(loadout)
+    nbrs = neighbors_from_tile(board, [16], {1 << 16}, flags=flags)
+    assert 18 in nbrs
+
+
+def test_full_moon_no_teleport_between_opposite_color_knights():
+    """Wiki: filled black and outlined white knights are not identical for Full Moon."""
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    grid[1][1] = Tile(
+        row=1,
+        col=1,
+        char="h",
+        letter="?",
+        base_score=3,
+        color=TileColor.COLORLESS,
+        curse=CurseType.CHESS_KNIGHT,
+        metadata={"chess_color": "black"},
+    )
+    grid[1][4] = Tile(
+        row=1,
+        col=4,
+        char="h",
+        letter="?",
+        base_score=3,
+        color=TileColor.COLORLESS,
+        curse=CurseType.CHESS_KNIGHT,
+        metadata={"chess_color": "white"},
+    )
+    board = Board(tiles=grid)
+    loadout = _stamp_loadout("full_moon", "Full Moon")
+    flags = stamp_search_flags(loadout)
+    nbrs = neighbors_from_tile(board, [6], {1 << 6}, flags=flags)
+    assert 9 not in nbrs
+
+
+def test_full_moon_teleport_between_same_color_knights():
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    grid[1][1] = Tile(
+        row=1,
+        col=1,
+        char="h",
+        letter="?",
+        base_score=3,
+        color=TileColor.COLORLESS,
+        curse=CurseType.CHESS_KNIGHT,
+        metadata={"chess_color": "white"},
+    )
+    grid[1][4] = Tile(
+        row=1,
+        col=4,
+        char="h",
+        letter="?",
+        base_score=3,
+        color=TileColor.COLORLESS,
+        curse=CurseType.CHESS_KNIGHT,
+        metadata={"chess_color": "white"},
+    )
+    board = Board(tiles=grid)
+    loadout = _stamp_loadout("full_moon", "Full Moon")
+    flags = stamp_search_flags(loadout)
+    nbrs = neighbors_from_tile(board, [6], {1 << 6}, flags=flags)
+    assert 9 in nbrs
+
+
 def test_red_envelope_finds_word_with_red_as_e(tmp_path):
     words = ["the", "tee"]
     wl = _make_wordlist(tmp_path, words)

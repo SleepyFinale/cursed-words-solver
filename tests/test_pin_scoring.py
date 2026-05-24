@@ -109,26 +109,67 @@ def test_mahjong_consumable_multiply():
 
 def test_super_8_chess_take_bonus():
     pipeline = ScoringPipeline()
-    board = Board(
-        tiles=[
-            [
-                _tile(0, 0, "N", 1, curse=CurseType.CHESS_KNIGHT),
-                _tile(0, 1, "A", 1),
-                _tile(0, 2, "B", 1),
-            ]
-            + [_tile(0, c, "C", 1) for c in range(3, 5)]
-        ]
-        + [[_tile(r, c, "D", 1) for c in range(5)] for r in range(1, 5)],
-        money=0,
+    grid = [[_tile(r, c, "D", 1) for c in range(5)] for r in range(5)]
+    grid[4][2] = _tile(
+        4,
+        2,
+        "?",
+        1,
+        curse=CurseType.CHESS_PAWN,
+        metadata={"chess_color": "white"},
     )
-    lo = Loadout(extras={"pin_effect": "sam_gambit", "pin_right_level": "0"})
-    score, bd = pipeline.score(board, [0, 1], "NA", lo)
-    assert bd["pipeline"]["word_score"] == 8
-    assert score == 10.0
+    grid[3][3] = _tile(
+        3,
+        3,
+        "?",
+        1,
+        curse=CurseType.CHESS_PAWN,
+        metadata={"chess_color": "black"},
+    )
+    grid[3][4] = _tile(3, 4, "A", 1)
+    board = Board(tiles=grid, money=0)
+    path = [22, 18, 19]
 
-    lo2 = Loadout(extras={"pin_effect": "sam_gambit", "pin_right_level": "1"})
-    score2, _ = pipeline.score(board, [0, 1], "NA", lo2)
-    assert score2 == 18.0  # 8+8 on one take, 2 tile base
+    lo = Loadout(extras={"pin_effect": "sam_gambit", "pin_right_level": "1"})
+    score, bd = pipeline.score(board, path, "PAA", lo)
+    assert bd["pipeline"]["word_score"] == 8
+    assert score == 11.0  # 3 tile base + 8 take bonus
+
+    lo2 = Loadout(extras={"pin_effect": "sam_gambit", "pin_right_level": "2"})
+    score2, bd2 = pipeline.score(board, path, "PAA", lo2)
+    assert bd2["pipeline"]["word_score"] == 16
+    assert score2 == 19.0  # 3 tile base + 16 take bonus (1 right upgrade)
+
+    lo3 = Loadout(extras={"pin_effect": "sam_gambit", "pin_right_level": "3"})
+    score3, bd3 = pipeline.score(board, path, "PAA", lo3)
+    assert bd3["pipeline"]["word_score"] == 8
+    assert score3 == 11.0  # 2 right upgrades: alternates back to +8
+
+
+def test_super_8_no_bonus_for_pawn_forward_move():
+    """Regression: volvox path starts on pawn and moves forward — not a take."""
+    pipeline = ScoringPipeline()
+    grid = [[_tile(r, c, "D", 1) for c in range(5)] for r in range(5)]
+    grid[4][0] = _tile(
+        4,
+        0,
+        "?",
+        1,
+        curse=CurseType.CHESS_PAWN,
+        metadata={"chess_color": "white"},
+    )
+    grid[3][0] = _tile(3, 0, "O", 1)
+    grid[3][1] = _tile(3, 1, "L", 1)
+    grid[2][1] = _tile(2, 1, "V", 4)
+    grid[1][1] = _tile(1, 1, "O", 1)
+    grid[1][2] = _tile(1, 2, "X", 8)
+    board = Board(tiles=grid, money=0)
+    path = [20, 15, 16, 11, 6, 7]
+
+    lo = Loadout(extras={"pin_effect": "super_8", "pin_right_level": "1"})
+    score, bd = pipeline.score(board, path, "volvox", lo)
+    assert bd["pipeline"]["word_score"] == 0
+    assert score == 16.0
 
 
 def test_bicycle_cards_submitted():

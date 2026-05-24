@@ -2032,6 +2032,9 @@ ALIASES: dict[str, dict[str, str]] = {
         "bossaddnumbers": "bison",
         "addnumbers": "bison",
         "add_numbers": "bison",
+        "bossqs": "axolotl",
+        "extraqs": "axolotl",
+        "extra_qs": "axolotl",
     },
     "pins": {
         "abacus": "abacus",

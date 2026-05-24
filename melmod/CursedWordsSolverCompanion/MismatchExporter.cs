@@ -25,7 +25,9 @@ namespace CursedWordsSolverCompanion
             string boardFingerprint,
             string loadoutFingerprint,
             Dictionary<string, string> extrasSnapshot,
-            string submitMethod
+            string submitMethod,
+            Player submitPlayer = null,
+            BoardSnapshot scoringBoardSnapshot = null
         )
         {
             if (suggestion == null)
@@ -51,6 +53,12 @@ namespace CursedWordsSolverCompanion
             var runStateSnapshot = CloneRunStateSnapshot(suggestion.run_state_snapshot);
             ScoringContextCapture.MergeExtrasIntoSnapshot(runStateSnapshot, extrasSnapshot);
 
+            var submitBoard = scoringBoardSnapshot;
+            if (submitBoard == null && submitPlayer != null)
+                submitBoard = BoardExporter.TryBuild(submitPlayer);
+            if (submitBoard != null)
+                BoardExporter.MergeSubmitTakeFlagsIntoRunState(runStateSnapshot, submitBoard);
+
             var payload = new Dictionary<string, object>
             {
                 ["word"] = word,
@@ -64,6 +72,7 @@ namespace CursedWordsSolverCompanion
                 ["run_state_snapshot"] = runStateSnapshot,
                 ["actual_trace"] = actualTrace ?? new List<Dictionary<string, object>>(),
                 ["extras_snapshot"] = extrasSnapshot ?? new Dictionary<string, string>(),
+                ["submit_board_tiles"] = submitBoard?.tiles,
                 ["game_types"] = new Dictionary<string, string>
                 {
                     ["submit_method"] = submitMethod ?? "",

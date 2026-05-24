@@ -410,6 +410,37 @@ def test_finds_tobiano_beats_12bier_with_flamingo(tmp_path):
         assert words.get("12bi56o", 0) > words.get("12bier", 0)
 
 
+def test_echappe_not_found_with_opposite_color_knight_full_moon():
+    """Regression: Full Moon must not chain black/white knights (echappe via invalid teleports)."""
+    import json
+
+    from cursed_words_solver.config import GAME_WORDLIST_PATH
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "echappe_full_moon_chess.json"
+    )
+    if not fixture.exists():
+        pytest.skip("echappe_full_moon_chess.json fixture required")
+
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data)
+    loadout = parse_run_state(data)
+    d = WordDictionary(GAME_WORDLIST_PATH)
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=15, time_budget=15.0)
+    results = searcher.find_best_words(board, loadout, top_n=50)
+    words = [r.word for r in results]
+    assert "echappe" not in words
+
+    flags = stamp_search_flags(loadout)
+    # Full Moon must not link white (4,2) knight to black (1,4) or chain through it.
+    nbrs_from_knight = neighbors_from_tile(board, [17, 22], {17, 22}, flags=flags)
+    assert 9 not in nbrs_from_knight  # black knight at (1,4); no Full Moon from white (4,2)
+
+
 def test_red_sticker_bonus(tmp_path):
     wl = _make_wordlist(tmp_path)
     board = _board_cat_horizontal()

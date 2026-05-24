@@ -20,6 +20,12 @@ namespace CursedWordsSolverCompanion
         private static string _loadoutFingerprint;
         private static Dictionary<string, string> _scoringContextExtras =
             new Dictionary<string, string>();
+        private static BoardSnapshot _submitBoardSnapshot;
+
+        public static BoardSnapshot SubmitBoardSnapshot
+        {
+            get { return _submitBoardSnapshot; }
+        }
 
         public static void BeginSubmit(
             string submitMethod,
@@ -29,6 +35,7 @@ namespace CursedWordsSolverCompanion
         {
             _active = false;
             _actualTrace = null;
+            _submitBoardSnapshot = null;
             _scoringContextExtras = new Dictionary<string, string>();
             _suggestion = SuggestionMatcher.Load();
             _word = SuggestionMatcher.WordFromSubmit(selections, words);
@@ -104,6 +111,29 @@ namespace CursedWordsSolverCompanion
             _actualTrace = ScoringTraceCollector.SerializeSteps(steps);
         }
 
+        /// <summary>
+        /// Snapshot board + take flags from word tiles while ScoreCalculation runs.
+        /// </summary>
+        public static void OnSubmitWordTiles(List<TileSelection> wordTiles)
+        {
+            if (!_active)
+                return;
+
+            var player = RunStateExporter.GetPlayerForUpdate();
+            if (player == null)
+                return;
+
+            var snapshot = BoardExporter.TryBuild(player);
+            if (snapshot == null)
+                return;
+
+            var takeAt = BoardExporter.ExtractTakeFlagsFromSelections(wordTiles);
+            if (takeAt.Count > 0)
+                BoardExporter.ApplyTakeFlags(snapshot, takeAt);
+
+            _submitBoardSnapshot = snapshot;
+        }
+
         public static void EndSubmit()
         {
             if (!_active)
@@ -123,6 +153,7 @@ namespace CursedWordsSolverCompanion
                 var extras = RunStateExporter.BuildExtrasSnapshot();
                 foreach (var kv in _scoringContextExtras)
                     extras[kv.Key] = kv.Value;
+                var submitPlayer = RunStateExporter.GetPlayerForUpdate();
                 MismatchExporter.ExportIfMismatch(
                     _suggestion,
                     _word,
@@ -132,7 +163,9 @@ namespace CursedWordsSolverCompanion
                     _boardFingerprint,
                     _loadoutFingerprint,
                     extras,
-                    _submitMethod
+                    _submitMethod,
+                    submitPlayer,
+                    _submitBoardSnapshot
                 );
             }
             catch (System.Exception ex)
@@ -142,6 +175,7 @@ namespace CursedWordsSolverCompanion
             finally
             {
                 _active = false;
+                _submitBoardSnapshot = null;
                 CalculateOverallScorePatch.LastCalculatedSteps = null;
             }
         }

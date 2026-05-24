@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 namespace CursedWordsSolverCompanion
@@ -9,6 +11,9 @@ namespace CursedWordsSolverCompanion
     public static class BoardExporter
     {
         private const int DefaultGridSize = 5;
+
+        private static readonly BindingFlags MemberFlags =
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
         public static BoardSnapshot TryBuild(Player player)
         {
@@ -80,6 +85,122 @@ namespace CursedWordsSolverCompanion
                 sb.Append(';');
             }
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Patch F8 snapshot board tiles with submit-time capture flags from the live grid.
+        /// </summary>
+        public static void MergeSubmitTakeFlagsIntoRunState(
+            Dictionary<string, object> runStateSnapshot,
+            BoardSnapshot submitBoard
+        )
+        {
+            if (runStateSnapshot == null || submitBoard?.tiles == null)
+                return;
+
+            var takeAt = CollectTakeFlags(submitBoard);
+            if (takeAt.Count == 0)
+                return;
+
+            ApplyTakeFlagsToRunState(runStateSnapshot, takeAt);
+        }
+
+        /// <summary>
+        /// Apply take flags keyed by "row,col" onto a board snapshot (during scoring).
+        /// </summary>
+        public static void ApplyTakeFlags(BoardSnapshot board, Dictionary<string, bool> takeAt)
+        {
+            if (board?.tiles == null || takeAt == null || takeAt.Count == 0)
+                return;
+
+            foreach (var tile in board.tiles)
+            {
+                if (tile == null)
+                    continue;
+                var key = tile.row + "," + tile.col;
+                if (takeAt.TryGetValue(key, out var isTake) && isTake)
+                    tile.take = true;
+            }
+        }
+
+        /// <summary>
+        /// Read take flags from word-path tile selections during ScoreCalculation.
+        /// </summary>
+        public static Dictionary<string, bool> ExtractTakeFlagsFromSelections(
+            List<TileSelection> selections
+        )
+        {
+            var takeAt = new Dictionary<string, bool>();
+            if (selections == null)
+                return takeAt;
+
+            foreach (var sel in selections)
+            {
+                if (sel?.SelectedTile == null)
+                    continue;
+                var tile = sel.SelectedTile;
+                if (!TileHasTake(tile))
+                    continue;
+                try
+                {
+                    var coords = tile.GetCoordinates();
+                    var key = coords.y + "," + coords.x;
+                    takeAt[key] = true;
+                }
+                catch
+                {
+                    // skip bad tile
+                }
+            }
+            return takeAt;
+        }
+
+        public static bool TileHasTake(Tile tile)
+        {
+            return MapTake(tile);
+        }
+
+        private static Dictionary<string, bool> CollectTakeFlags(BoardSnapshot submitBoard)
+        {
+            var takeAt = new Dictionary<string, bool>();
+            foreach (var tile in submitBoard.tiles)
+            {
+                if (tile == null || !tile.take)
+                    continue;
+                takeAt[tile.row + "," + tile.col] = true;
+            }
+            return takeAt;
+        }
+
+        private static void ApplyTakeFlagsToRunState(
+            Dictionary<string, object> runStateSnapshot,
+            Dictionary<string, bool> takeAt
+        )
+        {
+            object boardObj;
+            if (!runStateSnapshot.TryGetValue("board", out boardObj) || boardObj == null)
+                return;
+
+            var boardJson = boardObj as JObject ?? JObject.FromObject(boardObj);
+            var tiles = boardJson["tiles"] as JArray;
+            if (tiles == null)
+                return;
+
+            foreach (var token in tiles)
+            {
+                var tile = token as JObject;
+                if (tile == null)
+                    continue;
+                var row = tile["row"]?.ToObject<int>() ?? -1;
+                var col = tile["col"]?.ToObject<int>() ?? -1;
+                if (row < 0 || col < 0)
+                    continue;
+                var key = row + "," + col;
+                if (takeAt.TryGetValue(key, out var isTake) && isTake)
+                    tile["take"] = true;
+            }
+
+            runStateSnapshot["board"] = boardJson.ToObject<Dictionary<string, object>>();
         }
 
         private static GridData ResolveActiveGridData()
@@ -415,6 +536,13 @@ namespace CursedWordsSolverCompanion
                 {
                     snap.fraction_value = null;
                 }
+            }
+
+            if (curse.StartsWith("chess_"))
+            {
+                var chessColor = MapChessColor(tile);
+                if (!string.IsNullOrEmpty(chessColor))
+                    snap.chess_color = chessColor;
             }
 
             return snap;
@@ -841,6 +969,325 @@ namespace CursedWordsSolverCompanion
             }
 
             return false;
+        }
+
+        private static string MapChessColor(Tile tile)
+        {
+            if (tile == null)
+                return "";
+
+            // Game API: SetChessPiece(piece, isWhite); Tile.IsWhitePiece is the source of truth.
+            try
+            {
+                if (tile.IsChessPiece())
+                    return tile.IsWhitePiece ? "white" : "black";
+            }
+            catch
+            {
+                // fall through to reflection
+            }
+
+            var fromTile = MapChessColorFromReflect(tile);
+            if (!string.IsNullOrEmpty(fromTile))
+                return fromTile;
+
+            try
+            {
+                var packet = tile.GetValue();
+                if (packet != null)
+                {
+                    var fromPacket = MapChessColorFromReflect(packet);
+                    if (!string.IsNullOrEmpty(fromPacket))
+                        return fromPacket;
+                }
+            }
+            catch
+            {
+                // fall through
+            }
+
+            try
+            {
+                if (tile.IsChessPiece())
+                {
+                    var fromMethods = MapChessColorFromTileMethods(tile);
+                    if (!string.IsNullOrEmpty(fromMethods))
+                        return fromMethods;
+                }
+            }
+            catch
+            {
+                // fall through
+            }
+
+            return "";
+        }
+
+        /// <summary>
+        /// Game Tile API helpers (IsBlackChessPiece / IsWhiteChessPiece). Never infer white from false.
+        /// </summary>
+        private static string MapChessColorFromTileMethods(Tile tile)
+        {
+            if (tile == null)
+                return "";
+
+            var tileType = tile.GetType();
+
+            foreach (var name in new[] { "IsBlackChessPiece", "IsFilledChessPiece" })
+            {
+                var method = tileType.GetMethod(name, MemberFlags);
+                if (method != null && method.ReturnType == typeof(bool))
+                {
+                    try
+                    {
+                        if ((bool)method.Invoke(tile, null))
+                            return "black";
+                    }
+                    catch
+                    {
+                        // try next
+                    }
+                }
+            }
+
+            foreach (var name in new[] { "IsWhiteChessPiece", "IsOutlinedChessPiece" })
+            {
+                var method = tileType.GetMethod(name, MemberFlags);
+                if (method != null && method.ReturnType == typeof(bool))
+                {
+                    try
+                    {
+                        if ((bool)method.Invoke(tile, null))
+                            return "white";
+                    }
+                    catch
+                    {
+                        // try next
+                    }
+                }
+            }
+
+            var isWhiteField = tileType.GetField("IsWhitePiece", MemberFlags);
+            if (isWhiteField != null && isWhiteField.FieldType == typeof(bool))
+            {
+                try
+                {
+                    return (bool)isWhiteField.GetValue(tile) ? "white" : "black";
+                }
+                catch
+                {
+                    // fall through
+                }
+            }
+
+            return "";
+        }
+
+        private static string MapChessColorFromReflect(object obj)
+        {
+            if (obj == null)
+                return "";
+
+            foreach (var name in new[]
+            {
+                "ChessColor",
+                "PieceColor",
+                "ChessPieceColor",
+                "chessColor",
+                "pieceColor",
+            })
+            {
+                var mapped = TryReadChessColorMember(obj, name, isField: false);
+                if (!string.IsNullOrEmpty(mapped))
+                    return mapped;
+                mapped = TryReadChessColorMember(obj, name, isField: true);
+                if (!string.IsNullOrEmpty(mapped))
+                    return mapped;
+            }
+
+            foreach (var name in new[]
+            {
+                "IsBlackPiece",
+                "IsBlack",
+                "IsFilled",
+                "IsFilledIn",
+                "isBlack",
+                "isFilled",
+                "_isBlack",
+                "_isBlackChessPiece",
+            })
+            {
+                var black = TryReadChessBoolMember(obj, name);
+                if (black == true)
+                    return "black";
+            }
+
+            foreach (var name in new[]
+            {
+                "IsWhite",
+                "IsOutlined",
+                "IsOutline",
+                "isWhite",
+                "isOutlined",
+                "_isWhite",
+            })
+            {
+                var white = TryReadChessBoolMember(obj, name);
+                if (white == true)
+                    return "white";
+            }
+
+            return MapChessColorFromMemberScan(obj);
+        }
+
+        private static string TryReadChessColorMember(object obj, string name, bool isField)
+        {
+            try
+            {
+                var type = obj.GetType();
+                object val = null;
+                if (isField)
+                {
+                    var field = type.GetField(name, MemberFlags);
+                    if (field != null)
+                        val = field.GetValue(obj);
+                }
+                else
+                {
+                    var prop = type.GetProperty(name, MemberFlags);
+                    if (prop != null)
+                        val = prop.GetValue(obj, null);
+                }
+
+                if (val == null)
+                    return "";
+                if (val is bool b)
+                    return MapChessColorBoolFromMemberName(name, b);
+                return MapChessColorToken(val);
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static bool? TryReadChessBoolMember(object obj, string name)
+        {
+            try
+            {
+                var type = obj.GetType();
+                var prop = type.GetProperty(name, MemberFlags);
+                if (prop != null && prop.PropertyType == typeof(bool))
+                    return (bool)prop.GetValue(obj, null);
+
+                var field = type.GetField(name, MemberFlags);
+                if (field != null && field.FieldType == typeof(bool))
+                    return (bool)field.GetValue(obj);
+            }
+            catch
+            {
+                // fall through
+            }
+
+            return null;
+        }
+
+        private static string MapChessColorToken(object val)
+        {
+            if (val == null)
+                return "";
+
+            if (val is bool)
+                return "";
+
+            var name = val.ToString().Trim();
+            if (string.IsNullOrEmpty(name))
+                return "";
+
+            var lower = name.ToLowerInvariant();
+            if (lower.Contains("white") || lower.Contains("outline"))
+                return "white";
+            if (lower.Contains("black") || lower.Contains("filled"))
+                return "black";
+            return "";
+        }
+
+        private static string MapChessColorBoolFromMemberName(string memberName, bool value)
+        {
+            if (!value || string.IsNullOrEmpty(memberName))
+                return "";
+
+            var lower = memberName.ToLowerInvariant();
+            if (lower.Contains("white") || lower.Contains("outline"))
+                return "white";
+            if (lower.Contains("black") || lower.Contains("filled"))
+                return "black";
+            return "";
+        }
+
+        private static string MapChessColorFromMemberScan(object obj)
+        {
+            if (obj == null)
+                return "";
+
+            var type = obj.GetType();
+            foreach (var prop in type.GetProperties(MemberFlags))
+            {
+                if (!MemberNameLooksLikeChessColor(prop.Name))
+                    continue;
+                try
+                {
+                    var val = prop.GetValue(obj, null);
+                    if (val == null)
+                        continue;
+                    var mapped = val is bool b
+                        ? MapChessColorBoolFromMemberName(prop.Name, b)
+                        : MapChessColorToken(val);
+                    if (!string.IsNullOrEmpty(mapped))
+                        return mapped;
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+
+            foreach (var field in type.GetFields(MemberFlags))
+            {
+                if (!MemberNameLooksLikeChessColor(field.Name))
+                    continue;
+                try
+                {
+                    var val = field.GetValue(obj);
+                    if (val == null)
+                        continue;
+                    var mapped = val is bool b
+                        ? MapChessColorBoolFromMemberName(field.Name, b)
+                        : MapChessColorToken(val);
+                    if (!string.IsNullOrEmpty(mapped))
+                        return mapped;
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+
+            return "";
+        }
+
+        private static bool MemberNameLooksLikeChessColor(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+
+            var lower = name.ToLowerInvariant();
+            return lower.Contains("chess")
+                || lower.Contains("piececolor")
+                || lower.Contains("isblack")
+                || lower.Contains("iswhite")
+                || lower.Contains("isfilled")
+                || lower.Contains("isoutline");
         }
 
         private static string MapCurse(Tile tile, GlyphType glyph)

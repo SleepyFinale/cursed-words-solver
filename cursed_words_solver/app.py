@@ -55,6 +55,7 @@ from cursed_words_solver.rules.boss_effects import (
     boss_word_constraints,
 )
 from cursed_words_solver.rules.rule_lookup import boss_display_name
+from cursed_words_solver.rules.chess_tiles import missing_chess_color_warnings
 from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.ui.board_highlight import BoardHighlightOverlay
 from cursed_words_solver.ui.loadout_dialog import LoadoutDialog
@@ -423,6 +424,8 @@ class SolverApp:
                     print(f"Money: ${mod_money} (mod)", flush=True)
                 print("Parsed board:", flush=True)
                 print(format_board_grid(board, compact=True), flush=True)
+                for warn in missing_chess_color_warnings(board):
+                    print(f"  Warning: {warn}", flush=True)
                 if self.config.board_region.is_valid():
                     try:
                         board_img = capture_region(self.config.board_region)

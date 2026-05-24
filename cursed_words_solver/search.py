@@ -30,6 +30,11 @@ from cursed_words_solver.rules.scoring_conditions import (
     tile_number_value,
 )
 from cursed_words_solver.rules.fraction_tiles import fraction_position_valid
+from cursed_words_solver.rules.chess_tiles import (
+    chess_neighbors,
+    identical_chess_piece,
+    is_chess_piece,
+)
 from cursed_words_solver.rules.stamp_behaviors import StampSearchFlags, stamp_search_flags
 
 # 8 directions
@@ -37,12 +42,6 @@ DIRS_8 = [
     (-1, -1), (-1, 0), (-1, 1),
     (0, -1),           (0, 1),
     (1, -1),  (1, 0),  (1, 1),
-]
-
-# Knight L-moves
-KNIGHT_DIRS = [
-    (-2, -1), (-2, 1), (-1, -2), (-1, 2),
-    (1, -2), (1, 2), (2, -1), (2, 1),
 ]
 
 TIME_CHECK_INTERVAL = 256
@@ -483,6 +482,10 @@ def neighbors_standard(
 
 def _physical_letter(tile: Tile) -> str:
     """Glyph on tile for Full Moon matching (not word-position transforms like Flamingo)."""
+    if is_chess_piece(tile):
+        return ""
+    if tile.curse in (CurseType.WILDCARD, CurseType.FRACTION):
+        return ""
     glyph = normalize_tile_glyph(tile.char or "")
     if tile.curse == CurseType.CURRENCY:
         return glyph if glyph in CURRENCY_MAP else ""
@@ -497,17 +500,17 @@ def _double_letter_teleport_neighbors(
     visited: int | set[int],
     flags: StampSearchFlags,
 ) -> list[int]:
-    """Full Moon: jump to another unused tile with the same letter."""
+    """Full Moon: jump to another unused tile with the same letter or identical chess piece."""
     last_tile = board.get_by_index(path[-1])
     letter = _physical_letter(last_tile)
-    if not letter:
-        return []
     out: list[int] = []
     for idx in _active_indices(board):
         if idx == path[-1] or _visited_has(visited, idx):
             continue
         other = board.get_by_index(idx)
-        if _physical_letter(other) == letter:
+        if letter and _physical_letter(other) == letter:
+            out.append(idx)
+        elif identical_chess_piece(last_tile, other):
             out.append(idx)
     return out
 
@@ -537,32 +540,8 @@ def neighbors_from_tile(
             if not (visited & (1 << i))
         ]
 
-    if last_tile.curse == CurseType.CHESS_KNIGHT:
-        row, col = last_tile.row, last_tile.col
-        out = []
-        for dr, dc in KNIGHT_DIRS:
-            nr, nc = row + dr, col + dc
-            if 0 <= nr < 5 and 0 <= nc < 5:
-                idx = index_of(nr, nc)
-                if board.is_active_index(idx) and not _visited_has(visited, idx):
-                    out.append(idx)
-        return out
-
-    if last_tile.curse == CurseType.CHESS_ROOK:
-        return _line_neighbors(board, path[-1], visited, rook=True)
-
-    if last_tile.curse == CurseType.CHESS_BISHOP:
-        return _line_neighbors(board, path[-1], visited, bishop=True)
-
-    if last_tile.curse in (
-        CurseType.CHESS_QUEEN,
-        CurseType.CHESS_KING,
-    ):
-        # Queen: any straight line; King: one step any direction
-        if last_tile.curse == CurseType.CHESS_KING:
-            nbrs = neighbors_standard(board, path, visited, flags=flags)
-        else:
-            nbrs = _line_neighbors(board, path[-1], visited, rook=True, bishop=True)
+    if is_chess_piece(last_tile):
+        nbrs = chess_neighbors(board, path, visited, flags)
     else:
         nbrs = neighbors_standard(board, path, visited, flags=flags)
 
@@ -655,6 +634,15 @@ def _balanced_start_indices(board: Board) -> list[int]:
     return sorted(_active_indices(board), key=priority)
 
 
+def _chess_start_indices(board: Board) -> list[int]:
+    """Chess tiles as DFS starts (low priority in main pass; used for prefix seeding)."""
+    return [
+        i
+        for i in _active_indices(board)
+        if is_chess_piece(board.get_by_index(i))
+    ]
+
+
 def _interleaved_number_starts(board: Board) -> list[int]:
     """Round-robin across number faces so one '1' tile cannot monopolize digit-pass time."""
     buckets: dict[int, list[int]] = {}
@@ -702,43 +690,13 @@ def _fraction_cluster_number_starts(board: Board) -> list[int]:
         key=lambda i: (-float(board.get_by_index(i).base_score), i),
     )
 
-
-def _line_neighbors(
-    board: Board,
-    start_idx: int,
-    visited: int | set[int],
-    rook: bool = False,
-    bishop: bool = False,
-) -> list[int]:
-    row, col = start_idx // 5, start_idx % 5
-    out = []
-    straight = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-    diag = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
-    dirs = []
-    if rook:
-        dirs.extend(straight)
-    if bishop:
-        dirs.extend(diag)
-    for dr, dc in dirs:
-        step = 1
-        while True:
-            nr, nc = row + dr * step, col + dc * step
-            if not (0 <= nr < 5 and 0 <= nc < 5):
-                break
-            idx = index_of(nr, nc)
-            if board.is_active_index(idx) and not _visited_has(visited, idx):
-                out.append(idx)
-            step += 1
-    return out
-
-
 class WordSearcher:
     def __init__(
         self,
         dictionary: WordDictionary | None = None,
         min_len: int = 3,
         max_len: int = 15,
-        time_budget: float = 30.0,
+        time_budget: float = 45.0,
         score_fn: Callable | None = None,
         candidate_heap_size: int | None = None,
         blocked: bool = False,
@@ -872,6 +830,125 @@ class WordSearcher:
             ch = resolve_letter(tile, 0, flags=stamp_flags)
             dfs([start], ch, 1 << start)
 
+    def _chess_prefix_candidates(
+        self,
+        board: Board,
+        loadout: Loadout,
+        *,
+        budget_sec: float = 2.0,
+        max_cap: int = 5,
+        heap_k: int = 200,
+    ) -> list[tuple[float, str, tuple[int, ...]]]:
+        """Quick DFS from chess starts; returned paths seed extension (not main heap)."""
+        chess_starts = _chess_start_indices(board)
+        if not chess_starts:
+            return []
+        mini = _CandidateHeap(heap_k)
+        deadline = time.monotonic() + budget_sec
+        cap_hi = min(max_cap, self.max_len)
+        for cap in range(self.min_len, cap_hi + 1):
+            if time.monotonic() >= deadline:
+                break
+            self._collect_words_fair_starts(
+                board,
+                loadout,
+                mini,
+                deadline,
+                cap,
+                chess_starts,
+            )
+        return mini.best_sorted()
+
+    def _extend_top_candidates(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        *,
+        top_paths: int = 20,
+        max_rounds: int | None = None,
+        extra_seeds: list[tuple[float, str, tuple[int, ...]]] | None = None,
+    ) -> None:
+        """Extend strong partial paths by one tile per round (cheap cap+N refinement)."""
+        if self.max_len <= self.min_len:
+            return
+        if max_rounds is None:
+            max_rounds = min(self.max_len - self.min_len, 12)
+        stamp_flags = stamp_search_flags(loadout)
+
+        def score_path(path: list[int], word: str) -> float:
+            if self.score_fn:
+                return self.score_fn(board, path, word, loadout)
+            return self.scoring.score_total_only(board, path, word, loadout)
+
+        for _round in range(max_rounds):
+            extended = False
+            seen_prefixes: set[tuple[int, ...]] = set()
+            seed_entries = list(candidates.best_sorted()[:top_paths])
+            if extra_seeds:
+                seed_entries.extend(extra_seeds)
+            for _score, _word, path_tuple in seed_entries:
+                path = list(path_tuple)
+                if len(path) >= self.max_len:
+                    continue
+                key = tuple(path)
+                if key in seen_prefixes:
+                    continue
+                seen_prefixes.add(key)
+                visited_mask = sum(1 << idx for idx in path)
+                letters = "".join(
+                    resolve_letter(board.get_by_index(idx), j, flags=stamp_flags)
+                    for j, idx in enumerate(path)
+                )
+                for idx in neighbors_from_tile(
+                    board, path, visited_mask, flags=stamp_flags
+                ):
+                    tile = board.get_by_index(idx)
+                    ch = resolve_letter(tile, len(letters), flags=stamp_flags)
+                    word = (letters + ch).lower()
+                    new_path = path + [idx]
+                    if len(word) < self.min_len:
+                        continue
+                    if not self.validator.word_ok(
+                        board, new_path, word, stamp_flags
+                    ):
+                        continue
+                    sc = score_path(new_path, word)
+                    candidates.consider(sc, word, new_path)
+                    extended = True
+            if not extended:
+                break
+
+    def _refine_candidates_with_extension(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        chess_seeds: list[tuple[float, str, tuple[int, ...]]],
+        *,
+        top_paths: int,
+    ) -> None:
+        """Extend chess capture chains on a large scratch heap, then merge back."""
+        if not chess_seeds:
+            return
+        main_entries = candidates.best_sorted()
+        refine = _CandidateHeap(4000)
+        for score, word, path in chess_seeds:
+            refine.consider(score, word, list(path))
+        self._extend_top_candidates(
+            board,
+            loadout,
+            refine,
+            top_paths=min(120, len(chess_seeds) + 20),
+            extra_seeds=None,
+            max_rounds=6,
+        )
+        candidates._heap.clear()
+        for score, word, path in refine.best_sorted()[:120]:
+            candidates.consider(score, word, list(path))
+        for score, word, path in main_entries:
+            candidates.consider(score, word, list(path))
+
     def find_best_words(
         self,
         board: Board,
@@ -993,6 +1070,19 @@ class WordSearcher:
                 )
                 if cap >= 8 and len(candidates) == before:
                     break
+
+        if len(candidates) > 0:
+            chess_seeds = self._chess_prefix_candidates(board, loadout)
+            self._refine_candidates_with_extension(
+                board,
+                loadout,
+                candidates,
+                chess_seeds,
+                top_paths=min(
+                    len(candidates),
+                    self.candidate_heap_size or _candidate_heap_size(top_n),
+                ),
+            )
 
         seen_words: set[str] = set()
         unique: list[WordResult] = []

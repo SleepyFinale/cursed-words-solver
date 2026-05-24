@@ -37,6 +37,8 @@ namespace CursedWordsSolverCompanion
         public bool active = true;
         /// <summary>True when this tile is a chess capture landing square (Movie Camera, Zebra).</summary>
         public bool take;
+        /// <summary>Chess piece side: black (filled) or white (outlined).</summary>
+        public string chess_color = "";
         public string card_suit = "";
         public string card_rank = "";
     }

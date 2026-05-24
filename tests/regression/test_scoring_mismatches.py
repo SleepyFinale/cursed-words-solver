@@ -13,6 +13,32 @@ from cursed_words_solver.rules.pipeline import ScoringPipeline
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "mismatches"
 
 
+def _merge_submit_take_flags(run_state: dict, data: dict) -> None:
+    """Apply submit-time take flags when snapshot predates melmod merge."""
+    submit_tiles = data.get("submit_board_tiles")
+    if not isinstance(submit_tiles, list):
+        return
+    board = run_state.get("board")
+    if not isinstance(board, dict):
+        return
+    tiles = board.get("tiles")
+    if not isinstance(tiles, list):
+        return
+    take_at = {
+        (int(t["row"]), int(t["col"]))
+        for t in submit_tiles
+        if isinstance(t, dict) and t.get("take")
+    }
+    if not take_at:
+        return
+    for tile in tiles:
+        if not isinstance(tile, dict):
+            continue
+        key = (int(tile.get("row", -1)), int(tile.get("col", -1)))
+        if key in take_at:
+            tile["take"] = True
+
+
 def _run_state_for_replay(data: dict) -> dict:
     """Merge submit-time extras into the F8 snapshot so replay matches in-game scoring."""
     run_state = dict(data.get("run_state_snapshot") or {})
@@ -20,6 +46,7 @@ def _run_state_for_replay(data: dict) -> dict:
     extras.update(data.get("extras_snapshot") or {})
     if extras:
         run_state["extras"] = extras
+    _merge_submit_take_flags(run_state, data)
     return run_state
 
 

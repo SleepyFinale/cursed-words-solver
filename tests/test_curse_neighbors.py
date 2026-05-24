@@ -12,7 +12,16 @@ def _empty_board() -> Board:
 
 def test_knight_moves():
     board = _empty_board()
-    board.tiles[2][2] = _tile(2, 2, CurseType.CHESS_KNIGHT)
+    board.tiles[2][2] = Tile(
+        2,
+        2,
+        "?",
+        "?",
+        0,
+        TileColor.COLORLESS,
+        CurseType.CHESS_KNIGHT,
+        metadata={"chess_color": "black"},
+    )
     nbrs = neighbors_from_tile(board, [board.tiles[2][2].index], {12})
     # Knight at (2,2) -> some L positions
     assert len(nbrs) > 0

@@ -1,0 +1,41 @@
+{
+  "board": {
+    "source": "melmod",
+    "row_order": "top_first",
+    "money": 0,
+    "rows": 5,
+    "cols": 5,
+    "playable_origin": "full",
+    "playable_min_row": 0,
+    "playable_max_row": 4,
+    "playable_min_col": 0,
+    "playable_max_col": 4,
+    "tiles": [
+      {"row": 4, "col": 0, "char": "c", "letter": "C", "base_score": 3.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 4, "col": 1, "char": "j", "letter": "J", "base_score": 8.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 4, "col": 2, "char": "a", "letter": "A", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 4, "col": 3, "char": "o", "letter": "O", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 4, "col": 4, "char": "i", "letter": "I", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 3, "col": 0, "char": "h", "letter": "H", "base_score": 4.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 3, "col": 1, "char": "d", "letter": "D", "base_score": 2.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 3, "col": 2, "char": "i", "letter": "I", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 3, "col": 3, "char": "p", "letter": "?", "base_score": 1.0, "color": "colorless", "curse": "chess_pawn", "chess_color": "white", "active": true},
+      {"row": 3, "col": 4, "char": "l", "letter": "L", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 2, "col": 0, "char": "s", "letter": "S", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 2, "col": 1, "char": "u", "letter": "U", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 2, "col": 2, "char": "e", "letter": "E", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 2, "col": 3, "char": "r", "letter": "R", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 2, "col": 4, "char": "t", "letter": "T", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 1, "col": 0, "char": "e", "letter": "E", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 1, "col": 1, "char": "p", "letter": "P", "base_score": 3.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 1, "col": 2, "char": "l", "letter": "L", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 1, "col": 3, "char": "s", "letter": "S", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 1, "col": 4, "char": "e", "letter": "E", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 0, "col": 0, "char": "n", "letter": "N", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 0, "col": 1, "char": "z", "letter": "Z", "base_score": 10.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 0, "col": 2, "char": "a", "letter": "A", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 0, "col": 3, "char": "n", "letter": "N", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true},
+      {"row": 0, "col": 4, "char": "o", "letter": "O", "base_score": 1.0, "color": "colorless", "curse": "letter", "active": true}
+    ]
+  }
+}

@@ -48,12 +48,14 @@ namespace CursedWordsSolverCompanion
 
         [HarmonyPrefix]
         public static void Prefix(
+            List<TileSelection> tileSelections,
             List<BossModifier> bossModifiers,
             List<HistoricWord> previousWords
         )
         {
             BossResolver.CacheFromScoring(bossModifiers);
             ScoringCaptureSession.OnScoringContext(previousWords);
+            ScoringCaptureSession.OnSubmitWordTiles(tileSelections);
         }
 
         [HarmonyPostfix]

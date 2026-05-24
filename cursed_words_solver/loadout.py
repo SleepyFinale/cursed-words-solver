@@ -199,6 +199,9 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
             meta["consumable"] = True
         if entry.get("take"):
             meta["take"] = True
+        chess_color = entry.get("chess_color")
+        if chess_color:
+            meta["chess_color"] = str(chess_color).strip().lower()
         card_suit = entry.get("card_suit")
         if card_suit:
             meta["card_suit"] = str(card_suit).strip().lower()

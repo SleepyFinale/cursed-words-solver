@@ -92,15 +92,38 @@ def test_grid_sticker_scatter_class():
 
 def test_clapper_board_two_takes_multiply():
     board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "N", 3, curse=CurseType.CHESS_KNIGHT)
-    board.tiles[0][1] = _tile(0, 1, "R", 3, curse=CurseType.CHESS_ROOK)
-    board.tiles[0][2] = _tile(0, 2, "A", 2)
+    board.tiles[2][0] = _tile(
+        2,
+        0,
+        "R",
+        5,
+        curse=CurseType.CHESS_ROOK,
+        metadata={"chess_color": "black"},
+    )
+    board.tiles[2][2] = _tile(
+        2,
+        2,
+        "P",
+        1,
+        curse=CurseType.CHESS_PAWN,
+        metadata={"chess_color": "white"},
+    )
+    board.tiles[1][3] = _tile(
+        1,
+        3,
+        "P",
+        1,
+        curse=CurseType.CHESS_PAWN,
+        metadata={"chess_color": "black"},
+    )
+    board.tiles[1][4] = _tile(1, 4, "A", 2)
     pipeline = ScoringPipeline()
     loadout = Loadout(
         stickers=[LoadoutItem(id="clapper_board", name="Clapper Board", level=1)]
     )
-    score, bd = pipeline.score(board, [0, 1, 2], "nra", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "nra", Loadout())
+    path = [10, 12, 8, 9]
+    score, bd = pipeline.score(board, path, "rppa", loadout)
+    base, _ = pipeline.score(board, path, "rppa", Loadout())
     assert bd["multiplier"] == 2.0
     assert score == base * 2
 
@@ -185,6 +208,36 @@ def test_zebra_take_tile_multiply():
     score, bd = pipeline.score(board, [0, 1], "na", loadout)
     base, base_bd = pipeline.score(board, [0, 1], "na", Loadout())
     assert bd["pipeline"]["tile_scores"][0] == base_bd["pipeline"]["tile_scores"][0] * 3
+    assert score > base
+
+
+def test_zebra_inferred_capture_multiplies_attacker_tile():
+    """Capture landing at path[2]; Zebra multiplies capturing bishop at path[1]."""
+    board = _empty_board()
+    board.tiles[4][0] = _tile(
+        4,
+        0,
+        "?",
+        3,
+        curse=CurseType.CHESS_BISHOP,
+        metadata={"chess_color": "black"},
+    )
+    board.tiles[3][1] = _tile(
+        3,
+        1,
+        "?",
+        12,
+        curse=CurseType.CHESS_KNIGHT,
+        metadata={"chess_color": "white"},
+    )
+    board.tiles[0][2] = _tile(0, 2, "A", 2)
+    path = [21, 20, 16, 2]  # bishop -> knight capture -> letter
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="zebra", name="Zebra", level=1)])
+    score, bd = pipeline.score(board, path, "abca", loadout)
+    base, base_bd = pipeline.score(board, path, "abca", Loadout())
+    assert bd["pipeline"]["tile_scores"][1] == base_bd["pipeline"]["tile_scores"][1] * 3
+    assert bd["pipeline"]["tile_scores"][2] == base_bd["pipeline"]["tile_scores"][2]
     assert score > base
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 
 from cursed_words_solver.models import (
     CHESS_CURSES,
@@ -15,6 +16,13 @@ from cursed_words_solver.models import (
     normalize_tile_glyph,
 )
 from cursed_words_solver.rules.base_scoring import _scrabble_value, tile_base_contribution
+from cursed_words_solver.rules.chess_tiles import (
+    chess_side,
+    chess_side_known,
+    identical_chess_piece,
+    is_chess_capture_step,
+    is_chess_piece,
+)
 from cursed_words_solver.rules.fraction_tiles import fraction_parts, is_fraction_tile
 
 NON_COLOUR_FOR_NUMBER_BONUS = frozenset(
@@ -318,16 +326,35 @@ def _has_take_metadata(tile: Tile) -> bool:
 
 
 def is_take_tile(tile: Tile, *, strict: bool = False) -> bool:
-    """Chess capture on path. strict=True requires melmod take metadata."""
+    """Melmod take metadata on a tile (strict ignores non-metadata)."""
     if _has_take_metadata(tile):
         return True
-    if strict:
+    return False
+
+
+def is_take_at_path_position(
+    board: Board,
+    path: list[int],
+    pos: int,
+    *,
+    strict: bool = False,
+    allies_can_take: bool = False,
+) -> bool:
+    """Whether path[pos] counts as a chess capture landing square."""
+    tile = board.get_by_index(path[pos])
+    if _has_take_metadata(tile):
+        return True
+    if strict or pos == 0:
         return False
-    return is_chess_tile(tile)
-
-
-def chess_piece_value(tile: Tile) -> int:
-    return CHESS_PIECE_VALUES.get(tile.curse, 0)
+    prefix = path[:pos]
+    return is_chess_capture_step(
+        board,
+        path[pos - 1],
+        path[pos],
+        allies_can_take=allies_can_take,
+        path_prefix=prefix,
+        visited=set(prefix),
+    )
 
 
 def chess_take_path_positions(
@@ -336,17 +363,118 @@ def chess_take_path_positions(
     """Indices into path for tiles that count as takes."""
     return [
         i
-        for i, idx in enumerate(path)
-        if is_take_tile(board.get_by_index(idx), strict=strict)
+        for i in range(len(path))
+        if is_take_at_path_position(board, path, i, strict=strict)
     ]
 
 
-def first_n_take_piece_value_sum(
-    board: Board, path: list[int], n: int, *, strict: bool = False
+def chess_piece_value(tile: Tile) -> int:
+    return CHESS_PIECE_VALUES.get(tile.curse, 0)
+
+
+def _is_full_moon_chess_teleport_step(
+    board: Board, path: list[int], pos: int
+) -> bool:
+    """True when path step pos is a Full Moon jump between identical chess pieces."""
+    if pos < 1:
+        return False
+    from_idx, to_idx = path[pos - 1], path[pos]
+    from_tile = board.get_by_index(from_idx)
+    to_tile = board.get_by_index(to_idx)
+    if not is_chess_piece(from_tile) or not is_chess_piece(to_tile):
+        return False
+    if not identical_chess_piece(from_tile, to_tile):
+        return False
+    prefix = path[:pos]
+    return not is_chess_capture_step(
+        board,
+        from_idx,
+        to_idx,
+        path_prefix=prefix,
+        visited=set(prefix),
+    )
+
+
+def movie_camera_take_piece_value_at(
+    board: Board, path: list[int], pos: int
+) -> int:
+    """Movie Camera piece value for a capture landing at path[pos]."""
+    landing = board.get_by_index(path[pos])
+    if pos >= 2 and _is_full_moon_chess_teleport_step(board, path, pos - 1):
+        from_tile = board.get_by_index(path[pos - 1])
+        from_half = int(from_tile.base_score // 2)
+        land_half = int(landing.base_score // 2)
+        return max(from_half, land_half, chess_piece_value(landing))
+    piece = chess_piece_value(landing)
+    if is_chess_piece(landing):
+        boosted = int(landing.base_score)
+        if boosted > piece * 2:
+            return boosted
+    return piece
+
+
+def _movie_camera_take_excluded(
+    board: Board, path: list[int], take_pos: int, all_takes: list[int]
+) -> bool:
+    """Drop a capture superseded by a later take after a Full Moon chain across letter tiles."""
+    for fm_pos in range(take_pos + 1, len(path)):
+        if not _is_full_moon_chess_teleport_step(board, path, fm_pos):
+            continue
+        if not any(t > fm_pos for t in all_takes):
+            continue
+        if any(take_pos < t < fm_pos for t in all_takes):
+            continue
+        has_letter_gap = any(
+            not is_chess_piece(board.get_by_index(path[p]))
+            for p in range(take_pos + 1, fm_pos)
+        )
+        if has_letter_gap:
+            return True
+    return False
+
+
+def movie_camera_take_path_positions(
+    board: Board, path: list[int], *, strict: bool = False
+) -> list[int]:
+    """Path indices for captures that count toward Movie Camera's first-N takes."""
+    all_takes = chess_take_path_positions(board, path, strict=strict)
+    return [
+        pos
+        for pos in all_takes
+        if not _movie_camera_take_excluded(board, path, pos, all_takes)
+    ]
+
+
+def first_n_movie_camera_piece_value_sum(
+    board: Board,
+    path: list[int],
+    n: int,
+    *,
+    strict: bool = False,
 ) -> int:
     total = 0
+    for pos in movie_camera_take_path_positions(board, path, strict=strict)[
+        : max(n, 0)
+    ]:
+        total += movie_camera_take_piece_value_at(board, path, pos)
+    return total
+
+
+def first_n_take_piece_value_sum(
+    board: Board,
+    path: list[int],
+    n: int,
+    *,
+    strict: bool = False,
+    value_fn: Callable[[Board, list[int], int], int] | None = None,
+) -> int:
+    def _default_value(b: Board, p: list[int], pos: int) -> int:
+        return chess_piece_value(b.get_by_index(p[pos]))
+
+    fn = value_fn or _default_value
+    total = 0
     for pos in chess_take_path_positions(board, path, strict=strict)[: max(n, 0)]:
-        total += chess_piece_value(board.get_by_index(path[pos]))
+        total += fn(board, path, pos)
     return total
 
 
@@ -640,22 +768,13 @@ def chess_piece_count_on_path(board: Board, path: list[int]) -> int:
     return sum(1 for idx in path if is_chess_tile(board.get_by_index(idx)))
 
 
-def _chess_side(tile: Tile) -> str:
-    side = str(tile.metadata.get("chess_color", "") or "").lower()
-    if side in ("black", "white"):
-        return side
-    if tile.color == TileColor.WHITE:
-        return "white"
-    return "black"
-
-
 def chess_balanced_colors(board: Board, path: list[int]) -> bool:
     black = white = 0
     for idx in path:
         tile = board.get_by_index(idx)
-        if not is_chess_tile(tile):
+        if not is_chess_tile(tile) or not chess_side_known(tile):
             continue
-        if _chess_side(tile) == "white":
+        if chess_side(tile) == "white":
             white += 1
         else:
             black += 1
@@ -847,9 +966,9 @@ def distinct_pair_count_on_path(board: Board, path: list[int]) -> int:
 
 
 def king_take_on_path(board: Board, path: list[int]) -> bool:
-    for idx in path:
-        tile = board.get_by_index(idx)
-        if tile.curse == CurseType.CHESS_KING and is_take_tile(tile):
+    for pos in chess_take_path_positions(board, path):
+        tile = board.get_by_index(path[pos])
+        if tile.curse == CurseType.CHESS_KING:
             return True
     return False
 
@@ -1208,6 +1327,27 @@ def tile_matches_target(tile: Tile, target: str) -> bool:
     return False
 
 
+def path_has_melmod_take_metadata(board: Board, path: list[int]) -> bool:
+    """True when melmod marked any path tile as a capture landing square."""
+    for idx in path:
+        if _has_take_metadata(board.get_by_index(idx)):
+            return True
+    return False
+
+
+def chess_take_strict_mode(
+    board: Board, path: list[int], *, strict_requested: bool
+) -> bool:
+    """Whether to require melmod take metadata for strict-take sticker rules.
+
+    Pre-play board exports usually lack take flags; infer captures unless melmod
+    confirmed captures on this path (post-submit mismatch validation).
+    """
+    if not strict_requested:
+        return False
+    return path_has_melmod_take_metadata(board, path)
+
+
 def chess_takes_on_path(board: Board, path: list[int], *, strict: bool = False) -> int:
     return len(chess_take_path_positions(board, path, strict=strict))
 
@@ -1236,9 +1376,15 @@ def mahjong_consumable_factor(loadout: Loadout, rule: dict) -> float:
 
 
 def super_8_take_word_bonus(loadout: Loadout, rule: dict) -> int:
+    """Wiki Super 8 right track: +8 at even upgrade counts, +16/+24/+32 at odd.
+
+    Pin levels from melmod are 1-indexed (Level 1 = base, no right upgrades yet).
+    """
     base = int(rule.get("value", 8))
-    per_upgrade = int(rule.get("value_per_right_upgrade", 8))
-    return scaled_pin_value(base, per_upgrade, pin_right_level(loadout))
+    right_upgrades = max(0, pin_right_level(loadout) - 1)
+    if right_upgrades % 2 == 0:
+        return base
+    return base * ((right_upgrades + 1) // 2 + 1)
 
 
 def bicycle_word_per_card(loadout: Loadout, rule: dict) -> int:
