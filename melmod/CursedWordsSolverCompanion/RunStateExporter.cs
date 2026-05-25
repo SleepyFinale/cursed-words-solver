@@ -30,6 +30,7 @@ namespace CursedWordsSolverCompanion
                     return false;
 
                 var snapshot = BuildSnapshot(player);
+                MergePreservedExtrasFromDisk(snapshot);
                 WriteSnapshot(snapshot);
                 DictionaryExporter.TryExport(logSuccess);
                 if (logSuccess)
@@ -155,6 +156,7 @@ namespace CursedWordsSolverCompanion
             try
             {
                 var freshExtras = BuildExtrasSnapshot();
+                ScoringCaptureSession.MergeScoringContextIntoExtras(freshExtras);
                 if (freshExtras == null || freshExtras.Count == 0)
                     return;
                 TryMergeExtrasKeys(freshExtras);
@@ -202,7 +204,7 @@ namespace CursedWordsSolverCompanion
             }
         }
 
-        private static void TryMergeExtrasKeys(Dictionary<string, string> keysToMerge)
+        public static void TryMergeExtrasKeys(Dictionary<string, string> keysToMerge)
         {
             if (keysToMerge == null || keysToMerge.Count == 0)
                 return;
@@ -290,6 +292,60 @@ namespace CursedWordsSolverCompanion
             if (snapshot.board != null)
                 ConsumablePlacementTracker.OnBoardSnapshot(snapshot.board);
             return snapshot;
+        }
+
+        private static readonly string[] ExtrasPreserveFromDisk =
+        {
+            "previous_word_first_letter",
+            "mutating_dna_letter_counts",
+            "bicycle_word_score_bonus",
+            "cards_submitted",
+            "birthday_cake_bonus",
+        };
+
+        /// <summary>
+        /// F7 full export rebuilds extras from reflection; keep post-submit scoring keys.
+        /// </summary>
+        private static void MergePreservedExtrasFromDisk(RunStateSnapshot snapshot)
+        {
+            if (snapshot?.extras == null || !File.Exists(OutputPath))
+                return;
+
+            try
+            {
+                var json = File.ReadAllText(OutputPath, Encoding.UTF8);
+                var root = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
+                if (root == null || !root.TryGetValue("extras", out var extrasObj) || extrasObj == null)
+                    return;
+
+                var onDisk = new Dictionary<string, string>();
+                var existing = extrasObj as Dictionary<string, string>;
+                if (existing != null)
+                {
+                    foreach (var kv in existing)
+                        onDisk[kv.Key] = kv.Value ?? "";
+                }
+                else if (extrasObj is Newtonsoft.Json.Linq.JObject jobj)
+                {
+                    foreach (var prop in jobj.Properties())
+                        onDisk[prop.Name] = prop.Value?.ToString() ?? "";
+                }
+
+                foreach (var key in ExtrasPreserveFromDisk)
+                {
+                    if (snapshot.extras.ContainsKey(key)
+                        && !string.IsNullOrEmpty(snapshot.extras[key]))
+                        continue;
+                    string value;
+                    if (!onDisk.TryGetValue(key, out value) || string.IsNullOrEmpty(value))
+                        continue;
+                    snapshot.extras[key] = value;
+                }
+            }
+            catch
+            {
+                // ignore — fresh export still usable
+            }
         }
 
         private static void WriteSnapshot(RunStateSnapshot snapshot)
@@ -690,6 +746,8 @@ namespace CursedWordsSolverCompanion
             if (firstGrid >= 0)
                 snapshot.extras["is_first_grid_of_encounter"] = firstGrid > 0 ? "true" : "false";
 
+            var historicWords = TryGetHistoricPreviousWords(player);
+
             var prevLetter = TryGetStringProperty(
                 player,
                 "PreviousWordFirstLetter",
@@ -702,6 +760,8 @@ namespace CursedWordsSolverCompanion
                     "PreviousWordFirstLetter",
                     "LastWordFirstLetter"
                 );
+            if (string.IsNullOrEmpty(prevLetter))
+                prevLetter = ScoringContextCapture.FirstLetterFromHistoricWords(historicWords);
             if (!string.IsNullOrEmpty(prevLetter))
                 snapshot.extras["previous_word_first_letter"] = prevLetter.Substring(0, 1).ToLowerInvariant();
 
@@ -720,7 +780,6 @@ namespace CursedWordsSolverCompanion
             if (redUsed >= 0)
                 snapshot.extras["red_tiles_used_encounter"] = redUsed.ToString();
 
-            var historicWords = TryGetHistoricPreviousWords(player);
             var greenPoison = ScoringContextCapture.ComputeGreenPoisonBonus(historicWords);
             if (greenPoison > 0.001)
                 snapshot.extras["green_poison_bonus"] = greenPoison.ToString(

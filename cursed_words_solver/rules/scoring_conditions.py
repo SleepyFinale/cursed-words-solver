@@ -199,6 +199,11 @@ def word_all_cursed_tiles(board: Board, path: list[int]) -> bool:
     return all(is_cursed_tile(board.get_by_index(idx)) for idx in path)
 
 
+def cursed_word_played(_board: Board, path: list[int], word: str) -> bool:
+    """Jack-o'-Lantern: every submitted word counts as a cursed word."""
+    return bool(path and word)
+
+
 def is_joker_tile(tile: Tile) -> bool:
     val = tile.metadata.get("is_joker")
     return val is True or val == "true" or val == 1 or val == "1"
@@ -1077,6 +1082,8 @@ def normalize_scoring_path(path: list[int]) -> list[int]:
 
 def path_letter_for_double_letter(tile: Tile) -> str:
     """Letter for Yellow Glasses path doubles; uses submit char when letter is unresolved."""
+    if tile.curse == CurseType.CURRENCY:
+        return ""
     ch = path_letter_for_count(tile)
     if ch:
         return ch
@@ -1226,9 +1233,18 @@ def currency_on_path(board: Board, path: list[int]) -> bool:
     return any(board.get_by_index(idx).curse == CurseType.CURRENCY for idx in path)
 
 
-def money_for_scoring(board: Board, path: list[int], loadout: Loadout) -> int:
-    """Money for per-$ rules (Credit Card, etc.): in-run bank only, not path tiles."""
-    return max(board.money, loadout.money, 0)
+def money_for_scoring(
+    board: Board,
+    path: list[int],
+    loadout: Loadout,
+    *,
+    state: dict | None = None,
+) -> int:
+    """Bank for per-$ rules plus currency earned this word (tile_init money_bonus)."""
+    base = max(board.money, loadout.money, 0)
+    if state is not None:
+        base += int(state.get("money_bonus", 0))
+    return base
 
 
 def path_all_non_adjacent(path: list[int]) -> bool:
@@ -1689,6 +1705,8 @@ def explain_sticker_condition(
         return True, f"applied: word '{first}' matches path first letter '{path_first}'"
 
     if condition == "word_starts_same_as_previous":
+        if grid_number(loadout) <= 1:
+            return False, "skipped: no previous word on first grid"
         prev = _extra_letter(loadout, "previous_word_first_letter")
         first = _effective_word_start_letter(board, path, word)
         if not prev or not first:
@@ -1786,6 +1804,8 @@ def _evaluate_sticker_condition(
             return False
         return first == first_letter_on_path(board, path)
     if condition == "word_starts_same_as_previous":
+        if grid_number(loadout) <= 1:
+            return False
         prev = _extra_letter(loadout, "previous_word_first_letter")
         first = _effective_word_start_letter(board, path, word)
         if not prev or not first:
@@ -1833,6 +1853,8 @@ def _evaluate_sticker_condition(
         return word_starts_ends_different_curse_type(board, path)
     if condition == "word_all_cursed":
         return word_all_cursed_tiles(board, path)
+    if condition == "cursed_word":
+        return cursed_word_played(board, path, word)
     if condition.startswith("card_count_eq:"):
         try:
             n = int(condition.split(":", 1)[1])

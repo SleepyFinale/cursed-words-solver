@@ -161,6 +161,8 @@ def initial_tile_scores(
             contrib = float(tile.base_score)
         elif tile.color == TileColor.BLUE and blue_base_override is not None:
             contrib = float(blue_base_override)
+        elif tile.curse == CT.CURRENCY and tile.metadata.get("source") == "melmod":
+            contrib = float(tile.base_score)
         else:
             contrib = float(tile_base_contribution(tile, money))
         scores.append(contrib)

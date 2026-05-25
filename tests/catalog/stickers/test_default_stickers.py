@@ -243,8 +243,8 @@ def test_credit_card_money_word_score():
     assert bd["word_score"] == 10
 
 
-def test_credit_card_money_ignores_currency_on_path():
-    """Per-$ stickers use bank balance only; path $ tiles do not add to money."""
+def test_credit_card_money_includes_currency_earned_this_word():
+    """Per-$ stickers use bank after GetMoneyFromCurrencyTiles (+$1 per $ tile)."""
     board = Board(tiles=_empty_board().tiles, money=5)
     board.tiles[0][0] = _tile(0, 0, "$", 0, curse=CurseType.CURRENCY)
     board.tiles[0][1] = _tile(0, 1, "A", 2)
@@ -254,8 +254,24 @@ def test_credit_card_money_ignores_currency_on_path():
         stickers=[LoadoutItem(id="credit_card", name="Credit Card", level=1)],
     )
     score, bd = pipeline.score(board, [0, 1], "a", loadout)
-    assert bd["word_score"] == 10
-    assert score == 12
+    assert bd["word_score"] == 12
+    assert score == 14
+
+
+def test_credit_card_money_does_not_compound_across_repeated_scoring():
+    """Search scores many candidates; currency must not permanently raise loadout.money."""
+    board = Board(tiles=_empty_board().tiles, money=2)
+    board.tiles[0][0] = _tile(0, 0, "$", 0, curse=CurseType.CURRENCY)
+    board.tiles[0][1] = _tile(0, 1, "A", 2)
+    loadout = Loadout(
+        money=2,
+        stickers=[LoadoutItem(id="credit_card", name="Credit Card", level=1)],
+    )
+    pipeline = ScoringPipeline()
+    for _ in range(100):
+        pipeline.score_total_only(board, [0, 1], "a", loadout)
+    assert loadout.money == 2
+    assert board.money == 2
 
 
 def test_credit_card_money_uses_bank_not_currency_tile_value():
@@ -268,8 +284,8 @@ def test_credit_card_money_uses_bank_not_currency_tile_value():
         stickers=[LoadoutItem(id="credit_card", name="Credit Card", level=1)],
     )
     score, bd = pipeline.score(board, [0, 1], "a", loadout)
-    assert bd["word_score"] == 10
-    assert score == 12
+    assert bd["word_score"] == 12
+    assert score == 14
 
 
 def test_currency_letter_value_melmod_glyph():

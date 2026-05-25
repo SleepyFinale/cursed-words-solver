@@ -729,7 +729,7 @@ TUNED_STICKERS: dict[str, dict] = {
     "jack_o_lantern": {
         "name": "Jack-o'-Lantern",
         "type": "add_money_on_condition",
-        "condition": "word_all_cursed",
+        "condition": "cursed_word",
         "base": 1,
         "upgrade": 1,
         "wiki_effect": "Get $N for every cursed word",

@@ -1,5 +1,6 @@
 """Default-unlocked stamp scoring and search (wiki: Unlocked by default)."""
 
+import json
 from pathlib import Path
 
 from cursed_words_solver.dictionary import WordDictionary
@@ -11,6 +12,7 @@ from cursed_words_solver.models import (
     Tile,
     TileColor,
 )
+from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
@@ -165,25 +167,117 @@ def test_bento_box_same_first_letter():
     pipeline = ScoringPipeline()
     loadout = Loadout(
         stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
-        extras={"previous_word_first_letter": "c"},
+        extras={"previous_word_first_letter": "c", "grid_number": "2"},
     )
     score, bd = pipeline.score(board, [0], "cat", loadout)
     assert bd["multiplier"] == 1.5
     assert score == 4 * 1.5
 
 
+def test_bento_box_skipped_on_first_grid():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "Y", 4)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras={"previous_word_first_letter": "y", "grid_number": "1"},
+    )
+    score, bd = pipeline.score(board, [0], "yaccas", loadout)
+    assert bd["multiplier"] == 1.0
+    assert score == 4.0
+
+
 def test_bento_box_path_first_letter_not_dictionary_word():
+    """When path-first matches previous but dictionary word does not, Bento still applies."""
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "$", 0, curse=CurseType.CURRENCY)
     board.tiles[0][1] = _tile(0, 1, "E", 1)
     pipeline = ScoringPipeline()
     loadout = Loadout(
         stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
-        extras={"previous_word_first_letter": "e"},
+        extras={"previous_word_first_letter": "e", "grid_number": "2"},
     )
     score, bd = pipeline.score(board, [0, 1], "weep", loadout)
     assert bd["multiplier"] == 1.5
-    assert score == int(1 * 1.5)
+    assert score == 1.0
+
+    loadout_no_match = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras={"previous_word_first_letter": "w", "grid_number": "2"},
+    )
+    score2, bd2 = pipeline.score(board, [0, 1], "weep", loadout_no_match)
+    assert bd2["multiplier"] == 1.0
+    assert score2 == 1.0
+
+
+def test_yegg_bento_box_with_previous_word_letter():
+    """Regression: Bento Box ×1.5 when current word matches previous first letter (yegg)."""
+    from tests.regression.test_scoring_mismatches import _run_state_for_replay
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260525_032753.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    pipeline = ScoringPipeline()
+    score, _bd = pipeline.score(board, data["path"], data["word"], loadout)
+    assert score == 108
+
+
+def test_woo_bento_box_with_previous_word_letter():
+    """Regression: Bento Box ×1.5 when current word matches previous first letter (woo)."""
+    from tests.regression.test_scoring_mismatches import _run_state_for_replay
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260525_035046.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    pipeline = ScoringPipeline()
+    score, _bd = pipeline.score(board, data["path"], data["word"], loadout)
+    assert score == 594
+
+
+def test_vielles_bento_box_with_previous_word_letter():
+    """Regression: Bento Box ×1.5 when current word matches previous first letter (vielles)."""
+    from tests.regression.test_scoring_mismatches import _run_state_for_replay
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260525_033903.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    pipeline = ScoringPipeline()
+    score, _bd = pipeline.score(board, data["path"], data["word"], loadout)
+    assert score == 111
+
+
+def test_historic_words_fallback_previous_letter():
+    from cursed_words_solver.loadout import _normalize_pin_extras
+
+    extras = _normalize_pin_extras(
+        {
+            "historic_words": json.dumps(
+                [{"word": "yarn", "path": [0]}, {"word": "yodel", "path": [1]}]
+            )
+        }
+    )
+    assert extras.get("previous_word_first_letter") == "y"
 
 
 def test_chips_path_first_letter_not_dictionary_word():

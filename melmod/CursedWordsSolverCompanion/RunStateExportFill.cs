@@ -336,7 +336,15 @@ namespace CursedWordsSolverCompanion
 
             var historic = RunStateExporter.TryGetHistoricPreviousWordsPublic(player);
             if (historic != null && historic.Count > 0)
+            {
                 snapshot.extras["historic_words"] = SerializeHistoricWords(historic);
+                if (!snapshot.extras.ContainsKey("previous_word_first_letter"))
+                {
+                    var prev = ScoringContextCapture.FirstLetterFromHistoricWords(historic);
+                    if (!string.IsNullOrEmpty(prev))
+                        snapshot.extras["previous_word_first_letter"] = prev;
+                }
+            }
         }
 
         private static void FillBossParams(RunStateSnapshot snapshot, Player player)

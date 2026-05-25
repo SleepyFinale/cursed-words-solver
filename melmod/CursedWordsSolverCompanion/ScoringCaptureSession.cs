@@ -118,6 +118,51 @@ namespace CursedWordsSolverCompanion
                 return;
         }
 
+        /// <summary>
+        /// After each submit, store the submitted word's first letter for the next word's Bento Box check.
+        /// </summary>
+        private static void PersistLastSubmittedWordFirstLetter()
+        {
+            var letter = ScoringContextCapture.FirstLetterFromSubmittedWord(
+                _word,
+                _path,
+                _submitBoardSnapshot ?? _boardAtSubmit
+            );
+            if (string.IsNullOrEmpty(letter))
+                return;
+
+            _scoringContextExtras["previous_word_first_letter"] = letter;
+            TryPersistScoringContextExtras();
+        }
+
+        /// <summary>
+        /// Write scoring-time extras into run_state.json so F8 sees them before the next submit.
+        /// </summary>
+        public static void TryPersistScoringContextExtras()
+        {
+            if (_scoringContextExtras == null || _scoringContextExtras.Count == 0)
+                return;
+
+            try
+            {
+                RunStateExporter.TryMergeExtrasKeys(_scoringContextExtras);
+            }
+            catch
+            {
+                // ignore — F7 full export still available
+            }
+        }
+
+        /// <summary>Overlay scoring-time extras onto a snapshot before post-submit merge.</summary>
+        public static void MergeScoringContextIntoExtras(Dictionary<string, string> target)
+        {
+            if (target == null || _scoringContextExtras == null)
+                return;
+
+            foreach (var kv in _scoringContextExtras)
+                target[kv.Key] = kv.Value ?? "";
+        }
+
         public static void OnScoreStepsCalculated(List<ScoreCalcVizInfo> steps)
         {
             if (steps == null)
@@ -154,6 +199,8 @@ namespace CursedWordsSolverCompanion
         {
             try
             {
+                PersistLastSubmittedWordFirstLetter();
+
                 var actualScore = ComputeActualScore();
                 var submitPlayer = RunStateExporter.GetPlayerForUpdate();
                 var runState = RunStateExporter.CaptureRunState(submitPlayer);

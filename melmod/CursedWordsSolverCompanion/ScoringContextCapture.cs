@@ -292,6 +292,52 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
+        /// First letter of the word just submitted — becomes previous_word_first_letter for the next F8.
+        /// Path-first when currency/symbol leads the path (Bento/Chips parity with solver).
+        /// </summary>
+        public static string FirstLetterFromSubmittedWord(
+            string word,
+            List<int> path,
+            BoardSnapshot board
+        )
+        {
+            var pathFirst = FirstLetterOnBoardPath(path, board);
+            var wordFirst = FirstAlphabeticLetter(word);
+            if (
+                !string.IsNullOrEmpty(pathFirst)
+                && !string.IsNullOrEmpty(wordFirst)
+                && pathFirst != wordFirst
+            )
+                return pathFirst;
+            return !string.IsNullOrEmpty(wordFirst) ? wordFirst : pathFirst;
+        }
+
+        private static string FirstLetterOnBoardPath(List<int> path, BoardSnapshot board)
+        {
+            if (path == null || board?.tiles == null)
+                return "";
+
+            const int cols = 5;
+            foreach (var idx in path)
+            {
+                if (idx < 0)
+                    continue;
+                var row = idx / cols;
+                var col = idx % cols;
+                foreach (var tile in board.tiles)
+                {
+                    if (tile == null || tile.row != row || tile.col != col)
+                        continue;
+                    var ch = (tile.letter ?? tile.char_display ?? "").Trim().ToLowerInvariant();
+                    if (ch.Length == 1 && char.IsLetter(ch[0]))
+                        return ch;
+                }
+            }
+
+            return "";
+        }
+
+        /// <summary>
         /// ApplyPoisonEffect parity: per prior word, green_tile_count × 10% of that word's score.
         /// </summary>
         public static double ComputeGreenPoisonBonus(List<HistoricWord> previousWords)

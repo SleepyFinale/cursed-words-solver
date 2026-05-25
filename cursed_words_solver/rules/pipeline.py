@@ -405,6 +405,23 @@ def _boss_is_salamander(loadout: Loadout) -> bool:
     return bid == "salamander" or "bosslesspoints" in bid
 
 
+def _has_mutating_dna_stamp(loadout: Loadout) -> bool:
+    return any(
+        "mutating" in (stamp.id or "").lower()
+        or "dna" in (stamp.id or "").lower()
+        or "mutating" in (stamp.name or "").lower()
+        for stamp in loadout.stamps
+    )
+
+
+def _salamander_defer_multiply_for_mutating(loadout: Loadout) -> bool:
+    """Defer ×WORD until after Mutating DNA only when that stamp can still fire."""
+    if not _boss_is_salamander(loadout) or not _has_mutating_dna_stamp(loadout):
+        return False
+    prior = sum(mutating_dna_letter_counts_from_loadout(loadout).values())
+    return 0 < prior < 8
+
+
 def _finalize(
     state: dict[str, Any],
     board: Board | None = None,
@@ -539,18 +556,7 @@ class ScoringPipeline:
         if pin_effect and not hourglass:
             state = self._apply_pin(loadout, pin_effect, state, board, path)
             _trace_step(state, "pin", rule_id=pin_effect, detail="pin applied")
-        has_mutating_stamp = any(
-            "mutating" in (stamp.id or "").lower()
-            or "dna" in (stamp.id or "").lower()
-            or "mutating" in (stamp.name or "").lower()
-            for stamp in loadout.stamps
-        )
-        mutating_prior_total = sum(
-            mutating_dna_letter_counts_from_loadout(loadout).values()
-        )
-        defer_multiply_stickers = (
-            has_mutating_stamp and 0 < mutating_prior_total < 8
-        )
+        defer_multiply_stickers = _salamander_defer_multiply_for_mutating(loadout)
 
         _skip_types = _STAMP_SKIP_TYPES
 
@@ -1183,7 +1189,7 @@ class ScoringPipeline:
                 bonus = sticker_rule_int(level, rule) * len(path)
             elif word_mode == "per_money":
                 bonus = sticker_rule_int(level, rule) * money_for_scoring(
-                    board, path, loadout
+                    board, path, loadout, state=state
                 )
             elif word_mode == "per_void_unused":
                 n = void_tiles_letter_not_in_word(board, state["word"])
@@ -1324,24 +1330,12 @@ class ScoringPipeline:
                 factor = scaled_word_multiplier(level, rule, loadout, path=path)
                 label = condition or rule.get("scale_from_extras", "scaled")
                 rid = (rule_id or applying_sticker_id or "").lower()
-                salamander = _boss_is_salamander(loadout)
+                salamander_defer = _salamander_defer_multiply_for_mutating(loadout)
                 if (
                     rid == "yellow_glasses"
                     and state["word_score"] > 0
                     and level >= 3
-                    and not salamander
-                    and not word_starts_ends_different_suit(board, path)
-                    and chess_takes_on_path(board, path) < 2
-                ):
-                    _queue_word_multiplier(
-                        state, factor, rule_id, defer_finalize=True
-                    )
-                    state["effects"].append(f"×{factor} word ({label})")
-                elif (
-                    rid == "yellow_glasses"
-                    and state["word_score"] > 0
-                    and level >= 3
-                    and salamander
+                    and salamander_defer
                 ):
                     state["salamander_post_mutating_mults"].append(
                         (factor, rule_id)
@@ -1350,7 +1344,7 @@ class ScoringPipeline:
                 elif (
                     rid == "wrestlers"
                     and state["word_score"] > 0
-                    and salamander
+                    and salamander_defer
                     and word_starts_ends_different_suit(board, path)
                 ):
                     state["salamander_post_mutating_mults"].append(
@@ -1360,7 +1354,7 @@ class ScoringPipeline:
                 elif (
                     rid == "wrestlers"
                     and state["word_score"] > 0
-                    and salamander
+                    and _boss_is_salamander(loadout)
                 ):
                     bonus = int(100 * factor)
                     _add_word_score(state, bonus)
@@ -1452,7 +1446,7 @@ class ScoringPipeline:
 
         elif effect_type == "multiply_money_bonus":
             factor = money_word_multiplier(
-                level, rule, money_for_scoring(board, path, loadout)
+                level, rule, money_for_scoring(board, path, loadout, state=state)
             )
             if factor != 1.0:
                 _queue_word_multiplier(state, factor, rule_id)

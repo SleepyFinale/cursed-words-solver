@@ -345,6 +345,38 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
     )
 
 
+def _first_alphabetic_letter(word: str) -> str:
+    """First A–Z letter in a submitted word (lowercase), matching game/melmod capture."""
+    for ch in (word or "").strip().lower():
+        if ch.isalpha():
+            return ch
+    return ""
+
+
+def _previous_letter_from_historic_words(raw: Any) -> str:
+    """Last historic word's first letter (Bento Box / Limnophila parity with melmod)."""
+    rows: list[Any]
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return ""
+        rows = parsed if isinstance(parsed, list) else []
+    elif isinstance(raw, list):
+        rows = raw
+    else:
+        return ""
+
+    for row in reversed(rows):
+        if not isinstance(row, dict):
+            continue
+        word = str(row.get("word") or "").strip()
+        letter = _first_alphabetic_letter(word)
+        if letter:
+            return letter
+    return ""
+
+
 def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
     """Parse melmod string extras into structures the scoring pipeline uses."""
     out = dict(extras)
@@ -436,10 +468,13 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
             "1",
             1,
         )
-    if "previous_word_first_letter" in out and out["previous_word_first_letter"]:
-        out["previous_word_first_letter"] = (
-            str(out["previous_word_first_letter"]).strip().lower()[:1]
-        )
+    prev = str(out.get("previous_word_first_letter") or "").strip().lower()[:1]
+    if not prev and out.get("historic_words"):
+        prev = _previous_letter_from_historic_words(out.get("historic_words"))
+    if prev:
+        out["previous_word_first_letter"] = prev
+    elif "previous_word_first_letter" in out:
+        out.pop("previous_word_first_letter", None)
     for key in ("boss_area_number", "grids_remaining"):
         if key in out:
             try:

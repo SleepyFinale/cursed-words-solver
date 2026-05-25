@@ -14,11 +14,13 @@ from cursed_words_solver.rules.scoring_conditions import (
     bicycle_word_per_card,
     birthday_cake_improve_for_path,
     effective_suited_cards_on_path,
+    normalize_scoring_path,
     path_letter_for_count,
     rewind_bicycle_pre_word_extras,
     rewind_birthday_cake_pre_word_extras,
     suited_cards_on_path_count,
 )
+from cursed_words_solver.rules.tile_scoring import currency_money_from_path
 
 _BICYCLE_POST_EXTRAS = frozenset({"bicycle_word_score_bonus", "cards_submitted"})
 
@@ -406,6 +408,38 @@ def _money_from_actual_trace(data: dict) -> int | None:
     return peak if peak > 0 else None
 
 
+def _jack_o_lantern_money(loadout) -> int:
+    for item in loadout.stickers:
+        if item.id == "jack_o_lantern":
+            return max(1, item.level)
+    return 0
+
+
+def _bank_money_for_replay(
+    data: dict, board, path: list[int], loadout
+) -> int | None:
+    """Pre-currency bank for replay; peak trace $ includes tile_init earnings."""
+    peak = _money_from_actual_trace(data)
+    if peak is None:
+        return None
+    currency = currency_money_from_path(board, normalize_scoring_path(path), loadout)
+    if currency > 0 and peak >= currency:
+        bank = peak - currency
+    else:
+        bank = peak
+    trace = data.get("actual_trace")
+    if not isinstance(trace, list) or not trace:
+        return bank
+    first = trace[0]
+    if not isinstance(first, dict) or first.get("money") is None:
+        return bank
+    start = int(first["money"])
+    jack = _jack_o_lantern_money(loadout)
+    if jack and start < bank and bank - start == jack:
+        return start
+    return bank
+
+
 # Known scoring gaps; remove a stem when `pytest tests/regression/ -k <id>` passes.
 _KNOWN_FAILING = frozenset({
     "20260524_162313_cachacas",
@@ -468,7 +502,7 @@ def test_scoring_mismatch(case_path: Path) -> None:
     loadout = parse_run_state(run_state)
     _adjust_mutating_dna_extras(run_state, data, board, path)
     loadout = parse_run_state(run_state)
-    replay_money = _money_from_actual_trace(data)
+    replay_money = _bank_money_for_replay(data, board, path, loadout)
     if replay_money is not None:
         board.money = max(board.money, replay_money)
         loadout.money = max(loadout.money, replay_money)

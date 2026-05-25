@@ -177,3 +177,17 @@ def test_jack_o_lantern_cursed_word_money():
     base, _ = pipeline.score(board, [0, 1], "2?", Loadout())
     assert bd["money_bonus"] == 1
     assert score == base
+
+
+def test_jack_o_lantern_letter_and_currency_path():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "G", 2)
+    board.tiles[0][1] = _tile(0, 1, "O", 2)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="jack_o_lantern", name="Jack-o'-Lantern", level=1)]
+    )
+    score, bd = pipeline.score(board, [0, 1], "go", loadout)
+    base, _ = pipeline.score(board, [0, 1], "go", Loadout())
+    assert bd["money_bonus"] == 1
+    assert score == base
