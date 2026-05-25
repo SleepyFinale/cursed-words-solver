@@ -12,7 +12,9 @@ from cursed_words_solver.models import (
     TileColor,
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.rule_lookup import count_scoring_items, get_rule, slugify_name
+from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
+
+from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 from cursed_words_solver.search import (
     PathValidator,
@@ -72,16 +74,8 @@ def test_all_hayley_stamps_catalogued():
 
 def test_count_scoring_vs_grid_only_hayley_stamps():
     pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[
-            LoadoutItem(id=slugify_name(n), name=n, level=1, kind="stamp")
-            for n in HAYLEY_STAMP_NAMES
-        ]
-    )
-    scoring, total, grid_only = count_scoring_items(pipeline.rules, loadout)
-    assert total == 4
-    assert grid_only == len(GRID_ONLY_SLUGS)
-    assert scoring == 4 - len(GRID_ONLY_SLUGS)
+    assert_loadout_stamp_coverage(pipeline.rules, HAYLEY_STAMP_NAMES)
+
 
 
 def test_full_battery_three_numbers_triples_word():

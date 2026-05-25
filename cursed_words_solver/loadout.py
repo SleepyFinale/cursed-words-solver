@@ -1,4 +1,4 @@
-"""Loadout capture: MelonLoader JSON, manual UI, stub tray OCR."""
+"""Loadout capture: MelonLoader JSON and manual UI."""
 
 from __future__ import annotations
 
@@ -17,8 +17,31 @@ from cursed_words_solver.models import (
     LoadoutItem,
     Tile,
     TileColor,
+    curse_type_from_key,
     normalize_tile_glyph,
 )
+
+_TAXONOMY_PATH = Path(__file__).resolve().parents[1] / "data" / "game" / "tile_taxonomy.json"
+_VALID_COLORS: set[str] | None = None
+_VALID_CURSES: set[str] | None = None
+
+
+def _taxonomy_sets() -> tuple[set[str], set[str]]:
+    global _VALID_COLORS, _VALID_CURSES
+    if _VALID_COLORS is not None and _VALID_CURSES is not None:
+        return _VALID_COLORS, _VALID_CURSES
+    colors: set[str] = {c.value for c in TileColor}
+    curses: set[str] = {c.value for c in CurseType}
+    if _TAXONOMY_PATH.is_file():
+        try:
+            tax = json.loads(_TAXONOMY_PATH.read_text(encoding="utf-8"))
+            colors = {r["solver_color"] for r in tax.get("colors", [])} | colors
+            curses = {r["solver_curse"] for r in tax.get("curses", [])} | curses
+            curses |= {"wildcard", "chess_pawn", "chess_rook", "chess_bishop", "chess_knight", "chess_queen", "chess_king"}
+        except (json.JSONDecodeError, KeyError):
+            pass
+    _VALID_COLORS, _VALID_CURSES = colors, curses
+    return _VALID_COLORS, _VALID_CURSES
 
 
 def _read_run_state_json(path: Path) -> dict[str, Any] | None:
@@ -87,6 +110,8 @@ _CURSE_MAP: dict[str, CurseType] = {
     "chess_king": CurseType.CHESS_KING,
     "item": CurseType.ITEM,
     "card": CurseType.CARD,
+    "arrow": CurseType.ARROW,
+    "blank": CurseType.BLANK,
     "unknown": CurseType.UNKNOWN,
 }
 
@@ -124,11 +149,37 @@ def _resolve_letter_for_word(char: str, letter: str, curse: CurseType) -> str:
 
 
 def _melmod_row_to_solver(board_data: dict[str, Any], game_row: int) -> int:
-    """Map melmod row index to solver/OCR row (0 = top of screen)."""
+    """Map melmod row index to solver row (0 = top of screen)."""
     if board_data.get("row_order") == "top_first":
         return game_row
     # Legacy exports: Unity grid row 0 is the bottom row on screen.
     return 4 - game_row
+
+
+def melmod_board_available(data: dict[str, Any] | None) -> bool:
+    """True when run_state.json contains a valid melmod board export."""
+    return parse_board_from_run_state(data) is not None
+
+
+def melmod_install_hint() -> str:
+    """User-facing steps when the companion mod or F7 export is missing."""
+    return (
+        "Install the MelonLoader companion mod (see melmod/README.md in the repo), "
+        "start a run in-game, then press F7 to export the board to run_state.json."
+    )
+
+
+def is_run_state_template(data: dict[str, Any] | None) -> bool:
+    if not data:
+        return True
+    if data.get("character") == "Example":
+        return True
+    board = data.get("board")
+    if isinstance(board, dict) and board.get("source") != "melmod":
+        return not melmod_board_available(data)
+    return not melmod_board_available(data) and not (
+        data.get("stickers") or data.get("extras", {}).get("pin_effect")
+    )
 
 
 def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
@@ -185,8 +236,15 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
             letter_raw = ""
             color_key = "colorless"
 
+        valid_colors, valid_curses = _taxonomy_sets()
+        if color_key not in valid_colors and color_key != "inactive":
+            color_key = "unknown"
+        if curse_key not in valid_curses and curse_key != "inactive":
+            curse_key = "unknown"
         color = _COLOR_MAP.get(color_key, TileColor.UNKNOWN)
-        curse = _CURSE_MAP.get(curse_key, CurseType.UNKNOWN)
+        curse = curse_type_from_key(curse_key)
+        if curse == CurseType.UNKNOWN:
+            curse = _CURSE_MAP.get(curse_key, CurseType.UNKNOWN)
         letter = _resolve_letter_for_word(char, letter_raw, curse) if is_active else ""
 
         number_value = entry.get("number_value")
@@ -210,6 +268,17 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
             meta["card_rank"] = str(card_rank).strip().upper()[:1]
         if entry.get("is_joker") in (True, "true", "True", "1", 1):
             meta["is_joker"] = True
+        if entry.get("was_glitch") in (True, "true", "True", "1", 1):
+            meta["was_glitch"] = True
+        cactus_growth = entry.get("cactus_growth")
+        if cactus_growth is not None:
+            try:
+                meta["cactus_growth"] = int(cactus_growth)
+            except (TypeError, ValueError):
+                pass
+        scattered = entry.get("scattered_item_id") or entry.get("scattered_item")
+        if scattered:
+            meta["scattered_item_id"] = slugify_name(str(scattered))
 
         tile_obj = Tile(
             row=row,
@@ -288,16 +357,55 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
             out["pin_memory"] = []
     elif raw_memory is None:
         out.setdefault("pin_memory", [])
-    for int_key in ("cards_submitted", "bicycle_word_score_bonus", "bicycle_suited_on_path"):
+    raw_stitched = out.get("stitched_sticker_ids")
+    if isinstance(raw_stitched, str) and raw_stitched.strip():
+        try:
+            parsed = json.loads(raw_stitched)
+            out["stitched_sticker_ids"] = parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            out["stitched_sticker_ids"] = [
+                s.strip() for s in raw_stitched.split(",") if s.strip()
+            ]
+    for int_key in (
+        "cards_submitted",
+        "bicycle_word_score_bonus",
+        "bicycle_suited_on_path",
+        "pin_left_level",
+        "pin_right_level",
+        "pin_left_variable",
+        "pin_right_variable",
+        "overhand_level",
+        "grid_number",
+    ):
         if int_key in out:
             try:
                 out[int_key] = int(out[int_key])
             except (TypeError, ValueError):
                 out[int_key] = 0
     for key in (
+        "boss_floor_modification",
+        "fox_stolen_this_grid",
+        "fox_stolen_this_word",
+    ):
+        if key in out:
+            try:
+                out[key] = int(out[key])
+            except (TypeError, ValueError):
+                out[key] = 0
+    for key in ("green_poison_bonus", "pink_saved_this_word"):
+        if key in out:
+            try:
+                out[key] = float(out[key])
+            except (TypeError, ValueError):
+                out[key] = 0.0
+    for key in (
         "red_tiles_used_encounter",
         "consumable_rack_count",
         "rare_item_count",
+        "fairy_count",
+        "animal_stamp_count",
+        "money_lost_encounter",
+        "grids_total",
         "target_number",
         "target_score",
         "michael_book_bonus",
@@ -306,6 +414,9 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
         "shop_restock_count",
         "chess_move_tile_count",
         "rack_overflow",
+        "run_seed",
+        "wolf_max_length",
+        "cobra_min_length",
     ):
         if key in out:
             try:
@@ -358,6 +469,9 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
             "1",
             1,
         )
+    for key in ("kokeshi_dolls", "frozen_in_shop", "board_from_melmod"):
+        if key in out:
+            out[key] = out[key] in (True, "true", "True", "1", 1)
     return out
 
 

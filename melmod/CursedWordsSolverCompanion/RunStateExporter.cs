@@ -44,6 +44,7 @@ namespace CursedWordsSolverCompanion
                                 + "scores may show Birthday 0; rebuild melmod or set "
                                 + "run_state.extras.birthday_cake_bonus manually"
                         );
+                    ExportCompleteness.LogWarningsIfNeeded(snapshot, player, true);
                 }
                 return true;
             }
@@ -73,7 +74,44 @@ namespace CursedWordsSolverCompanion
             AppendPinFingerprint(sb, player.MyCharacter);
             sb.Append('|');
             sb.Append(ComputeBoardFingerprint(player));
+            RunStateExportFill.AppendEncounterFingerprint(sb, player);
             return sb.ToString();
+        }
+
+        public static void CacheGridNumber(int gridNumber)
+        {
+            if (gridNumber >= 1)
+                RunStateExportFill.CachedGridNumber = gridNumber;
+        }
+
+        public static List<HistoricWord> TryGetHistoricPreviousWordsPublic(Player player)
+        {
+            return TryGetHistoricPreviousWords(player);
+        }
+
+        /// <summary>
+        /// Merge submit-time take/card metadata into on-disk run_state.json (matched F8 suggestion).
+        /// </summary>
+        public static void TryMergeSubmitBoardMetadata(BoardSnapshot submitBoard)
+        {
+            if (submitBoard == null || !File.Exists(OutputPath))
+                return;
+
+            try
+            {
+                var json = File.ReadAllText(OutputPath, Encoding.UTF8);
+                var root = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
+                if (root == null)
+                    return;
+
+                BoardExporter.MergeSubmitTakeFlagsIntoRunState(root, submitBoard);
+                BoardExporter.MergeSubmitCardMetadataIntoRunState(root, submitBoard);
+                WriteJsonRoot(root);
+            }
+            catch
+            {
+                // ignore — F7 full export still available
+            }
         }
 
         public static string ComputeBoardFingerprint(Player player)
@@ -131,6 +169,18 @@ namespace CursedWordsSolverCompanion
         /// Merge Bicycle WordScoreBonus after CalculateOverallScore so F8 sees the value
         /// used for the next word (SubmitWord Postfix may run before scoring finishes).
         /// </summary>
+        public static void TryMergeCachedGridNumber()
+        {
+            if (RunStateExportFill.CachedGridNumber < 1)
+                return;
+            TryMergeExtrasKeys(
+                new Dictionary<string, string>
+                {
+                    ["grid_number"] = RunStateExportFill.CachedGridNumber.ToString(),
+                }
+            );
+        }
+
         public static void TryMergeBicycleExtrasAfterScore()
         {
             try
@@ -185,8 +235,13 @@ namespace CursedWordsSolverCompanion
                 merged[kv.Key] = kv.Value ?? "";
 
             root["extras"] = merged;
+            WriteJsonRoot(root);
+        }
+
+        private static void WriteJsonRoot(Dictionary<string, object> root)
+        {
             var updated = JsonConvert.SerializeObject(root, Formatting.Indented);
-            File.WriteAllText(OutputPath, updated, new UTF8Encoding(false));
+            WriteTextAtomic(OutputPath, updated);
         }
 
         private static Player GetPlayer()
@@ -199,6 +254,13 @@ namespace CursedWordsSolverCompanion
             {
                 return null;
             }
+        }
+
+        public static RunStateSnapshot CaptureRunState(Player player)
+        {
+            if (player == null)
+                return null;
+            return BuildSnapshot(player);
         }
 
         private static RunStateSnapshot BuildSnapshot(Player player)
@@ -221,8 +283,12 @@ namespace CursedWordsSolverCompanion
                 FillBossExtras(snapshot, player, bosses);
             }
             FillPinExtras(snapshot, player.MyCharacter);
+            FillStickerStampOrchestration(snapshot, player);
             FillRunContextExtras(snapshot, player);
             snapshot.board = BoardExporter.TryBuild(player);
+            RunStateExportFill.ApplyMetadata(snapshot, player);
+            if (snapshot.board != null)
+                ConsumablePlacementTracker.OnBoardSnapshot(snapshot.board);
             return snapshot;
         }
 
@@ -233,7 +299,20 @@ namespace CursedWordsSolverCompanion
                 Directory.CreateDirectory(dir);
 
             var json = JsonConvert.SerializeObject(snapshot, Formatting.Indented);
-            File.WriteAllText(OutputPath, json, new UTF8Encoding(false));
+            WriteTextAtomic(OutputPath, json);
+        }
+
+        private static void WriteTextAtomic(string path, string content)
+        {
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            var temp = path + ".tmp";
+            File.WriteAllText(temp, content, new UTF8Encoding(false));
+            if (File.Exists(path))
+                File.Delete(path);
+            File.Move(temp, path);
         }
 
         private static List<RunStateItem> MapItems(Item[] items, bool stampsOnly)
@@ -269,10 +348,7 @@ namespace CursedWordsSolverCompanion
             snapshot.boss_id = "";
             snapshot.boss_name = "";
             snapshot.boss_effect = "";
-            if (snapshot.extras == null)
-                return;
-            snapshot.extras.Remove("boss_area_number");
-            snapshot.extras.Remove("boss_cursed");
+            RunStateExportFill.ClearBossExtras(snapshot.extras);
         }
 
         private static void FillBoss(
@@ -380,6 +456,17 @@ namespace CursedWordsSolverCompanion
                     area = BossResolver.TryGetRunStage(player);
                 if (area >= 1 && area <= 5)
                     snapshot.extras["boss_area_number"] = area.ToString();
+
+                try
+                {
+                    var floorMod = boss.FloorAdjustedModification;
+                    if (floorMod > 0)
+                        snapshot.extras["boss_floor_modification"] = floorMod.ToString();
+                }
+                catch
+                {
+                    // optional
+                }
             }
 
             var hyenaBlocked = TryGetBoolProperty(
@@ -419,6 +506,12 @@ namespace CursedWordsSolverCompanion
                     pin.UpgradeableComponents[0]
                 ).ToString();
                 snapshot.extras["pin_right_level"] = GetUpgradeableLevel(
+                    pin.UpgradeableComponents[1]
+                ).ToString();
+                snapshot.extras["pin_left_variable"] = GetUpgradeableVariableValue(
+                    pin.UpgradeableComponents[0]
+                ).ToString();
+                snapshot.extras["pin_right_variable"] = GetUpgradeableVariableValue(
                     pin.UpgradeableComponents[1]
                 ).ToString();
             }
@@ -627,6 +720,43 @@ namespace CursedWordsSolverCompanion
             if (redUsed >= 0)
                 snapshot.extras["red_tiles_used_encounter"] = redUsed.ToString();
 
+            var historicWords = TryGetHistoricPreviousWords(player);
+            var greenPoison = ScoringContextCapture.ComputeGreenPoisonBonus(historicWords);
+            if (greenPoison > 0.001)
+                snapshot.extras["green_poison_bonus"] = greenPoison.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture
+                );
+
+            try
+            {
+                var hourglassType = Type.GetType("Hourglass");
+                if (hourglassType != null)
+                {
+                    var method = player.GetType().GetMethod(
+                        "GetUnpackedItemsOfType",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                    );
+                    if (method != null)
+                    {
+                        var list = method.Invoke(player, new object[] { hourglassType }) as System.Collections.IList;
+                        if (list != null)
+                            snapshot.extras["hourglass_count"] = list.Count.ToString();
+                    }
+                }
+                foreach (var sticker in player.GetStickers(forItemComparison: true) ?? new List<Item>())
+                {
+                    if (sticker != null && sticker.GetType().Name == "Capybara")
+                    {
+                        snapshot.extras["capybara_shuffle"] = "true";
+                        break;
+                    }
+                }
+            }
+            catch
+            {
+                // optional scoring-order extras
+            }
+
             var consumables = TryGetIntProperty(
                 player,
                 "ConsumableRackCount",
@@ -762,6 +892,12 @@ namespace CursedWordsSolverCompanion
 
             if (TryGetAvocadoMushy(player))
                 snapshot.extras["avocado_mushy"] = "true";
+
+            if (
+                snapshot.extras.ContainsKey("avocado_mushy")
+                && snapshot.extras["avocado_mushy"] == "true"
+            )
+                snapshot.extras["frozen_in_shop"] = "true";
 
             if (HasMutatingDnaStamp(player))
             {
@@ -1563,6 +1699,115 @@ namespace CursedWordsSolverCompanion
                 return (int)levelProp.GetValue(component, null);
 
             return 0;
+        }
+
+        private static int GetUpgradeableVariableValue(object component)
+        {
+            if (component == null)
+                return 0;
+
+            var valueProp = component.GetType().GetProperty(
+                "VariableValue",
+                BindingFlags.Public | BindingFlags.Instance
+            );
+            if (valueProp != null && valueProp.PropertyType == typeof(int))
+                return (int)valueProp.GetValue(component, null);
+
+            return 0;
+        }
+
+        private static void FillStickerStampOrchestration(RunStateSnapshot snapshot, Player player)
+        {
+            if (player == null || snapshot.extras == null)
+                return;
+
+            var stickers = player.Stickers;
+            if (stickers == null)
+                return;
+
+            for (var i = 0; i < stickers.Length; i++)
+            {
+                var sticker = stickers[i];
+                if (sticker == null)
+                    continue;
+
+                var typeName = sticker.GetType().Name;
+                if (typeName == "Frankenstein")
+                {
+                    var stitched = TryGetStitchedStickerIds(sticker);
+                    snapshot.extras["stitched_sticker_ids"] = JsonConvert.SerializeObject(
+                        stitched
+                    );
+                }
+                else if (typeName == "Overhand")
+                {
+                    if (
+                        sticker.UpgradeableComponents != null
+                        && sticker.UpgradeableComponents.Count > 0
+                    )
+                    {
+                        snapshot.extras["overhand_level"] = GetUpgradeableVariableValue(
+                            sticker.UpgradeableComponents[0]
+                        ).ToString();
+                    }
+                }
+            }
+        }
+
+        private static List<string> TryGetStitchedStickerIds(Item frankenstein)
+        {
+            var result = new List<string>();
+            if (frankenstein == null)
+                return result;
+
+            try
+            {
+                var prop = frankenstein.GetType().GetProperty(
+                    "StitchedItems",
+                    BindingFlags.Public | BindingFlags.Instance
+                );
+                if (prop == null)
+                    return result;
+
+                var items = prop.GetValue(frankenstein, null) as System.Collections.IEnumerable;
+                if (items == null)
+                    return result;
+
+                foreach (var item in items)
+                {
+                    if (item == null)
+                        continue;
+                    var name = "";
+                    try
+                    {
+                        var nameProp = item.GetType().GetProperty("Name");
+                        if (nameProp != null)
+                            name = nameProp.GetValue(item, null) as string ?? "";
+                    }
+                    catch
+                    {
+                        // optional
+                    }
+                    var art = "";
+                    try
+                    {
+                        var artProp = item.GetType().GetProperty("ArtFileName");
+                        if (artProp != null)
+                            art = artProp.GetValue(item, null) as string ?? "";
+                    }
+                    catch
+                    {
+                        // optional
+                    }
+                    result.Add(Slugify(art, name));
+                }
+            }
+            catch
+            {
+                // optional
+            }
+
+            return result;
         }
 
         public static string GetCharacterName(Character character)

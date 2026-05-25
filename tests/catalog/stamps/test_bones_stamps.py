@@ -8,7 +8,9 @@ from cursed_words_solver.models import (
     Tile,
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.rule_lookup import count_scoring_items, get_rule, slugify_name
+from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
+
+from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
 from cursed_words_solver.rules.scoring_conditions import detect_card_hand
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 from cursed_words_solver.search import resolve_letter
@@ -72,16 +74,8 @@ def test_all_bones_stamps_catalogued():
 
 def test_count_scoring_vs_grid_only_bones_stamps():
     pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[
-            LoadoutItem(id=slugify_name(n), name=n, level=1, kind="stamp")
-            for n in BONES_STAMP_NAMES
-        ]
-    )
-    scoring, total, grid_only = count_scoring_items(pipeline.rules, loadout)
-    assert total == 7
-    assert grid_only == len(GRID_ONLY_SLUGS)
-    assert scoring == 1
+    assert_loadout_stamp_coverage(pipeline.rules, BONES_STAMP_NAMES)
+
 
 
 def test_martini_three_card_flush():

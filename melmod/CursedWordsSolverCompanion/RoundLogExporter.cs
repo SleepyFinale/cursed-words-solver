@@ -1,0 +1,371 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using MelonLoader;
+using MelonLoader.Preferences;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
+namespace CursedWordsSolverCompanion
+{
+    public sealed class RoundCaptureContext
+    {
+        public string SubmitMethod;
+        public string SubmittedWord;
+        public List<int> SubmittedPath;
+        public LastSuggestion Suggestion;
+        public int ActualScore;
+        public List<Dictionary<string, object>> ActualTrace;
+        public List<ScoreCalcVizInfo> ScoreSteps;
+        public string BoardFingerprint;
+        public string LoadoutFingerprint;
+        public BoardSnapshot BoardAtSubmit;
+        public BoardSnapshot SubmitBoardSnapshot;
+        public List<ConsumableRackTileSnapshot> RackBefore;
+        public List<ConsumableRackTileSnapshot> RackAfter;
+        public List<ConsumablePlacementRecord> ConsumablePlacements;
+        public RunStateSnapshot RunState;
+        public Dictionary<string, string> ScoringExtras;
+        public bool CaptureActive;
+    }
+
+    public static class RoundLogExporter
+    {
+        public const int SchemaVersion = 1;
+
+        public static readonly string RoundLogDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".cursed_words_solver",
+            "round_logs"
+        );
+
+        private static MelonPreferences_Category _prefs;
+        private static MelonPreferences_Entry<bool> _enabled;
+
+        public static bool IsEnabled
+        {
+            get
+            {
+                EnsurePrefs();
+                return _enabled.Value;
+            }
+        }
+
+        public static void EnsurePrefs()
+        {
+            if (_prefs != null)
+                return;
+
+            _prefs = MelonPreferences.CreateCategory(
+                "CursedWordsSolverCompanion_RoundLog",
+                "Cursed Words Solver Round Logs"
+            );
+            _enabled = _prefs.CreateEntry(
+                "RoundLogEnabled",
+                true,
+                "Round log enabled",
+                "Write a JSON log after every word submit"
+            );
+        }
+
+        public static string ExportRound(RoundCaptureContext ctx)
+        {
+            if (!IsEnabled || ctx == null)
+                return "";
+
+            try
+            {
+                Directory.CreateDirectory(RoundLogDir);
+                var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+                var outPath = Path.Combine(RoundLogDir, ts + ".json");
+
+                var matchStatus = ResolveMatchStatus(ctx);
+                var pathTiles = BuildPathTiles(ctx);
+                var runStateDict = SerializeRunState(ctx.RunState);
+
+                var payload = new Dictionary<string, object>
+                {
+                    ["schema_version"] = SchemaVersion,
+                    ["exported_at"] = DateTime.UtcNow.ToString("o"),
+                    ["round_id"] = ts,
+                    ["submit_method"] = ctx.SubmitMethod ?? "",
+                    ["grid_number"] = GetGridNumber(ctx),
+                    ["match_status"] = matchStatus,
+                    ["solver"] = BuildSolverBlock(ctx),
+                    ["actual"] = BuildActualBlock(ctx, pathTiles),
+                    ["run_state"] = runStateDict,
+                    ["consumables"] = BuildConsumablesBlock(ctx),
+                    ["comparison"] = BuildComparisonBlock(ctx, matchStatus),
+                };
+
+                var json = JsonConvert.SerializeObject(payload, Formatting.Indented);
+                WriteAtomic(outPath, json);
+                AppendIndex(ts, outPath, matchStatus, ctx);
+
+                MelonLogger.Msg("Round log: " + outPath + " (" + matchStatus + ")");
+                return outPath;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error("Round log export failed: " + ex);
+                return "";
+            }
+        }
+
+        private static string ResolveMatchStatus(RoundCaptureContext ctx)
+        {
+            if (ctx.Suggestion == null || ctx.Suggestion.path == null || ctx.Suggestion.path.Count == 0)
+                return "no_suggestion";
+
+            var pathMatch = SuggestionMatcher.PathsEqual(
+                ctx.Suggestion.path,
+                ctx.SubmittedPath
+            );
+            var boardMatch = string.Equals(
+                ctx.Suggestion.board_fingerprint ?? "",
+                ctx.BoardFingerprint ?? "",
+                StringComparison.Ordinal
+            );
+
+            if (!pathMatch || !boardMatch)
+                return "path_mismatch";
+
+            var predicted = ctx.Suggestion.predicted_score;
+            if (predicted != ctx.ActualScore)
+                return "score_mismatch";
+
+            return "score_match";
+        }
+
+        private static Dictionary<string, object> BuildSolverBlock(RoundCaptureContext ctx)
+        {
+            var block = new Dictionary<string, object> { ["available"] = false };
+            if (ctx.Suggestion == null)
+                return block;
+
+            block["available"] = true;
+            block["word"] = ctx.Suggestion.word ?? "";
+            block["scoring_word"] = ctx.Suggestion.word ?? "";
+            block["path"] = ctx.Suggestion.path ?? new List<int>();
+            block["predicted_score"] = ctx.Suggestion.predicted_score;
+            block["board_fingerprint"] = ctx.Suggestion.board_fingerprint ?? "";
+            block["loadout_fingerprint"] = ctx.Suggestion.loadout_fingerprint ?? "";
+
+            if (ctx.Suggestion.predicted_trace != null)
+                block["predicted_trace"] = ctx.Suggestion.predicted_trace;
+
+            try
+            {
+                if (File.Exists(SuggestionMatcher.SuggestionFilePath))
+                {
+                    var raw = JObject.Parse(File.ReadAllText(SuggestionMatcher.SuggestionFilePath));
+                    if (raw["dictionary_word"] != null)
+                        block["dictionary_word"] = raw["dictionary_word"].ToString();
+                    if (raw["f8_sequence"] != null)
+                        block["f8_sequence"] = raw["f8_sequence"].ToString();
+                    if (raw["created_at"] != null)
+                        block["solver_created_at"] = raw["created_at"].ToString();
+                }
+            }
+            catch
+            {
+                // optional
+            }
+
+            return block;
+        }
+
+        private static Dictionary<string, object> BuildActualBlock(
+            RoundCaptureContext ctx,
+            List<Dictionary<string, object>> pathTiles
+        )
+        {
+            return new Dictionary<string, object>
+            {
+                ["word"] = ctx.SubmittedWord ?? "",
+                ["path"] = ctx.SubmittedPath ?? new List<int>(),
+                ["path_tiles"] = pathTiles,
+                ["score"] = ctx.ActualScore,
+                ["trace"] = ctx.ActualTrace ?? new List<Dictionary<string, object>>(),
+            };
+        }
+
+        private static Dictionary<string, object> BuildConsumablesBlock(RoundCaptureContext ctx)
+        {
+            var placements = new List<Dictionary<string, object>>();
+            if (ctx.ConsumablePlacements != null)
+            {
+                foreach (var p in ctx.ConsumablePlacements)
+                {
+                    if (p == null)
+                        continue;
+                    placements.Add(
+                        new Dictionary<string, object>
+                        {
+                            ["row"] = p.row,
+                            ["col"] = p.col,
+                            ["rack_index"] = p.rack_index,
+                            ["detected_at"] = p.detected_at ?? "",
+                            ["new_tile"] = p.new_tile,
+                            ["replaced_tile"] = p.replaced_tile,
+                        }
+                    );
+                }
+            }
+
+            return new Dictionary<string, object>
+            {
+                ["rack_before"] = ctx.RackBefore ?? new List<ConsumableRackTileSnapshot>(),
+                ["rack_after"] = ctx.RackAfter ?? new List<ConsumableRackTileSnapshot>(),
+                ["placements_this_round"] = placements,
+            };
+        }
+
+        private static Dictionary<string, object> BuildComparisonBlock(
+            RoundCaptureContext ctx,
+            string matchStatus
+        )
+        {
+            var predicted = ctx.Suggestion != null ? ctx.Suggestion.predicted_score : 0;
+            var pathMatches = false;
+            if (ctx.Suggestion != null && ctx.Suggestion.path != null)
+            {
+                pathMatches =
+                    SuggestionMatcher.PathsEqual(ctx.Suggestion.path, ctx.SubmittedPath)
+                    && string.Equals(
+                        ctx.Suggestion.board_fingerprint ?? "",
+                        ctx.BoardFingerprint ?? "",
+                        StringComparison.Ordinal
+                    );
+            }
+
+            return new Dictionary<string, object>
+            {
+                ["score_delta"] = ctx.ActualScore - predicted,
+                ["path_matches_suggestion"] = pathMatches,
+                ["capture_active"] = ctx.CaptureActive,
+                ["match_status"] = matchStatus,
+            };
+        }
+
+        private static List<Dictionary<string, object>> BuildPathTiles(RoundCaptureContext ctx)
+        {
+            var result = new List<Dictionary<string, object>>();
+            var board = ctx.SubmitBoardSnapshot ?? ctx.BoardAtSubmit;
+            if (board?.tiles == null || ctx.SubmittedPath == null)
+                return result;
+
+            var byIndex = new Dictionary<int, BoardTileSnapshot>();
+            foreach (var t in board.tiles)
+            {
+                if (t == null || !t.active)
+                    continue;
+                // Path indices match melmod export row (0 = top) per loadout.py.
+                var idx = t.row * 5 + t.col;
+                byIndex[idx] = t;
+            }
+
+            foreach (var idx in ctx.SubmittedPath)
+            {
+                if (!byIndex.TryGetValue(idx, out var tile) || tile == null)
+                {
+                    result.Add(
+                        new Dictionary<string, object>
+                        {
+                            ["path_index"] = idx,
+                            ["row"] = idx / 5,
+                            ["col"] = idx % 5,
+                        }
+                    );
+                    continue;
+                }
+
+                result.Add(
+                    new Dictionary<string, object>
+                    {
+                        ["path_index"] = idx,
+                        ["row"] = tile.row,
+                        ["col"] = tile.col,
+                        ["letter"] = tile.letter,
+                        ["char"] = tile.char_display,
+                        ["curse"] = tile.curse,
+                        ["color"] = tile.color,
+                        ["base_score"] = tile.base_score,
+                        ["consumable"] = tile.consumable,
+                        ["was_consumable"] = tile.was_consumable,
+                        ["take"] = tile.take,
+                        ["card_suit"] = tile.card_suit ?? "",
+                        ["card_rank"] = tile.card_rank ?? "",
+                    }
+                );
+            }
+
+            return result;
+        }
+
+        private static Dictionary<string, object> SerializeRunState(RunStateSnapshot snapshot)
+        {
+            if (snapshot == null)
+                return new Dictionary<string, object>();
+
+            var json = JsonConvert.SerializeObject(snapshot);
+            return JsonConvert.DeserializeObject<Dictionary<string, object>>(json)
+                ?? new Dictionary<string, object>();
+        }
+
+        private static string GetGridNumber(RoundCaptureContext ctx)
+        {
+            if (ctx.RunState?.extras != null
+                && ctx.RunState.extras.TryGetValue("grid_number", out var gn))
+                return gn ?? "";
+
+            if (ctx.ScoringExtras != null
+                && ctx.ScoringExtras.TryGetValue("grid_number", out var g2))
+                return g2 ?? "";
+
+            return "";
+        }
+
+        private static void AppendIndex(
+            string roundId,
+            string filePath,
+            string matchStatus,
+            RoundCaptureContext ctx
+        )
+        {
+            try
+            {
+                var indexPath = Path.Combine(RoundLogDir, "index.jsonl");
+                var predicted = ctx.Suggestion != null ? ctx.Suggestion.predicted_score : 0;
+                var line =
+                    JsonConvert.SerializeObject(
+                        new Dictionary<string, object>
+                        {
+                            ["round_id"] = roundId,
+                            ["file"] = filePath,
+                            ["match_status"] = matchStatus,
+                            ["predicted_score"] = predicted,
+                            ["actual_score"] = ctx.ActualScore,
+                            ["submitted_word"] = ctx.SubmittedWord ?? "",
+                            ["solver_word"] = ctx.Suggestion?.word ?? "",
+                        }
+                    ) + "\n";
+                File.AppendAllText(indexPath, line, new UTF8Encoding(false));
+            }
+            catch
+            {
+                // optional
+            }
+        }
+
+        private static void WriteAtomic(string path, string content)
+        {
+            var temp = path + ".tmp";
+            File.WriteAllText(temp, content, new UTF8Encoding(false));
+            if (File.Exists(path))
+                File.Delete(path);
+            File.Move(temp, path);
+        }
+    }
+}

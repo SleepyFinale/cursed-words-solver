@@ -322,13 +322,15 @@ ACHIEVEMENT_STAMPS: dict[str, dict] = {
         "wiki_page": "Heart_On_Fire",
         "shop_price": 18,
     },
-    "hourglass": _custom_effect(
-        "Hourglass",
-        "Items and boss effects trigger backwards",
-        "meta",
-        "Hourglass",
-    )
-    | {"shop_price": 20},
+    "hourglass": {
+        "name": "Hourglass",
+        "type": "reverse_scoring_order",
+        "effect_class": "meta",
+        "game_class": "Hourglass",
+        "wiki_effect": "Items and boss effects trigger backwards",
+        "wiki_page": "Hourglass",
+        "shop_price": 20,
+    },
     "id_card": _custom_effect(
         "ID Card",
         "You can upgrade both sides of your pin after boss encounters",

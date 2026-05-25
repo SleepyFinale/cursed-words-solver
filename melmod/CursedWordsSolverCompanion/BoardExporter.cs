@@ -630,6 +630,7 @@ namespace CursedWordsSolverCompanion
                 color = color,
                 curse = curse,
                 consumable = MapConsumable(tile),
+                was_consumable = MapWasConsumable(tile),
                 take = MapTake(tile),
             };
 
@@ -679,6 +680,51 @@ namespace CursedWordsSolverCompanion
                 var chessColor = MapChessColor(tile);
                 if (!string.IsNullOrEmpty(chessColor))
                     snap.chess_color = chessColor;
+            }
+
+            if (curse == "item")
+            {
+                try
+                {
+                    var scattered = tile.ScatteredItem;
+                    if (scattered != null)
+                    {
+                        var art = scattered.ArtFileName ?? scattered.Name ?? "";
+                        if (!string.IsNullOrWhiteSpace(art))
+                            snap.scattered_item_id = RunStateExporter.Slugify(
+                                scattered.ArtFileName,
+                                scattered.Name
+                            );
+                    }
+                }
+                catch
+                {
+                    // optional field
+                }
+            }
+
+            try
+            {
+                if (tile.WasGlitchTile)
+                    snap.was_glitch = true;
+            }
+            catch
+            {
+                // optional
+            }
+
+            if (color == "cactus")
+            {
+                try
+                {
+                    var growth = tile.CactusGrowth;
+                    if (growth != null)
+                        snap.cactus_growth = (int)Math.Max(0, growth.Score);
+                }
+                catch
+                {
+                    snap.cactus_growth = 1;
+                }
             }
 
             return snap;
@@ -1006,6 +1052,33 @@ namespace CursedWordsSolverCompanion
             }
 
             return false;
+        }
+
+        private static bool MapWasConsumable(Tile tile)
+        {
+            if (tile == null)
+                return false;
+
+            try
+            {
+                var field = tile.GetType().GetField("WasConsumable", MemberFlags);
+                if (field != null && field.FieldType == typeof(bool))
+                    return (bool)field.GetValue(tile);
+            }
+            catch
+            {
+                // fall through
+            }
+
+            return false;
+        }
+
+        /// <summary>Export a single tile (e.g. consumable rack slot).</summary>
+        public static BoardTileSnapshot ExportTileAt(Tile tile, int row, int col)
+        {
+            if (tile == null)
+                return null;
+            return MapTile(tile, row, col);
         }
 
         private static string MapCardSuit(Tile tile)
@@ -1806,6 +1879,9 @@ namespace CursedWordsSolverCompanion
 
             if (glyph == GlyphType.ScatteredItem)
                 return "item";
+
+            if (glyph == GlyphType.Arrow)
+                return "arrow";
 
             if (IsCardGlyph(glyph) || TryIsPlayingCard(tile))
                 return "card";

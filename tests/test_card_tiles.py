@@ -10,7 +10,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     suited_cards_on_path_count,
 )
 from cursed_words_solver.search import _is_wildcard_tile
-from cursed_words_solver.vision.board_parser import _detect_card_overlay
+from cursed_words_solver.rules.card_overlay import detect_card_overlay as _detect_card_overlay
 
 
 def _card(row: int, col: int, rank: str, suit: str, score: int = 2) -> Tile:

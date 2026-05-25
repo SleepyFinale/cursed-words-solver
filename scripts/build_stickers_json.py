@@ -16,6 +16,92 @@ from scripts.catalog.achievement_stamps_catalog import ACHIEVEMENT_STAMPS
 
 WIKI_DIR = ROOT / "data" / "wiki"
 OUT_PATH = WIKI_DIR / "stickers.json"
+STAMP_SUBCLASSES_PATH = ROOT / "data" / "game" / "stamp_subclasses.json"
+
+# Movement / letter search flags (migrated from stamp_behaviors._LEGACY_STAMP_FLAGS).
+STAMP_SEARCH_FLAGS: dict[str, dict[str, bool]] = {
+    "hungry_snake": {"horizontal_wrap": True},
+    "full_moon": {"double_letter_teleport": True},
+    "queenie": {"q_as_qu": True},
+    "red_envelope": {"red_as_e": True},
+    "sluggish_zombie": {"z_as_s": True},
+    "flamingo": {"shiny_as_one": True},
+    "test_tube": {"number_plus_minus_one": True},
+    "card_shark": {"card_suit_first_letter": True},
+    "spicy_pepper": {"red_as_s": True},
+    "number_go_up": {"number_ascending_free_position": True},
+    "honeypot": {"word_stitch": True},
+    "bunch_of_grapes": {"number_roman_ivx": True},
+    "jellyfish": {"j_as_h_or_y": True},
+    "suspension_bridge": {"red_letter_plus_minus_one": True},
+    "king_of_the_bridge": {"chess_allies_can_take": True},
+    "television": {"chess_king_queen_item_movement": True},
+}
+
+LETTER_BEHAVIOR_FLAGS: dict[str, dict[str, bool]] = {
+    "q_as_qu": {"q_as_qu": True},
+    "red_as_e": {"red_as_e": True},
+    "z_as_s": {"z_as_s": True},
+    "shiny_as_one": {"shiny_as_one": True},
+    "number_plus_minus_one": {"number_plus_minus_one": True},
+    "card_suit_first_letter": {"card_suit_first_letter": True},
+    "red_as_s": {"red_as_s": True},
+    "number_ascending_free_position": {"number_ascending_free_position": True},
+    "word_stitch": {"word_stitch": True},
+    "number_roman_ivx": {"number_roman_ivx": True},
+    "j_as_h_or_y": {"j_as_h_or_y": True},
+    "red_letter_plus_minus_one": {"red_letter_plus_minus_one": True},
+    "chess_allies_can_take": {"chess_allies_can_take": True},
+    "chess_king_queen_item_movement": {"chess_king_queen_item_movement": True},
+}
+
+
+def _slug_to_pascal(slug: str) -> str:
+    parts = re.sub(r"[^a-z0-9]+", "_", slug.lower()).strip("_").split("_")
+    return "".join(p.capitalize() for p in parts if p)
+
+
+def enrich_stamps_catalog(stamps: dict[str, dict]) -> None:
+    game_classes: dict[str, str] = {}
+    if STAMP_SUBCLASSES_PATH.is_file():
+        data = json.loads(STAMP_SUBCLASSES_PATH.read_text(encoding="utf-8"))
+        for row in data.get("stamps", []):
+            if row.get("in_subclasses"):
+                game_classes[row["slug"]] = row["game_class"]
+    for slug, rule in stamps.items():
+        if slug in game_classes and not rule.get("game_class"):
+            rule["game_class"] = game_classes[slug]
+        elif not rule.get("game_class"):
+            rule.setdefault("game_class", _slug_to_pascal(slug))
+        flags = dict(STAMP_SEARCH_FLAGS.get(slug, {}))
+        for key in ("letter_behavior", "letter_substitute"):
+            lb = rule.get(key)
+            if isinstance(lb, str) and lb in LETTER_BEHAVIOR_FLAGS:
+                flags.update(LETTER_BEHAVIOR_FLAGS[lb])
+        if flags:
+            existing = rule.get("search_flags")
+            if isinstance(existing, dict):
+                flags = {**existing, **flags}
+            rule["search_flags"] = flags
+
+
+def enrich_stickers_orchestration(stickers: dict[str, dict]) -> None:
+    if "frankenstein" in stickers:
+        stickers["frankenstein"].update(
+            {
+                "type": "frankenstein_stitch",
+                "effect_class": "orchestration",
+                "game_class": "Frankenstein",
+            }
+        )
+    if "overhand" in stickers:
+        stickers["overhand"].update(
+            {
+                "type": "overhand_replay",
+                "effect_class": "orchestration",
+                "game_class": "Overhand",
+            }
+        )
 
 def _grid_scatter(
     name: str,
@@ -24,13 +110,15 @@ def _grid_scatter(
     *,
     grid_timing: str = "start",
 ) -> dict:
+    timing = grid_timing if grid_timing in ("encounter", "start_encounter") else "start"
     entry = {
         "name": name,
-        "type": "custom",
+        "type": "scatter_start_encounter" if timing == "encounter" else "scatter_start_grid",
         "effect_class": "scatter",
         "grid_effect": wiki_effect,
         "wiki_effect": wiki_effect,
         "wiki_page": wiki_page,
+        "game_class": name.replace(" ", "").replace("'", ""),
     }
     if grid_timing != "start":
         entry["grid_timing"] = grid_timing
@@ -1204,7 +1292,11 @@ TUNED_STAMPS: dict[str, dict] = {
         "movement",
         "Full_Moon",
     )
-    | {"shop_price": 11},
+    | {
+        "shop_price": 11,
+        "game_class": "FullMoon",
+        "search_flags": {"double_letter_teleport": True},
+    },
     "golden_record": _custom_effect(
         "Golden Record",
         "Get a random tile from your word as a consumable tile",
@@ -1219,13 +1311,16 @@ TUNED_STAMPS: dict[str, dict] = {
         "Golden_Scales",
     )
     | {"shop_price": 10},
-    "hungry_snake": _custom_effect(
-        "Hungry Snake",
-        "The grid wraps horizontally",
-        "movement",
-        "Hungry_Snake",
-    )
-    | {"shop_price": 11},
+    "hungry_snake": {
+        "name": "Hungry Snake",
+        "type": "custom",
+        "effect_class": "movement",
+        "game_class": "HungrySnake",
+        "wiki_effect": "The grid wraps horizontally",
+        "wiki_page": "Hungry_Snake",
+        "search_flags": {"horizontal_wrap": True},
+        "shop_price": 11,
+    },
     "kimono": _grid_scatter(
         "Kimono",
         "Each BLUE tile used scatters a ? onto the next grid",
@@ -1277,7 +1372,9 @@ TUNED_STAMPS: dict[str, dict] = {
         "wiki_effect": "Qs can behave as a QU. Qs get ×5 TILE SCORE",
         "wiki_page": "Queenie",
         "shop_price": 10,
+        "game_class": "Queenie",
         "letter_behavior": "q_as_qu",
+        "search_flags": {"q_as_qu": True},
     },
     "red_envelope": _custom_effect(
         "Red Envelope",
@@ -1777,8 +1874,9 @@ TUNED_BOSSES: dict[str, dict] = {
     },
     "capybara": {
         "name": "Capybara",
-        "type": "custom",
+        "type": "shuffle_loadout_order",
         "effect_class": "encounter",
+        "game_class": "Capybara",
         "wiki_page": "Capybara",
         "wiki_effect": "Randomizes sticker/stamp order on submit",
         "scaling": [
@@ -1788,6 +1886,8 @@ TUNED_BOSSES: dict[str, dict] = {
     "cobra": {
         "name": "Cobra",
         "type": "boss_word_min_length",
+        "game_class": "MinWordLength",
+        "effect_class": "search_only",
         "wiki_page": "Cobra",
         "scaling": [
             {"area": 1, "min_length": 4, "cursed_min_length": 5},
@@ -1800,6 +1900,8 @@ TUNED_BOSSES: dict[str, dict] = {
     "wolf": {
         "name": "Wolf",
         "type": "boss_word_max_length",
+        "game_class": "MaxWordLength",
+        "effect_class": "search_only",
         "wiki_page": "Wolf",
         "scaling": [
             {"area": 1, "max_length": 5, "cursed_max_length": 4},
@@ -1812,6 +1914,8 @@ TUNED_BOSSES: dict[str, dict] = {
     "salamander": {
         "name": "Salamander",
         "type": "boss_tile_penalty",
+        "game_class": "ReducedLetterValue",
+        "effect_class": "scoring_early",
         "wiki_page": "Salamander",
         "scaling": [
             {"area": 1, "value": 1, "cursed": 2},
@@ -1824,6 +1928,8 @@ TUNED_BOSSES: dict[str, dict] = {
     "robo_monkey": {
         "name": "Robo-Monkey",
         "type": "boss_subtract_word_score_money",
+        "game_class": "NegativeMoney",
+        "effect_class": "scoring_early",
         "wiki_page": "Robo-Monkey",
         "scaling": [
             {"area": 1, "multiplier": 1, "cursed_multiplier": 2},
@@ -1836,6 +1942,8 @@ TUNED_BOSSES: dict[str, dict] = {
     "toothed_whale": {
         "name": "Toothed Whale",
         "type": "boss_target_score_multiplier",
+        "game_class": "BigBoss",
+        "effect_class": "encounter",
         "wiki_page": "Toothed_Whale",
         "scaling": [
             {"area": 1, "multiplier": 1.25, "cursed_multiplier": 1.35},
@@ -1847,139 +1955,190 @@ TUNED_BOSSES: dict[str, dict] = {
     },
 }
 
-def _default_pin_branches(name: str) -> dict:
-    return {
-        "name": name,
-        "branches": {
-            "left": {"type": "add_word_score", "value": 2},
-            "right": {"type": "add_word_score", "value": 3},
-        },
-    }
-
-
-def _pin_custom(name: str, wiki_effect: str, character: str = "") -> dict:
-    entry = {
-        "name": name,
-        "type": "custom",
-        "wiki_effect": wiki_effect,
-        "effect_class": "scatter",
-    }
-    if character:
-        entry["character"] = character
-    return entry
-
-
-def _pin_grid_only(
+def _pin_entry(
     name: str,
-    wiki_effect: str,
     character: str,
+    game_class: str,
     *,
+    left: dict | None = None,
+    right: dict | None = None,
+    orchestration: str | None = None,
     wiki_page: str = "",
+    wiki_effect: str = "",
 ) -> dict:
-    entry = _pin_custom(name, wiki_effect, character)
+    """Pin catalog entry: left = grid track, right = scoring track (game UpgradeableComponents)."""
+    entry: dict = {
+        "name": name,
+        "character": character,
+        "game_class": game_class,
+    }
     if wiki_page:
         entry["wiki_page"] = wiki_page
+    if wiki_effect:
+        entry["wiki_effect"] = wiki_effect
+    if left:
+        entry["left"] = left
+    if right:
+        entry["right"] = right
+    if orchestration:
+        entry["orchestration"] = orchestration
+        entry["type"] = orchestration
+    elif right and right.get("type"):
+        entry["type"] = right["type"]
+        entry.update({k: v for k, v in right.items() if k != "type"})
     return entry
+
+
+def _pin_left_scatter(wiki_effect: str, *, timing: str = "grid", slug: str = "") -> dict:
+    t = "scatter_start_encounter" if timing == "encounter" else "scatter_start_grid"
+    out = {"type": t, "effect_class": "scatter", "wiki_effect": wiki_effect}
+    if slug:
+        out["grid_handler"] = slug
+    return out
 
 
 # Pin rules keyed by art slug (melmod extras.pin_effect).
 TUNED_PINS: dict[str, dict] = {
-    "abacus": {
-        "name": "Abacus",
-        "character": "hayley_bayles",
-        "type": "colored_number_tile_bonus",
-        "value": 10,
-        "value_per_right_upgrade": 10,
-        "wiki_effect": "Coloured numbers get +N TILE SCORE",
-        "wiki_page": "Abacus",
-        "grid_effect": "START OF GRID: Scatters unique numbers 1-5",
-    },
-    "milky_way": _pin_grid_only(
+    "abacus": _pin_entry(
+        "Abacus",
+        "hayley_bayles",
+        "Abacus",
+        left=_pin_left_scatter(
+            "START OF GRID: Scatters unique numbers 1-5", slug="abacus"
+        ),
+        right={
+            "type": "colored_number_tile_bonus",
+            "value": 10,
+            "value_per_right_upgrade": 10,
+            "value_from_component": 1,
+        },
+        wiki_page="Abacus",
+        wiki_effect="Coloured numbers get +N TILE SCORE",
+    ),
+    "milky_way": _pin_entry(
         "Milky Way",
-        "START OF GRID: Scatters VOID tiles; VOID tiles have a 10% chance to go SHINY",
         "nina_nix",
+        "MilkyWay",
+        left=_pin_left_scatter(
+            "START OF GRID: Scatters VOID tiles; VOID tiles have a 10% chance to go SHINY",
+            slug="milky_way",
+        ),
         wiki_page="Milky_Way",
     ),
-    "rainbow": {
-        "name": "Rainbow",
-        "character": "beans",
-        "type": "unique_colour_word_bonus",
-        "value": 5,
-        "value_per_right_upgrade": 5,
-        "wiki_effect": "+5 WORD SCORE per unique tile colour used",
-        "wiki_page": "Rainbow",
-        "grid_effect": "START OF GRID: Scatters unusually coloured tile",
-    },
-    "mahjong_red_dragon": {
-        "name": "Mahjong Red Dragon",
-        "character": "sandy_saguaro",
-        "type": "tile_multiply",
-        "target": "consumable",
-        "scale_by_pin_right": True,
-        "factor_base": 2.0,
-        "factor_per_pin_right": 1.0,
-        "wiki_effect": "Consumable tiles get ×N TILE SCORE (N = 2 + right upgrades)",
-        "wiki_page": "Mahjong_Red_Dragon",
-        "grid_effect": "START OF ENCOUNTER: Get red consumable tile(s)",
-    },
-    "bucket": _pin_grid_only(
+    "rainbow": _pin_entry(
+        "Rainbow",
+        "beans",
+        "Rainbow",
+        left=_pin_left_scatter(
+            "START OF GRID: Scatters unusually coloured tile", slug="rainbow"
+        ),
+        right={
+            "type": "unique_colour_word_bonus",
+            "value": 5,
+            "value_per_right_upgrade": 5,
+            "value_from_component": 1,
+        },
+        wiki_page="Rainbow",
+        wiki_effect="+5 WORD SCORE per unique tile colour used",
+    ),
+    "mahjong_red_dragon": _pin_entry(
+        "Mahjong Red Dragon",
+        "sandy_saguaro",
+        "MahjongRedDragon",
+        left=_pin_left_scatter(
+            "START OF ENCOUNTER: Get red consumable tile(s)",
+            timing="encounter",
+            slug="mahjong_red_dragon",
+        ),
+        right={
+            "type": "tile_multiply",
+            "target": "consumable",
+            "scale_by_pin_right": True,
+            "factor_base": 2.0,
+            "factor_per_pin_right": 1.0,
+        },
+        wiki_page="Mahjong_Red_Dragon",
+        wiki_effect="Consumable tiles get ×N TILE SCORE (N = 2 + right upgrades)",
+    ),
+    "bucket": _pin_entry(
         "Bucket",
-        "START OF GRID: Scatters the tiles in your bucket",
         "octacles",
+        "Bucket",
+        left=_pin_left_scatter(
+            "START OF GRID: Scatters the tiles in your bucket", slug="bucket"
+        ),
         wiki_page="Bucket",
     ),
-    "random_access_memory": {
-        "name": "Random Access Memory",
-        "character": "nat_h4",
-        "type": "pin_memory_replay",
-        "wiki_effect": "Behaves as all items stored in pin memory",
-        "wiki_page": "Random_Access_Memory",
-    },
-    "rodman": _pin_grid_only(
+    "random_access_memory": _pin_entry(
+        "Random Access Memory",
+        "nat_h4",
+        "RandomAccessMemory",
+        orchestration="pin_memory_replay",
+        wiki_page="Random_Access_Memory",
+        wiki_effect="Behaves as all items stored in pin memory",
+    ),
+    "rodman": _pin_entry(
         "Carp Streamers",
-        "START OF GRID: Scatters 1 RED tile and 1 BLUE tile",
         "rodman",
+        "CarpStreamers",
+        left=_pin_left_scatter(
+            "START OF GRID: Scatters 1 RED tile and 1 BLUE tile", slug="rodman"
+        ),
         wiki_page="Carp_Streamers",
     ),
-    "sam_gambit": {
-        "name": "Super 8",
-        "character": "sam_gambit",
-        "type": "chess_take_word_bonus",
-        "value": 8,
-        "value_per_right_upgrade": 8,
-        "wiki_effect": "Takes give +N WORD SCORE",
-        "wiki_page": "Super_8",
-        "grid_effect": "START OF GRID: Scatters film/chess items",
-        "effect_class": "scatter",
-    },
-    "bones_the_dog": {
-        "name": "Bicycle",
-        "character": "bones_the_dog",
-        "type": "cards_submitted_word_bonus",
-        "value": 1,
-        "value_per_right_upgrade": 1,
-        "wiki_effect": "Get +0 WORD SCORE, improved by 1 per submitted card (× right upgrades)",
-        "wiki_page": "Bicycle",
-        "grid_effect": "START OF GRID: Scatters cards",
-        "effect_class": "scatter",
-    },
-    "cretaceous_meg": {
-        "name": "Wad of Cash",
-        "character": "cretaceous_meg",
-        "type": "add_tile_score",
-        "target": "currency",
-        "value": 10,
-        "wiki_effect": "Currencies get +10 TILE SCORE",
-        "wiki_page": "Wad_of_Cash",
-        "grid_effect": "START OF GRID: Scatters currency",
-    },
-    "human_boy": {
-        "name": "Human Hands",
-        "character": "human_boy",
-        "type": "human_hands_pin",
-        "wiki_effect": "Boost favourite sticker levels; replay favourite stamp scoring",
-        "wiki_page": "Human_Hands",
-    },
+    "sam_gambit": _pin_entry(
+        "Super 8",
+        "sam_gambit",
+        "SuperEight",
+        left=_pin_left_scatter(
+            "START OF GRID: Scatters film/chess items", slug="sam_gambit"
+        ),
+        right={
+            "type": "chess_take_word_bonus",
+            "value": 8,
+            "value_per_right_upgrade": 8,
+            "value_from_component": 1,
+            "per_take_from_variable": True,
+        },
+        wiki_page="Super_8",
+        wiki_effect="Takes give +N WORD SCORE",
+    ),
+    "bones_the_dog": _pin_entry(
+        "Bicycle",
+        "bones_the_dog",
+        "Bicycle",
+        left=_pin_left_scatter("START OF GRID: Scatters cards", slug="bones_the_dog"),
+        right={
+            "type": "cards_submitted_word_bonus",
+            "value": 1,
+            "value_per_right_upgrade": 1,
+            "value_from_component": 1,
+            "accumulator_field": "bicycle_word_score_bonus",
+        },
+        wiki_page="Bicycle",
+        wiki_effect="Get +0 WORD SCORE, improved by 1 per submitted card",
+    ),
+    "cretaceous_meg": _pin_entry(
+        "Wad of Cash",
+        "cretaceous_meg",
+        "WadOfCash",
+        left=_pin_left_scatter("START OF GRID: Scatters currency", slug="cretaceous_meg"),
+        right={
+            "type": "add_tile_score",
+            "target": "currency",
+            "value": 10,
+        },
+        wiki_page="Wad_of_Cash",
+        wiki_effect="Currencies get +10 TILE SCORE",
+    ),
+    "human_boy": _pin_entry(
+        "Human Hands",
+        "human_boy",
+        "HumanHands",
+        orchestration="human_hands_pin",
+        wiki_page="Human_Hands",
+        wiki_effect="Boost favourite sticker levels; replay favourite stamp scoring",
+    ),
 }
 
 ALIASES: dict[str, dict[str, str]] = {
@@ -2156,6 +2315,10 @@ def main() -> int:
 
     stamps = dict(existing.get("stamps", {}))
     stamps.update(build_bucket(stamp_titles, TUNED_STAMPS, "stamp"))
+    enrich_stamps_catalog(stamps)
+
+    stickers = dict(stickers)
+    enrich_stickers_orchestration(stickers)
 
     bosses = build_bucket(boss_titles, TUNED_BOSSES, "boss")
 

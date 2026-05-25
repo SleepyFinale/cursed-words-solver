@@ -37,11 +37,19 @@ def _color_bonus(tile: Tile, letter_base: int) -> int:
     color = tile.color
     if color == TileColor.RED:
         return 1
-    if color in (TileColor.BLUE, TileColor.CACTUS):
+    if color in (TileColor.BLUE,):
         return 1
     if color == TileColor.PURPLE:
         return 2
     return 0
+
+
+def _cactus_growth_bonus(tile: Tile) -> int:
+    raw = tile.metadata.get("cactus_growth", 1)
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 1
 
 
 def tile_base_contribution(tile: Tile, money: int = 0) -> float:
@@ -69,6 +77,9 @@ def tile_base_contribution(tile: Tile, money: int = 0) -> float:
             letter_base = -abs(letter_base)
     elif color == TileColor.GOLD:
         letter_base = money
+
+    if color == TileColor.CACTUS:
+        return letter_base + _cactus_growth_bonus(tile)
 
     bonus = _color_bonus(tile, letter_base)
     return letter_base + bonus

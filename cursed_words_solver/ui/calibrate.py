@@ -1,4 +1,4 @@
-"""Calibration wizard to select board capture region."""
+"""Calibration wizard to select board capture region for path highlights."""
 
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ class RegionSelector(QWidget):
 
 
 def run_calibration_wizard(config: AppConfig) -> AppConfig:
-    """Interactive region selection for board (and optional money)."""
+    """Interactive region selection for the 5×5 board overlay alignment."""
     app = QApplication.instance() or QApplication(sys.argv)
 
     def select_region(prompt: str, terminal_hint: str) -> Region | None:
@@ -140,20 +140,6 @@ def run_calibration_wizard(config: AppConfig) -> AppConfig:
         )
     else:
         print("  Board selection cancelled (previous region kept).", flush=True)
-
-    money = select_region(
-        "Optional: drag over MONEY display.\n"
-        "ESC to skip money region.",
-        "Optional: drag over the money display. ESC to skip.",
-    )
-    if money and money.width > 40:
-        config.money_region = money
-        print(
-            f"  Money set: {money.width}×{money.height} at ({money.x},{money.y})",
-            flush=True,
-        )
-    elif money is None:
-        print("  Money selection skipped.", flush=True)
 
     config.save()
     return config

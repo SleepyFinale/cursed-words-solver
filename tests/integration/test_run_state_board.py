@@ -10,7 +10,7 @@ from cursed_words_solver.loadout import (
 )
 from cursed_words_solver.rules.boss_effects import boss_word_constraints, load_rules_catalog
 from cursed_words_solver.models import CurseType, TileColor, normalize_tile_glyph
-from cursed_words_solver.vision.board_parser import format_board_grid
+from cursed_words_solver.board_display import format_board_grid
 
 SAMPLE_BOARD_JSON = {
     "character": "Test",
@@ -639,3 +639,101 @@ def test_parse_run_state_nested_boss_object():
     assert loadout.boss_name == "Wolf"
     rules = load_rules_catalog()
     assert boss_word_constraints(loadout, rules, default_max_len=15).max_len == 4
+
+
+def test_parse_run_state_grid_number_and_kokeshi():
+    from cursed_words_solver.rules.scoring_conditions import grid_number
+
+    data = {
+        "character": "Cretaceous Meg",
+        "extras": {
+            "grid_number": "3",
+            "kokeshi_dolls": "true",
+            "board_from_melmod": "true",
+            "character_slug": "cretaceous_meg",
+            "fairy_count": "2",
+            "rare_item_count": "1",
+        },
+        "stickers": [],
+        "stamps": [{"id": "kokeshi_dolls", "name": "Kokeshi Dolls"}],
+    }
+    loadout = parse_run_state(data)
+    assert grid_number(loadout) == 3
+    assert loadout.extras["kokeshi_dolls"] is True
+    assert loadout.extras["board_from_melmod"] is True
+    assert loadout.extras["character_slug"] == "cretaceous_meg"
+    assert loadout.extras["fairy_count"] == 2
+    assert loadout.extras["rare_item_count"] == 1
+
+
+def test_parse_run_state_stitched_and_overhand_json():
+    data = {
+        "character": "Test",
+        "extras": {
+            "stitched_sticker_ids": '["brain","tombstone"]',
+            "overhand_level": "2",
+            "frozen_in_shop": "true",
+        },
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    assert loadout.extras["stitched_sticker_ids"] == ["brain", "tombstone"]
+    assert loadout.extras["overhand_level"] == 2
+    assert loadout.extras["frozen_in_shop"] is True
+
+
+def test_parse_board_tile_extras_metadata():
+    data = {
+        "board": {
+            "source": "melmod",
+            "row_order": "top_first",
+            "tiles": [
+                {
+                    "row": 0,
+                    "col": 0,
+                    "char": "A",
+                    "letter": "A",
+                    "curse": "arrow",
+                    "color": "colorless",
+                    "base_score": 1,
+                    "consumable": True,
+                    "was_glitch": True,
+                    "cactus_growth": 2,
+                },
+                *[
+                    {
+                        "row": r,
+                        "col": c,
+                        "char": "X",
+                        "letter": "X",
+                        "curse": "letter",
+                        "color": "colorless",
+                        "base_score": 1,
+                    }
+                    for r in range(5)
+                    for c in range(5)
+                    if not (r == 0 and c == 0)
+                ],
+            ],
+        }
+    }
+    board = parse_board_from_run_state(data)
+    assert board is not None
+    tile = board.get(0, 0)
+    assert tile.curse == CurseType.ARROW
+    assert tile.metadata.get("consumable") is True
+    assert tile.metadata.get("was_glitch") is True
+    assert tile.metadata.get("cactus_growth") == 2
+
+
+def test_parse_run_state_schema_version_passthrough():
+    data = {
+        "schema_version": 1,
+        "exported_at": "2026-05-25T00:00:00Z",
+        "character": "Test",
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    assert loadout.character == "Test"

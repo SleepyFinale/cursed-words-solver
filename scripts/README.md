@@ -1,5 +1,20 @@
 # Maintenance scripts
 
+## Game research
+
+```bash
+python scripts/extract_game_types.py
+python scripts/generate_sticker_audit.py
+```
+
+See [`docs/game-research/README.md`](../docs/game-research/README.md).
+
+## Trace comparison
+
+```bash
+python scripts/compare_trace.py tests/fixtures/mismatches/<id>.json
+```
+
 Run all commands from the **repository root** (the folder containing `pyproject.toml`).
 
 | Script | Purpose |

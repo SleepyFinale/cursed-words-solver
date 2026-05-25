@@ -17,12 +17,15 @@ from cursed_words_solver.models import Loadout, LoadoutItem
 
 
 SCORING_INACTIVE_TYPES = frozenset({"unmodeled", "custom", ""})
+GRID_ONLY_TYPES = frozenset({"scatter_start_grid", "scatter_start_encounter"})
+META_SCORING_TYPES = frozenset({"reverse_scoring_order", "shuffle_loadout_order"})
 
 
 
 # Pin types that only orchestrate other effects (still count as scoring-active).
 
 PIN_ORCHESTRATION_TYPES = frozenset({"pin_memory_replay", "human_hands_pin"})
+STICKER_ORCHESTRATION_TYPES = frozenset({"frankenstein_stitch", "overhand_replay"})
 
 
 
@@ -164,11 +167,19 @@ def is_scoring_rule(rule: dict[str, Any] | None) -> bool:
     effect_type = rule.get("type", "")
 
     if effect_type in PIN_ORCHESTRATION_TYPES:
-
         return True
+
+    if effect_type in STICKER_ORCHESTRATION_TYPES:
+        return False
 
     if effect_type in SCORING_INACTIVE_TYPES:
 
+        return False
+
+    if effect_type in GRID_ONLY_TYPES or effect_type in META_SCORING_TYPES:
+        return False
+
+    if effect_type == "reverse_scoring_order":
         return False
 
     if effect_type and effect_type != "unmodeled":
@@ -193,44 +204,115 @@ def is_scoring_rule(rule: dict[str, Any] | None) -> bool:
 
 
 
+def _pin_left_track(rule: dict[str, Any]) -> dict[str, Any] | None:
+    left = rule.get("left")
+    return left if isinstance(left, dict) else None
+
+
+def _pin_right_track(rule: dict[str, Any]) -> dict[str, Any] | None:
+    right = rule.get("right")
+    return right if isinstance(right, dict) else None
+
+
+def _pin_orchestration_type(rule: dict[str, Any]) -> str:
+    orch = rule.get("orchestration") or ""
+    if orch in PIN_ORCHESTRATION_TYPES:
+        return str(orch)
+    top = rule.get("type", "")
+    if top in PIN_ORCHESTRATION_TYPES:
+        return str(top)
+    return ""
+
+
+def pin_has_word_scoring(rule: dict[str, Any]) -> bool:
+    """True when pin contributes to word/tile score (right track or orchestration)."""
+    if _pin_orchestration_type(rule):
+        return True
+    right = _pin_right_track(rule)
+    if right and is_scoring_rule(right):
+        return True
+    return is_scoring_rule(rule)
+
+
+def stamp_is_catalog_inactive(rule: dict[str, Any]) -> bool:
+    """Non-word-scoring stamp (grid scatter, shop, movement, meta)."""
+    if is_scoring_rule(rule):
+        return False
+    t = rule.get("type", "")
+    ec = rule.get("effect_class", "")
+    if t in GRID_ONLY_TYPES:
+        return True
+    if t == "custom" and ec in (
+        "scatter",
+        "shop",
+        "encounter",
+        "movement",
+        "meta",
+        "sell",
+        "consumable",
+        "letter_behavior",
+    ):
+        return True
+    if ec in (
+        "shop",
+        "encounter",
+        "movement",
+        "scatter",
+        "meta",
+        "sell",
+        "orchestration",
+        "unique",
+        "sell_cost",
+    ):
+        return True
+    return False
+
+
 def _pin_has_grid_only_metadata(rule: dict[str, Any]) -> bool:
-
-    """Grid scatter documented but no word-scoring type."""
-
+    """Grid scatter (left track) with no word-scoring right track."""
+    if pin_has_word_scoring(rule):
+        return False
+    left = _pin_left_track(rule)
+    if left and left.get("type") in GRID_ONLY_TYPES:
+        return True
     effect_type = rule.get("type", "")
-
+    if effect_type in GRID_ONLY_TYPES:
+        return True
     return effect_type in SCORING_INACTIVE_TYPES and bool(
-
         rule.get("grid_effect") or rule.get("effect_class") == "scatter"
-
     )
 
 
 
 
 
+def get_pin_rule(rules: dict[str, Any], pin_id: str) -> tuple[str | None, dict[str, Any] | None]:
+    """Full catalog pin entry (left/right tracks, game_class)."""
+    return get_rule(rules, "pins", pin_id, pin_id)
+
+
 def get_pin_scoring_rule(
-
     rules: dict[str, Any],
-
     pin_id: str,
-
 ) -> dict[str, Any] | None:
-
-    """Flat pin scoring rule; ignores pin_branch (left/right levels come from extras)."""
-
-    canonical = resolve_rule_id(rules, "pins", pin_id, pin_id) or pin_id.strip().lower()
-
-    pin_rule = rules.get("pins", {}).get(canonical)
-
+    """Right-track scoring rule; flat legacy pins still supported."""
+    _key, pin_rule = get_pin_rule(rules, pin_id)
     if not isinstance(pin_rule, dict):
-
         return None
-
+    orch = _pin_orchestration_type(pin_rule)
+    if orch:
+        out = dict(pin_rule)
+        out.setdefault("type", orch)
+        return out
+    right = _pin_right_track(pin_rule)
+    if right and is_scoring_rule(right):
+        merged = {k: v for k, v in pin_rule.items() if k not in ("left", "right")}
+        merged.update(right)
+        merged.setdefault("type", right.get("type", ""))
+        merged["game_class"] = pin_rule.get("game_class", merged.get("game_class", ""))
+        return merged
     if is_scoring_rule(pin_rule):
-
         return pin_rule
-
     return None
 
 
@@ -238,61 +320,31 @@ def get_pin_scoring_rule(
 
 
 def get_pin_branch_rule(
-
     rules: dict[str, Any],
-
     pin_id: str,
-
     pin_branch: str,
-
 ) -> dict[str, Any] | None:
-
-    """Legacy branch-only pins; flat scoring pins use get_pin_scoring_rule instead."""
-
-    canonical = resolve_rule_id(rules, "pins", pin_id, pin_id) or pin_id.strip().lower()
-
-    pin_rule = rules.get("pins", {}).get(canonical)
-
+    """Left or right track rule; legacy `branches` dict still supported."""
+    _key, pin_rule = get_pin_rule(rules, pin_id)
     if not isinstance(pin_rule, dict):
-
         return None
-
-
-
+    branch = (pin_branch or "").strip().lower()
     branches = pin_rule.get("branches")
-
     if isinstance(branches, dict):
-
-        branch = (pin_branch or "").strip().lower()
-
         if branch in branches:
-
             sub = branches[branch]
-
             if isinstance(sub, dict) and sub.get("type") not in SCORING_INACTIVE_TYPES:
-
                 return sub
-
-        if "default" in branches:
-
-            sub = branches["default"]
-
-            if isinstance(sub, dict) and sub.get("type") not in SCORING_INACTIVE_TYPES:
-
-                return sub
-
-        if "" in branches:
-
-            sub = branches[""]
-
-            if isinstance(sub, dict) and sub.get("type") not in SCORING_INACTIVE_TYPES:
-
-                return sub
-
+        for fallback in ("default", ""):
+            if fallback in branches:
+                sub = branches[fallback]
+                if isinstance(sub, dict) and sub.get("type") not in SCORING_INACTIVE_TYPES:
+                    return sub
         return None
-
-
-
+    if branch == "left":
+        return _pin_left_track(pin_rule)
+    if branch == "right":
+        return _pin_right_track(pin_rule) or get_pin_scoring_rule(rules, pin_id)
     return get_pin_scoring_rule(rules, pin_id)
 
 
@@ -455,13 +507,17 @@ def count_scoring_items(rules: dict[str, Any], loadout: Loadout) -> tuple[int, i
 
             continue
 
-        if rule.get("type") == "custom":
-
-            grid_only += 1
-
-        elif is_scoring_rule(rule):
+        if is_scoring_rule(rule):
 
             scoring += 1
+
+        elif (
+            stamp_is_catalog_inactive(rule)
+            or rule.get("type") in STICKER_ORCHESTRATION_TYPES
+            or rule.get("type") == "custom"
+        ):
+
+            grid_only += 1
 
 
 
@@ -473,15 +529,11 @@ def count_scoring_items(rules: dict[str, Any], loadout: Loadout) -> tuple[int, i
 
             continue
 
-        if rule.get("type") == "custom":
-
-            grid_only += 1
-
-        elif is_scoring_rule(rule):
-
+        if is_scoring_rule(rule):
             scoring += 1
-
-
+        elif stamp_is_catalog_inactive(rule):
+            if rule.get("effect_class") != "movement" and not rule.get("search_flags"):
+                grid_only += 1
 
     if loadout.boss_id or loadout.boss_name:
 
@@ -508,13 +560,9 @@ def count_scoring_items(rules: dict[str, Any], loadout: Loadout) -> tuple[int, i
         _key, pin_rule = get_rule(rules, "pins", str(pin_effect), str(pin_effect))
 
         if pin_rule:
-
-            if is_scoring_rule(pin_rule):
-
+            if pin_has_word_scoring(pin_rule):
                 scoring += 1
-
             elif _pin_has_grid_only_metadata(pin_rule):
-
                 grid_only += 1
 
 

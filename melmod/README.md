@@ -4,9 +4,11 @@
 
 This MelonLoader mod writes files under `%USERPROFILE%\.cursed_words_solver\` while you play:
 
-- **Loadout** — character, stickers, stamps, boss, pin, money (`run_state.json`)
+- **Loadout** — character, stickers, stamps, boss, pin, money (`run_state.json`). Top-level `schema_version` (currently `1`) and `exported_at` (UTC ISO) on each export.
 
-- **Board** — live 5×5 tiles (letters, scores, colors, curse types) from game `GridData` (`run_state.json`)
+- **Board** — live 5×5 tiles (letters, scores, colors, curse types) from game `GridData` (`run_state.json`). Per-tile: `was_glitch`, `cactus_growth`, `scattered_item_id`, `arrow` curse mapping. `extras.board_from_melmod` is `true` when a live board is exported (solver skips scatter simulation).
+- **Tile scoring extras** — `extras.green_poison_bonus` (10% × green tiles per prior word), pink piggy bank handled in solver `tile_scoring.py`
+- **Boss extras** — `boss_floor_modification` (from active `BossModifier`), `fox_stolen_this_grid` / `fox_stolen_this_word` when applicable
 
 - **Dictionary** — full active-language vocabulary from game `WordTrie` (`game_words.txt` + `game_words_meta.json`)
 
@@ -14,9 +16,11 @@ This MelonLoader mod writes files under `%USERPROFILE%\.cursed_words_solver\` wh
 
 - **F7** in-game forces an immediate refresh (MelonLoader console log)
 
-- **Boss context** — `boss_id`, `boss_name`, plus `extras.boss_area_number` (from `Player.CurrentRunProgress.GetStage()`), `extras.boss_cursed` (from `BossModifier.IsCursed`), `extras.hyena_blocked`. Boss discovery uses live `EncounterController.GetBossModifiers()` (then player `ActiveBossModifiers`); fields are **cleared** when no boss is active (leaving a Wolf fight clears `boss_id` on the next export). Scoring hooks clear their cache when `bossModifiers` is empty. Wolf maps from game type `MaxWordLength` → wiki id `wolf`. **Bat** boards export all 25 slots with `active: false` on unused cells plus `rows`/`cols` (height × width from `GridData.Dimensions`), `playable_origin`, and `playable_min_row`…`playable_max_col` for overlay alignment. After rebuilding the companion, press **F7** in-game before **F8** solve so shrunk grids (e.g. game **4×3**) export with the correct active columns.
+- **Boss context** — `boss_id`, `boss_name`, plus `extras.boss_area_number` (from `Player.CurrentRunProgress.GetStage()`), `extras.boss_cursed` (from `BossModifier.IsCursed`), `extras.hyena_blocked`, `extras.boss_floor_modification`, `extras.grids_remaining`, live `wolf_max_length` / `cobra_min_length` when applicable. Boss discovery uses live `EncounterController.GetBossModifiers()` (then player `ActiveBossModifiers`); boss fields and boss-specific extras are **cleared** when no boss is active. Scoring hooks clear their cache when `bossModifiers` is empty. Wolf maps from game type `MaxWordLength` → wiki id `wolf`. **Bat** boards export all 25 slots with `active: false` on unused cells plus `rows`/`cols` (height × width from `GridData.Dimensions`), `playable_origin`, and `playable_min_row`…`playable_max_col` for overlay alignment. After rebuilding the companion, press **F7** in-game before **F8** solve so shrunk grids (e.g. game **4×3**) export with the correct active columns.
 
-The Python solver reads `run_state.json` on every **F8** solve. When `board` is present, it skips screenshot OCR entirely. It prefers `game_words.txt` for word validation so suggestions match what the game accepts (ENABLE1 includes many words the game rejects).
+- **Submit merge** — when you submit the F8 suggestion, `take` / `card_suit` / `card_rank` on the path are merged into `run_state.json` (plus `bicycle_suited_on_path` in `extras`) so the next solve does not require F7 after tracing the path.
+
+The Python solver reads `run_state.json` on every **F8** solve (board export is required). It prefers `game_words.txt` for word validation so suggestions match what the game accepts (ENABLE1 includes many words the game rejects).
 
 Do not bind F8 in the mod — that is the solver hotkey.
 
@@ -58,6 +62,37 @@ pytest tests/regression/ -k 20260523_143022
 Writes `tests/fixtures/mismatches/<timestamp>.json`; parametrized tests live in `tests/regression/test_scoring_mismatches.py`.
 
 See [`SCORING_HOOKS.md`](SCORING_HOOKS.md) for hooked game types (`EncounterController.SubmitWord`, `ScoreCalculation.CalculateOverallScore`, etc.).
+
+## Round logs (v1.2+)
+
+After **every** word submit (encounter or puzzle), the mod writes a structured round record — not only on score mismatches.
+
+**Workflow**
+
+1. **F7** refresh, then **F8** solve (Python writes `last_suggestion.json` with `f8_sequence`, path, predicted score/trace).
+2. Submit any word (F8 path, alternate path, or manual).
+3. Mod writes `%USERPROFILE%\.cursed_words_solver\round_logs\<timestamp>.json` with `match_status`: `score_match`, `score_mismatch`, `path_mismatch`, or `no_suggestion`.
+4. Append-only index: `round_logs/index.jsonl` (round id, file path, scores, words).
+
+Each log includes: full `run_state` at submit, solver block (when `last_suggestion.json` exists), actual word/path/score/trace, consumable rack before/after, and `consumables.placements_this_round` (board-diff detections between submits).
+
+**Mismatch bundles unchanged** — `scoring_mismatches/` still only when F8 path + board fingerprint match and scores differ.
+
+| File | Path |
+|------|------|
+| F8 prediction | `%USERPROFILE%\.cursed_words_solver\last_suggestion.json` |
+| Per-round logs | `%USERPROFILE%\.cursed_words_solver\round_logs\*.json` |
+| Round log index | `%USERPROFILE%\.cursed_words_solver\round_logs\index.jsonl` |
+| Mismatch bundles | `%USERPROFILE%\.cursed_words_solver\scoring_mismatches\*.json` |
+
+MelonPreference **Round log enabled** (default on). Startup logs the round log directory.
+
+**Turn a round log into a fixture**
+
+```powershell
+python scripts/round_log_to_test.py $env:USERPROFILE\.cursed_words_solver\round_logs\20260525_120000_000.json
+pytest tests/integration/test_round_log_schema.py -q
+```
 
 ## Install MelonLoader and the companion mod
 
@@ -161,7 +196,7 @@ This builds `CursedWordsSolverCompanion.dll` and copies it to `Cursed Words\Mods
 }
 ```
 
-Top-level `money` and `board.money` are the same value (`player.Money`). The solver uses this for GOLD tile scoring instead of money OCR.
+Top-level `money` and `board.money` are the same value (`player.Money`). The solver uses this for GOLD tile scoring.
 
 `base_score` is the tile's full in-game `packet.Score` (including fractional values and bonuses above 10). Rebuild the mod and press **F7** after updating so exports stay accurate.
 
@@ -171,7 +206,7 @@ Sticker/stamp `id` values are derived from the game's `ArtFileName` (slugified) 
 
 `extras.pin_effect` is the pin **art** slug (e.g. `abacus`, `sam_gambit` for Super 8, `bones_the_dog` for Bicycle). Pins are not stickers/stamps.
 
-`pin_left_level` and `pin_right_level` are cumulative counts of left- and right-side pin upgrades (after each stage you pick one side, or both with ID Card). For **Abacus**, only the right track affects word scoring (+10 TILE SCORE per coloured number on the path, scaling with `pin_right_level`); the left track is the grid scatter only. **VOID** number tiles count as coloured (void is a tile colour, not colourless). The solver does not use `pin_branch` for math (that field is display-only: which side is ahead).
+`pin_left_level` and `pin_right_level` are cumulative counts of left- and right-side pin upgrades (after each stage you pick one side, or both with ID Card). **`pin_left_variable`** and **`pin_right_variable`** mirror in-game `UpgradeableComponents[i].VariableValue` (used for bonuses; preferred over level when present). For **Abacus**, only the right track affects word scoring (+N TILE SCORE per coloured number on the path, N = `pin_right_variable`); the left track is the grid scatter only. **VOID** number tiles count as coloured (void is a tile colour, not colourless). The solver does not use `pin_branch` for math (that field is display-only: which side is ahead).
 
 Optional extras for specific pins:
 
@@ -179,7 +214,7 @@ Optional extras for specific pins:
 |-------|-----|
 | `bicycle_word_score_bonus` | Bicycle (`bones_the_dog`) — running `WordScoreBonus` on the pin before this word (game adds suited cards on path × right-track rate, then applies the total). Merged into `run_state.json` after each `CalculateOverallScore` (and on submit) so F8 stays in sync. |
 | `cards_submitted` | Legacy alias of `bicycle_word_score_bonus` for older solver builds |
-| `bicycle_suited_on_path` | Set during submit scoring capture — count of **unique playing-card suits** on the submitted path (each of clubs/spades/hearts/diamonds counts once). Fallback when board export lacks `card_suit`. For accurate F8 scores with Bicycle, press **F7 after placing card tiles on your path**, then F8. |
+| `bicycle_suited_on_path` | Set during submit scoring capture — count of **unique playing-card suits** on the submitted path (each of clubs/spades/hearts/diamonds counts once). Merged into `run_state.json` on matched submit; path tiles also get `card_suit` / `card_rank` on the board snapshot. |
 | `favourite_sticker_id`, `favourite_stamp_id` | Human Hands (`human_boy`) |
 | `pin_memory` | Random Access Memory (JSON array of `{id,name,level,kind}`) |
 
@@ -189,11 +224,28 @@ Run context extras (default-unlocked stickers):
 |-------|---------|
 | `is_first_grid_of_encounter` | Chequered Flag (`true` / `false`) |
 | `previous_word_first_letter` | Chips, Bento Box, Limnophila (single letter, e.g. `a`) |
+| `stitched_sticker_ids` | Frankenstein (JSON array of stitched sticker art slugs) |
+| `overhand_level` | Overhand (`UpgradeableComponents[0].VariableValue` — extra stamp applications per slot) |
+| `hourglass_count` | Hourglass (odd count reverses pin/sticker/stamp scoring order) |
+| `mutating_dna_letter_counts` | Mutating DNA (JSON map letter → use count) |
 | `tile_ninja_bonus` | Tile Ninja (additive ×WORD bonus; wiki +0.02 per consumable placed) |
 | `avocado_mushy` | Avocado frozen in shop (`true` → ×-2 WORD SCORE instead of ×2) |
 | `red_tiles_used_encounter` | Telescope (integer count this encounter) |
 | `consumable_rack_count` | Hi Vis Jacket (tiles on consumable rack) |
-| `rare_item_count` | Steak stamp (owned RARE items; set manually if not exported) |
+| `grid_number` | Current grid index in the encounter (1-based; also updated from `CalculateOverallScore`) |
+| `run_seed` | Run RNG seed when readable from player/progress |
+| `rare_item_count` | Owned RARE stickers/stamps/pin |
+| `fairy_count` | Fairy-related stamp count |
+| `animal_stamp_count` | Animal-themed stamps equipped |
+| `money_lost_encounter` | Money lost this encounter |
+| `kokeshi_dolls` | `true` when Kokeshi Dolls stamp equipped (currency path uses letter values) |
+| `frozen_in_shop` | `true` when Avocado is mushy / shop freeze active (`avocado_mushy` still exported) |
+| `character_slug` | Wiki-style slug for the active character |
+| `encounter_mode` | `encounter`, `shop`, or `none` |
+| `grids_total` | Total grids in encounter (Badger) when readable |
+| `sticker_order` / `stamp_order` | JSON slug arrays (live slot order) |
+| `historic_words` | Compact JSON of prior submitted words (word, path, score) |
+| `game_version` | `Application.version` for mismatch triage |
 | `target_number` | Lucky Dice (grid target number tile value, e.g. `2`) |
 | `birthday_cake_bonus` | Birthday Cake (accumulated “Get +X WORD SCORE” before this submit). If the solver shows `Birthday Cake: 0 + …`, press **F7** in-game after rebuilding the companion; until then you can set `"birthday_cake_bonus": "15"` (match the sticker UI) in `run_state.json` → `extras`. |
 | `michael_book_bonus` | Michael's Book (accumulated word bonus) |
@@ -222,11 +274,9 @@ Pure card glyphs export `curse: "card"`. Suited overlays only set `card_suit` / 
 
 4. Press **F8** in the solver — terminal should show `Word list: game (...)` and `Board from melmod` with the correct grid.
 
-5. **F10** in the solver recalibrates the screenshot region (for on-board path highlights and OCR fallback).
+5. **F10** in the solver recalibrates the on-screen board region (for numbered green path highlights).
 
 6. **ESC** hides the solver overlay and board highlights.
-
-7. Without the mod, the solver uses screenshot OCR (slower); press **F9** to edit loadout manually.
 
 ## Troubleshooting
 

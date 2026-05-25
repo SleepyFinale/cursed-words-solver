@@ -6,21 +6,25 @@ namespace CursedWordsSolverCompanion
     public static class ScoringCaptureSession
     {
         private static bool _active;
-
-        public static bool IsActive
-        {
-            get { return _active; }
-        }
         private static LastSuggestion _suggestion;
         private static string _word;
         private static List<int> _path;
         private static string _submitMethod;
         private static List<Dictionary<string, object>> _actualTrace;
+        private static List<Dictionary<string, object>> _roundTrace;
         private static string _boardFingerprint;
         private static string _loadoutFingerprint;
         private static Dictionary<string, string> _scoringContextExtras =
             new Dictionary<string, string>();
         private static BoardSnapshot _submitBoardSnapshot;
+        private static BoardSnapshot _boardAtSubmit;
+        private static List<ConsumableRackTileSnapshot> _rackBefore;
+        private static List<ConsumablePlacementRecord> _consumablePlacements;
+
+        public static bool IsActive
+        {
+            get { return _active; }
+        }
 
         public static BoardSnapshot SubmitBoardSnapshot
         {
@@ -35,6 +39,7 @@ namespace CursedWordsSolverCompanion
         {
             _active = false;
             _actualTrace = null;
+            _roundTrace = null;
             _submitBoardSnapshot = null;
             _scoringContextExtras = new Dictionary<string, string>();
             _suggestion = SuggestionMatcher.Load();
@@ -48,6 +53,9 @@ namespace CursedWordsSolverCompanion
 
             _boardFingerprint = FingerprintUtil.ComputeBoardFingerprint(player);
             _loadoutFingerprint = FingerprintUtil.ComputeLoadoutFingerprint(player);
+            _boardAtSubmit = BoardExporter.TryBuild(player);
+            _rackBefore = ConsumableRackExporter.Export(player);
+            _consumablePlacements = ConsumablePlacementTracker.DrainPlacementsSinceLastSubmit();
 
             var birthdayBonus = RunStateExporter.TryGetBirthdayCakeBonus(player);
             if (birthdayBonus >= 0)
@@ -71,10 +79,8 @@ namespace CursedWordsSolverCompanion
                         + (_suggestion != null ? _suggestion.predicted_score.ToString() : "?")
                         + " pts)"
                 );
-                return;
             }
-
-            if (_suggestion != null)
+            else if (_suggestion != null)
             {
                 MelonLogger.Msg(
                     "Scoring capture skipped: "
@@ -96,9 +102,6 @@ namespace CursedWordsSolverCompanion
 
         public static void OnScoringContext(List<HistoricWord> previousWords)
         {
-            if (!_active)
-                return;
-
             var player = RunStateExporter.GetPlayerForUpdate();
             var captured = ScoringContextCapture.ExtractFromPreviousWords(previousWords);
             var letterCounts = ScoringContextCapture.ResolveMutatingDnaLetterCounts(
@@ -110,23 +113,23 @@ namespace CursedWordsSolverCompanion
 
             foreach (var kv in captured)
                 _scoringContextExtras[kv.Key] = kv.Value;
+
+            if (!_active)
+                return;
         }
 
         public static void OnScoreStepsCalculated(List<ScoreCalcVizInfo> steps)
         {
-            if (!_active || steps == null)
+            if (steps == null)
                 return;
-            _actualTrace = ScoringTraceCollector.SerializeSteps(steps);
+
+            _roundTrace = ScoringTraceCollector.SerializeSteps(steps);
+            if (_active)
+                _actualTrace = _roundTrace;
         }
 
-        /// <summary>
-        /// Snapshot board + take flags from word tiles while ScoreCalculation runs.
-        /// </summary>
         public static void OnSubmitWordTiles(List<TileSelection> wordTiles)
         {
-            if (!_active)
-                return;
-
             var player = RunStateExporter.GetPlayerForUpdate();
             if (player == null)
                 return;
@@ -149,47 +152,89 @@ namespace CursedWordsSolverCompanion
 
         public static void EndSubmit()
         {
-            if (!_active)
-                return;
-
             try
             {
-                var actualScore = 0;
-                if (CalculateOverallScorePatch.LastCalculatedSteps != null)
-                {
-                    var packet = ScoreCalculation.GetScoreFromScoreCalcInfo(
-                        CalculateOverallScorePatch.LastCalculatedSteps
-                    );
-                    actualScore = (int)ScoringTraceCollector.ScorePacketToLong(packet);
-                }
+                var actualScore = ComputeActualScore();
+                var submitPlayer = RunStateExporter.GetPlayerForUpdate();
+                var runState = RunStateExporter.CaptureRunState(submitPlayer);
+                var rackAfter = ConsumableRackExporter.Export(submitPlayer);
 
                 var extras = RunStateExporter.BuildExtrasSnapshot();
                 foreach (var kv in _scoringContextExtras)
                     extras[kv.Key] = kv.Value;
-                var submitPlayer = RunStateExporter.GetPlayerForUpdate();
-                MismatchExporter.ExportIfMismatch(
-                    _suggestion,
-                    _word,
-                    _path,
-                    actualScore,
-                    _actualTrace,
-                    _boardFingerprint,
-                    _loadoutFingerprint,
-                    extras,
-                    _submitMethod,
-                    submitPlayer,
-                    _submitBoardSnapshot
-                );
+
+                var ctx = new RoundCaptureContext
+                {
+                    SubmitMethod = _submitMethod,
+                    SubmittedWord = _word,
+                    SubmittedPath = _path,
+                    Suggestion = _suggestion,
+                    ActualScore = actualScore,
+                    ActualTrace = _roundTrace,
+                    BoardFingerprint = _boardFingerprint,
+                    LoadoutFingerprint = _loadoutFingerprint,
+                    BoardAtSubmit = _boardAtSubmit,
+                    SubmitBoardSnapshot = _submitBoardSnapshot,
+                    RackBefore = _rackBefore,
+                    RackAfter = rackAfter,
+                    ConsumablePlacements = _consumablePlacements,
+                    RunState = runState,
+                    ScoringExtras = extras,
+                    CaptureActive = _active,
+                };
+
+                RoundLogExporter.EnsurePrefs();
+                RoundLogExporter.ExportRound(ctx);
+
+                if (_active)
+                {
+                    if (_submitBoardSnapshot != null)
+                        RunStateExporter.TryMergeSubmitBoardMetadata(_submitBoardSnapshot);
+
+                    MismatchExporter.ExportIfMismatch(
+                        _suggestion,
+                        _word,
+                        _path,
+                        actualScore,
+                        _actualTrace,
+                        _boardFingerprint,
+                        _loadoutFingerprint,
+                        extras,
+                        _submitMethod,
+                        submitPlayer,
+                        _submitBoardSnapshot
+                    );
+                }
+
+                ConsumablePlacementTracker.ResetAfterSubmit(_boardAtSubmit);
             }
             catch (System.Exception ex)
             {
-                MelonLogger.Error("Scoring capture failed: " + ex);
+                MelonLogger.Error("Submit capture failed: " + ex);
             }
             finally
             {
                 _active = false;
                 _submitBoardSnapshot = null;
                 CalculateOverallScorePatch.LastCalculatedSteps = null;
+            }
+        }
+
+        private static int ComputeActualScore()
+        {
+            if (CalculateOverallScorePatch.LastCalculatedSteps == null)
+                return 0;
+
+            try
+            {
+                var packet = ScoreCalculation.GetScoreFromScoreCalcInfo(
+                    CalculateOverallScorePatch.LastCalculatedSteps
+                );
+                return (int)ScoringTraceCollector.ScorePacketToLong(packet);
+            }
+            catch
+            {
+                return 0;
             }
         }
     }

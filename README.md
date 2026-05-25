@@ -1,8 +1,8 @@
-# Cursed Words Screenshot Solver
+# Cursed Words Solver
 
 Desktop assistant for **Cursed Words: The Word Game That Isn't**. Press a hotkey to find the highest-scoring valid word on the current 5×5 board and show where to click.
 
-The recommended setup uses a [MelonLoader companion mod](melmod/README.md) that reads the live board, loadout, and game dictionary directly from memory. Without the mod, the solver falls back to screenshot OCR (slower and less exact).
+Requires the [MelonLoader companion mod](melmod/README.md), which reads the live board, loadout, and game dictionary from game memory into `run_state.json`.
 
 **Capabilities**
 
@@ -34,13 +34,7 @@ python -m cursed_words_solver.app
 cursed-solver
 ```
 
-Per-tile OCR debug images when using the OCR fallback:
-
-```bash
-python -m cursed_words_solver.app --debug-ocr
-```
-
-### MelonLoader + companion mod (recommended)
+### MelonLoader + companion mod (required)
 
 Close Cursed Words, then from the repo root in PowerShell:
 
@@ -50,8 +44,6 @@ Close Cursed Words, then from the repo root in PowerShell:
 ```
 
 Steam default path: `C:\Program Files (x86)\Steam\steamapps\common\Cursed Words\`. Use `-GameDir` on either script if your install is elsewhere. Launch the game **once** from Steam after MelonLoader installs, then start a run and press **F7** before solving. Full install steps and JSON field reference: [`melmod/README.md`](melmod/README.md).
-
-Without the mod, EasyOCR downloads ~100MB to `%USERPROFILE%\.EasyOCR\` on first use.
 
 ## How it works
 
@@ -110,7 +102,7 @@ Field-by-field JSON documentation: [`melmod/README.md`](melmod/README.md). Do no
 Pressing **F8** starts `_solve_worker` in [`app.py`](cursed_words_solver/app.py) on a background thread (UI updates are posted back to the Qt main thread via `_HotkeyBridge` signals).
 
 1. **Reload state** — Read `run_state.json` via [`loadout.py`](cursed_words_solver/loadout.py) (`load_run_state`, `parse_board_from_run_state`).
-2. **Board** — If melmod exported a valid board, use it and skip OCR. Otherwise capture `board_region` and parse with [`board_parser.py`](cursed_words_solver/vision/board_parser.py) (EasyOCR + color detection). Money prefers melmod; OCR `money_region` is fallback only.
+2. **Board** — Parse the melmod board from `run_state.json` via [`loadout.py`](cursed_words_solver/loadout.py). F8 fails with a clear message if the board is missing (press **F7** in-game).
 3. **Dictionary** — [`dictionary.py`](cursed_words_solver/dictionary.py) loads `game_words.txt` when present (from melmod), else ENABLE1 ([`config.py`](cursed_words_solver/config.py) `resolve_wordlist`).
 4. **Search** — [`search.py`](cursed_words_solver/search.py) `WordSearcher.find_best_words` runs DFS over active tiles with curse-specific neighbors (standard adjacency, double-letter teleports, chess piece rules, wildcards). Chess movement follows [wiki rules](https://cursedwords.wiki.gg/wiki/Curses#Chess_pieces): piece-specific rays, same-color blocking, pawn forward/double/capture, en passant, and king cannot move into check — see [`chess_tiles.py`](cursed_words_solver/rules/chess_tiles.py). `PathValidator` prunes invalid prefixes and enforces stamp-specific rules. Search is time-budgeted (`search_time_budget_sec`) with fair per-start slices; extra passes cover void/number words on boards with NUMBER tiles. Boss limits (e.g. Wolf max length, Hyena block) come from [`boss_effects.py`](cursed_words_solver/rules/boss_effects.py).
 5. **Score** — Each candidate is scored by [`ScoringPipeline`](cursed_words_solver/rules/pipeline.py) using rules from [`data/wiki/stickers.json`](data/wiki/stickers.json) ([`rule_lookup.py`](cursed_words_solver/rules/rule_lookup.py)): base tile sum → Salamander/Robo-Monkey (boss) → grid path bonuses → pin → stickers → stamps, matching [wiki order](https://cursedwords.wiki.gg/wiki/Scoring).
@@ -122,12 +114,8 @@ Melmod provides *what* is on each tile; calibration tells the solver *where* the
 
 - **Result panel** — [`overlay.py`](cursed_words_solver/ui/overlay.py): frameless, always-on-top widget in the **second column from the left**. Shows the best word and score, warnings, and an optional thumbnail from the last board capture.
 - **On-board path** — [`board_highlight.py`](cursed_words_solver/ui/board_highlight.py): transparent, click-through window aligned to `board_region`. Numbered green circles and a connecting line mark the click order (`path_geometry`).
-- **Calibration** — **F10** runs [`calibrate.py`](cursed_words_solver/vision/calibrate.py); required for highlights even when using melmod.
+- **Calibration** — **F10** runs [`ui/calibrate.py`](cursed_words_solver/ui/calibrate.py) to align the on-screen highlight overlay with the 5×5 grid.
 - **Auto-clear** — When melmod is active, highlights watch board/loadout [fingerprints](cursed_words_solver/fingerprints.py) and clear on shop entry or a new round. Press **ESC** to hide manually.
-
-### OCR fallback
-
-If `run_state.json` has no valid `board` section, the solver screenshots the calibrated region, OCRs each cell, and optionally reads money from `money_region`. First solve on CPU can take several minutes while EasyOCR loads. Install melmod and press **F7** in-game to avoid this path.
 
 ## Hotkeys
 
@@ -143,12 +131,12 @@ If `run_state.json` has no valid `board` section, the solver screenshots the cal
 ## Usage
 
 1. **Melmod** — Install (see [Quick start](#melonloader--companion-mod-recommended)), start a run, press **F7** once so `run_state.json` and `game_words.txt` exist.
-2. **Calibrate** — On first run (or `--calibrate` / **F10**), drag a rectangle over the 5×5 board. Money region is optional with melmod.
-3. **Solve** — **F8**. Terminal shows `Board from melmod` or OCR progress, then `Done in … Best: WORD`. Overlay and highlights appear if calibrated. See [How it works](#how-it-works) for details.
+2. **Calibrate** — On first run (or `--calibrate` / **F10**), drag a rectangle over the 5×5 board for green path highlights.
+3. **Solve** — **F8**. Terminal shows `Board from melmod`, then `Done in … Best: WORD`. Overlay and green circles appear when calibrated.
 4. **Quit** — **Ctrl+Shift+Q** or close the overlay. Ctrl+C often fails while global hotkeys are active.
 5. **Recalibrate** — **F10**; preview at `%USERPROFILE%\.cursed_words_solver\debug\calibration_preview.png`.
 
-Without melmod: press **F9** for loadout, rely on OCR for the board, and use ENABLE1 until `game_words.txt` is exported.
+Press **F9** to edit loadout manually if needed. Without `game_words.txt`, the solver falls back to ENABLE1 until you press **F7** in-game.
 
 ## Runtime files
 
@@ -161,7 +149,7 @@ All paths under `%USERPROFILE%\.cursed_words_solver\`:
 | `game_words.txt`, `game_words_meta.json` | Melmod | Solver |
 | `last_suggestion.json` | Solver (each F8) | Melmod (scoring capture) |
 | `scoring_mismatches/` | Melmod | You → `scripts/mismatch_to_test.py` |
-| `debug/` | Solver | You (parse traces, OCR tiles, captures) |
+| `debug/` | Solver | You (parse traces, board captures) |
 
 ## Project layout
 
@@ -174,8 +162,8 @@ cursed_words_solver/   # Python package
   suggestion.py        # last_suggestion.json for melmod
   fingerprints.py      # Board/loadout change detection
   rules/               # Scoring pipeline, bosses, rule lookup
-  vision/              # OCR, calibration, color detect
-  ui/                  # Result overlay, board highlights, loadout dialog
+  board_display.py     # ASCII grid formatting for logs
+  ui/                  # Result overlay, board highlights, calibration, loadout dialog
 melmod/                # MelonLoader companion (C#) + install/build scripts
 data/wiki/             # stickers.json catalog + wiki scrape inputs
 scripts/               # build_stickers_json, mismatch_to_test — see scripts/README.md
@@ -189,19 +177,17 @@ Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 
 | Key | Default | Purpose |
 |-----|---------|---------|
-| `board_region` | — | `{x, y, width, height}` for overlay capture, OCR, and highlights |
+| `board_region` | — | `{x, y, width, height}` for on-board path highlights |
 | `show_board_highlight` | `true` | Numbered circles on the game board |
 | `hotkey` | `f8` | Solve hotkey |
 | `min_word_length` | `3` | Shortest word explored |
 | `max_word_length` | `15` | Longest path explored (max 25 on full grid). Keep 15 for long number words; search cost grows with depth |
 | `search_time_budget_sec` | `45` | Seconds per solve for word search. Legacy values `2` / `15` / `30` auto-upgrade on startup |
 | `top_n_results` | `3` | Alternate words shown in the overlay |
-| `money_region` | — | Optional; OCR fallback when melmod money is unavailable |
-| `cell_inset_ratio` | `0.1` | OCR per-tile crop inset |
-| `debug_ocr` | `false` | Save per-tile images under `debug/tiles/` |
 | `wordlist` | `game` | `game` → `game_words.txt`; `enable1` → offline fallback |
+| `setup_weight` | `0.4` | Weight for future-round setup value in search ranking |
 
-On startup the terminal prints the loaded word list, e.g. `Word list: game (120000 words)`. After each solve it prints the grid and `Board source: melmod` or `ocr`.
+On startup the terminal prints the loaded word list, e.g. `Word list: game (120000 words)`. After each solve it prints the grid and `Board source: melmod`.
 
 ### Search performance
 
@@ -213,7 +199,7 @@ On startup the terminal prints the loaded word list, e.g. `Word list: game (1200
 ### Troubleshooting
 
 - **Wrong words with melmod** — **F7** in-game, then **F8** again; check `run_state.json` has a `board` with 25 tiles.
-- **OCR wrong** — Install melmod, or compare `debug/last_board.png` and recalibrate (**F10**).
+- **F8 does nothing** — Install/rebuild melmod, start a run, press **F7**, then **F8** again.
 - **Overlay stuck on “Press F8 to solve”** — Restart the solver; check the terminal for `Done in … Best: WORD` after **F8**.
 - **No on-board highlights** — `show_board_highlight` true and **F10** region matches the live grid; melmod does not position highlights without calibration.
 - **No board in JSON** — Export only runs mid-run (not main menu).
@@ -265,9 +251,11 @@ GitHub Actions runs `pytest tests/` on push and pull request to `main` / `master
 | Catalog | `tests/catalog/` | Per-character sticker/stamp scoring rules |
 | Integration | `tests/integration/` | Melmod fingerprints, score traces, loadout scoring |
 | Regression | `tests/regression/` | Real mismatch captures under `tests/fixtures/mismatches/` |
-| Unit | `tests/test_*.py` | Search, bosses, dictionary, board parser, etc. |
+| Unit | `tests/test_*.py` | Search, bosses, dictionary, path geometry, etc. |
 
-**Contributing a scoring fix:** F7 → F8 → play the highlighted word → collect mismatch JSON → `python scripts/mismatch_to_test.py …` → fix pipeline → `pytest tests/regression/`.
+**Contributing a scoring fix:** F7 → F8 → play the highlighted word → collect mismatch JSON → `python scripts/mismatch_to_test.py …` → fix pipeline → `pytest tests/regression/ -k <fixture_id>` until green → remove that id from `_KNOWN_FAILING` in [`tests/regression/test_scoring_mismatches.py`](tests/regression/test_scoring_mismatches.py).
+
+New mismatch fixtures are **not** added to `_KNOWN_FAILING` by default, so CI fails until the replay passes (or you deliberately quarantine a case). Passing regressions (~54) still run on every `pytest tests/`.
 
 ## Related documentation
 

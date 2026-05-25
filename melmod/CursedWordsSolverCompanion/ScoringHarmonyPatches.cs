@@ -49,10 +49,15 @@ namespace CursedWordsSolverCompanion
         [HarmonyPrefix]
         public static void Prefix(
             List<TileSelection> tileSelections,
+            List<string> words,
+            List<Item> items,
+            List<HistoricWord> previousWords,
             List<BossModifier> bossModifiers,
-            List<HistoricWord> previousWords
+            GridData grid,
+            int GridNumber
         )
         {
+            RunStateExporter.CacheGridNumber(GridNumber);
             BossResolver.CacheFromScoring(bossModifiers);
             ScoringCaptureSession.OnScoringContext(previousWords);
             ScoringCaptureSession.OnSubmitWordTiles(tileSelections);
@@ -61,12 +66,10 @@ namespace CursedWordsSolverCompanion
         [HarmonyPostfix]
         public static void Postfix(List<ScoreCalcVizInfo> __result)
         {
-            RunStateExporter.TryMergeBicycleExtrasAfterScore();
-
-            if (!ScoringCaptureSession.IsActive)
-                return;
             LastCalculatedSteps = __result;
             ScoringCaptureSession.OnScoreStepsCalculated(__result);
+            RunStateExporter.TryMergeBicycleExtrasAfterScore();
+            RunStateExporter.TryMergeCachedGridNumber();
         }
     }
 }

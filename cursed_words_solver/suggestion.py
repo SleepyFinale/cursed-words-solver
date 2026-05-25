@@ -30,6 +30,8 @@ from cursed_words_solver.search import PathValidator
 
 SOLVER_VERSION = "0.1.0"
 
+_F8_SEQUENCE_PATH = LAST_SUGGESTION_PATH.parent / ".f8_sequence"
+
 
 
 def format_suggestion_word(result: WordResult) -> str:
@@ -190,9 +192,13 @@ def save_last_suggestion(
 
 
 
+    f8_sequence = _next_f8_sequence()
+
     payload: dict[str, Any] = {
 
         "created_at": datetime.now(timezone.utc).isoformat(),
+
+        "f8_sequence": f8_sequence,
 
         "solver_version": SOLVER_VERSION,
 
@@ -227,5 +233,19 @@ def save_last_suggestion(
         encoding="utf-8",
 
     )
+
+
+def _next_f8_sequence() -> int:
+    """Monotonic F8 counter for correlating with round_logs."""
+    LAST_SUGGESTION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    seq = 0
+    if _F8_SEQUENCE_PATH.exists():
+        try:
+            seq = int(_F8_SEQUENCE_PATH.read_text(encoding="utf-8").strip())
+        except (TypeError, ValueError):
+            seq = 0
+    seq += 1
+    _F8_SEQUENCE_PATH.write_text(str(seq), encoding="utf-8")
+    return seq
 
 

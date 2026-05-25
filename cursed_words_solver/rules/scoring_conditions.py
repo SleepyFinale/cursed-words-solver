@@ -7,6 +7,7 @@ from collections import Counter
 from collections.abc import Callable
 
 from cursed_words_solver.models import (
+    tile_counts_as_color,
     CHESS_CURSES,
     CURRENCY_MAP,
     Board,
@@ -81,6 +82,28 @@ def pin_right_level(loadout: Loadout) -> int:
         return int((loadout.extras or {}).get("pin_right_level", 0))
     except (TypeError, ValueError):
         return 0
+
+
+def pin_left_variable(loadout: Loadout) -> int | None:
+    try:
+        return int((loadout.extras or {}).get("pin_left_variable"))
+    except (TypeError, ValueError):
+        return None
+
+
+def pin_right_variable(loadout: Loadout) -> int | None:
+    try:
+        return int((loadout.extras or {}).get("pin_right_variable"))
+    except (TypeError, ValueError):
+        return None
+
+
+def human_hands_stamp_extra_apps(loadout: Loadout) -> int:
+    """Game: favourite stamp scored (right.VariableValue - 1) extra times after stamps."""
+    var = pin_right_variable(loadout)
+    if var is not None:
+        return max(0, var - 1)
+    return max(0, pin_right_level(loadout))
 
 
 def scaled_pin_value(base: int, per_upgrade: int, upgrade_level: int) -> int:
@@ -979,8 +1002,12 @@ def unique_colours_on_path(board: Board, path: list[int]) -> set[str]:
 
 
 def count_color_on_path(board: Board, path: list[int], color: str) -> int:
+    try:
+        want = TileColor(color)
+    except ValueError:
+        want = TileColor.UNKNOWN
     return sum(
-        1 for idx in path if board.get_by_index(idx).color.value == color
+        1 for idx in path if tile_counts_as_color(board.get_by_index(idx), want)
     )
 
 
@@ -1021,7 +1048,7 @@ def unused_red_tiles_on_board(board: Board, path: list[int]) -> int:
     return sum(
         1
         for tile in board.flat
-        if tile.color == TileColor.RED and tile.index not in used
+        if tile_counts_as_color(tile, TileColor.RED) and tile.index not in used
     )
 
 
@@ -1213,7 +1240,7 @@ def path_all_non_adjacent(path: list[int]) -> bool:
 def longest_red_run_on_path(board: Board, path: list[int]) -> int:
     best = cur = 0
     for idx in path:
-        if board.get_by_index(idx).color == TileColor.RED:
+        if tile_counts_as_color(board.get_by_index(idx), TileColor.RED):
             cur += 1
             best = max(best, cur)
         else:
@@ -1503,12 +1530,12 @@ def word_all_uncursed_on_path(board: Board, path: list[int]) -> bool:
 def has_blue_red_and_colourless_on_path(board: Board, path: list[int]) -> bool:
     has_blue = has_red = has_colourless = False
     for idx in path:
-        color = board.get_by_index(idx).color
-        if color == TileColor.BLUE:
+        tile = board.get_by_index(idx)
+        if tile_counts_as_color(tile, TileColor.BLUE):
             has_blue = True
-        elif color == TileColor.RED:
+        if tile_counts_as_color(tile, TileColor.RED):
             has_red = True
-        elif color == TileColor.COLORLESS:
+        if tile.color == TileColor.COLORLESS:
             has_colourless = True
     return has_blue and has_red and has_colourless
 
@@ -1733,7 +1760,7 @@ def _evaluate_sticker_condition(
         return False
 
     if condition == "ends_with_color:blue":
-        return board.get_by_index(path[-1]).color == TileColor.BLUE
+        return tile_counts_as_color(board.get_by_index(path[-1]), TileColor.BLUE)
     if condition == "red_count_gte:3":
         return count_color_on_path(board, path, "red") >= 3
     if condition == "word_starts_vowel":
@@ -1743,8 +1770,8 @@ def _evaluate_sticker_condition(
         if not path:
             return False
         return (
-            board.get_by_index(path[0]).color == TileColor.RED
-            and board.get_by_index(path[-1]).color == TileColor.RED
+            tile_counts_as_color(board.get_by_index(path[0]), TileColor.RED)
+            and tile_counts_as_color(board.get_by_index(path[-1]), TileColor.RED)
         )
     if condition == "no_colorless_on_path":
         return all(
@@ -1882,9 +1909,9 @@ def tile_matches_target(tile: Tile, target: str) -> bool:
     if target == "currency":
         return tile.curse == CurseType.CURRENCY
     if target == "red":
-        return tile.color == TileColor.RED
+        return tile_counts_as_color(tile, TileColor.RED)
     if target == "blue":
-        return tile.color == TileColor.BLUE
+        return tile_counts_as_color(tile, TileColor.BLUE)
     if target == "colored":
         return tile.color not in NON_COLOUR_FOR_NUMBER_BONUS
     if target == "wildcard":
@@ -1939,10 +1966,10 @@ def chess_takes_on_path(board: Board, path: list[int], *, strict: bool = False) 
 
 
 def abacus_colored_number_bonus(loadout: Loadout, rule: dict) -> int:
-    """+N TILE SCORE per coloured number; N scales with right-side pin upgrades.
-
-    Wiki Abacus right track: +10 at 0–1 upgrades, +20 at 2, +30 at 3, …
-    """
+    """+N TILE SCORE per coloured number; N = right UpgradeableComponent.VariableValue."""
+    var = pin_right_variable(loadout)
+    if var is not None:
+        return var
     base = int(rule.get("value", 10))
     per_upgrade = int(rule.get("value_per_right_upgrade", 10))
     right = pin_right_level(loadout)
@@ -1950,22 +1977,28 @@ def abacus_colored_number_bonus(loadout: Loadout, rule: dict) -> int:
 
 
 def rainbow_per_colour_bonus(loadout: Loadout, rule: dict) -> int:
+    var = pin_right_variable(loadout)
+    if var is not None:
+        return var
     base = int(rule.get("value", 5))
     per_upgrade = int(rule.get("value_per_right_upgrade", 5))
     return scaled_pin_value(base, per_upgrade, pin_right_level(loadout))
 
 
 def mahjong_consumable_factor(loadout: Loadout, rule: dict) -> float:
+    var = pin_right_variable(loadout)
+    if var is not None:
+        return float(var)
     base = float(rule.get("factor_base", 2.0))
     per_right = float(rule.get("factor_per_pin_right", 1.0))
     return base + per_right * pin_right_level(loadout)
 
 
 def super_8_take_word_bonus(loadout: Loadout, rule: dict) -> int:
-    """Wiki Super 8 right track: +8 at even upgrade counts, +16/+24/+32 at odd.
-
-    Pin levels from melmod are 1-indexed (Level 1 = base, no right upgrades yet).
-    """
+    """Per take: UpgradeableComponents[1].VariableValue (melmod pin_right_variable)."""
+    var = pin_right_variable(loadout)
+    if var is not None:
+        return var
     base = int(rule.get("value", 8))
     right_upgrades = max(0, pin_right_level(loadout) - 1)
     if right_upgrades % 2 == 0:
@@ -1974,10 +2007,10 @@ def super_8_take_word_bonus(loadout: Loadout, rule: dict) -> int:
 
 
 def bicycle_word_per_card(loadout: Loadout, rule: dict) -> int:
-    """Bicycle right UpgradeableComponent.VariableValue (+1 per suited card on path).
-
-    Pin levels from melmod are 1-indexed (Level 1 = base, no right upgrades yet).
-    """
+    """Bicycle right UpgradeableComponent.VariableValue (+1 per suited card on path)."""
+    var = pin_right_variable(loadout)
+    if var is not None:
+        return var
     base = int(rule.get("value", 1))
     per_upgrade = int(rule.get("value_per_right_upgrade", 1))
     right_upgrades = max(0, pin_right_level(loadout) - 1)
@@ -2279,8 +2312,8 @@ def bicycle_suited_on_path_from_extras(loadout: Loadout) -> int:
 def effective_suited_cards_on_path(
     board: Board, path: list[int], loadout: Loadout
 ) -> int:
-    """Suited cards on path from board tiles, with melmod fallback when export is empty."""
-    from_board = suited_cards_on_path_count(board, path)
+    """Unique playing-card suits on path (matches melmod export and regression captures)."""
+    from_board = unique_suited_suits_on_path_count(board, path)
     if from_board > 0:
         return from_board
     return bicycle_suited_on_path_from_extras(loadout)
@@ -2301,6 +2334,75 @@ def bicycle_word_bonus(
     suited = effective_suited_cards_on_path(board, path, loadout)
     acc = bicycle_word_score_accumulator_for_submit(loadout, board, path, rule)
     return acc + per_card * suited
+
+
+def birthday_cake_improve_for_path(
+    board: Board, path: list[int], level: int, rule: dict
+) -> int:
+    """Improve term added to birthday_cake_bonus after this submit."""
+    import math
+
+    high = highest_number_on_path(board, path)
+    if not high:
+        return 0
+    level_factor = sticker_rule_int(level, rule)
+    return int(math.floor(level_factor * high + 0.5))
+
+
+def rewind_birthday_cake_pre_word_extras(
+    loadout: Loadout,
+    board: Board,
+    path: list[int],
+    level: int,
+    rule: dict,
+) -> None:
+    """Subtract this word's improve from extras when snapshot is post-submit."""
+    improve = birthday_cake_improve_for_path(board, path, level, rule)
+    if improve <= 0:
+        return
+    bonus = birthday_cake_accumulated(loadout)
+    if bonus < improve:
+        return
+    extras = dict(loadout.extras or {})
+    pre = bonus - improve
+    extras["birthday_cake_bonus"] = str(pre)
+    loadout.extras = extras
+
+
+def rewind_setup_extras(
+    loadout: Loadout,
+    board: Board,
+    path: list[int] | None = None,
+    *,
+    pin_rule: dict | None = None,
+    birthday_rule: dict | None = None,
+    post_bicycle_bonus: int | None = None,
+) -> list[str]:
+    """Normalize extras before F8 search or regression replay."""
+    notes: list[str] = []
+    extras = dict(loadout.extras or {})
+    if extras.pop("bicycle_suited_on_path", None) is not None:
+        notes.append("cleared stale bicycle_suited_on_path")
+        loadout.extras = extras
+
+    if path and pin_rule is not None:
+        before = bicycle_word_score_accumulator(loadout)
+        rewind_bicycle_pre_word_extras(
+            loadout, board, path, pin_rule, post_bonus=post_bicycle_bonus
+        )
+        after = bicycle_word_score_accumulator(loadout)
+        if after != before:
+            notes.append(f"bicycle accumulator {before}→{after}")
+
+    if path and birthday_rule is not None:
+        before = birthday_cake_accumulated(loadout)
+        level = int(birthday_rule.get("level", 1))
+        rewind_birthday_cake_pre_word_extras(loadout, board, path, level, birthday_rule)
+        after = birthday_cake_accumulated(loadout)
+        if after != before:
+            notes.append(f"birthday cake bonus {before}→{after}")
+
+    return notes
 
 
 def rewind_bicycle_pre_word_extras(

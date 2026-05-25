@@ -120,6 +120,26 @@ namespace CursedWordsSolverCompanion
                     return "fox";
                 case "ExtraVoids":
                     return "mole";
+                case "ExtraQs":
+                    return "axolotl";
+                case "AddNumbers":
+                    return "bison";
+                case "DiscolourTiles":
+                    return "yeti_crab";
+                case "DestroyGrid":
+                    return "robo_eel";
+                case "SmallGrid":
+                    return "bat";
+                case "FewerGrids":
+                    return "badger";
+                case "ForcedSell":
+                    return "hyena";
+                case "RandomiseItemOrder":
+                    return "capybara";
+                case "BigBoss":
+                    return "toothed_whale";
+                case "CretaceousMegBoss":
+                    return "cretaceous_meg";
                 default:
                     return "";
             }

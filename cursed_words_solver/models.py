@@ -27,6 +27,7 @@ class TileColor(str, Enum):
 class CurseType(str, Enum):
     LETTER = "letter"
     WILDCARD = "wildcard"
+    BLANK = "blank"
     CURRENCY = "currency"
     NUMBER = "number"
     FRACTION = "fraction"
@@ -38,6 +39,7 @@ class CurseType(str, Enum):
     CHESS_KING = "chess_king"
     CARD = "card"
     ITEM = "item"
+    ARROW = "arrow"
     UNKNOWN = "unknown"
 
 
@@ -84,6 +86,49 @@ CHESS_CURSES = {
     CurseType.CHESS_QUEEN,
     CurseType.CHESS_KING,
 }
+
+_MELMOD_CURSE_ALIASES: dict[str, CurseType] = {
+    "letter": CurseType.LETTER,
+    "wildcard": CurseType.WILDCARD,
+    "blank": CurseType.BLANK,
+    "currency": CurseType.CURRENCY,
+    "number": CurseType.NUMBER,
+    "fraction": CurseType.FRACTION,
+    "chess_pawn": CurseType.CHESS_PAWN,
+    "chess_bishop": CurseType.CHESS_BISHOP,
+    "chess_rook": CurseType.CHESS_ROOK,
+    "chess_knight": CurseType.CHESS_KNIGHT,
+    "chess_queen": CurseType.CHESS_QUEEN,
+    "chess_king": CurseType.CHESS_KING,
+    "card": CurseType.CARD,
+    "item": CurseType.ITEM,
+    "arrow": CurseType.ARROW,
+    "unknown": CurseType.UNKNOWN,
+}
+
+
+def curse_type_from_key(key: str) -> CurseType:
+    """Map melmod/wiki curse string to CurseType."""
+    k = (key or "letter").strip().lower()
+    if k.startswith("chess_"):
+        return _MELMOD_CURSE_ALIASES.get(k, CurseType.CHESS_PAWN)
+    return _MELMOD_CURSE_ALIASES.get(k, CurseType.UNKNOWN)
+
+
+def tile_counts_as_color(tile: Tile, color: TileColor) -> bool:
+    """Game IsTileType: PURPLE counts as both RED and BLUE."""
+    if tile.color == color:
+        return True
+    if tile.color == TileColor.PURPLE and color in (TileColor.RED, TileColor.BLUE):
+        return True
+    return False
+
+
+def normalize_glyph_curse(curse: CurseType) -> CurseType:
+    """Blank tiles behave as wildcards in search/scoring."""
+    if curse == CurseType.BLANK:
+        return CurseType.WILDCARD
+    return curse
 
 
 @dataclass
@@ -179,6 +224,8 @@ class WordResult:
     score: float
     breakdown: dict[str, Any] = field(default_factory=dict)
     dictionary_word: str | None = None
+    setup_bonus: float = 0.0
+    rank_score: float = 0.0
 
     def path_coords(self) -> list[tuple[int, int]]:
         return [(i // 5, i % 5) for i in self.path]

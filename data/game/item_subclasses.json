@@ -1,0 +1,1712 @@
+{
+  "_meta": {
+    "source": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Cursed Words\\Cursed Words_Data\\Managed\\Assembly-CSharp.dll",
+    "count": 300
+  },
+  "subclasses": [
+    {
+      "name": "Abacus",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "AkoyaPearl",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "AlembicFlask",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Ambulance",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Amphora",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "AprilShower",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Arrivals",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "ArtistsPalette",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Automobile",
+      "overrides": []
+    },
+    {
+      "name": "Avocado",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Axe",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "BabyBottle",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Backpack",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Bank",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "BarChart",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "BarOfSoap",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "BaseCamp",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "BeamMeUp",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Beefeater",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "BentoBox",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Bicycle",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "BigBang",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "BirthdayCake",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "BlackHole",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "BlessingOfTheFairies",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "BlessingOfTheShopkeeper",
+      "overrides": []
+    },
+    {
+      "name": "Blueberries",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Bomb",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Bone",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Boomerang",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Brain",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Brick",
+      "overrides": []
+    },
+    {
+      "name": "Briefcase",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Broom",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Bucket",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "StartOfEncounterSetUp"
+      ]
+    },
+    {
+      "name": "Builder",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "BunchOfGrapes",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Burrito",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "BusinessGoose",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "BusySchedule",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "CableCar",
+      "overrides": []
+    },
+    {
+      "name": "Candle",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "CanOfBeans",
+      "overrides": []
+    },
+    {
+      "name": "CardShark",
+      "overrides": []
+    },
+    {
+      "name": "CarouselHorse",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "CarpStreamers",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Cartwheeler",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Castle",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "CelestialBody",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Champagne",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "ChequeredFlag",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Cherries",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "CherryPie",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "ChessBoard",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "ChessStrategyGuide",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Chick",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Chips",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "ChocolateCandy",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "ChristmasTree",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "CircusTent",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "ClapperBoard",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Cocktail",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "CoinPurse",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "ConfettiItem",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "CreakyChair",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "CreditCard",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "CrystalBall",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "CursedVHS",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Dagger",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Dancer",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "DangerousSummit",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Dango",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Dartboard",
+      "overrides": [
+        "ApplyTileBonus",
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "DeepSeaHorror",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "DeliveryTruck",
+      "overrides": []
+    },
+    {
+      "name": "Departures",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "DivingMask",
+      "overrides": []
+    },
+    {
+      "name": "Diya",
+      "overrides": []
+    },
+    {
+      "name": "Doughnut",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Dove",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "DownwardTrendingChart",
+      "overrides": []
+    },
+    {
+      "name": "Dragon",
+      "overrides": []
+    },
+    {
+      "name": "DustyCoffin",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Eclipse",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "EfficientRecycler",
+      "overrides": []
+    },
+    {
+      "name": "Egg",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "EightBall",
+      "overrides": [
+        "ApplyTileBonus",
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "ElectricGuitar",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "EmptyJar",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Eraser",
+      "overrides": []
+    },
+    {
+      "name": "ErrorItem",
+      "overrides": [
+        "ApplyTileBonus",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "EruptingVolcano",
+      "overrides": []
+    },
+    {
+      "name": "FallingLeaf",
+      "overrides": []
+    },
+    {
+      "name": "FamilyTicket",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Fan",
+      "overrides": []
+    },
+    {
+      "name": "FerrisWheel",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "FilingCabinet",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "FireExtinguisher",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Fireworks",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "FishCake",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Flamingo",
+      "overrides": []
+    },
+    {
+      "name": "FlashyFountainPen",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "FleurDeLis",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "FoodPoisoning",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Footprints",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "FortuneCookie",
+      "overrides": []
+    },
+    {
+      "name": "Fountain",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "FourLeafClover",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "FractionFrog",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Frankenstein",
+      "overrides": []
+    },
+    {
+      "name": "FriedShrimp",
+      "overrides": []
+    },
+    {
+      "name": "FullBattery",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "FullMoon",
+      "overrides": []
+    },
+    {
+      "name": "FutureFunds",
+      "overrides": []
+    },
+    {
+      "name": "GamePad",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Genie",
+      "overrides": []
+    },
+    {
+      "name": "Ghost",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Giraffe",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "GlassOfMilk",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "GlobeTrotter",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "GoFish",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "GoldenRecord",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "GoldenScales",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "GoldFish",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Gorilla",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "GraduationCap",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "HamSandwich",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Hanafuda",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "HauntedHouse",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "HauntedMirror",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "HeadInTheClouds",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "HeadTrauma",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "HeartOnFire",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "HiVisJacket",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Honeypot",
+      "overrides": []
+    },
+    {
+      "name": "Hourglass",
+      "overrides": []
+    },
+    {
+      "name": "HumanHands",
+      "overrides": []
+    },
+    {
+      "name": "HungryHippo",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "HungrySnake",
+      "overrides": []
+    },
+    {
+      "name": "IDCard",
+      "overrides": []
+    },
+    {
+      "name": "JackOLantern",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Jellyfish",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "JigsawPiece",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Joker",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "JollyRoger",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "JuiceBox",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Kadomatsu",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Kangaroo",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Kimono",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "KingOfTheBridge",
+      "overrides": []
+    },
+    {
+      "name": "KokeshiDolls",
+      "overrides": []
+    },
+    {
+      "name": "LabCoat",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Ladybird",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "LasVegas",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "LeftHumanHand",
+      "overrides": []
+    },
+    {
+      "name": "Limnophila",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Lipstick",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Lollipop",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "LuckyDice",
+      "overrides": [
+        "ApplyWordBonus",
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "LuckyScarf",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "LuffingJibCrane",
+      "overrides": []
+    },
+    {
+      "name": "MagiciansHat",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "MagicWand",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Magnet",
+      "overrides": []
+    },
+    {
+      "name": "MahjongRedDragon",
+      "overrides": [
+        "ApplyTileBonus",
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "MapleLeaf",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Maracas",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Martini",
+      "overrides": []
+    },
+    {
+      "name": "MichaelsBook",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Microphone",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Microscope",
+      "overrides": []
+    },
+    {
+      "name": "MilkyWay",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "MirrorBall",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "MischievousImp",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Moai",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "MovieCamera",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "MushroomUpgrade",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "MusicalNotes",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "MutatingDNA",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "MysteriousAmulet",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "MysteryGift",
+      "overrides": []
+    },
+    {
+      "name": "Neapolitan",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "NestEgg",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "NewEruptingVolcano",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Newspaper",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "NorthernCardinal",
+      "overrides": []
+    },
+    {
+      "name": "NumberFactory",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "NumberGoUp",
+      "overrides": []
+    },
+    {
+      "name": "NumbersBunchOfGrapes",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "NumbersGiraffe",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Oden",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Ogre",
+      "overrides": []
+    },
+    {
+      "name": "Onigiri",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "OrnateKey",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Overhand",
+      "overrides": []
+    },
+    {
+      "name": "PairOfSocks",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "PaperLantern",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Parachute",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Parrot",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Peacock",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Pear",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "PeasOfAPod",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "PetriDish",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "PieceOfCake",
+      "overrides": []
+    },
+    {
+      "name": "PiggyBank",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Pinata",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "PizzaSlice",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Pneumonia",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "PocketMoney",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "PokerFace",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "PostalHorn",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Postbox",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Printer",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Queen",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "QueenBee",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "QueenOfSpades",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Raccoon",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Radio",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Rainbow",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "RainbowSprinkles",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "RandomAccessMemory",
+      "overrides": [
+        "StartOfEncounterSetUp"
+      ]
+    },
+    {
+      "name": "Receipt",
+      "overrides": []
+    },
+    {
+      "name": "RedBalloon",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "RedEnvelope",
+      "overrides": []
+    },
+    {
+      "name": "RetroRaider",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Rex",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "RightHumanHand",
+      "overrides": []
+    },
+    {
+      "name": "Rollercoaster",
+      "overrides": []
+    },
+    {
+      "name": "RollerSkate",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Rolodex",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Rosebud",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Ruler",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "SaguaroSeedling",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Saxophone",
+      "overrides": []
+    },
+    {
+      "name": "Scissors",
+      "overrides": [
+        "ApplyItemToScore"
+      ]
+    },
+    {
+      "name": "SequoiaSapling",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "SewingNeedle",
+      "overrides": []
+    },
+    {
+      "name": "ShavedIce",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Shield",
+      "overrides": []
+    },
+    {
+      "name": "SignalReceiver",
+      "overrides": []
+    },
+    {
+      "name": "SillyPuppy",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "SlotMachine",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "StartOfEncounterSetUp"
+      ]
+    },
+    {
+      "name": "SluggishZombie",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "SlySpy",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "SmartShirt",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Snail",
+      "overrides": []
+    },
+    {
+      "name": "Snapshot",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyTileBonus",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Snowman",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "SoaringKite",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "SpicyPepper",
+      "overrides": []
+    },
+    {
+      "name": "SpoutingWhale",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "StackOfPancakes",
+      "overrides": []
+    },
+    {
+      "name": "Stadium",
+      "overrides": []
+    },
+    {
+      "name": "StampAlbum",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "StampPadlock",
+      "overrides": []
+    },
+    {
+      "name": "StatueOfLiberty",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Steak",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Stethoscope",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "StickerPadlock",
+      "overrides": []
+    },
+    {
+      "name": "StickingPlaster",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Stiletto",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Stilton",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "StormCloud",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Suitcase",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Sunflower",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "SuperEight",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Supervillain",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "SurpriseDelivery",
+      "overrides": []
+    },
+    {
+      "name": "Sushi",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "TakeoutBox",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Teapot",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Telescope",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Television",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "TenPinBowling",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "TestTube",
+      "overrides": []
+    },
+    {
+      "name": "TileNinja",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Tombstone",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Toolbox",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "ToriiGate",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "TrafficLights",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "TrophyOfWealth",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "TwinkleToes",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "UnderConstruction",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Underhand",
+      "overrides": []
+    },
+    {
+      "name": "Unicorn",
+      "overrides": []
+    },
+    {
+      "name": "ValentinesDayCard",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "WadOfCash",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "WaxyVizor",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "WeeklyShop",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Wheel",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "StartOfEncounterSetUp"
+      ]
+    },
+    {
+      "name": "WheezyVixen",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "WindChime",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Window",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "WorkOfArt",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "WornOutJeans",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "Wrestlers",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "WrigglyWorm",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Xray",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "YellowGlasses",
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "Zebra",
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-"""Main application: hotkey solver with overlay."""
+"""Main application: melmod-backed hotkey solver with overlay."""
 
 from __future__ import annotations
 
@@ -39,11 +39,14 @@ from cursed_words_solver.suggestion import (
 )
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, WordResult
+from cursed_words_solver.board_display import format_board_grid
 from cursed_words_solver.loadout import (
     bicycle_extras_stale_warning,
     format_loadout_summary,
     load_run_state,
     load_run_state_raw,
+    melmod_board_available,
+    melmod_install_hint,
     merge_loadout_with_board,
     mod_money_from_run_state,
     parse_board_from_run_state,
@@ -59,14 +62,9 @@ from cursed_words_solver.rules.rule_lookup import boss_display_name
 from cursed_words_solver.rules.chess_tiles import missing_chess_color_warnings
 from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.ui.board_highlight import BoardHighlightOverlay
+from cursed_words_solver.ui.calibrate import run_calibration_wizard
 from cursed_words_solver.ui.loadout_dialog import LoadoutDialog
 from cursed_words_solver.ui.overlay import ResultOverlay
-from cursed_words_solver.vision.board_parser import (
-    BoardParser,
-    format_board_grid,
-    tile_appears_unread,
-)
-from cursed_words_solver.vision.calibrate import run_calibration_wizard
 
 
 @dataclass(frozen=True)
@@ -106,7 +104,6 @@ class SolverApp:
         self._loadout_cache = load_run_state()
         self._loadout_source = self._detect_loadout_source()
         self._scoring = ScoringPipeline()
-        self._parser: BoardParser | None = None
         self._dictionary: WordDictionary | None = None
         self._searcher: WordSearcher | None = None
         self._busy = False
@@ -122,18 +119,10 @@ class SolverApp:
         self.overlay.request_quit.connect(self._shutdown)
         atexit.register(keyboard.unhook_all)
 
-    def _ensure_ready(self, *, require_board_region: bool = True) -> bool:
-        if require_board_region and not self.config.board_region.is_valid():
-            return False
+    def _ensure_solver(self) -> bool:
         if self._dictionary is None:
             wl_path = resolve_wordlist(self.config.wordlist)
             self._dictionary = WordDictionary(wl_path)
-        if self._parser is None:
-            self._parser = BoardParser(
-                use_gpu=self.config.ocr_use_gpu,
-                cell_inset_ratio=self.config.cell_inset_ratio,
-                debug_ocr=self.config.debug_ocr,
-            )
         if self._searcher is None:
             self._searcher = WordSearcher(
                 dictionary=self._dictionary,
@@ -148,24 +137,31 @@ class SolverApp:
             QMessageBox.information(
                 None,
                 "Calibration",
-                "Select the 5×5 board region. Optionally select money display.",
+                "Select the 5×5 board region on screen for green path highlights.",
             )
             self.config = run_calibration_wizard(self.config)
             self._finish_calibration("Calibration complete")
 
-        if not self.config.board_region.is_valid():
-            QMessageBox.critical(
-                None,
-                "Calibration required",
-                "Board region not set. Run with --calibrate",
-            )
-            return 1
-
         if not self.calibrate:
             br = self.config.board_region
-            print(
-                f"Board region: {br.width}×{br.height} at ({br.x},{br.y}).",
-                flush=True,
+            if br.is_valid():
+                print(
+                    f"Board region: {br.width}×{br.height} at ({br.x},{br.y}).",
+                    flush=True,
+                )
+            else:
+                print(
+                    "Board region not set — press F10 to calibrate for on-screen highlights.",
+                    flush=True,
+                )
+
+        board_data = load_run_state_raw()
+        if not melmod_board_available(board_data):
+            QMessageBox.warning(
+                None,
+                "MelonLoader mod required",
+                melmod_install_hint()
+                + "\n\nF8 will not solve until run_state.json contains a board (press F7 in-game).",
             )
 
         wl_path = resolve_wordlist(self.config.wordlist)
@@ -242,24 +238,19 @@ class SolverApp:
                 "Start a run, press F7, then F8 here.",
                 flush=True,
             )
-        board_data = load_run_state_raw()
-        mod_board = parse_board_from_run_state(board_data)
-        if mod_board is not None:
-            print(
-                "Melmod board ready in run_state.json (F8 will skip OCR).",
-                flush=True,
-            )
+        if melmod_board_available(board_data):
+            print("Melmod board ready in run_state.json.", flush=True)
         elif self._loadout_source == "mod":
             print(
                 "Melmod loadout found but no board in run_state.json — "
                 "press F7 during a round with tiles visible.",
                 flush=True,
             )
-        print(
-            "Preloading OCR in background (first F8 is faster after this finishes)...",
-            flush=True,
-        )
-        threading.Thread(target=self._preload_ocr, daemon=True).start()
+        if not self.config.board_region.is_valid():
+            print(
+                "Press F10 to calibrate the board region for green path highlights.",
+                flush=True,
+            )
         try:
             return self.app.exec()
         finally:
@@ -358,20 +349,6 @@ class SolverApp:
         else:
             self._clear_highlight_state()
 
-    def _preload_ocr(self) -> None:
-        try:
-            if not self._ensure_ready():
-                return
-            _ = self._parser.reader
-            print(
-                f"Idle — open the game and press {self.config.hotkey.upper()} to solve "
-                "(first solve on CPU may take several minutes).",
-                flush=True,
-            )
-        except Exception:
-            print("OCR preload failed (will retry on first solve):", flush=True)
-            traceback.print_exc()
-
     def _finish_calibration(self, prefix: str) -> None:
         br = self.config.board_region
         if not br.is_valid():
@@ -402,8 +379,8 @@ class SolverApp:
     def _solve_worker(self) -> None:
         self._busy = True
         unmapped: list[str] = []
-        board_source = "ocr"
-        money_source = "none"
+        board_source = "melmod"
+        money_source = "mod"
         try:
             print("Solve started...", flush=True)
 
@@ -414,27 +391,8 @@ class SolverApp:
             board = parse_board_from_run_state(run_state_data)
             board_img = None
 
-            if board is not None:
-                if not self._ensure_ready(require_board_region=False):
-                    print("Solver not ready (dictionary failed to load).", flush=True)
-                    return
-                board_source = "melmod"
-                money_source = "mod"
-                print("Board from melmod (run_state.json).", flush=True)
-                if mod_money:
-                    print(f"Money: ${mod_money} (mod)", flush=True)
-                print("Parsed board:", flush=True)
-                print(format_board_grid(board, compact=True), flush=True)
-                for warn in missing_chess_color_warnings(board):
-                    print(f"  Warning: {warn}", flush=True)
-                if self.config.board_region.is_valid():
-                    try:
-                        board_img = capture_region(self.config.board_region)
-                        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-                        save_debug_image(board_img, DEBUG_DIR / "last_board.png")
-                    except Exception as e:
-                        print(f"Overlay capture skipped: {e}", flush=True)
-            else:
+            if board is None:
+                print(melmod_install_hint(), flush=True)
                 if run_state_data is None:
                     print(
                         "Could not read run_state.json (file locked or invalid JSON).",
@@ -451,34 +409,31 @@ class SolverApp:
                         f"Board export invalid ({n} tiles, need 25) — press F7 again.",
                         flush=True,
                     )
-                if not self._ensure_ready():
-                    print(
-                        "Solver not ready (calibrate board region or install melmod).",
-                        flush=True,
-                    )
-                    return
-                region = self.config.board_region
-                print("Capturing board (OCR)...", flush=True)
-                board_img = capture_region(region)
-                DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-                save_debug_image(board_img, DEBUG_DIR / "last_board.png")
-                money = 0
-                if mod_money > 0:
-                    money = mod_money
-                    money_source = "mod"
-                elif (
-                    self.config.money_region
-                    and self.config.money_region.is_valid()
-                ):
-                    money_img = capture_region(self.config.money_region)
-                    money = self._parser.parse_money(money_img)
-                    if money:
-                        money_source = "ocr"
-                board = self._parser.parse_board(board_img, money=money)
-                if money_source == "mod":
-                    print(f"Money: ${money} (mod)", flush=True)
-                elif money_source == "ocr":
-                    print(f"Money: ${money} (ocr)", flush=True)
+                return
+
+            if not self._ensure_solver():
+                print("Solver not ready (dictionary failed to load).", flush=True)
+                return
+
+            print("Board from melmod (run_state.json).", flush=True)
+            if mod_money:
+                print(f"Money: ${mod_money} (mod)", flush=True)
+            print("Parsed board:", flush=True)
+            print(format_board_grid(board, compact=True), flush=True)
+            for warn in missing_chess_color_warnings(board):
+                print(f"  Warning: {warn}", flush=True)
+            if self.config.board_region.is_valid():
+                try:
+                    board_img = capture_region(self.config.board_region)
+                    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+                    save_debug_image(board_img, DEBUG_DIR / "last_board.png")
+                except Exception as e:
+                    print(f"Board capture skipped: {e}", flush=True)
+            elif self.config.show_board_highlight:
+                print(
+                    "Press F10 to calibrate board region for on-screen path highlights.",
+                    flush=True,
+                )
 
             search_budget = self.config.search_time_budget_sec
             search_started = time.monotonic()
@@ -487,10 +442,17 @@ class SolverApp:
                 board.money,
                 mod_money=mod_money if mod_money > 0 else None,
             )
+            from cursed_words_solver.rules.scoring_conditions import rewind_setup_extras
+
+            rewind_notes = rewind_setup_extras(loadout, board)
+            self._searcher.setup_weight = self.config.setup_weight
+            self._searcher.setup_discount = self.config.setup_discount
             scoring, total, grid_only, unmapped = self._scoring.loadout_mapping_summary(
                 loadout
             )
             print(format_loadout_summary(loadout), flush=True)
+            for note in rewind_notes:
+                print(f"  Setup: {note}", flush=True)
             bicycle_warn = bicycle_extras_stale_warning(loadout)
             if bicycle_warn:
                 print(f"  Warning: {bicycle_warn}", flush=True)
@@ -661,19 +623,13 @@ class SolverApp:
         return "file"
 
     def _overlay_warnings(self, board, unmapped: list[str]) -> str:
-        tiles = board.flat
-        low_conf = [t for t in tiles if t.ocr_confidence < 0.4]
-        unknown = [t for t in tiles if tile_appears_unread(t)]
+        del board
         lines: list[str] = []
         if unmapped:
             lines.append(
                 f"Unmapped rules: {', '.join(unmapped[:4])}"
                 f"{'…' if len(unmapped) > 4 else ''}"
             )
-        if unknown:
-            lines.append(f"{len(unknown)} tile(s) unread (?)")
-        elif low_conf:
-            lines.append(f"Low OCR on {len(low_conf)} tiles")
         return "<br>".join(lines)
 
     def _save_debug(
@@ -682,30 +638,14 @@ class SolverApp:
         board,
         results,
         *,
-        board_source: str = "ocr",
-        money_source: str = "none",
+        board_source: str = "melmod",
+        money_source: str = "mod",
         top_predicted_trace: list | None = None,
     ) -> None:
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         if img is not None:
             save_debug_image(img, DEBUG_DIR / f"board_{ts}.png")
-        if self._parser and self.config.debug_ocr:
-            self._parser.save_debug_tiles(img, DEBUG_DIR)
-        ocr_debug = []
-        if self._parser:
-            for d in self._parser.last_cell_debug:
-                ocr_debug.append(
-                    {
-                        "row": d.row,
-                        "col": d.col,
-                        "letter_texts": d.letter_texts,
-                        "score_texts": d.score_texts,
-                        "fallback_texts": d.fallback_texts,
-                        "score_override": d.score_override,
-                        "chosen_variant": d.chosen_variant,
-                    }
-                )
         payload = {
             "board_source": board_source,
             "money_source": money_source,
@@ -719,11 +659,9 @@ class SolverApp:
                     "base_score": t.base_score,
                     "color": t.color.value,
                     "curse": t.curse.value,
-                    "confidence": t.ocr_confidence,
                 }
                 for t in board.flat
             ],
-            "ocr_debug": ocr_debug,
             "results": [
                 {
                     "word": r.word,
@@ -766,25 +704,20 @@ class SolverApp:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Cursed Words Screenshot Solver")
+    parser = argparse.ArgumentParser(
+        description="Cursed Words solver (requires MelonLoader companion mod)"
+    )
     parser.add_argument(
         "--calibrate",
         action="store_true",
-        help="Run calibration wizard on startup",
+        help="Run board-region calibration wizard on startup",
     )
     parser.add_argument("--hotkey", default=None, help="Override hotkey (e.g. f8)")
-    parser.add_argument(
-        "--debug-ocr",
-        action="store_true",
-        help="Save per-tile letter/score ROI images under ~/.cursed_words_solver/debug/tiles/",
-    )
     args = parser.parse_args()
 
     config = AppConfig.load()
     if args.hotkey:
         config.hotkey = args.hotkey
-    if args.debug_ocr:
-        config.debug_ocr = True
 
     app = SolverApp(config, calibrate=args.calibrate)
     sys.exit(app.run())

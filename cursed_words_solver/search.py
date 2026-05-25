@@ -18,6 +18,7 @@ from cursed_words_solver.models import (
     WordResult,
     normalize_tile_glyph,
 )
+from cursed_words_solver.encounter_board import effective_board_for_loadout
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.scoring_conditions import (
     CARD_SUIT_FIRST_LETTER,
@@ -37,6 +38,11 @@ from cursed_words_solver.rules.chess_tiles import (
     is_chess_piece,
 )
 from cursed_words_solver.rules.stamp_behaviors import StampSearchFlags, stamp_search_flags
+from cursed_words_solver.setup_value import (
+    project_setup_delta,
+    rank_score_for_word,
+    setup_future_value,
+)
 
 # 8 directions
 DIRS_8 = [
@@ -527,8 +533,8 @@ def neighbors_from_tile(
     last_tile = board.get_by_index(path[-1])
     flags = flags or StampSearchFlags()
 
-    # WHITE tile: can teleport to any unused cell (once per step from white)
-    if last_tile.color.value == "white":
+    # WHITE tile: teleport to any unused cell (wiki / game movement)
+    if last_tile.color == TileColor.WHITE:
         if isinstance(visited, set):
             return [
                 i
@@ -706,6 +712,8 @@ class WordSearcher:
         candidate_heap_size: int | None = None,
         blocked: bool = False,
         block_reason: str = "",
+        setup_weight: float = 0.4,
+        setup_discount: float = 0.85,
     ) -> None:
         self.dictionary = dictionary or WordDictionary()
         self.validator = PathValidator(self.dictionary, min_len)
@@ -717,6 +725,9 @@ class WordSearcher:
         self.scoring = ScoringPipeline()
         self.score_fn = score_fn
         self.candidate_heap_size = candidate_heap_size
+        self.setup_weight = setup_weight
+        self.setup_discount = setup_discount
+        self._score_cache: dict[tuple[tuple[int, ...], str], tuple[float, float, float]] = {}
 
     def _min_start_slice_sec(self) -> float:
         if self.time_budget >= 12.0:
@@ -781,9 +792,7 @@ class WordSearcher:
         start_indices: list[int] | None = None,
     ) -> None:
         def score_path(path: list[int], word: str) -> float:
-            if self.score_fn:
-                return self.score_fn(board, path, word, loadout)
-            return self.scoring.score_total_only(board, path, word, loadout)
+            return self._rank_score_for_candidate(board, path, word, loadout)
 
         expansions = 0
         timed_out = False
@@ -882,9 +891,7 @@ class WordSearcher:
         stamp_flags = stamp_search_flags(loadout)
 
         def score_path(path: list[int], word: str) -> float:
-            if self.score_fn:
-                return self.score_fn(board, path, word, loadout)
-            return self.scoring.score_total_only(board, path, word, loadout)
+            return self._rank_score_for_candidate(board, path, word, loadout)
 
         for _round in range(max_rounds):
             extended = False
@@ -954,6 +961,50 @@ class WordSearcher:
         for score, word, path in main_entries:
             candidates.consider(score, word, list(path))
 
+    def _rank_score_for_candidate(
+        self,
+        board: Board,
+        path: list[int],
+        word: str,
+        loadout: Loadout,
+    ) -> float:
+        key = (tuple(path), word)
+        cached = self._score_cache.get(key)
+        if cached is not None:
+            return cached[2]
+        if self.score_fn:
+            immediate = self.score_fn(board, path, word, loadout)
+            rank = immediate
+            setup = 0.0
+        else:
+            immediate = self.scoring.score_total_only(board, path, word, loadout)
+            rank, setup = rank_score_for_word(
+                board,
+                path,
+                word,
+                loadout,
+                immediate,
+                setup_weight=self.setup_weight,
+                setup_discount=self.setup_discount,
+                rules=self.scoring.rules,
+            )
+        self._score_cache[key] = (immediate, setup, rank)
+        return rank
+
+    def _immediate_and_setup(
+        self, board: Board, path: list[int], word: str, loadout: Loadout
+    ) -> tuple[float, float]:
+        key = (tuple(path), word)
+        cached = self._score_cache.get(key)
+        if cached is not None:
+            return cached[0], cached[1]
+        self._rank_score_for_candidate(board, path, word, loadout)
+        cached = self._score_cache.get(key)
+        if cached is not None:
+            return cached[0], cached[1]
+        immediate = self.scoring.score_total_only(board, path, word, loadout)
+        return immediate, 0.0
+
     def find_best_words(
         self,
         board: Board,
@@ -962,7 +1013,9 @@ class WordSearcher:
     ) -> list[WordResult]:
         if self.blocked:
             return []
+        self._score_cache.clear()
         loadout = loadout or Loadout(money=board.money)
+        board = effective_board_for_loadout(board, loadout, self.scoring.rules)
         heap_k = self.candidate_heap_size or _candidate_heap_size(top_n)
         candidates = _CandidateHeap(heap_k)
         start_time = time.monotonic()
@@ -1089,18 +1142,21 @@ class WordSearcher:
 
         seen_words: set[str] = set()
         unique: list[WordResult] = []
-        for score, word, path_tuple in candidates.best_sorted():
+        for rank_sc, word, path_tuple in candidates.best_sorted():
             if word in seen_words:
                 continue
             seen_words.add(word)
             path = list(path_tuple)
+            immediate, setup = self._immediate_and_setup(board, path, word, loadout)
             _, bd = self.scoring.score(board, path, word, loadout)
             unique.append(
                 WordResult(
                     word=word,
                     path=path,
-                    score=score,
+                    score=immediate,
                     breakdown=bd,
+                    setup_bonus=setup,
+                    rank_score=rank_sc if rank_sc else immediate + setup,
                 )
             )
             if len(unique) >= top_n:

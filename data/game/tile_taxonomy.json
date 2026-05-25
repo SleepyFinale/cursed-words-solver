@@ -1,0 +1,150 @@
+{
+  "_meta": {
+    "source": "Assembly-CSharp TileType/GlyphType + cursedwords.wiki.gg/wiki/Tiles"
+  },
+  "colors": [
+    {
+      "game_tile_type": "Normal",
+      "solver_color": "colorless",
+      "wiki_slug": "colourless",
+      "base_score_rule": "scrabble_letter",
+      "generatable_default": false
+    },
+    {
+      "game_tile_type": "Red",
+      "solver_color": "red",
+      "wiki_slug": "red",
+      "base_score_rule": "color_plus_1",
+      "generatable_default": true
+    },
+    {
+      "game_tile_type": "Blue",
+      "solver_color": "blue",
+      "wiki_slug": "blue",
+      "base_score_rule": "color_plus_1",
+      "generatable_default": true
+    },
+    {
+      "game_tile_type": "Shiny",
+      "solver_color": "shiny",
+      "wiki_slug": "shiny",
+      "base_score_rule": "flat_50",
+      "generatable_default": true
+    },
+    {
+      "game_tile_type": "Void",
+      "solver_color": "void",
+      "wiki_slug": "void",
+      "base_score_rule": "negate_face",
+      "generatable_default": true
+    },
+    {
+      "game_tile_type": "Cactus",
+      "solver_color": "cactus",
+      "wiki_slug": "cactus",
+      "base_score_rule": "cactus_growth",
+      "generatable_default": false,
+      "scoring_hooks": ["grid_start_increment"]
+    },
+    {
+      "game_tile_type": "Pink",
+      "solver_color": "pink",
+      "wiki_slug": "pink",
+      "base_score_rule": "scrabble_letter",
+      "scoring_hooks": ["pink_store_money"]
+    },
+    {
+      "game_tile_type": "Gold",
+      "solver_color": "gold",
+      "wiki_slug": "gold",
+      "base_score_rule": "player_money"
+    },
+    {
+      "game_tile_type": "Green",
+      "solver_color": "green",
+      "wiki_slug": "green",
+      "base_score_rule": "scrabble_letter",
+      "scoring_hooks": ["word_transfer_finalize", "poison_later_words"]
+    },
+    {
+      "game_tile_type": "Purple",
+      "solver_color": "purple",
+      "wiki_slug": "purple",
+      "base_score_rule": "color_plus_2",
+      "counts_as": ["red", "blue"]
+    },
+    {
+      "game_tile_type": "White",
+      "solver_color": "white",
+      "wiki_slug": "white",
+      "base_score_rule": "scrabble_letter",
+      "search_flags": ["teleport_any_cell"]
+    },
+    {
+      "game_tile_type": "Glitch",
+      "solver_color": "glitch",
+      "wiki_slug": "glitch",
+      "base_score_rule": "scrabble_letter",
+      "scoring_hooks": ["settle_glitch"],
+      "generatable_default": false
+    }
+  ],
+  "curses": [
+    {
+      "game_glyph_type": "Letter",
+      "melmod_curse": "letter",
+      "solver_curse": "letter"
+    },
+    {
+      "game_glyph_type": "Blank",
+      "melmod_curse": "wildcard",
+      "solver_curse": "wildcard"
+    },
+    {
+      "game_glyph_type": "Number",
+      "melmod_curse": "number",
+      "solver_curse": "number",
+      "search_flags": ["position_index"]
+    },
+    {
+      "game_glyph_type": "Fraction",
+      "melmod_curse": "fraction",
+      "solver_curse": "fraction",
+      "search_flags": ["position_numerator_or_denominator"]
+    },
+    {
+      "game_glyph_type": "Currency",
+      "melmod_curse": "currency",
+      "solver_curse": "currency",
+      "scoring_hooks": ["currency_money"]
+    },
+    {
+      "game_glyph_type": "Chess",
+      "melmod_curse": "chess_*",
+      "solver_curse": "chess_pawn",
+      "search_flags": ["chess_movement"]
+    },
+    {
+      "game_glyph_type": "BespokeCard",
+      "melmod_curse": "card",
+      "solver_curse": "card"
+    },
+    {
+      "game_glyph_type": "ScatteredItem",
+      "melmod_curse": "item",
+      "solver_curse": "item",
+      "base_score_rule": "zero"
+    },
+    {
+      "game_glyph_type": "Arrow",
+      "melmod_curse": "arrow",
+      "solver_curse": "arrow",
+      "search_flags": ["wobbly_redirect"]
+    },
+    {
+      "game_glyph_type": "None",
+      "melmod_curse": "letter",
+      "solver_curse": "letter"
+    }
+  ]
+}

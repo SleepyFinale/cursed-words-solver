@@ -152,6 +152,18 @@ def test_wolf_max_length_constraint():
     assert c.max_len == 4
 
 
+def test_fox_steal_in_pipeline():
+    board = _board_letters(["cat..", ".....", ".....", ".....", "....."])
+    loadout = _loadout(
+        boss_id="fox",
+        money=10,
+        extras={"boss_area_number": 1, "boss_floor_modification": 2},
+    )
+    pipe = ScoringPipeline()
+    _, bd = pipe.score(board, [0, 1, 2], "cat", loadout)
+    assert loadout.money < 10
+
+
 def test_hyena_blocks_search():
     loadout = _loadout(extras={"hyena_blocked": True})
     c = boss_word_constraints(loadout, RULES)

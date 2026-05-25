@@ -14,6 +14,7 @@ from cursed_words_solver.rules.rule_lookup import get_rule, resolve_rule_id
 _RULES_PATH = (
     Path(__file__).resolve().parents[2] / "data" / "wiki" / "stickers.json"
 )
+_TAXONOMY_PATH = Path(__file__).resolve().parents[2] / "data" / "game" / "boss_taxonomy.json"
 
 
 @lru_cache(maxsize=1)
@@ -159,6 +160,26 @@ def boss_word_constraints(
             max_len = max(1, int(v))
 
     return BossConstraints(min_len=min_len, max_len=max_len)
+
+
+@lru_cache(maxsize=1)
+def load_boss_taxonomy() -> dict[str, Any]:
+    if not _TAXONOMY_PATH.is_file():
+        return {"bosses": {}}
+    return json.loads(_TAXONOMY_PATH.read_text(encoding="utf-8"))
+
+
+def boss_scoring_effect_type(rule: dict[str, Any] | None) -> str:
+    """Resolved scoring handler id (catalog type or boss_effect_type)."""
+    if not rule:
+        return ""
+    return str(rule.get("boss_effect_type") or rule.get("type") or "")
+
+
+def boss_grid_handler(rule: dict[str, Any] | None) -> str:
+    if not rule:
+        return ""
+    return str(rule.get("grid_handler") or "")
 
 
 def boss_rule_applies(rule: dict[str, Any], ctx: BossContext) -> bool:

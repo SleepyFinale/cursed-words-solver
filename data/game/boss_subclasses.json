@@ -1,0 +1,108 @@
+{
+  "_meta": {
+    "source": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Cursed Words\\Cursed Words_Data\\Managed\\Assembly-CSharp.dll",
+    "count": 20
+  },
+  "subclasses": [
+    {
+      "name": "AddNumbers",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "BigBoss",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "CretaceousMegBoss",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "DestroyGrid",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "DiscolourTiles",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "ExtraQs",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "ExtraVoids",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "FewerGrids",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "ForcedSell",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "HumanBoyBoss",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "MaxWordLength",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "MichaelBoss",
+      "fields": [],
+      "methods": "PopulateModifierDrafts"
+    },
+    {
+      "name": "MinWordLength",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "NegativeMoney",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "PrismaticBeanBoss",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "RandomiseItemOrder",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "ReducedLetterValue",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "SandySaguaroBoss",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "SmallGrid",
+      "fields": [],
+      "methods": {}
+    },
+    {
+      "name": "StealsMoney",
+      "fields": [],
+      "methods": {}
+    }
+  ]
+}

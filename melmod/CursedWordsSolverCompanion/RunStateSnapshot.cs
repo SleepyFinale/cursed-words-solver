@@ -4,6 +4,8 @@ namespace CursedWordsSolverCompanion
 {
     public sealed class RunStateSnapshot
     {
+        public int schema_version = 1;
+        public string exported_at = "";
         public string character = "";
         public string pin_branch = "";
         public int money;

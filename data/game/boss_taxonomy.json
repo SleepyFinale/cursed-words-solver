@@ -1,0 +1,100 @@
+{
+  "_meta": {
+    "source": "boss_subclasses.json + wiki Main Bosses"
+  },
+  "bosses": {
+    "salamander": {
+      "game_class": "ReducedLetterValue",
+      "effect_class": "scoring_early",
+      "effect_type": "boss_tile_penalty"
+    },
+    "robo_monkey": {
+      "game_class": "NegativeMoney",
+      "effect_class": "scoring_early",
+      "effect_type": "boss_subtract_word_score_money"
+    },
+    "fox": {
+      "game_class": "StealsMoney",
+      "effect_class": "scoring_early",
+      "effect_type": "boss_steal_money",
+      "grid_handler": "fox_grid_steal"
+    },
+    "wolf": {
+      "game_class": "MaxWordLength",
+      "effect_class": "search_only",
+      "effect_type": "boss_word_max_length"
+    },
+    "cobra": {
+      "game_class": "MinWordLength",
+      "effect_class": "search_only",
+      "effect_type": "boss_word_min_length"
+    },
+    "toothed_whale": {
+      "game_class": "BigBoss",
+      "effect_class": "encounter",
+      "effect_type": "boss_target_score_multiplier"
+    },
+    "capybara": {
+      "game_class": "RandomiseItemOrder",
+      "effect_class": "encounter",
+      "effect_type": "shuffle_loadout_order"
+    },
+    "hyena": {
+      "game_class": "ForcedSell",
+      "effect_class": "encounter",
+      "effect_type": "hyena_blocked"
+    },
+    "axolotl": {
+      "game_class": "ExtraQs",
+      "effect_class": "grid_start",
+      "effect_type": "custom",
+      "grid_handler": "axolotl_q"
+    },
+    "mole": {
+      "game_class": "ExtraVoids",
+      "effect_class": "grid_start",
+      "effect_type": "custom",
+      "grid_handler": "mole_void"
+    },
+    "bison": {
+      "game_class": "AddNumbers",
+      "effect_class": "grid_start",
+      "effect_type": "custom",
+      "grid_handler": "bison_numbers"
+    },
+    "yeti_crab": {
+      "game_class": "DiscolourTiles",
+      "effect_class": "grid_start",
+      "effect_type": "custom",
+      "grid_handler": "yeti_colorless"
+    },
+    "robo_eel": {
+      "game_class": "DestroyGrid",
+      "effect_class": "grid_start",
+      "effect_type": "custom",
+      "grid_handler": "robo_eel_eat"
+    },
+    "bat": {
+      "game_class": "SmallGrid",
+      "effect_class": "grid_start",
+      "effect_type": "custom",
+      "grid_handler": "bat_shrink"
+    },
+    "badger": {
+      "game_class": "FewerGrids",
+      "effect_class": "encounter",
+      "effect_type": "custom"
+    },
+    "cretaceous_meg": {
+      "game_class": "CretaceousMegBoss",
+      "effect_class": "meta",
+      "effect_type": "custom"
+    }
+  },
+  "hidden": {
+    "michael": { "game_class": "MichaelBoss", "effect_class": "meta" },
+    "sandy_saguaro": { "game_class": "SandySaguaroBoss", "effect_class": "meta" },
+    "prismatic_bean": { "game_class": "PrismaticBeanBoss", "effect_class": "meta" },
+    "human_boy_boss": { "game_class": "HumanBoyBoss", "effect_class": "meta" }
+  }
+}

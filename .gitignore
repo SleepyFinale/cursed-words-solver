@@ -24,6 +24,9 @@ htmlcov/
 # Wiki API scratch files (regenerate via README → Sticker rules catalog)
 data/wiki/_*.json
 
+# Game decompile scratch (regenerate via scripts/extract_game_types.py)
+docs/game-research/_decompiled/
+
 # Agent / one-off debug scratch at repo root
 /_*.txt
 /t.txt

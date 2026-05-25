@@ -64,9 +64,19 @@ Harmony prefix parameter names must match the game (`tiles`, not `selections`).
 | `EncounterController.SubmitWord` | Prefix | Start capture session; read word + path |
 | `EncounterController.SubmitWord` | Postfix | Match `last_suggestion.json`; export mismatch if needed |
 | `PuzzleController.SubmitWord` | Prefix/Postfix | Same for puzzle grids |
-| `ScoreCalculation.CalculateOverallScore` | Postfix | If session active, append serialized `ScoreCalcVizInfo` list |
+| `ScoreCalculation.CalculateOverallScore` | Postfix | Always cache `List<ScoreCalcVizInfo>` for round logs; build `actual_trace` only when capture is active |
+| `ScoringCaptureSession.EndSubmit` | (internal) | Always export `round_logs/<timestamp>.json`; mismatch export only when capture active |
 
 `PopulateValidityAndScore` also calls score calculation for the preview — session flag must be **submit-only** (set in `SubmitWord` prefix, cleared in postfix).
+
+### Round logs vs mismatch capture
+
+| Feature | When | Output |
+|---------|------|--------|
+| **Round log** | Every `SubmitWord` (if `RoundLogEnabled`) | `round_logs/<timestamp>.json` + `index.jsonl` |
+| **Mismatch bundle** | F8 path + board fingerprint match, scores differ | `scoring_mismatches/<timestamp>.json` |
+
+Round logs include solver prediction (from `last_suggestion.json` when present), actual submit, full `run_state`, consumable rack snapshots, and placement diff since last submit. `match_status` is informational; mismatches still use the dedicated folder for regression tests.
 
 ### Suggestion matching (`SuggestionMatcher`)
 

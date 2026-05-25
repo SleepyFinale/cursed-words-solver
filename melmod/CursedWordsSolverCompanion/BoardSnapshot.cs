@@ -33,6 +33,8 @@ namespace CursedWordsSolverCompanion
         public int? number_value;
         public double? fraction_value;
         public bool consumable;
+        /// <summary>True when tile was placed from consumable rack (Tile.WasConsumable).</summary>
+        public bool was_consumable;
         /// <summary>False when Bat (or similar) leaves this slot off the playable grid.</summary>
         public bool active = true;
         /// <summary>True when this tile is a chess capture landing square (Movie Camera, Zebra).</summary>
@@ -43,5 +45,10 @@ namespace CursedWordsSolverCompanion
         public string card_rank = "";
         /// <summary>True for joker tiles (wildcard that counts as any card for poker hands).</summary>
         public bool is_joker;
+        /// <summary>True when tile was GLITCH before SettleGlitchTiles.</summary>
+        public bool was_glitch;
+        /// <summary>CactusGrowth packet value (+1 per grid start).</summary>
+        public int? cactus_growth;
+        public string scattered_item_id = "";
     }
 }

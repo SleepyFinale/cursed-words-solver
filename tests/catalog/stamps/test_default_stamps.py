@@ -12,7 +12,9 @@ from cursed_words_solver.models import (
     TileColor,
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.rule_lookup import count_scoring_items, get_rule, slugify_name
+from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
+
+from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 from cursed_words_solver.search import (
     PathValidator,
@@ -57,25 +59,28 @@ GRID_ONLY_SLUGS = {
     "downward_trending_chart",
     "efficient_recycler",
     "family_ticket",
-    "full_moon",
     "golden_record",
     "golden_scales",
-    "hungry_snake",
     "kimono",
     "nest_egg",
     "paper_lantern",
     "parachute",
     "pi_ata",
-    "red_envelope",
     "saxophone",
     "slot_machine",
-    "sluggish_zombie",
     "teapot",
     "waxy_vizor",
     "weekly_shop",
     "window",
     "xray",
     "young_cardinal",
+}
+SEARCH_ONLY_SLUGS = {
+    "full_moon",
+    "hungry_snake",
+    "queenie",
+    "red_envelope",
+    "sluggish_zombie",
 }
 
 
@@ -126,16 +131,7 @@ def test_all_default_stamps_catalogued():
 
 def test_count_scoring_vs_grid_only_all_defaults():
     pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[
-            LoadoutItem(id=slugify_name(n), name=n, level=1, kind="stamp")
-            for n in DEFAULT_STAMP_NAMES
-        ]
-    )
-    scoring, total, grid_only = count_scoring_items(pipeline.rules, loadout)
-    assert total == 28
-    assert grid_only == len(GRID_ONLY_SLUGS)
-    assert scoring == 28 - len(GRID_ONLY_SLUGS)
+    assert_loadout_stamp_coverage(pipeline.rules, DEFAULT_STAMP_NAMES)
 
 
 def test_avocado_doubles_word_score():

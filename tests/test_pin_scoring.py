@@ -65,6 +65,31 @@ def test_all_pin_aliases_resolve():
         assert resolve_rule_id(pipeline.rules, "pins", alias, "") == canonical
 
 
+def test_abacus_pin_left_scatter_numbers_on_manual_board():
+    from cursed_words_solver.encounter_board import effective_board_for_loadout
+
+    pipeline = ScoringPipeline()
+    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
+    for row in grid:
+        for t in row:
+            t.metadata.pop("source", None)
+    board = Board(tiles=grid, money=0)
+    lo = Loadout(
+        extras={
+            "pin_effect": "abacus",
+            "pin_left_level": "2",
+            "grid_number": "1",
+        }
+    )
+    effective = effective_board_for_loadout(board, lo, pipeline.rules)
+    numbers = [
+        t
+        for t in effective.flat
+        if t.number_value is not None and 1 <= t.number_value <= 5
+    ]
+    assert len(numbers) >= 1
+
+
 def test_grid_only_pins_no_word_score_change():
     pipeline = ScoringPipeline()
     board = _letter_board()
@@ -327,6 +352,40 @@ def test_pin_scoring_counts_include_scoring_pins():
     scoring_g, total_g, grid_only_g = count_scoring_items(pipeline.rules, lo_grid)
     assert scoring_g == 0
     assert grid_only_g == 1
+
+
+def test_super_8_pin_right_variable_overrides_level_heuristic():
+    pipeline = ScoringPipeline()
+    grid = [[_tile(r, c, "D", 1) for c in range(5)] for r in range(5)]
+    grid[4][2] = _tile(
+        4,
+        2,
+        "?",
+        1,
+        curse=CurseType.CHESS_PAWN,
+        metadata={"chess_color": "white"},
+    )
+    grid[3][3] = _tile(
+        3,
+        3,
+        "?",
+        1,
+        curse=CurseType.CHESS_PAWN,
+        metadata={"chess_color": "black"},
+    )
+    grid[3][4] = _tile(3, 4, "A", 1)
+    board = Board(tiles=grid, money=0)
+    path = [22, 18, 19]
+    lo = Loadout(
+        extras={
+            "pin_effect": "sam_gambit",
+            "pin_right_level": "3",
+            "pin_right_variable": "24",
+        }
+    )
+    score, bd = pipeline.score(board, path, "PAA", lo)
+    assert bd["pipeline"]["word_score"] == 24
+    assert score == 27.0
 
 
 def test_both_pin_tracks_independent_of_branch():

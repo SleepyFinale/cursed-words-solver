@@ -107,12 +107,19 @@ class ResultOverlay(QWidget):
             word_html = format_suggestion_word(top).upper().replace(
                 " → ", "<span style='color:#8cf'> → </span>"
             )
+            setup_line = ""
+            if top.setup_bonus > 0:
+                setup_line = (
+                    f"<br><span style='font-size:12px;color:#8cf'>"
+                    f"+{top.setup_bonus:,.0f} setup (rank {top.rank_score:,.0f})</span>"
+                )
             self.hero_result.setText(
                 f"<span style='font-size:22px;font-weight:bold;color:#fff'>"
                 f"{word_html}</span>"
                 f"&nbsp;&nbsp;"
                 f"<span style='font-size:18px;font-weight:bold;color:#0f8'>"
                 f"{top.score:,.0f} pts</span>"
+                f"{setup_line}"
             )
             self.hero_result.show()
         else:

@@ -66,6 +66,32 @@ def test_search_benchmark_cat_board(tmp_path):
 
 
 @pytest.mark.slow
+def test_search_benchmark_with_setup_weight(tmp_path):
+    """Setup ranking enabled should still finish under budget on a small board."""
+    wl = _make_wordlist(tmp_path)
+    d = WordDictionary(wl)
+    board = _board_cat_horizontal()
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="birthday_cake", name="Birthday Cake", level=1, kind="sticker")
+        ],
+        extras={"grids_remaining": "2"},
+    )
+    searcher = WordSearcher(
+        dictionary=d,
+        min_len=3,
+        max_len=8,
+        time_budget=1.0,
+        setup_weight=0.4,
+    )
+    t0 = time.perf_counter()
+    results = searcher.find_best_words(board, loadout, top_n=1)
+    elapsed = time.perf_counter() - t0
+    assert results
+    assert elapsed < 1.5
+
+
+@pytest.mark.slow
 def test_search_benchmark_game_board_if_available():
     from cursed_words_solver.config import GAME_WORDLIST_PATH
 

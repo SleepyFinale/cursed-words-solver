@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "exported_at": "2026-05-25T12:00:00.0000000Z",
+  "round_id": "20260525_120000_000",
+  "submit_method": "EncounterController.SubmitWord",
+  "grid_number": "2",
+  "match_status": "score_match",
+  "solver": {
+    "available": true,
+    "word": "new",
+    "scoring_word": "new",
+    "path": [6, 7, 8],
+    "predicted_score": 120,
+    "board_fingerprint": "fp-board",
+    "loadout_fingerprint": "fp-loadout",
+    "f8_sequence": 42,
+    "predicted_trace": [
+      {
+        "phase": "init",
+        "word_score": 0.0,
+        "subtotal": 0.0
+      }
+    ]
+  },
+  "actual": {
+    "word": "new",
+    "path": [6, 7, 8],
+    "path_tiles": [
+      {"path_index": 6, "row": 1, "col": 1, "letter": "N", "char": "n", "curse": "letter", "color": "shiny"},
+      {"path_index": 7, "row": 1, "col": 2, "letter": "E", "char": "e", "curse": "letter", "color": "shiny"},
+      {"path_index": 8, "row": 1, "col": 3, "letter": "W", "char": "w", "curse": "letter", "color": "shiny"}
+    ],
+    "score": 120,
+    "trace": [
+      {
+        "phase": "init",
+        "word_score": 0.0,
+        "subtotal": 0.0
+      }
+    ]
+  },
+  "run_state": {
+    "character": "Test Hero",
+    "money": 10,
+    "stickers": [],
+    "stamps": [],
+    "board": {
+      "source": "melmod",
+      "row_order": "top_first",
+      "rows": 5,
+      "cols": 5,
+      "tiles": []
+    },
+    "extras": {
+      "grid_number": "2"
+    }
+  },
+  "consumables": {
+    "rack_before": [],
+    "rack_after": [],
+    "placements_this_round": []
+  },
+  "comparison": {
+    "score_delta": 0,
+    "path_matches_suggestion": true,
+    "capture_active": true,
+    "match_status": "score_match"
+  }
+}

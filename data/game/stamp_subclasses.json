@@ -1,0 +1,1114 @@
+{
+  "_meta": {
+    "source": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Cursed Words\\Cursed Words_Data\\Managed\\Assembly-CSharp.dll",
+    "catalog_stamps": 151,
+    "matched": 134
+  },
+  "stamps": [
+    {
+      "slug": "akoya_pearl",
+      "game_class": "AkoyaPearl",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "angel_investment",
+      "game_class": "AngelInvestment",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "avocado",
+      "game_class": "Avocado",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "banana",
+      "game_class": "Banana",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "bank",
+      "game_class": "Bank",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "bar_chart",
+      "game_class": "BarChart",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "bar_of_soap",
+      "game_class": "BarOfSoap",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "beam_me_up",
+      "game_class": "BeamMeUp",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "beefeater",
+      "game_class": "Beefeater",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "bento_box",
+      "game_class": "BentoBox",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "big_bang",
+      "game_class": "BigBang",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "black_hole",
+      "game_class": "BlackHole",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "<ApplyStartOfGridEffect>b__2_0"
+      ]
+    },
+    {
+      "slug": "blessing_of_the_fairies",
+      "game_class": "BlessingOfTheFairies",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "blessing_of_the_shopkeeper",
+      "game_class": "BlessingOfTheShopkeeper",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "bomb",
+      "game_class": "Bomb",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "book_of_openings",
+      "game_class": "BookOfOpenings",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "briefcase",
+      "game_class": "Briefcase",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "bubble_tea",
+      "game_class": "BubbleTea",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "builder",
+      "game_class": "Builder",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "slug": "bunch_of_grapes",
+      "game_class": "BunchOfGrapes",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "slug": "business_goose",
+      "game_class": "BusinessGoose",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "busy_schedule",
+      "game_class": "BusySchedule",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "cable_car",
+      "game_class": "CableCar",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "card_shark",
+      "game_class": "CardShark",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "cartwheeler",
+      "game_class": "Cartwheeler",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "chess_board",
+      "game_class": "ChessBoard",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "chick",
+      "game_class": "Chick",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "chocolate_candy",
+      "game_class": "ChocolateCandy",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "christmas_tree",
+      "game_class": "ChristmasTree",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "dangerous_summit",
+      "game_class": "DangerousSummit",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "dango",
+      "game_class": "Dango",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "delivery_truck",
+      "game_class": "DeliveryTruck",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "disco_ball",
+      "game_class": "DiscoBall",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "diya",
+      "game_class": "Diya",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "dove",
+      "game_class": "Dove",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "downward_trending_chart",
+      "game_class": "DownwardTrendingChart",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "dragon",
+      "game_class": "Dragon",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "eclipse",
+      "game_class": "Eclipse",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "efficient_recycler",
+      "game_class": "EfficientRecycler",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "empty_jar",
+      "game_class": "EmptyJar",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "eraser",
+      "game_class": "Eraser",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "error",
+      "game_class": "Error",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "erupting_volcano",
+      "game_class": "EruptingVolcano",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "falling_leaf",
+      "game_class": "FallingLeaf",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "family_ticket",
+      "game_class": "FamilyTicket",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "fan",
+      "game_class": "Fan",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "filing_cabinet",
+      "game_class": "FilingCabinet",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "flamingo",
+      "game_class": "Flamingo",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "flashy_fountain_pen",
+      "game_class": "FlashyFountainPen",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "fleur_de_lis",
+      "game_class": "FleurDeLis",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "<ApplyStartOfGridEffect>b__2_0"
+      ]
+    },
+    {
+      "slug": "food_poisoning",
+      "game_class": "FoodPoisoning",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "fortune_cookie",
+      "game_class": "FortuneCookie",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "four_leaf_clover",
+      "game_class": "FourLeafClover",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "fraction_frog",
+      "game_class": "FractionFrog",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "fried_shrimp",
+      "game_class": "FriedShrimp",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "full_battery",
+      "game_class": "FullBattery",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "full_moon",
+      "game_class": "FullMoon",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "genie",
+      "game_class": "Genie",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "giraffe",
+      "game_class": "Giraffe",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "globe_trotter",
+      "game_class": "GlobeTrotter",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "go_fish",
+      "game_class": "GoFish",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "golden_record",
+      "game_class": "GoldenRecord",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "golden_scales",
+      "game_class": "GoldenScales",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "haunted_house",
+      "game_class": "HauntedHouse",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "haunted_mirror",
+      "game_class": "HauntedMirror",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "head_in_the_clouds",
+      "game_class": "HeadInTheClouds",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "head_trauma",
+      "game_class": "HeadTrauma",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "heart_on_fire",
+      "game_class": "HeartOnFire",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "honeypot",
+      "game_class": "Honeypot",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "hourglass",
+      "game_class": "Hourglass",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "hungry_snake",
+      "game_class": "HungrySnake",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "id_card",
+      "game_class": "IdCard",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "jellyfish",
+      "game_class": "Jellyfish",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "jolly_roger",
+      "game_class": "JollyRoger",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "slug": "juice_box",
+      "game_class": "JuiceBox",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "kimono",
+      "game_class": "Kimono",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "<ApplyStartOfGridEffect>b__2_0"
+      ]
+    },
+    {
+      "slug": "king_of_the_bridge",
+      "game_class": "KingOfTheBridge",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "kokeshi_dolls",
+      "game_class": "KokeshiDolls",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "limnophila",
+      "game_class": "Limnophila",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "magician_s_hat",
+      "game_class": "MagicianSHat",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "magnet",
+      "game_class": "Magnet",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "martini",
+      "game_class": "Martini",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "microphone",
+      "game_class": "Microphone",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "microscope",
+      "game_class": "Microscope",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "moai",
+      "game_class": "Moai",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "slug": "mushroom_upgrade",
+      "game_class": "MushroomUpgrade",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "slug": "mutating_dna",
+      "game_class": "MutatingDna",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "neapolitan",
+      "game_class": "Neapolitan",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "nest_egg",
+      "game_class": "NestEgg",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "slug": "newspaper",
+      "game_class": "Newspaper",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "number_factory",
+      "game_class": "NumberFactory",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "number_go_up",
+      "game_class": "NumberGoUp",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "oden",
+      "game_class": "Oden",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "ogre",
+      "game_class": "Ogre",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "padlock_stamp",
+      "game_class": "PadlockStamp",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "paper_lantern",
+      "game_class": "PaperLantern",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "<ApplyStartOfGridEffect>b__2_0"
+      ]
+    },
+    {
+      "slug": "parachute",
+      "game_class": "Parachute",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "<ApplyStartOfGridEffect>b__2_0"
+      ]
+    },
+    {
+      "slug": "pi_ata",
+      "game_class": "PiAta",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "piece_of_cake",
+      "game_class": "PieceOfCake",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "piggy_bank",
+      "game_class": "PiggyBank",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "pinata",
+      "game_class": "Pinata",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "pizza_slice",
+      "game_class": "PizzaSlice",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "pocket_money",
+      "game_class": "PocketMoney",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "queen_bee",
+      "game_class": "QueenBee",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "queenie",
+      "game_class": "Queenie",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "receipt",
+      "game_class": "Receipt",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "red_balloon",
+      "game_class": "RedBalloon",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "red_envelope",
+      "game_class": "RedEnvelope",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "right_hand",
+      "game_class": "RightHand",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "rollercoaster",
+      "game_class": "Rollercoaster",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "rosebud",
+      "game_class": "Rosebud",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "ruler",
+      "game_class": "Ruler",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "saguaro_seedling",
+      "game_class": "SaguaroSeedling",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "saxophone",
+      "game_class": "Saxophone",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "sewing_needle",
+      "game_class": "SewingNeedle",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "shaved_ice",
+      "game_class": "ShavedIce",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "silly_puppy",
+      "game_class": "SillyPuppy",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "slot_machine",
+      "game_class": "SlotMachine",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "StartOfEncounterSetUp"
+      ]
+    },
+    {
+      "slug": "sluggish_zombie",
+      "game_class": "SluggishZombie",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "smart_shirt",
+      "game_class": "SmartShirt",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "snail",
+      "game_class": "Snail",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "spicy_pepper",
+      "game_class": "SpicyPepper",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "spouting_whale",
+      "game_class": "SpoutingWhale",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "stack_of_pancakes",
+      "game_class": "StackOfPancakes",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "stadium",
+      "game_class": "Stadium",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "statue_of_liberty",
+      "game_class": "StatueOfLiberty",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "<ApplyStartOfGridEffect>b__2_0"
+      ]
+    },
+    {
+      "slug": "steak",
+      "game_class": "Steak",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "stethoscope",
+      "game_class": "Stethoscope",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "stiletto",
+      "game_class": "Stiletto",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "slug": "supervillain",
+      "game_class": "Supervillain",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "surprise_delivery",
+      "game_class": "SurpriseDelivery",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "suspension_bridge",
+      "game_class": "SuspensionBridge",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "takeout_box",
+      "game_class": "TakeoutBox",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "teapot",
+      "game_class": "Teapot",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "television",
+      "game_class": "Television",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "test_tube",
+      "game_class": "TestTube",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "tile_ninja",
+      "game_class": "TileNinja",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "slug": "tin_of_beans",
+      "game_class": "TinOfBeans",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "torii_gate",
+      "game_class": "ToriiGate",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "trophy_of_wealth",
+      "game_class": "TrophyOfWealth",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "twinkle_toes",
+      "game_class": "TwinkleToes",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "underhand",
+      "game_class": "Underhand",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "unicorn",
+      "game_class": "Unicorn",
+      "in_subclasses": true,
+      "overrides": []
+    },
+    {
+      "slug": "valentine_s_day_card",
+      "game_class": "ValentineSDayCard",
+      "in_subclasses": false,
+      "overrides": []
+    },
+    {
+      "slug": "waxy_vizor",
+      "game_class": "WaxyVizor",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "weekly_shop",
+      "game_class": "WeeklyShop",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "wheel",
+      "game_class": "Wheel",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "StartOfEncounterSetUp"
+      ]
+    },
+    {
+      "slug": "window",
+      "game_class": "Window",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "work_of_art",
+      "game_class": "WorkOfArt",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "slug": "xray",
+      "game_class": "Xray",
+      "in_subclasses": true,
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "<ApplyStartOfGridEffect>b__2_0"
+      ]
+    },
+    {
+      "slug": "young_cardinal",
+      "game_class": "YoungCardinal",
+      "in_subclasses": false,
+      "overrides": []
+    }
+  ]
+}

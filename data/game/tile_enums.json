@@ -1,0 +1,155 @@
+{
+  "_meta": {
+    "source": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Cursed Words\\Cursed Words_Data\\Managed\\Assembly-CSharp.dll"
+  },
+  "enums": {
+    "TileType": [
+      {
+        "name": "Normal",
+        "value": 0
+      },
+      {
+        "name": "Red",
+        "value": 1
+      },
+      {
+        "name": "Blue",
+        "value": 2
+      },
+      {
+        "name": "Shiny",
+        "value": 3
+      },
+      {
+        "name": "Void",
+        "value": 4
+      },
+      {
+        "name": "Cactus",
+        "value": 5
+      },
+      {
+        "name": "Pink",
+        "value": 6
+      },
+      {
+        "name": "Gold",
+        "value": 7
+      },
+      {
+        "name": "Green",
+        "value": 8
+      },
+      {
+        "name": "Purple",
+        "value": 9
+      },
+      {
+        "name": "White",
+        "value": 10
+      },
+      {
+        "name": "Glitch",
+        "value": 11
+      }
+    ],
+    "GlyphType": [
+      {
+        "name": "Blank",
+        "value": 0
+      },
+      {
+        "name": "Letter",
+        "value": 1
+      },
+      {
+        "name": "Number",
+        "value": 2
+      },
+      {
+        "name": "Fraction",
+        "value": 3
+      },
+      {
+        "name": "Chess",
+        "value": 4
+      },
+      {
+        "name": "BespokeCard",
+        "value": 5
+      },
+      {
+        "name": "Currency",
+        "value": 6
+      },
+      {
+        "name": "Arrow",
+        "value": 7
+      },
+      {
+        "name": "ScatteredItem",
+        "value": 8
+      },
+      {
+        "name": "None",
+        "value": 9
+      }
+    ],
+    "ChessPiece": [
+      {
+        "name": "None",
+        "value": 0
+      },
+      {
+        "name": "Pawn",
+        "value": 1
+      },
+      {
+        "name": "Knight",
+        "value": 2
+      },
+      {
+        "name": "Bishop",
+        "value": 3
+      },
+      {
+        "name": "Rook",
+        "value": 4
+      },
+      {
+        "name": "Queen",
+        "value": 5
+      },
+      {
+        "name": "King",
+        "value": 6
+      }
+    ],
+    "Suit": [
+      {
+        "name": "None",
+        "value": 0
+      },
+      {
+        "name": "Clubs",
+        "value": 1
+      },
+      {
+        "name": "Spades",
+        "value": 2
+      },
+      {
+        "name": "Hearts",
+        "value": 3
+      },
+      {
+        "name": "Diamonds",
+        "value": 4
+      },
+      {
+        "name": "Joker",
+        "value": 5
+      }
+    ]
+  }
+}

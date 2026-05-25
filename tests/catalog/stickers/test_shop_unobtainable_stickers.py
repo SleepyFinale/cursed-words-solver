@@ -82,7 +82,7 @@ def test_bone_multiplier_level_3():
 def test_frankenstein_left_hand_padlock_catalog():
     pipeline = ScoringPipeline()
     _key, frank = get_rule(pipeline.rules, "stickers", "frankenstein", "Frankenstein")
-    assert frank.get("effect_class") == "unique"
+    assert frank.get("effect_class") == "orchestration"
     _key, left = get_rule(pipeline.rules, "stickers", "left_hand", "Left Hand")
     assert left.get("effect_class") == "meta"
     _key, pad = get_rule(pipeline.rules, "stickers", "padlock_sticker", "Padlock (sticker)")

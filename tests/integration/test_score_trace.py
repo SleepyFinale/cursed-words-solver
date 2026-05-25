@@ -32,7 +32,7 @@ def test_score_with_trace_returns_steps():
     score, _bd, trace = pipeline.score_with_trace(board, path, word, Loadout())
     assert score == pipeline.score_total_only(board, path, word, Loadout())
     assert trace
-    assert trace[0]["phase"] == "init"
+    assert trace[0]["phase"] == "tile_init"
     assert any(s.get("phase") == "pre_multiply" for s in trace)
 
 
@@ -42,19 +42,19 @@ def test_trace_conditional_rule_applied_flag():
     board.tiles[0][0] = Tile(
         row=0,
         col=0,
-        char="$",
-        letter="S",
-        base_score=0,
-        color=TileColor.COLORLESS,
-        curse=CurseType.CURRENCY,
+        char="A",
+        letter="A",
+        base_score=2,
+        color=TileColor.RED,
+        curse=CurseType.LETTER,
     )
     path = [0, 1, 2]
     loadout = Loadout(
         stickers=[
-            LoadoutItem(id="sunflower", name="Sunflower", level=1),
+            LoadoutItem(id="artist_s_palette", name="Artist's Palette", level=1),
             LoadoutItem(id="wheezy_vixen", name="Wheezy Vixen", level=2),
         ],
-        money=10,
+        money=0,
     )
     pipeline = ScoringPipeline()
     _score, _bd, trace = pipeline.score_with_trace(board, path, "aaa", loadout)
@@ -63,12 +63,12 @@ def test_trace_conditional_rule_applied_flag():
     assert rule_steps
     assert all("applied" in s for s in rule_steps)
 
-    sunflower = next(s for s in rule_steps if s.get("rule_id") == "sunflower")
+    palette = next(s for s in rule_steps if s.get("rule_id") == "artist_s_palette")
     wheezy = next(s for s in rule_steps if s.get("rule_id") == "wheezy_vixen")
 
-    assert sunflower["applied"] is True
+    assert palette["applied"] is True
     assert wheezy["applied"] is False
-    assert wheezy["detail"] != sunflower["detail"]
+    assert wheezy["detail"] != palette["detail"]
     assert "vwxyz" in wheezy["detail"].lower()
 
 

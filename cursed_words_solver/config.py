@@ -52,35 +52,29 @@ class Region:
 @dataclass
 class AppConfig:
     board_region: Region = field(default_factory=Region)
-    money_region: Region | None = None
     hotkey: str = "f8"
     min_word_length: int = 3
     max_word_length: int = 15
     search_time_budget_sec: float = 45.0
     top_n_results: int = 3
-    ocr_use_gpu: bool = False
-    cell_inset_ratio: float = 0.1
-    debug_ocr: bool = False
     wordlist: str = "game"
     show_board_highlight: bool = True
+    setup_weight: float = 0.4
+    setup_discount: float = 0.85
 
     def save(self) -> None:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         payload = {
             "board_region": self.board_region.to_dict(),
-            "money_region": (
-                self.money_region.to_dict() if self.money_region else None
-            ),
             "hotkey": self.hotkey,
             "min_word_length": self.min_word_length,
             "max_word_length": self.max_word_length,
             "search_time_budget_sec": self.search_time_budget_sec,
             "top_n_results": self.top_n_results,
-            "ocr_use_gpu": self.ocr_use_gpu,
-            "cell_inset_ratio": self.cell_inset_ratio,
-            "debug_ocr": self.debug_ocr,
             "wordlist": self.wordlist,
             "show_board_highlight": self.show_board_highlight,
+            "setup_weight": self.setup_weight,
+            "setup_discount": self.setup_discount,
         }
         CONFIG_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -89,7 +83,6 @@ class AppConfig:
         if not CONFIG_PATH.exists():
             return cls()
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        money = data.get("money_region")
         max_word_length = int(data.get("max_word_length", 15))
         search_time_budget_sec = float(data.get("search_time_budget_sec", 45.0))
         migrated = False
@@ -105,17 +98,15 @@ class AppConfig:
             migrated = True
         cfg = cls(
             board_region=Region.from_dict(data.get("board_region", {})),
-            money_region=Region.from_dict(money) if money else None,
             hotkey=data.get("hotkey", "f8"),
             min_word_length=int(data.get("min_word_length", 3)),
             max_word_length=max_word_length,
             search_time_budget_sec=search_time_budget_sec,
             top_n_results=int(data.get("top_n_results", 3)),
-            ocr_use_gpu=bool(data.get("ocr_use_gpu", False)),
-            cell_inset_ratio=float(data.get("cell_inset_ratio", 0.1)),
-            debug_ocr=bool(data.get("debug_ocr", False)),
             wordlist=str(data.get("wordlist", "game")),
             show_board_highlight=bool(data.get("show_board_highlight", True)),
+            setup_weight=float(data.get("setup_weight", 0.4)),
+            setup_discount=float(data.get("setup_discount", 0.85)),
         )
         if migrated:
             cfg.save()

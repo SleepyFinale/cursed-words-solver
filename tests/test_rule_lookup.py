@@ -3,6 +3,7 @@ from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.rule_lookup import (
     collect_unmapped_items,
     get_pin_branch_rule,
+    get_pin_scoring_rule,
     resolve_rule_id,
 )
 
@@ -46,7 +47,7 @@ def test_abacus_pin_alias_resolves_to_scoring_rule():
         },
     }
     assert resolve_rule_id(rules, "pins", "abacus", "") == "abacus"
-    assert get_pin_branch_rule(rules, "abacus", "left") is not None
+    assert get_pin_scoring_rule(rules, "abacus") is not None
 
 
 def test_abacus_pin_no_bonus_without_coloured_numbers_on_path():

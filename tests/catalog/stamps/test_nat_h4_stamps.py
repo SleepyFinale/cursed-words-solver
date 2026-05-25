@@ -2,7 +2,9 @@
 
 from cursed_words_solver.models import Board, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.rule_lookup import count_scoring_items, get_rule, slugify_name
+from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
+
+from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
 
 NAT_H4_STAMP_NAMES = [
     "Delivery Truck",
@@ -44,16 +46,8 @@ def test_all_nat_h4_stamps_catalogued():
 
 def test_count_scoring_vs_grid_only_nat_h4_stamps():
     pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[
-            LoadoutItem(id=slugify_name(n), name=n, level=1, kind="stamp")
-            for n in NAT_H4_STAMP_NAMES
-        ]
-    )
-    scoring, total, grid_only = count_scoring_items(pipeline.rules, loadout)
-    assert total == 3
-    assert grid_only == len(GRID_ONLY_SLUGS)
-    assert scoring == 3 - len(GRID_ONLY_SLUGS)
+    assert_loadout_stamp_coverage(pipeline.rules, NAT_H4_STAMP_NAMES)
+
 
 
 def test_delivery_truck_shop_effect():

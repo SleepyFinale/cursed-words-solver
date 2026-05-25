@@ -19,37 +19,41 @@ from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, T
 
 from cursed_words_solver.rules.base_scoring import _scrabble_value, tile_base_contribution
 
-from cursed_words_solver.rules.rule_lookup import (
-
-    collect_unmapped_items,
-
-    count_catalog_items,
-
-    count_scoring_items,
-
-    get_pin_scoring_rule,
-
-    get_rule,
-
-    resolve_rule_id,
-
+from cursed_words_solver.rules.pin_effects import apply_pin_word_scoring
+from cursed_words_solver.rules.stamp_effects import (
+    PIPELINE_SKIP_TYPES as _STAMP_SKIP_TYPES,
+    apply_stamp_with_orchestration,
+    apply_sticker_with_orchestration,
 )
+from cursed_words_solver.rules.rule_lookup import (
+    collect_unmapped_items,
+    count_catalog_items,
+    count_scoring_items,
+    get_rule,
+    resolve_rule_id,
+)
+from cursed_words_solver.rules.scoring_order import (
+    apply_green_tile_word_transfer,
+    build_scoring_item_sequence,
+    hourglass_reverses_order,
+)
+from cursed_words_solver.rules.tile_scoring import apply_tile_init
 from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
 
 from cursed_words_solver.rules.boss_effects import (
     boss_context,
     boss_rule_applies,
+    boss_scoring_effect_type,
     get_active_boss_rule,
     resolve_boss_scaling,
 )
+from cursed_words_solver.rules.boss_scoring import (
+    EARLY_BOSS_TYPES,
+    apply_early_boss_scoring,
+)
 
 # Wiki Scoring step 1: Salamander / Robo-Monkey before pin, stickers, stamps.
-_EARLY_BOSS_EFFECT_TYPES = frozenset(
-    {
-        "boss_tile_penalty",
-        "boss_subtract_word_score_money",
-    }
-)
+_EARLY_BOSS_EFFECT_TYPES = EARLY_BOSS_TYPES
 from cursed_words_solver.rules.scoring_conditions import (
     abacus_colored_number_bonus,
     birthday_cake_accumulated,
@@ -105,6 +109,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     number_sum_on_path,
     number_tile_count_on_path,
     word_all_numbers_on_path,
+    human_hands_stamp_extra_apps,
     pin_left_level,
     pin_right_level,
     rainbow_per_colour_bonus,
@@ -400,8 +405,14 @@ def _boss_is_salamander(loadout: Loadout) -> bool:
     return bid == "salamander" or "bosslesspoints" in bid
 
 
-def _finalize(state: dict[str, Any]) -> float:
+def _finalize(
+    state: dict[str, Any],
+    board: Board | None = None,
+    path: list[int] | None = None,
+) -> float:
     """Sum tile + word scores, then apply queued ×WORD multipliers with floor each step."""
+    if board is not None and path is not None:
+        apply_green_tile_word_transfer(board, path, state)
     total = sum(state["tile_scores"]) + state["word_score"]
     for entry in state.get("pending_word_multipliers", []):
         factor = _pending_multiplier_factor(entry)
@@ -485,15 +496,47 @@ class ScoringPipeline:
         )
         if trace is not None:
             state["_trace"] = trace
-            _trace_step(
-                state,
-                "init",
-                detail=f"base tile sum {state['base_score']}",
-            )
-        state = self._apply_early_boss_rules(state, board, path, loadout)
+        apply_tile_init(
+            board,
+            path,
+            word,
+            loadout,
+            state,
+            microscope_base=loadout_has_stamp(loadout, "microscope"),
+            blue_base_override=shield_blue_base_from_loadout(loadout, self.rules),
+            trace_step=_trace_step if trace is not None else None,
+        )
+        hourglass = hourglass_reverses_order(loadout, self.rules)
+        if not hourglass:
+            state = self._apply_early_boss_rules(state, board, path, loadout)
         _apply_void_path_bonuses(board, path, loadout, state)
+
+        for ref in build_scoring_item_sequence(board, path, loadout, self.rules):
+            if ref.kind != "grid_path":
+                continue
+            _key, rule = get_rule(self.rules, "stickers", ref.rule_id, ref.rule_id)
+            if not rule:
+                _key, rule = get_rule(self.rules, "stamps", ref.rule_id, ref.rule_id)
+            if not rule or rule.get("type") in (
+                "unmodeled",
+                "custom",
+                "scatter_start_grid",
+                "scatter_start_encounter",
+            ):
+                continue
+            state = self._apply_rule(
+                rule,
+                state,
+                board,
+                path,
+                loadout,
+                ref.level,
+                applying_sticker_id=ref.rule_id,
+            )
+            _trace_step(state, "grid_item", rule_id=ref.rule_id, detail="scattered grid item")
+
         pin_effect = str(loadout.extras.get("pin_effect", "") or "").strip()
-        if pin_effect:
+        if pin_effect and not hourglass:
             state = self._apply_pin(loadout, pin_effect, state, board, path)
             _trace_step(state, "pin", rule_id=pin_effect, detail="pin applied")
         has_mutating_stamp = any(
@@ -509,51 +552,116 @@ class ScoringPipeline:
             has_mutating_stamp and 0 < mutating_prior_total < 8
         )
 
+        _skip_types = _STAMP_SKIP_TYPES
+
+        def _sticker_slots() -> list[int]:
+            slots = list(range(len(loadout.stickers)))
+            return list(reversed(slots)) if hourglass else slots
+
+        def _stamp_slots() -> list[int]:
+            slots = list(range(len(loadout.stamps)))
+            return list(reversed(slots)) if hourglass else slots
+
         def _apply_sticker_pass(*, multiply_only: bool) -> None:
             nonlocal state
-            for sticker in loadout.stickers:
+            for slot in _sticker_slots():
+                sticker = loadout.stickers[slot]
                 _key, rule = get_rule(
                     self.rules, "stickers", sticker.id, sticker.name
                 )
-                if not rule or rule.get("type") in ("unmodeled", "custom"):
+                if not rule or rule.get("type") in _skip_types:
                     continue
                 is_multiply = rule.get("type") == "multiply_word_scaled"
                 if multiply_only != is_multiply:
                     continue
-                state = self._apply_rule(
-                    rule,
-                    state,
-                    board,
-                    path,
-                    loadout,
-                    sticker.level,
-                    applying_sticker_id=sticker.id or sticker.name,
+                state = apply_sticker_with_orchestration(
+                    rules=self.rules,
+                    loadout=loadout,
+                    state=state,
+                    board=board,
+                    path=path,
+                    sticker=sticker,
+                    slot=slot,
+                    apply_rule=self._apply_rule,
                 )
 
         state["_immediate_word_mult"] = True
-        if defer_multiply_stickers:
+        if hourglass:
+            for slot in _stamp_slots():
+                stamp = loadout.stamps[slot]
+                _key, rule = get_rule(self.rules, "stamps", stamp.id, stamp.name)
+                if rule and rule.get("type") not in _skip_types:
+                    state = apply_stamp_with_orchestration(
+                        rules=self.rules,
+                        loadout=loadout,
+                        state=state,
+                        board=board,
+                        path=path,
+                        stamp=stamp,
+                        slot=slot,
+                        apply_rule=self._apply_rule,
+                    )
+            if defer_multiply_stickers:
+                _apply_sticker_pass(multiply_only=False)
+            else:
+                for slot in _sticker_slots():
+                    sticker = loadout.stickers[slot]
+                    _key, rule = get_rule(
+                        self.rules, "stickers", sticker.id, sticker.name
+                    )
+                    if not rule or rule.get("type") in _skip_types:
+                        continue
+                    state = apply_sticker_with_orchestration(
+                        rules=self.rules,
+                        loadout=loadout,
+                        state=state,
+                        board=board,
+                        path=path,
+                        sticker=sticker,
+                        slot=slot,
+                        apply_rule=self._apply_rule,
+                    )
+            if defer_multiply_stickers:
+                _apply_sticker_pass(multiply_only=True)
+            if pin_effect:
+                state = self._apply_pin(loadout, pin_effect, state, board, path)
+                _trace_step(state, "pin", rule_id=pin_effect, detail="pin applied")
+        elif defer_multiply_stickers:
             _apply_sticker_pass(multiply_only=False)
         else:
-            for sticker in loadout.stickers:
+            for slot in _sticker_slots():
+                sticker = loadout.stickers[slot]
                 _key, rule = get_rule(
                     self.rules, "stickers", sticker.id, sticker.name
                 )
-                if not rule or rule.get("type") in ("unmodeled", "custom"):
+                if not rule or rule.get("type") in _skip_types:
                     continue
-                state = self._apply_rule(
-                    rule,
-                    state,
-                    board,
-                    path,
-                    loadout,
-                    sticker.level,
-                    applying_sticker_id=sticker.id or sticker.name,
+                state = apply_sticker_with_orchestration(
+                    rules=self.rules,
+                    loadout=loadout,
+                    state=state,
+                    board=board,
+                    path=path,
+                    sticker=sticker,
+                    slot=slot,
+                    apply_rule=self._apply_rule,
                 )
         state["_immediate_word_mult"] = False
-        for stamp in loadout.stamps:
-            _key, rule = get_rule(self.rules, "stamps", stamp.id, stamp.name)
-            if rule and rule.get("type") not in ("unmodeled", "custom"):
-                state = self._apply_rule(rule, state, board, path, loadout, 1)
+        if not hourglass:
+            for slot in _stamp_slots():
+                stamp = loadout.stamps[slot]
+                _key, rule = get_rule(self.rules, "stamps", stamp.id, stamp.name)
+                if rule and rule.get("type") not in _skip_types:
+                    state = apply_stamp_with_orchestration(
+                        rules=self.rules,
+                        loadout=loadout,
+                        state=state,
+                        board=board,
+                        path=path,
+                        stamp=stamp,
+                        slot=slot,
+                        apply_rule=self._apply_rule,
+                    )
         for factor, mult_rule_id in state.get("salamander_post_mutating_mults", []):
             _apply_immediate_word_multiplier(state, factor, mult_rule_id)
         state["salamander_post_mutating_mults"] = []
@@ -565,6 +673,8 @@ class ScoringPipeline:
             self.rules, "pins", pin_effect, pin_effect
         ) == "human_boy":
             state = self._apply_human_hands(loadout, state, board, path)
+        if hourglass:
+            state = self._apply_early_boss_rules(state, board, path, loadout)
         state = self._apply_late_boss_rules(state, board, path, loadout)
         return state
 
@@ -575,24 +685,17 @@ class ScoringPipeline:
         path: list[int],
         loadout: Loadout,
     ) -> dict[str, Any]:
-        """Wiki step 1: Salamander tile penalty / Robo-Monkey word penalty before stickers."""
-        _key, boss = get_active_boss_rule(self.rules, loadout)
-        if boss and boss.get("type") in _EARLY_BOSS_EFFECT_TYPES:
-            ctx = boss_context(loadout, self.rules)
-            if boss_rule_applies(boss, ctx):
-                rule_id = _key or loadout.boss_id or loadout.boss_name or "boss"
-                state = self._apply_rule(
-                    boss,
-                    state,
-                    board,
-                    path,
-                    loadout,
-                    1,
-                    applying_sticker_id=rule_id,
-                )
-                if state.get("_trace") is not None:
-                    _trace_step(state, "boss", rule_id=rule_id, detail="boss applied")
-        return state
+        """Wiki step 1: ApplyBossModifier before stickers (unless Hourglass)."""
+        trace_fn = _trace_step if state.get("_trace") is not None else None
+        return apply_early_boss_scoring(
+            state,
+            board,
+            path,
+            loadout,
+            self.rules,
+            self._apply_rule,
+            trace_step=trace_fn,
+        )
 
     def _apply_late_boss_rules(
         self,
@@ -611,6 +714,13 @@ class ScoringPipeline:
             ctx = boss_context(loadout, self.rules)
             if boss_rule_applies(boss, ctx):
                 state = self._apply_rule(boss, state, board, path, loadout, 1)
+                if state.get("_trace") is not None:
+                    _trace_step(
+                        state,
+                        "boss_late",
+                        rule_id=_key or loadout.boss_id or "boss",
+                        detail=boss_scoring_effect_type(boss) or boss.get("type", ""),
+                    )
         elif loadout.boss_effect:
             state = self._apply_named_effect(
                 loadout.boss_effect, state, board, path, loadout
@@ -626,7 +736,8 @@ class ScoringPipeline:
     ) -> float:
         """Final score without building the breakdown dict (search hot path)."""
         loadout = loadout or Loadout(money=board.money)
-        return _finalize(self._compute_state(board, path, word, loadout))
+        state = self._compute_state(board, path, word, loadout)
+        return _finalize(state, board, path)
 
     def score(
         self,
@@ -637,7 +748,7 @@ class ScoringPipeline:
     ) -> tuple[float, dict[str, Any]]:
         loadout = loadout or Loadout(money=board.money)
         state = self._compute_state(board, path, word, loadout)
-        final = _finalize(state)
+        final = _finalize(state, board, path)
         breakdown: dict[str, Any] = {
             "base_total": state["base_score"],
             "tile_total": sum(state["tile_scores"]),
@@ -686,94 +797,22 @@ class ScoringPipeline:
         return final, breakdown, trace
 
     def _apply_pin(
-
         self,
-
         loadout: Loadout,
-
         pin_effect: str,
-
         state: dict,
-
         board: Board,
-
         path: list[int],
-
     ) -> dict:
-
-        canonical = resolve_rule_id(self.rules, "pins", pin_effect, pin_effect)
-
-        if canonical == "random_access_memory":
-
-            return self._apply_pin_memory(loadout, state, board, path)
-
-
-
-        pin_rule = get_pin_scoring_rule(self.rules, pin_effect)
-
-        if pin_rule and pin_rule.get("type") != "human_hands_pin":
-
-            state = self._apply_rule(pin_rule, state, board, path, loadout, 1)
-
-        return state
-
-
-
-    def _apply_pin_memory(
-
-        self,
-
-        loadout: Loadout,
-
-        state: dict,
-
-        board: Board,
-
-        path: list[int],
-
-    ) -> dict:
-
-        memory = loadout.extras.get("pin_memory") or []
-
-        if not isinstance(memory, list):
-
-            return state
-
-        for entry in memory:
-
-            if not isinstance(entry, dict):
-
-                continue
-
-            kind = str(entry.get("kind", "sticker")).lower()
-
-            bucket = "stamps" if kind == "stamp" else "stickers"
-
-            item_id = str(entry.get("id", "") or "")
-
-            item_name = str(entry.get("name", "") or "")
-
-            try:
-
-                level = int(entry.get("level", 1))
-
-            except (TypeError, ValueError):
-
-                level = 1
-
-            _key, rule = get_rule(self.rules, bucket, item_id, item_name)
-
-            if rule and rule.get("type") not in ("unmodeled", "custom"):
-
-                state = self._apply_rule(
-
-                    rule, state, board, path, loadout, level
-
-                )
-
-                state["effects"].append(f"RAM: {item_name or item_id}")
-
-        return state
+        return apply_pin_word_scoring(
+            rules=self.rules,
+            loadout=loadout,
+            pin_effect=pin_effect,
+            state=state,
+            board=board,
+            path=path,
+            apply_rule=self._apply_rule,
+        )
 
 
 
@@ -841,34 +880,21 @@ class ScoringPipeline:
 
 
 
-        if fav_stamp and right > 0:
-
+        stamp_extra = human_hands_stamp_extra_apps(loadout)
+        if fav_stamp and stamp_extra > 0:
             for stamp in loadout.stamps:
-
                 if stamp.id == fav_stamp or stamp.name == fav_stamp:
-
                     _key, rule = get_rule(
-
                         self.rules, "stamps", stamp.id, stamp.name
-
                     )
-
                     if rule and rule.get("type") not in ("unmodeled", "custom"):
-
-                        for _ in range(right):
-
+                        for _ in range(stamp_extra):
                             state = self._apply_rule(
-
                                 rule, state, board, path, loadout, 1
-
                             )
-
                         state["effects"].append(
-
-                            f"Human Hands: favourite stamp ×{right} extra"
-
+                            f"Human Hands: favourite stamp ×{stamp_extra} extra"
                         )
-
                     break
 
 
@@ -1724,6 +1750,12 @@ class ScoringPipeline:
                 sub = int(mult * loadout.money)
                 state["word_score"] -= sub
                 state["effects"].append(f"-{sub} word score (boss × money)")
+
+        elif effect_type == "boss_steal_money":
+            from cursed_words_solver.rules.boss_scoring import apply_boss_steal_money
+
+            ctx = boss_context(loadout, self.rules)
+            apply_boss_steal_money(state, loadout, rule, ctx)
 
         elif effect_type in ("boss_word_min_length", "boss_word_max_length"):
             pass

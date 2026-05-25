@@ -1,0 +1,79 @@
+{
+  "_meta": {
+    "source": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Cursed Words\\Cursed Words_Data\\Managed\\Assembly-CSharp.dll"
+  },
+  "pins": [
+    {
+      "name": "Abacus",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Bicycle",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "SuperEight",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus"
+      ]
+    },
+    {
+      "name": "MilkyWay",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "RandomAccessMemory",
+      "overrides": [
+        "StartOfEncounterSetUp"
+      ]
+    },
+    {
+      "name": "Rainbow",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyWordBonus",
+        "<ApplyStartOfGridEffect>b__6_0"
+      ]
+    },
+    {
+      "name": "MahjongRedDragon",
+      "overrides": [
+        "ApplyTileBonus",
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "WadOfCash",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "ApplyTileBonus"
+      ]
+    },
+    {
+      "name": "Bucket",
+      "overrides": [
+        "ApplyStartOfGridEffect",
+        "StartOfEncounterSetUp"
+      ]
+    },
+    {
+      "name": "CarpStreamers",
+      "overrides": [
+        "ApplyStartOfGridEffect"
+      ]
+    },
+    {
+      "name": "HumanHands",
+      "overrides": []
+    }
+  ]
+}
