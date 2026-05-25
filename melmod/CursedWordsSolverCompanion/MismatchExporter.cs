@@ -57,7 +57,10 @@ namespace CursedWordsSolverCompanion
             if (submitBoard == null && submitPlayer != null)
                 submitBoard = BoardExporter.TryBuild(submitPlayer);
             if (submitBoard != null)
+            {
                 BoardExporter.MergeSubmitTakeFlagsIntoRunState(runStateSnapshot, submitBoard);
+                BoardExporter.MergeSubmitCardMetadataIntoRunState(runStateSnapshot, submitBoard);
+            }
 
             var payload = new Dictionary<string, object>
             {

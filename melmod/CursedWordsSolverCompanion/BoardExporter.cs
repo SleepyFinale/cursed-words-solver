@@ -124,6 +124,135 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
+        /// True when the tile has a playing-card suit (Bicycle / poker scoring).
+        /// </summary>
+        public static bool TileHasSuitedCard(Tile tile)
+        {
+            return !string.IsNullOrEmpty(MapCardSuit(tile));
+        }
+
+        /// <summary>
+        /// Count unique playing-card suits on a submitted word path (each suit counts once).
+        /// </summary>
+        public static int CountSuitedCardsOnSelections(List<TileSelection> selections)
+        {
+            if (selections == null)
+                return 0;
+
+            var suits = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var sel in selections)
+            {
+                if (sel?.SelectedTile == null)
+                    continue;
+                var tile = sel.SelectedTile;
+                var suit = MapCardSuit(tile);
+                if (string.IsNullOrEmpty(suit))
+                    continue;
+                suits.Add(suit.Trim().ToLowerInvariant());
+            }
+            return suits.Count;
+        }
+
+        /// <summary>
+        /// Patch card_suit / card_rank on a board snapshot from word-path selections.
+        /// </summary>
+        public static void ApplyCardMetadataFromSelections(
+            BoardSnapshot board,
+            List<TileSelection> selections
+        )
+        {
+            if (board?.tiles == null || selections == null)
+                return;
+
+            foreach (var sel in selections)
+            {
+                if (sel?.SelectedTile == null)
+                    continue;
+
+                var tile = sel.SelectedTile;
+                var suit = MapCardSuit(tile);
+                if (string.IsNullOrEmpty(suit))
+                    continue;
+
+                try
+                {
+                    var coords = tile.GetCoordinates();
+                    var row = coords.y;
+                    var col = coords.x;
+                    var rank = MapCardRank(tile, null);
+                    foreach (var snap in board.tiles)
+                    {
+                        if (snap == null || snap.row != row || snap.col != col)
+                            continue;
+                        snap.card_suit = suit;
+                        if (!string.IsNullOrEmpty(rank))
+                            snap.card_rank = rank;
+                        else if (
+                            !string.IsNullOrWhiteSpace(snap.letter)
+                            && snap.letter != "?"
+                        )
+                            snap.card_rank = snap.letter.Trim().ToUpperInvariant();
+                        break;
+                    }
+                }
+                catch
+                {
+                    // skip bad tile
+                }
+            }
+        }
+
+        /// <summary>
+        /// Merge submit-time card metadata into an F8 run_state board snapshot.
+        /// </summary>
+        public static void MergeSubmitCardMetadataIntoRunState(
+            Dictionary<string, object> runStateSnapshot,
+            BoardSnapshot submitBoard
+        )
+        {
+            if (runStateSnapshot == null || submitBoard?.tiles == null)
+                return;
+
+            var cardAt = new Dictionary<string, BoardTileSnapshot>();
+            foreach (var tile in submitBoard.tiles)
+            {
+                if (tile == null || string.IsNullOrEmpty(tile.card_suit))
+                    continue;
+                cardAt[tile.row + "," + tile.col] = tile;
+            }
+            if (cardAt.Count == 0)
+                return;
+
+            object boardObj;
+            if (!runStateSnapshot.TryGetValue("board", out boardObj) || boardObj == null)
+                return;
+
+            var boardJson = boardObj as JObject ?? JObject.FromObject(boardObj);
+            var tiles = boardJson["tiles"] as JArray;
+            if (tiles == null)
+                return;
+
+            foreach (var token in tiles)
+            {
+                var tile = token as JObject;
+                if (tile == null)
+                    continue;
+                var row = tile["row"]?.ToObject<int>() ?? -1;
+                var col = tile["col"]?.ToObject<int>() ?? -1;
+                if (row < 0 || col < 0)
+                    continue;
+                BoardTileSnapshot src;
+                if (!cardAt.TryGetValue(row + "," + col, out src) || src == null)
+                    continue;
+                tile["card_suit"] = src.card_suit;
+                if (!string.IsNullOrEmpty(src.card_rank))
+                    tile["card_rank"] = src.card_rank;
+            }
+
+            runStateSnapshot["board"] = boardJson.ToObject<Dictionary<string, object>>();
+        }
+
+        /// <summary>
         /// Read take flags from word-path tile selections during ScoreCalculation.
         /// </summary>
         public static Dictionary<string, bool> ExtractTakeFlagsFromSelections(
@@ -504,10 +633,17 @@ namespace CursedWordsSolverCompanion
                 take = MapTake(tile),
             };
 
+            var isJoker = MapIsJoker(tile, glyph);
+            if (isJoker)
+            {
+                snap.is_joker = true;
+                snap.curse = "wildcard";
+                snap.letter = "?";
+            }
+
             var cardSuit = MapCardSuit(tile);
             if (!string.IsNullOrEmpty(cardSuit))
             {
-                snap.curse = "card";
                 snap.card_suit = cardSuit;
                 snap.card_rank = MapCardRank(tile, letter);
             }
@@ -592,6 +728,9 @@ namespace CursedWordsSolverCompanion
 
         private static string MapLetter(Tile tile, GlyphType glyph, string curse)
         {
+            if (IsJokerGlyph(glyph) || MapIsJoker(tile, glyph))
+                return "?";
+
             if (curse.StartsWith("chess_"))
                 return "?";
 
@@ -874,26 +1013,160 @@ namespace CursedWordsSolverCompanion
             if (tile == null)
                 return "";
 
+            var fromPacket = TryMapCardSuitFromPacket(tile);
+            if (!string.IsNullOrEmpty(fromPacket))
+                return fromPacket;
+
+            foreach (var methodName in new[]
+            {
+                "GetCardSuit",
+                "GetPlayingCardSuit",
+                "GetSuit",
+            })
+            {
+                try
+                {
+                    var method = tile.GetType().GetMethod(methodName, MemberFlags);
+                    if (method == null || method.GetParameters().Length != 0)
+                        continue;
+                    var val = method.Invoke(tile, null);
+                    if (val == null)
+                        continue;
+                    var normalized = NormalizeCardSuit(val.ToString());
+                    if (!string.IsNullOrEmpty(normalized))
+                        return normalized;
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+
             foreach (var name in new[]
             {
                 "Suit",
                 "CardSuit",
                 "PlayingCardSuit",
+                "PlayingCard",
+                "Card",
+                "PlayingCardData",
+                "card",
+                "playingCard",
             })
             {
                 try
                 {
-                    var prop = tile.GetType().GetProperty(
-                        name,
-                        System.Reflection.BindingFlags.Public
-                            | System.Reflection.BindingFlags.Instance
-                    );
+                    var prop = tile.GetType().GetProperty(name, MemberFlags);
                     if (prop == null)
                         continue;
                     var val = prop.GetValue(tile, null);
-                    if (val == null)
+                    var nested = ReadSuitFromObject(val);
+                    if (!string.IsNullOrEmpty(nested))
+                        return nested;
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+
+            foreach (var name in new[] { "HasSuit", "HasPlayingCardSuit", "IsSuited" })
+            {
+                try
+                {
+                    var prop = tile.GetType().GetProperty(name, MemberFlags);
+                    if (prop == null || prop.PropertyType != typeof(bool))
                         continue;
-                    return val.ToString().Trim().ToLowerInvariant();
+                    if (!(bool)prop.GetValue(tile, null))
+                        continue;
+                    var suit = MapCardSuitFromFields(tile);
+                    if (!string.IsNullOrEmpty(suit))
+                        return suit;
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+
+            var fromFields = MapCardSuitFromFields(tile);
+            if (!string.IsNullOrEmpty(fromFields))
+                return fromFields;
+
+            return TryMapCardSuitFromDisplay(tile);
+        }
+
+        private static string TryMapCardSuitFromPacket(Tile tile)
+        {
+            try
+            {
+                var packet = tile.GetValue();
+                return ReadSuitFromObject(packet);
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static string ReadSuitFromObject(object obj)
+        {
+            if (obj == null)
+                return "";
+
+            if (obj is string s)
+            {
+                var direct = NormalizeCardSuit(s);
+                if (!string.IsNullOrEmpty(direct))
+                    return direct;
+            }
+
+            var asText = obj.ToString();
+            var fromText = NormalizeCardSuit(asText);
+            if (!string.IsNullOrEmpty(fromText))
+                return fromText;
+
+            if (obj.GetType().IsEnum)
+            {
+                fromText = NormalizeCardSuit(asText);
+                if (!string.IsNullOrEmpty(fromText))
+                    return fromText;
+            }
+
+            foreach (var name in new[]
+            {
+                "Suit",
+                "CardSuit",
+                "PlayingCardSuit",
+                "PlayingCard",
+                "suit",
+                "cardSuit",
+            })
+            {
+                try
+                {
+                    var prop = obj.GetType().GetProperty(name, MemberFlags);
+                    if (prop == null)
+                        continue;
+                    var val = prop.GetValue(obj, null);
+                    var nested = ReadSuitFromObject(val);
+                    if (!string.IsNullOrEmpty(nested))
+                        return nested;
+                }
+                catch
+                {
+                    // try next
+                }
+
+                try
+                {
+                    var field = obj.GetType().GetField(name, MemberFlags);
+                    if (field == null)
+                        continue;
+                    var val = field.GetValue(obj);
+                    var nested = ReadSuitFromObject(val);
+                    if (!string.IsNullOrEmpty(nested))
+                        return nested;
                 }
                 catch
                 {
@@ -904,12 +1177,123 @@ namespace CursedWordsSolverCompanion
             return "";
         }
 
-        private static string MapCardRank(Tile tile, string letter)
+        private static string TryMapCardSuitFromDisplay(Tile tile)
+        {
+            foreach (var raw in new[] { MapDisplay(tile, ""), TryGetTileDisplayString(tile) })
+            {
+                if (string.IsNullOrWhiteSpace(raw))
+                    continue;
+                var suit = NormalizeCardSuitFromDisplay(raw);
+                if (!string.IsNullOrEmpty(suit))
+                    return suit;
+            }
+            return "";
+        }
+
+        private static string TryGetTileDisplayString(Tile tile)
         {
             if (tile == null)
                 return "";
+            try
+            {
+                var s = tile.GetStringRepresentation();
+                if (!string.IsNullOrWhiteSpace(s))
+                    return StripRichText(s);
+            }
+            catch
+            {
+                // fall through
+            }
+            return "";
+        }
 
-            foreach (var name in new[] { "Rank", "CardRank", "PlayingCardRank" })
+        private static string NormalizeCardSuitFromDisplay(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return "";
+            if (raw.IndexOf('♥') >= 0 || raw.IndexOf('♡') >= 0)
+                return "hearts";
+            if (raw.IndexOf('♠') >= 0)
+                return "spades";
+            if (raw.IndexOf('♣') >= 0)
+                return "clubs";
+            if (raw.IndexOf('♦') >= 0 || raw.IndexOf('♢') >= 0)
+                return "diamonds";
+            return NormalizeCardSuit(raw);
+        }
+
+        private static string MapCardSuitFromFields(Tile tile)
+        {
+            foreach (var name in new[]
+            {
+                "suit",
+                "cardSuit",
+                "playingCardSuit",
+            })
+            {
+                try
+                {
+                    var field = tile.GetType().GetField(
+                        name,
+                        System.Reflection.BindingFlags.Public
+                            | System.Reflection.BindingFlags.NonPublic
+                            | System.Reflection.BindingFlags.Instance
+                    );
+                    if (field == null)
+                        continue;
+                    var val = field.GetValue(tile);
+                    if (val == null)
+                        continue;
+                    var normalized = NormalizeCardSuit(val.ToString());
+                    if (!string.IsNullOrEmpty(normalized))
+                        return normalized;
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+
+            return "";
+        }
+
+        private static string NormalizeCardSuit(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return "";
+            var s = raw.Trim().ToLowerInvariant();
+            if (s.Contains("club"))
+                return "clubs";
+            if (s.Contains("spade"))
+                return "spades";
+            if (s.Contains("heart"))
+                return "hearts";
+            if (s.Contains("diamond"))
+                return "diamonds";
+            if (s == "c" || s == "♣")
+                return "clubs";
+            if (s == "s" || s == "♠")
+                return "spades";
+            if (s == "h" || s == "♥")
+                return "hearts";
+            if (s == "d" || s == "♦")
+                return "diamonds";
+            return "";
+        }
+
+        private static bool MapIsJoker(Tile tile, GlyphType glyph)
+        {
+            if (IsJokerGlyph(glyph))
+                return true;
+            if (tile == null)
+                return false;
+
+            foreach (var name in new[]
+            {
+                "IsJoker",
+                "IsJokerTile",
+                "IsPlayingCardJoker",
+            })
             {
                 try
                 {
@@ -918,17 +1302,130 @@ namespace CursedWordsSolverCompanion
                         System.Reflection.BindingFlags.Public
                             | System.Reflection.BindingFlags.Instance
                     );
-                    if (prop == null)
+                    if (prop == null || prop.PropertyType != typeof(bool))
                         continue;
-                    var val = prop.GetValue(tile, null);
-                    if (val == null)
-                        continue;
-                    return val.ToString().Trim().ToUpperInvariant();
+                    if ((bool)prop.GetValue(tile, null))
+                        return true;
                 }
                 catch
                 {
                     // try next
                 }
+            }
+
+            return false;
+        }
+
+        private static bool IsJokerGlyph(GlyphType glyph)
+        {
+            try
+            {
+                if (glyph.ToString().Equals("Joker", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            catch
+            {
+                // fall through
+            }
+
+            try
+            {
+                return Enum.IsDefined(typeof(GlyphType), "Joker")
+                    && (GlyphType)Enum.Parse(typeof(GlyphType), "Joker") == glyph;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string MapCardRank(Tile tile, string letter)
+        {
+            if (tile == null)
+                return "";
+
+            foreach (var methodName in new[] { "GetCardRank", "GetPlayingCardRank", "GetRank" })
+            {
+                try
+                {
+                    var method = tile.GetType().GetMethod(methodName, MemberFlags);
+                    if (method == null || method.GetParameters().Length != 0)
+                        continue;
+                    var val = method.Invoke(tile, null);
+                    if (val == null)
+                        continue;
+                    var rank = val.ToString().Trim().ToUpperInvariant();
+                    if (!string.IsNullOrEmpty(rank))
+                        return rank;
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+
+            foreach (var name in new[]
+            {
+                "Rank",
+                "CardRank",
+                "PlayingCardRank",
+                "PlayingCard",
+                "Card",
+            })
+            {
+                try
+                {
+                    var prop = tile.GetType().GetProperty(name, MemberFlags);
+                    if (prop == null)
+                        continue;
+                    var val = prop.GetValue(tile, null);
+                    if (val == null)
+                        continue;
+                    if (val is string rankStr && !string.IsNullOrWhiteSpace(rankStr))
+                        return rankStr.Trim().ToUpperInvariant();
+                    var rankProp = val.GetType().GetProperty("Rank", MemberFlags);
+                    if (rankProp != null)
+                    {
+                        var nested = rankProp.GetValue(val, null);
+                        if (nested != null)
+                        {
+                            var nestedRank = nested.ToString().Trim().ToUpperInvariant();
+                            if (!string.IsNullOrEmpty(nestedRank))
+                                return nestedRank;
+                        }
+                    }
+                    var asRank = val.ToString().Trim().ToUpperInvariant();
+                    if (!string.IsNullOrEmpty(asRank) && asRank.Length <= 2)
+                        return asRank;
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+
+            try
+            {
+                var packet = tile.GetValue();
+                if (packet != null)
+                {
+                    foreach (var name in new[] { "Rank", "CardRank", "PlayingCardRank" })
+                    {
+                        var prop = packet.GetType().GetProperty(name, MemberFlags);
+                        if (prop == null)
+                            continue;
+                        var val = prop.GetValue(packet, null);
+                        if (val == null)
+                            continue;
+                        var rank = val.ToString().Trim().ToUpperInvariant();
+                        if (!string.IsNullOrEmpty(rank))
+                            return rank;
+                    }
+                }
+            }
+            catch
+            {
+                // fall through
             }
 
             if (!string.IsNullOrWhiteSpace(letter) && letter != "?")
@@ -1292,6 +1789,9 @@ namespace CursedWordsSolverCompanion
 
         private static string MapCurse(Tile tile, GlyphType glyph)
         {
+            if (IsJokerGlyph(glyph) || MapIsJoker(tile, glyph))
+                return "wildcard";
+
             if (glyph == GlyphType.Blank)
                 return "wildcard";
 

@@ -172,20 +172,102 @@ def test_super_8_no_bonus_for_pawn_forward_move():
     assert score == 16.0
 
 
-def test_bicycle_cards_submitted():
+def test_bicycle_cards_submitted_base_right_track():
+    """Mirrors zooier/weakness: accumulated WordScoreBonus, no suited cards on path."""
     pipeline = ScoringPipeline()
     board = _letter_board("abc")
     lo = Loadout(
         extras={
-            "pin_effect": "bones_the_dog",
-            "pin_right_level": "2",
-            "cards_submitted": "3",
+            "pin_effect": "bicycle",
+            "pin_left_level": "1",
+            "pin_right_level": "1",
+            "bicycle_word_score_bonus": "1",
         }
     )
     score, bd = pipeline.score(board, [0, 1, 2], "abc", lo)
-    # per card = 1 + 2 = 3; × 3 cards = 9 word; + 3 tile base
-    assert bd["pipeline"]["word_score"] == 9
-    assert score == 12.0
+    assert bd["pipeline"]["word_score"] == 1
+    assert score == 4.0  # 3 tile base + 1 word
+
+
+def test_bicycle_zoonymy_two_suited_cards_on_path():
+    """Mirrors zoonymy: Bicycle acc 1 + 2 suited, yellow glasses ×1.5 on 24+3."""
+    pipeline = ScoringPipeline()
+    scores = [10, 1, 1, 1, 4, 3, 4]
+    letters = "ZOONYMY"
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    path: list[int] = []
+    coords = [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (1, 0), (1, 1)]
+    for (row, col), ch, sc in zip(coords, letters, scores, strict=True):
+        meta: dict = {"source": "melmod"}
+        if ch == "Z":
+            meta["card_suit"] = "hearts"
+            meta["card_rank"] = "Z"
+        elif ch == "O" and col == 1 and row == 0:
+            meta["card_suit"] = "spades"
+            meta["card_rank"] = "O"
+        grid[row][col] = _tile(row, col, ch, sc, metadata=meta)
+        path.append(row * 5 + col)
+    board = Board(tiles=grid, money=9)
+    lo = Loadout(
+        character="Bones The Dog",
+        stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=1)],
+        extras={
+            "pin_effect": "bicycle",
+            "pin_left_level": "2",
+            "pin_right_level": "1",
+            "bicycle_word_score_bonus": 1,
+        },
+    )
+    score, bd = pipeline.score(board, path, "zoonymy", lo)
+    assert int(score) == 40
+
+
+def test_bicycle_suited_count_from_melmod_extra():
+    pipeline = ScoringPipeline()
+    board = _letter_board("abc")
+    lo = Loadout(
+        extras={
+            "pin_effect": "bicycle",
+            "pin_right_level": "1",
+            "bicycle_word_score_bonus": 1,
+            "bicycle_suited_on_path": 2,
+        }
+    )
+    score, bd = pipeline.score(board, [0, 1, 2], "abc", lo)
+    assert bd["pipeline"]["word_score"] == 3
+    assert score == 6.0
+
+
+def test_bicycle_suited_cards_on_path():
+    pipeline = ScoringPipeline()
+    grid = [[_tile(0, c, "A", 1) for c in range(5)] for _ in range(5)]
+    grid[0][0] = _tile(
+        0,
+        0,
+        "A",
+        1,
+        metadata={"source": "melmod", "card_suit": "hearts"},
+    )
+    grid[0][1] = _tile(
+        0,
+        1,
+        "K",
+        1,
+        metadata={"source": "melmod", "card_suit": "spades"},
+    )
+    grid[0][2] = _tile(0, 2, "Q", 1, metadata={"source": "melmod", "card_suit": "clubs"})
+    board = Board(tiles=grid, money=0)
+    lo = Loadout(
+        extras={
+            "pin_effect": "bones_the_dog",
+            "pin_right_level": "2",
+            "bicycle_word_score_bonus": "0",
+        }
+    )
+    score, bd = pipeline.score(board, [0, 1, 2], "abc", lo)
+    # pin_right 2 → +2 per suited card; 3 suited on path = 6 word; + 3 tile base
+    assert bd["pipeline"]["word_score"] == 6
+    assert score == 9.0
 
 
 def test_ram_replays_memory_items():
@@ -254,15 +336,22 @@ def test_both_pin_tracks_independent_of_branch():
     assert rule is not None
     assert rule["type"] == "cards_submitted_word_bonus"
 
-    board = _letter_board()
+    grid = [[_tile(0, c, "A", 1) for c in range(5)] for _ in range(5)]
+    grid[0][0] = _tile(
+        0, 0, "A", 1, metadata={"source": "melmod", "card_suit": "hearts"}
+    )
+    grid[0][1] = _tile(
+        0, 1, "K", 1, metadata={"source": "melmod", "card_suit": "spades"}
+    )
+    board = Board(tiles=grid, money=0)
     lo = Loadout(
         pin_branch="left",
         extras={
             "pin_effect": "bones_the_dog",
             "pin_left_level": "2",
             "pin_right_level": "1",
-            "cards_submitted": "2",
+            "bicycle_word_score_bonus": "0",
         },
     )
     _, bd = pipeline.score(board, [0, 1], "aa", lo)
-    assert bd["pipeline"]["word_score"] == 4  # (1+1)×2 cards
+    assert bd["pipeline"]["word_score"] == 2  # +1 per suited card × 2 on path

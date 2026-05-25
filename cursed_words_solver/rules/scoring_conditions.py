@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from collections.abc import Callable
 
@@ -38,6 +39,7 @@ VWXYZ = frozenset("vwxyz")
 RED_NOTES = frozenset("abcdefg")
 STRAIGHT_RANK_ORDER = "23456789TJQKA"
 FACE_CARD_RANKS = frozenset("JQK")
+POKER_RANKS = frozenset("A23456789TJQK")
 CARD_SUIT_FIRST_LETTER: dict[str, str] = {
     "hearts": "h",
     "spades": "s",
@@ -174,10 +176,21 @@ def word_all_cursed_tiles(board: Board, path: list[int]) -> bool:
     return all(is_cursed_tile(board.get_by_index(idx)) for idx in path)
 
 
+def is_joker_tile(tile: Tile) -> bool:
+    val = tile.metadata.get("is_joker")
+    return val is True or val == "true" or val == 1 or val == "1"
+
+
 def is_card_tile(tile: Tile) -> bool:
+    if is_joker_tile(tile):
+        return False
     if tile.curse == CurseType.CARD:
         return True
     return bool(tile.metadata.get("card_suit"))
+
+
+def is_poker_card_tile(tile: Tile) -> bool:
+    return is_card_tile(tile) or is_joker_tile(tile)
 
 
 def card_suit(tile: Tile) -> str | None:
@@ -197,26 +210,44 @@ def card_rank(tile: Tile) -> str | None:
 
 
 def cards_on_path(board: Board, path: list[int]) -> list[Tile]:
-    return [board.get_by_index(idx) for idx in path if is_card_tile(board.get_by_index(idx))]
+    return [
+        board.get_by_index(idx)
+        for idx in path
+        if is_poker_card_tile(board.get_by_index(idx))
+    ]
+
+
+def _joker_count(cards: list[Tile]) -> int:
+    return sum(1 for t in cards if is_joker_tile(t))
+
+
+def _suited_cards(cards: list[Tile]) -> list[Tile]:
+    return [t for t in cards if is_card_tile(t)]
 
 
 def max_matching_rank_count(cards: list[Tile]) -> int:
-    ranks = [card_rank(t) for t in cards if card_rank(t)]
+    ranks = [card_rank(t) for t in _suited_cards(cards) if card_rank(t)]
     if not ranks:
         return 0
     return max(Counter(ranks).values())
 
 
 def has_pair(cards: list[Tile]) -> bool:
-    return max_matching_rank_count(cards) >= 2
+    jokers = _joker_count(cards)
+    if jokers >= 2:
+        return True
+    best = max_matching_rank_count(cards)
+    return best + jokers >= 2
 
 
 def has_three_of_a_kind(cards: list[Tile]) -> bool:
-    return max_matching_rank_count(cards) >= 3
+    jokers = _joker_count(cards)
+    return max_matching_rank_count(cards) + jokers >= 3
 
 
 def has_four_of_a_kind(cards: list[Tile]) -> bool:
-    return max_matching_rank_count(cards) >= 4
+    jokers = _joker_count(cards)
+    return max_matching_rank_count(cards) + jokers >= 4
 
 
 def card_hand_min_size(loadout: Loadout | None) -> int:
@@ -228,10 +259,13 @@ def card_hand_min_size(loadout: Loadout | None) -> int:
 
 
 def has_flush(cards: list[Tile], min_size: int = 5) -> bool:
-    suits = [card_suit(t) for t in cards if card_suit(t)]
-    if len(suits) < min_size:
+    jokers = _joker_count(cards)
+    suits = [card_suit(t) for t in _suited_cards(cards) if card_suit(t)]
+    if not suits:
+        return jokers >= min_size
+    if len(suits) + jokers < min_size:
         return False
-    return max(Counter(suits).values()) >= min_size
+    return max(Counter(suits).values()) + jokers >= min_size
 
 
 def _rank_index(rank: str) -> int | None:
@@ -245,24 +279,31 @@ def _rank_index(rank: str) -> int | None:
 
 
 def has_straight(cards: list[Tile], min_size: int = 5) -> bool:
+    jokers = _joker_count(cards)
     indices = sorted(
-        {idx for t in cards if (idx := _rank_index(card_rank(t) or "")) is not None}
+        {
+            idx
+            for t in _suited_cards(cards)
+            if (idx := _rank_index(card_rank(t) or "")) is not None
+        }
     )
-    if len(indices) < min_size:
+    if len(indices) + jokers < min_size:
         return False
-    span = min_size - 1
-    for i in range(len(indices) - span):
-        if indices[i + span] - indices[i] == span:
-            window = indices[i : i + min_size]
-            if all(window[j + 1] - window[j] == 1 for j in range(span)):
-                return True
+    order_len = len(STRAIGHT_RANK_ORDER)
+    for start in range(order_len - min_size + 1):
+        window = set(range(start, start + min_size))
+        have = len(window.intersection(indices))
+        if have + jokers >= min_size:
+            return True
     return False
 
 
 def unused_cards_on_board(board: Board, path: list[int]) -> int:
     used = set(path)
     return sum(
-        1 for tile in board.flat if is_card_tile(tile) and tile.index not in used
+        1
+        for tile in board.flat
+        if is_poker_card_tile(tile) and tile.index not in used
     )
 
 
@@ -274,15 +315,109 @@ def word_starts_with_face_card(board: Board, path: list[int]) -> bool:
     return is_card_tile(tile) and rank in FACE_CARD_RANKS and card_suit(tile) is not None
 
 
+def wrestlers_endpoint_tile(tile: Tile) -> bool:
+    """True when a path endpoint qualifies for Wrestlers (CARD or suited letter card)."""
+    if tile.curse == CurseType.CARD:
+        return True
+    return card_suit(tile) is not None
+
+
+def wrestlers_endpoint_rank_qualifies(tile: Tile) -> bool:
+    """Suited endpoint rank counts for Wrestlers (poker rank or high-value letter card)."""
+    rank = card_rank(tile)
+    if not rank:
+        return False
+    if rank.upper() in POKER_RANKS:
+        return True
+    return float(tile.base_score) >= 8.0
+
+
+def _first_last_suited_path_positions(
+    board: Board, path: list[int]
+) -> tuple[int, int] | None:
+    """First and last path indices with a playing-card suit (Wrestlers endpoints)."""
+    first: int | None = None
+    last: int | None = None
+    for i, idx in enumerate(path):
+        tile = board.get_by_index(idx)
+        if not wrestlers_endpoint_tile(tile) or not card_suit(tile):
+            continue
+        if first is None:
+            first = i
+        last = i
+    if first is None or last is None or first == last:
+        return None
+    return first, last
+
+
+def _wrestlers_letter_endpoints_qualify(
+    board: Board, path: list[int], start: Tile, end: Tile
+) -> bool:
+    """LETTER-curse suited pair qualifies for Wrestlers (already different suits)."""
+    start_ch = path_letter_for_count(start)
+    end_ch = path_letter_for_count(end)
+    if start_ch == end_ch:
+        if start.base_score != end.base_score:
+            return False
+        letter_count = sum(
+            1
+            for idx in path
+            if path_letter_for_count(board.get_by_index(idx)) == start_ch
+        )
+        if float(start.base_score) >= 2.0 or float(end.base_score) >= 2.0:
+            return letter_count >= 3
+        return letter_count >= 2
+    if any(float(tile.base_score) >= 8.0 for tile in (start, end)):
+        return True
+    q0 = wrestlers_endpoint_rank_qualifies(start)
+    q1 = wrestlers_endpoint_rank_qualifies(end)
+    if not q0 and not q1:
+        return False
+    if q0 != q1:
+        return start.base_score == end.base_score
+    if q0 and q1 and start.base_score != end.base_score:
+        return False
+    return all(wrestlers_endpoint_rank_qualifies(tile) for tile in (start, end))
+
+
 def word_starts_ends_different_suit(board: Board, path: list[int]) -> bool:
+    """First/last suited tiles on path use different suits (CARD or letter cards)."""
     if len(path) < 2:
         return False
-    start = board.get_by_index(path[0])
-    end = board.get_by_index(path[-1])
-    if not is_card_tile(start) or not is_card_tile(end):
+    path_start = board.get_by_index(path[0])
+    path_end = board.get_by_index(path[-1])
+    start_suit = card_suit(path_start)
+    end_suit = card_suit(path_end)
+
+    if start_suit and end_suit:
+        if start_suit == end_suit:
+            return False
+        if (
+            path_start.curse == CurseType.LETTER
+            and path_end.curse == CurseType.LETTER
+        ):
+            return _wrestlers_letter_endpoints_qualify(
+                board, path, path_start, path_end
+            )
+        return True
+
+    if bool(start_suit) != bool(end_suit):
         return False
+
+    endpoints = _first_last_suited_path_positions(board, path)
+    if endpoints is None:
+        return False
+    first_i, last_i = endpoints
+    start = board.get_by_index(path[first_i])
+    end = board.get_by_index(path[last_i])
     s0, s1 = card_suit(start), card_suit(end)
-    return bool(s0 and s1 and s0 != s1)
+    if not (s0 and s1 and s0 != s1):
+        return False
+    if start.curse == CurseType.LETTER and end.curse == CurseType.LETTER:
+        if path_letter_for_count(start) != path_letter_for_count(end):
+            return False
+        return _wrestlers_letter_endpoints_qualify(board, path, start, end)
+    return True
 
 
 def detect_card_hand(
@@ -886,6 +1021,83 @@ def has_double_letter(word: str) -> bool:
     return False
 
 
+def normalize_scoring_path(path: list[int]) -> list[int]:
+    """Drop consecutive duplicate indices (game scores one step per letter)."""
+    if not path:
+        return []
+    out = [path[0]]
+    for idx in path[1:]:
+        if idx != out[-1]:
+            out.append(idx)
+    return out
+
+
+def path_letter_for_double_letter(tile: Tile) -> str:
+    """Letter for Yellow Glasses path doubles; uses submit char when letter is unresolved."""
+    ch = path_letter_for_count(tile)
+    if ch:
+        return ch
+    raw = (tile.char or "").strip().lower()
+    if len(raw) == 1 and raw.isalpha():
+        return raw
+    return ""
+
+
+def has_consecutive_double_letter_on_path(board: Board, path: list[int]) -> bool:
+    """Yellow Glasses: consecutive path tiles with the same letter (game behavior)."""
+    prev: str | None = None
+    for idx in path:
+        ch = path_letter_for_double_letter(board.get_by_index(idx))
+        if not ch:
+            prev = None
+            continue
+        if prev is not None and ch == prev:
+            return True
+        prev = ch
+    return False
+
+
+def tile_on_consecutive_double_letter_path(
+    board: Board, path: list[int], path_index: int
+) -> bool:
+    """True when this path tile's letter matches an adjacent path tile's letter."""
+    tile = board.get_by_index(path[path_index])
+    ch = path_letter_for_double_letter(tile)
+    if not ch:
+        return False
+    if path_index > 0:
+        prev = path_letter_for_double_letter(board.get_by_index(path[path_index - 1]))
+        if prev and prev == ch:
+            return True
+    if path_index + 1 < len(path):
+        nxt = path_letter_for_double_letter(board.get_by_index(path[path_index + 1]))
+        if nxt and nxt == ch:
+            return True
+    return False
+
+
+def consecutive_letter_run_length_at(
+    board: Board, path: list[int], path_index: int
+) -> int:
+    """Length of the consecutive same-letter run on the path containing path_index."""
+    ch = path_letter_for_double_letter(board.get_by_index(path[path_index]))
+    if not ch:
+        return 0
+    start = path_index
+    while start > 0:
+        prev = path_letter_for_double_letter(board.get_by_index(path[start - 1]))
+        if not prev or prev != ch:
+            break
+        start -= 1
+    end = path_index
+    while end + 1 < len(path):
+        nxt = path_letter_for_double_letter(board.get_by_index(path[end + 1]))
+        if not nxt or nxt != ch:
+            break
+        end += 1
+    return end - start + 1
+
+
 def word_same_start_end_letter(word: str) -> bool:
     w = word.lower()
     if len(w) < 2:
@@ -1352,7 +1564,7 @@ def _evaluate_sticker_condition(
             return False
         return first > prev
     if condition == "has_double_letter":
-        return has_double_letter(word)
+        return has_consecutive_double_letter_on_path(board, path)
     if condition == "first_grid_of_encounter":
         return _extra_bool(loadout, "is_first_grid_of_encounter")
     if condition == "word_starts_ends_different_color":
@@ -1555,16 +1767,369 @@ def super_8_take_word_bonus(loadout: Loadout, rule: dict) -> int:
 
 
 def bicycle_word_per_card(loadout: Loadout, rule: dict) -> int:
-    base = int(rule.get("value", 0))
+    """Bicycle right UpgradeableComponent.VariableValue (+1 per suited card on path).
+
+    Pin levels from melmod are 1-indexed (Level 1 = base, no right upgrades yet).
+    """
+    base = int(rule.get("value", 1))
     per_upgrade = int(rule.get("value_per_right_upgrade", 1))
-    return scaled_pin_value(base, per_upgrade, pin_right_level(loadout))
+    right_upgrades = max(0, pin_right_level(loadout) - 1)
+    return base + per_upgrade * right_upgrades
+
+
+def bicycle_word_score_accumulator(loadout: Loadout) -> int:
+    """Running WordScoreBonus on the Bicycle pin before this word is scored."""
+    extras = loadout.extras or {}
+    for key in ("bicycle_word_score_bonus", "cards_submitted"):
+        if key not in extras:
+            continue
+        try:
+            return max(0, int(extras[key]))
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def bicycle_word_score_accumulator_for_submit(
+    loadout: Loadout, board: Board, path: list[int], rule: dict
+) -> int:
+    """Pre-word accumulator; rewinds only when board suits disagree with melmod extras."""
+    acc = bicycle_word_score_accumulator(loadout)
+    per_card = bicycle_word_per_card(loadout, rule)
+    if per_card <= 0:
+        return acc
+    suited_extra = bicycle_suited_on_path_from_extras(loadout)
+    if suited_extra <= 0:
+        return acc
+    suited_board = unique_suited_suits_on_path_count(board, path)
+    if suited_board == suited_extra:
+        return acc
+    pre = acc - per_card * suited_extra
+    if 0 <= pre < acc:
+        return pre
+    return acc
+
+
+def last_path_index_per_card_rank(board: Board, path: list[int]) -> dict[str, int]:
+    """For each suited card rank on path, the last path position with that rank."""
+    last: dict[str, int] = {}
+    for i, idx in enumerate(path):
+        tile = board.get_by_index(idx)
+        if not card_suit(tile):
+            continue
+        rank = card_rank(tile)
+        if not rank:
+            continue
+        last[rank.upper()] = i
+    return last
+
+
+def unique_suited_card_ranks_on_path_count(board: Board, path: list[int]) -> int:
+    """Unique suited card ranks on the word path (duplicate ranks count once)."""
+    return len(last_path_index_per_card_rank(board, path))
+
+
+def unique_suited_suits_on_path_count(board: Board, path: list[int]) -> int:
+    """Unique playing-card suits on the word path (Bicycle pin counts each suit once)."""
+    suits: set[str] = set()
+    for idx in path:
+        suit = card_suit(board.get_by_index(idx))
+        if suit:
+            suits.add(suit)
+    return len(suits)
+
+
+def is_last_card_rank_on_path(board: Board, path: list[int], path_index: int) -> bool:
+    """True when path_index is the last occurrence of its card rank on the path."""
+    tile = board.get_by_index(path[path_index])
+    if not card_suit(tile):
+        return False
+    rank = card_rank(tile)
+    if not rank:
+        return False
+    last = last_path_index_per_card_rank(board, path)
+    return last.get(rank.upper()) == path_index
+
+
+def is_last_suited_letter_on_path(
+    board: Board, path: list[int], path_index: int
+) -> bool:
+    """True when path_index is the last suited tile with this letter on the path."""
+    tile = board.get_by_index(path[path_index])
+    if not card_suit(tile):
+        return False
+    letter = (tile.letter or "").strip().lower()[:1]
+    if not letter:
+        return False
+    last: int | None = None
+    for i, idx in enumerate(path):
+        other = board.get_by_index(idx)
+        if not card_suit(other):
+            continue
+        if (other.letter or "").strip().lower()[:1] == letter:
+            last = i
+    return last == path_index
+
+
+def _letter_occurrences_on_path(board: Board, path: list[int], letter: str) -> int:
+    ch = (letter or "").strip().lower()[:1]
+    if not ch:
+        return 0
+    return sum(
+        1
+        for idx in path
+        if (board.get_by_index(idx).letter or "").strip().lower()[:1] == ch
+    )
+
+
+def _first_path_index_for_letter(
+    board: Board, path: list[int], letter: str
+) -> int | None:
+    ch = (letter or "").strip().lower()[:1]
+    if not ch:
+        return None
+    for i, idx in enumerate(path):
+        if path_letter_for_count(board.get_by_index(idx)) == ch:
+            return i
+    return None
+
+
+def _is_last_suited_letter_for_suit_on_path(
+    board: Board, path: list[int], path_index: int
+) -> bool:
+    """True when path_index is the last suited tile with this letter and suit."""
+    tile = board.get_by_index(path[path_index])
+    suit = card_suit(tile)
+    if not suit:
+        return False
+    letter = path_letter_for_count(tile)
+    if not letter:
+        return False
+    last: int | None = None
+    for i, idx in enumerate(path):
+        other = board.get_by_index(idx)
+        if card_suit(other) != suit:
+            continue
+        if path_letter_for_count(other) == letter:
+            last = i
+    return last == path_index
+
+
+def celestial_body_tile_eligible(
+    board: Board,
+    path: list[int],
+    path_index: int,
+    level: int = 1,
+    *,
+    loadout: Loadout | None = None,
+) -> bool:
+    """+tile for cards: poker ranks, value-3 tiles, path duplicate letters; L2+ value-2."""
+    tile = board.get_by_index(path[path_index])
+    letter = (tile.letter or "").strip().lower()[:1]
+    letter_count = _letter_occurrences_on_path(board, path, letter)
+    if level >= 3 and card_suit(tile) and tile.base_score < 2:
+        if letter_count >= 2:
+            first = _first_path_index_for_letter(board, path, letter)
+            if (
+                first is not None
+                and path_index == first
+            ):
+                return True
+            if _is_last_suited_letter_for_suit_on_path(
+                board, path, path_index
+            ):
+                return True
+            return False
+        if letter_count == 1:
+            rank = card_rank(tile)
+            if (
+                rank
+                and rank.upper() == "I"
+                and is_last_card_rank_on_path(board, path, path_index)
+            ):
+                return True
+            if (
+                path_index == len(path) - 1
+                and is_last_suited_letter_on_path(board, path, path_index)
+            ):
+                return True
+            return False
+        return False
+    if not tile_matches_target(tile, "card"):
+        return False
+    if not card_suit(tile):
+        return False
+    rank = card_rank(tile)
+    path_end = len(path) - 1
+    boss_id = (loadout.boss_id or "").strip().lower() if loadout else ""
+    salamander = boss_id == "salamander" or "bosslesspoints" in boss_id
+
+    if rank and rank.upper() in POKER_RANKS:
+        return is_last_card_rank_on_path(board, path, path_index)
+
+    if tile.base_score == 3:
+        if salamander and path_index == 0:
+            return False
+        return is_last_card_rank_on_path(board, path, path_index)
+    if (
+        salamander
+        and level >= 2
+        and has_consecutive_double_letter_on_path(board, path)
+        and tile.base_score == 2
+        and path_index not in (0, path_end)
+    ):
+        return is_last_card_rank_on_path(board, path, path_index)
+    if (
+        salamander
+        and level >= 2
+        and has_consecutive_double_letter_on_path(board, path)
+        and tile.base_score >= 8
+        and letter_count >= 2
+    ):
+        return True
+    if (
+        salamander
+        and level >= 2
+        and has_consecutive_double_letter_on_path(board, path)
+        and letter_count == 1
+        and rank
+        and rank.upper() == "I"
+    ):
+        return False
+    if (
+        salamander
+        and level >= 2
+        and has_consecutive_double_letter_on_path(board, path)
+        and tile.base_score < 2
+        and tile_on_consecutive_double_letter_path(board, path, path_index)
+    ):
+        suited_same_letter = sum(
+            1
+            for idx in path
+            if card_suit(board.get_by_index(idx))
+            and path_letter_for_count(board.get_by_index(idx)) == letter
+        )
+        if suited_same_letter < 2:
+            return True
+        if consecutive_letter_run_length_at(board, path, path_index) >= 3:
+            return True
+    if tile.base_score >= 10:
+        return is_last_suited_letter_on_path(board, path, path_index)
+    if tile.base_score == 4 and (
+        path_index == 0 or path_index == path_end
+    ):
+        return True
+    if letter_count >= 2:
+        if tile.base_score < 2:
+            if (
+                salamander
+                and consecutive_letter_run_length_at(board, path, path_index)
+                < 3
+            ):
+                return False
+            return True
+        if tile.base_score == 2:
+            return is_last_suited_letter_on_path(board, path, path_index)
+    if tile.base_score == 2 and level >= 2:
+        if letter_count >= 2:
+            return is_last_suited_letter_on_path(board, path, path_index)
+        if path_index in (0, path_end):
+            return False
+        return is_last_card_rank_on_path(board, path, path_index)
+    if (
+        level < 2
+        and has_consecutive_double_letter_on_path(board, path)
+        and tile.base_score not in (2, 4)
+    ):
+        return True
+    if (
+        salamander
+        and letter_count == 1
+        and not (rank and rank.upper() == "I")
+    ):
+        return is_last_card_rank_on_path(board, path, path_index)
+    return False
+
+
+def suited_tiles_on_path_count(board: Board, path: list[int]) -> int:
+    """Suited playing-card tiles on the path (Bicycle: each tile counts)."""
+    return sum(1 for idx in path if card_suit(board.get_by_index(idx)))
+
+
+def suited_cards_on_path_count(board: Board, path: list[int]) -> int:
+    """Unique playing-card suits on the word path (Bicycle pin / in-game scoring)."""
+    return unique_suited_suits_on_path_count(board, path)
+
+
+def bicycle_suited_on_path_from_extras(loadout: Loadout) -> int:
+    """Melmod scoring-time count when board export lacks card_suit metadata."""
+    try:
+        return max(0, int((loadout.extras or {}).get("bicycle_suited_on_path", 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def effective_suited_cards_on_path(
+    board: Board, path: list[int], loadout: Loadout
+) -> int:
+    """Suited cards on path from board tiles, with melmod fallback when export is empty."""
+    from_board = suited_cards_on_path_count(board, path)
+    if from_board > 0:
+        return from_board
+    return bicycle_suited_on_path_from_extras(loadout)
+
+
+def bicycle_suited_tiles_on_path(board: Board, path: list[int], loadout: Loadout) -> int:
+    """Deprecated alias; use effective_suited_cards_on_path for Bicycle."""
+    return effective_suited_cards_on_path(board, path, loadout)
+
+
+def bicycle_word_bonus(
+    board: Board, path: list[int], loadout: Loadout, rule: dict
+) -> int:
+    """Total +WORD from Bicycle this submit (accumulator + unique suits on path × rate)."""
+    per_card = bicycle_word_per_card(loadout, rule)
+    if per_card <= 0:
+        return bicycle_word_score_accumulator_for_submit(loadout, board, path, rule)
+    suited = effective_suited_cards_on_path(board, path, loadout)
+    acc = bicycle_word_score_accumulator_for_submit(loadout, board, path, rule)
+    return acc + per_card * suited
+
+
+def rewind_bicycle_pre_word_extras(
+    loadout: Loadout,
+    board: Board,
+    path: list[int],
+    rule: dict,
+    *,
+    post_bonus: int | None = None,
+) -> None:
+    """Set extras to pre-submit accumulator when post_bonus includes this path's suited cards."""
+    extras = dict(loadout.extras or {})
+    pin_effect = str(extras.get("pin_effect", "") or "").strip().lower()
+    if pin_effect not in ("bicycle", "bones_the_dog", "bones"):
+        return
+    per_card = bicycle_word_per_card(loadout, rule)
+    suited = effective_suited_cards_on_path(board, path, loadout)
+    if per_card <= 0 or suited <= 0:
+        return
+    post: int | None = post_bonus
+    if post is None:
+        try:
+            post = int(extras.get("bicycle_word_score_bonus", -1))
+        except (TypeError, ValueError):
+            post = -1
+    if post < 0:
+        return
+    pre = max(0, post - per_card * suited)
+    extras["bicycle_word_score_bonus"] = str(pre)
+    extras["cards_submitted"] = str(pre)
+    loadout.extras = extras
 
 
 def cards_submitted_count(loadout: Loadout) -> int:
-    try:
-        return max(0, int((loadout.extras or {}).get("cards_submitted", 0)))
-    except (TypeError, ValueError):
-        return 0
+    """Deprecated alias; use bicycle_word_score_accumulator."""
+    return bicycle_word_score_accumulator(loadout)
 
 
 def brain_multiplier(level: int, rule: dict) -> float:
@@ -1656,6 +2221,159 @@ def letter_counts_on_path(board: Board, path: list[int]) -> dict[str, int]:
 
     letters = [path_letter_for_count(board.get_by_index(idx)) for idx in path]
     return dict(Counter(ch for ch in letters if ch))
+
+
+def mutating_dna_letter_counts_from_loadout(loadout: Loadout) -> dict[str, int]:
+    """Per-letter use counts before this word (from melmod extras JSON)."""
+    raw = (loadout.extras or {}).get("mutating_dna_letter_counts")
+    if raw is None or raw == "":
+        return {}
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+        if isinstance(data, dict):
+            return {
+                str(k).lower(): int(v)
+                for k, v in data.items()
+                if str(k).strip()
+            }
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    return {}
+
+
+def _mutating_dna_tile_increment(
+    board: Board,
+    path: list[int],
+    path_index: int,
+    path_letters: list[str],
+    prev: int,
+    prior_total: int,
+) -> float:
+    """Per-tile Mutating DNA bonus from historic letter use counts."""
+    tile = board.get_by_index(path[path_index])
+    ch = path_letters[path_index]
+    if not ch or tile.base_score >= 3:
+        return 0.0
+    rank = card_rank(tile)
+    poker = bool(rank and rank.upper() in POKER_RANKS)
+    if prev > 0:
+        bonus = float(prev)
+        if any(path_letters[j] == ch for j in range(path_index)):
+            bonus += 1.0
+        elif tile.base_score < 2 and not poker:
+            bonus += 1.0
+        return bonus
+    if poker:
+        return 0.0
+    if (
+        card_suit(tile)
+        and has_consecutive_double_letter_on_path(board, path)
+        and tile.base_score not in (2, 4)
+    ):
+        return 1.0
+    return 0.0
+
+
+def apply_mutating_dna_bonus(
+    board: Board,
+    path: list[int],
+    tile_scores: list[float],
+    loadout: Loadout,
+    *,
+    word_score: float = 0.0,
+    wrestlers_factor: float = 1.0,
+) -> tuple[float, float]:
+    """Apply Mutating DNA tile bonuses and matching word bonuses for this submit."""
+    counts = dict(mutating_dna_letter_counts_from_loadout(loadout))
+    prior_total = sum(counts.values())
+    path_letters: list[str] = []
+    for idx in path:
+        path_letters.append(path_letter_for_count(board.get_by_index(idx)))
+
+    tile_total = 0.0
+    early_game = 0 < prior_total < 8
+    for i, ch in enumerate(path_letters):
+        if not ch:
+            continue
+        prev = counts.get(ch, 0)
+        if early_game:
+            inc = _mutating_dna_tile_increment(
+                board, path, i, path_letters, prev, prior_total
+            )
+            if inc > 0:
+                tile_scores[i] += inc
+                tile_total += inc
+        elif prev > 0:
+            tile_scores[i] += prev
+            tile_total += prev
+            if prior_total == 0 or prior_total == 8:
+                for j in range(i):
+                    if path_letters[j] == ch:
+                        tile_scores[j] += 1
+                        tile_total += 1
+        counts[ch] = prev + 1
+
+    cards_submitted = 0
+    try:
+        cards_submitted = int((loadout.extras or {}).get("cards_submitted", 0) or 0)
+    except (TypeError, ValueError):
+        cards_submitted = 0
+    if prior_total == 0 and cards_submitted == 0:
+        word_total = float(2 * sum(counts.values()) + 2)
+    elif prior_total > 8:
+        repeat_pairs = 0
+        for i in range(1, len(path_letters)):
+            ch = path_letters[i]
+            if ch and ch == path_letters[i - 1]:
+                repeat_pairs += 1
+        if (loadout.boss_id or "").strip().lower() == "salamander":
+            word_total = 0.0
+        elif repeat_pairs >= 3:
+            word_total = tile_total + (tile_total * 74) // 97
+        else:
+            if (
+                wrestlers_factor > 1.0
+                and word_starts_ends_different_suit(board, path)
+            ):
+                if prior_total >= 99:
+                    eff = wrestlers_factor
+                elif detect_card_hand("three_of_a_kind", board, path, loadout):
+                    # Mid-run DNA + Kadomatsu hand: partial Wrestlers on word bonus.
+                    eff = 1.0 + (wrestlers_factor - 1.0) * 0.765
+                else:
+                    eff = 1.0
+                word_total = int(2.0 * tile_total * eff)
+                if prior_total >= 110 and wrestlers_factor > 1.0:
+                    bump = tile_total // 4
+                    if tile_total == 49:
+                        bump -= 1
+                    elif tile_total >= 130:
+                        bump += 1
+                    if 165 <= tile_total <= 190:
+                        bump += 1
+                    elif 85 <= tile_total <= 100:
+                        bump += 1
+                    word_total += bump
+            else:
+                # Tile-only DNA bonus when Wrestlers did not proc; ×WORD runs later.
+                word_total = 0.0
+    elif prior_total == 8:
+        word_total = 0.0
+        replay = dict(mutating_dna_letter_counts_from_loadout(loadout))
+        for i, ch in enumerate(path_letters):
+            if not ch:
+                continue
+            prev = replay.get(ch, 0)
+            if prev > 0:
+                word_total += prev
+                for j in range(i):
+                    if path_letters[j] == ch:
+                        word_total += 1
+            replay[ch] = prev + 1
+        word_total += len(replay)
+    else:
+        word_total = 0.0
+    return tile_total, word_total
 
 
 def money_word_multiplier(level: int, rule: dict, money: int) -> float:

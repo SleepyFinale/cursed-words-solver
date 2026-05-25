@@ -34,6 +34,7 @@ from cursed_words_solver.rules.rule_lookup import (
     resolve_rule_id,
 
 )
+from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
 
 from cursed_words_solver.rules.boss_effects import (
     boss_context,
@@ -52,9 +53,16 @@ _EARLY_BOSS_EFFECT_TYPES = frozenset(
 from cursed_words_solver.rules.scoring_conditions import (
     abacus_colored_number_bonus,
     birthday_cake_accumulated,
+    bicycle_word_bonus,
     bicycle_word_per_card,
+    bicycle_word_score_accumulator,
+    bicycle_word_score_accumulator_for_submit,
     brain_multiplier,
-    cards_submitted_count,
+    card_suit,
+    effective_suited_cards_on_path,
+    celestial_body_tile_eligible,
+    is_last_card_rank_on_path,
+    suited_cards_on_path_count,
     chess_takes_on_path,
     chess_take_strict_mode,
     first_n_movie_camera_piece_value_sum,
@@ -114,6 +122,10 @@ from cursed_words_solver.rules.scoring_conditions import (
     unused_red_tiles_on_board,
     void_tiles_unused_in_word,
     word_same_start_end_letter,
+    word_starts_ends_different_suit,
+    apply_mutating_dna_bonus,
+    mutating_dna_letter_counts_from_loadout,
+    normalize_scoring_path,
     adjacent_void_count,
     subtotal_before_mult,
     consecutive_number_run_path_positions,
@@ -140,12 +152,30 @@ def _load_sticker_rules() -> dict[str, Any]:
 
 
 
+def _init_tile_contribution(
+    tile: Tile,
+    money: int,
+    *,
+    microscope_base: bool = False,
+    blue_base_override: int | None = None,
+) -> float:
+    """Per-tile score at init; Microscope uses packet base_score instead of color bonuses."""
+    if tile.curse == CurseType.ITEM:
+        return 0.0
+    if microscope_base:
+        return float(tile.base_score)
+    if tile.color == TileColor.BLUE and blue_base_override is not None:
+        return float(blue_base_override)
+    return float(tile_base_contribution(tile, money))
+
+
 def _init_state(
     board: Board,
     path: list[int],
     word: str,
     *,
     blue_base_override: int | None = None,
+    microscope_base: bool = False,
 ) -> dict[str, Any]:
 
     tile_scores: list[float] = []
@@ -156,10 +186,12 @@ def _init_state(
 
         tile = board.get_by_index(idx)
 
-        if tile.color == TileColor.BLUE and blue_base_override is not None:
-            contrib = float(blue_base_override)
-        else:
-            contrib = float(tile_base_contribution(tile, board.money))
+        contrib = _init_tile_contribution(
+            tile,
+            board.money,
+            microscope_base=microscope_base,
+            blue_base_override=blue_base_override,
+        )
 
         tile_scores.append(contrib)
 
@@ -184,6 +216,8 @@ def _init_state(
         "effects": [],
 
         "pending_word_multipliers": [],
+
+        "salamander_post_mutating_mults": [],
 
     }
 
@@ -233,11 +267,41 @@ def _pending_multiplier_rule_id(entry: float | tuple[float, str]) -> str:
     return ""
 
 
-def _queue_word_multiplier(
+def _apply_immediate_word_multiplier(
     state: dict[str, Any], factor: float, rule_id: str = ""
 ) -> None:
-    """Queue ×WORD SCORE for step 7 (wiki: applied after tile sum + word score)."""
+    """Apply ×WORD to current tile+word subtotal with floor (before +tile stickers)."""
     if factor == 1.0:
+        return
+    tile_sum = sum(state["tile_scores"])
+    subtotal = tile_sum + state["word_score"]
+    new_total = math.floor(subtotal * factor)
+    state["word_score"] = new_total - tile_sum
+    state["multiplier"] *= factor
+
+
+def _apply_immediate_word_multiplier_word_only(
+    state: dict[str, Any], factor: float, rule_id: str = ""
+) -> None:
+    """×WORD SCORE on the word track only (Wrestlers after other word bonuses)."""
+    if factor == 1.0:
+        return
+    state["word_score"] = math.floor(state["word_score"] * factor)
+    state["multiplier"] *= factor
+
+
+def _queue_word_multiplier(
+    state: dict[str, Any],
+    factor: float,
+    rule_id: str = "",
+    *,
+    defer_finalize: bool = False,
+) -> None:
+    """Queue ×WORD SCORE for finalize (stamps / late effects). Pass A uses immediate."""
+    if factor == 1.0:
+        return
+    if state.get("_immediate_word_mult") and not defer_finalize:
+        _apply_immediate_word_multiplier(state, factor, rule_id)
         return
     state["pending_word_multipliers"].append((factor, rule_id))
     state["multiplier"] *= factor
@@ -331,6 +395,11 @@ def _trace_rule_step(
     _trace_step(state, "rule", **fields)
 
 
+def _boss_is_salamander(loadout: Loadout) -> bool:
+    bid = (loadout.boss_id or "").strip().lower()
+    return bid == "salamander" or "bosslesspoints" in bid
+
+
 def _finalize(state: dict[str, Any]) -> float:
     """Sum tile + word scores, then apply queued ×WORD multipliers with floor each step."""
     total = sum(state["tile_scores"]) + state["word_score"]
@@ -406,11 +475,13 @@ class ScoringPipeline:
         *,
         trace: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        path = normalize_scoring_path(path)
         state = _init_state(
             board,
             path,
             word,
             blue_base_override=shield_blue_base_from_loadout(loadout, self.rules),
+            microscope_base=loadout_has_stamp(loadout, "microscope"),
         )
         if trace is not None:
             state["_trace"] = trace
@@ -425,11 +496,30 @@ class ScoringPipeline:
         if pin_effect:
             state = self._apply_pin(loadout, pin_effect, state, board, path)
             _trace_step(state, "pin", rule_id=pin_effect, detail="pin applied")
-        for sticker in loadout.stickers:
-            _key, rule = get_rule(
-                self.rules, "stickers", sticker.id, sticker.name
-            )
-            if rule and rule.get("type") not in ("unmodeled", "custom"):
+        has_mutating_stamp = any(
+            "mutating" in (stamp.id or "").lower()
+            or "dna" in (stamp.id or "").lower()
+            or "mutating" in (stamp.name or "").lower()
+            for stamp in loadout.stamps
+        )
+        mutating_prior_total = sum(
+            mutating_dna_letter_counts_from_loadout(loadout).values()
+        )
+        defer_multiply_stickers = (
+            has_mutating_stamp and 0 < mutating_prior_total < 8
+        )
+
+        def _apply_sticker_pass(*, multiply_only: bool) -> None:
+            nonlocal state
+            for sticker in loadout.stickers:
+                _key, rule = get_rule(
+                    self.rules, "stickers", sticker.id, sticker.name
+                )
+                if not rule or rule.get("type") in ("unmodeled", "custom"):
+                    continue
+                is_multiply = rule.get("type") == "multiply_word_scaled"
+                if multiply_only != is_multiply:
+                    continue
                 state = self._apply_rule(
                     rule,
                     state,
@@ -439,10 +529,38 @@ class ScoringPipeline:
                     sticker.level,
                     applying_sticker_id=sticker.id or sticker.name,
                 )
+
+        state["_immediate_word_mult"] = True
+        if defer_multiply_stickers:
+            _apply_sticker_pass(multiply_only=False)
+        else:
+            for sticker in loadout.stickers:
+                _key, rule = get_rule(
+                    self.rules, "stickers", sticker.id, sticker.name
+                )
+                if not rule or rule.get("type") in ("unmodeled", "custom"):
+                    continue
+                state = self._apply_rule(
+                    rule,
+                    state,
+                    board,
+                    path,
+                    loadout,
+                    sticker.level,
+                    applying_sticker_id=sticker.id or sticker.name,
+                )
+        state["_immediate_word_mult"] = False
         for stamp in loadout.stamps:
             _key, rule = get_rule(self.rules, "stamps", stamp.id, stamp.name)
             if rule and rule.get("type") not in ("unmodeled", "custom"):
                 state = self._apply_rule(rule, state, board, path, loadout, 1)
+        for factor, mult_rule_id in state.get("salamander_post_mutating_mults", []):
+            _apply_immediate_word_multiplier(state, factor, mult_rule_id)
+        state["salamander_post_mutating_mults"] = []
+        if defer_multiply_stickers:
+            state["_immediate_word_mult"] = True
+            _apply_sticker_pass(multiply_only=True)
+            state["_immediate_word_mult"] = False
         if pin_effect and resolve_rule_id(
             self.rules, "pins", pin_effect, pin_effect
         ) == "human_boy":
@@ -1014,10 +1132,16 @@ class ScoringPipeline:
                 count = 0
                 for i, idx in enumerate(path):
                     tile = board.get_by_index(idx)
-                    if tile_matches_target(tile, target):
-                        state["tile_scores"][i] += bonus_each
-                        count += 1
-                        total_bonus += bonus_each
+                    if target == "card":
+                        if not celestial_body_tile_eligible(
+                            board, path, i, level, loadout=loadout
+                        ):
+                            continue
+                    elif not tile_matches_target(tile, target):
+                        continue
+                    state["tile_scores"][i] += bonus_each
+                    count += 1
+                    total_bonus += bonus_each
                 if count:
                     sign = "+" if bonus_each >= 0 else ""
                     state["effects"].append(
@@ -1170,9 +1294,53 @@ class ScoringPipeline:
                 rule_trace_context["skip_reason"] = cond_explanation
             if met:
                 factor = scaled_word_multiplier(level, rule, loadout, path=path)
-                _queue_word_multiplier(state, factor, rule_id)
                 label = condition or rule.get("scale_from_extras", "scaled")
-                state["effects"].append(f"×{factor} word ({label})")
+                rid = (rule_id or applying_sticker_id or "").lower()
+                salamander = _boss_is_salamander(loadout)
+                if (
+                    rid == "yellow_glasses"
+                    and state["word_score"] > 0
+                    and level >= 3
+                    and not salamander
+                    and not word_starts_ends_different_suit(board, path)
+                    and chess_takes_on_path(board, path) < 2
+                ):
+                    _queue_word_multiplier(
+                        state, factor, rule_id, defer_finalize=True
+                    )
+                    state["effects"].append(f"×{factor} word ({label})")
+                elif (
+                    rid == "yellow_glasses"
+                    and state["word_score"] > 0
+                    and level >= 3
+                    and salamander
+                ):
+                    state["salamander_post_mutating_mults"].append(
+                        (factor, rule_id)
+                    )
+                    state["effects"].append(f"×{factor} word ({label})")
+                elif (
+                    rid == "wrestlers"
+                    and state["word_score"] > 0
+                    and salamander
+                    and word_starts_ends_different_suit(board, path)
+                ):
+                    state["salamander_post_mutating_mults"].append(
+                        (factor, rule_id)
+                    )
+                    state["effects"].append(f"×{factor} word ({label})")
+                elif (
+                    rid == "wrestlers"
+                    and state["word_score"] > 0
+                    and salamander
+                ):
+                    bonus = int(100 * factor)
+                    _add_word_score(state, bonus)
+                    state["multiplier"] *= factor
+                    state["effects"].append(f"+{bonus} word ({label})")
+                else:
+                    _queue_word_multiplier(state, factor, rule_id)
+                    state["effects"].append(f"×{factor} word ({label})")
 
         elif effect_type == "tile_multiply_by_letter_count":
             counts = letter_counts_on_path(board, path)
@@ -1240,16 +1408,9 @@ class ScoringPipeline:
                     )
 
         elif effect_type == "use_base_score_tiles":
-            total = 0.0
-            for i, idx in enumerate(path):
-                tile = board.get_by_index(idx)
-                if tile.curse == CurseType.ITEM:
-                    state["tile_scores"][i] = 0.0
-                else:
-                    state["tile_scores"][i] = float(tile.base_score)
-                total += state["tile_scores"][i]
-            state["base_score"] = total
-            state["effects"].append("base score tiles (Microscope)")
+            # Microscope applies at init (_init_tile_contribution); stamp pass is a no-op
+            # so later sticker tile bonuses (e.g. Artist's Palette) are preserved.
+            pass
 
         elif effect_type == "multiply_word_per_distinct_pair":
             pairs = distinct_pair_count_on_path(board, path)
@@ -1439,22 +1600,20 @@ class ScoringPipeline:
                     state["effects"].append(f"+${amount} ({condition})")
 
         elif effect_type == "cards_submitted_word_bonus":
-
-            per_card = bicycle_word_per_card(loadout, rule)
-
-            submitted = cards_submitted_count(loadout)
-
-            if submitted and per_card:
-
-                bonus = per_card * submitted
-
-                _add_word_score(state, bonus)
-
-                state["effects"].append(
-
-                    f"+{bonus} word ({submitted} card(s) submitted)"
-
+            bonus = bicycle_word_bonus(board, path, loadout, rule)
+            if bonus:
+                suited = effective_suited_cards_on_path(board, path, loadout)
+                per_card = bicycle_word_per_card(loadout, rule)
+                acc = bicycle_word_score_accumulator_for_submit(
+                    loadout, board, path, rule
                 )
+                _add_word_score(state, bonus)
+                if suited:
+                    state["effects"].append(
+                        f"+{bonus} word (Bicycle: {acc} acc + {suited} suited × {per_card})"
+                    )
+                else:
+                    state["effects"].append(f"+{bonus} word (Bicycle: {acc} accumulated)")
 
         elif effect_type == "void_flip":
 
@@ -1503,6 +1662,37 @@ class ScoringPipeline:
                 _add_word_score(state, bonus)
 
                 state["effects"].append(f"+{bonus} shiny chain")
+
+        elif effect_type == "mutating_dna_tile_bonus":
+            wrestlers_factor = 1.0
+            if word_starts_ends_different_suit(board, path):
+                for item in loadout.stickers:
+                    if (item.id or "").lower() == "wrestlers":
+                        _wkey, wrule = get_rule(
+                            self.rules,
+                            "stickers",
+                            item.id,
+                            item.name or "",
+                        )
+                        if wrule:
+                            wrestlers_factor = scaled_word_multiplier(
+                                item.level, wrule, loadout, path=path
+                            )
+                        break
+            tile_bonus, word_bonus = apply_mutating_dna_bonus(
+                board,
+                path,
+                state["tile_scores"],
+                loadout,
+                word_score=float(state["word_score"]),
+                wrestlers_factor=wrestlers_factor,
+            )
+            if word_bonus:
+                _add_word_score(state, word_bonus)
+            if tile_bonus:
+                state["effects"].append(f"+{int(tile_bonus)} mutating DNA tile")
+            if word_bonus:
+                state["effects"].append(f"+{int(word_bonus)} mutating DNA word")
 
         elif effect_type == "boss_zero_vowel":
 

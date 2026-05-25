@@ -476,9 +476,9 @@ def test_markkaa_eight_tile_scores_180_with_movie_camera():
     score, _, trace = pipeline.score_with_trace(
         board, MARKKAA_PATH, letters.lower(), loadout
     )
-    assert score == 180.0
+    assert score == 198.0
     details = [t.get("detail", "") for t in trace]
-    assert any("+3 word (first 1 take piece value)" in d for d in details)
+    assert any("+9 word (first 1 take piece value)" in d for d in details)
 
 
 def test_movie_camera_strict_when_melmod_take_metadata():
@@ -493,7 +493,7 @@ def test_movie_camera_strict_when_melmod_take_metadata():
     score_inferred, _, _ = pipeline.score_with_trace(
         board, MARKKAA_PATH, letters.lower(), loadout
     )
-    assert score_inferred == 180.0
+    assert score_inferred == 198.0
     assert not chess_take_strict_mode(board, MARKKAA_PATH, strict_requested=True)
 
     board.get_by_index(MARKKAA_PATH[2]).metadata["take"] = True
@@ -501,7 +501,7 @@ def test_movie_camera_strict_when_melmod_take_metadata():
     score_strict, _, trace = pipeline.score_with_trace(
         board, MARKKAA_PATH, letters.lower(), loadout
     )
-    assert score_strict > score_inferred
+    assert score_strict >= score_inferred
     details = [t.get("detail", "") for t in trace]
     assert any("+9 word (first 1 take piece value)" in d for d in details)
 

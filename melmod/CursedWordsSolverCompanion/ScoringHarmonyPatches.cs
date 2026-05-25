@@ -61,6 +61,8 @@ namespace CursedWordsSolverCompanion
         [HarmonyPostfix]
         public static void Postfix(List<ScoreCalcVizInfo> __result)
         {
+            RunStateExporter.TryMergeBicycleExtrasAfterScore();
+
             if (!ScoringCaptureSession.IsActive)
                 return;
             LastCalculatedSteps = __result;

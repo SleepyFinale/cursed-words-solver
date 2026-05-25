@@ -23,6 +23,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     CARD_SUIT_FIRST_LETTER,
     card_suit,
     is_card_tile,
+    is_joker_tile,
     fraction_parts,
     is_fraction_tile,
     is_number_like_tile,
@@ -603,7 +604,11 @@ def _number_tile_start_indices(board: Board) -> list[int]:
 
 
 def _is_wildcard_tile(tile: Tile) -> bool:
-    return tile.curse == CurseType.WILDCARD or tile.letter == "?"
+    return (
+        tile.curse == CurseType.WILDCARD
+        or tile.letter == "?"
+        or is_joker_tile(tile)
+    )
 
 
 def _wildcard_start_indices(board: Board) -> list[int]:

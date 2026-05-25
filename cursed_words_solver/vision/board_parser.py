@@ -29,6 +29,24 @@ LETTER_ALLOWLIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ?"
 DIGIT_ALLOWLIST = "0123456789"
 MIXED_ALLOWLIST = LETTER_ALLOWLIST + DIGIT_ALLOWLIST
 
+SUIT_SYMBOL_TO_NAME: dict[str, str] = {
+    "♣": "clubs",
+    "♠": "spades",
+    "♥": "hearts",
+    "♦": "diamonds",
+}
+
+SUIT_WORD_TO_NAME: dict[str, str] = {
+    "club": "clubs",
+    "clubs": "clubs",
+    "spade": "spades",
+    "spades": "spades",
+    "heart": "hearts",
+    "hearts": "hearts",
+    "diamond": "diamonds",
+    "diamonds": "diamonds",
+}
+
 CHESS_GLYPHS = {
     "pawn": CurseType.CHESS_PAWN,
     "bishop": CurseType.CHESS_BISHOP,
@@ -174,6 +192,37 @@ def _parse_score_override(texts: list[str]) -> int | None:
         return None
     val = int(nums[-1])
     return max(0, min(10, val))
+
+
+def _detect_card_overlay(text: str) -> tuple[str | None, str | None, bool]:
+    """Return (suit, rank_hint, is_joker) from OCR text."""
+    combined = text or ""
+    lower = combined.lower()
+    is_joker = bool(re.search(r"\bjoker\b", lower)) or "🃏" in combined
+    if is_joker:
+        return None, None, True
+
+    suit: str | None = None
+    for sym, name in SUIT_SYMBOL_TO_NAME.items():
+        if sym in combined:
+            suit = name
+            break
+    if suit is None:
+        for word, name in SUIT_WORD_TO_NAME.items():
+            if re.search(rf"\b{re.escape(word)}\b", lower):
+                suit = name
+                break
+
+    rank: str | None = None
+    cleaned = re.sub(r"[^A-Za-z0-9?]", "", combined.upper())
+    for sym in SUIT_SYMBOL_TO_NAME:
+        cleaned = cleaned.replace(sym, "")
+    if cleaned:
+        ch = cleaned[0]
+        if ch.isalnum() and ch != "?":
+            rank = ch
+
+    return suit, rank, is_joker
 
 
 def _detect_chess(combined_lower: str, conf: float) -> CurseType | None:
@@ -329,6 +378,8 @@ def tile_appears_unread(tile: Tile) -> bool:
     Fraction, wildcard, and chess tiles use letter ``?`` for search but are not
     OCR failures when ``char`` carries the display glyph.
     """
+    if tile.metadata.get("is_joker"):
+        return False
     if tile.curse in {
         CurseType.FRACTION,
         CurseType.WILDCARD,
@@ -718,6 +769,20 @@ class BoardParser:
                 meta["fraction_num"] = num
                 meta["fraction_den"] = den
                 fraction_value = num / den if den else None
+
+        overlay_text = " ".join(texts)
+        suit, overlay_rank, is_joker = _detect_card_overlay(overlay_text)
+        if is_joker:
+            meta["is_joker"] = True
+            curse = CurseType.WILDCARD
+            letter = "?"
+            display = "?"
+        if suit:
+            meta["card_suit"] = suit
+            if overlay_rank and overlay_rank != "?":
+                meta["card_rank"] = overlay_rank
+            elif letter and letter != "?":
+                meta["card_rank"] = letter.upper()[:1]
 
         tile = Tile(
             row=row,

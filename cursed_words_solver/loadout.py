@@ -208,6 +208,8 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
         card_rank = entry.get("card_rank")
         if card_rank is not None:
             meta["card_rank"] = str(card_rank).strip().upper()[:1]
+        if entry.get("is_joker") in (True, "true", "True", "1", 1):
+            meta["is_joker"] = True
 
         tile_obj = Tile(
             row=row,
@@ -286,11 +288,12 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
             out["pin_memory"] = []
     elif raw_memory is None:
         out.setdefault("pin_memory", [])
-    if "cards_submitted" in out:
-        try:
-            out["cards_submitted"] = int(out["cards_submitted"])
-        except (TypeError, ValueError):
-            out["cards_submitted"] = 0
+    for int_key in ("cards_submitted", "bicycle_word_score_bonus", "bicycle_suited_on_path"):
+        if int_key in out:
+            try:
+                out[int_key] = int(out[int_key])
+            except (TypeError, ValueError):
+                out[int_key] = 0
     for key in (
         "red_tiles_used_encounter",
         "consumable_rack_count",
@@ -444,6 +447,47 @@ def save_loadout(loadout: Loadout, path: Path | None = None) -> Path:
     return path
 
 
+_BICYCLE_PIN_IDS = frozenset({"bicycle", "bones_the_dog", "bones"})
+
+
+def _is_bicycle_pin(loadout: Loadout) -> bool:
+    pin = str((loadout.extras or {}).get("pin_effect", "") or "").strip().lower()
+    return pin in _BICYCLE_PIN_IDS
+
+
+def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:
+    """Warn when run_state may under-count Bicycle word score at F8."""
+    if loadout is None or not _is_bicycle_pin(loadout):
+        return None
+    extras = loadout.extras or {}
+    bonus_raw = extras.get("bicycle_word_score_bonus")
+    cards_raw = extras.get("cards_submitted")
+    if bonus_raw is None and cards_raw is None:
+        return (
+            "Bicycle pin: bicycle_word_score_bonus missing from run_state — "
+            "press F7 in-game or rebuild melmod before trusting Bicycle scores."
+        )
+    try:
+        bonus = int(bonus_raw) if bonus_raw is not None else -1
+    except (TypeError, ValueError):
+        bonus = -1
+    try:
+        cards = int(cards_raw) if cards_raw is not None else 0
+    except (TypeError, ValueError):
+        cards = 0
+    if bonus_raw is None and cards > 0:
+        return (
+            f"Bicycle pin: bicycle_word_score_bonus missing but cards_submitted={cards} — "
+            "press F7 in-game or wait for melmod refresh."
+        )
+    if bonus == 0 and cards > 0:
+        return (
+            f"Bicycle pin: bicycle_word_score_bonus is 0 but cards_submitted={cards} — "
+            "press F7 in-game or wait for melmod refresh."
+        )
+    return None
+
+
 def format_loadout_summary(loadout: Loadout | None) -> str:
     """Short human-readable loadout line for console/overlay."""
     if loadout is None:
@@ -480,9 +524,18 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
     memory = loadout.extras.get("pin_memory")
     if isinstance(memory, list) and memory:
         parts.append(f"RAM={len(memory)}")
-    cards = loadout.extras.get("cards_submitted")
-    if cards:
-        parts.append(f"cards={cards}")
+    if _is_bicycle_pin(loadout):
+        bonus = loadout.extras.get("bicycle_word_score_bonus")
+        if bonus is not None:
+            parts.append(f"Bicycle={int(bonus)}")
+        else:
+            cards = loadout.extras.get("cards_submitted")
+            if cards is not None:
+                parts.append(f"Bicycle=? (cards_submitted={cards}; F7 if stale)")
+    else:
+        cards = loadout.extras.get("cards_submitted")
+        if cards:
+            parts.append(f"cards={cards}")
     has_birthday = any(
         (s.id or "").lower() == "birthday_cake"
         or "birthday" in (s.name or "").lower()

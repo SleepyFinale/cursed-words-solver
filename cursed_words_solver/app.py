@@ -40,6 +40,7 @@ from cursed_words_solver.suggestion import (
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, WordResult
 from cursed_words_solver.loadout import (
+    bicycle_extras_stale_warning,
     format_loadout_summary,
     load_run_state,
     load_run_state_raw,
@@ -490,6 +491,9 @@ class SolverApp:
                 loadout
             )
             print(format_loadout_summary(loadout), flush=True)
+            bicycle_warn = bicycle_extras_stale_warning(loadout)
+            if bicycle_warn:
+                print(f"  Warning: {bicycle_warn}", flush=True)
             if total:
                 msg = f"  Rules: {scoring}/{total} affect score"
                 if grid_only:

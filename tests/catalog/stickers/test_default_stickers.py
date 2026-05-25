@@ -368,10 +368,19 @@ def test_wheezy_vixen_skipped_for_speccy_currency_path():
     ]
     assert "wheezy_vixen" not in rule_ids
 
+    applied_multiply_rules = {
+        str(s.get("rule_id", "")).lower()
+        for s in trace
+        if s.get("phase") == "rule"
+        and s.get("applied")
+        and "multiply" in str(s.get("effect_type", ""))
+    }
+    assert "wheezy_vixen" not in applied_multiply_rules
+    assert "sunflower" in applied_multiply_rules
+
     multiply_steps = [s for s in trace if s.get("phase") == "multiply"]
     multiply_rule_ids = {str(s.get("rule_id", "")).lower() for s in multiply_steps}
     assert "wheezy_vixen" not in multiply_rule_ids
-    assert "sunflower" in multiply_rule_ids
     assert "avocado" in multiply_rule_ids
     assert "bento_box" in multiply_rule_ids or "bento box" in multiply_rule_ids
 
@@ -437,5 +446,58 @@ def test_yellow_glasses_double_letter():
     loadout = Loadout(
         stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=1)]
     )
-    score, bd = pipeline.score(board, [0, 1, 2], "bba", loadout)
+    # Consecutive B on path; word "aba" has no double letter in the string.
+    score, bd = pipeline.score(board, [0, 1, 2], "aba", loadout)
     assert bd["multiplier"] == 1.5
+    base, _ = pipeline.score(board, [0, 1, 2], "aba", Loadout())
+    assert score == int(base * 1.5)
+
+
+def test_yellow_glasses_no_double_across_chess_tile():
+    """Chess submit char breaks path; same letter on both sides must not count."""
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "S", 1)
+    board.tiles[0][1] = Tile(
+        row=0,
+        col=1,
+        char="t",
+        letter="?",
+        base_score=6.0,
+        color=TileColor.COLORLESS,
+        curse=CurseType.CHESS_ROOK,
+        metadata={"chess_color": "black"},
+    )
+    board.tiles[0][2] = _tile(0, 2, "S", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=1)]
+    )
+    base, _ = pipeline.score(board, [0, 1, 2], "sts", Loadout())
+    score, bd = pipeline.score(board, [0, 1, 2], "sts", loadout)
+    assert bd["multiplier"] == 1.0
+    assert score == base
+
+
+def test_yellow_glasses_no_double_across_chess_bishop():
+    """Bishop submit char between equal letters (bemeant-style) must not count."""
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "E", 1)
+    board.tiles[0][1] = Tile(
+        row=0,
+        col=1,
+        char="n",
+        letter="?",
+        base_score=4.0,
+        color=TileColor.COLORLESS,
+        curse=CurseType.CHESS_BISHOP,
+        metadata={"chess_color": "black"},
+    )
+    board.tiles[0][2] = _tile(0, 2, "E", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=1)]
+    )
+    base, _ = pipeline.score(board, [0, 1, 2], "ene", Loadout())
+    score, bd = pipeline.score(board, [0, 1, 2], "ene", loadout)
+    assert bd["multiplier"] == 1.0
+    assert score == base

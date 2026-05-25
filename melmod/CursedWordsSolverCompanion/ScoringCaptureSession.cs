@@ -99,7 +99,15 @@ namespace CursedWordsSolverCompanion
             if (!_active)
                 return;
 
+            var player = RunStateExporter.GetPlayerForUpdate();
             var captured = ScoringContextCapture.ExtractFromPreviousWords(previousWords);
+            var letterCounts = ScoringContextCapture.ResolveMutatingDnaLetterCounts(
+                player,
+                previousWords
+            );
+            captured["mutating_dna_letter_counts"] =
+                ScoringContextCapture.SerializeLetterCounts(letterCounts);
+
             foreach (var kv in captured)
                 _scoringContextExtras[kv.Key] = kv.Value;
         }
@@ -130,6 +138,11 @@ namespace CursedWordsSolverCompanion
             var takeAt = BoardExporter.ExtractTakeFlagsFromSelections(wordTiles);
             if (takeAt.Count > 0)
                 BoardExporter.ApplyTakeFlags(snapshot, takeAt);
+
+            BoardExporter.ApplyCardMetadataFromSelections(snapshot, wordTiles);
+
+            var suitedOnPath = BoardExporter.CountSuitedCardsOnSelections(wordTiles);
+            _scoringContextExtras["bicycle_suited_on_path"] = suitedOnPath.ToString();
 
             _submitBoardSnapshot = snapshot;
         }

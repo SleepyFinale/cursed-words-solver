@@ -177,7 +177,9 @@ Optional extras for specific pins:
 
 | Field | Pin |
 |-------|-----|
-| `cards_submitted` | Bicycle (`bones_the_dog`) |
+| `bicycle_word_score_bonus` | Bicycle (`bones_the_dog`) — running `WordScoreBonus` on the pin before this word (game adds suited cards on path × right-track rate, then applies the total). Merged into `run_state.json` after each `CalculateOverallScore` (and on submit) so F8 stays in sync. |
+| `cards_submitted` | Legacy alias of `bicycle_word_score_bonus` for older solver builds |
+| `bicycle_suited_on_path` | Set during submit scoring capture — count of **unique playing-card suits** on the submitted path (each of clubs/spades/hearts/diamonds counts once). Fallback when board export lacks `card_suit`. For accurate F8 scores with Bicycle, press **F7 after placing card tiles on your path**, then F8. |
 | `favourite_sticker_id`, `favourite_stamp_id` | Human Hands (`human_boy`) |
 | `pin_memory` | Random Access Memory (JSON array of `{id,name,level,kind}`) |
 
@@ -203,11 +205,12 @@ Board tiles may include:
 | `consumable` | Mahjong Red Dragon pin |
 | `take` | Movie Camera, Clapper Board, Zebra (chess capture on the word path) |
 | `chess_color` | Chess movement blocking and Dove balanced-colors scoring (`black` = filled piece, `white` = outlined). Exported from game field `Tile.IsWhitePiece` (`false` = black/filled, `true` = white/outlined). |
-| `card_suit`, `card_rank` | Bones The Dog poker stickers (`hearts`, `spades`, `clubs`, `diamonds` + rank letter) |
+| `card_suit`, `card_rank` | Bones The Dog poker stickers (`hearts`, `spades`, `clubs`, `diamonds` + rank letter). Suited tiles keep their primary curse (`letter`, `number`, `chess_*`, etc.) and add suit metadata. |
+| `is_joker` | Joker tiles (`true`): wildcard letter `?` for search; count as any card for poker-hand scoring. |
 
 When `take` is absent, sticker rules with `strict_takes` stay inactive for captures; the Super 8 pin infers takes from valid chess capture moves along the word path (opponent landing squares and en passant).
 
-Playing cards export `curse: "card"` when suit metadata is found.
+Pure card glyphs export `curse: "card"`. Suited overlays only set `card_suit` / `card_rank` without replacing the primary curse.
 
 ## Usage
 

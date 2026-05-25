@@ -41,5 +41,7 @@ namespace CursedWordsSolverCompanion
         public string chess_color = "";
         public string card_suit = "";
         public string card_rank = "";
+        /// <summary>True for joker tiles (wildcard that counts as any card for poker hands).</summary>
+        public bool is_joker;
     }
 }

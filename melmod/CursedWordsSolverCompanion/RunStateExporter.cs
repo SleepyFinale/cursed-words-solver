@@ -116,46 +116,77 @@ namespace CursedWordsSolverCompanion
         {
             try
             {
-                if (!File.Exists(OutputPath))
-                    return;
-
                 var freshExtras = BuildExtrasSnapshot();
                 if (freshExtras == null || freshExtras.Count == 0)
                     return;
-
-                var json = File.ReadAllText(OutputPath, Encoding.UTF8);
-                var root = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
-                if (root == null)
-                    return;
-
-                var merged = new Dictionary<string, string>();
-                object extrasObj;
-                if (root.TryGetValue("extras", out extrasObj) && extrasObj != null)
-                {
-                    var existing = extrasObj as Dictionary<string, string>;
-                    if (existing != null)
-                    {
-                        foreach (var kv in existing)
-                            merged[kv.Key] = kv.Value ?? "";
-                    }
-                    else if (extrasObj is Newtonsoft.Json.Linq.JObject jobj)
-                    {
-                        foreach (var prop in jobj.Properties())
-                            merged[prop.Name] = prop.Value?.ToString() ?? "";
-                    }
-                }
-
-                foreach (var kv in freshExtras)
-                    merged[kv.Key] = kv.Value ?? "";
-
-                root["extras"] = merged;
-                var updated = JsonConvert.SerializeObject(root, Formatting.Indented);
-                File.WriteAllText(OutputPath, updated, new UTF8Encoding(false));
+                TryMergeExtrasKeys(freshExtras);
             }
             catch
             {
                 // ignore — F7 full export still available
             }
+        }
+
+        /// <summary>
+        /// Merge Bicycle WordScoreBonus after CalculateOverallScore so F8 sees the value
+        /// used for the next word (SubmitWord Postfix may run before scoring finishes).
+        /// </summary>
+        public static void TryMergeBicycleExtrasAfterScore()
+        {
+            try
+            {
+                var player = GetPlayer();
+                if (player == null || player.MyCharacter == null)
+                    return;
+
+                var pin = player.MyCharacter.CharacterItem;
+                var bicycleExtras = BuildBicycleExtras(pin);
+                if (bicycleExtras == null || bicycleExtras.Count == 0)
+                    return;
+
+                TryMergeExtrasKeys(bicycleExtras);
+            }
+            catch
+            {
+                // ignore — F7 full export still available
+            }
+        }
+
+        private static void TryMergeExtrasKeys(Dictionary<string, string> keysToMerge)
+        {
+            if (keysToMerge == null || keysToMerge.Count == 0)
+                return;
+            if (!File.Exists(OutputPath))
+                return;
+
+            var json = File.ReadAllText(OutputPath, Encoding.UTF8);
+            var root = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
+            if (root == null)
+                return;
+
+            var merged = new Dictionary<string, string>();
+            object extrasObj;
+            if (root.TryGetValue("extras", out extrasObj) && extrasObj != null)
+            {
+                var existing = extrasObj as Dictionary<string, string>;
+                if (existing != null)
+                {
+                    foreach (var kv in existing)
+                        merged[kv.Key] = kv.Value ?? "";
+                }
+                else if (extrasObj is Newtonsoft.Json.Linq.JObject jobj)
+                {
+                    foreach (var prop in jobj.Properties())
+                        merged[prop.Name] = prop.Value?.ToString() ?? "";
+                }
+            }
+
+            foreach (var kv in keysToMerge)
+                merged[kv.Key] = kv.Value ?? "";
+
+            root["extras"] = merged;
+            var updated = JsonConvert.SerializeObject(root, Formatting.Indented);
+            File.WriteAllText(OutputPath, updated, new UTF8Encoding(false));
         }
 
         private static Player GetPlayer()
@@ -393,7 +424,7 @@ namespace CursedWordsSolverCompanion
             }
 
             FillPinMemory(snapshot, pin);
-            FillCardsSubmitted(snapshot, character);
+            FillBicycleExtras(snapshot, pin);
             FillFavourites(snapshot, character);
         }
 
@@ -482,14 +513,62 @@ namespace CursedWordsSolverCompanion
             return null;
         }
 
-        private static void FillCardsSubmitted(RunStateSnapshot snapshot, Character character)
+        /// <summary>
+        /// Bicycle pin (decompiled): WordScoreBonus accumulates across words; each submit adds
+        /// (suited cards on path × right-track VariableValue) then applies the running total.
+        /// </summary>
+        private static void FillBicycleExtras(RunStateSnapshot snapshot, Item pin)
         {
-            var count = TryGetIntProperty(character, "CardsSubmitted", "SubmittedCards");
-            if (count < 0)
-                count = TryGetIntProperty(GameStatics.GetPlayer(), "CardsSubmitted", "SubmittedCards");
-            if (count < 0)
-                count = 0;
-            snapshot.extras["cards_submitted"] = count.ToString();
+            var bicycleExtras = BuildBicycleExtras(pin);
+            if (bicycleExtras == null)
+                return;
+
+            foreach (var kv in bicycleExtras)
+                snapshot.extras[kv.Key] = kv.Value;
+        }
+
+        private static Dictionary<string, string> BuildBicycleExtras(Item pin)
+        {
+            if (pin == null || !IsBicyclePin(pin))
+                return null;
+
+            var accumulated = TryGetBicycleWordScoreBonus(pin);
+            if (accumulated < 0)
+                return null;
+
+            return new Dictionary<string, string>
+            {
+                ["bicycle_word_score_bonus"] = accumulated.ToString(),
+                // Legacy key name used by older solver builds / docs.
+                ["cards_submitted"] = accumulated.ToString(),
+            };
+        }
+
+        private static bool IsBicyclePin(Item pin)
+        {
+            if (pin == null)
+                return false;
+            if (pin is Bicycle)
+                return true;
+
+            var slug = Slugify(pin.ArtFileName, pin.Name);
+            if (string.IsNullOrEmpty(slug))
+                return false;
+
+            var s = slug.ToLowerInvariant();
+            return s == "bicycle" || s == "bones_the_dog" || s == "bones";
+        }
+
+        private static int TryGetBicycleWordScoreBonus(Item pin)
+        {
+            if (pin == null)
+                return -1;
+
+            var bicycle = pin as Bicycle;
+            if (bicycle != null)
+                return bicycle.WordScoreBonus;
+
+            return TryGetIntMember(pin, "WordScoreBonus");
         }
 
         private static void FillRunContextExtras(RunStateSnapshot snapshot, Player player)
@@ -683,6 +762,17 @@ namespace CursedWordsSolverCompanion
 
             if (TryGetAvocadoMushy(player))
                 snapshot.extras["avocado_mushy"] = "true";
+
+            if (HasMutatingDnaStamp(player))
+            {
+                var previousWords = TryGetHistoricPreviousWords(player);
+                var letterCounts = ScoringContextCapture.ResolveMutatingDnaLetterCounts(
+                    player,
+                    previousWords
+                );
+                snapshot.extras["mutating_dna_letter_counts"] =
+                    ScoringContextCapture.SerializeLetterCounts(letterCounts);
+            }
         }
 
         private static readonly BindingFlags MemberFlags =
@@ -1049,6 +1139,89 @@ namespace CursedWordsSolverCompanion
             if (raw is double d && d >= 0 && Math.Abs(d - Math.Round(d)) < 0.001)
                 return (int)Math.Round(d);
             return -1;
+        }
+
+        private static bool HasMutatingDnaStamp(Player player)
+        {
+            if (player?.Stamps == null)
+                return false;
+
+            foreach (var stamp in player.Stamps)
+            {
+                if (stamp == null)
+                    continue;
+                var name = stamp.Name ?? "";
+                var art = stamp.ArtFileName ?? "";
+                if (name.IndexOf("Mutating", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+                if (name.IndexOf("DNA", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+                if (art.IndexOf("mutating", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+                if (art.IndexOf("dna", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static List<HistoricWord> TryGetHistoricPreviousWords(Player player)
+        {
+            if (player == null)
+                return null;
+
+            foreach (var name in new[]
+            {
+                "PreviousWords",
+                "HistoricWords",
+                "SubmittedWords",
+                "WordsThisEncounter",
+                "WordsThisRun",
+            })
+            {
+                try
+                {
+                    var prop = player.GetType().GetProperty(name, MemberFlags);
+                    if (prop == null)
+                        continue;
+                    var value = prop.GetValue(player, null) as List<HistoricWord>;
+                    if (value != null && value.Count > 0)
+                        return value;
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+
+            try
+            {
+                var encounter = BossResolver.TryGetEncounter();
+                if (encounter != null)
+                {
+                    foreach (var name in new[]
+                    {
+                        "PreviousWords",
+                        "HistoricWords",
+                        "SubmittedWords",
+                        "WordsThisEncounter",
+                    })
+                    {
+                        var prop = encounter.GetType().GetProperty(name, MemberFlags);
+                        if (prop == null)
+                            continue;
+                        var value = prop.GetValue(encounter, null) as List<HistoricWord>;
+                        if (value != null && value.Count > 0)
+                            return value;
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return null;
         }
 
         private static bool HasBirthdayCakeSticker(Player player)
@@ -1468,6 +1641,16 @@ namespace CursedWordsSolverCompanion
             sb.Append(Slugify(pin.ArtFileName, pin.Name));
             sb.Append(':');
             sb.Append(GetPinBranch(character));
+
+            if (IsBicyclePin(pin))
+            {
+                var bonus = TryGetBicycleWordScoreBonus(pin);
+                if (bonus >= 0)
+                {
+                    sb.Append('|');
+                    sb.Append(bonus);
+                }
+            }
         }
 
         public static string Slugify(string artFileName, string fallbackName)
