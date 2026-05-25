@@ -120,7 +120,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     unique_colours_on_path,
     unique_vowels_in_word,
     unused_red_tiles_on_board,
-    void_tiles_unused_in_word,
+    void_tiles_letter_not_in_word,
     word_same_start_end_letter,
     word_starts_ends_different_suit,
     apply_mutating_dna_bonus,
@@ -1103,7 +1103,9 @@ class ScoringPipeline:
             if target == "void_adjacent":
                 for i, idx in enumerate(path):
                     tile = board.get_by_index(idx)
-                    n_void = adjacent_void_count(board, tile)
+                    n_void = adjacent_void_count(
+                        board, tile, path=path, path_index=i
+                    )
                     if n_void:
                         add = bonus_each * n_void
                         state["tile_scores"][i] += add
@@ -1158,7 +1160,7 @@ class ScoringPipeline:
                     board, path, loadout
                 )
             elif word_mode == "per_void_unused":
-                n = void_tiles_unused_in_word(board, path)
+                n = void_tiles_letter_not_in_word(board, state["word"])
                 bonus = sticker_rule_int(level, rule) * n
             elif word_mode == "per_unused_red":
                 n = unused_red_tiles_on_board(board, path)

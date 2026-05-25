@@ -34,7 +34,8 @@
       "boss_long_words": "cobra",
       "five_letter_minimum": "cobra",
       "bosslesspoints": "salamander",
-      "bossmoney": "toothed_whale",
+      "bossmoney": "fox",
+      "bossfox": "fox",
       "bigboss": "toothed_whale",
       "big_boss": "toothed_whale",
       "bossnegativemoney": "robo_monkey",
@@ -55,7 +56,10 @@
       "add_numbers": "bison",
       "bossqs": "axolotl",
       "extraqs": "axolotl",
-      "extra_qs": "axolotl"
+      "extra_qs": "axolotl",
+      "bossvoids": "mole",
+      "extra_voids": "mole",
+      "extravoids": "mole"
     },
     "pins": {
       "abacus": "abacus",

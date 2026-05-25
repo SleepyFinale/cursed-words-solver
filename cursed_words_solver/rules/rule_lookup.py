@@ -84,13 +84,17 @@ def resolve_rule_id(
 
 
 
-    candidates = [
+    candidates: list[str] = []
 
-        (item_id or "").strip().lower(),
+    if (item_name or "").strip():
 
-        slugify_name(item_name),
+        candidates.append(slugify_name(item_name))
 
-    ]
+    id_raw = (item_id or "").strip().lower()
+
+    if id_raw:
+
+        candidates.append(id_raw)
 
     alias_map = _alias_map(rules, bucket)
 

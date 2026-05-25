@@ -156,3 +156,55 @@ def test_tombstone_void_adjacent_bonus():
     score, _ = pipeline.score(board, [1], "a", loadout)
     # A at (0,1) has void at (0,0) and (1,1) → +10
     assert score == 13
+
+
+def test_tombstone_diagonal_void_adjacent_bonus():
+    board = _empty_board()
+    board.tiles[4][3] = _tile(4, 3, "G", 2)
+    board.tiles[3][4] = _tile(3, 4, "E", 0, color=TileColor.VOID)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="tombstone", name="Tombstone", level=1)])
+    score, _ = pipeline.score(board, [23], "g", loadout)
+    base, _ = pipeline.score(board, [23], "g", Loadout())
+    assert score == base + 5
+
+
+def test_tombstone_void_path_corner_cluster_two_hop():
+    """VOID path tile with three direct VOID neighbours also picks up 2-hop VOIDs."""
+    board = _empty_board()
+    board.tiles[2][0] = _tile(2, 0, "Y", 0, color=TileColor.VOID)
+    board.tiles[2][1] = _tile(2, 1, "S", 0, color=TileColor.VOID)
+    board.tiles[2][2] = _tile(2, 2, "M", 0, color=TileColor.VOID)
+    board.tiles[3][0] = _tile(3, 0, "I", 0, color=TileColor.VOID)
+    board.tiles[3][1] = _tile(3, 1, "F", 0, color=TileColor.VOID)
+    board.tiles[3][4] = _tile(3, 4, "X", 0, color=TileColor.VOID)
+    board.tiles[1][1] = _tile(1, 1, "R", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="tombstone", name="Tombstone", level=2)])
+    score, _ = pipeline.score(board, [10, 6, 11], "yrs", loadout)
+    base, _ = pipeline.score(board, [10, 6, 11], "yrs", Loadout())
+    assert score - base == 110
+
+
+def test_tombstone_number_void_counts_adjacent():
+    board = _empty_board()
+    board.tiles[3][2] = _tile(3, 2, "E", 1)
+    board.tiles[3][0] = _tile(3, 0, "O", 0, color=TileColor.VOID)
+    board.tiles[2][2] = _tile(2, 2, "A", 0, color=TileColor.VOID)
+    board.tiles[2][3] = _tile(2, 3, "F", 0, color=TileColor.VOID)
+    board.tiles[3][1] = Tile(
+        row=3,
+        col=1,
+        char="8",
+        letter="8",
+        base_score=0.0,
+        color=TileColor.VOID,
+        curse=CurseType.NUMBER,
+        number_value=8,
+        metadata={"source": "melmod"},
+    )
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="tombstone", name="Tombstone", level=1)])
+    score, _ = pipeline.score(board, [17], "e", loadout)
+    base, _ = pipeline.score(board, [17], "e", Loadout())
+    assert score == base + 15

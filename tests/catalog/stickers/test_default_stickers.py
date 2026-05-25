@@ -151,6 +151,41 @@ def test_dusty_coffin_void_unused():
     assert score == base + 8
 
 
+def test_dusty_coffin_skips_void_whose_letter_is_in_word():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "B", 2)
+    board.tiles[2][2] = _tile(2, 2, "A", 0, color=TileColor.VOID)
+    board.tiles[4][4] = _tile(4, 4, "Z", 0, color=TileColor.VOID)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
+    score, bd = pipeline.score(board, [0], "baa", loadout)
+    base, _ = pipeline.score(board, [0], "baa", Loadout())
+    assert bd["word_score"] == 8
+    assert score == base + 8
+
+
+def test_dusty_coffin_number_void_digit_not_in_word():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 2)
+    board.tiles[3][1] = Tile(
+        row=3,
+        col=1,
+        char="8",
+        letter="8",
+        base_score=0.0,
+        color=TileColor.VOID,
+        curse=CurseType.NUMBER,
+        number_value=8,
+        metadata={"source": "melmod"},
+    )
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
+    score, bd = pipeline.score(board, [0], "a", loadout)
+    base, _ = pipeline.score(board, [0], "a", Loadout())
+    assert bd["word_score"] == 8
+    assert score == base + 8
+
+
 def test_fire_extinguisher_unused_red():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 2)

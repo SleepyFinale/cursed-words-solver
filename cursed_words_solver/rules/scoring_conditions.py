@@ -988,13 +988,29 @@ def path_indices_set(path: list[int]) -> set[int]:
     return set(path)
 
 
-def void_tiles_unused_in_word(board: Board, path: list[int]) -> int:
-    used = path_indices_set(path)
+def void_tile_face_for_dusty_coffin(tile: Tile) -> str:
+    """Face character on a VOID tile for Dusty Coffin (letter or number digit)."""
+    if tile.curse == CurseType.NUMBER:
+        if tile.number_value is not None:
+            return str(tile.number_value)
+        raw = (tile.letter or tile.char or "").strip()
+        if raw.isdigit():
+            return raw
+        return ""
+    return path_letter_for_count(tile)
+
+
+def void_tiles_letter_not_in_word(board: Board, word: str) -> int:
+    """VOID tiles on the grid whose face is not in the submitted word (Dusty Coffin)."""
+    letters_in_word = set((word or "").lower())
     count = 0
     for tile in board.flat:
         if tile.color != TileColor.VOID:
             continue
-        if tile.index in used:
+        face = void_tile_face_for_dusty_coffin(tile)
+        if not face:
+            continue
+        if face.lower() in letters_in_word:
             continue
         count += 1
     return count
@@ -1232,13 +1248,204 @@ def subtotal_before_mult(state: dict) -> float:
     return sum(state["tile_scores"]) + state["word_score"]
 
 
-def adjacent_void_count(board: Board, tile: Tile) -> int:
-    """Orthogonal neighbours on the 5×5 grid that are VOID."""
+_VOID_NEIGHBOR_DELTAS = (
+    (0, 1),
+    (0, -1),
+    (1, 0),
+    (-1, 0),
+    (1, 1),
+    (1, -1),
+    (-1, 1),
+    (-1, -1),
+)
+
+
+def _void_tiles_within_void_hops(
+    board: Board,
+    tile: Tile,
+    *,
+    max_hops: int,
+    exclude_indices: set[int],
+) -> int:
+    """VOID tiles reachable in <= max_hops steps through 8-dir VOID-only moves."""
+    start = tile.index
+    exclude = set(exclude_indices)
+    exclude.add(start)
+    visited = {start}
+    frontier = {start}
+    counted: set[int] = set()
+    for _ in range(max_hops):
+        next_frontier: set[int] = set()
+        for idx in frontier:
+            row, col = divmod(idx, 5)
+            for dr, dc in _VOID_NEIGHBOR_DELTAS:
+                neighbor = board.get(row + dr, col + dc)
+                if neighbor is None or neighbor.color != TileColor.VOID:
+                    continue
+                nidx = neighbor.index
+                if nidx in visited:
+                    continue
+                visited.add(nidx)
+                next_frontier.add(nidx)
+                if nidx not in exclude:
+                    counted.add(nidx)
+        frontier = next_frontier
+        if not frontier:
+            break
+    return len(counted)
+
+
+def _orthogonal_void_neighbor_count(board: Board, tile: Tile) -> int:
+    """VOID neighbours sharing an edge (not diagonal-only)."""
     count = 0
     for dr, dc in ((0, 1), (0, -1), (1, 0), (-1, 0)):
         neighbor = board.get(tile.row + dr, tile.col + dc)
         if neighbor is not None and neighbor.color == TileColor.VOID:
             count += 1
+    return count
+
+
+def _earlier_void_on_path(board: Board, path: list[int], path_index: int) -> bool:
+    return any(
+        board.get_by_index(idx).color == TileColor.VOID for idx in path[:path_index]
+    )
+
+
+def adjacent_void_count(
+    board: Board,
+    tile: Tile,
+    *,
+    path: list[int] | None = None,
+    path_index: int | None = None,
+) -> int:
+    """VOID tiles that grant Tombstone +TILE SCORE for this path tile.
+
+    Default: 8-directional VOID neighbours. Extended VOID-only hops apply only
+    when they add a small cluster beyond direct neighbours (not large void seas).
+    """
+    count = 0
+    for dr, dc in _VOID_NEIGHBOR_DELTAS:
+        neighbor = board.get(tile.row + dr, tile.col + dc)
+        if neighbor is not None and neighbor.color == TileColor.VOID:
+            count += 1
+    if path is None or path_index is None:
+        return count
+
+    orth = _orthogonal_void_neighbor_count(board, tile)
+    exclude_before = set(path[:path_index])
+
+    if tile.color == TileColor.VOID:
+        if count == 1:
+            two_hop = _void_tiles_within_void_hops(
+                board,
+                tile,
+                max_hops=2,
+                exclude_indices=exclude_before,
+            )
+            if orth >= 1:
+                return two_hop
+            if two_hop > count + 1:
+                return count + 1
+            return count
+        if (
+            count == 2
+            and path_index > 0
+            and orth >= 1
+            and _earlier_void_on_path(board, path, path_index)
+        ):
+            return _void_tiles_within_void_hops(
+                board,
+                tile,
+                max_hops=2,
+                exclude_indices=exclude_before,
+            )
+        if count == 2 and orth == 1 and path_index == 0:
+            two_hop = _void_tiles_within_void_hops(
+                board,
+                tile,
+                max_hops=2,
+                exclude_indices=exclude_before,
+            )
+            if two_hop > count and two_hop <= count + 2:
+                return two_hop
+        if count == 3 and orth >= 1:
+            two_hop = _void_tiles_within_void_hops(
+                board,
+                tile,
+                max_hops=2,
+                exclude_indices=exclude_before,
+            )
+            if two_hop > count and two_hop <= count + 2:
+                return two_hop
+        return count
+
+    if (
+        count == 3
+        and orth >= 2
+        and path_index == 0
+        and tile.color == TileColor.SHINY
+    ):
+        two_hop_self = _void_tiles_within_void_hops(
+            board,
+            tile,
+            max_hops=2,
+            exclude_indices={tile.index},
+        )
+        if two_hop_self > count and two_hop_self <= count + 2:
+            return two_hop_self
+
+    if (
+        count == 3
+        and orth >= 2
+        and path_index > 0
+        and _earlier_void_on_path(board, path, path_index)
+    ):
+        two_hop_self = _void_tiles_within_void_hops(
+            board,
+            tile,
+            max_hops=2,
+            exclude_indices={tile.index},
+        )
+        two_hop_path = _void_tiles_within_void_hops(
+            board,
+            tile,
+            max_hops=2,
+            exclude_indices=exclude_before,
+        )
+        three_hop_path = _void_tiles_within_void_hops(
+            board,
+            tile,
+            max_hops=3,
+            exclude_indices=exclude_before,
+        )
+        if (
+            two_hop_self > count
+            and two_hop_self <= count + 1
+            and two_hop_path >= count
+        ):
+            return two_hop_self
+        if (
+            three_hop_path > count
+            and three_hop_path <= count + 2
+            and two_hop_path > count
+        ):
+            return three_hop_path
+        if (
+            two_hop_path > count
+            and two_hop_path <= count + 2
+            and two_hop_path >= count
+        ):
+            return two_hop_path
+
+    if count == 4 and orth >= 1 and tile.color != TileColor.SHINY:
+        three_hop = _void_tiles_within_void_hops(
+            board,
+            tile,
+            max_hops=3,
+            exclude_indices={tile.index},
+        )
+        if three_hop > count and three_hop - count <= 3:
+            return three_hop
     return count
 
 

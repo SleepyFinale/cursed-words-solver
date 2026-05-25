@@ -344,6 +344,84 @@ def test_parse_run_state_bossqs_alias_is_axolotl():
     assert boss_display_name(loadout, rules) == "Axolotl"
 
 
+def test_parse_run_state_bossvoids_alias_is_mole():
+    """In-game Mole prefab/display name is Extra Voids / bossvoids."""
+    data = {
+        "character": "Nina Nix",
+        "boss_id": "bossvoids",
+        "boss_name": "Extra Voids",
+        "extras": {"boss_area_number": 1},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        boss_display_name,
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "mole"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+    assert boss_display_name(loadout, rules) == "Mole"
+
+
+def test_parse_run_state_toothed_whale_misexport_resolves_via_boss_name():
+    """StealsMoney runtime was wrongly mapped to toothed_whale; Fox display name wins."""
+    data = {
+        "character": "Nina Nix",
+        "boss_id": "toothed_whale",
+        "boss_name": "Fox",
+        "extras": {"boss_area_number": 3},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        boss_display_name,
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "fox"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+    assert boss_display_name(loadout, rules) == "Fox"
+
+
+def test_parse_run_state_bossmoney_alias_is_fox():
+    """In-game Fox prefab slug is bossmoney (StealsMoney modifier)."""
+    data = {
+        "character": "Nina Nix",
+        "boss_id": "bossmoney",
+        "boss_name": "Fox",
+        "extras": {"boss_area_number": 3},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        boss_display_name,
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "fox"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+    assert boss_display_name(loadout, rules) == "Fox"
+
+
 def test_parse_run_state_bigboss_alias_is_toothed_whale():
     """In-game Toothed Whale prefab/display name is BigBoss / bigboss."""
     data = {

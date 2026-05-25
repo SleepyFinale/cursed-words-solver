@@ -117,7 +117,9 @@ namespace CursedWordsSolverCompanion
                 case "NegativeMoney":
                     return "robo_monkey";
                 case "StealsMoney":
-                    return "toothed_whale";
+                    return "fox";
+                case "ExtraVoids":
+                    return "mole";
                 default:
                     return "";
             }
