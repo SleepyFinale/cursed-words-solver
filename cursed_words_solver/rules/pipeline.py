@@ -1,4 +1,4 @@
-"""Full scoring pipeline: boss penalties -> grid -> pin -> stickers -> stamps (wiki order)."""
+"""Full scoring pipeline: tile init -> pin -> stickers L→R -> stamps L→R -> boss -> finalize."""
 
 
 
@@ -117,6 +117,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     letter_counts_on_path,
     max_qualifying_letter_half_multiplier,
     scaled_word_multiplier,
+    word_percent_bonus_from_multiplier,
     sticker_rule_int,
     super_8_take_word_bonus,
     tile_matches_target,
@@ -221,6 +222,7 @@ def _init_state(
         "effects": [],
 
         "pending_word_multipliers": [],
+        "pending_word_percent_bonuses": [],
 
         "salamander_post_mutating_mults": [],
 
@@ -235,13 +237,19 @@ def _void_number_on_path(tile: Tile) -> bool:
 def _apply_void_path_bonuses(
     board: Board, path: list[int], loadout: Loadout, state: dict[str, Any]
 ) -> None:
-    """Built-in void path bonus: +2 TILE SCORE on a letter (Scrabble value ≥ 8) immediately before a void NUMBER."""
+    """Built-in void path bonus: +2 TILE SCORE on a letter (Scrabble value ≥ 8) immediately before a void NUMBER.
+
+    In-game, the bonus does not apply when that void number is immediately followed by another
+    void number on the path (consecutive void-number run).
+    """
     bonus = 2
     before_void = 0
     before_void_bonus_total = 0
     for i in range(len(path) - 1):
         next_tile = board.get_by_index(path[i + 1])
         if not _void_number_on_path(next_tile):
+            continue
+        if i + 2 < len(path) and _void_number_on_path(board.get_by_index(path[i + 2])):
             continue
         prev_tile = board.get_by_index(path[i])
         if prev_tile.curse != CurseType.LETTER or _scrabble_value(prev_tile.letter) < 8:
@@ -310,6 +318,24 @@ def _queue_word_multiplier(
         return
     state["pending_word_multipliers"].append((factor, rule_id))
     state["multiplier"] *= factor
+
+
+def _queue_word_percent_bonus(
+    state: dict[str, Any],
+    percent: int,
+    rule_id: str = "",
+    *,
+    wiki_factor: float | None = None,
+) -> None:
+    """Queue multiplicative WordBonus token (game: multiply total by percent/100).
+
+    Example: wiki ×1.5 => percent 150; wiki ×4 => percent 400.
+    """
+    if percent <= 0:
+        return
+    state["pending_word_percent_bonuses"].append((int(percent), rule_id))
+    if wiki_factor is not None and wiki_factor != 1.0:
+        state["multiplier"] *= wiki_factor
 
 
 def _flush_word_multipliers_to_tiles(state: dict[str, Any]) -> None:
@@ -422,15 +448,42 @@ def _salamander_defer_multiply_for_mutating(loadout: Loadout) -> bool:
     return 0 < prior < 8
 
 
+def _apply_percent_word_bonuses(
+    state: dict[str, Any],
+    subtotal: float,
+    *,
+    trace: list[dict[str, Any]] | None = None,
+) -> float:
+    """GetScoreFromScoreCalcInfo-style multiplicative WordBonus steps."""
+    entries = state.get("pending_word_percent_bonuses", [])
+    if not entries:
+        return subtotal
+    total = subtotal
+    for percent, rule_id in entries:
+        factor = float(percent) / 100.0
+        total = math.floor(total * factor)
+        if trace is not None:
+            fields: dict[str, Any] = {
+                "factor": float(factor),
+                "percent": int(percent),
+                "detail": f"×{factor:g} word (word_bonus:{percent})",
+            }
+            if rule_id:
+                fields["rule_id"] = rule_id
+            _trace_step(state, "multiply", **fields)
+    return total
+
+
 def _finalize(
     state: dict[str, Any],
     board: Board | None = None,
     path: list[int] | None = None,
 ) -> float:
-    """Sum tile + word scores, then apply queued ×WORD multipliers with floor each step."""
+    """Sum tile + word scores, apply % WORD bonuses, then floor ×WORD multipliers."""
     if board is not None and path is not None:
         apply_green_tile_word_transfer(board, path, state)
-    total = sum(state["tile_scores"]) + state["word_score"]
+    subtotal = sum(state["tile_scores"]) + state["word_score"]
+    total = _apply_percent_word_bonuses(state, subtotal)
     for entry in state.get("pending_word_multipliers", []):
         factor = _pending_multiplier_factor(entry)
         if factor != 1.0:
@@ -441,10 +494,10 @@ def _finalize(
 def _finalize_with_trace(state: dict[str, Any]) -> tuple[float, list[dict[str, Any]]]:
     """Like _finalize but records each ×WORD floor step in trace."""
     trace = state.get("_trace")
-    total = sum(state["tile_scores"]) + state["word_score"]
-    mult_trace: list[dict[str, Any]] = []
+    subtotal = sum(state["tile_scores"]) + state["word_score"]
     if trace is not None:
         _trace_step(state, "pre_multiply", detail="tile sum + word score")
+    total = _apply_percent_word_bonuses(state, subtotal, trace=trace)
     for entry in state.get("pending_word_multipliers", []):
         factor = _pending_multiplier_factor(entry)
         mult_rule_id = _pending_multiplier_rule_id(entry)
@@ -458,7 +511,7 @@ def _finalize_with_trace(state: dict[str, Any]) -> tuple[float, list[dict[str, A
                 if mult_rule_id:
                     fields["rule_id"] = mult_rule_id
                 _trace_step(state, "multiply", **fields)
-    return float(total), mult_trace
+    return float(total), []
 
 
 
@@ -1026,7 +1079,9 @@ class ScoringPipeline:
 
                 factor = brain_multiplier(level, rule)
 
-                _queue_word_multiplier(state, factor, rule_id)
+                _queue_word_multiplier(
+                    state, factor, rule_id, defer_finalize=True
+                )
 
                 state["effects"].append(
 
@@ -1361,7 +1416,12 @@ class ScoringPipeline:
                     state["multiplier"] *= factor
                     state["effects"].append(f"+{bonus} word ({label})")
                 else:
-                    _queue_word_multiplier(state, factor, rule_id)
+                    percent = word_percent_bonus_from_multiplier(
+                        factor, rule, level=level
+                    )
+                    _queue_word_percent_bonus(
+                        state, percent, rule_id, wiki_factor=factor
+                    )
                     state["effects"].append(f"×{factor} word ({label})")
 
         elif effect_type == "tile_multiply_by_letter_count":
@@ -1449,7 +1509,10 @@ class ScoringPipeline:
                 level, rule, money_for_scoring(board, path, loadout, state=state)
             )
             if factor != 1.0:
-                _queue_word_multiplier(state, factor, rule_id)
+                percent = word_percent_bonus_from_multiplier(factor, rule, level=level)
+                _queue_word_percent_bonus(
+                    state, percent, rule_id, wiki_factor=factor
+                )
                 state["effects"].append(f"×{factor} word (money bonus)")
 
         elif effect_type == "multiply_consumable_rack":
@@ -1506,8 +1569,11 @@ class ScoringPipeline:
                     factor = -2.0
                 if level > 1 and factor > 0:
                     factor = factor**level
-                _queue_word_multiplier(state, factor, rule_id)
-                state["effects"].append(f"×{factor} multiplier")
+                percent = word_percent_bonus_from_multiplier(factor, rule, level=level)
+                _queue_word_percent_bonus(
+                    state, percent, rule_id, wiki_factor=factor
+                )
+                state["effects"].append(f"×{factor} word")
 
         elif effect_type == "red_tile_bonus":
 

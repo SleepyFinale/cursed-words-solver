@@ -180,20 +180,22 @@ Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 | `board_region` | — | `{x, y, width, height}` for on-board path highlights |
 | `show_board_highlight` | `true` | Numbered circles on the game board |
 | `hotkey` | `f8` | Solve hotkey |
-| `min_word_length` | `3` | Shortest word explored |
-| `max_word_length` | `15` | Longest path explored (max 25 on full grid). Keep 15 for long number words; search cost grows with depth |
 | `search_time_budget_sec` | `45` | Seconds per solve for word search. Legacy values `2` / `15` / `30` auto-upgrade on startup |
 | `top_n_results` | `3` | Alternate words shown in the overlay |
 | `wordlist` | `game` | `game` → `game_words.txt`; `enable1` → offline fallback |
 | `setup_weight` | `0.4` | Weight for future-round setup value in search ranking |
+| `search_workers` | `"auto"` | Parallel DFS processes: `"auto"` (up to 8 cores), `1` to disable, or integer `2`–`16` |
 
 On startup the terminal prints the loaded word list, e.g. `Word list: game (120000 words)`. After each solve it prints the grid and `Board source: melmod`.
+
+Word length is derived automatically per solve: minimum is 1, maximum is the active board size (up to 25), then boss effects (for example Cobra/Wolf) clamp that range.
 
 ### Search performance
 
 - **Melmod board (F7)** — Exact tiles avoid wasted DFS branches; refresh before **F8**.
 - **Game wordlist** — **F7** exports `game_words.txt` for tighter dictionary pruning than ENABLE1.
 - **`search_time_budget_sec`** — Main knob for more candidates within a time limit.
+- **`search_workers`** — Set to `"auto"` or `4` to partition DFS by start cell across processes (helps CPU-bound search; sticker scoring still dominates on heavy loadouts).
 - **Curse-heavy boards** — Teleports, chess pieces, and wildcards branch heavily; wildcards are searched first. Raise the time budget on dense boards if needed.
 
 ### Troubleshooting

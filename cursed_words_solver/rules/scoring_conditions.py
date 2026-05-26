@@ -1569,9 +1569,31 @@ def distinct_curse_types_on_path(board: Board, path: list[int]) -> int:
     return len(types)
 
 
+_ODEN_CURSE_CATEGORIES: dict[CurseType, str] = {
+    CurseType.WILDCARD: "wildcard",
+    CurseType.BLANK: "wildcard",
+    CurseType.ITEM: "item",
+    CurseType.CARD: "card",
+    CurseType.CURRENCY: "currency",
+    CurseType.NUMBER: "number",
+    CurseType.FRACTION: "number",
+    CurseType.CHESS_PAWN: "chess",
+    CurseType.CHESS_BISHOP: "chess",
+    CurseType.CHESS_ROOK: "chess",
+    CurseType.CHESS_KNIGHT: "chess",
+    CurseType.CHESS_QUEEN: "chess",
+    CurseType.CHESS_KING: "chess",
+}
+
+
 def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
-    """Distinct curse types among all tiles on the path (Oden)."""
-    return len({curse_type_key(board.get_by_index(idx)) for idx in path})
+    """Distinct Oden curse categories on the path (wiki buckets, not per-piece chess)."""
+    categories: set[str] = set()
+    for idx in path:
+        category = _ODEN_CURSE_CATEGORIES.get(board.get_by_index(idx).curse)
+        if category:
+            categories.add(category)
+    return len(categories)
 
 
 def coloured_tile_count_on_grid(board: Board) -> int:
@@ -1705,7 +1727,9 @@ def explain_sticker_condition(
         return True, f"applied: word '{first}' matches path first letter '{path_first}'"
 
     if condition == "word_starts_same_as_previous":
-        if grid_number(loadout) <= 1:
+        if _extra_bool(loadout, "is_first_grid_of_encounter"):
+            return False, "skipped: no previous word on first grid"
+        if grid_number(loadout) == 1:
             return False, "skipped: no previous word on first grid"
         prev = _extra_letter(loadout, "previous_word_first_letter")
         first = _effective_word_start_letter(board, path, word)
@@ -1804,7 +1828,9 @@ def _evaluate_sticker_condition(
             return False
         return first == first_letter_on_path(board, path)
     if condition == "word_starts_same_as_previous":
-        if grid_number(loadout) <= 1:
+        if _extra_bool(loadout, "is_first_grid_of_encounter"):
+            return False
+        if grid_number(loadout) == 1:
             return False
         prev = _extra_letter(loadout, "previous_word_first_letter")
         first = _effective_word_start_letter(board, path, word)
@@ -2510,6 +2536,20 @@ def scaled_word_multiplier(
     return factor
 
 
+def word_percent_bonus_from_multiplier(factor: float, rule: dict, *, level: int = 1) -> int:
+    """Map wiki ×WORD factor to in-game multiplicative WordBonus.
+
+    In `GetScoreFromScoreCalcInfo`, multiplicative WordBonus entries multiply
+    the running total by `word_bonus / 100`. So a wiki `×1.5` becomes a token
+    `150`, `×3` becomes `300`, etc.
+
+    `rule`/`level` are accepted for call-site consistency; the mapping is
+    purely `factor × 100`.
+    """
+    _ = (rule, level)
+    return max(0, int(round(factor * 100)))
+
+
 def path_letter_for_count(tile: Tile) -> str:
     """Lowercase letter used for Bubble Tea same-letter counts."""
     if tile.curse == CurseType.NUMBER:
@@ -2539,7 +2579,11 @@ def first_letter_on_path(board: Board, path: list[int]) -> str:
 
 
 def _effective_word_start_letter(board: Board, path: list[int], word: str) -> str:
-    """First letter for Bento/Chips-style conditions: path-first when currency leads."""
+    """First letter for Bento/Chips-style conditions (melmod path-first parity).
+
+    When currency/symbols lead the path but the dictionary word starts elsewhere, the
+    game uses the path's first letter tile (see ScoringContextCapture).
+    """
     path_first = first_letter_on_path(board, path)
     word_first = word_first_letter(word)
     if path_first and word_first and path_first != word_first:

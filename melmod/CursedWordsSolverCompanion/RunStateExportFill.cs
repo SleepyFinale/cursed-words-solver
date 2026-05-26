@@ -138,17 +138,26 @@ namespace CursedWordsSolverCompanion
 
         public static int ResolveGridNumber(Player player)
         {
-            if (CachedGridNumber >= 1)
-                return CachedGridNumber;
+            // Prefer live encounter/player index. CachedGridNumber is from the last
+            // CalculateOverallScore and can stay high across grids/encounters until the
+            // next submit (e.g. Bento Box firing on grid 1 when cache still says 2+).
+            var gridIndex = TryGetIntProperty(
+                player,
+                "CurrentGridIndex",
+                "GridIndex",
+                "GridsCompletedThisEncounter"
+            );
+            if (gridIndex >= 0)
+                return gridIndex + 1;
 
             var encounter = BossResolver.TryGetEncounter();
             if (encounter != null)
             {
                 var fromEncounter = TryGetIntProperty(
                     encounter,
-                    "CurrentGridsGenerated",
-                    "GridNumber",
                     "CurrentGridNumber",
+                    "GridNumber",
+                    "CurrentGridsGenerated",
                     "GridsGenerated"
                 );
                 if (fromEncounter >= 1)
@@ -174,16 +183,8 @@ namespace CursedWordsSolverCompanion
                 }
             }
 
-            var gridIndex = TryGetIntProperty(
-                player,
-                "CurrentGridIndex",
-                "GridIndex",
-                "GridsCompletedThisEncounter",
-                "GridNumber",
-                "CurrentGridNumber"
-            );
-            if (gridIndex >= 0)
-                return gridIndex + 1;
+            if (CachedGridNumber >= 1)
+                return CachedGridNumber;
 
             return 1;
         }

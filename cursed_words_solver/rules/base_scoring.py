@@ -14,6 +14,16 @@ def _is_melmod_tile(tile: Tile) -> bool:
     return tile.metadata.get("source") == "melmod"
 
 
+_CHESS_VOID_VALUES: dict[CurseType, int] = {
+    CurseType.CHESS_KING: 15,
+    CurseType.CHESS_QUEEN: 9,
+    CurseType.CHESS_ROOK: 5,
+    CurseType.CHESS_BISHOP: 3,
+    CurseType.CHESS_KNIGHT: 3,
+    CurseType.CHESS_PAWN: 1,
+}
+
+
 def _void_face_value(tile: Tile) -> int:
     """Magnitude to negate for void tiles when packet.Score is 0."""
     if tile.curse == CurseType.NUMBER:
@@ -21,6 +31,9 @@ def _void_face_value(tile: Tile) -> int:
             return tile.number_value
         if tile.letter.isdigit():
             return int(tile.letter)
+    chess_val = _CHESS_VOID_VALUES.get(tile.curse)
+    if chess_val is not None:
+        return chess_val
     return _scrabble_value(tile.letter)
 
 

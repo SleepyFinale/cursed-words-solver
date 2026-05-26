@@ -35,7 +35,7 @@ class BossContext:
 
 @dataclass(frozen=True)
 class BossConstraints:
-    min_len: int = 3
+    min_len: int = 1
     max_len: int = 15
     blocked: bool = False
     block_reason: str = ""
@@ -147,7 +147,7 @@ def boss_word_constraints(
         return BossConstraints(max_len=default_max_len)
 
     effect_type = ctx.rule.get("type", "")
-    min_len = 3
+    min_len = 1
     max_len = default_max_len
 
     if effect_type == "boss_word_min_length":

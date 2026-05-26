@@ -10,6 +10,7 @@ from cursed_words_solver.config import ensure_wordlist
 class WordDictionary:
     def __init__(self, path: Path | None = None) -> None:
         path = path or ensure_wordlist()
+        self.path = path
         self.words: set[str] = set()
         self._build(path)
 

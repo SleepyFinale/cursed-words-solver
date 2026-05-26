@@ -187,6 +187,24 @@ def test_bento_box_skipped_on_first_grid():
     assert score == 4.0
 
 
+def test_bento_box_skipped_when_stale_grid_number_but_first_grid_flag():
+    """Stale grid_number export must not trigger Bento on encounter grid 1."""
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "D", 2)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras={
+            "previous_word_first_letter": "d",
+            "grid_number": "2",
+            "is_first_grid_of_encounter": True,
+        },
+    )
+    score, bd = pipeline.score(board, [0], "debilities", loadout)
+    assert bd["multiplier"] == 1.0
+    assert score == 2.0
+
+
 def test_bento_box_path_first_letter_not_dictionary_word():
     """When path-first matches previous but dictionary word does not, Bento still applies."""
     board = _empty_board()

@@ -53,28 +53,26 @@ class Region:
 class AppConfig:
     board_region: Region = field(default_factory=Region)
     hotkey: str = "f8"
-    min_word_length: int = 3
-    max_word_length: int = 15
     search_time_budget_sec: float = 45.0
     top_n_results: int = 3
     wordlist: str = "game"
     show_board_highlight: bool = True
     setup_weight: float = 0.4
     setup_discount: float = 0.85
+    search_workers: int | str = "auto"
 
     def save(self) -> None:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         payload = {
             "board_region": self.board_region.to_dict(),
             "hotkey": self.hotkey,
-            "min_word_length": self.min_word_length,
-            "max_word_length": self.max_word_length,
             "search_time_budget_sec": self.search_time_budget_sec,
             "top_n_results": self.top_n_results,
             "wordlist": self.wordlist,
             "show_board_highlight": self.show_board_highlight,
             "setup_weight": self.setup_weight,
             "setup_discount": self.setup_discount,
+            "search_workers": self.search_workers,
         }
         CONFIG_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -83,9 +81,10 @@ class AppConfig:
         if not CONFIG_PATH.exists():
             return cls()
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        max_word_length = int(data.get("max_word_length", 15))
         search_time_budget_sec = float(data.get("search_time_budget_sec", 45.0))
         migrated = False
+        if "min_word_length" in data or "max_word_length" in data:
+            migrated = True
         if search_time_budget_sec in (
             LEGACY_SEARCH_TIME_BUDGET_SEC,
             PREVIOUS_SEARCH_TIME_BUDGET_SEC,
@@ -93,20 +92,18 @@ class AppConfig:
         ):
             search_time_budget_sec = 45.0
             migrated = True
-        if max_word_length == LEGACY_MAX_WORD_LENGTH:
-            max_word_length = 15
+        if int(data.get("max_word_length", 15)) == LEGACY_MAX_WORD_LENGTH:
             migrated = True
         cfg = cls(
             board_region=Region.from_dict(data.get("board_region", {})),
             hotkey=data.get("hotkey", "f8"),
-            min_word_length=int(data.get("min_word_length", 3)),
-            max_word_length=max_word_length,
             search_time_budget_sec=search_time_budget_sec,
             top_n_results=int(data.get("top_n_results", 3)),
             wordlist=str(data.get("wordlist", "game")),
             show_board_highlight=bool(data.get("show_board_highlight", True)),
             setup_weight=float(data.get("setup_weight", 0.4)),
             setup_discount=float(data.get("setup_discount", 0.85)),
+            search_workers=data.get("search_workers", "auto"),
         )
         if migrated:
             cfg.save()

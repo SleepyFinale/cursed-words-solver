@@ -137,7 +137,8 @@ def test_brain_level1_multiplier_1_5():
     p = bd["pipeline"]
     assert p["multiplier"] == 1.5
     assert sum(p["tile_scores"]) == 15.0
-    assert p["word_score"] == 7.0
+    # Brain defers ×WORD to finalize (not baked into word_score mid-pipeline).
+    assert p["word_score"] == 0.0
     assert score == 22.0
 
 
@@ -660,6 +661,33 @@ def test_shiny_letter_before_void_number_no_path_bonus():
     assert "tile before VOID" not in effects
     # shiny G (50) + void 6 (-6) = 44; wrong +2 on G would yield 46
     assert score == 44.0
+
+
+def test_void_path_no_bonus_before_void_run():
+    """Letter before void number gets no +2 when next void is followed by another void number."""
+    def tile(r, c, ch, score, *, color=TileColor.COLORLESS, curse=CurseType.LETTER, nv=None):
+        return Tile(
+            row=r,
+            col=c,
+            char=ch,
+            letter=ch,
+            base_score=score,
+            color=color,
+            curse=curse,
+            number_value=nv,
+            metadata={"source": "melmod"},
+        )
+
+    grid = [[tile(r, c, "a", 1) for c in range(5)] for r in range(5)]
+    grid[2][2] = tile(2, 2, "x", 8)
+    grid[3][1] = tile(3, 1, "4", 0, curse=CurseType.NUMBER, nv=4, color=TileColor.VOID)
+    grid[4][2] = tile(4, 2, "5", 0, curse=CurseType.NUMBER, nv=5, color=TileColor.VOID)
+    board = Board(tiles=grid, money=0)
+    path = [12, 16, 22]
+    score, bd = ScoringPipeline().score(board, path, "x45", Loadout())
+    effects = " ".join(bd["pipeline"]["effects"])
+    assert "tile before VOID" not in effects
+    assert sum(bd["pipeline"]["tile_scores"]) == 8.0 + (-4) + (-5)
 
 
 def test_m23ders_void_letters_no_path_bonus_scores_36():

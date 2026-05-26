@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+
+from cursed_words_solver.fingerprints import board_fingerprint
 from cursed_words_solver.models import (
     CHESS_CURSES,
     Board,
@@ -28,6 +31,20 @@ BLACK_HOME_ROW = 0
 WHITE_HOME_ROW = 4
 EN_PASSANT_BLACK_RANK = 1
 EN_PASSANT_WHITE_RANK = 3
+
+_ATTACK_CACHE_MAX = 8192
+_attack_cache: OrderedDict[tuple, bool] = OrderedDict()
+
+
+def _visited_cache_key(visited: int | set[int]) -> int | frozenset[int]:
+    if isinstance(visited, set):
+        return frozenset(visited)
+    return visited
+
+
+def clear_chess_attack_cache() -> None:
+    """Clear attack lookup cache (call at start of each solve)."""
+    _attack_cache.clear()
 
 
 def index_of(row: int, col: int) -> int:
@@ -472,7 +489,7 @@ def _is_square_attacked_by_sliding(
     return False
 
 
-def is_square_attacked(
+def _is_square_attacked_uncached(
     board: Board,
     row: int,
     col: int,
@@ -494,6 +511,31 @@ def is_square_attacked(
     ):
         return True
     return False
+
+
+def is_square_attacked(
+    board: Board,
+    row: int,
+    col: int,
+    by_side: str,
+    visited: int | set[int],
+) -> bool:
+    key = (
+        board_fingerprint(board),
+        _visited_cache_key(visited),
+        row,
+        col,
+        by_side,
+    )
+    hit = _attack_cache.get(key)
+    if hit is not None:
+        _attack_cache.move_to_end(key)
+        return hit
+    result = _is_square_attacked_uncached(board, row, col, by_side, visited)
+    _attack_cache[key] = result
+    if len(_attack_cache) > _ATTACK_CACHE_MAX:
+        _attack_cache.popitem(last=False)
+    return result
 
 
 def king_neighbors(

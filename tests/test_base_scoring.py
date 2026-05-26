@@ -97,6 +97,34 @@ def test_melmod_void_number_zero_base_score():
     assert tile_base_contribution(t) == -9
 
 
+def test_melmod_void_chess_queen_zero_base_score():
+    t = Tile(
+        0,
+        0,
+        "w",
+        "?",
+        0,
+        TileColor.VOID,
+        CurseType.CHESS_QUEEN,
+        metadata={"source": "melmod", "chess_color": "black"},
+    )
+    assert tile_base_contribution(t) == -9
+
+
+def test_melmod_void_chess_king_zero_base_score():
+    t = Tile(
+        0,
+        0,
+        "k",
+        "?",
+        0,
+        TileColor.VOID,
+        CurseType.CHESS_KING,
+        metadata={"source": "melmod", "chess_color": "white"},
+    )
+    assert tile_base_contribution(t) == -15
+
+
 def test_red_bonus():
     t = Tile(0, 0, "A", "A", 1, TileColor.RED, CurseType.LETTER)
     assert tile_base_contribution(t) == 2  # 1 + 1

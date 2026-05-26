@@ -118,18 +118,45 @@ class SolverApp:
         self._bridge.solve_finished.connect(self._apply_solve_ui)
         self.overlay.request_quit.connect(self._shutdown)
         atexit.register(keyboard.unhook_all)
+        atexit.register(self._shutdown_search_pool)
 
     def _ensure_solver(self) -> bool:
         if self._dictionary is None:
             wl_path = resolve_wordlist(self.config.wordlist)
             self._dictionary = WordDictionary(wl_path)
         if self._searcher is None:
+            from cursed_words_solver.search_parallel import (
+                resolve_search_workers,
+                warmup_search_pool,
+            )
+
+            wl_path = resolve_wordlist(self.config.wordlist)
+            workers = resolve_search_workers(self.config.search_workers)
             self._searcher = WordSearcher(
                 dictionary=self._dictionary,
-                min_len=self.config.min_word_length,
-                max_len=self.config.max_word_length,
+                min_len=1,
+                max_len=25,
                 time_budget=self.config.search_time_budget_sec,
+                setup_weight=self.config.setup_weight,
+                setup_discount=self.config.setup_discount,
+                search_workers=workers,
+                wordlist_path=wl_path,
             )
+            if workers > 1:
+                print(
+                    f"Warming parallel search pool ({workers} workers)...",
+                    flush=True,
+                )
+                warm_sec = warmup_search_pool(wl_path, workers)
+                from cursed_words_solver.config import wordlist_count
+
+                words = wordlist_count(wl_path)
+                words_note = f", {words} words" if words else ""
+                print(
+                    f"  Pool ready in {warm_sec:.1f}s "
+                    f"({workers} workers{words_note}).",
+                    flush=True,
+                )
         return True
 
     def run(self) -> int:
@@ -279,6 +306,12 @@ class SolverApp:
             keyboard.unhook_all()
         except Exception:
             pass
+
+    @staticmethod
+    def _shutdown_search_pool() -> None:
+        from cursed_words_solver.search_parallel import shutdown_search_pool
+
+        shutdown_search_pool(wait=False)
 
     def _shutdown(self) -> None:
         if self._shutting_down:
@@ -469,17 +502,16 @@ class SolverApp:
                     "rebuild melmod if you are fighting a boss.",
                     flush=True,
                 )
+            board_max_len = max(1, sum(board.active))
             constraints = boss_word_constraints(
                 loadout,
                 self._scoring.rules,
-                default_max_len=self.config.max_word_length,
+                default_max_len=board_max_len,
             )
-            effective_min = max(
-                self.config.min_word_length, constraints.min_len
-            )
-            effective_max = min(
-                self.config.max_word_length, constraints.max_len
-            )
+            effective_min = max(1, constraints.min_len)
+            effective_max = min(board_max_len, constraints.max_len)
+            if effective_max < effective_min:
+                effective_max = effective_min
             self._searcher.min_len = effective_min
             self._searcher.max_len = effective_max
             self._searcher.time_budget = search_budget
@@ -499,6 +531,12 @@ class SolverApp:
             print(search_msg + "...", flush=True)
             if constraints.blocked and constraints.block_reason:
                 print(f"  Boss: {constraints.block_reason}", flush=True)
+            if self._searcher.search_workers > 1:
+                print(
+                    f"  Parallel search: {self._searcher.search_workers} workers "
+                    "(pool reused for this solve)",
+                    flush=True,
+                )
             results = self._searcher.find_best_words(
                 board,
                 loadout=loadout,
@@ -514,6 +552,18 @@ class SolverApp:
                     min_len=effective_min,
                 )
             search_elapsed = time.monotonic() - search_started
+            timing = self._searcher.last_search_timing
+            if timing is not None:
+                pool_note = (
+                    f", pool init {timing.pool_init_sec:.1f}s"
+                    if timing.pool_init_sec > 0.05
+                    else ""
+                )
+                print(
+                    f"  Timing: dfs {timing.dfs_sec:.1f}s, extend {timing.extend_sec:.1f}s, "
+                    f"chess {timing.chess_sec:.1f}s (budget {search_budget:.0f}s{pool_note})",
+                    flush=True,
+                )
 
             pred_trace: list | None = None
             if results:

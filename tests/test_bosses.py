@@ -152,6 +152,22 @@ def test_wolf_max_length_constraint():
     assert c.max_len == 4
 
 
+def test_default_word_constraints_use_min_one_and_passed_max():
+    board = _board_letters(
+        [
+            "word.",
+            "grid.",
+            "....h",
+            ".....",
+            ".....",
+        ]
+    )
+    loadout = _loadout()
+    c = boss_word_constraints(loadout, RULES, default_max_len=sum(board.active))
+    assert c.min_len == 1
+    assert c.max_len == 9
+
+
 def test_fox_steal_in_pipeline():
     board = _board_letters(["cat..", ".....", ".....", ".....", "....."])
     loadout = _loadout(

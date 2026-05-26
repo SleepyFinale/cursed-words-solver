@@ -326,6 +326,38 @@ def _predicted_mutating_first_word_only(data: dict) -> bool:
     return False
 
 
+def _bento_applied_in_actual_trace(data: dict) -> bool:
+    trace = data.get("actual_trace")
+    if not isinstance(trace, list):
+        return False
+    for step in trace:
+        if not isinstance(step, dict):
+            continue
+        item_id = str(step.get("item_id", "") or "").lower()
+        if item_id != "bento_box":
+            continue
+        if step.get("word_bonus_multiplicative"):
+            return True
+    return False
+
+
+def _adjust_bento_previous_word_extras(run_state: dict, data: dict) -> None:
+    """Drop stale previous_word_first_letter when submit trace shows Bento did not fire."""
+    stamps = run_state.get("stamps")
+    if not isinstance(stamps, list):
+        return
+    has_bento = any(
+        isinstance(s, dict)
+        and str(s.get("id", "") or "").lower() in ("bento_box", "bento")
+        for s in stamps
+    )
+    if not has_bento or _bento_applied_in_actual_trace(data):
+        return
+    extras = dict(run_state.get("extras") or {})
+    if extras.pop("previous_word_first_letter", None) is not None:
+        run_state["extras"] = extras
+
+
 def _adjust_previous_word_letter_extras(run_state: dict, data: dict) -> None:
     """Drop stale previous_word_first_letter when scoring had no prior word yet."""
     trace = data.get("predicted_trace")
@@ -484,6 +516,7 @@ def test_scoring_mismatch(case_path: Path) -> None:
     if not run_state:
         pytest.fail(f"{case_path.name}: missing run_state_snapshot")
     _adjust_previous_word_letter_extras(run_state, data)
+    _adjust_bento_previous_word_extras(run_state, data)
 
     word = data["word"]
     path = data["path"]

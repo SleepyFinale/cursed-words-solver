@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import heapq
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
+
+from concurrent.futures import ProcessPoolExecutor
 
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import (
@@ -32,8 +36,13 @@ from cursed_words_solver.rules.scoring_conditions import (
     tile_number_value,
 )
 from cursed_words_solver.rules.fraction_tiles import fraction_position_valid
+from cursed_words_solver.fast_rank import (
+    fast_rank_lower_bound,
+    loadout_allows_fast_rank,
+)
 from cursed_words_solver.rules.chess_tiles import (
     chess_neighbors,
+    clear_chess_attack_cache,
     identical_chess_piece,
     is_chess_piece,
 )
@@ -53,6 +62,18 @@ DIRS_8 = [
 
 TIME_CHECK_INTERVAL = 256
 DEFAULT_CANDIDATE_HEAP_SIZE = 100
+
+
+@dataclass
+class SearchTiming:
+    """Phase timings from the last find_best_words call."""
+
+    wall_sec: float = 0.0
+    dfs_sec: float = 0.0
+    extend_sec: float = 0.0
+    chess_sec: float = 0.0
+    pool_init_sec: float = 0.0
+    parallel_workers: int = 1
 
 
 def index_of(row: int, col: int) -> int:
@@ -87,6 +108,12 @@ class _CandidateHeap:
             heapq.heappush(self._heap, entry)
         elif entry > self._heap[0]:
             heapq.heapreplace(self._heap, entry)
+
+    def min_rank_score(self) -> float | None:
+        """Lowest rank_score among kept candidates, or None if heap not full."""
+        if len(self._heap) < self._k:
+            return None
+        return self._heap[0][0]
 
     def best_sorted(self) -> list[tuple[float, str, tuple[int, ...]]]:
         out: list[tuple[float, str, tuple[int, ...]]] = []
@@ -654,6 +681,20 @@ def _chess_start_indices(board: Board) -> list[int]:
     ]
 
 
+def _chess_tile_count(board: Board) -> int:
+    return sum(1 for t in board.flat if is_chess_piece(t))
+
+
+def _chess_prefix_budget_sec(board: Board) -> float:
+    """Adaptive budget for chess-only prefix seeding (0 = skip)."""
+    count = _chess_tile_count(board)
+    if count < 3:
+        return 0.0
+    if count < 6:
+        return 0.5
+    return 2.0
+
+
 def _interleaved_number_starts(board: Board) -> list[int]:
     """Round-robin across number faces so one '1' tile cannot monopolize digit-pass time."""
     buckets: dict[int, list[int]] = {}
@@ -714,6 +755,9 @@ class WordSearcher:
         block_reason: str = "",
         setup_weight: float = 0.4,
         setup_discount: float = 0.85,
+        search_workers: int = 1,
+        wordlist_path: Path | None = None,
+        use_fast_rank: bool | None = None,
     ) -> None:
         self.dictionary = dictionary or WordDictionary()
         self.validator = PathValidator(self.dictionary, min_len)
@@ -727,7 +771,16 @@ class WordSearcher:
         self.candidate_heap_size = candidate_heap_size
         self.setup_weight = setup_weight
         self.setup_discount = setup_discount
+        self.search_workers = max(1, int(search_workers))
+        self._wordlist_path = wordlist_path or getattr(
+            self.dictionary, "path", None
+        )
+        self._use_fast_rank_override = use_fast_rank
         self._score_cache: dict[tuple[tuple[int, ...], str], tuple[float, float, float]] = {}
+        self._prune_heap: _CandidateHeap | None = None
+        self._parallel_executor: ProcessPoolExecutor | None = None
+        self._active_deadline: float | None = None
+        self.last_search_timing: SearchTiming | None = None
 
     def _min_start_slice_sec(self) -> float:
         if self.time_budget >= 12.0:
@@ -737,6 +790,20 @@ class WordSearcher:
         if self.time_budget >= 3.0:
             return 0.25
         return 0.0
+
+    def _use_fast_rank_for(self, loadout: Loadout) -> bool:
+        if self._use_fast_rank_override is not None:
+            return self._use_fast_rank_override
+        return loadout_allows_fast_rank(loadout, setup_weight=self.setup_weight)
+
+    def _time_expired(self) -> bool:
+        dl = self._active_deadline
+        return dl is not None and time.monotonic() >= dl
+
+    def _time_check_interval(self, loadout: Loadout) -> int:
+        if loadout.stickers or loadout.stamps or loadout.boss_effect:
+            return 32
+        return TIME_CHECK_INTERVAL
 
     def _collect_words_fair_starts(
         self,
@@ -750,7 +817,31 @@ class WordSearcher:
         digits_only: bool = False,
     ) -> None:
         """Give each start a fair share of pass_deadline (prevents cell 0 eating the whole budget)."""
-        if not starts:
+        if not starts or time.monotonic() >= pass_deadline:
+            return
+        pool = self._parallel_executor
+        if (
+            pool is not None
+            and self.search_workers > 1
+            and len(starts) > 1
+        ):
+            from cursed_words_solver.search_parallel import parallel_collect_fair_starts
+
+            parallel_collect_fair_starts(
+                executor=pool,
+                workers=self.search_workers,
+                board=board,
+                loadout=loadout,
+                candidates=candidates,
+                deadline=pass_deadline,
+                max_len=max_len,
+                min_len=self.min_len,
+                starts=starts,
+                digits_only=digits_only,
+                setup_weight=self.setup_weight,
+                setup_discount=self.setup_discount,
+                use_fast_rank=self._use_fast_rank_for(loadout),
+            )
             return
         n = len(starts)
         pass_start = time.monotonic()
@@ -791,8 +882,19 @@ class WordSearcher:
         digits_only: bool = False,
         start_indices: list[int] | None = None,
     ) -> None:
-        def score_path(path: list[int], word: str) -> float:
-            return self._rank_score_for_candidate(board, path, word, loadout)
+        use_fast = self._use_fast_rank_for(loadout)
+        prev_heap = self._prune_heap
+        prev_deadline = self._active_deadline
+        self._prune_heap = candidates if use_fast else None
+        self._active_deadline = deadline
+        check_interval = self._time_check_interval(loadout)
+
+        def score_path(path: list[int], word: str) -> float | None:
+            if self._time_expired():
+                return None
+            return self._rank_score_for_candidate(
+                board, path, word, loadout, prune_heap=candidates if use_fast else None
+            )
 
         expansions = 0
         timed_out = False
@@ -801,13 +903,13 @@ class WordSearcher:
 
         def dfs(path: list[int], letters: str, visited_mask: int) -> None:
             nonlocal expansions, timed_out
-            if timed_out:
+            if timed_out or self._time_expired():
+                timed_out = True
                 return
             expansions += 1
-            if expansions % TIME_CHECK_INTERVAL == 0:
-                if time.monotonic() > deadline:
-                    timed_out = True
-                    return
+            if expansions % check_interval == 0 and time.monotonic() > deadline:
+                timed_out = True
+                return
 
             word = letters.lower()
             if len(word) >= self.min_len and self.validator.word_ok(
@@ -815,9 +917,10 @@ class WordSearcher:
             ):
                 if not digits_only or any(ch.isdigit() for ch in word):
                     sc = score_path(path, word)
-                    candidates.consider(sc, word, path)
+                    if sc is not None:
+                        candidates.consider(sc, word, path)
 
-            if len(path) >= max_len:
+            if len(path) >= max_len or timed_out:
                 return
 
             steps_left = max_len - len(path)
@@ -829,6 +932,9 @@ class WordSearcher:
             for idx in _neighbors_sorted_by_base_score(
                 board, path, visited_mask, flags=stamp_flags
             ):
+                if timed_out or self._time_expired():
+                    timed_out = True
+                    break
                 tile = board.get_by_index(idx)
                 ch = resolve_letter(tile, len(letters), flags=stamp_flags)
                 dfs(path + [idx], letters + ch, visited_mask | (1 << idx))
@@ -844,21 +950,37 @@ class WordSearcher:
             ch = resolve_letter(tile, 0, flags=stamp_flags)
             dfs([start], ch, 1 << start)
 
+        self._prune_heap = prev_heap
+        self._active_deadline = prev_deadline
+
     def _chess_prefix_candidates(
         self,
         board: Board,
         loadout: Loadout,
         *,
-        budget_sec: float = 2.0,
+        budget_sec: float | None = None,
+        solve_deadline: float | None = None,
         max_cap: int = 5,
         heap_k: int = 200,
     ) -> list[tuple[float, str, tuple[int, ...]]]:
         """Quick DFS from chess starts; returned paths seed extension (not main heap)."""
+        if solve_deadline is not None and time.monotonic() >= solve_deadline:
+            return []
+        if budget_sec is None:
+            budget_sec = _chess_prefix_budget_sec(board)
+        if budget_sec <= 0:
+            return []
+        if solve_deadline is not None:
+            budget_sec = min(budget_sec, max(0.0, solve_deadline - time.monotonic()))
+            if budget_sec <= 0:
+                return []
         chess_starts = _chess_start_indices(board)
         if not chess_starts:
             return []
         mini = _CandidateHeap(heap_k)
         deadline = time.monotonic() + budget_sec
+        if solve_deadline is not None:
+            deadline = min(deadline, solve_deadline)
         cap_hi = min(max_cap, self.max_len)
         for cap in range(self.min_len, cap_hi + 1):
             if time.monotonic() >= deadline:
@@ -882,54 +1004,76 @@ class WordSearcher:
         top_paths: int = 20,
         max_rounds: int | None = None,
         extra_seeds: list[tuple[float, str, tuple[int, ...]]] | None = None,
+        deadline: float | None = None,
     ) -> None:
         """Extend strong partial paths by one tile per round (cheap cap+N refinement)."""
         if self.max_len <= self.min_len:
+            return
+        if deadline is not None and time.monotonic() >= deadline:
             return
         if max_rounds is None:
             max_rounds = min(self.max_len - self.min_len, 12)
         stamp_flags = stamp_search_flags(loadout)
 
-        def score_path(path: list[int], word: str) -> float:
-            return self._rank_score_for_candidate(board, path, word, loadout)
+        use_fast = self._use_fast_rank_for(loadout)
 
-        for _round in range(max_rounds):
-            extended = False
-            seen_prefixes: set[tuple[int, ...]] = set()
-            seed_entries = list(candidates.best_sorted()[:top_paths])
-            if extra_seeds:
-                seed_entries.extend(extra_seeds)
-            for _score, _word, path_tuple in seed_entries:
-                path = list(path_tuple)
-                if len(path) >= self.max_len:
-                    continue
-                key = tuple(path)
-                if key in seen_prefixes:
-                    continue
-                seen_prefixes.add(key)
-                visited_mask = sum(1 << idx for idx in path)
-                letters = "".join(
-                    resolve_letter(board.get_by_index(idx), j, flags=stamp_flags)
-                    for j, idx in enumerate(path)
-                )
-                for idx in neighbors_from_tile(
-                    board, path, visited_mask, flags=stamp_flags
-                ):
-                    tile = board.get_by_index(idx)
-                    ch = resolve_letter(tile, len(letters), flags=stamp_flags)
-                    word = (letters + ch).lower()
-                    new_path = path + [idx]
-                    if len(word) < self.min_len:
+        def score_path(path: list[int], word: str) -> float | None:
+            if self._time_expired():
+                return None
+            return self._rank_score_for_candidate(
+                board, path, word, loadout, prune_heap=candidates if use_fast else None
+            )
+
+        prev_deadline = self._active_deadline
+        if deadline is not None:
+            self._active_deadline = deadline
+        try:
+            for _round in range(max_rounds):
+                if deadline is not None and time.monotonic() >= deadline:
+                    break
+                extended = False
+                seen_prefixes: set[tuple[int, ...]] = set()
+                seed_entries = list(candidates.best_sorted()[:top_paths])
+                if extra_seeds:
+                    seed_entries.extend(extra_seeds)
+                for _score, _word, path_tuple in seed_entries:
+                    if deadline is not None and time.monotonic() >= deadline:
+                        break
+                    path = list(path_tuple)
+                    if len(path) >= self.max_len:
                         continue
-                    if not self.validator.word_ok(
-                        board, new_path, word, stamp_flags
+                    key = tuple(path)
+                    if key in seen_prefixes:
+                        continue
+                    seen_prefixes.add(key)
+                    visited_mask = sum(1 << idx for idx in path)
+                    letters = "".join(
+                        resolve_letter(board.get_by_index(idx), j, flags=stamp_flags)
+                        for j, idx in enumerate(path)
+                    )
+                    for idx in neighbors_from_tile(
+                        board, path, visited_mask, flags=stamp_flags
                     ):
-                        continue
-                    sc = score_path(new_path, word)
-                    candidates.consider(sc, word, new_path)
-                    extended = True
-            if not extended:
-                break
+                        if deadline is not None and time.monotonic() >= deadline:
+                            break
+                        tile = board.get_by_index(idx)
+                        ch = resolve_letter(tile, len(letters), flags=stamp_flags)
+                        word = (letters + ch).lower()
+                        new_path = path + [idx]
+                        if len(word) < self.min_len:
+                            continue
+                        if not self.validator.word_ok(
+                            board, new_path, word, stamp_flags
+                        ):
+                            continue
+                        sc = score_path(new_path, word)
+                        if sc is not None:
+                            candidates.consider(sc, word, new_path)
+                            extended = True
+                if not extended:
+                    break
+        finally:
+            self._active_deadline = prev_deadline
 
     def _refine_candidates_with_extension(
         self,
@@ -967,11 +1111,22 @@ class WordSearcher:
         path: list[int],
         word: str,
         loadout: Loadout,
-    ) -> float:
+        *,
+        prune_heap: _CandidateHeap | None = None,
+    ) -> float | None:
+        if self._time_expired():
+            return None
         key = (tuple(path), word)
         cached = self._score_cache.get(key)
         if cached is not None:
             return cached[2]
+        heap = prune_heap
+        if heap is not None:
+            min_sc = heap.min_rank_score()
+            if min_sc is not None:
+                lb = fast_rank_lower_bound(board, path)
+                if lb <= min_sc:
+                    return None
         if self.score_fn:
             immediate = self.score_fn(board, path, word, loadout)
             rank = immediate
@@ -1014,12 +1169,13 @@ class WordSearcher:
         if self.blocked:
             return []
         self._score_cache.clear()
+        clear_chess_attack_cache()
         loadout = loadout or Loadout(money=board.money)
         board = effective_board_for_loadout(board, loadout, self.scoring.rules)
         heap_k = self.candidate_heap_size or _candidate_heap_size(top_n)
         candidates = _CandidateHeap(heap_k)
-        start_time = time.monotonic()
-        deadline = start_time + self.time_budget
+        solve_start = time.monotonic()
+        timing = SearchTiming(parallel_workers=self.search_workers)
         has_number_tiles = any(is_number_like_tile(t) for t in board.flat)
         has_fraction_tiles = any(is_fraction_tile(t) for t in board.flat)
         void_letter_starts = [
@@ -1047,98 +1203,137 @@ class WordSearcher:
             number_reserve = 0.0
             void_reserve = 0.0
             fraction_cluster_reserve = 0.0
+
+        letter_starts = _balanced_start_indices(board)
+        use_parallel = (
+            self.search_workers > 1
+            and self._wordlist_path is not None
+        )
+        # Short budgets: one pass at max_len. Longer budgets: deepen so DFS does not
+        # exhaust the first high-base-score branch to max_len before shorter words.
+        # Parallel mode uses one pass at max_len to avoid repeated pool scheduling.
+        if use_parallel:
+            caps: range | list[int] = [self.max_len]
+        elif self.time_budget >= 6.0 and self.max_len > self.min_len:
+            caps = range(self.min_len, self.max_len + 1)
+        else:
+            caps = [self.max_len]
+
+        from cursed_words_solver.search_parallel import get_search_pool
+
+        pool = (
+            get_search_pool(self._wordlist_path, self.search_workers)
+            if use_parallel
+            else None
+        )
+        # Budget starts after pool handle exists (workers should already be warm).
+        search_begin = time.monotonic()
+        deadline = search_begin + self.time_budget
         main_deadline = (
             deadline - number_reserve - void_reserve - fraction_cluster_reserve
         )
-
-        letter_starts = _balanced_start_indices(board)
-        # Short budgets: one pass at max_len. Longer budgets: deepen so DFS does not
-        # exhaust the first high-base-score branch to max_len before shorter words.
-        if self.time_budget >= 6.0 and self.max_len > self.min_len:
-            caps: range | list[int] = range(self.min_len, self.max_len + 1)
-        else:
-            caps = [self.max_len]
-        for cap in caps:
-            if time.monotonic() >= main_deadline:
-                break
-            self._collect_words_fair_starts(
-                board,
-                loadout,
-                candidates,
-                main_deadline,
-                cap,
-                letter_starts,
-            )
-
-        if has_number_tiles:
-            if fraction_cluster_reserve > 0 and time.monotonic() < deadline:
-                cluster_starts = _fraction_cluster_number_starts(board)
-                if cluster_starts:
-                    cluster_deadline = min(
-                        deadline, time.monotonic() + fraction_cluster_reserve
-                    )
-                    priority_starts = [
-                        i
-                        for i in cluster_starts
-                        if float(board.get_by_index(i).base_score) >= 40.0
-                    ]
-                    if not priority_starts:
-                        priority_starts = cluster_starts[:1]
-                    cluster_cap = min(9, self.max_len)
-                    for cap in range(7, cluster_cap + 1):
-                        if time.monotonic() >= cluster_deadline:
-                            break
-                        self._collect_words_fair_starts(
-                            board,
-                            loadout,
-                            candidates,
-                            cluster_deadline,
-                            cap,
-                            priority_starts,
-                            digits_only=True,
-                        )
-
-            if void_letter_starts and time.monotonic() < deadline:
-                void_cap = 7 if self.max_len >= 7 else self.max_len
-                void_deadline = min(deadline, time.monotonic() + void_reserve)
-                self._collect_words_fair_starts(
-                    board,
-                    loadout,
-                    candidates,
-                    void_deadline,
-                    void_cap,
-                    void_letter_starts,
-                    digits_only=True,
-                )
-
-            number_starts = _interleaved_number_starts(board)
-            digit_start = 7 if self.max_len >= 7 else 6
-            for cap in range(digit_start, self.max_len + 1):
-                if time.monotonic() >= deadline or not number_starts:
+        dfs_start = search_begin
+        self._parallel_executor = pool
+        try:
+            for cap in caps:
+                if time.monotonic() >= main_deadline:
                     break
-                before = len(candidates)
                 self._collect_words_fair_starts(
                     board,
                     loadout,
                     candidates,
-                    deadline,
+                    main_deadline,
                     cap,
-                    number_starts,
-                    digits_only=True,
+                    letter_starts,
                 )
-                if cap >= 8 and len(candidates) == before:
-                    break
 
-        if len(candidates) > 0:
-            chess_seeds = self._chess_prefix_candidates(board, loadout)
+            if has_number_tiles:
+                if fraction_cluster_reserve > 0 and time.monotonic() < deadline:
+                    cluster_starts = _fraction_cluster_number_starts(board)
+                    if cluster_starts:
+                        cluster_deadline = min(
+                            deadline,
+                            time.monotonic() + fraction_cluster_reserve,
+                        )
+                        priority_starts = [
+                            i
+                            for i in cluster_starts
+                            if float(board.get_by_index(i).base_score) >= 40.0
+                        ]
+                        if not priority_starts:
+                            priority_starts = cluster_starts[:1]
+                        cluster_cap = min(9, self.max_len)
+                        for cap in range(7, cluster_cap + 1):
+                            if time.monotonic() >= cluster_deadline:
+                                break
+                            self._collect_words_fair_starts(
+                                board,
+                                loadout,
+                                candidates,
+                                cluster_deadline,
+                                cap,
+                                priority_starts,
+                                digits_only=True,
+                            )
+
+                if void_letter_starts and time.monotonic() < deadline:
+                    void_cap = 7 if self.max_len >= 7 else self.max_len
+                    void_deadline = min(
+                        deadline, time.monotonic() + void_reserve
+                    )
+                    self._collect_words_fair_starts(
+                        board,
+                        loadout,
+                        candidates,
+                        void_deadline,
+                        void_cap,
+                        void_letter_starts,
+                        digits_only=True,
+                    )
+
+                number_starts = _interleaved_number_starts(board)
+                digit_start = 7 if self.max_len >= 7 else 6
+                for cap in range(digit_start, self.max_len + 1):
+                    if time.monotonic() >= deadline or not number_starts:
+                        break
+                    before = len(candidates)
+                    self._collect_words_fair_starts(
+                        board,
+                        loadout,
+                        candidates,
+                        deadline,
+                        cap,
+                        number_starts,
+                        digits_only=True,
+                    )
+                    if cap >= 8 and len(candidates) == before:
+                        break
+        finally:
+            self._parallel_executor = None
+
+        timing.dfs_sec = time.monotonic() - dfs_start
+
+        chess_seeds: list[tuple[float, str, tuple[int, ...]]] = []
+        if len(candidates) > 0 and time.monotonic() < deadline:
+            chess_start = time.monotonic()
+            chess_seeds = self._chess_prefix_candidates(
+                board, loadout, solve_deadline=deadline
+            )
+            timing.chess_sec = time.monotonic() - chess_start
             heap_k = self.candidate_heap_size or _candidate_heap_size(top_n)
+            extend_start = time.monotonic()
             self._extend_top_candidates(
                 board,
                 loadout,
                 candidates,
                 top_paths=min(30, len(candidates), heap_k),
                 extra_seeds=chess_seeds or None,
+                deadline=deadline,
             )
+            timing.extend_sec = time.monotonic() - extend_start
+
+        timing.wall_sec = time.monotonic() - solve_start
+        self.last_search_timing = timing
 
         seen_words: set[str] = set()
         unique: list[WordResult] = []
