@@ -98,6 +98,8 @@ from cursed_words_solver.rules.scoring_conditions import (
     first_letter_on_path,
     word_first_letter,
     detect_card_hand,
+    hanafuda_hand_satisfied,
+    hanafuda_x_required,
     unused_cards_on_board,
     is_colored_number_tile,
     is_number_like_tile,
@@ -331,7 +333,8 @@ def _queue_word_percent_bonus(
 
     Example: wiki ×1.5 => percent 150; wiki ×4 => percent 400.
     """
-    if percent <= 0:
+    # Allow negative percents for "negative multiplier" stickers (e.g. Avocado mushy).
+    if percent == 0:
         return
     state["pending_word_percent_bonuses"].append((int(percent), rule_id))
     if wiki_factor is not None and wiki_factor != 1.0:
@@ -378,6 +381,7 @@ def _trace_rule_snapshot(state: dict[str, Any]) -> tuple[Any, ...]:
         tuple(state["tile_scores"]),
         float(state["word_score"]),
         len(state.get("pending_word_multipliers", [])),
+        len(state.get("pending_word_percent_bonuses", [])),
         int(state.get("money_bonus", 0)),
     )
 
@@ -1646,17 +1650,26 @@ class ScoringPipeline:
 
         elif effect_type == "card_hand_word_bonus":
             hand = rule.get("hand", "")
-            if not detect_card_hand(hand, board, path, loadout):
+            if rule.get("word_mode") == "per_unused_card":
+                if not hanafuda_hand_satisfied(board, path, level):
+                    pass
+                else:
+                    n_unused = unused_cards_on_board(board, path)
+                    per = sticker_rule_int(level, rule)
+                    x = hanafuda_x_required(level)
+                    hand_label = {
+                        2: "pair",
+                        3: "three_of_a_kind",
+                        4: "four_of_a_kind",
+                    }.get(x, hand or "pair")
+                    if n_unused and per:
+                        bonus = per * n_unused
+                        _add_word_score(state, bonus)
+                        state["effects"].append(
+                            f"+{bonus} word ({hand_label}, {n_unused} unused card(s))"
+                        )
+            elif not detect_card_hand(hand, board, path, loadout):
                 pass
-            elif rule.get("word_mode") == "per_unused_card" and hand == "pair":
-                n_unused = unused_cards_on_board(board, path)
-                per = sticker_rule_int(level, rule)
-                if n_unused and per:
-                    bonus = per * n_unused
-                    _add_word_score(state, bonus)
-                    state["effects"].append(
-                        f"+{bonus} word (pair, {n_unused} unused card(s))"
-                    )
             else:
                 bonus = sticker_rule_int(level, rule)
                 if bonus:

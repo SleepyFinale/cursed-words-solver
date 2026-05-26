@@ -391,14 +391,15 @@ def test_wheezy_vixen_skipped_for_speccy_currency_path():
     run_state["extras"] = extras
     board = parse_board_from_run_state(run_state)
     loadout = parse_run_state(run_state)
-    from tests.regression.test_scoring_mismatches import _money_from_actual_trace
+    from tests.regression.test_scoring_mismatches import _bank_money_for_replay
 
-    replay_money = _money_from_actual_trace(data)
+    path = data["path"]
+    word = data["word"]
+
+    replay_money = _bank_money_for_replay(data, board, path, loadout)
     if replay_money is not None:
         board.money = max(board.money, replay_money)
         loadout.money = max(loadout.money, replay_money)
-    path = data["path"]
-    word = data["word"]
 
     pipeline = ScoringPipeline()
     score, bd, trace = pipeline.score_with_trace(board, path, word, loadout)

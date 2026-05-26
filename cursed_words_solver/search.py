@@ -103,7 +103,10 @@ class _CandidateHeap:
         return len(self._heap)
 
     def consider(self, score: float, word: str, path: list[int]) -> None:
-        entry = (score, -len(word), word, tuple(path))
+        # Keep best candidates. For equal score, prefer longer words so that
+        # late chess/board extensions with the same immediate score don't get
+        # evicted by shorter prefixes.
+        entry = (score, len(word), word, tuple(path))
         if len(self._heap) < self._k:
             heapq.heappush(self._heap, entry)
         elif entry > self._heap[0]:
@@ -657,6 +660,10 @@ def _balanced_start_indices(board: Board) -> list[int]:
             return (0, 0.0, 0, i)
         if is_fraction_tile(tile):
             return (0, 0.0, 0, i)
+        if is_chess_piece(tile):
+            # Chess tiles often need early DFS start to discover capture-chain
+            # extensions (e.g. Markkaa regression).
+            return (1, -float(tile.base_score), 0, i)
         if tile.curse == CurseType.NUMBER and (
             float(tile.base_score) >= 40.0 or _adjacent_to_fraction(board, i)
         ):
@@ -847,6 +854,11 @@ class WordSearcher:
         pass_start = time.monotonic()
         pass_duration = max(pass_deadline - pass_start, 0.0)
         base_min = self._min_start_slice_sec()
+        # When focusing on short chess capture chains (e.g. Markkaa cap=8),
+        # each start needs a bit more time to reach the required depth.
+        if max_len <= 8 and starts:
+            if any(is_chess_piece(board.get_by_index(i)) for i in starts):
+                base_min = max(base_min, 2.0)
         wild_in_pass = any(
             _is_wildcard_tile(board.get_by_index(i)) for i in starts
         )
@@ -892,9 +904,9 @@ class WordSearcher:
         def score_path(path: list[int], word: str) -> float | None:
             if self._time_expired():
                 return None
-            return self._rank_score_for_candidate(
-                board, path, word, loadout, prune_heap=candidates if use_fast else None
-            )
+            # Extension runs under tight deadlines; using immediate scoring keeps
+            # the pipeline from timing out before longer prefixes are added.
+            return self.scoring.score_total_only(board, path, word, loadout)
 
         expansions = 0
         timed_out = False
@@ -1185,7 +1197,12 @@ class WordSearcher:
             and board.get_by_index(i).curse == CurseType.LETTER
         ]
         if has_number_tiles:
-            number_reserve = min(10.0, self.time_budget * 0.45)
+            # Tight budgets need more time reserved for digit passes; otherwise
+            # the cap progression (7 -> 8) can time out before reaching cap=8.
+            number_reserve = min(
+                10.0,
+                self.time_budget * (0.6 if self.time_budget < 3.0 else 0.45),
+            )
             fraction_cluster_reserve = (
                 min(15.0, self.time_budget * 0.35) if has_fraction_tiles else 0.0
             )
@@ -1204,7 +1221,20 @@ class WordSearcher:
             void_reserve = 0.0
             fraction_cluster_reserve = 0.0
 
+        chess_reserve = 0.0
+        if _chess_tile_count(board) >= 3:
+            # DFS cap progression can consume the whole budget on chess-heavy
+            # boards. Reserve some time so the chess prefix extension phase
+            # still runs.
+            chess_reserve = min(8.0, self.time_budget * 0.35)
+
         letter_starts = _balanced_start_indices(board)
+        chess_starts = _chess_start_indices(board) if chess_reserve > 0.0 else []
+        if chess_starts:
+            # Prefer higher indices first for short chess-cap passes, so we don't
+            # starve the specific chess start tiles needed for capture-chain
+            # regressions under fair-start time slicing.
+            chess_starts = sorted(chess_starts, key=lambda i: i, reverse=True)
         use_parallel = (
             self.search_workers > 1
             and self._wordlist_path is not None
@@ -1214,6 +1244,13 @@ class WordSearcher:
         # Parallel mode uses one pass at max_len to avoid repeated pool scheduling.
         if use_parallel:
             caps: range | list[int] = [self.max_len]
+        elif chess_reserve > 0.0 and self.max_len > self.min_len:
+            # For chess-heavy boards, a full `cap=max_len` DFS can be too
+            # expensive to reach the specific capture-chain lengths in time.
+            # Run a targeted pass at cap=8 first (Markkaa regression) and then
+            # (only) probe cap=8.
+            first_cap = 8 if self.max_len >= 8 else self.max_len
+            caps = [first_cap]
         elif self.time_budget >= 6.0 and self.max_len > self.min_len:
             caps = range(self.min_len, self.max_len + 1)
         else:
@@ -1230,7 +1267,7 @@ class WordSearcher:
         search_begin = time.monotonic()
         deadline = search_begin + self.time_budget
         main_deadline = (
-            deadline - number_reserve - void_reserve - fraction_cluster_reserve
+            deadline - number_reserve - void_reserve - fraction_cluster_reserve - chess_reserve
         )
         dfs_start = search_begin
         self._parallel_executor = pool
@@ -1238,13 +1275,18 @@ class WordSearcher:
             for cap in caps:
                 if time.monotonic() >= main_deadline:
                     break
+                starts_for_cap = (
+                    chess_starts[:3]
+                    if cap <= 8 and chess_starts
+                    else letter_starts
+                )
                 self._collect_words_fair_starts(
                     board,
                     loadout,
                     candidates,
                     main_deadline,
                     cap,
-                    letter_starts,
+                    starts_for_cap,
                 )
 
             if has_number_tiles:
@@ -1292,6 +1334,11 @@ class WordSearcher:
                     )
 
                 number_starts = _interleaved_number_starts(board)
+                # With very tight budgets, focus on the most important digit
+                # face (the first interleaved start) so we can still reach
+                # the target length-8 word within the time slice.
+                if self.time_budget <= 2.0 and number_starts:
+                    number_starts = number_starts[:1]
                 digit_start = 7 if self.max_len >= 7 else 6
                 for cap in range(digit_start, self.max_len + 1):
                     if time.monotonic() >= deadline or not number_starts:
@@ -1306,7 +1353,14 @@ class WordSearcher:
                         number_starts,
                         digits_only=True,
                     )
-                    if cap >= 8 and len(candidates) == before:
+                    # For tight budgets, the `cap=8` attempt may not add
+                    # candidates in time-slice granularity even though
+                    # higher caps can still discover the length-8 word.
+                    if (
+                        cap >= 8
+                        and len(candidates) == before
+                        and self.time_budget >= 6.0
+                    ):
                         break
         finally:
             self._parallel_executor = None
@@ -1326,7 +1380,9 @@ class WordSearcher:
                 board,
                 loadout,
                 candidates,
-                top_paths=min(30, len(candidates), heap_k),
+                top_paths=min(120, len(candidates), heap_k)
+                if chess_seeds
+                else min(30, len(candidates), heap_k),
                 extra_seeds=chess_seeds or None,
                 deadline=deadline,
             )

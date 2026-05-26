@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using MelonLoader;
 
@@ -53,6 +54,8 @@ namespace CursedWordsSolverCompanion
 
             _boardFingerprint = FingerprintUtil.ComputeBoardFingerprint(player);
             _loadoutFingerprint = FingerprintUtil.ComputeLoadoutFingerprint(player);
+            if (!string.IsNullOrEmpty(_loadoutFingerprint))
+                _scoringContextExtras["loadout_fingerprint"] = _loadoutFingerprint;
             _boardAtSubmit = BoardExporter.TryBuild(player);
             _rackBefore = ConsumableRackExporter.Export(player);
             _consumablePlacements = ConsumablePlacementTracker.DrainPlacementsSinceLastSubmit();
@@ -168,9 +171,72 @@ namespace CursedWordsSolverCompanion
             if (steps == null)
                 return;
 
+            CaptureBicycleAccumulatorFromSteps(steps);
             _roundTrace = ScoringTraceCollector.SerializeSteps(steps);
             if (_active)
                 _actualTrace = _roundTrace;
+        }
+
+        /// <summary>
+        /// Prefer the scoring engine's computed Bicycle bonus (WordScoreBonus after increment)
+        /// over reflection reads, which can be stale for the next F8 prediction.
+        /// </summary>
+        private static void CaptureBicycleAccumulatorFromSteps(List<ScoreCalcVizInfo> steps)
+        {
+            if (steps == null || _scoringContextExtras == null)
+                return;
+
+            try
+            {
+                for (var i = 0; i < steps.Count; i++)
+                {
+                    var step = steps[i];
+                    if (step?.RelevantItem == null || step.WordBonus == null)
+                        continue;
+
+                    var itemId = RunStateExporter.Slugify(
+                        step.RelevantItem.ArtFileName,
+                        step.RelevantItem.Name
+                    );
+                    if (!string.Equals(itemId, "bicycle", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (step.WordBonus.IsMultiplicative || step.WordBonus.IsPoison)
+                        continue;
+
+                    var score = step.WordBonus.Bonus != null ? step.WordBonus.Bonus.Score : 0L;
+                    if (score <= 0L)
+                        continue;
+
+                    // Step bonus is the total applied this word; extras need pre-word pin acc.
+                    var stored = score;
+                    if (
+                        _scoringContextExtras.TryGetValue(
+                            "bicycle_suited_on_path",
+                            out var suitedRaw
+                        )
+                        && int.TryParse(suitedRaw, out var suited)
+                        && suited > 0
+                    )
+                    {
+                        var perCard = RunStateExporter.TryGetBicyclePerCardRate();
+                        if (perCard > 0)
+                        {
+                            var pre = score - perCard * suited;
+                            if (pre >= 0L)
+                                stored = pre;
+                        }
+                    }
+
+                    _scoringContextExtras["bicycle_word_score_bonus"] = stored.ToString();
+                    _scoringContextExtras["cards_submitted"] = stored.ToString();
+                    return;
+                }
+            }
+            catch
+            {
+                // best-effort only
+            }
         }
 
         public static void OnSubmitWordTiles(List<TileSelection> wordTiles)

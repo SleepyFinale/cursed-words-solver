@@ -931,6 +931,10 @@ def test_1a34sex_debug_snapshot_scores_152_integer_display():
     assert score == int(score)
 
 
+@pytest.mark.skipif(
+    not (_DEBUG_DIR / "parse_20260522_155754.json").exists(),
+    reason="debug snapshot missing",
+)
 def test_he34are_no_abacus_left_without_coloured_or_void_numbers():
     """Colourless numbers on path do not get Abacus tile bonus."""
     board = _board_from_debug_json("parse_20260522_155754.json")

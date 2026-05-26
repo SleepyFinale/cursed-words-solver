@@ -159,6 +159,11 @@ def boss_word_constraints(
         if v is not None:
             max_len = max(1, int(v))
 
+    # Cretaceous Meg (bossdino alias) uses the standard minimum word length
+    # even though the wiki entry is `type="custom"` without explicit constraints.
+    if min_len == 1 and (ctx.rule_key or "").strip().lower() == "cretaceous_meg":
+        min_len = 3
+
     return BossConstraints(min_len=min_len, max_len=max_len)
 
 

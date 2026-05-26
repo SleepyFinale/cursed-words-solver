@@ -225,16 +225,26 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
             is_active = True
         active[idx] = bool(is_active)
 
-        char = normalize_tile_glyph(
-            str(entry.get("char", entry.get("char_display", "?")) or "?")
-        )
-        letter_raw = normalize_tile_glyph(str(entry.get("letter", char) or char))
+        raw_char_display = str(entry.get("char", entry.get("char_display", "?")) or "?")
+        raw_letter_display = str(entry.get("letter", raw_char_display) or raw_char_display)
+
+        # Joker tiles can be exported inconsistently across game/mod versions.
+        # If the 🃏 glyph is present but `is_joker` is missing/false, treat it as a joker.
+        is_joker_glyph = "🃏" in (raw_char_display + raw_letter_display)
+
+        char = normalize_tile_glyph(raw_char_display)
+        letter_raw = normalize_tile_glyph(raw_letter_display)
         color_key = str(entry.get("color", "colorless") or "colorless").lower()
         if not is_active:
             curse_key = "inactive"
             char = ""
             letter_raw = ""
             color_key = "colorless"
+
+        if is_active and is_joker_glyph and curse_key != "inactive":
+            # Match melmod behavior for jokers: wildcard with unknown letter.
+            curse_key = "wildcard"
+            letter_raw = "?"
 
         valid_colors, valid_curses = _taxonomy_sets()
         if color_key not in valid_colors and color_key != "inactive":
@@ -266,7 +276,7 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
         card_rank = entry.get("card_rank")
         if card_rank is not None:
             meta["card_rank"] = str(card_rank).strip().upper()[:1]
-        if entry.get("is_joker") in (True, "true", "True", "1", 1):
+        if entry.get("is_joker") in (True, "true", "True", "1", 1) or is_joker_glyph:
             meta["is_joker"] = True
         if entry.get("was_glitch") in (True, "true", "True", "1", 1):
             meta["was_glitch"] = True

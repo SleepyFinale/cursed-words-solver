@@ -68,7 +68,8 @@ namespace CursedWordsSolverCompanion
         {
             LastCalculatedSteps = __result;
             ScoringCaptureSession.OnScoreStepsCalculated(__result);
-            RunStateExporter.TryMergeBicycleExtrasAfterScore();
+            if (!RunStateExporter.TryMergeBicycleExtrasAfterScore())
+                RunStateExporter.QueueBicycleExtrasRetry();
             RunStateExporter.TryMergeCachedGridNumber();
         }
     }

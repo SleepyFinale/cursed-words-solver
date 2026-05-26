@@ -132,14 +132,14 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
-        /// Count unique playing-card suits on a submitted word path (each suit counts once).
+        /// Bicycle suited credit on path: unique suits when at most one suit, else unique ranks.
         /// </summary>
         public static int CountSuitedCardsOnSelections(List<TileSelection> selections)
         {
             if (selections == null)
                 return 0;
 
-            var suits = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var suitedCount = 0;
             foreach (var sel in selections)
             {
                 if (sel?.SelectedTile == null)
@@ -148,9 +148,9 @@ namespace CursedWordsSolverCompanion
                 var suit = MapCardSuit(tile);
                 if (string.IsNullOrEmpty(suit))
                     continue;
-                suits.Add(suit.Trim().ToLowerInvariant());
+                suitedCount += 1;
             }
-            return suits.Count;
+            return suitedCount;
         }
 
         /// <summary>

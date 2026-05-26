@@ -625,7 +625,7 @@ TUNED_STICKERS: dict[str, dict] = {
         "word_mode": "per_unused_card",
         "base": 12,
         "upgrade": 12,
-        "wiki_effect": "Pair: +WORD per unused card on grid",
+        "wiki_effect": "Pair/three/four matching LETTERS with suits: +WORD per unused suited tile (see Hanafuda.cs)",
         "wiki_page": "Hanafuda",
     },
     "joker": _grid_scatter(

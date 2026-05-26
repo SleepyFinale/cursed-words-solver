@@ -295,6 +295,70 @@ def test_bicycle_suited_cards_on_path():
     assert score == 9.0
 
 
+def test_bicycle_hadjees_multi_suit_same_rank_counts_tiles():
+    """Regression: hadjees path awards +1 per suited tile on path (3 suited tiles)."""
+    pipeline = ScoringPipeline()
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    path: list[int] = []
+    tiles = [
+        (2, 3, "H", 4, {"card_suit": "hearts", "card_rank": "H"}),
+        (3, 2, "A", 1, {}),
+        (2, 2, "E", 1, {"card_suit": "diamonds", "card_rank": "E"}),
+        (1, 1, "J", 8, {}),
+        (2, 1, "E", 1, {}),
+        (2, 0, "E", 1, {}),
+        (3, 0, "E", 1, {"card_suit": "spades", "card_rank": "E"}),
+    ]
+    for row, col, ch, sc, meta in tiles:
+        grid[row][col] = _tile(row, col, ch, sc, metadata=meta)
+        path.append(row * 5 + col)
+    board = Board(tiles=grid, money=1)
+    lo = Loadout(
+        extras={
+            "pin_effect": "bicycle",
+            "pin_right_level": "1",
+            "pin_right_variable": "1",
+            "bicycle_word_score_bonus": "5",
+        }
+    )
+    score, bd = pipeline.score(board, path, "hadjees", lo)
+    assert bd["pipeline"]["word_score"] == 8
+    assert int(score) == 25
+
+
+def test_bicycle_ricinolic_single_suit_multi_rank_counts_one():
+    """Regression: ricinolic — A/L/G all clubs on path → 1 suited credit."""
+    pipeline = ScoringPipeline()
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    path: list[int] = []
+    tiles = [
+        (4, 1, "R", 1, {}),
+        (3, 2, "I", 1, {}),
+        (3, 3, "A", 1, {"card_suit": "clubs", "card_rank": "A"}),
+        (2, 2, "I", 1, {}),
+        (2, 3, "N", 1, {}),
+        (1, 2, "O", 1, {}),
+        (1, 3, "L", 1, {"card_suit": "clubs", "card_rank": "L"}),
+        (2, 4, "I", 1, {}),
+        (3, 4, "G", 2, {"card_suit": "clubs", "card_rank": "G"}),
+    ]
+    for row, col, ch, sc, meta in tiles:
+        grid[row][col] = _tile(row, col, ch, sc, metadata=meta)
+        path.append(row * 5 + col)
+    board = Board(tiles=grid, money=1)
+    lo = Loadout(
+        extras={
+            "pin_effect": "bicycle",
+            "pin_right_level": "1",
+            "pin_right_variable": "1",
+            "bicycle_word_score_bonus": "4",
+        }
+    )
+    score, bd = pipeline.score(board, path, "ricinolic", lo)
+    assert bd["pipeline"]["word_score"] == 5
+    assert int(score) == 15
+
+
 def test_ram_replays_memory_items():
     pipeline = ScoringPipeline()
     board = _letter_board("cat")

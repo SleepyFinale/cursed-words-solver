@@ -28,7 +28,7 @@ Do not bind F8 in the mod — that is the solver hotkey.
 
 When the solver’s predicted score does not match the game after you play the **F8 suggestion**, the mod writes a debug bundle you can turn into a regression test.
 
-**Workflow**
+### Scoring mismatch workflow
 
 1. In-game: **F7** (refresh board/loadout), then run the Python solver and press **F8**.
 2. Solver writes `%USERPROFILE%\.cursed_words_solver\last_suggestion.json` (`scoring_word` / `word`, `path`, fingerprints, `predicted_trace`; optional `dictionary_word` when the game will spell it differently).
@@ -40,10 +40,10 @@ If you play the same dictionary word on a **different valid path** (e.g. another
 
 MelonLoader console logs `Scoring MISMATCH` with the file path, or `Scoring match` when totals agree.
 
-**Where files live**
+### Where files live
 
 | File | Path |
-|------|------|
+| ---- | ---- |
 | F8 prediction (written by Python) | `%USERPROFILE%\.cursed_words_solver\last_suggestion.json` |
 | Mismatch bundles (written by mod) | `%USERPROFILE%\.cursed_words_solver\scoring_mismatches\*.json` |
 | Solver debug per F8 | `%USERPROFILE%\.cursed_words_solver\debug\parse_*.json` |
@@ -52,7 +52,7 @@ On startup the mod prints the mismatch folder path. After each word submit you s
 
 If you only see a score difference in-game but **no** `scoring_mismatches` file, the mod did not recognize the submit as the F8 suggestion — check the skip message (alternate path vs board changed), press **F8** again, then submit on the **highlighted path** before the board changes.
 
-**Turn a mismatch into a regression fixture**
+### Turn a mismatch into a regression fixture
 
 ```powershell
 python scripts/mismatch_to_test.py $env:USERPROFILE\.cursed_words_solver\scoring_mismatches\20260523_143022.json
@@ -67,7 +67,7 @@ See [`SCORING_HOOKS.md`](SCORING_HOOKS.md) for hooked game types (`EncounterCont
 
 After **every** word submit (encounter or puzzle), the mod writes a structured round record — not only on score mismatches.
 
-**Workflow**
+### Round log workflow
 
 1. **F7** refresh, then **F8** solve (Python writes `last_suggestion.json` with `f8_sequence`, path, predicted score/trace).
 2. Submit any word (F8 path, alternate path, or manual).
@@ -79,7 +79,7 @@ Each log includes: full `run_state` at submit, solver block (when `last_suggesti
 **Mismatch bundles unchanged** — `scoring_mismatches/` still only when F8 path + board fingerprint match and scores differ.
 
 | File | Path |
-|------|------|
+| ---- | ---- |
 | F8 prediction | `%USERPROFILE%\.cursed_words_solver\last_suggestion.json` |
 | Per-round logs | `%USERPROFILE%\.cursed_words_solver\round_logs\*.json` |
 | Round log index | `%USERPROFILE%\.cursed_words_solver\round_logs\index.jsonl` |
@@ -87,7 +87,7 @@ Each log includes: full `run_state` at submit, solver block (when `last_suggesti
 
 MelonPreference **Round log enabled** (default on). Startup logs the round log directory.
 
-**Turn a round log into a fixture**
+### Turn a round log into a fixture
 
 ```powershell
 python scripts/round_log_to_test.py $env:USERPROFILE\.cursed_words_solver\round_logs\20260525_120000_000.json
@@ -211,17 +211,17 @@ Sticker/stamp `id` values are derived from the game's `ArtFileName` (slugified) 
 Optional extras for specific pins:
 
 | Field | Pin |
-|-------|-----|
+| ---- | ---- |
 | `bicycle_word_score_bonus` | Bicycle (`bones_the_dog`) — running `WordScoreBonus` on the pin before this word (game adds suited cards on path × right-track rate, then applies the total). Merged into `run_state.json` after each `CalculateOverallScore` (and on submit) so F8 stays in sync. |
 | `cards_submitted` | Legacy alias of `bicycle_word_score_bonus` for older solver builds |
-| `bicycle_suited_on_path` | Set during submit scoring capture — count of **unique playing-card suits** on the submitted path (each of clubs/spades/hearts/diamonds counts once). Merged into `run_state.json` on matched submit; path tiles also get `card_suit` / `card_rank` on the board snapshot. |
+| `bicycle_suited_on_path` | Set during submit scoring capture — Bicycle suited credit on the path (unique suits when at most one suit on the path, else unique suited card ranks). Merged into `run_state.json` on matched submit; path tiles also get `card_suit` / `card_rank` on the board snapshot. After each scored word, press **F7** if the solver Bicycle total looks one step behind the in-game pin. |
 | `favourite_sticker_id`, `favourite_stamp_id` | Human Hands (`human_boy`) |
 | `pin_memory` | Random Access Memory (JSON array of `{id,name,level,kind}`) |
 
 Run context extras (default-unlocked stickers):
 
 | Field | Sticker |
-|-------|---------|
+| ---- | ---- |
 | `is_first_grid_of_encounter` | Chequered Flag (`true` / `false`) |
 | `previous_word_first_letter` | Chips, Bento Box, Limnophila (single letter, e.g. `a`) |
 | `stitched_sticker_ids` | Frankenstein (JSON array of stitched sticker art slugs) |
@@ -253,12 +253,12 @@ Run context extras (default-unlocked stickers):
 Board tiles may include:
 
 | Field | Used by |
-|-------|---------|
+| ---- | ---- |
 | `consumable` | Mahjong Red Dragon pin |
 | `take` | Movie Camera, Clapper Board, Zebra (chess capture on the word path) |
 | `chess_color` | Chess movement blocking and Dove balanced-colors scoring (`black` = filled piece, `white` = outlined). Exported from game field `Tile.IsWhitePiece` (`false` = black/filled, `true` = white/outlined). |
 | `card_suit`, `card_rank` | Bones The Dog poker stickers (`hearts`, `spades`, `clubs`, `diamonds` + rank letter). Suited tiles keep their primary curse (`letter`, `number`, `chess_*`, etc.) and add suit metadata. |
-| `is_joker` | Joker tiles (`true`): wildcard letter `?` for search; count as any card for poker-hand scoring. |
+| `is_joker` | Joker tiles (`true`): wildcard letter `?` for search; count as any card for poker hands and **Poker Face** (starts with face card). They do **not** add Bicycle suited credit. **Wrestlers**: suited start + joker at path end qualifies; joker at start uses first/last **suited tiles on the path** (e.g. clubs then hearts); joker start + only one suited tile on a short word does not. |
 
 When `take` is absent, sticker rules with `strict_takes` stay inactive for captures; the Super 8 pin infers takes from valid chess capture moves along the word path (opponent landing squares and en passant).
 

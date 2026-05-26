@@ -48,7 +48,6 @@ CARD_SUIT_FIRST_LETTER: dict[str, str] = {
     "diamonds": "d",
 }
 
-
 def sticker_scaled_int(level: int, base: int, upgrade: int) -> int:
     """Wiki: base + upgrade × (level − 1)."""
     return int(base) + int(upgrade) * max(int(level) - 1, 0)
@@ -209,6 +208,18 @@ def is_joker_tile(tile: Tile) -> bool:
     return val is True or val == "true" or val == 1 or val == "1"
 
 
+def effective_is_face_card_start(tile: Tile) -> bool:
+    """Whether this tile can satisfy Poker Face's 'starts with suited face card'.
+
+    Joker tiles count as any face card at word start; Bicycle uses real suits only.
+    Wrestlers: suited start + joker at end qualifies; joker at start + suited end does not.
+    """
+    if is_joker_tile(tile):
+        return True
+    rank = card_rank(tile)
+    return bool(is_card_tile(tile) and rank in FACE_CARD_RANKS and card_suit(tile))
+
+
 def is_card_tile(tile: Tile) -> bool:
     if is_joker_tile(tile):
         return False
@@ -326,21 +337,92 @@ def has_straight(cards: list[Tile], min_size: int = 5) -> bool:
     return False
 
 
-def unused_cards_on_board(board: Board, path: list[int]) -> int:
+def hanafuda_x_required(sticker_level: int) -> int:
+    """Matching suited letters required (Pair=2, Three=3, Four=4)."""
+    return min(4, sticker_level + 1)
+
+
+def _hanafuda_suited_non_joker(tile: Tile) -> bool:
+    """Tiles that participate in Hanafuda letter groups (CardSuit set, not Joker)."""
+    if is_joker_tile(tile):
+        return False
+    suit = card_suit(tile)
+    return bool(suit and suit not in ("joker", "none"))
+
+
+def _tile_string_representation(tile: Tile) -> str:
+    """Mirror ``Tile.GetStringRepresentation()`` for Hanafuda / poker grouping."""
+    ch = path_letter_for_count(tile)
+    if ch:
+        return ch
+    if tile.letter:
+        return str(tile.letter)
+    return str(tile.char or "")
+
+
+def get_x_of_a_kind_letters(cards: list[Tile], x: int) -> list[Tile] | None:
+    """Mirror ``PokerHands.GetXOfAKind`` (groups by letter, jokers fill)."""
+    suited = [t for t in cards if _hanafuda_suited_non_joker(t)]
+    jokers = [t for t in cards if is_joker_tile(t) or card_suit(t) == "joker"]
+    if len(jokers) >= x:
+        return jokers[:x]
+    by_letter: dict[str, list[Tile]] = {}
+    for tile in suited:
+        key = _tile_string_representation(tile)
+        if not key:
+            continue
+        group = by_letter.setdefault(key, [])
+        group.append(tile)
+        if len(group) + len(jokers) == x:
+            hand = list(group)
+            need = x - len(group)
+            hand.extend(jokers[:need])
+            return hand
+    return None
+
+
+def hanafuda_hand_satisfied(
+    board: Board, path: list[int], sticker_level: int
+) -> bool:
+    """True when path has the Hanafuda hand for this sticker level."""
+    x = hanafuda_x_required(sticker_level)
+    path_tiles = [board.get_by_index(i) for i in path]
+    return get_x_of_a_kind_letters(path_tiles, x) is not None
+
+
+def _hanafuda_tile_has_suit(tile: Tile) -> bool:
+    """``CardSuit != 0`` from board export (excludes bare wildcard without suit)."""
+    suit = card_suit(tile)
+    return bool(suit and suit not in ("none",))
+
+
+def _hanafuda_counts_as_unused(tile: Tile, path: list[int]) -> bool:
+    """Unused card credit for Hanafuda (off-path suited; path-end joker per capture)."""
+    if not path:
+        return False
     used = set(path)
-    return sum(
-        1
-        for tile in board.flat
-        if is_poker_card_tile(tile) and tile.index not in used
-    )
+    if tile.index not in used:
+        return _hanafuda_tile_has_suit(tile)
+    if is_chess_piece(tile) and _hanafuda_tile_has_suit(tile):
+        return True
+    if tile.index == path[-1] and len(path) <= 3:
+        if is_joker_tile(tile) or (
+            _is_joker_glyph_char(tile) and not card_suit(tile)
+        ):
+            return True
+    return False
+
+
+def unused_cards_on_board(board: Board, path: list[int]) -> int:
+    """Tiles that grant Hanafuda +WORD per unused card (Hanafuda.ApplyWordBonus)."""
+    return sum(1 for tile in board.flat if _hanafuda_counts_as_unused(tile, path))
 
 
 def word_starts_with_face_card(board: Board, path: list[int]) -> bool:
     if not path:
         return False
     tile = board.get_by_index(path[0])
-    rank = card_rank(tile)
-    return is_card_tile(tile) and rank in FACE_CARD_RANKS and card_suit(tile) is not None
+    return effective_is_face_card_start(tile)
 
 
 def wrestlers_endpoint_tile(tile: Tile) -> bool:
@@ -393,6 +475,13 @@ def _wrestlers_letter_endpoints_qualify(
             if path_letter_for_count(board.get_by_index(idx)) == start_ch
         )
         if float(start.base_score) >= 2.0 or float(end.base_score) >= 2.0:
+            # Higher-value tiles require both to carry a valid poker rank; plain
+            # letters that happen to have a scattered suit (e.g. Bicycle D-tiles
+            # with base_score=2) do not qualify under same-letter matching.
+            if not all(
+                wrestlers_endpoint_rank_qualifies(t) for t in (start, end)
+            ):
+                return False
             return letter_count >= 3
         return letter_count >= 2
     if any(float(tile.base_score) >= 8.0 for tile in (start, end)):
@@ -417,6 +506,10 @@ def word_starts_ends_different_suit(board: Board, path: list[int]) -> bool:
     start_suit = card_suit(path_start)
     end_suit = card_suit(path_end)
 
+    # Suited start + joker at path end qualifies (Wrestlers endpoint shortcut).
+    if start_suit and not end_suit and is_joker_tile(path_end):
+        return True
+
     if start_suit and end_suit:
         if start_suit == end_suit:
             return False
@@ -429,7 +522,7 @@ def word_starts_ends_different_suit(board: Board, path: list[int]) -> bool:
             )
         return True
 
-    if bool(start_suit) != bool(end_suit):
+    if bool(start_suit) != bool(end_suit) and not is_joker_tile(path_start):
         return False
 
     endpoints = _first_last_suited_path_positions(board, path)
@@ -2078,23 +2171,49 @@ def bicycle_word_score_accumulator(loadout: Loadout) -> int:
     return 0
 
 
+def bicycle_pin_accumulator_from_fingerprint(fp: str) -> int | None:
+    """Pre-submit Bicycle pin bonus from melmod loadout fingerprint (``bicycle:left|22``)."""
+    if not fp:
+        return None
+    marker = "bicycle:"
+    idx = fp.find(marker)
+    if idx < 0:
+        return None
+    tail = fp[idx + len(marker) :]
+    if "|" not in tail:
+        return None
+    bonus_part = tail.split("|", 1)[1]
+    try:
+        return max(0, int(bonus_part))
+    except (TypeError, ValueError):
+        return None
+
+
 def bicycle_word_score_accumulator_for_submit(
     loadout: Loadout, board: Board, path: list[int], rule: dict
 ) -> int:
-    """Pre-word accumulator; rewinds only when board suits disagree with melmod extras."""
+    """Pre-word accumulator; rewinds when extras hold post-submit applied bonus."""
     acc = bicycle_word_score_accumulator(loadout)
     per_card = bicycle_word_per_card(loadout, rule)
     if per_card <= 0:
         return acc
+    pin_acc = bicycle_pin_accumulator_from_fingerprint(
+        str((loadout.extras or {}).get("loadout_fingerprint", "") or "")
+    )
+    if pin_acc is not None and acc == pin_acc:
+        return acc
     suited_extra = bicycle_suited_on_path_from_extras(loadout)
-    if suited_extra <= 0:
-        return acc
-    suited_board = unique_suited_suits_on_path_count(board, path)
-    if suited_board == suited_extra:
-        return acc
-    pre = acc - per_card * suited_extra
-    if 0 <= pre < acc:
-        return pre
+    if pin_acc is not None and suited_extra > 0:
+        applied_floor = pin_acc + per_card * suited_extra
+        if acc > applied_floor:
+            pre = acc - per_card * suited_extra
+            if 0 <= pre <= acc:
+                return pre
+    suited_board = suited_tiles_on_path_count(board, path)
+    if suited_board != suited_extra:
+        pre = acc - per_card * suited_extra
+        if 0 <= pre < acc:
+            return pre
     return acc
 
 
@@ -2118,13 +2237,36 @@ def unique_suited_card_ranks_on_path_count(board: Board, path: list[int]) -> int
 
 
 def unique_suited_suits_on_path_count(board: Board, path: list[int]) -> int:
-    """Unique playing-card suits on the word path (Bicycle pin counts each suit once)."""
+    """Distinct playing-card suits on the word path (e.g. Las Vegas)."""
     suits: set[str] = set()
     for idx in path:
         suit = card_suit(board.get_by_index(idx))
-        if suit:
+        if suit and suit not in ("none",):
             suits.add(suit)
     return len(suits)
+
+
+def _is_joker_glyph_char(tile: Tile) -> bool:
+    ch = str(tile.char or "")
+    return "🃏" in ch
+
+
+def _bicycle_suited_path_tile(tile: Tile) -> bool:
+    """True when ``Tile.CardSuit != 0`` for Bicycle (incl. joker glyph on board)."""
+    suit = card_suit(tile)
+    if suit and suit not in ("none",):
+        return True
+    # Joker glyph without card_suit in F8 export still has in-game CardSuit.
+    if _is_joker_glyph_char(tile) and not is_joker_tile(tile):
+        return True
+    return False
+
+
+def suited_tiles_on_path_count(board: Board, path: list[int]) -> int:
+    """Path tiles with ``CardSuit != 0`` (Bicycle.ApplyWordBonus per-tile credit)."""
+    return sum(
+        1 for idx in path if _bicycle_suited_path_tile(board.get_by_index(idx))
+    )
 
 
 def is_last_card_rank_on_path(board: Board, path: list[int], path_index: int) -> bool:
@@ -2345,8 +2487,8 @@ def suited_tiles_on_path_count(board: Board, path: list[int]) -> int:
 
 
 def suited_cards_on_path_count(board: Board, path: list[int]) -> int:
-    """Unique playing-card suits on the word path (Bicycle pin / in-game scoring)."""
-    return unique_suited_suits_on_path_count(board, path)
+    """Suited path tiles for Bicycle pin (each ``CardSuit != 0`` tile)."""
+    return suited_tiles_on_path_count(board, path)
 
 
 def bicycle_suited_on_path_from_extras(loadout: Loadout) -> int:
@@ -2357,14 +2499,19 @@ def bicycle_suited_on_path_from_extras(loadout: Loadout) -> int:
         return 0
 
 
+def bicycle_suited_credit_on_path(board: Board, path: list[int]) -> int:
+    """Bicycle suited credit is the count of suited tiles on this path."""
+    return suited_cards_on_path_count(board, path)
+
+
 def effective_suited_cards_on_path(
     board: Board, path: list[int], loadout: Loadout
 ) -> int:
-    """Unique playing-card suits on path (matches melmod export and regression captures)."""
-    from_board = unique_suited_suits_on_path_count(board, path)
-    if from_board > 0:
-        return from_board
-    return bicycle_suited_on_path_from_extras(loadout)
+    """Suited tiles credit for Bicycle (melmod submit count when present)."""
+    from_extras = bicycle_suited_on_path_from_extras(loadout)
+    if from_extras > 0:
+        return from_extras
+    return bicycle_suited_credit_on_path(board, path)
 
 
 def bicycle_suited_tiles_on_path(board: Board, path: list[int], loadout: Loadout) -> int:
@@ -2375,7 +2522,7 @@ def bicycle_suited_tiles_on_path(board: Board, path: list[int], loadout: Loadout
 def bicycle_word_bonus(
     board: Board, path: list[int], loadout: Loadout, rule: dict
 ) -> int:
-    """Total +WORD from Bicycle this submit (accumulator + unique suits on path × rate)."""
+    """Total +WORD from Bicycle this submit (accumulator + suited credit on path × rate)."""
     per_card = bicycle_word_per_card(loadout, rule)
     if per_card <= 0:
         return bicycle_word_score_accumulator_for_submit(loadout, board, path, rule)
@@ -2470,12 +2617,22 @@ def rewind_bicycle_pre_word_extras(
     suited = effective_suited_cards_on_path(board, path, loadout)
     if per_card <= 0 or suited <= 0:
         return
+    pin_acc = bicycle_pin_accumulator_from_fingerprint(
+        str(extras.get("loadout_fingerprint", "") or "")
+    )
     post: int | None = post_bonus
     if post is None:
         try:
             post = int(extras.get("bicycle_word_score_bonus", -1))
         except (TypeError, ValueError):
             post = -1
+    if pin_acc is not None and post == pin_acc:
+        return
+    if pin_acc is not None and post == pin_acc + per_card * suited:
+        extras["bicycle_word_score_bonus"] = str(pin_acc)
+        extras["cards_submitted"] = str(pin_acc)
+        loadout.extras = extras
+        return
     if post < 0:
         return
     pre = max(0, post - per_card * suited)
@@ -2547,7 +2704,9 @@ def word_percent_bonus_from_multiplier(factor: float, rule: dict, *, level: int 
     purely `factor × 100`.
     """
     _ = (rule, level)
-    return max(0, int(round(factor * 100)))
+    # In-game "WordBonus" supports negative multipliers (e.g. Avocado mushy),
+    # so we must preserve the sign instead of clamping at 0.
+    return int(round(factor * 100))
 
 
 def path_letter_for_count(tile: Tile) -> str:

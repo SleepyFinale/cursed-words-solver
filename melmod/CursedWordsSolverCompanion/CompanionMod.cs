@@ -61,6 +61,7 @@ namespace CursedWordsSolverCompanion
             if (Input.GetKeyDown(KeyCode.F7))
             {
                 RunStateExporter.TryExport(true);
+                RunStateExporter.TryFlushPendingBicycleExtrasRetry();
                 RefreshFingerprint();
                 return;
             }
@@ -68,6 +69,8 @@ namespace CursedWordsSolverCompanion
             var player = GetPlayerSafe();
             if (player == null)
                 return;
+
+            RunStateExporter.TryFlushPendingBicycleExtrasRetry();
 
             var fingerprint = RunStateExporter.ComputeFingerprint(player);
             if (fingerprint == _lastFingerprint)

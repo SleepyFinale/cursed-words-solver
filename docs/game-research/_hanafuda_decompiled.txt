@@ -1,0 +1,3 @@
+C:\Users\TheMi\Documents\cursed-words-solver\scripts\decompile_type\Program.cs(32,56): error CS1503: Argument 1: cannot convert from 'string' to 'ICSharpCode.Decompiler.TypeSystem.FullTypeName' [C:\Users\TheMi\Documents\cursed-words-solver\scripts\decompile_type\DecompileType.csproj]
+
+The build failed. Fix the build errors and run again.

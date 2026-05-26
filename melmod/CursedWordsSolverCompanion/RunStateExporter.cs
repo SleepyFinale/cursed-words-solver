@@ -10,6 +10,9 @@ namespace CursedWordsSolverCompanion
 {
     public static class RunStateExporter
     {
+        private const int BicycleMergeRetryBudget = 12;
+        private static int _pendingBicycleMergeRetries = 0;
+
         private static readonly string OutputPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".cursed_words_solver",
@@ -160,6 +163,8 @@ namespace CursedWordsSolverCompanion
                 if (freshExtras == null || freshExtras.Count == 0)
                     return;
                 TryMergeExtrasKeys(freshExtras);
+                if (!TryMergeBicycleExtrasAfterScore())
+                    QueueBicycleExtrasRetry();
             }
             catch
             {
@@ -183,25 +188,44 @@ namespace CursedWordsSolverCompanion
             );
         }
 
-        public static void TryMergeBicycleExtrasAfterScore()
+        public static bool TryMergeBicycleExtrasAfterScore()
         {
             try
             {
                 var player = GetPlayer();
                 if (player == null || player.MyCharacter == null)
-                    return;
+                    return false;
 
                 var pin = player.MyCharacter.CharacterItem;
                 var bicycleExtras = BuildBicycleExtras(pin);
                 if (bicycleExtras == null || bicycleExtras.Count == 0)
-                    return;
+                    return true;
 
                 TryMergeExtrasKeys(bicycleExtras);
+                return true;
             }
             catch
             {
                 // ignore — F7 full export still available
+                return false;
             }
+        }
+
+        public static void QueueBicycleExtrasRetry()
+        {
+            _pendingBicycleMergeRetries = BicycleMergeRetryBudget;
+        }
+
+        public static void TryFlushPendingBicycleExtrasRetry()
+        {
+            if (_pendingBicycleMergeRetries <= 0)
+                return;
+            if (TryMergeBicycleExtrasAfterScore())
+            {
+                _pendingBicycleMergeRetries = 0;
+                return;
+            }
+            _pendingBicycleMergeRetries = Math.Max(0, _pendingBicycleMergeRetries - 1);
         }
 
         public static void TryMergeExtrasKeys(Dictionary<string, string> keysToMerge)
@@ -718,6 +742,36 @@ namespace CursedWordsSolverCompanion
                 return bicycle.WordScoreBonus;
 
             return TryGetIntMember(pin, "WordScoreBonus");
+        }
+
+        /// <summary>
+        /// Bicycle right-track rate (+WORD per suited card on path). Used when rewinding
+        /// capture extras from applied step bonus to pre-word pin accumulator.
+        /// </summary>
+        public static int TryGetBicyclePerCardRate()
+        {
+            try
+            {
+                var player = GetPlayerForUpdate();
+                if (player?.MyCharacter?.CharacterItem == null)
+                    return 0;
+                if (!IsBicyclePin(player.MyCharacter.CharacterItem))
+                    return 0;
+
+                var components = player.MyCharacter.CharacterItem.UpgradeableComponents;
+                if (components != null && components.Count > 1)
+                {
+                    var right = GetUpgradeableVariableValue(components[1]);
+                    if (right > 0)
+                        return right;
+                }
+            }
+            catch
+            {
+                // best-effort
+            }
+
+            return 1;
         }
 
         private static void FillRunContextExtras(RunStateSnapshot snapshot, Player player)

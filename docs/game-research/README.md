@@ -11,6 +11,15 @@ ilspycmd $dll -t ScoreCalculation -o $out
 ilspycmd $dll -t EncounterController -o $out
 ilspycmd $dll -t Item -o $out
 ilspycmd $dll -t Player -o $out
+ilspycmd $dll -t Tile -o $out
+ilspycmd $dll -t Hanafuda -o $out
+ilspycmd $dll -t PokerHands -o $out
+ilspycmd $dll -t Wrestlers -o $out
+ilspycmd $dll -t Bicycle -o $out
+ilspycmd $dll -t Joker -o $out
+ilspycmd $dll -t ScoreCalcVizInfo -o $out
+ilspycmd $dll -t WordBonusToken -o $out
+# Or: dotnet run --project scripts/decompile_type -- $dll ScoreCalculation Hanafuda ...
 python scripts/extract_game_types.py
 python scripts/extract_stamp_types.py
 python scripts/extract_tile_enums.py
@@ -25,7 +34,7 @@ python scripts/generate_boss_audit.py
 ## Documents
 
 | File | Purpose |
-|------|---------|
+| ---- | ---- |
 | [scoring-pipeline.md](scoring-pipeline.md) | In-game `CalculateOverallScore` order vs wiki |
 | [effect-taxonomy.md](effect-taxonomy.md) | JSON schema + `Item` subclass mapping |
 | [sticker-audit.md](sticker-audit.md) | Catalog vs game-type coverage (generated) |
@@ -40,7 +49,7 @@ python scripts/generate_boss_audit.py
 ## Solver mapping
 
 | Game | Solver module |
-|------|----------------|
+| ---- | ------------- |
 | `EncounterController.GetItemsForWordSubmission` | `cursed_words_solver/rules/scoring_order.py` |
 | `Item.ApplyStartOfGridEffect` | `cursed_words_solver/rules/grid_effects.py` |
 | `ScoreCalculation.CalculateOverallScore` | `cursed_words_solver/rules/pipeline.py` |
