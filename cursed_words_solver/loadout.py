@@ -229,8 +229,10 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
         raw_letter_display = str(entry.get("letter", raw_char_display) or raw_char_display)
 
         # Joker tiles can be exported inconsistently across game/mod versions.
-        # If the 🃏 glyph is present but `is_joker` is missing/false, treat it as a joker.
+        # Prefer explicit `is_joker`; fall back to 🃏 glyph only when the tile does not
+        # carry a stable letter face (some non-joker tiles can still render the glyph).
         is_joker_glyph = "🃏" in (raw_char_display + raw_letter_display)
+        is_joker_exported = entry.get("is_joker") in (True, "true", "True", "1", 1)
 
         char = normalize_tile_glyph(raw_char_display)
         letter_raw = normalize_tile_glyph(raw_letter_display)
@@ -241,8 +243,34 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
             letter_raw = ""
             color_key = "colorless"
 
-        if is_active and is_joker_glyph and curse_key != "inactive":
-            # Match melmod behavior for jokers: wildcard with unknown letter.
+        treat_as_joker = bool(is_joker_exported)
+        if (
+            not treat_as_joker
+            and is_active
+            and is_joker_glyph
+            and curse_key != "inactive"
+        ):
+            # Only coerce 🃏 glyph tiles to wildcard when the export does not provide a
+            # stable letter. Otherwise, keep the letter tile semantics (the glyph can
+            # appear for other effects).
+            if (letter_raw or "").strip() in ("", "?"):
+                treat_as_joker = True
+            elif curse_key in ("wildcard", "blank"):
+                treat_as_joker = True
+            else:
+                # VOID + base_score 0 joker-glyph tiles behave like wildcards in scoring
+                # (e.g. Wrestlers endpoint shortcut).
+                try:
+                    base_score = float(entry.get("base_score", 0) or 0)
+                except (TypeError, ValueError):
+                    base_score = 0.0
+                if color_key == "void" or base_score == 0.0:
+                    treat_as_joker = True
+                # Some joker-glyph tiles export with a letter face but behave as
+                # wildcards; empirically these tend to be low-score non-red tiles.
+                elif base_score == 1.0 and color_key != "red":
+                    treat_as_joker = True
+        if treat_as_joker and is_active and curse_key != "inactive":
             curse_key = "wildcard"
             letter_raw = "?"
 
@@ -276,7 +304,7 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
         card_rank = entry.get("card_rank")
         if card_rank is not None:
             meta["card_rank"] = str(card_rank).strip().upper()[:1]
-        if entry.get("is_joker") in (True, "true", "True", "1", 1) or is_joker_glyph:
+        if treat_as_joker:
             meta["is_joker"] = True
         if entry.get("was_glitch") in (True, "true", "True", "1", 1):
             meta["was_glitch"] = True

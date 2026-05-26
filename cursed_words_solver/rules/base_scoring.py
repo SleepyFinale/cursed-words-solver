@@ -84,7 +84,11 @@ def tile_base_contribution(tile: Tile, money: int = 0) -> float:
             # Shiny gives flat 50 base, not affected by letter manipulators
             return 50
     if color == TileColor.VOID:
-        if letter_base == 0 or _is_melmod_tile(tile):
+        if _is_melmod_tile(tile):
+            # Trust melmod packet.Score for VOID tiles (often 0), rather than
+            # inferring a negative face value which is only needed for OCR-like exports.
+            pass
+        elif letter_base == 0:
             letter_base = -abs(_void_face_value(tile))
         else:
             letter_base = -abs(letter_base)

@@ -147,7 +147,20 @@ namespace CursedWordsSolverCompanion
                 var tile = sel.SelectedTile;
                 var suit = MapCardSuit(tile);
                 if (string.IsNullOrEmpty(suit))
-                    continue;
+                {
+                    // Bicycle counts any `CardSuit != 0` tile; jokers may not expose a suit,
+                    // but still count as suited credit.
+                    try
+                    {
+                        var glyph = tile.GetGlyphType();
+                        if (!IsJokerGlyph(glyph) && !MapIsJoker(tile, glyph))
+                            continue;
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                }
                 suitedCount += 1;
             }
             return suitedCount;

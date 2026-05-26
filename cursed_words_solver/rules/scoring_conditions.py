@@ -393,7 +393,13 @@ def hanafuda_hand_satisfied(
 def _hanafuda_tile_has_suit(tile: Tile) -> bool:
     """``CardSuit != 0`` from board export (excludes bare wildcard without suit)."""
     suit = card_suit(tile)
-    return bool(suit and suit not in ("none",))
+    if suit and suit not in ("none",):
+        return True
+    # Melmod can export joker glyph tiles without card_suit, but in-game they still
+    # have CardSuit != 0 for Hanafuda unused-card credit.
+    if _is_joker_glyph_char(tile) and not suit and not is_joker_tile(tile):
+        return True
+    return False
 
 
 def _hanafuda_counts_as_unused(tile: Tile, path: list[int]) -> bool:
@@ -2482,8 +2488,14 @@ def celestial_body_tile_eligible(
 
 
 def suited_tiles_on_path_count(board: Board, path: list[int]) -> int:
-    """Suited playing-card tiles on the path (Bicycle: each tile counts)."""
-    return sum(1 for idx in path if card_suit(board.get_by_index(idx)))
+    """Suited playing-card tiles on the path (Bicycle: ``CardSuit != 0`` tiles).
+
+    Note: keep parity with `_bicycle_suited_path_tile`, including joker-glyph tiles
+    that may be missing `card_suit` in melmod exports.
+    """
+    return sum(
+        1 for idx in path if _bicycle_suited_path_tile(board.get_by_index(idx))
+    )
 
 
 def suited_cards_on_path_count(board: Board, path: list[int]) -> int:
