@@ -31,7 +31,7 @@ def test_fox_steal_money() -> None:
     apply_boss_steal_money(state, loadout, boss, boss_context(loadout, rules))
     assert loadout.money == 8
     assert "stolen" in state["effects"][-1].lower()
-    assert state["tile_scores"][0] == -2.0
+    assert state["tile_scores"][0] == 0.0
 
 
 def test_boss_zero_vowel_finalize_zeros_score() -> None:

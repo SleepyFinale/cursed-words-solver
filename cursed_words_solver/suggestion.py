@@ -34,8 +34,12 @@ _F8_SEQUENCE_PATH = LAST_SUGGESTION_PATH.parent / ".f8_sequence"
 
 
 
-def stale_suggestion_warning(current_board_fp: str) -> str | None:
-    """Return a user-visible warning when last F8 was for a different board."""
+def stale_suggestion_warning(
+    current_board_fp: str,
+    *,
+    current_loadout_fp: str | None = None,
+) -> str | None:
+    """Return a startup note when last F8 was for a different board or run."""
     current = (current_board_fp or "").strip()
     if not current or not LAST_SUGGESTION_PATH.exists():
         return None
@@ -43,13 +47,39 @@ def stale_suggestion_warning(current_board_fp: str) -> str | None:
         data = json.loads(LAST_SUGGESTION_PATH.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
-    previous = str(data.get("board_fingerprint") or "").strip()
-    if not previous or previous == current:
+    previous_board = str(data.get("board_fingerprint") or "").strip()
+    if not previous_board or previous_board == current:
         return None
+    loadout = (current_loadout_fp or "").strip()
+    previous_loadout = str(data.get("loadout_fingerprint") or "").strip()
+    if loadout and previous_loadout and previous_loadout != loadout:
+        return (
+            "Note: last F8 was for a different run — "
+            "press F8 to refresh before submitting."
+        )
     return (
-        "Previous F8 suggestion was for a different board — "
-        "press F7 then F8 again before submitting."
+        "Note: board changed since last F8 — "
+        "press F8 again before submitting."
     )
+
+
+def clear_stale_last_suggestion_if_loadout_changed(current_loadout_fp: str) -> bool:
+    """Remove last_suggestion.json when character/loadout changed (new run)."""
+    current = (current_loadout_fp or "").strip()
+    if not current or not LAST_SUGGESTION_PATH.exists():
+        return False
+    try:
+        data = json.loads(LAST_SUGGESTION_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    previous = str(data.get("loadout_fingerprint") or "").strip()
+    if not previous or previous == current:
+        return False
+    try:
+        LAST_SUGGESTION_PATH.unlink()
+    except OSError:
+        return False
+    return True
 
 
 def stale_suggestion_warning_for_board(board: Board) -> str | None:

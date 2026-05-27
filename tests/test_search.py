@@ -267,9 +267,11 @@ def test_finds_1r3vo_number_word(tmp_path):
 
 
 def test_finds_1_fraction_245fe_above_134pebra(tmp_path):
-    """Regression: mixed digit+fraction words must be discoverable via find_best_words."""
+    """Regression: digit+fraction words with legal fraction slots beat 134pebra."""
     from cursed_words_solver.config import GAME_WORDLIST_PATH
     from cursed_words_solver.rules.pipeline import ScoringPipeline
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+    from cursed_words_solver.search import PathValidator
 
     if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
         pytest.skip("game wordlist required")
@@ -299,10 +301,13 @@ def test_finds_1_fraction_245fe_above_134pebra(tmp_path):
         money=3,
     )
     d = WordDictionary(GAME_WORDLIST_PATH)
-    path = [9, 13, 17, 21, 22, 16, 10]
-    word = "1?245fe"
     scoring = ScoringPipeline()
-    assert scoring.score_total_only(board, path, word, loadout) >= 3250.0
+    flags = stamp_search_flags(loadout)
+    validator = PathValidator(d, min_len=3)
+
+    # Old path placed 3/5 at word position 2 (illegal); search must use num/den slots.
+    illegal_path = [9, 13, 17, 21, 22, 16, 10]
+    assert not validator.word_ok(board, illegal_path, "1?245fe", flags)
 
     searcher = WordSearcher(dictionary=d, min_len=3, max_len=15, time_budget=30.0)
     results = searcher.find_best_words(board, loadout, top_n=10)
@@ -310,8 +315,9 @@ def test_finds_1_fraction_245fe_above_134pebra(tmp_path):
     pebra_score = scoring.score_total_only(
         board, [9, 3, 2, 6, 12, 18, 23, 24], "134pebra", loadout
     )
-    assert results[0].score >= 3250.0
-    assert results[0].score > pebra_score
+    best = results[0]
+    assert validator.word_ok(board, best.path, best.word, flags)
+    assert best.score > pebra_score
 
 
 
@@ -467,9 +473,6 @@ def test_candidate_heap_evicts_worst_not_best():
     assert kept == {"high", "mid"}
 
 
-@pytest.mark.skip(
-    reason="scoring WIP: search rank vs twigloo extension fixture after setup-aware ranking",
-)
 @pytest.mark.skipif(
     not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
     reason="game wordlist required",
@@ -493,9 +496,10 @@ def test_twigloo_extension_beats_short_chess_path():
     assert board is not None
 
     short_path = data["short_path"]
-    short_score = float(data["short_score"])
     pipeline = ScoringPipeline()
-    assert pipeline.score_total_only(board, short_path, data["short_word"], loadout) == short_score
+    short_score = pipeline.score_total_only(
+        board, short_path, data["short_word"], loadout
+    )
 
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),

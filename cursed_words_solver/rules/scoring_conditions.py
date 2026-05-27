@@ -189,7 +189,18 @@ def word_starts_ends_different_curse_type(board: Board, path: list[int]) -> bool
     end = board.get_by_index(path[-1])
     if not is_cursed_tile(start) or not is_cursed_tile(end):
         return False
-    return curse_type_key(start) != curse_type_key(end)
+
+    # The game groups related curses into broader categories for this condition.
+    # - All chess pieces count as a single "chess" curse family.
+    # - NUMBER + FRACTION are treated as the same "number" family.
+    def curse_category(tile: Tile) -> str:
+        if tile.curse in CHESS_CURSES:
+            return "chess"
+        if tile.curse in (CurseType.NUMBER, CurseType.FRACTION):
+            return "number"
+        return curse_type_key(tile)
+
+    return curse_category(start) != curse_category(end)
 
 
 def word_all_cursed_tiles(board: Board, path: list[int]) -> bool:
@@ -1206,6 +1217,19 @@ def unused_red_tiles_on_board(board: Board, path: list[int]) -> int:
 
 def unique_vowels_in_word(word: str) -> int:
     return len({c for c in word.lower() if c in VOWELS})
+
+
+def unique_vowels_on_path(board: Board, path: list[int]) -> int:
+    """Unique vowels on letter tiles along the path (Pneumonia; skips currency/numbers)."""
+    seen: set[str] = set()
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.curse in (CurseType.CURRENCY, CurseType.NUMBER):
+            continue
+        ch = path_letter_for_count(tile)
+        if ch in VOWELS:
+            seen.add(ch)
+    return len(seen)
 
 
 def has_double_letter(word: str) -> bool:

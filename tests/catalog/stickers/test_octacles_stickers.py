@@ -137,6 +137,19 @@ def test_broom_same_curse_type_ends_no_mult():
     assert score == base
 
 
+def test_broom_chess_vs_chess_no_mult():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "N", 1, curse=CurseType.CHESS_BISHOP)
+    board.tiles[0][1] = _tile(0, 1, "A", 2)
+    board.tiles[0][2] = _tile(0, 2, "N", 1, curse=CurseType.CHESS_KNIGHT)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="broom", name="Broom", level=1)])
+    score, bd = pipeline.score(board, [0, 1, 2], "nan", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2], "nan", Loadout())
+    assert bd["multiplier"] == 1.0
+    assert score == base
+
+
 def test_mischievous_imp_all_cursed_multiply():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "2", 2, curse=CurseType.NUMBER)

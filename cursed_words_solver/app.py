@@ -33,6 +33,7 @@ from cursed_words_solver.config import (
     resolve_wordlist,
 )
 from cursed_words_solver.suggestion import (
+    clear_stale_last_suggestion_if_loadout_changed,
     dictionary_word_for_path,
     format_suggestion_word,
     save_last_suggestion,
@@ -270,6 +271,13 @@ class SolverApp:
             )
         if melmod_board_available(board_data):
             print("Melmod board ready in run_state.json.", flush=True)
+            board_fp, loadout_fp = fingerprints_from_run_state(board_data)
+            if not clear_stale_last_suggestion_if_loadout_changed(loadout_fp):
+                stale_note = stale_suggestion_warning(
+                    board_fp, current_loadout_fp=loadout_fp
+                )
+                if stale_note:
+                    print(f"  {stale_note}", flush=True)
         elif self._loadout_source == "mod":
             print(
                 "Melmod loadout found but no board in run_state.json — "
@@ -462,13 +470,6 @@ class SolverApp:
                 melmod_board_fp, melmod_loadout_fp = fingerprints_from_run_state(
                     run_state_data
                 )
-            stale_warn = (
-                stale_suggestion_warning(melmod_board_fp)
-                if melmod_board_fp
-                else None
-            )
-            if stale_warn:
-                print(f"  Warning: {stale_warn}", flush=True)
             for warn in missing_chess_color_warnings(board):
                 print(f"  Warning: {warn}", flush=True)
             if self.config.board_region.is_valid():
@@ -638,7 +639,7 @@ class SolverApp:
                     flush=True,
                 )
 
-            warnings = self._overlay_warnings(board, unmapped, stale_warn=stale_warn)
+            warnings = self._overlay_warnings(board, unmapped)
             highlight = (
                 self.config.show_board_highlight
                 and self.config.board_region.is_valid()
@@ -692,13 +693,9 @@ class SolverApp:
             return "mod"
         return "file"
 
-    def _overlay_warnings(
-        self, board, unmapped: list[str], *, stale_warn: str | None = None
-    ) -> str:
+    def _overlay_warnings(self, board, unmapped: list[str]) -> str:
         del board
         lines: list[str] = []
-        if stale_warn:
-            lines.append(stale_warn)
         if unmapped:
             lines.append(
                 f"Unmapped rules: {', '.join(unmapped[:4])}"

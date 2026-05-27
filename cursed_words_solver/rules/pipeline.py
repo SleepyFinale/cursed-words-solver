@@ -126,7 +126,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     unique_colour_count_on_path,
     unique_curse_type_count_on_path,
     unique_colours_on_path,
-    unique_vowels_in_word,
+    unique_vowels_on_path,
     unused_red_tiles_on_board,
     void_tiles_letter_not_in_word,
     word_same_start_end_letter,
@@ -1264,7 +1264,7 @@ class ScoringPipeline:
                 if word_same_start_end_letter(state["word"]):
                     bonus = sticker_rule_int(level, rule)
             elif word_mode == "per_unique_vowel":
-                n = unique_vowels_in_word(state["word"])
+                n = unique_vowels_on_path(board, path)
                 bonus = sticker_rule_int(level, rule) * n
             elif word_mode == "if_subtotal_zero":
                 if subtotal_before_mult(state) == 0:

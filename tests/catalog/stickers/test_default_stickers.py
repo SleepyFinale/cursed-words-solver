@@ -16,6 +16,8 @@ from cursed_words_solver.rules.rule_lookup import count_scoring_items, slugify_n
 from cursed_words_solver.rules.scoring_conditions import (
     currency_letter_value,
     money_for_scoring,
+    unique_vowels_in_word,
+    unique_vowels_on_path,
 )
 
 DEFAULT_STICKER_NAMES = [
@@ -184,6 +186,25 @@ def test_dusty_coffin_number_void_digit_not_in_word():
     base, _ = pipeline.score(board, [0], "a", Loadout())
     assert bd["word_score"] == 8
     assert score == base + 8
+
+
+def test_pneumonia_counts_path_letter_vowels_not_dictionary_or_currency():
+    """Mismatch 20260527_024904: €–A–R scored as 'ear' — only tile A counts for Pneumonia."""
+    board = _empty_board()
+    board.tiles[4][4] = _tile(4, 4, "€", 10, curse=CurseType.CURRENCY)
+    board.tiles[3][3] = _tile(3, 3, "A", 1)
+    board.tiles[4][2] = _tile(4, 2, "R", 1)
+    path = [24, 18, 22]
+    assert unique_vowels_in_word("ear") == 2
+    assert unique_vowels_on_path(board, path) == 1
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="pneumonia", name="Pneumonia", level=2)],
+        extras={"pin_effect": "bucket", "pin_branch": "right"},
+    )
+    score, bd = pipeline.score(board, path, "ear", loadout)
+    assert bd["word_score"] == 20
+    assert int(score) == 32
 
 
 def test_fire_extinguisher_unused_red():

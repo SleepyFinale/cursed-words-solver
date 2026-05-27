@@ -376,9 +376,7 @@ class PathValidator:
         word: str,
         stamp_flags: StampSearchFlags | None,
     ) -> bool:
-        relaxed_fractions = self.relaxed_numbers or any(
-            ch.isdigit() for ch in word
-        ) and any(is_fraction_tile(board.get_by_index(idx)) for idx in path)
+        relaxed_fractions = self.relaxed_numbers
         for i, idx in enumerate(path):
             tile = board.get_by_index(idx)
             if not number_position_valid(
@@ -575,6 +573,17 @@ class PathValidator:
 
 def _active_indices(board: Board) -> list[int]:
     return [i for i in range(25) if board.is_active_index(i)]
+
+
+def _legal_word_start_indices(board: Board) -> list[int]:
+    """Active tiles that may start a word (fractions only when 1-based pos 1 is legal)."""
+    out: list[int] = []
+    for i in _active_indices(board):
+        tile = board.get_by_index(i)
+        if is_fraction_tile(tile) and not fraction_position_valid(tile, 0, relaxed=False):
+            continue
+        out.append(i)
+    return out
 
 
 def neighbors_standard(
@@ -1039,6 +1048,8 @@ def _balanced_start_indices(board: Board) -> list[int]:
         if _is_wildcard_tile(tile):
             return (0, 0.0, 0, i)
         if is_fraction_tile(tile):
+            if not fraction_position_valid(tile, 0, relaxed=False):
+                return (4, 0.0, 0, i)
             return (0, 0.0, 0, i)
         if is_chess_piece(tile):
             # Chess tiles often need early DFS start to discover capture-chain
@@ -1056,7 +1067,7 @@ def _balanced_start_indices(board: Board) -> list[int]:
             return (2, 0.0, nv, i)
         return (3, 0.0, 0, i)
 
-    return sorted(_active_indices(board), key=priority)
+    return sorted(_legal_word_start_indices(board), key=priority)
 
 
 def _chess_start_indices(board: Board) -> list[int]:
@@ -1564,7 +1575,7 @@ class WordSearcher:
         if start_indices is not None:
             starts = [s for s in start_indices if board.is_active_index(s)]
         else:
-            starts = _active_indices(board)
+            starts = _legal_word_start_indices(board)
         for start in starts:
             if timed_out or time.monotonic() > deadline:
                 break
@@ -1667,7 +1678,7 @@ class WordSearcher:
                 ):
                     need_length = True
 
-            starts = _active_indices(board)
+            starts = _legal_word_start_indices(board)
             cap = min(max_len, 10)
 
             for color in end_colors:
@@ -2095,6 +2106,10 @@ class WordSearcher:
         if hanafuda_level >= 1 and joker_count >= 2:
             seed_reserve = min(5.0, self.time_budget * 0.12)
 
+        extension_reserve = 0.0
+        if self.max_len > self.min_len:
+            extension_reserve = min(5.0, self.time_budget * 0.12)
+
         letter_starts = _balanced_start_indices(board)
         chess_starts = _chess_start_indices(board) if chess_reserve > 0.0 else []
         if chess_starts:
@@ -2148,7 +2163,9 @@ class WordSearcher:
             - fraction_cluster_reserve
             - chess_reserve
             - seed_reserve
+            - extension_reserve
         )
+        pre_extend_deadline = deadline - extension_reserve if extension_reserve > 0 else deadline
         dfs_start = search_begin
         self._parallel_executor = pool
         start_productivity: dict[int, int] = {}
@@ -2188,11 +2205,11 @@ class WordSearcher:
                 )
 
             if has_number_tiles:
-                if fraction_cluster_reserve > 0 and time.monotonic() < deadline:
+                if fraction_cluster_reserve > 0 and time.monotonic() < pre_extend_deadline:
                     cluster_starts = _fraction_cluster_number_starts(board)
                     if cluster_starts:
                         cluster_deadline = min(
-                            deadline,
+                            pre_extend_deadline,
                             time.monotonic() + fraction_cluster_reserve,
                         )
                         priority_starts = [
@@ -2216,10 +2233,10 @@ class WordSearcher:
                                 digits_only=True,
                             )
 
-                if void_letter_starts and time.monotonic() < deadline:
+                if void_letter_starts and time.monotonic() < pre_extend_deadline:
                     void_cap = 7 if self.max_len >= 7 else self.max_len
                     void_deadline = min(
-                        deadline, time.monotonic() + void_reserve
+                        pre_extend_deadline, time.monotonic() + void_reserve
                     )
                     self._collect_words_fair_starts(
                         board,
@@ -2239,14 +2256,14 @@ class WordSearcher:
                     number_starts = number_starts[:1]
                 digit_start = 7 if self.max_len >= 7 else 6
                 for cap in range(digit_start, self.max_len + 1):
-                    if time.monotonic() >= deadline or not number_starts:
+                    if time.monotonic() >= pre_extend_deadline or not number_starts:
                         break
                     before = len(candidates)
                     self._collect_words_fair_starts(
                         board,
                         loadout,
                         candidates,
-                        deadline,
+                        pre_extend_deadline,
                         cap,
                         number_starts,
                         digits_only=True,
@@ -2269,13 +2286,13 @@ class WordSearcher:
         if (
             hanafuda_level >= 1
             and joker_count >= 2
-            and time.monotonic() < deadline
+            and time.monotonic() < pre_extend_deadline
         ):
             self._collect_joker_cluster_candidates(
                 board,
                 loadout,
                 candidates,
-                deadline,
+                pre_extend_deadline,
                 self.max_len,
             )
 
@@ -2283,10 +2300,10 @@ class WordSearcher:
             self.mult_search_passes
             and mult_count > 0
             and self.time_budget >= 6.0
-            and time.monotonic() < deadline
+            and time.monotonic() < pre_extend_deadline
         ):
             mult_reserve = min(4.0, self.time_budget * 0.12)
-            mult_deadline = min(deadline, time.monotonic() + mult_reserve)
+            mult_deadline = min(pre_extend_deadline, time.monotonic() + mult_reserve)
             self._collect_mult_seed_candidates(
                 board,
                 loadout,
@@ -2300,20 +2317,31 @@ class WordSearcher:
         if len(candidates) > 0 and time.monotonic() < deadline:
             chess_start = time.monotonic()
             chess_seeds = self._chess_prefix_candidates(
-                board, loadout, solve_deadline=deadline
+                board, loadout, solve_deadline=pre_extend_deadline
             )
             timing.chess_sec = time.monotonic() - chess_start
             heap_k = self.candidate_heap_size or _candidate_heap_size(top_n)
             extend_start = time.monotonic()
+            extend_deadline = deadline
+            top_paths = (
+                min(120, len(candidates), heap_k)
+                if chess_seeds
+                else min(30, len(candidates), heap_k)
+            )
+            max_extend_rounds: int | None = None
+            if self.max_len > self.min_len:
+                preview = candidates.best_sorted()[:top_paths]
+                if any("?" in word for _sc, word, _path in preview):
+                    top_paths = min(120, len(candidates), heap_k)
+                    max_extend_rounds = min(self.max_len - self.min_len, 16)
             self._extend_top_candidates(
                 board,
                 loadout,
                 candidates,
-                top_paths=min(120, len(candidates), heap_k)
-                if chess_seeds
-                else min(30, len(candidates), heap_k),
+                top_paths=top_paths,
+                max_rounds=max_extend_rounds,
                 extra_seeds=chess_seeds or None,
-                deadline=deadline,
+                deadline=extend_deadline if extension_reserve > 0 else deadline,
             )
             timing.extend_sec = time.monotonic() - extend_start
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile
@@ -17,7 +19,12 @@ from cursed_words_solver.rules.scoring_conditions import (
     number_sum_on_path,
     tile_numeric_value,
 )
-from cursed_words_solver.search import PathValidator, WordSearcher, resolve_letter
+from cursed_words_solver.search import (
+    PathValidator,
+    WordSearcher,
+    _legal_word_start_indices,
+    resolve_letter,
+)
 from cursed_words_solver.dictionary import WordDictionary
 
 
@@ -218,7 +225,7 @@ def test_brain_number_sum_includes_fraction_value():
 
 
 def test_mixed_digit_fraction_word_valid(tmp_path):
-    """Regression: 1?245fe must use _number_word_valid, not _wildcard_valid."""
+    """Regression: 1?245fe uses _number_word_valid; 3/5 fraction is not at num/den slots."""
     from cursed_words_solver.config import GAME_WORDLIST_PATH
     from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
     from tests.helpers.boards import _board_1_fraction_245fe_fixture
@@ -230,7 +237,7 @@ def test_mixed_digit_fraction_word_valid(tmp_path):
     path = [9, 13, 17, 21, 22, 16, 10]
     word = "1?245fe"
     loadout = Loadout(
-        stamps=[LoadoutItem(id="test_tube", name="Test Tube", level=1, kind="sticker")]
+        stickers=[LoadoutItem(id="test_tube", name="Test Tube", level=1, kind="sticker")]
     )
     flags = stamp_search_flags(loadout)
     d = WordDictionary(GAME_WORDLIST_PATH)
@@ -238,7 +245,68 @@ def test_mixed_digit_fraction_word_valid(tmp_path):
 
     assert not v._wildcard_valid(word)
     assert v._number_word_valid(board, path, word, flags)
-    assert v.word_ok(board, path, word, flags)
+    assert not v.word_ok(board, path, word, flags)
+
+
+def test_three_eighths_cannot_start_word():
+    """⅜ (3/8) at path index 0 is illegal; digits elsewhere must not relax that."""
+    board = Board(
+        tiles=[[_tile(0, c, "x", 1) for c in range(5)] for _ in range(5)],
+        money=0,
+    )
+    frac = _tile(
+        0,
+        0,
+        "?",
+        11,
+        curse=CurseType.FRACTION,
+        char="⅜",
+        fraction_value=3 / 8,
+        metadata={"fraction_num": 3, "fraction_den": 8},
+    )
+    board.tiles[0][0] = frac
+    board.tiles[0][1] = _tile(0, 1, "A", 1)
+    board.tiles[0][2] = _tile(0, 2, "6", 6, curse=CurseType.NUMBER, number_value=6)
+    path = [0, 1, 2]
+    wl = Path(__file__).resolve().parent / "_tmp_frac_words.txt"
+    try:
+        wl.write_text("aa6\n", encoding="utf-8")
+        v = PathValidator(WordDictionary(wl), min_len=3)
+        assert not v.word_ok(board, path, "?a6", None)
+    finally:
+        wl.unlink(missing_ok=True)
+
+
+def test_legal_word_start_indices_fraction_slots():
+    board = Board(
+        tiles=[[_tile(0, c, "x", 1) for c in range(5)] for _ in range(5)],
+        money=0,
+    )
+    three_eighths = _tile(
+        0,
+        0,
+        "?",
+        11,
+        curse=CurseType.FRACTION,
+        char="⅜",
+        fraction_value=3 / 8,
+        metadata={"fraction_num": 3, "fraction_den": 8},
+    )
+    one_eighth = _tile(
+        0,
+        1,
+        "?",
+        9,
+        curse=CurseType.FRACTION,
+        char="⅛",
+        fraction_value=0.125,
+        metadata={"fraction_num": 1, "fraction_den": 8},
+    )
+    board.tiles[0][0] = three_eighths
+    board.tiles[0][1] = one_eighth
+    starts = _legal_word_start_indices(board)
+    assert 0 not in starts
+    assert 1 in starts
 
 
 def test_fraction_parts_from_melmod_tenth_glyph():
