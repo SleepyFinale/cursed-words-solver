@@ -158,6 +158,10 @@ namespace CursedWordsSolverCompanion
         {
             try
             {
+                // Pin WordScoreBonus first so scoring-context capture cannot leave a stale value.
+                if (!TryMergeBicycleExtrasAfterScore())
+                    QueueBicycleExtrasRetry();
+
                 var freshExtras = BuildExtrasSnapshot();
                 ScoringCaptureSession.MergeScoringContextIntoExtras(freshExtras);
                 if (freshExtras == null || freshExtras.Count == 0)
@@ -730,6 +734,27 @@ namespace CursedWordsSolverCompanion
 
             var s = slug.ToLowerInvariant();
             return s == "bicycle" || s == "bones_the_dog" || s == "bones";
+        }
+
+        /// <summary>
+        /// Live Bicycle pin WordScoreBonus (post-word value for the next F8 prediction).
+        /// </summary>
+        public static int TryGetLiveBicycleWordScoreBonus()
+        {
+            try
+            {
+                var player = GetPlayerForUpdate();
+                if (player?.MyCharacter?.CharacterItem == null)
+                    return -1;
+                var pin = player.MyCharacter.CharacterItem;
+                if (!IsBicyclePin(pin))
+                    return -1;
+                return TryGetBicycleWordScoreBonus(pin);
+            }
+            catch
+            {
+                return -1;
+            }
         }
 
         private static int TryGetBicycleWordScoreBonus(Item pin)

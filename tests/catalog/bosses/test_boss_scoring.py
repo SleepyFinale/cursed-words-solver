@@ -5,7 +5,7 @@ from __future__ import annotations
 from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
 from cursed_words_solver.rules.boss_scoring import apply_boss_steal_money
 from cursed_words_solver.rules.boss_effects import boss_context, load_rules_catalog
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.rules.pipeline import ScoringPipeline, _finalize, _init_state
 from cursed_words_solver.rules.scoring_order import (
     _maybe_shuffled_loadout,
     build_scoring_item_sequence,
@@ -27,10 +27,39 @@ def test_fox_steal_money() -> None:
     rules = load_rules_catalog()
     boss = rules["bosses"]["fox"]
     loadout = Loadout(money=10, boss_id="fox", extras={"boss_area_number": 1})
-    state = {"money_bonus": 0, "effects": []}
+    state = {"money_bonus": 0, "effects": [], "tile_scores": [0.0, 2.0]}
     apply_boss_steal_money(state, loadout, boss, boss_context(loadout, rules))
     assert loadout.money == 8
     assert "stolen" in state["effects"][-1].lower()
+    assert state["tile_scores"][0] == -2.0
+
+
+def test_boss_zero_vowel_finalize_zeros_score() -> None:
+    state = {
+        "tile_scores": [10.0, 10.0, 10.0],
+        "word_score": 5.0,
+        "multiplier": 0.0,
+        "pending_word_multipliers": [(2.0, "brain")],
+        "pending_word_percent_bonuses": [],
+    }
+    assert _finalize(state) == 0.0
+
+
+def test_boss_zero_vowel_via_pipeline() -> None:
+    board = _board()
+    loadout = Loadout()
+    pipe = ScoringPipeline()
+    state = _init_state(board, [0, 1, 2], "aaa")
+    state = pipe._apply_rule(
+        {"type": "boss_zero_vowel"},
+        state,
+        board,
+        [0, 1, 2],
+        loadout,
+        1,
+    )
+    assert state["multiplier"] == 0
+    assert _finalize(state, board, [0, 1, 2]) == 0.0
 
 
 def test_salamander_still_applies() -> None:

@@ -103,7 +103,17 @@ namespace CursedWordsSolverCompanion
                 WriteAtomic(outPath, json);
                 AppendIndex(ts, outPath, matchStatus, ctx);
 
-                MelonLogger.Msg("Round log: " + outPath + " (" + matchStatus + ")");
+                var staleSuggestion =
+                    ctx.Suggestion != null
+                    && !string.Equals(
+                        ctx.Suggestion.board_fingerprint ?? "",
+                        ctx.BoardFingerprint ?? "",
+                        StringComparison.Ordinal
+                    );
+                var statusLabel = matchStatus;
+                if (staleSuggestion && matchStatus == "path_mismatch")
+                    statusLabel = matchStatus + " (stale F8 board)";
+                MelonLogger.Msg("Round log: " + outPath + " (" + statusLabel + ")");
                 return outPath;
             }
             catch (Exception ex)
@@ -228,22 +238,29 @@ namespace CursedWordsSolverCompanion
         )
         {
             var predicted = ctx.Suggestion != null ? ctx.Suggestion.predicted_score : 0;
+            var boardFingerprintMatches = false;
             var pathMatches = false;
             if (ctx.Suggestion != null && ctx.Suggestion.path != null)
             {
+                boardFingerprintMatches = string.Equals(
+                    ctx.Suggestion.board_fingerprint ?? "",
+                    ctx.BoardFingerprint ?? "",
+                    StringComparison.Ordinal
+                );
                 pathMatches =
                     SuggestionMatcher.PathsEqual(ctx.Suggestion.path, ctx.SubmittedPath)
-                    && string.Equals(
-                        ctx.Suggestion.board_fingerprint ?? "",
-                        ctx.BoardFingerprint ?? "",
-                        StringComparison.Ordinal
-                    );
+                    && boardFingerprintMatches;
             }
+
+            var staleSuggestion =
+                ctx.Suggestion != null && !boardFingerprintMatches;
 
             return new Dictionary<string, object>
             {
                 ["score_delta"] = ctx.ActualScore - predicted,
                 ["path_matches_suggestion"] = pathMatches,
+                ["board_fingerprint_matches_suggestion"] = boardFingerprintMatches,
+                ["stale_suggestion"] = staleSuggestion,
                 ["capture_active"] = ctx.CaptureActive,
                 ["match_status"] = matchStatus,
             };

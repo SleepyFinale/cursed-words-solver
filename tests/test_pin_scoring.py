@@ -359,6 +359,62 @@ def test_bicycle_ricinolic_single_suit_multi_rank_counts_one():
     assert int(score) == 15
 
 
+def test_bicycle_stale_warning_when_extras_differ_from_fingerprint():
+    from cursed_words_solver.loadout import bicycle_extras_stale_warning
+
+    fp = "Bones The Dog|9||-|bicycle:left|34"
+    lo = Loadout(
+        extras={
+            "pin_effect": "bicycle",
+            "bicycle_word_score_bonus": "35",
+            "loadout_fingerprint": fp,
+        }
+    )
+    warn = bicycle_extras_stale_warning(lo)
+    assert warn is not None
+    assert "35" in warn
+    assert "34" in warn
+
+
+def test_bicycle_extras_ahead_of_stale_fingerprint_suffix():
+    """Regression snash: extras=35, fingerprint|34 → 35+4 suited, ×2.5 wrestlers = 260."""
+    pipeline = ScoringPipeline()
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    configs = [
+        (0, 0, "S", 2, {"card_suit": "spades", "card_rank": "S"}),
+        (0, 1, "N", 2, {"card_suit": "spades", "card_rank": "N"}),
+        (0, 2, "A", 0, {}),
+        (0, 3, "H", 50, {"card_suit": "hearts", "card_rank": "H"}),
+        (0, 4, "Q", 11, {"card_suit": "hearts", "card_rank": "Q"}),
+    ]
+    path: list[int] = []
+    for row, col, ch, sc, meta in configs:
+        grid[row][col] = _tile(row, col, ch, sc, metadata=meta)
+        path.append(row * 5 + col)
+    board = Board(tiles=grid, money=9)
+    fp = (
+        "Bones The Dog|9|joker:2,postal_horn:2,hanafuda:1,wrestlers:2,poker_face:0|"
+        "card_shark:0,full_moon:0,martini:0,haunted_mirror:0|fox|bicycle:left|34"
+    )
+    lo = Loadout(
+        character="Bones The Dog",
+        stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=3)],
+        boss_id="fox",
+        extras={
+            "pin_effect": "bicycle",
+            "pin_left_level": "4",
+            "pin_right_level": "1",
+            "pin_right_variable": "1",
+            "bicycle_word_score_bonus": "35",
+            "cards_submitted": "35",
+            "loadout_fingerprint": fp,
+        },
+    )
+    score, bd = pipeline.score(board, path, "snahq", lo)
+    assert bd["pipeline"]["word_score"] == 39
+    assert int(score) == 260
+
+
 def test_ram_replays_memory_items():
     pipeline = ScoringPipeline()
     board = _letter_board("cat")

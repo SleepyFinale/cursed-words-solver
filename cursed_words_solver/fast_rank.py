@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from cursed_words_solver.models import Board, Loadout
+from cursed_words_solver.mult_search import (
+    guaranteed_mult_factor,
+    loadout_mult_rules,
+)
 from cursed_words_solver.rules.base_scoring import tile_base_contribution
 from cursed_words_solver.setup_value import _has_setup_mechanics
 
@@ -39,3 +43,30 @@ def fast_rank_lower_bound(board: Board, path: list[int]) -> float:
     for idx in path:
         total += tile_base_contribution(board.get_by_index(idx), board.money)
     return total
+
+
+def loadout_allows_mult_prune(
+    loadout: Loadout,
+    rules: dict,
+    *,
+    setup_weight: float = 0.0,
+) -> bool:
+    """True when mult_aware_lower_bound is safe for heap pruning."""
+    if loadout_allows_fast_rank(loadout, setup_weight=setup_weight):
+        return True
+    mult_rules = loadout_mult_rules(loadout, rules)
+    if not mult_rules:
+        return False
+    return all(mr.condition in ("always", "") for mr in mult_rules)
+
+
+def mult_aware_lower_bound(
+    board: Board,
+    path: list[int],
+    loadout: Loadout,
+    rules: dict,
+) -> float:
+    """Tile bases × guaranteed always-on mults; never exceeds full pipeline score."""
+    base = fast_rank_lower_bound(board, path)
+    mult_rules = loadout_mult_rules(loadout, rules, board=board, path=path)
+    return base * guaranteed_mult_factor(mult_rules, loadout, path)

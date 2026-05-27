@@ -18,13 +18,13 @@ from cursed_words_solver.config import LAST_SUGGESTION_PATH
 
 from cursed_words_solver.dictionary import WordDictionary
 
-from cursed_words_solver.fingerprints import fingerprints_from_run_state
+from cursed_words_solver.fingerprints import board_fingerprint, fingerprints_from_run_state
 
 from cursed_words_solver.models import Board, Loadout, WordResult
 
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 
-from cursed_words_solver.search import PathValidator
+from cursed_words_solver.search import PathValidator, physical_word_for_path
 
 
 
@@ -32,6 +32,28 @@ SOLVER_VERSION = "0.1.0"
 
 _F8_SEQUENCE_PATH = LAST_SUGGESTION_PATH.parent / ".f8_sequence"
 
+
+
+def stale_suggestion_warning(current_board_fp: str) -> str | None:
+    """Return a user-visible warning when last F8 was for a different board."""
+    current = (current_board_fp or "").strip()
+    if not current or not LAST_SUGGESTION_PATH.exists():
+        return None
+    try:
+        data = json.loads(LAST_SUGGESTION_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    previous = str(data.get("board_fingerprint") or "").strip()
+    if not previous or previous == current:
+        return None
+    return (
+        "Previous F8 suggestion was for a different board — "
+        "press F7 then F8 again before submitting."
+    )
+
+
+def stale_suggestion_warning_for_board(board: Board) -> str | None:
+    return stale_suggestion_warning(board_fingerprint(board))
 
 
 def format_suggestion_word(result: WordResult) -> str:
@@ -179,6 +201,11 @@ def save_last_suggestion(
 
 
     scoring_word = result.word
+    phys_word = physical_word_for_path(
+        board, result.path, flags=stamp_search_flags(loadout)
+    )
+    if phys_word != scoring_word.lower():
+        scoring_word = phys_word
 
     dict_word: str | None = None
 

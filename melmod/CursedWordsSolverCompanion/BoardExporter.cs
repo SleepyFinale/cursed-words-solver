@@ -656,7 +656,20 @@ namespace CursedWordsSolverCompanion
             }
 
             var cardSuit = MapCardSuit(tile);
-            if (!string.IsNullOrEmpty(cardSuit))
+            if (cardSuit == "joker")
+            {
+                // Void letter tiles can mis-read as Joker suit; game uses CardSuit == 0 for Hanafuda unused.
+                var spuriousVoidLetterJoker =
+                    curse == "letter" && color == "void" && !isJoker;
+                if (!spuriousVoidLetterJoker)
+                {
+                    snap.is_joker = true;
+                    snap.card_suit = "joker";
+                    if (string.IsNullOrEmpty(snap.card_rank))
+                        snap.card_rank = MapCardRank(tile, letter);
+                }
+            }
+            else if (!string.IsNullOrEmpty(cardSuit))
             {
                 snap.card_suit = cardSuit;
                 snap.card_rank = MapCardRank(tile, letter);
@@ -1364,12 +1377,16 @@ namespace CursedWordsSolverCompanion
                 return "hearts";
             if (s == "d" || s == "♦")
                 return "diamonds";
+            if (s.Contains("joker"))
+                return "joker";
             return "";
         }
 
         private static bool MapIsJoker(Tile tile, GlyphType glyph)
         {
             if (IsJokerGlyph(glyph))
+                return true;
+            if (tile != null && DisplayContainsJokerGlyph(MapDisplay(tile, "")))
                 return true;
             if (tile == null)
                 return false;
@@ -1423,6 +1440,14 @@ namespace CursedWordsSolverCompanion
             {
                 return false;
             }
+        }
+
+        private static bool DisplayContainsJokerGlyph(string display)
+        {
+            if (string.IsNullOrEmpty(display))
+                return false;
+            return display.IndexOf('\uD83C') >= 0 && display.IndexOf('\uDCCF') >= 0
+                || display.IndexOf("🃏", StringComparison.Ordinal) >= 0;
         }
 
         private static string MapCardRank(Tile tile, string letter)

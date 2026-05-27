@@ -36,6 +36,7 @@ from cursed_words_solver.suggestion import (
     dictionary_word_for_path,
     format_suggestion_word,
     save_last_suggestion,
+    stale_suggestion_warning,
 )
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, WordResult
@@ -139,6 +140,8 @@ class SolverApp:
                 time_budget=self.config.search_time_budget_sec,
                 setup_weight=self.config.setup_weight,
                 setup_discount=self.config.setup_discount,
+                mult_search_weight=self.config.mult_search_weight,
+                mult_search_passes=self.config.mult_search_passes,
                 search_workers=workers,
                 wordlist_path=wl_path,
             )
@@ -453,6 +456,19 @@ class SolverApp:
                 print(f"Money: ${mod_money} (mod)", flush=True)
             print("Parsed board:", flush=True)
             print(format_board_grid(board, compact=True), flush=True)
+            melmod_board_fp: str | None = None
+            melmod_loadout_fp: str | None = None
+            if run_state_data:
+                melmod_board_fp, melmod_loadout_fp = fingerprints_from_run_state(
+                    run_state_data
+                )
+            stale_warn = (
+                stale_suggestion_warning(melmod_board_fp)
+                if melmod_board_fp
+                else None
+            )
+            if stale_warn:
+                print(f"  Warning: {stale_warn}", flush=True)
             for warn in missing_chess_color_warnings(board):
                 print(f"  Warning: {warn}", flush=True)
             if self.config.board_region.is_valid():
@@ -480,6 +496,8 @@ class SolverApp:
             rewind_notes = rewind_setup_extras(loadout, board)
             self._searcher.setup_weight = self.config.setup_weight
             self._searcher.setup_discount = self.config.setup_discount
+            self._searcher.mult_search_weight = self.config.mult_search_weight
+            self._searcher.mult_search_passes = self.config.mult_search_passes
             scoring, total, grid_only, unmapped = self._scoring.loadout_mapping_summary(
                 loadout
             )
@@ -559,9 +577,17 @@ class SolverApp:
                     if timing.pool_init_sec > 0.05
                     else ""
                 )
+                total_score = timing.score_sec + timing.final_score_sec
+                score_pct = (
+                    f"{100.0 * total_score / timing.wall_sec:.0f}%"
+                    if timing.wall_sec > 0
+                    else "n/a"
+                )
                 print(
                     f"  Timing: dfs {timing.dfs_sec:.1f}s, extend {timing.extend_sec:.1f}s, "
-                    f"chess {timing.chess_sec:.1f}s (budget {search_budget:.0f}s{pool_note})",
+                    f"chess {timing.chess_sec:.1f}s, score {total_score:.1f}s "
+                    f"({score_pct} of {timing.wall_sec:.1f}s"
+                    f", {timing.score_calls} pipeline calls{pool_note})",
                     flush=True,
                 )
 
@@ -612,18 +638,12 @@ class SolverApp:
                     flush=True,
                 )
 
-            warnings = self._overlay_warnings(board, unmapped)
+            warnings = self._overlay_warnings(board, unmapped, stale_warn=stale_warn)
             highlight = (
                 self.config.show_board_highlight
                 and self.config.board_region.is_valid()
                 and bool(results)
             )
-            melmod_board_fp: str | None = None
-            melmod_loadout_fp: str | None = None
-            if board_source == "melmod" and run_state_data:
-                melmod_board_fp, melmod_loadout_fp = fingerprints_from_run_state(
-                    run_state_data
-                )
             self._bridge.solve_finished.emit(
                 _SolveUIUpdate(
                     board=board,
@@ -672,9 +692,13 @@ class SolverApp:
             return "mod"
         return "file"
 
-    def _overlay_warnings(self, board, unmapped: list[str]) -> str:
+    def _overlay_warnings(
+        self, board, unmapped: list[str], *, stale_warn: str | None = None
+    ) -> str:
         del board
         lines: list[str] = []
+        if stale_warn:
+            lines.append(stale_warn)
         if unmapped:
             lines.append(
                 f"Unmapped rules: {', '.join(unmapped[:4])}"

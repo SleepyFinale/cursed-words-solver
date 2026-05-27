@@ -52,6 +52,8 @@ On startup the mod prints the mismatch folder path. After each word submit you s
 
 If you only see a score difference in-game but **no** `scoring_mismatches` file, the mod did not recognize the submit as the F8 suggestion — check the skip message (alternate path vs board changed), press **F8** again, then submit on the **highlighted path** before the board changes.
 
+If the board changed since F8, melmod logs a **Warning** at submit (`Solver suggestion is stale…`) and round logs set `comparison.stale_suggestion: true` when `board_fingerprint` on `last_suggestion.json` does not match the current board. The Python solver prints the same hint when you press F8 on a new board while an old suggestion file remains.
+
 ### Turn a mismatch into a regression fixture
 
 ```powershell

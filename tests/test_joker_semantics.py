@@ -7,11 +7,15 @@ from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_st
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.scoring_conditions import (
+    get_x_of_a_kind_letters,
+    hanafuda_hand_satisfied,
+    rewind_bicycle_pre_word_extras,
     unique_suited_suits_on_path_count,
     unused_cards_on_board,
     word_starts_ends_different_suit,
     word_starts_with_face_card,
 )
+from cursed_words_solver.rules.rule_lookup import get_pin_scoring_rule
 
 FIXTURE_SH = (
     Path(__file__).resolve().parent
@@ -54,6 +58,30 @@ FIXTURE_DEV = (
     / "fixtures"
     / "mismatches"
     / "20260526_150823.json"
+)
+FIXTURE_TINA = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260526_231158.json"
+)
+FIXTURE_KHEDA = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260526_231923.json"
+)
+FIXTURE_AAH = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260526_234220.json"
+)
+FIXTURE_YINCE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260527_013139_yince.json"
 )
 
 
@@ -334,6 +362,70 @@ def test_mismatch_fixture_dev_scores_730():
     assert score == float(data["actual_score"])
 
 
+def test_hanafuda_three_of_a_kind_with_joker_glyphs_on_path():
+    """Joker-glyphs with letter faces count as poker jokers for Hanafuda (tina-style)."""
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    grid[1][1] = _tile(
+        1,
+        1,
+        "T",
+        2,
+        metadata={"source": "melmod", "card_suit": "clubs", "card_rank": "T"},
+    )
+    grid[0][1] = _tile(0, 1, "🃏", 1, color=TileColor.RED, metadata={"source": "melmod"})
+    grid[0][1].letter = "A"
+    grid[0][2] = _tile(0, 2, "🃏", 1, color=TileColor.RED, metadata={"source": "melmod"})
+    grid[0][2].letter = "F"
+    grid[0][3] = _tile(
+        0,
+        3,
+        "A",
+        2,
+        metadata={"source": "melmod", "card_suit": "spades", "card_rank": "A"},
+    )
+    path = [6, 1, 2, 3]
+    board = Board(tiles=grid, money=9)
+    path_tiles = [board.get_by_index(i) for i in path]
+    assert get_x_of_a_kind_letters(path_tiles, 3) is not None
+    assert hanafuda_hand_satisfied(board, path, 2)
+
+
+def test_mismatch_fixture_kheda_scores_2470():
+    """Hanafuda unused: void letter with spurious joker export must not count (20260526_231923)."""
+    if not FIXTURE_KHEDA.exists():
+        return
+    data = json.loads(FIXTURE_KHEDA.read_text(encoding="utf-8"))
+    snap = data["run_state_snapshot"]
+    board = parse_board_from_run_state(snap)
+    assert board is not None
+    loadout = parse_run_state(snap)
+    loadout.extras.update(data.get("extras_snapshot") or {})
+    loadout.extras["loadout_fingerprint"] = data["loadout_fingerprint"]
+    path = data["path"]
+    assert unused_cards_on_board(board, path) == 19
+    score, bd = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert any("three_of_a_kind" in e and "19 unused" in e for e in bd["pipeline"]["effects"])
+    assert score == float(data["actual_score"])
+
+
+def test_mismatch_fixture_tina_scores_1250():
+    """Hanafuda L2 + joker-glyphs on path + 19 unused cards (regression 20260526_231158)."""
+    if not FIXTURE_TINA.exists():
+        return
+    data = json.loads(FIXTURE_TINA.read_text(encoding="utf-8"))
+    snap = data["run_state_snapshot"]
+    board = parse_board_from_run_state(snap)
+    assert board is not None
+    loadout = parse_run_state(snap)
+    loadout.extras.update(data.get("extras_snapshot") or {})
+    loadout.extras["loadout_fingerprint"] = data["loadout_fingerprint"]
+    path = data["path"]
+    assert unused_cards_on_board(board, path) == 19
+    score, bd = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert any("three_of_a_kind" in e and "19 unused" in e for e in bd["pipeline"]["effects"])
+    assert score == float(data["actual_score"])
+
+
 def test_mismatch_fixture_cly_scores_1440():
     """3-letter word Q-L-joker: path-end joker counts toward Hanafuda (20 unused)."""
     if not FIXTURE_CLY.exists():
@@ -347,4 +439,42 @@ def test_mismatch_fixture_cly_scores_1440():
     path = data["path"]
     assert unused_cards_on_board(board, path) == 20
     score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert score == float(data["actual_score"])
+
+
+def test_mismatch_fixture_yince_scores_8320():
+    """Joker bookends + Hanafuda L3 four-of-a-kind (round log 20260527_013139)."""
+    if not FIXTURE_YINCE.exists():
+        return
+    data = json.loads(FIXTURE_YINCE.read_text(encoding="utf-8"))
+    snap = data["run_state_snapshot"]
+    board = parse_board_from_run_state(snap)
+    assert board is not None
+    loadout = parse_run_state(snap)
+    path = data["path"]
+    assert word_starts_ends_different_suit(board, path)
+    assert hanafuda_hand_satisfied(board, path, 3)
+    pipeline = ScoringPipeline()
+    rule = get_pin_scoring_rule(pipeline.rules, "bones_the_dog")
+    rewind_bicycle_pre_word_extras(loadout, board, path, rule)
+    score, bd = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert any("word_starts_ends_different_suit" in e for e in bd["pipeline"]["effects"])
+    assert score == float(data["actual_score"])
+
+
+def test_mismatch_fixture_aah_scores_1430():
+    """Void A + red A + path-end wildcard: 22 unused Hanafuda, void start -1 (20260526_234220)."""
+    if not FIXTURE_AAH.exists():
+        return
+    data = json.loads(FIXTURE_AAH.read_text(encoding="utf-8"))
+    snap = data["run_state_snapshot"]
+    board = parse_board_from_run_state(snap)
+    assert board is not None
+    loadout = parse_run_state(snap)
+    loadout.extras.update(data.get("extras_snapshot") or {})
+    loadout.extras["loadout_fingerprint"] = data["loadout_fingerprint"]
+    path = data["path"]
+    assert unused_cards_on_board(board, path) == 22
+    score, bd = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert any("three_of_a_kind" in e and "22 unused" in e for e in bd["pipeline"]["effects"])
     assert score == float(data["actual_score"])

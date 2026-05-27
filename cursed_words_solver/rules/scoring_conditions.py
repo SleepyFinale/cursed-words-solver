@@ -342,9 +342,20 @@ def hanafuda_x_required(sticker_level: int) -> int:
     return min(4, sticker_level + 1)
 
 
+def _poker_hand_joker(tile: Tile) -> bool:
+    """In-game ``Suit.Joker`` for ``PokerHands.GetXOfAKind`` (Hanafuda hand detection only)."""
+    if is_joker_tile(tile):
+        return True
+    if card_suit(tile) == "joker":
+        return True
+    if _is_joker_glyph_char(tile):
+        return True
+    return False
+
+
 def _hanafuda_suited_non_joker(tile: Tile) -> bool:
     """Tiles that participate in Hanafuda letter groups (CardSuit set, not Joker)."""
-    if is_joker_tile(tile):
+    if _poker_hand_joker(tile):
         return False
     suit = card_suit(tile)
     return bool(suit and suit not in ("joker", "none"))
@@ -363,7 +374,7 @@ def _tile_string_representation(tile: Tile) -> str:
 def get_x_of_a_kind_letters(cards: list[Tile], x: int) -> list[Tile] | None:
     """Mirror ``PokerHands.GetXOfAKind`` (groups by letter, jokers fill)."""
     suited = [t for t in cards if _hanafuda_suited_non_joker(t)]
-    jokers = [t for t in cards if is_joker_tile(t) or card_suit(t) == "joker"]
+    jokers = [t for t in cards if _poker_hand_joker(t)]
     if len(jokers) >= x:
         return jokers[:x]
     by_letter: dict[str, list[Tile]] = {}
@@ -394,6 +405,10 @@ def _hanafuda_tile_has_suit(tile: Tile) -> bool:
     """``CardSuit != 0`` from board export (excludes bare wildcard without suit)."""
     suit = card_suit(tile)
     if suit and suit not in ("none",):
+        if suit == "joker":
+            return not (
+                tile.curse == CurseType.LETTER and tile.color == TileColor.VOID
+            )
         return True
     # Melmod can export joker glyph tiles without card_suit, but in-game they still
     # have CardSuit != 0 for Hanafuda unused-card credit.
@@ -403,7 +418,12 @@ def _hanafuda_tile_has_suit(tile: Tile) -> bool:
 
 
 def _hanafuda_counts_as_unused(tile: Tile, path: list[int]) -> bool:
-    """Unused card credit for Hanafuda (off-path suited; path-end joker per capture)."""
+    """Unused card credit for Hanafuda (CardSuit != 0, not in submitted path).
+
+    Off-path suited tiles count. Chess on path can count. Short words may count a
+    path-end joker glyph with no exported suit (cly/ja captures); melmod wildcard
+    tiles on the path never count (game excludes submitted tiles).
+    """
     if not path:
         return False
     used = set(path)
@@ -448,15 +468,25 @@ def wrestlers_endpoint_rank_qualifies(tile: Tile) -> bool:
     return float(tile.base_score) >= 8.0
 
 
+def _wrestlers_real_suit(tile: Tile) -> str | None:
+    """Playing-card suit for Wrestlers (excludes joker tiles and pseudo-suit ``joker``)."""
+    if is_joker_tile(tile):
+        return None
+    suit = card_suit(tile)
+    if not suit or suit in ("joker", "none"):
+        return None
+    return suit
+
+
 def _first_last_suited_path_positions(
     board: Board, path: list[int]
 ) -> tuple[int, int] | None:
-    """First and last path indices with a playing-card suit (Wrestlers endpoints)."""
+    """First and last path indices with a real playing-card suit (Wrestlers endpoints)."""
     first: int | None = None
     last: int | None = None
     for i, idx in enumerate(path):
         tile = board.get_by_index(idx)
-        if not wrestlers_endpoint_tile(tile) or not card_suit(tile):
+        if _wrestlers_real_suit(tile) is None:
             continue
         if first is None:
             first = i
@@ -509,11 +539,29 @@ def word_starts_ends_different_suit(board: Board, path: list[int]) -> bool:
         return False
     path_start = board.get_by_index(path[0])
     path_end = board.get_by_index(path[-1])
-    start_suit = card_suit(path_start)
-    end_suit = card_suit(path_end)
+    start_suit = _wrestlers_real_suit(path_start)
+    end_suit = _wrestlers_real_suit(path_end)
 
     # Suited start + joker at path end qualifies (Wrestlers endpoint shortcut).
-    if start_suit and not end_suit and is_joker_tile(path_end):
+    if start_suit and is_joker_tile(path_end):
+        return True
+
+    # Joker at start: first/last non-joker suited tiles on the path (not path endpoints).
+    if is_joker_tile(path_start):
+        endpoints = _first_last_suited_path_positions(board, path)
+        if endpoints is None:
+            return False
+        first_i, last_i = endpoints
+        start = board.get_by_index(path[first_i])
+        end = board.get_by_index(path[last_i])
+        s0, s1 = _wrestlers_real_suit(start), _wrestlers_real_suit(end)
+        if not (s0 and s1 and s0 != s1):
+            return False
+        if start.curse == CurseType.LETTER and end.curse == CurseType.LETTER:
+            if path_letter_for_count(start) == path_letter_for_count(end):
+                return _wrestlers_letter_endpoints_qualify(
+                    board, path, start, end
+                )
         return True
 
     if start_suit and end_suit:
@@ -537,7 +585,7 @@ def word_starts_ends_different_suit(board: Board, path: list[int]) -> bool:
     first_i, last_i = endpoints
     start = board.get_by_index(path[first_i])
     end = board.get_by_index(path[last_i])
-    s0, s1 = card_suit(start), card_suit(end)
+    s0, s1 = _wrestlers_real_suit(start), _wrestlers_real_suit(end)
     if not (s0 and s1 and s0 != s1):
         return False
     if start.curse == CurseType.LETTER and end.curse == CurseType.LETTER:
@@ -2259,8 +2307,10 @@ def _is_joker_glyph_char(tile: Tile) -> bool:
 
 def _bicycle_suited_path_tile(tile: Tile) -> bool:
     """True when ``Tile.CardSuit != 0`` for Bicycle (incl. joker glyph on board)."""
+    if is_joker_tile(tile):
+        return False
     suit = card_suit(tile)
-    if suit and suit not in ("none",):
+    if suit and suit not in ("none", "joker"):
         return True
     # Joker glyph without card_suit in F8 export still has in-game CardSuit.
     if _is_joker_glyph_char(tile) and not is_joker_tile(tile):

@@ -672,6 +672,18 @@ def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:
             f"Bicycle pin: bicycle_word_score_bonus is 0 but cards_submitted={cards} — "
             "press F7 in-game or wait for melmod refresh."
         )
+    from cursed_words_solver.rules.scoring_conditions import (
+        bicycle_pin_accumulator_from_fingerprint,
+    )
+
+    fp = str(extras.get("loadout_fingerprint", "") or "")
+    pin_acc = bicycle_pin_accumulator_from_fingerprint(fp)
+    acc = bonus if bonus >= 0 else cards
+    if pin_acc is not None and acc >= 0 and pin_acc != acc:
+        return (
+            f"Bicycle pin: run_state bonus={acc} but loadout fingerprint has {pin_acc} — "
+            "press F7 in-game or wait for melmod refresh."
+        )
     return None
 
 

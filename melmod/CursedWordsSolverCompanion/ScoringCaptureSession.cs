@@ -64,6 +64,21 @@ namespace CursedWordsSolverCompanion
             if (birthdayBonus >= 0)
                 _scoringContextExtras["birthday_cake_bonus"] = birthdayBonus.ToString();
 
+            var boardMatchesSuggestion = _suggestion != null
+                && string.Equals(
+                    _suggestion.board_fingerprint ?? "",
+                    _boardFingerprint ?? "",
+                    StringComparison.Ordinal
+                );
+
+            if (boardMatchesSuggestion == false && _suggestion != null)
+            {
+                MelonLogger.Warning(
+                    "Solver suggestion is stale (board changed since F8). "
+                        + "Press F7 then F8 on this board before using the overlay or score capture."
+                );
+            }
+
             if (
                 SuggestionMatcher.MatchesSuggestion(
                     _suggestion,
@@ -156,6 +171,16 @@ namespace CursedWordsSolverCompanion
             }
         }
 
+        /// <summary>
+        /// Keys written from live pin via TryMergeBicycleExtrasAfterScore — do not let
+        /// derived capture values overwrite pin WordScoreBonus in run_state.json.
+        /// </summary>
+        private static readonly string[] BicyclePinExtrasKeys =
+        {
+            "bicycle_word_score_bonus",
+            "cards_submitted",
+        };
+
         /// <summary>Overlay scoring-time extras onto a snapshot before post-submit merge.</summary>
         public static void MergeScoringContextIntoExtras(Dictionary<string, string> target)
         {
@@ -163,7 +188,23 @@ namespace CursedWordsSolverCompanion
                 return;
 
             foreach (var kv in _scoringContextExtras)
+            {
+                if (IsBicyclePinExtraKey(kv.Key))
+                    continue;
                 target[kv.Key] = kv.Value ?? "";
+            }
+        }
+
+        private static bool IsBicyclePinExtraKey(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+                return false;
+            foreach (var blocked in BicyclePinExtrasKeys)
+            {
+                if (string.Equals(key, blocked, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
         }
 
         public static void OnScoreStepsCalculated(List<ScoreCalcVizInfo> steps)
@@ -208,24 +249,32 @@ namespace CursedWordsSolverCompanion
                     if (score <= 0L)
                         continue;
 
-                    // Step bonus is the total applied this word; extras need pre-word pin acc.
+                    // Step bonus is the total applied this word; mismatch capture needs pre-word acc.
+                    // run_state.json uses live pin via TryMergeBicycleExtrasAfterScore (not merged here).
                     var stored = score;
+                    var suited = 0;
                     if (
                         _scoringContextExtras.TryGetValue(
                             "bicycle_suited_on_path",
                             out var suitedRaw
                         )
-                        && int.TryParse(suitedRaw, out var suited)
-                        && suited > 0
                     )
+                        int.TryParse(suitedRaw, out suited);
+
+                    var perCard = suited > 0 ? RunStateExporter.TryGetBicyclePerCardRate() : 0;
+                    if (perCard > 0 && suited > 0)
                     {
-                        var perCard = RunStateExporter.TryGetBicyclePerCardRate();
-                        if (perCard > 0)
-                        {
-                            var pre = score - perCard * suited;
-                            if (pre >= 0L)
-                                stored = pre;
-                        }
+                        var pre = score - perCard * suited;
+                        if (pre >= 0L)
+                            stored = pre;
+                    }
+
+                    var pinBonus = RunStateExporter.TryGetLiveBicycleWordScoreBonus();
+                    if (pinBonus >= 0 && perCard > 0 && suited > 0)
+                    {
+                        var preFromPin = pinBonus - perCard * suited;
+                        if (preFromPin >= 0L)
+                            stored = preFromPin;
                     }
 
                     _scoringContextExtras["bicycle_word_score_bonus"] = stored.ToString();

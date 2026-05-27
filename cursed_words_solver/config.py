@@ -53,12 +53,14 @@ class Region:
 class AppConfig:
     board_region: Region = field(default_factory=Region)
     hotkey: str = "f8"
-    search_time_budget_sec: float = 45.0
+    search_time_budget_sec: float = 60.0
     top_n_results: int = 3
     wordlist: str = "game"
     show_board_highlight: bool = True
     setup_weight: float = 0.4
     setup_discount: float = 0.85
+    mult_search_weight: float = 0.4
+    mult_search_passes: bool = True
     search_workers: int | str = "auto"
 
     def save(self) -> None:
@@ -72,6 +74,8 @@ class AppConfig:
             "show_board_highlight": self.show_board_highlight,
             "setup_weight": self.setup_weight,
             "setup_discount": self.setup_discount,
+            "mult_search_weight": self.mult_search_weight,
+            "mult_search_passes": self.mult_search_passes,
             "search_workers": self.search_workers,
         }
         CONFIG_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -81,7 +85,7 @@ class AppConfig:
         if not CONFIG_PATH.exists():
             return cls()
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        search_time_budget_sec = float(data.get("search_time_budget_sec", 45.0))
+        search_time_budget_sec = float(data.get("search_time_budget_sec", 60.0))
         migrated = False
         if "min_word_length" in data or "max_word_length" in data:
             migrated = True
@@ -90,7 +94,7 @@ class AppConfig:
             PREVIOUS_SEARCH_TIME_BUDGET_SEC,
             PREVIOUS_DEFAULT_SEARCH_TIME_BUDGET_SEC,
         ):
-            search_time_budget_sec = 45.0
+            search_time_budget_sec = 60.0
             migrated = True
         if int(data.get("max_word_length", 15)) == LEGACY_MAX_WORD_LENGTH:
             migrated = True
@@ -103,6 +107,8 @@ class AppConfig:
             show_board_highlight=bool(data.get("show_board_highlight", True)),
             setup_weight=float(data.get("setup_weight", 0.4)),
             setup_discount=float(data.get("setup_discount", 0.85)),
+            mult_search_weight=float(data.get("mult_search_weight", 0.4)),
+            mult_search_passes=bool(data.get("mult_search_passes", True)),
             search_workers=data.get("search_workers", "auto"),
         )
         if migrated:

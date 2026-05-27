@@ -484,6 +484,8 @@ def _finalize(
     path: list[int] | None = None,
 ) -> float:
     """Sum tile + word scores, apply % WORD bonuses, then floor ×WORD multipliers."""
+    if state.get("multiplier") == 0:
+        return 0.0
     if board is not None and path is not None:
         apply_green_tile_word_transfer(board, path, state)
     subtotal = sum(state["tile_scores"]) + state["word_score"]
@@ -497,6 +499,8 @@ def _finalize(
 
 def _finalize_with_trace(state: dict[str, Any]) -> tuple[float, list[dict[str, Any]]]:
     """Like _finalize but records each ×WORD floor step in trace."""
+    if state.get("multiplier") == 0:
+        return 0.0, []
     trace = state.get("_trace")
     subtotal = sum(state["tile_scores"]) + state["word_score"]
     if trace is not None:

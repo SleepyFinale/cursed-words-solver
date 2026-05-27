@@ -58,6 +58,9 @@ def apply_boss_steal_money(
     loadout.money = max(0, loadout.money - stolen)
     state["effects"].append(f"−${stolen} stolen by boss (Fox)")
     loadout.extras["fox_stolen_this_word"] = str(stolen)
+    tile_scores = state.get("tile_scores")
+    if tile_scores and stolen > 0 and float(tile_scores[0]) == 0.0:
+        tile_scores[0] -= float(stolen)
 
 
 def apply_early_boss_scoring(
