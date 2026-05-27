@@ -64,6 +64,10 @@ namespace CursedWordsSolverCompanion
             if (birthdayBonus >= 0)
                 _scoringContextExtras["birthday_cake_bonus"] = birthdayBonus.ToString();
 
+            var targetNumber = RunStateExporter.TryGetLuckyDiceTargetNumber(player);
+            if (targetNumber >= 0)
+                _scoringContextExtras["target_number"] = targetNumber.ToString();
+
             var boardMatchesSuggestion = _suggestion != null
                 && string.Equals(
                     _suggestion.board_fingerprint ?? "",

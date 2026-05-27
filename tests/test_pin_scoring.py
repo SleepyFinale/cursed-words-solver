@@ -415,6 +415,16 @@ def test_bicycle_extras_ahead_of_stale_fingerprint_suffix():
     assert int(score) == 260
 
 
+def test_rewind_setup_does_not_cache_neapolitan_without_stamp():
+    from cursed_words_solver.rules.scoring_conditions import rewind_setup_extras
+
+    board = _letter_board("abc")
+    lo = Loadout(extras={"neapolitan_percent": "155"})
+    notes = rewind_setup_extras(lo, board)
+    assert not any("neapolitan baseline cached" in n for n in notes)
+    assert "neapolitan_percent_last_known" not in (lo.extras or {})
+
+
 def test_ram_replays_memory_items():
     pipeline = ScoringPipeline()
     board = _letter_board("cat")

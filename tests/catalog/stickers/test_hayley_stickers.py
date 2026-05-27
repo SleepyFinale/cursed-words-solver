@@ -214,3 +214,16 @@ def test_lucky_dice_inactive_without_target():
     score, _ = pipeline.score(board, [0, 1], "2a", loadout)
     base, _ = pipeline.score(board, [0, 1], "2a", Loadout())
     assert score == base
+
+
+def test_lucky_dice_ambiguous_path_numbers_without_target():
+    """Multiple number values on path — no target_number means no bonus."""
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "1", 2, curse=CurseType.NUMBER, number_value=1)
+    board.tiles[0][1] = _tile(0, 1, "2", 3, curse=CurseType.NUMBER, number_value=2)
+    board.tiles[0][2] = _tile(0, 2, "A", 4)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="lucky_dice", name="Lucky Dice", level=1)])
+    score, _ = pipeline.score(board, [0, 1, 2], "12a", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2], "12a", Loadout())
+    assert score == base

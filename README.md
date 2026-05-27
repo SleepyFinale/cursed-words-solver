@@ -215,6 +215,7 @@ Word length is derived automatically per solve: minimum is 1, maximum is the act
 - **No board in JSON** — Export only runs mid-run (not main menu).
 - **Invalid word suggestions** — Rebuild melmod, **F7** during a run, confirm `game_words.txt` exists. `enable1 fallback` means the game dictionary was not exported.
 - **Birthday Cake shows 0** — Set `extras.birthday_cake_bonus` in `run_state.json` (press **F7** after rebuilding melmod, or edit manually to match the sticker UI).
+- **Lucky Dice off by +50** — Rebuild melmod, press **F7** in-game, confirm `run_state.json` → `extras.target_number` is set (not `lucky_dice_target_missing`). Without it the solver skips the +50 word bonus.
 
 ### Scoring calibration (predicted vs in-game)
 
@@ -224,6 +225,8 @@ With melmod companion **v1.1.6+**:
 2. Play the suggested word on the **highlighted path** before the board changes.
 3. On score mismatch, the mod saves `scoring_mismatches\<timestamp>.json`.
 4. Add a regression fixture: `python scripts/mismatch_to_test.py <path-to-mismatch.json>` → `tests/fixtures/mismatches/<id>.json`, then `pytest tests/regression/ -k <id>`.
+
+**Lucky Dice** needs `extras.target_number` (the grid’s chosen number tile value). Hayley’s Lucky Dice sticker adds **+50 WORD SCORE** when your word contains that number. If predictions are low by exactly 50 with Lucky Dice equipped, press **F7** after rebuilding melmod so `target_number` is exported; the companion also sets `lucky_dice_target_missing` when it cannot read the target. Mismatch replay can infer a missing target from `actual_trace` when Lucky Dice clearly fired.
 
 Rebuild after pulling solver changes: `.\melmod\build.ps1`. Details: `[melmod/README.md](melmod/README.md#scoring-mismatch-capture-v116)`, `[melmod/SCORING_HOOKS.md](melmod/SCORING_HOOKS.md)`.
 

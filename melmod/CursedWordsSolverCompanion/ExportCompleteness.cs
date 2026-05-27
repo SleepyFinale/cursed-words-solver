@@ -80,6 +80,12 @@ namespace CursedWordsSolverCompanion
                     missing.Add("boss_area_number");
             }
 
+            if (HasLuckyDice(player))
+            {
+                if (!extras.ContainsKey("target_number"))
+                    missing.Add("target_number");
+            }
+
             return missing;
         }
 
@@ -105,6 +111,26 @@ namespace CursedWordsSolverCompanion
                     continue;
                 var slug = RunStateExporter.Slugify(stamp.ArtFileName, stamp.Name);
                 if (slug.IndexOf(slugPart, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool HasLuckyDice(Player player)
+        {
+            if (player?.Stickers == null)
+                return false;
+            foreach (var sticker in player.Stickers)
+            {
+                if (sticker == null)
+                    continue;
+                if (string.Equals(sticker.GetType().Name, "LuckyDice", System.StringComparison.Ordinal))
+                    return true;
+                var name = sticker.Name ?? "";
+                if (
+                    name.IndexOf("Lucky", System.StringComparison.OrdinalIgnoreCase) >= 0
+                    && name.IndexOf("Dice", System.StringComparison.OrdinalIgnoreCase) >= 0
+                )
                     return true;
             }
             return false;

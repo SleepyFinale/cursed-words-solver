@@ -915,22 +915,11 @@ namespace CursedWordsSolverCompanion
             if (consumables >= 0)
                 snapshot.extras["consumable_rack_count"] = consumables.ToString();
 
-            var targetNumber = TryGetIntProperty(
-                player,
-                "TargetNumber",
-                "LuckyDiceTarget",
-                "GridTargetNumber",
-                "CurrentTargetNumber"
-            );
-            if (targetNumber < 0)
-                targetNumber = TryGetIntProperty(
-                    GameStatics.GetPlayer(),
-                    "TargetNumber",
-                    "LuckyDiceTarget",
-                    "GridTargetNumber"
-                );
+            var targetNumber = TryGetLuckyDiceTargetNumber(player);
             if (targetNumber >= 0)
                 snapshot.extras["target_number"] = targetNumber.ToString();
+            else if (HasLuckyDiceSticker(player))
+                snapshot.extras["lucky_dice_target_missing"] = "true";
 
             var stampsPrice = TryGetStampsShopPriceTotal(player);
             if (stampsPrice >= 0)
@@ -1089,6 +1078,228 @@ namespace CursedWordsSolverCompanion
                 name => name.IndexOf("Birthday", StringComparison.OrdinalIgnoreCase) >= 0,
                 art => art.IndexOf("birthday", StringComparison.OrdinalIgnoreCase) >= 0
             );
+        }
+
+        /// <summary>
+        /// Lucky Dice grid target number (tile face value). Returns -1 if unknown.
+        /// </summary>
+        public static int TryGetLuckyDiceTargetNumber(Player player)
+        {
+            var targetNumber = TryGetIntProperty(
+                player,
+                "TargetNumber",
+                "LuckyDiceTarget",
+                "GridTargetNumber",
+                "CurrentTargetNumber",
+                "DiceTarget",
+                "NumberTarget",
+                "ChosenTargetNumber",
+                "SelectedTargetNumber",
+                "LuckyNumber"
+            );
+            if (targetNumber < 0)
+                targetNumber = TryGetIntProperty(
+                    GameStatics.GetPlayer(),
+                    "TargetNumber",
+                    "LuckyDiceTarget",
+                    "GridTargetNumber",
+                    "CurrentTargetNumber",
+                    "DiceTarget",
+                    "NumberTarget"
+                );
+
+            if (targetNumber < 0)
+            {
+                var grid = ResolveActiveGridData();
+                if (grid != null)
+                    targetNumber = TryGetIntProperty(
+                        grid,
+                        "TargetNumber",
+                        "LuckyDiceTarget",
+                        "GridTargetNumber",
+                        "CurrentTargetNumber",
+                        "DiceTarget",
+                        "NumberTarget"
+                    );
+            }
+
+            if (targetNumber < 0)
+                targetNumber = TryGetStickerTargetNumber(
+                    player,
+                    name =>
+                        name.IndexOf("Lucky", StringComparison.OrdinalIgnoreCase) >= 0
+                        && name.IndexOf("Dice", StringComparison.OrdinalIgnoreCase) >= 0,
+                    art => art.IndexOf("lucky_dice", StringComparison.OrdinalIgnoreCase) >= 0
+                        || art.IndexOf("luckydice", StringComparison.OrdinalIgnoreCase) >= 0
+                );
+
+            if (targetNumber < 0 && player != null)
+            {
+                foreach (var sticker in player.GetStickers(forItemComparison: true) ?? new List<Item>())
+                {
+                    if (sticker == null)
+                        continue;
+                    if (!string.Equals(sticker.GetType().Name, "LuckyDice", StringComparison.Ordinal))
+                        continue;
+                    targetNumber = TryGetTargetNumberFromObject(sticker);
+                    if (targetNumber >= 0)
+                        break;
+                    foreach (var nested in TryGetNestedStickerTargets(sticker))
+                    {
+                        targetNumber = TryGetTargetNumberFromObject(nested);
+                        if (targetNumber >= 0)
+                            break;
+                    }
+                    if (targetNumber >= 0)
+                        break;
+                }
+            }
+
+            return targetNumber;
+        }
+
+        private static int TryGetStickerTargetNumber(
+            Player player,
+            Func<string, bool> nameMatch,
+            Func<string, bool> artMatch
+        )
+        {
+            if (player?.Stickers == null)
+                return -1;
+
+            foreach (var sticker in player.Stickers)
+            {
+                if (sticker == null)
+                    continue;
+                var name = sticker.Name ?? "";
+                var art = sticker.ArtFileName ?? "";
+                if (!nameMatch(name) && !artMatch(art))
+                    continue;
+
+                var target = TryGetTargetNumberFromObject(sticker);
+                if (target >= 0)
+                    return target;
+
+                foreach (var nested in TryGetNestedStickerTargets(sticker))
+                {
+                    target = TryGetTargetNumberFromObject(nested);
+                    if (target >= 0)
+                        return target;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int TryGetTargetNumberFromObject(object target)
+        {
+            if (target == null)
+                return -1;
+
+            var named = TryGetIntMember(
+                target,
+                "TargetNumber",
+                "LuckyDiceTarget",
+                "GridTargetNumber",
+                "CurrentTargetNumber",
+                "DiceTarget",
+                "NumberTarget",
+                "ChosenTargetNumber",
+                "SelectedTargetNumber",
+                "LuckyNumber",
+                "Target",
+                "CurrentTarget",
+                "_targetNumber",
+                "_luckyDiceTarget",
+                "targetNumber",
+                "luckyDiceTarget"
+            );
+            if (named >= 0)
+                return named;
+
+            return TryScanTargetNumberMembers(target);
+        }
+
+        private static int TryScanTargetNumberMembers(object target)
+        {
+            var type = target.GetType();
+            foreach (var prop in type.GetProperties(MemberFlags))
+            {
+                var value = TryReadIntLike(prop.GetValue(target, null));
+                if (value < 0 || !MemberNameLooksLikeTargetNumber(prop.Name))
+                    continue;
+                return value;
+            }
+
+            foreach (var field in type.GetFields(MemberFlags))
+            {
+                var value = TryReadIntLike(field.GetValue(target));
+                if (value < 0 || !MemberNameLooksLikeTargetNumber(field.Name))
+                    continue;
+                return value;
+            }
+
+            return -1;
+        }
+
+        private static bool MemberNameLooksLikeTargetNumber(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+
+            var lower = name.ToLowerInvariant();
+            if (
+                lower.Contains("level")
+                || lower.Contains("upgrade")
+                || lower.Contains("cost")
+                || lower.Contains("price")
+                || lower.Contains("rarity")
+                || lower.Contains("index")
+                || lower.Contains("bonus")
+                || lower.Contains("score")
+            )
+                return false;
+
+            return (lower.Contains("target") && lower.Contains("number"))
+                || lower == "targetnumber"
+                || lower == "luckydicetarget"
+                || lower == "gridtargetnumber";
+        }
+
+        private static GridData ResolveActiveGridData()
+        {
+            GridData grid = null;
+
+            var encounter = UnityEngine.Object.FindAnyObjectByType<EncounterController>();
+            if (encounter != null)
+            {
+                try
+                {
+                    grid = encounter.GetGridData();
+                }
+                catch
+                {
+                    grid = null;
+                }
+            }
+
+            if (grid != null)
+                return grid;
+
+            var puzzle = UnityEngine.Object.FindAnyObjectByType<PuzzleController>();
+            if (puzzle != null)
+            {
+                try
+                {
+                    grid = puzzle.GetGridData();
+                }
+                catch
+                {
+                    grid = null;
+                }
+            }
+
+            return grid;
         }
 
         /// <summary>
@@ -1520,6 +1731,33 @@ namespace CursedWordsSolverCompanion
                 if (name.IndexOf("Birthday", StringComparison.OrdinalIgnoreCase) >= 0)
                     return true;
                 if (art.IndexOf("birthday", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool HasLuckyDiceSticker(Player player)
+        {
+            if (player?.Stickers == null)
+                return false;
+
+            foreach (var sticker in player.Stickers)
+            {
+                if (sticker == null)
+                    continue;
+                if (string.Equals(sticker.GetType().Name, "LuckyDice", StringComparison.Ordinal))
+                    return true;
+                var name = sticker.Name ?? "";
+                var art = sticker.ArtFileName ?? "";
+                if (
+                    name.IndexOf("Lucky", StringComparison.OrdinalIgnoreCase) >= 0
+                    && name.IndexOf("Dice", StringComparison.OrdinalIgnoreCase) >= 0
+                )
+                    return true;
+                if (art.IndexOf("lucky_dice", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+                if (art.IndexOf("luckydice", StringComparison.OrdinalIgnoreCase) >= 0)
                     return true;
             }
 

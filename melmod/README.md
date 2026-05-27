@@ -248,7 +248,8 @@ Run context extras (default-unlocked stickers):
 | `sticker_order` / `stamp_order` | JSON slug arrays (live slot order) |
 | `historic_words` | Compact JSON of prior submitted words (word, path, score) |
 | `game_version` | `Application.version` for mismatch triage |
-| `target_number` | Lucky Dice (grid target number tile value, e.g. `2`) |
+| `target_number` | Lucky Dice (grid target number tile value, e.g. `2`). Read from player/grid state and the Lucky Dice sticker when property names differ by build. |
+| `lucky_dice_target_missing` | `true` when Lucky Dice is equipped but `target_number` could not be read (rebuild melmod and press **F7**) |
 | `birthday_cake_bonus` | Birthday Cake (accumulated “Get +X WORD SCORE” before this submit). If the solver shows `Birthday Cake: 0 + …`, press **F7** in-game after rebuilding the companion; until then you can set `"birthday_cake_bonus": "15"` (match the sticker UI) in `run_state.json` → `extras`. |
 | `michael_book_bonus` | Michael's Book (accumulated word bonus) |
 

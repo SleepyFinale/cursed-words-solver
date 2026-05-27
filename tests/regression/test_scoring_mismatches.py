@@ -14,11 +14,14 @@ from cursed_words_solver.rules.scoring_conditions import (
     bicycle_word_per_card,
     birthday_cake_improve_for_path,
     effective_suited_cards_on_path,
+    infer_lucky_dice_target_number,
+    is_number_like_tile,
     normalize_scoring_path,
     path_letter_for_count,
     rewind_bicycle_pre_word_extras,
     rewind_birthday_cake_pre_word_extras,
     suited_cards_on_path_count,
+    tile_numeric_value,
 )
 from cursed_words_solver.rules.tile_scoring import currency_money_from_path
 
@@ -51,6 +54,101 @@ def _merge_submit_take_flags(run_state: dict, data: dict) -> None:
         key = (int(tile.get("row", -1)), int(tile.get("col", -1)))
         if key in take_at:
             tile["take"] = True
+
+
+def _has_lucky_dice_sticker(run_state: dict) -> bool:
+    stickers = run_state.get("stickers")
+    if not isinstance(stickers, list):
+        return False
+    for sticker in stickers:
+        if not isinstance(sticker, dict):
+            continue
+        sticker_id = str(sticker.get("id", "") or "").lower()
+        name = str(sticker.get("name", "") or "").lower()
+        if sticker_id == "lucky_dice" or "lucky dice" in name:
+            return True
+    return False
+
+
+def _lucky_dice_trace_word_bonus(data: dict) -> int | None:
+    trace = data.get("actual_trace")
+    if not isinstance(trace, list):
+        return None
+    for step in trace:
+        if not isinstance(step, dict):
+            continue
+        item_id = str(step.get("item_id", "") or "").lower()
+        item_name = str(step.get("item_name", "") or "").lower()
+        if item_id != "lucky_dice" and item_name != "lucky dice":
+            continue
+        try:
+            total = int(step.get("word_bonus", 0))
+        except (TypeError, ValueError):
+            continue
+        if total <= 0 or step.get("word_bonus_multiplicative"):
+            continue
+        return total
+    return None
+
+
+def _first_number_value_on_path(board, path: list[int]) -> int | None:
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if is_number_like_tile(tile):
+            return int(tile_numeric_value(tile))
+    return None
+
+
+def _adjust_lucky_dice_target_extras(
+    run_state: dict,
+    data: dict,
+    board,
+    path: list[int],
+) -> None:
+    """Fill target_number when capture omitted it but Lucky Dice fired in-game."""
+    if not _has_lucky_dice_sticker(run_state):
+        return
+    extras = dict(run_state.get("extras") or {})
+    if extras.get("target_number") not in (None, "", -1):
+        try:
+            if int(extras.get("target_number", -1)) >= 0:
+                return
+        except (TypeError, ValueError):
+            pass
+
+    observed = _lucky_dice_trace_word_bonus(data)
+    if observed is None:
+        return
+
+    expected = data.get("actual_score")
+    if expected is None:
+        return
+    word = str(data.get("word", ""))
+    baseline_loadout = parse_run_state(run_state)
+    baseline_score, _ = ScoringPipeline().score(
+        board, path, word, baseline_loadout
+    )
+    if int(expected) - int(baseline_score) != observed:
+        return
+
+    inferred = infer_lucky_dice_target_number(
+        board, path, expected_bonus=50, observed_bonus=observed
+    )
+    if inferred is None:
+        first_on_path = _first_number_value_on_path(board, path)
+        if first_on_path is None:
+            return
+        trial = dict(run_state)
+        trial_extras = dict(extras)
+        trial_extras["target_number"] = str(first_on_path)
+        trial["extras"] = trial_extras
+        trial_loadout = parse_run_state(trial)
+        score, _ = ScoringPipeline().score(board, path, word, trial_loadout)
+        if int(score) != int(expected):
+            return
+        inferred = first_on_path
+    extras["target_number"] = str(inferred)
+    run_state["extras"] = extras
 
 
 def _bicycle_trace_word_bonus(data: dict) -> int | None:
@@ -574,6 +672,10 @@ def test_scoring_mismatch(case_path: Path) -> None:
     _adjust_bento_previous_word_extras(run_state, data)
     _adjust_neapolitan_percent_extras(run_state, data)
 
+    board_for_lucky = parse_board_from_run_state(run_state)
+    if board_for_lucky is not None:
+        _adjust_lucky_dice_target_extras(run_state, data, board_for_lucky, path)
+
     # For a couple of early plain-letter fixtures the raw F8 snapshot already
     # matches the game's scoring without any extras reconciliation; replay
     # adjustments (Bicycle, birthday cake, etc.) only introduce drift there.
@@ -646,6 +748,40 @@ def test_neapolitan_replay_uses_cached_percent_when_live_missing() -> None:
         and int(step.get("percent", 0) or 0) == 110
         for step in (trace or [])
     )
+
+
+def test_infer_lucky_dice_target_from_trace_and_board() -> None:
+    case_path = FIXTURES / "20260527_162934.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260527_162934 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    path = data["path"]
+    assert _lucky_dice_trace_word_bonus(data) == 50
+    inferred = infer_lucky_dice_target_number(
+        board, path, expected_bonus=50, observed_bonus=50
+    )
+    assert inferred is None
+    _adjust_lucky_dice_target_extras(run_state, data, board, path)
+    assert int((run_state.get("extras") or {})["target_number"]) == 1
+
+
+def test_lucky_dice_epicarps_mismatch_replay() -> None:
+    case_path = FIXTURES / "20260527_162934.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260527_162934 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    path = data["path"]
+    _adjust_lucky_dice_target_extras(run_state, data, board, path)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert int(score) == int(data["actual_score"])
 
 
 def test_run_state_replay_keeps_michael_phase_boss_extras() -> None:

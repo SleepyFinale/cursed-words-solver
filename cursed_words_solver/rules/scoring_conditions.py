@@ -1061,6 +1061,45 @@ def target_number_from_loadout(loadout: Loadout) -> int:
         return -1
 
 
+def infer_lucky_dice_target_number(
+    board: Board,
+    path: list[int],
+    *,
+    expected_bonus: int = 50,
+    observed_bonus: int | None = None,
+) -> int | None:
+    """Infer Lucky Dice grid target when melmod omitted extras.target_number.
+
+    Conservative: only returns a value when the path (or path∩board uniqueness)
+    unambiguously identifies one number tile face value.
+    """
+    if observed_bonus is not None and observed_bonus != expected_bonus:
+        return None
+
+    path_values: list[int] = []
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if is_number_like_tile(tile):
+            path_values.append(int(tile_numeric_value(tile)))
+    if not path_values:
+        return None
+
+    unique_on_path = sorted(set(path_values))
+    if len(unique_on_path) == 1:
+        return unique_on_path[0]
+
+    board_counts: Counter[int] = Counter()
+    for tile in board.flat:
+        if is_number_like_tile(tile):
+            board_counts[int(tile_numeric_value(tile))] += 1
+
+    singletons = [value for value in unique_on_path if board_counts.get(value, 0) == 1]
+    if len(singletons) == 1:
+        return singletons[0]
+
+    return None
+
+
 def target_score_from_loadout(loadout: Loadout) -> int:
     """Dartboard target base score (default 1), scaled by Toothed Whale boss."""
     try:
@@ -2561,14 +2600,17 @@ def rewind_setup_extras(
         if after != before:
             notes.append(f"birthday cake bonus {before}→{after}")
 
-    extras = dict(loadout.extras or {})
-    live_neapolitan = _extra_int(loadout, "neapolitan_percent", -1)
-    if live_neapolitan > 0 and extras.get("neapolitan_percent_last_known") != str(
-        live_neapolitan
-    ):
-        extras["neapolitan_percent_last_known"] = str(live_neapolitan)
-        loadout.extras = extras
-        notes.append(f"neapolitan baseline cached at {live_neapolitan}%")
+    from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
+
+    if loadout_has_stamp(loadout, "neapolitan"):
+        extras = dict(loadout.extras or {})
+        live_neapolitan = _extra_int(loadout, "neapolitan_percent", -1)
+        if live_neapolitan > 0 and extras.get("neapolitan_percent_last_known") != str(
+            live_neapolitan
+        ):
+            extras["neapolitan_percent_last_known"] = str(live_neapolitan)
+            loadout.extras = extras
+            notes.append(f"neapolitan baseline cached at {live_neapolitan}%")
 
     return notes
 
