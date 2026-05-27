@@ -65,12 +65,66 @@ def boss_is_cursed(loadout: Loadout) -> bool:
 def get_active_boss_rule(
     rules: dict[str, Any], loadout: Loadout
 ) -> tuple[str | None, dict[str, Any] | None]:
+    ruleset = get_active_boss_rules(rules, loadout)
+    if not ruleset:
+        return None, None
+    return ruleset[0]
+
+
+def active_boss_ids(loadout: Loadout) -> list[str]:
+    """Current active boss modifier ids for this phase.
+
+    When `extras.boss_modifiers` is present, it is treated as source of truth and can be empty
+    (important for Michael phases with no copied effects).
+    """
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    if "boss_modifiers" in extras:
+        raw = extras.get("boss_modifiers")
+        rows: list[Any]
+        if isinstance(raw, list):
+            rows = raw
+        elif isinstance(raw, str):
+            rows = [s.strip() for s in raw.split(",") if s.strip()]
+        else:
+            rows = []
+        out: list[str] = []
+        for entry in rows:
+            item = str(entry or "").strip().lower()
+            if item and item not in out:
+                out.append(item)
+        return out
+    primary = str(loadout.boss_id or "").strip().lower()
+    if primary:
+        return [primary]
+    return []
+
+
+def get_active_boss_rules(
+    rules: dict[str, Any], loadout: Loadout
+) -> list[tuple[str, dict[str, Any]]]:
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    ids = active_boss_ids(loadout)
+    resolved: list[tuple[str, dict[str, Any]]] = []
+    seen: set[str] = set()
+    if ids:
+        for boss_id in ids:
+            key, rule = get_rule(rules, "bosses", boss_id, boss_id)
+            if not key or not rule:
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            resolved.append((key, rule))
+        return resolved
+    if "boss_modifiers" in extras:
+        # Explicit empty modifiers means "no copied boss effects this phase".
+        return resolved
     if not (loadout.boss_id or loadout.boss_name):
-        return None, None
+        return resolved
     key, rule = get_rule(rules, "bosses", loadout.boss_id, loadout.boss_name)
-    if not rule:
-        return None, None
-    return key, rule
+    if key and rule and key not in seen:
+        resolved.append((key, rule))
+    return resolved
 
 
 def boss_context(loadout: Loadout, rules: dict[str, Any]) -> BossContext:
@@ -136,6 +190,16 @@ def effective_target_score_multiplier(loadout: Loadout, rules: dict[str, Any]) -
 def boss_word_constraints(
     loadout: Loadout, rules: dict[str, Any], *, default_max_len: int = 15
 ) -> BossConstraints:
+    michael_min = 0
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    for key in ("michael_min_word_length", "michael_phase_min_word_length"):
+        if key not in extras:
+            continue
+        try:
+            michael_min = max(michael_min, int(extras.get(key) or 0))
+        except (TypeError, ValueError):
+            continue
+
     if _extra_bool(loadout, "hyena_blocked"):
         return BossConstraints(
             blocked=True,
@@ -144,7 +208,10 @@ def boss_word_constraints(
 
     ctx = boss_context(loadout, rules)
     if not ctx.rule:
-        return BossConstraints(max_len=default_max_len)
+        min_len = 1
+        if michael_min > 0:
+            min_len = max(min_len, michael_min)
+        return BossConstraints(min_len=min_len, max_len=default_max_len)
 
     effect_type = ctx.rule.get("type", "")
     min_len = 1
@@ -164,6 +231,8 @@ def boss_word_constraints(
     if min_len == 1 and (ctx.rule_key or "").strip().lower() == "cretaceous_meg":
         min_len = 3
 
+    if michael_min > 0:
+        min_len = max(min_len, michael_min)
     return BossConstraints(min_len=min_len, max_len=max_len)
 
 

@@ -74,6 +74,41 @@ def _bicycle_trace_word_bonus(data: dict) -> int | None:
     return None
 
 
+def _neapolitan_trace_percent(data: dict) -> int | None:
+    trace = data.get("actual_trace")
+    if not isinstance(trace, list):
+        return None
+    for step in trace:
+        if not isinstance(step, dict):
+            continue
+        item_id = str(step.get("item_id", "") or "").lower()
+        item_name = str(step.get("item_name", "") or "").lower()
+        if item_id != "neapolitan" and item_name != "neapolitan":
+            continue
+        if not step.get("word_bonus_multiplicative") or step.get("word_bonus_poison"):
+            continue
+        try:
+            percent = int(step.get("word_bonus", 0))
+        except (TypeError, ValueError):
+            continue
+        if percent > 0:
+            return percent
+    return None
+
+
+def _adjust_neapolitan_percent_extras(run_state: dict, data: dict) -> None:
+    """Inject Neapolitan's live % multiplier when fixture predates melmod export."""
+    extras = run_state.get("extras")
+    if not isinstance(extras, dict):
+        return
+    if extras.get("neapolitan_percent"):
+        return
+    percent = _neapolitan_trace_percent(data)
+    if percent is None:
+        return
+    extras["neapolitan_percent"] = str(percent)
+
+
 def _infer_bicycle_accumulator_from_trace(
     data: dict, extras: dict, board, path: list[int], loadout
 ) -> int | None:
@@ -537,6 +572,7 @@ def test_scoring_mismatch(case_path: Path) -> None:
 
     _adjust_previous_word_letter_extras(run_state, data)
     _adjust_bento_previous_word_extras(run_state, data)
+    _adjust_neapolitan_percent_extras(run_state, data)
 
     # For a couple of early plain-letter fixtures the raw F8 snapshot already
     # matches the game's scoring without any extras reconciliation; replay
@@ -562,5 +598,70 @@ def test_scoring_mismatch(case_path: Path) -> None:
         board.money = max(board.money, replay_money)
         loadout.money = max(loadout.money, replay_money)
     pipeline = ScoringPipeline()
-    score, _bd = pipeline.score(board, path, word, loadout)
+    if case_path.stem in {
+        "20260527_133401",
+        "20260527_134935",
+        "20260527_140252",
+        "20260527_141228",
+        "20260527_142009",
+        "20260527_151017",
+    }:
+        score, _bd, trace = pipeline.score_with_trace(board, path, word, loadout)
+        expected_percent = (
+            110
+            if case_path.stem in {"20260527_141228", "20260527_142009", "20260527_151017"}
+            else 105
+        )
+        assert any(
+            isinstance(step, dict)
+            and step.get("phase") == "multiply"
+            and str(step.get("rule_id", "") or "").lower() == "neapolitan"
+            and int(step.get("percent", 0) or 0) == expected_percent
+            for step in (trace or [])
+        )
+    else:
+        score, _bd = pipeline.score(board, path, word, loadout)
     assert int(score) == expected
+
+
+def test_neapolitan_replay_uses_cached_percent_when_live_missing() -> None:
+    case_path = FIXTURES / "20260527_141228.json"
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    assert run_state
+    extras = dict(run_state.get("extras") or {})
+    extras.pop("neapolitan_percent", None)
+    extras["neapolitan_percent_last_known"] = "110"
+    run_state["extras"] = extras
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    pipeline = ScoringPipeline()
+    score, _bd, trace = pipeline.score_with_trace(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"])
+    assert any(
+        isinstance(step, dict)
+        and step.get("phase") == "multiply"
+        and str(step.get("rule_id", "") or "").lower() == "neapolitan"
+        and int(step.get("percent", 0) or 0) == 110
+        for step in (trace or [])
+    )
+
+
+def test_run_state_replay_keeps_michael_phase_boss_extras() -> None:
+    data = {
+        "run_state_snapshot": {
+            "boss_id": "salamander",
+            "extras": {"boss_modifiers": "[]"},
+            "stickers": [],
+            "stamps": [],
+        },
+        "extras_snapshot": {
+            "boss_modifiers": "[]",
+            "michael_min_word_length": "25",
+        },
+    }
+    run_state = _run_state_for_replay(data)
+    loadout = parse_run_state(run_state)
+    assert loadout.extras.get("boss_modifiers") == []
+    assert int(loadout.extras.get("michael_min_word_length", 0)) == 25

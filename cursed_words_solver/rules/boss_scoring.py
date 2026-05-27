@@ -9,6 +9,7 @@ from cursed_words_solver.rules.boss_effects import (
     boss_context,
     boss_rule_applies,
     get_active_boss_rule,
+    get_active_boss_rules,
     resolve_boss_scaling,
 )
 
@@ -71,28 +72,32 @@ def apply_early_boss_scoring(
     trace_step: Callable[..., None] | None = None,
 ) -> dict[str, Any]:
     """Early ApplyBossModifier pass (before items when no Hourglass)."""
-    key, boss = get_active_boss_rule(rules, loadout)
-    if not boss:
-        return state
-    ctx = boss_context(loadout, rules)
-    if not boss_rule_applies(boss, ctx):
-        return state
     from cursed_words_solver.rules.boss_effects import boss_scoring_effect_type
 
-    effect = boss_scoring_effect_type(boss)
-    rule_id = key or loadout.boss_id or "boss"
-    if effect == "boss_steal_money":
-        apply_boss_steal_money(state, loadout, boss, ctx)
-        if trace_step:
-            trace_step(
-                state,
-                "boss_early",
-                rule_id=rule_id,
-                detail=state["effects"][-1] if state.get("effects") else "fox steal",
-            )
-        return state
-    if effect in EARLY_BOSS_TYPES:
-        state = apply_rule(boss, state, board, path, loadout, 1)
-        if trace_step:
-            trace_step(state, "boss_early", rule_id=rule_id, detail=effect)
+    active = get_active_boss_rules(rules, loadout)
+    if not active:
+        key, boss = get_active_boss_rule(rules, loadout)
+        active = [(key or "", boss)] if boss is not None else []
+    for key, boss in active:
+        if not boss:
+            continue
+        ctx = boss_context(loadout, rules)
+        if not boss_rule_applies(boss, ctx):
+            continue
+        effect = boss_scoring_effect_type(boss)
+        rule_id = key or loadout.boss_id or "boss"
+        if effect == "boss_steal_money":
+            apply_boss_steal_money(state, loadout, boss, ctx)
+            if trace_step:
+                trace_step(
+                    state,
+                    "boss_early",
+                    rule_id=rule_id,
+                    detail=state["effects"][-1] if state.get("effects") else "fox steal",
+                )
+            continue
+        if effect in EARLY_BOSS_TYPES:
+            state = apply_rule(boss, state, board, path, loadout, 1)
+            if trace_step:
+                trace_step(state, "boss_early", rule_id=rule_id, detail=effect)
     return state

@@ -169,8 +169,8 @@ def test_tombstone_diagonal_void_adjacent_bonus():
     assert score == base + 5
 
 
-def test_tombstone_void_path_corner_cluster_two_hop():
-    """VOID path tile with three direct VOID neighbours also picks up 2-hop VOIDs."""
+def test_tombstone_void_path_corner_cluster_direct_only():
+    """Tombstone counts only direct VOID neighbours on path tiles."""
     board = _empty_board()
     board.tiles[2][0] = _tile(2, 0, "Y", 0, color=TileColor.VOID)
     board.tiles[2][1] = _tile(2, 1, "S", 0, color=TileColor.VOID)
@@ -183,7 +183,30 @@ def test_tombstone_void_path_corner_cluster_two_hop():
     loadout = Loadout(stickers=[LoadoutItem(id="tombstone", name="Tombstone", level=2)])
     score, _ = pipeline.score(board, [10, 6, 11], "yrs", loadout)
     base, _ = pipeline.score(board, [10, 6, 11], "yrs", Loadout())
-    assert score - base == 110
+    assert score - base == 100
+
+
+def test_tombstone_stoolies_shape_uses_direct_void_adjacency():
+    board = _empty_board()
+    # Match the stoolies mismatch neighborhood with VOID and SHINY tiles.
+    board.tiles[1][1] = _tile(1, 1, "S", 0, color=TileColor.VOID)
+    board.tiles[1][0] = _tile(1, 0, "T", 50, color=TileColor.SHINY)
+    board.tiles[2][0] = _tile(2, 0, "O", 1, color=TileColor.COLORLESS)
+    board.tiles[4][3] = _tile(4, 3, "O", 1, color=TileColor.COLORLESS)
+    board.tiles[4][2] = _tile(4, 2, "L", 1, color=TileColor.COLORLESS)
+    board.tiles[3][2] = _tile(3, 2, "I", 0, color=TileColor.VOID)
+    board.tiles[2][2] = _tile(2, 2, "E", 1, color=TileColor.COLORLESS)
+    board.tiles[2][3] = _tile(2, 3, "S", 50, color=TileColor.SHINY)
+    board.tiles[4][1] = _tile(4, 1, "E", 0, color=TileColor.VOID)
+    board.tiles[4][4] = _tile(4, 4, "W", 0, color=TileColor.VOID)
+    board.tiles[2][1] = _tile(2, 1, "G", 0, color=TileColor.VOID)
+    board.tiles[1][3] = _tile(1, 3, "E", 0, color=TileColor.VOID)
+    path = [6, 5, 10, 23, 22, 17, 12, 13]
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="tombstone", name="Tombstone", level=2)])
+    score, _ = pipeline.score(board, path, "stoolies", loadout)
+    base, _ = pipeline.score(board, path, "stoolies", Loadout())
+    assert score - base == 170
 
 
 def test_tombstone_number_void_counts_adjacent():

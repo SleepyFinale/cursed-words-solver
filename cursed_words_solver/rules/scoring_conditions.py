@@ -1532,134 +1532,12 @@ def adjacent_void_count(
     path: list[int] | None = None,
     path_index: int | None = None,
 ) -> int:
-    """VOID tiles that grant Tombstone +TILE SCORE for this path tile.
-
-    Default: 8-directional VOID neighbours. Extended VOID-only hops apply only
-    when they add a small cluster beyond direct neighbours (not large void seas).
-    """
+    """VOID tiles that grant Tombstone +TILE SCORE for this path tile."""
     count = 0
     for dr, dc in _VOID_NEIGHBOR_DELTAS:
         neighbor = board.get(tile.row + dr, tile.col + dc)
         if neighbor is not None and neighbor.color == TileColor.VOID:
             count += 1
-    if path is None or path_index is None:
-        return count
-
-    orth = _orthogonal_void_neighbor_count(board, tile)
-    exclude_before = set(path[:path_index])
-
-    if tile.color == TileColor.VOID:
-        if count == 1:
-            two_hop = _void_tiles_within_void_hops(
-                board,
-                tile,
-                max_hops=2,
-                exclude_indices=exclude_before,
-            )
-            if orth >= 1:
-                return two_hop
-            if two_hop > count + 1:
-                return count + 1
-            return count
-        if (
-            count == 2
-            and path_index > 0
-            and orth >= 1
-            and _earlier_void_on_path(board, path, path_index)
-        ):
-            return _void_tiles_within_void_hops(
-                board,
-                tile,
-                max_hops=2,
-                exclude_indices=exclude_before,
-            )
-        if count == 2 and orth == 1 and path_index == 0:
-            two_hop = _void_tiles_within_void_hops(
-                board,
-                tile,
-                max_hops=2,
-                exclude_indices=exclude_before,
-            )
-            if two_hop > count and two_hop <= count + 2:
-                return two_hop
-        if count == 3 and orth >= 1:
-            two_hop = _void_tiles_within_void_hops(
-                board,
-                tile,
-                max_hops=2,
-                exclude_indices=exclude_before,
-            )
-            if two_hop > count and two_hop <= count + 2:
-                return two_hop
-        return count
-
-    if (
-        count == 3
-        and orth >= 2
-        and path_index == 0
-        and tile.color == TileColor.SHINY
-    ):
-        two_hop_self = _void_tiles_within_void_hops(
-            board,
-            tile,
-            max_hops=2,
-            exclude_indices={tile.index},
-        )
-        if two_hop_self > count and two_hop_self <= count + 2:
-            return two_hop_self
-
-    if (
-        count == 3
-        and orth >= 2
-        and path_index > 0
-        and _earlier_void_on_path(board, path, path_index)
-    ):
-        two_hop_self = _void_tiles_within_void_hops(
-            board,
-            tile,
-            max_hops=2,
-            exclude_indices={tile.index},
-        )
-        two_hop_path = _void_tiles_within_void_hops(
-            board,
-            tile,
-            max_hops=2,
-            exclude_indices=exclude_before,
-        )
-        three_hop_path = _void_tiles_within_void_hops(
-            board,
-            tile,
-            max_hops=3,
-            exclude_indices=exclude_before,
-        )
-        if (
-            two_hop_self > count
-            and two_hop_self <= count + 1
-            and two_hop_path >= count
-        ):
-            return two_hop_self
-        if (
-            three_hop_path > count
-            and three_hop_path <= count + 2
-            and two_hop_path > count
-        ):
-            return three_hop_path
-        if (
-            two_hop_path > count
-            and two_hop_path <= count + 2
-            and two_hop_path >= count
-        ):
-            return two_hop_path
-
-    if count == 4 and orth >= 1 and tile.color != TileColor.SHINY:
-        three_hop = _void_tiles_within_void_hops(
-            board,
-            tile,
-            max_hops=3,
-            exclude_indices={tile.index},
-        )
-        if three_hop > count and three_hop - count <= 3:
-            return three_hop
     return count
 
 
@@ -2683,6 +2561,15 @@ def rewind_setup_extras(
         if after != before:
             notes.append(f"birthday cake bonus {before}→{after}")
 
+    extras = dict(loadout.extras or {})
+    live_neapolitan = _extra_int(loadout, "neapolitan_percent", -1)
+    if live_neapolitan > 0 and extras.get("neapolitan_percent_last_known") != str(
+        live_neapolitan
+    ):
+        extras["neapolitan_percent_last_known"] = str(live_neapolitan)
+        loadout.extras = extras
+        notes.append(f"neapolitan baseline cached at {live_neapolitan}%")
+
     return notes
 
 
@@ -2747,13 +2634,88 @@ def tile_ninja_multiplier_bonus(loadout: Loadout) -> float:
         return 0.0
 
 
+def _is_neapolitan_rule(rule: dict) -> bool:
+    slug = str(rule.get("id") or rule.get("slug") or "").strip().lower()
+    name = str(rule.get("name") or "").strip().lower()
+    game_class = str(rule.get("game_class") or "").strip().lower()
+    return slug == "neapolitan" or name == "neapolitan" or game_class == "neapolitan"
+
+
+def _extra_positive_int(extras: dict[str, Any], key: str) -> int | None:
+    if key not in extras:
+        return None
+    raw = extras.get(key)
+    try:
+        val = int(raw) if isinstance(raw, bool) is False else 0
+    except (TypeError, ValueError):
+        try:
+            val = int(float(raw))
+        except (TypeError, ValueError):
+            return None
+    return val if val > 0 else None
+
+
+def neapolitan_base_percent_from_loadout(loadout: Loadout | None) -> tuple[int, str]:
+    """Resolve baseline Neapolitan percent and source.
+
+    Source priority:
+    1) live `neapolitan_percent` from current run_state export
+    2) persisted `neapolitan_percent_last_known` fallback from prior captures
+    3) static rule baseline (100%)
+    """
+    extras = (
+        loadout.extras
+        if loadout is not None and isinstance(loadout.extras, dict)
+        else {}
+    )
+    live_percent = _extra_positive_int(extras, "neapolitan_percent")
+    if live_percent is not None:
+        return live_percent, "live"
+    cached_percent = _extra_positive_int(extras, "neapolitan_percent_last_known")
+    if cached_percent is not None:
+        return cached_percent, "cached"
+    return 100, "default"
+
+
+def _neapolitan_multiplier_from_extras(
+    loadout: Loadout | None,
+    rule: dict,
+    *,
+    improve_on_submit: bool = False,
+) -> float | None:
+    """Neapolitan is a live, multiplicative WordBonus percent exported by melmod.
+
+    When present in `loadout.extras`, treat it as the source of truth:
+    e.g. 105 -> ×1.05.
+    """
+    if loadout is None or not _is_neapolitan_rule(rule):
+        return None
+    base_percent, _source = neapolitan_base_percent_from_loadout(loadout)
+
+    # In submit simulation mode, apply exactly one additional +5% step to the
+    # same word (matching in-game submit scoring).
+    effective_percent = base_percent + (5 if improve_on_submit else 0)
+    if effective_percent <= 0:
+        return None
+    return float(effective_percent) / 100.0
+
+
 def scaled_word_multiplier(
     level: int,
     rule: dict,
     loadout: Loadout | None = None,
     path: list[int] | None = None,
+    *,
+    improve_neapolitan_on_submit: bool = False,
 ) -> float:
     factor = sticker_rule_float(level, rule)
+    neapolitan_mult = _neapolitan_multiplier_from_extras(
+        loadout,
+        rule,
+        improve_on_submit=improve_neapolitan_on_submit,
+    )
+    if neapolitan_mult is not None:
+        return neapolitan_mult
     if loadout is not None:
         scale = rule.get("scale_from_extras")
         if scale == "tile_ninja_bonus":

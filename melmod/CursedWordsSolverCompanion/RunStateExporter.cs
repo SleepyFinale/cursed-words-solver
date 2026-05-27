@@ -329,6 +329,8 @@ namespace CursedWordsSolverCompanion
             "bicycle_word_score_bonus",
             "cards_submitted",
             "birthday_cake_bonus",
+            "neapolitan_percent",
+            "neapolitan_percent_last_known",
         };
 
         /// <summary>
@@ -457,6 +459,12 @@ namespace CursedWordsSolverCompanion
             snapshot.boss_name = bossName;
             // Prefer runtime type (MaxWordLength → wolf) over prefab slug (bosssmallwords).
             var wikiId = BossResolver.WikiBossIdFromRuntimeType(boss);
+            if (
+                string.IsNullOrEmpty(wikiId)
+                && !string.IsNullOrEmpty(bossName)
+                && bossName.IndexOf("Michael", StringComparison.OrdinalIgnoreCase) >= 0
+            )
+                wikiId = "michael";
             if (string.IsNullOrEmpty(wikiId))
                 wikiId = Slugify(boss.PrefabFileName, bossName);
             snapshot.boss_id = wikiId;

@@ -5,6 +5,7 @@ from cursed_words_solver.loadout import (
     format_loadout_summary,
     load_run_state,
     loadout_to_dict,
+    neapolitan_extras_stale_warning,
     parse_run_state,
     save_loadout,
 )
@@ -138,3 +139,48 @@ def test_loadout_to_dict_matches_melmod_keys():
         "boss_effect",
         "extras",
     }
+
+
+def test_neapolitan_warning_uses_cached_baseline_message():
+    lo = Loadout(
+        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
+        extras={"neapolitan_percent_last_known": "125"},
+    )
+    warning = neapolitan_extras_stale_warning(lo)
+    assert warning is not None
+    assert "125%" in warning
+    assert "cached baseline" in warning
+
+
+def test_neapolitan_warning_default_when_no_percent_available():
+    lo = Loadout(
+        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
+        extras={},
+    )
+    warning = neapolitan_extras_stale_warning(lo)
+    assert warning is not None
+    assert "defaulting to 100%" in warning
+
+
+def test_parse_run_state_normalizes_boss_modifiers_json_string():
+    lo = parse_run_state(
+        {
+            "boss_id": "salamander",
+            "extras": {"boss_modifiers": '["badger","mole","salamander","mole"]'},
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+    assert lo.extras["boss_modifiers"] == ["badger", "mole", "salamander"]
+
+
+def test_parse_run_state_normalizes_michael_min_word_length():
+    lo = parse_run_state(
+        {
+            "boss_id": "michael",
+            "extras": {"michael_min_word_length": "25"},
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+    assert lo.extras["michael_min_word_length"] == 25

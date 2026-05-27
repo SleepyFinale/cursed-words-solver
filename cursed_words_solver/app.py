@@ -50,6 +50,7 @@ from cursed_words_solver.loadout import (
     melmod_board_available,
     melmod_install_hint,
     merge_loadout_with_board,
+    neapolitan_extras_stale_warning,
     mod_money_from_run_state,
     parse_board_from_run_state,
     save_loadout,
@@ -495,6 +496,31 @@ class SolverApp:
             from cursed_words_solver.rules.scoring_conditions import rewind_setup_extras
 
             rewind_notes = rewind_setup_extras(loadout, board)
+            # Neapolitan (and similar) can improve on submit and that improved percent
+            # applies immediately to the submitted word. For F8 predictions, simulate
+            # that submit-time improvement so predicted scores match in-game scoring.
+            if isinstance(loadout.extras, dict):
+                loadout.extras["simulate_submit_improvements"] = True
+                has_neapolitan = any(
+                    str(getattr(stamp, "id", "") or "").strip().lower() == "neapolitan"
+                    for stamp in (loadout.stamps or [])
+                )
+                if has_neapolitan:
+                    from cursed_words_solver.rules.scoring_conditions import (
+                        neapolitan_base_percent_from_loadout,
+                    )
+
+                    base_percent, source = neapolitan_base_percent_from_loadout(loadout)
+                    source_label = {
+                        "live": "live extras",
+                        "cached": "cached fallback",
+                        "default": "default fallback",
+                    }.get(source, source)
+                    print(
+                        "  Setup: Neapolitan submit simulation active "
+                        f"({base_percent}% -> {base_percent + 5}% when condition met; {source_label}).",
+                        flush=True,
+                    )
             self._searcher.setup_weight = self.config.setup_weight
             self._searcher.setup_discount = self.config.setup_discount
             self._searcher.mult_search_weight = self.config.mult_search_weight
@@ -508,6 +534,9 @@ class SolverApp:
             bicycle_warn = bicycle_extras_stale_warning(loadout)
             if bicycle_warn:
                 print(f"  Warning: {bicycle_warn}", flush=True)
+            neap_warn = neapolitan_extras_stale_warning(loadout)
+            if neap_warn:
+                print(f"  Warning: {neap_warn}", flush=True)
             if total:
                 msg = f"  Rules: {scoring}/{total} affect score"
                 if grid_only:

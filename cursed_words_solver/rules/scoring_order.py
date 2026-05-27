@@ -40,11 +40,11 @@ def capybara_shuffles_loadout(loadout: Loadout | None, rules: dict) -> bool:
         return False
     if str(loadout.extras.get("capybara_shuffle", "") or "").lower() in ("1", "true", "yes"):
         return True
-    from cursed_words_solver.rules.boss_effects import get_active_boss_rule
+    from cursed_words_solver.rules.boss_effects import get_active_boss_rules
 
-    _key, boss = get_active_boss_rule(rules, loadout)
-    if boss and boss.get("type") == "shuffle_loadout_order":
-        return True
+    for _key, boss in get_active_boss_rules(rules, loadout):
+        if boss and boss.get("type") == "shuffle_loadout_order":
+            return True
     for sticker in loadout.stickers:
         _key, rule = get_rule(rules, "stickers", sticker.id, sticker.name)
         if rule and rule.get("type") == "shuffle_loadout_order":

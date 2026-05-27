@@ -418,6 +418,28 @@ def _previous_letter_from_historic_words(raw: Any) -> str:
 def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
     """Parse melmod string extras into structures the scoring pipeline uses."""
     out = dict(extras)
+    raw_boss_modifiers = out.get("boss_modifiers")
+    if isinstance(raw_boss_modifiers, str) and raw_boss_modifiers.strip():
+        parsed_list: list[str] = []
+        try:
+            parsed = json.loads(raw_boss_modifiers)
+            rows = parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            rows = [s.strip() for s in raw_boss_modifiers.split(",") if s.strip()]
+        for entry in rows:
+            item = str(entry or "").strip().lower()
+            if item and item not in parsed_list:
+                parsed_list.append(item)
+        out["boss_modifiers"] = parsed_list
+    elif isinstance(raw_boss_modifiers, list):
+        normalized: list[str] = []
+        for entry in raw_boss_modifiers:
+            item = str(entry or "").strip().lower()
+            if item and item not in normalized:
+                normalized.append(item)
+        out["boss_modifiers"] = normalized
+    elif raw_boss_modifiers is None:
+        out.setdefault("boss_modifiers", [])
     raw_memory = out.get("pin_memory")
     if isinstance(raw_memory, str):
         try:
@@ -440,6 +462,7 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
         "cards_submitted",
         "bicycle_word_score_bonus",
         "bicycle_suited_on_path",
+        "neapolitan_percent",
         "pin_left_level",
         "pin_right_level",
         "pin_left_variable",
@@ -487,6 +510,7 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
         "run_seed",
         "wolf_max_length",
         "cobra_min_length",
+        "michael_min_word_length",
     ):
         if key in out:
             try:
@@ -642,6 +666,12 @@ def _is_bicycle_pin(loadout: Loadout) -> bool:
     return pin in _BICYCLE_PIN_IDS
 
 
+def _has_neapolitan_stamp(loadout: Loadout) -> bool:
+    return any(
+        str((s.id or "")).strip().lower() == "neapolitan" for s in (loadout.stamps or [])
+    )
+
+
 def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:
     """Warn when run_state may under-count Bicycle word score at F8."""
     if loadout is None or not _is_bicycle_pin(loadout):
@@ -685,6 +715,28 @@ def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:
             "press F7 in-game or wait for melmod refresh."
         )
     return None
+
+
+def neapolitan_extras_stale_warning(loadout: Loadout | None) -> str | None:
+    """Warn when Neapolitan's live percent is missing and fallback is used."""
+    if loadout is None or not _has_neapolitan_stamp(loadout):
+        return None
+    from cursed_words_solver.rules.scoring_conditions import (
+        neapolitan_base_percent_from_loadout,
+    )
+
+    base_percent, source = neapolitan_base_percent_from_loadout(loadout)
+    if source == "live":
+        return None
+    if source == "cached":
+        return (
+            "Neapolitan: using cached baseline "
+            f"{base_percent}% (live neapolitan_percent missing) — press F7 in-game if stale."
+        )
+    return (
+        "Neapolitan: live/cached baseline missing, defaulting to 100% — "
+        "press F7 in-game after a qualifying submit to capture current value."
+    )
 
 
 def format_loadout_summary(loadout: Loadout | None) -> str:

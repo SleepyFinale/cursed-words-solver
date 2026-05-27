@@ -8,7 +8,7 @@ from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.mult_search import optimistic_mult_factor, search_rank_score
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.search import WordSearcher
+from cursed_words_solver.search import WordSearcher, _color_end_indices
 from tests.helpers.boards import _make_wordlist
 
 
@@ -120,3 +120,16 @@ def test_search_bone_always_mult(tmp_path: Path) -> None:
     assert results
     assert results[0].word == "cat"
     assert results[0].score >= 4
+
+
+def test_color_end_indices_yellow_aliases_to_gold() -> None:
+    board = _board_blueberries()
+    board.tiles[0][2].color = TileColor.GOLD
+
+    assert _color_end_indices(board, "yellow") == [2]
+
+
+def test_color_end_indices_unknown_color_returns_empty() -> None:
+    board = _board_blueberries()
+
+    assert _color_end_indices(board, "not-a-real-color") == []

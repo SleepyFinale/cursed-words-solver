@@ -45,6 +45,7 @@ from cursed_words_solver.rules.boss_effects import (
     boss_rule_applies,
     boss_scoring_effect_type,
     get_active_boss_rule,
+    get_active_boss_rules,
     resolve_boss_scaling,
 )
 from cursed_words_solver.rules.boss_scoring import (
@@ -118,6 +119,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     red_tiles_used_encounter,
     letter_counts_on_path,
     max_qualifying_letter_half_multiplier,
+    neapolitan_base_percent_from_loadout,
     scaled_word_multiplier,
     word_percent_bonus_from_multiplier,
     sticker_rule_int,
@@ -772,23 +774,29 @@ class ScoringPipeline:
         loadout: Loadout,
     ) -> dict[str, Any]:
         """Boss effects not handled in wiki step 1 (constraints, vowel zero, custom)."""
-        _key, boss = get_active_boss_rule(self.rules, loadout)
-        if boss and boss.get("type") not in (
-            "unmodeled",
-            "custom",
-            *_EARLY_BOSS_EFFECT_TYPES,
-        ):
+        active = get_active_boss_rules(self.rules, loadout)
+        if not active:
+            _key, boss = get_active_boss_rule(self.rules, loadout)
+            active = [(_key or "", boss)] if boss is not None else []
+        for key, boss in active:
+            if not boss or boss.get("type") in (
+                "unmodeled",
+                "custom",
+                *_EARLY_BOSS_EFFECT_TYPES,
+            ):
+                continue
             ctx = boss_context(loadout, self.rules)
-            if boss_rule_applies(boss, ctx):
-                state = self._apply_rule(boss, state, board, path, loadout, 1)
-                if state.get("_trace") is not None:
-                    _trace_step(
-                        state,
-                        "boss_late",
-                        rule_id=_key or loadout.boss_id or "boss",
-                        detail=boss_scoring_effect_type(boss) or boss.get("type", ""),
-                    )
-        elif loadout.boss_effect:
+            if not boss_rule_applies(boss, ctx):
+                continue
+            state = self._apply_rule(boss, state, board, path, loadout, 1)
+            if state.get("_trace") is not None:
+                _trace_step(
+                    state,
+                    "boss_late",
+                    rule_id=key or loadout.boss_id or "boss",
+                    detail=boss_scoring_effect_type(boss) or boss.get("type", ""),
+                )
+        if not active and loadout.boss_effect:
             state = self._apply_named_effect(
                 loadout.boss_effect, state, board, path, loadout
             )
@@ -1387,12 +1395,48 @@ class ScoringPipeline:
                 rule_trace_context["path_first_letter"] = first_letter_on_path(
                     board, path
                 )
-            if not met:
+            rid = (rule_id or applying_sticker_id or "").lower()
+            is_neapolitan = rid == "neapolitan"
+            if not met and not is_neapolitan:
                 rule_trace_context["skip_reason"] = cond_explanation
-            if met:
-                factor = scaled_word_multiplier(level, rule, loadout, path=path)
+            if met or is_neapolitan:
+                simulate_improve = bool(
+                    isinstance(getattr(loadout, "extras", None), dict)
+                    and (loadout.extras or {}).get("simulate_submit_improvements")
+                )
+                improve_neapolitan = simulate_improve and is_neapolitan and met
+                if is_neapolitan:
+                    base_percent, source = neapolitan_base_percent_from_loadout(loadout)
+                    rule_trace_context["neapolitan_base_percent"] = int(base_percent)
+                    rule_trace_context["neapolitan_base_source"] = source
+                    rule_trace_context["neapolitan_simulate_submit_improve"] = bool(
+                        improve_neapolitan
+                    )
+                    if met:
+                        if improve_neapolitan:
+                            rule_trace_context[
+                                "condition_explanation"
+                            ] = "applied: base multiplier + submit improve"
+                        else:
+                            rule_trace_context[
+                                "condition_explanation"
+                            ] = "applied: base multiplier (improve available)"
+                    else:
+                        rule_trace_context[
+                            "condition_explanation"
+                        ] = "applied: base multiplier (improve requires 3+ colours)"
+                factor = scaled_word_multiplier(
+                    level,
+                    rule,
+                    loadout,
+                    path=path,
+                    improve_neapolitan_on_submit=improve_neapolitan,
+                )
+                if rid == "neapolitan":
+                    rule_trace_context["neapolitan_effective_percent"] = int(
+                        round(float(factor) * 100.0)
+                    )
                 label = condition or rule.get("scale_from_extras", "scaled")
-                rid = (rule_id or applying_sticker_id or "").lower()
                 salamander_defer = _salamander_defer_multiply_for_mutating(loadout)
                 if (
                     rid == "yellow_glasses"
@@ -1471,9 +1515,21 @@ class ScoringPipeline:
 
         elif effect_type == "multiply_word_by_unique_colour_count":
             n = unique_colour_count_on_path(board, path)
-            if n >= 1:
-                factor = float(n)
+            factor = float(n)
+            if n == 0:
+                # Preserve hard-zero behavior for Dango when there are no coloured tiles.
                 _queue_word_multiplier(state, factor, rule_id)
+                state["effects"].append(
+                    f"×{factor} word ({n} unique colour(s))"
+                )
+            else:
+                percent = word_percent_bonus_from_multiplier(factor, rule, level=level)
+                _queue_word_percent_bonus(
+                    state,
+                    percent,
+                    rule_id,
+                    wiki_factor=factor,
+                )
                 state["effects"].append(
                     f"×{factor} word ({n} unique colour(s))"
                 )

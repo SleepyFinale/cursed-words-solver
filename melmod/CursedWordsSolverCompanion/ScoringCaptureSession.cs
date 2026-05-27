@@ -213,6 +213,7 @@ namespace CursedWordsSolverCompanion
                 return;
 
             CaptureBicycleAccumulatorFromSteps(steps);
+            CaptureNeapolitanPercentFromSteps(steps);
             _roundTrace = ScoringTraceCollector.SerializeSteps(steps);
             if (_active)
                 _actualTrace = _roundTrace;
@@ -280,6 +281,46 @@ namespace CursedWordsSolverCompanion
                     _scoringContextExtras["bicycle_word_score_bonus"] = stored.ToString();
                     _scoringContextExtras["cards_submitted"] = stored.ToString();
                     return;
+                }
+            }
+            catch
+            {
+                // best-effort only
+            }
+        }
+
+        /// <summary>
+        /// Capture Neapolitan's multiplicative WordBonus percent for the next F8 prediction.
+        /// </summary>
+        private static void CaptureNeapolitanPercentFromSteps(List<ScoreCalcVizInfo> steps)
+        {
+            if (steps == null || _scoringContextExtras == null)
+                return;
+
+            try
+            {
+                for (var i = 0; i < steps.Count; i++)
+                {
+                    var step = steps[i];
+                    if (step?.RelevantItem == null || step.WordBonus == null)
+                        continue;
+
+                    var itemId = RunStateExporter.Slugify(
+                        step.RelevantItem.ArtFileName,
+                        step.RelevantItem.Name
+                    );
+                    if (!string.Equals(itemId, "neapolitan", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (!step.WordBonus.IsMultiplicative || step.WordBonus.IsPoison)
+                        continue;
+
+                    var bonus = step.WordBonus.Bonus != null ? step.WordBonus.Bonus.Score : 0L;
+                    if (bonus <= 0L)
+                        continue;
+
+                    _scoringContextExtras["neapolitan_percent"] = bonus.ToString();
+                    break;
                 }
             }
             catch

@@ -63,6 +63,19 @@ def test_count_scoring_vs_grid_only_nina_stamps():
 
 
 
+def test_dango_zero_colours_zeros_word():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.COLORLESS)
+    board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.COLORLESS)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="dango", name="Dango", level=1, kind="stamp")]
+    )
+    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
+    assert bd["multiplier"] == 0.0
+    assert score == 0
+
+
 def test_dango_two_colours_doubles_word():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
@@ -88,3 +101,19 @@ def test_dango_three_colours_triples_word():
     score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
     assert bd["multiplier"] == 3.0
     assert score == 36
+
+
+def test_dango_uses_word_bonus_channel_for_nonzero():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
+    board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="dango", name="Dango", level=1, kind="stamp")]
+    )
+    score, _bd, trace = pipeline.score_with_trace(board, [0, 1], "ab", loadout)
+    assert score == 20
+    assert any(
+        step.get("phase") == "multiply" and step.get("rule_id") == "dango"
+        for step in trace
+    )

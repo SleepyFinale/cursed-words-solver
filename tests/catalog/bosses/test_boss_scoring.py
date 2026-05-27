@@ -70,6 +70,36 @@ def test_salamander_still_applies() -> None:
     assert any("per tile (boss)" in e for e in bd["pipeline"]["effects"])
 
 
+def test_boss_modifiers_source_of_truth_can_disable_stale_primary_boss() -> None:
+    board = _board()
+    # Primary boss id can be stale in capture; explicit empty boss_modifiers means
+    # this phase has no copied boss effects.
+    loadout = Loadout(
+        boss_id="salamander",
+        extras={"boss_area_number": 1, "boss_modifiers": []},
+    )
+    pipe = ScoringPipeline()
+    _, bd = pipe.score(board, [0, 1, 2], "aaa", loadout)
+    assert not any("per tile (boss)" in e for e in bd["pipeline"]["effects"])
+
+
+def test_multiple_boss_modifiers_apply_in_single_score() -> None:
+    board = _board()
+    loadout = Loadout(
+        boss_id="badger",
+        money=10,
+        extras={
+            "boss_area_number": 1,
+            "boss_modifiers": ["salamander", "robo_monkey"],
+        },
+    )
+    pipe = ScoringPipeline()
+    _, bd = pipe.score(board, [0, 1, 2], "aaa", loadout)
+    effects = bd["pipeline"]["effects"]
+    assert any("per tile (boss)" in e for e in effects)
+    assert any("word score (boss × money)" in e for e in effects)
+
+
 def test_capybara_shuffles_sticker_order() -> None:
     from cursed_words_solver.models import LoadoutItem
 

@@ -753,11 +753,14 @@ def _neighbors_sorted_for_loadout(
 
 def _color_end_indices(board: Board, color_name: str) -> list[int]:
     target = color_name.lower()
+    if target == "yellow":
+        # Legacy rule data may still use "yellow"; the runtime enum uses "gold".
+        target = "gold"
     color_map = {
         "blue": TileColor.BLUE,
         "red": TileColor.RED,
         "green": TileColor.GREEN,
-        "yellow": TileColor.YELLOW,
+        "gold": TileColor.GOLD,
         "pink": TileColor.PINK,
         "purple": TileColor.PURPLE,
     }

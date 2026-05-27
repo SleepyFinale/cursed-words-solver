@@ -32,6 +32,7 @@ namespace CursedWordsSolverCompanion
             "fox_stolen_this_word",
             "wolf_max_length",
             "cobra_min_length",
+            "michael_min_word_length",
         };
 
         public static void ClearBossExtras(Dictionary<string, string> extras)
@@ -366,22 +367,53 @@ namespace CursedWordsSolverCompanion
             if (minLen > 0 && snapshot.boss_id == "cobra")
                 snapshot.extras["cobra_min_length"] = minLen.ToString();
 
-            if (bosses.Count > 1)
+            var ids = new List<string>();
+            foreach (var b in bosses)
             {
-                var ids = new List<string>();
-                foreach (var b in bosses)
-                {
-                    if (b == null)
-                        continue;
-                    var id = BossResolver.WikiBossIdFromRuntimeType(b);
-                    if (string.IsNullOrEmpty(id))
-                        id = RunStateExporter.Slugify(b.PrefabFileName, b.Name);
-                    if (!string.IsNullOrEmpty(id))
-                        ids.Add(id);
-                }
-                if (ids.Count > 0)
-                    snapshot.extras["boss_modifiers"] = JsonConvert.SerializeObject(ids);
+                if (b == null)
+                    continue;
+                var id = BossResolver.WikiBossIdFromRuntimeType(b);
+                if (string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(b.Name)
+                    && b.Name.IndexOf("Michael", StringComparison.OrdinalIgnoreCase) >= 0)
+                    id = "michael";
+                if (string.IsNullOrEmpty(id))
+                    id = RunStateExporter.Slugify(b.PrefabFileName, b.Name);
+                if (!string.IsNullOrEmpty(id))
+                    ids.Add(id);
             }
+            if (ids.Count > 0)
+                snapshot.extras["boss_modifiers"] = JsonConvert.SerializeObject(ids);
+
+            var michaelMin = TryGetIntProperty(
+                boss,
+                "MinWordLength",
+                "MinimumWordLength",
+                "CurrentMinWordLength",
+                "RequiredWordLength",
+                "WordLengthRequirement"
+            );
+            if (michaelMin < 0)
+                michaelMin = TryGetIntProperty(
+                    player,
+                    "MichaelMinWordLength",
+                    "WordsmithMinWordLength",
+                    "BossMinWordLength"
+                );
+            if (michaelMin < 0)
+            {
+                var encounter = BossResolver.TryGetEncounter();
+                if (encounter != null)
+                    michaelMin = TryGetIntProperty(
+                        encounter,
+                        "MichaelMinWordLength",
+                        "WordsmithMinWordLength",
+                        "BossMinWordLength",
+                        "MinWordLength",
+                        "RequiredWordLength"
+                    );
+            }
+            if (michaelMin > 0)
+                snapshot.extras["michael_min_word_length"] = michaelMin.ToString();
         }
 
         private static string SerializeItemSlugOrder(Item[] items)

@@ -152,6 +152,24 @@ def test_wolf_max_length_constraint():
     assert c.max_len == 4
 
 
+def test_michael_min_word_length_constraint_from_extras():
+    loadout = _loadout(
+        boss_id="michael",
+        extras={"michael_min_word_length": 25},
+    )
+    c = boss_word_constraints(loadout, RULES)
+    assert c.min_len == 25
+
+
+def test_michael_min_word_length_does_not_require_copied_boss_effects():
+    loadout = _loadout(
+        boss_id="salamander",
+        extras={"boss_modifiers": [], "michael_min_word_length": 25},
+    )
+    c = boss_word_constraints(loadout, RULES)
+    assert c.min_len == 25
+
+
 def test_default_word_constraints_use_min_one_and_passed_max():
     board = _board_letters(
         [
