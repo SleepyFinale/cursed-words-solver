@@ -218,7 +218,18 @@ Optional extras for specific pins:
 | `cards_submitted` | Legacy alias of `bicycle_word_score_bonus` for older solver builds |
 | `bicycle_suited_on_path` | Set during submit scoring capture — Bicycle suited credit on the path (unique suits when at most one suit on the path, else unique suited card ranks). Merged into `run_state.json` on matched submit; path tiles also get `card_suit` / `card_rank` on the board snapshot. After each scored word, press **F7** if the solver Bicycle total looks one step behind the in-game pin. |
 | `favourite_sticker_id`, `favourite_stamp_id` | Human Hands (`human_boy`) |
-| `pin_memory` | Random Access Memory (JSON array of `{id,name,level,kind}`) |
+| `pin_memory` | Random Access Memory (JSON array of `{id,name,level,kind}`, acquisition order) |
+| `pin_memory_count` | Number of items exported from `ItemsInMemory` |
+| `pin_memory_export_note` | `ok`, `empty_valid`, `field_missing`, `reflection_failed`, or `no_pin` |
+
+### Random Access Memory troubleshooting
+
+- Pin memory starts **empty** at run start; `pin_memory: []` with `pin_memory_export_note: empty_valid` is normal before the first boss pick.
+- After boss picks, press **F7** so `ItemsInMemory` is read from the game (`public List<Item> ItemsInMemory` field).
+- If the MelonLoader console shows **`RAM pin: could not read ItemsInMemory`**, rebuild/install the latest companion mod — older builds only checked properties, not the field.
+- **`Export completeness: pin_memory (ItemsInMemory unreadable)`** means the RAM pin is active but export failed; fix melmod and F7 again.
+- **`pin_memory unexpected item:<slug>`** should never happen in-game (wiki-blacklisted draft pool). Report if you see it.
+- The solver applies RAM items **after scattered grid items on the path**, **before** equipped stickers/stamps. Movement stamps (e.g. Hungry Snake) affect **search** via `pin_memory`; they do not add word-score replay.
 
 Run context extras (default-unlocked stickers):
 

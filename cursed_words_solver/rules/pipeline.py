@@ -1211,7 +1211,7 @@ class ScoringPipeline:
                 for i, idx in enumerate(path):
                     tile = board.get_by_index(idx)
                     n_void = adjacent_void_count(
-                        board, tile, path=path, path_index=i
+                        board, tile, loadout=loadout, path=path, path_index=i
                     )
                     if n_void:
                         add = bonus_each * n_void

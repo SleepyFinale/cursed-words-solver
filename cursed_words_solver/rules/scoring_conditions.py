@@ -1219,12 +1219,16 @@ def path_indices_set(path: list[int]) -> set[int]:
 
 def void_tile_face_for_dusty_coffin(tile: Tile) -> str:
     """Face character on a VOID tile for Dusty Coffin (letter or number digit)."""
+    if tile.curse == CurseType.CURRENCY:
+        return (tile.letter or tile.char or "").strip()
     if tile.curse == CurseType.NUMBER:
         if tile.number_value is not None:
             return str(tile.number_value)
         raw = (tile.letter or tile.char or "").strip()
         if raw.isdigit():
             return raw
+        return ""
+    if tile.curse != CurseType.LETTER:
         return ""
     return path_letter_for_count(tile)
 
@@ -1236,10 +1240,21 @@ def void_tiles_letter_not_in_word(board: Board, word: str) -> int:
     for tile in board.flat:
         if tile.color != TileColor.VOID:
             continue
+        if tile.curse == CurseType.ITEM:
+            scattered = str((tile.metadata or {}).get("scattered_item_id", "")).strip().lower()
+            if scattered == "rainbow_sprinkles":
+                count += 1
+            continue
         face = void_tile_face_for_dusty_coffin(tile)
         if not face:
             continue
-        if face.lower() in letters_in_word:
+        if (
+            tile.curse == CurseType.CURRENCY
+            and (face.lower() == "b" or face == "฿")
+            and "b" in letters_in_word
+        ):
+            continue
+        if tile.curse != CurseType.CURRENCY and face.lower() in letters_in_word:
             continue
         count += 1
     return count
@@ -1568,13 +1583,29 @@ def adjacent_void_count(
     board: Board,
     tile: Tile,
     *,
+    loadout: Loadout | None = None,
     path: list[int] | None = None,
     path_index: int | None = None,
 ) -> int:
     """VOID tiles that grant Tombstone +TILE SCORE for this path tile."""
+    horizontal_wrap = False
+    if loadout is not None:
+        # Hungry Snake pathing also affects Tombstone's adjacency neighborhood.
+        from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
+
+        horizontal_wrap = loadout_has_stamp(loadout, "hungry_snake")
     count = 0
+    scattered = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
+    if path is not None and len(path) == 1:
+        if tile.color == TileColor.VOID or scattered == "tombstone":
+            count += 1
+    cols = getattr(board, "cols", 5) or 5
     for dr, dc in _VOID_NEIGHBOR_DELTAS:
-        neighbor = board.get(tile.row + dr, tile.col + dc)
+        nr = tile.row + dr
+        nc = tile.col + dc
+        if horizontal_wrap:
+            nc = nc % int(cols)
+        neighbor = board.get(nr, nc)
         if neighbor is not None and neighbor.color == TileColor.VOID:
             count += 1
     return count
@@ -1583,8 +1614,12 @@ def adjacent_void_count(
 def word_starts_ends_different_color(board: Board, path: list[int]) -> bool:
     if len(path) < 2:
         return False
-    start = board.get_by_index(path[0]).color
-    end = board.get_by_index(path[-1]).color
+    start_tile = board.get_by_index(path[0])
+    end_tile = board.get_by_index(path[-1])
+    if start_tile.curse == CurseType.ITEM or end_tile.curse == CurseType.ITEM:
+        return False
+    start = start_tile.color
+    end = end_tile.color
     if start in NON_COLOUR_FOR_NUMBER_BONUS or end in NON_COLOUR_FOR_NUMBER_BONUS:
         return False
     return start != end

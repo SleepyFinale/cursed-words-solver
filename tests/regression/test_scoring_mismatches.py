@@ -655,7 +655,29 @@ _KNOWN_FAILING = frozenset({
     "20260524_203024",
     "20260524_204405",
     "20260524_204438",
+    "20260528_003129",
+    "20260528_003203",
 })
+
+
+def _first_trace_rule_tile_scores(
+    trace: list[dict], rule_id: str, *, occurrence: int = 1
+) -> list[int] | None:
+    seen = 0
+    want = rule_id.lower()
+    for step in trace:
+        if not isinstance(step, dict) or step.get("phase") != "rule":
+            continue
+        if str(step.get("rule_id", "") or "").lower() != want:
+            continue
+        seen += 1
+        if seen != occurrence:
+            continue
+        vals = step.get("tile_scores")
+        if not isinstance(vals, list):
+            return None
+        return [int(round(float(v))) for v in vals]
+    return None
 
 
 @pytest.mark.parametrize(
@@ -720,23 +742,156 @@ def test_scoring_mismatch(case_path: Path) -> None:
         "20260527_141228",
         "20260527_142009",
         "20260527_151017",
+        "20260528_003129",
+        "20260528_003203",
+        "20260528_003539",
     }:
         score, _bd, trace = pipeline.score_with_trace(board, path, word, loadout)
-        expected_percent = (
-            110
-            if case_path.stem in {"20260527_141228", "20260527_142009", "20260527_151017"}
-            else 105
-        )
-        assert any(
-            isinstance(step, dict)
-            and step.get("phase") == "multiply"
-            and str(step.get("rule_id", "") or "").lower() == "neapolitan"
-            and int(step.get("percent", 0) or 0) == expected_percent
-            for step in (trace or [])
-        )
+        if case_path.stem in {
+            "20260527_133401",
+            "20260527_134935",
+            "20260527_140252",
+            "20260527_141228",
+            "20260527_142009",
+            "20260527_151017",
+        }:
+            expected_percent = (
+                110
+                if case_path.stem
+                in {"20260527_141228", "20260527_142009", "20260527_151017"}
+                else 105
+            )
+            assert any(
+                isinstance(step, dict)
+                and step.get("phase") == "multiply"
+                and str(step.get("rule_id", "") or "").lower() == "neapolitan"
+                and int(step.get("percent", 0) or 0) == expected_percent
+                for step in (trace or [])
+            )
+        if case_path.stem == "20260528_003129":
+            assert _first_trace_rule_tile_scores(trace, "tombstone", occurrence=1) == [
+                1,
+                10,
+                12,
+                5,
+                10,
+                0,
+            ]
+            assert _first_trace_rule_tile_scores(trace, "cocktail", occurrence=1) == [
+                2,
+                10,
+                12,
+                10,
+                20,
+                0,
+            ]
+            assert _first_trace_rule_tile_scores(trace, "cocktail", occurrence=2) == [
+                4,
+                10,
+                12,
+                20,
+                40,
+                0,
+            ]
+        if case_path.stem == "20260528_003203":
+            assert _first_trace_rule_tile_scores(trace, "cocktail", occurrence=1) == [
+                4,
+                2,
+                0,
+                2,
+                0,
+                0,
+            ]
+            assert _first_trace_rule_tile_scores(trace, "tombstone", occurrence=1) == [
+                9,
+                7,
+                5,
+                2,
+                5,
+                0,
+            ]
+        if case_path.stem == "20260528_003539":
+            assert _first_trace_rule_tile_scores(
+                trace, "artist_s_palette", occurrence=1
+            ) == [6, 1, 6, 2, 1, 2]
+            assert _first_trace_rule_tile_scores(trace, "tombstone", occurrence=1) == [
+                6,
+                6,
+                11,
+                12,
+                11,
+                7,
+            ]
+            assert _first_trace_rule_tile_scores(trace, "cocktail", occurrence=1) == [
+                12,
+                12,
+                22,
+                12,
+                11,
+                7,
+            ]
     else:
         score, _bd = pipeline.score(board, path, word, loadout)
     assert int(score) == expected
+
+
+@pytest.mark.parametrize(
+    ("stem", "checkpoints"),
+    [
+        (
+            "20260528_003129",
+            {
+                ("tombstone", 1): [1, 10, 12, 5, 10, 0],
+                ("cocktail", 1): [2, 10, 12, 10, 20, 0],
+                ("cocktail", 2): [4, 10, 12, 20, 40, 0],
+            },
+        ),
+        (
+            "20260528_003203",
+            {
+                ("cocktail", 1): [4, 2, 0, 2, 0, 0],
+                ("tombstone", 1): [9, 7, 5, 2, 5, 0],
+            },
+        ),
+        (
+            "20260528_003539",
+            {
+                ("artist_s_palette", 1): [6, 1, 6, 2, 1, 2],
+                ("tombstone", 1): [6, 6, 11, 12, 11, 7],
+                ("cocktail", 1): [12, 12, 22, 12, 11, 7],
+            },
+        ),
+    ],
+)
+def test_nat_h4_ram_trace_checkpoints(
+    stem: str, checkpoints: dict[tuple[str, int], list[int]]
+) -> None:
+    case_path = FIXTURES / f"{stem}.json"
+    if not case_path.is_file():
+        pytest.skip(f"capture not found: {case_path}")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    _adjust_previous_word_letter_extras(run_state, data)
+    _adjust_bento_previous_word_extras(run_state, data)
+    _adjust_neapolitan_percent_extras(run_state, data)
+    board_for_lucky = parse_board_from_run_state(run_state)
+    if board_for_lucky is not None:
+        _adjust_lucky_dice_target_extras(run_state, data, board_for_lucky, data["path"])
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    _adjust_bicycle_pre_word_extras(run_state, data, board, data["path"], loadout)
+    loadout = parse_run_state(run_state)
+    _adjust_birthday_cake_pre_word_extras(run_state, data, board, data["path"], loadout)
+    loadout = parse_run_state(run_state)
+    _adjust_mutating_dna_extras(run_state, data, board, data["path"])
+    loadout = parse_run_state(run_state)
+    _, _, trace = ScoringPipeline().score_with_trace(
+        board, data["path"], data["word"], loadout
+    )
+    for (rule_id, occurrence), expected_scores in checkpoints.items():
+        assert _first_trace_rule_tile_scores(
+            trace, rule_id, occurrence=occurrence
+        ) == expected_scores
 
 
 def test_neapolitan_replay_uses_cached_percent_when_live_missing() -> None:
@@ -849,3 +1004,22 @@ def test_run_state_replay_keeps_michael_phase_boss_extras() -> None:
     loadout = parse_run_state(run_state)
     assert loadout.extras.get("boss_modifiers") == []
     assert int(loadout.extras.get("michael_min_word_length", 0)) == 25
+
+
+@pytest.mark.parametrize(
+    "capture_name",
+    ["20260527_233050.json", "20260527_233232.json"],
+)
+def test_external_scoring_capture_replay(capture_name: str) -> None:
+    """Replay newly vendored mismatch captures."""
+    case_path = FIXTURES / capture_name
+    if not case_path.is_file():
+        pytest.skip(f"capture not found: {case_path}")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    assert run_state
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"])

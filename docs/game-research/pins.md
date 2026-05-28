@@ -33,7 +33,11 @@ Pin scoring hooks:
 
 ### Random Access Memory
 
-`ItemsInMemory` replayed in `CalculateOverallScore` like nested items. Blacklisted types include `Snapshot`, `BeamMeUp`, `Overhand`, etc. (see `RandomAccessMemory.BlacklistedItemTypes`).
+- **Field:** `public List<Item> ItemsInMemory` (acquisition order preserved).
+- **Draft blacklist** (`BlacklistedItemTypes`, cannot be offered after boss): `BeamMeUp`, `CrystalBall`, `Dartboard`, `EightBall`, `HungryHippo`, `LuckyDice`, `MysteryGift`, `NestEgg`, `Overhand`, `SewingNeedle`, `SignalReceiver`, `Snapshot`, `Underhand`, `Unicorn`.
+- **Solver slugs:** `beam_me_up`, `crystal_ball`, `dartboard`, `magic_8_ball`, `hungry_hippo`, `lucky_dice`, `mystery_gift`, `nest_egg`, `overhand`, `sewing_needle`, `signal_receiver`, `snapshot`, `underhand`, `unicorn` (see `cursed_words_solver/rules/ram_memory.py`).
+- **Scoring order (wiki):** scattered grid-item tiles on path → RAM memory items (in order) → equipped stickers/stamps.
+- **Movement stamps** (e.g. `hungry_snake`) can be stored in RAM; they affect search via `pin_memory`, not word-score replay.
 
 ### Human Hands
 

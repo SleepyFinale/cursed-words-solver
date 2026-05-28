@@ -5,6 +5,14 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from cursed_words_solver.models import Board, Loadout
+from cursed_words_solver.rules.ram_memory import (
+    RAM_BLACKLIST_EFFECT_TYPES,
+    pin_memory_entries,
+    ram_entry_bucket,
+    ram_entry_level,
+    ram_entry_slug,
+    should_skip_ram_scoring,
+)
 from cursed_words_solver.rules.rule_lookup import (
     PIN_ORCHESTRATION_TYPES,
     get_pin_rule,
@@ -13,20 +21,8 @@ from cursed_words_solver.rules.rule_lookup import (
     resolve_rule_id,
 )
 
-# Types skipped when RAM replays ItemsInMemory (see RandomAccessMemory.BlacklistedItemTypes).
-RAM_BLACKLIST_TYPES = frozenset(
-    {
-        "snapshot",
-        "beam_me_up",
-        "overhand",
-        "reverse_scoring_order",
-        "shuffle_loadout_order",
-        "scatter_start_grid",
-        "scatter_start_encounter",
-        "unmodeled",
-        "custom",
-    }
-)
+# Backward-compatible alias for tests/docs (includes custom movement items).
+RAM_BLACKLIST_TYPES = RAM_BLACKLIST_EFFECT_TYPES | frozenset({"custom"})
 
 
 def get_pin_tracks(
@@ -53,28 +49,18 @@ def apply_pin_memory(
     path: list[int],
     apply_rule: Callable[..., dict[str, Any]],
 ) -> dict[str, Any]:
-    memory = loadout.extras.get("pin_memory") or []
-    if not isinstance(memory, list):
-        return state
-    for entry in memory:
-        if not isinstance(entry, dict):
+    for entry in pin_memory_entries(loadout):
+        if should_skip_ram_scoring(rules, entry):
             continue
-        kind = str(entry.get("kind", "sticker")).lower()
-        bucket = "stamps" if kind == "stamp" else "stickers"
+        bucket = ram_entry_bucket(entry)
         item_id = str(entry.get("id", "") or "")
         item_name = str(entry.get("name", "") or "")
-        try:
-            level = int(entry.get("level", 1))
-        except (TypeError, ValueError):
-            level = 1
         _key, rule = get_rule(rules, bucket, item_id, item_name)
         if not rule:
             continue
-        effect_type = str(rule.get("type", "")).lower()
-        if effect_type in RAM_BLACKLIST_TYPES:
-            continue
+        level = ram_entry_level(entry)
         state = apply_rule(rule, state, board, path, loadout, level)
-        state["effects"].append(f"RAM: {item_name or item_id}")
+        state["effects"].append(f"RAM: {item_name or item_id or ram_entry_slug(entry)}")
     return state
 
 

@@ -231,3 +231,32 @@ def test_tombstone_number_void_counts_adjacent():
     score, _ = pipeline.score(board, [17], "e", loadout)
     base, _ = pipeline.score(board, [17], "e", Loadout())
     assert score == base + 15
+
+
+def test_tombstone_counts_void_path_tile_itself():
+    board = _empty_board()
+    board.tiles[3][4] = _tile(3, 4, "₩", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="tombstone", name="Tombstone", level=1)])
+    score, _ = pipeline.score(board, [19], "navvy", loadout)
+    base, _ = pipeline.score(board, [19], "navvy", Loadout())
+    assert score == base + 5
+
+
+def test_tombstone_counts_scattered_tombstone_tile_itself():
+    board = _empty_board()
+    board.tiles[3][4] = Tile(
+        row=3,
+        col=4,
+        char="🪦",
+        letter="Y",
+        base_score=0.0,
+        color=TileColor.COLORLESS,
+        curse=CurseType.ITEM,
+        metadata={"source": "melmod", "scattered_item_id": "tombstone"},
+    )
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="tombstone", name="Tombstone", level=1)])
+    score, _ = pipeline.score(board, [19], "navvy", loadout)
+    base, _ = pipeline.score(board, [19], "navvy", Loadout())
+    assert score == base + 5

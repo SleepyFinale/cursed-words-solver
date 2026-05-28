@@ -8,6 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from cursed_words_solver.models import Loadout
+from cursed_words_solver.rules.ram_memory import pin_memory_entries, ram_entry_bucket
 from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
 _CATALOG_PATH = Path(__file__).resolve().parents[2] / "data" / "wiki" / "stickers.json"
@@ -64,7 +65,11 @@ def _catalog() -> dict:
 def stamp_slugs(loadout: Loadout | None) -> frozenset[str]:
     if not loadout:
         return frozenset()
-    return frozenset(slugify_name(s.id or s.name) for s in loadout.stamps)
+    slugs = {slugify_name(s.id or s.name) for s in loadout.stamps}
+    for entry in pin_memory_entries(loadout):
+        if ram_entry_bucket(entry) == "stamps":
+            slugs.add(slugify_name(str(entry.get("id") or entry.get("name") or "")))
+    return frozenset(slugs)
 
 
 def loadout_has_stamp(loadout: Loadout | None, slug: str) -> bool:
@@ -96,6 +101,15 @@ def stamp_search_flags(loadout: Loadout | None) -> StampSearchFlags:
     for sticker in loadout.stickers:
         slug = slugify_name(sticker.id or sticker.name)
         _key, rule = get_rule(rules, "stickers", sticker.id, sticker.name)
+        for k, v in _flags_from_rule(slug, rule).items():
+            if v:
+                merged[k] = True
+    for entry in pin_memory_entries(loadout):
+        slug = slugify_name(str(entry.get("id") or entry.get("name") or ""))
+        bucket = ram_entry_bucket(entry)
+        item_id = str(entry.get("id", "") or "")
+        item_name = str(entry.get("name", "") or "")
+        _key, rule = get_rule(rules, bucket, item_id, item_name)
         for k, v in _flags_from_rule(slug, rule).items():
             if v:
                 merged[k] = True

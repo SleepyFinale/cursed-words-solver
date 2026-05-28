@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 using MelonLoader;
+using Newtonsoft.Json;
 
 namespace CursedWordsSolverCompanion
 {
@@ -86,7 +88,74 @@ namespace CursedWordsSolverCompanion
                     missing.Add("target_number");
             }
 
+            CollectRamMemoryWarnings(snapshot, player, missing);
+
             return missing;
+        }
+
+        private static readonly HashSet<string> RamNonGeneratableSlugs = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase
+        )
+        {
+            "beam_me_up",
+            "crystal_ball",
+            "dartboard",
+            "magic_8_ball",
+            "hungry_hippo",
+            "lucky_dice",
+            "mystery_gift",
+            "nest_egg",
+            "overhand",
+            "sewing_needle",
+            "signal_receiver",
+            "snapshot",
+            "underhand",
+            "unicorn",
+        };
+
+        private static void CollectRamMemoryWarnings(
+            RunStateSnapshot snapshot,
+            Player player,
+            List<string> missing
+        )
+        {
+            var pin = player?.MyCharacter?.CharacterItem;
+            if (pin == null || !IsRandomAccessMemoryPin(pin))
+                return;
+
+            var extras = snapshot.extras ?? new Dictionary<string, string>();
+            if (
+                extras.TryGetValue("pin_memory_export_note", out var note)
+                && note == "field_missing"
+            )
+                missing.Add("pin_memory (ItemsInMemory unreadable)");
+
+            if (!extras.TryGetValue("pin_memory", out var raw) || string.IsNullOrWhiteSpace(raw))
+                return;
+
+            try
+            {
+                var rows = JsonConvert.DeserializeObject<List<RunStateItem>>(raw);
+                if (rows == null)
+                    return;
+                foreach (var row in rows)
+                {
+                    if (row == null || string.IsNullOrEmpty(row.id))
+                        continue;
+                    if (RamNonGeneratableSlugs.Contains(row.id))
+                        missing.Add("pin_memory unexpected item:" + row.id);
+                }
+            }
+            catch
+            {
+                missing.Add("pin_memory (invalid JSON)");
+            }
+        }
+
+        private static bool IsRandomAccessMemoryPin(Item pin)
+        {
+            var t = pin.GetType();
+            return string.Equals(t.Name, "RandomAccessMemory", StringComparison.Ordinal);
         }
 
         private static bool HasFrankenstein(Player player)

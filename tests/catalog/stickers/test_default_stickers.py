@@ -166,6 +166,33 @@ def test_dusty_coffin_skips_void_whose_letter_is_in_word():
     assert score == base + 8
 
 
+def test_dusty_coffin_counts_void_used_on_path():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "B", 2)
+    board.tiles[0][1] = _tile(0, 1, "Q", 0, color=TileColor.VOID)
+    board.tiles[4][4] = _tile(4, 4, "Z", 0, color=TileColor.VOID)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
+    score, bd = pipeline.score(board, [0, 1], "ba", loadout)
+    base, _ = pipeline.score(board, [0, 1], "ba", Loadout())
+    assert bd["word_score"] == 16
+    assert score == base + 16
+
+
+def test_dusty_coffin_counts_void_currency_symbols_not_in_word():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 2)
+    board.tiles[0][1] = _tile(0, 1, "₮", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
+    board.tiles[0][2] = _tile(0, 2, "₡", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
+    board.tiles[4][4] = _tile(4, 4, "Z", 0, color=TileColor.VOID)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
+    score, bd = pipeline.score(board, [0], "at", loadout)
+    base, _ = pipeline.score(board, [0], "at", Loadout())
+    assert bd["word_score"] == 24
+    assert score == base + 24
+
+
 def test_dusty_coffin_number_void_digit_not_in_word():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 2)
@@ -184,6 +211,77 @@ def test_dusty_coffin_number_void_digit_not_in_word():
     loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
     score, bd = pipeline.score(board, [0], "a", loadout)
     base, _ = pipeline.score(board, [0], "a", Loadout())
+    assert bd["word_score"] == 8
+    assert score == base + 8
+
+
+def test_dusty_coffin_ignores_void_item_tiles():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "G", 2)
+    board.tiles[4][1] = Tile(
+        row=4,
+        col=1,
+        char="🗝️",
+        letter="A",
+        base_score=0.0,
+        color=TileColor.VOID,
+        curse=CurseType.ITEM,
+        metadata={"source": "melmod", "scattered_item_id": "ornate_key"},
+    )
+    board.tiles[0][1] = _tile(0, 1, "₮", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
+    score, bd = pipeline.score(board, [0], "groggy", loadout)
+    base, _ = pipeline.score(board, [0], "groggy", Loadout())
+    # Only the VOID currency contributes; VOID item tiles should not.
+    assert bd["word_score"] == 8
+    assert score == base + 8
+
+
+def test_dusty_coffin_counts_unused_void_item_when_letter_in_word():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "R", 1)
+    board.tiles[4][3] = _tile(4, 3, "$", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
+    board.tiles[0][3] = Tile(
+        row=0,
+        col=3,
+        char="🧁",
+        letter="I",
+        base_score=0.0,
+        color=TileColor.VOID,
+        curse=CurseType.ITEM,
+        metadata={"source": "melmod", "scattered_item_id": "rainbow_sprinkles"},
+    )
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
+    score, bd = pipeline.score(board, [0], "requin", loadout)
+    base, _ = pipeline.score(board, [0], "requin", Loadout())
+    assert bd["word_score"] == 16
+    assert score == base + 16
+
+
+def test_dusty_coffin_uses_only_unused_void_tiles_mismatch_shape():
+    """megabyte mismatch: two VOID tiles on path, one VOID currency off-path."""
+    board = _empty_board()
+    board.tiles[4][3] = _tile(4, 3, "M", 3)
+    board.tiles[3][4] = _tile(3, 4, "⚰️", 0, curse=CurseType.ITEM)
+    board.tiles[2][3] = Tile(
+        row=2,
+        col=3,
+        char="🎡",
+        letter="G",
+        base_score=0.0,
+        color=TileColor.VOID,
+        curse=CurseType.ITEM,
+        metadata={"source": "melmod", "scattered_item_id": "ferris_wheel"},
+    )
+    board.tiles[2][4] = _tile(2, 4, "฿", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
+    board.tiles[3][2] = _tile(3, 2, "₣", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
+    path = [23, 19, 13, 14]
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
+    score, bd = pipeline.score(board, path, "megabyte", loadout)
+    base, _ = pipeline.score(board, path, "megabyte", Loadout())
     assert bd["word_score"] == 8
     assert score == base + 8
 

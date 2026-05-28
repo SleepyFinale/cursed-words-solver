@@ -626,10 +626,19 @@ namespace CursedWordsSolverCompanion
 
         private static void FillPinMemory(RunStateSnapshot snapshot, Item pin)
         {
-            var items = TryGetPinMemoryItems(pin);
+            var items = TryGetPinMemoryItems(pin, out var exportNote);
+            snapshot.extras["pin_memory_export_note"] = exportNote;
             if (items == null || items.Count == 0)
             {
                 snapshot.extras["pin_memory"] = "[]";
+                snapshot.extras["pin_memory_count"] = "0";
+                if (IsRandomAccessMemoryPin(pin) && exportNote == "field_missing")
+                {
+                    MelonLogger.Warning(
+                        "RAM pin: could not read ItemsInMemory (field/property missing). "
+                            + "Rebuild melmod after updating the companion."
+                    );
+                }
                 return;
             }
 
@@ -652,22 +661,51 @@ namespace CursedWordsSolverCompanion
             }
 
             snapshot.extras["pin_memory"] = JsonConvert.SerializeObject(mapped);
+            snapshot.extras["pin_memory_count"] = mapped.Count.ToString();
         }
 
-        private static List<Item> TryGetPinMemoryItems(Item pin)
+        private static bool IsRandomAccessMemoryPin(Item pin)
         {
             if (pin == null)
-                return null;
+                return false;
+            var t = pin.GetType();
+            return string.Equals(t.Name, "RandomAccessMemory", StringComparison.Ordinal)
+                || t.FullName?.IndexOf("RandomAccessMemory", StringComparison.Ordinal) >= 0;
+        }
 
-            var names = new[]
+        private static List<Item> TryGetPinMemoryItems(Item pin, out string exportNote)
+        {
+            exportNote = "empty";
+            if (pin == null)
             {
-                "MemoryItems",
-                "PinMemory",
-                "StoredItems",
-                "ItemsInMemory",
-                "Memory",
-            };
+                exportNote = "no_pin";
+                return null;
+            }
 
+            // Game: public List<Item> ItemsInMemory (field, not property).
+            try
+            {
+                var field = pin.GetType().GetField(
+                    "ItemsInMemory",
+                    BindingFlags.Public | BindingFlags.Instance
+                );
+                if (field != null)
+                {
+                    var fromField = CoerceItemList(field.GetValue(pin));
+                    if (fromField != null)
+                    {
+                        exportNote = fromField.Count > 0 ? "ok" : "empty_valid";
+                        return fromField;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning("RAM ItemsInMemory field read failed: " + ex.Message);
+                exportNote = "reflection_failed";
+            }
+
+            var names = new[] { "MemoryItems", "PinMemory", "StoredItems", "Memory" };
             foreach (var name in names)
             {
                 try
@@ -679,34 +717,44 @@ namespace CursedWordsSolverCompanion
                     if (prop == null)
                         continue;
 
-                    var value = prop.GetValue(pin, null);
-                    var arr = value as Item[];
-                    if (arr != null)
-                        return new List<Item>(arr);
-                    var list = value as System.Collections.Generic.List<Item>;
-                    if (list != null)
-                        return list;
-                    var enumerable = value as System.Collections.IEnumerable;
-                    if (enumerable != null)
+                    var fromProp = CoerceItemList(prop.GetValue(pin, null));
+                    if (fromProp != null)
                     {
-                        var result = new List<Item>();
-                        foreach (var entry in enumerable)
-                        {
-                            var it = entry as Item;
-                            if (it != null)
-                                result.Add(it);
-                        }
-                        if (result.Count > 0)
-                            return result;
+                        exportNote = fromProp.Count > 0 ? "ok" : "empty_valid";
+                        return fromProp;
                     }
                 }
                 catch
                 {
-                    // try next property
+                    // try next
                 }
             }
 
+            exportNote = IsRandomAccessMemoryPin(pin) ? "field_missing" : "empty";
             return null;
+        }
+
+        private static List<Item> CoerceItemList(object value)
+        {
+            if (value == null)
+                return new List<Item>();
+            var arr = value as Item[];
+            if (arr != null)
+                return new List<Item>(arr);
+            var list = value as List<Item>;
+            if (list != null)
+                return list;
+            var enumerable = value as System.Collections.IEnumerable;
+            if (enumerable == null)
+                return null;
+            var result = new List<Item>();
+            foreach (var entry in enumerable)
+            {
+                var it = entry as Item;
+                if (it != null)
+                    result.Add(it);
+            }
+            return result;
         }
 
         /// <summary>
