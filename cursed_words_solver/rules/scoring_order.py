@@ -52,9 +52,15 @@ def capybara_shuffles_loadout(loadout: Loadout | None, rules: dict) -> bool:
     return False
 
 
-def _path_grid_item_refs(board: Board, path: list[int], rules: dict) -> list[ScoringItemRef]:
+def _path_grid_item_refs(
+    board: Board,
+    path: list[int],
+    rules: dict,
+    loadout: Loadout | None = None,
+) -> list[ScoringItemRef]:
+    from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
     refs: list[ScoringItemRef] = []
-    for idx in path:
+    for path_pos, idx in enumerate(path):
         tile = board.get_by_index(idx)
         if tile.curse != CurseType.ITEM:
             continue
@@ -68,12 +74,19 @@ def _path_grid_item_refs(board: Board, path: list[int], rules: dict) -> list[Sco
             bucket = "stamps"
         if not rule:
             continue
+        rule_id = _key or slug
         refs.append(
             ScoringItemRef(
                 kind="grid_path",
                 item=None,
-                rule_id=_key or slug,
-                level=1,
+                rule_id=rule_id,
+                level=grid_path_sticker_level(
+                    loadout,
+                    rule_id,
+                    board=board,
+                    path=path,
+                    path_tile_index=path_pos,
+                ),
             )
         )
     return refs
@@ -159,10 +172,31 @@ def build_scoring_item_sequence(
     if not loadout:
         return []
     loadout = _maybe_shuffled_loadout(loadout, rules, path)
-    refs = _path_grid_item_refs(board, path, rules) + _inventory_item_refs(loadout, rules)
+    refs = _path_grid_item_refs(board, path, rules, loadout) + _inventory_item_refs(
+        loadout, rules
+    )
     if hourglass_reverses_order(loadout, rules):
         refs = list(reversed(refs))
     return refs
+
+
+def sort_grid_path_refs(
+    refs: list[ScoringItemRef], rules: dict
+) -> list[ScoringItemRef]:
+    """First-of-colour grid ×N (e.g. Cocktail) before path word mults; other grid stickers keep path order."""
+
+    def _priority(ref: ScoringItemRef) -> tuple[int, int]:
+        _key, rule = get_rule(rules, "stickers", ref.rule_id, ref.rule_id)
+        if not rule:
+            _key, rule = get_rule(rules, "stamps", ref.rule_id, ref.rule_id)
+        effect = rule.get("type") if rule else ""
+        if effect == "tile_multiply" and rule.get("target") == "first_of_each_colour":
+            return (0, 0)
+        if effect == "multiply_word_scaled":
+            return (1, 0)
+        return (2, 0)
+
+    return sorted(refs, key=_priority)
 
 
 def apply_green_tile_word_transfer(

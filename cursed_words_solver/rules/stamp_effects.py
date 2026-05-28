@@ -173,6 +173,55 @@ def apply_overhand_replays_for_slot(
     return state
 
 
+def apply_snapshot_copy_sticker(
+    *,
+    rules: dict[str, Any],
+    loadout: Loadout,
+    state: dict[str, Any],
+    board: Board,
+    path: list[int],
+    sticker: LoadoutItem,
+    apply_rule: Callable[..., dict[str, Any]],
+    multiply_only: bool,
+) -> dict[str, Any]:
+    """Equipped Snapshot applies the copied grid sticker's scoring rule at submit."""
+    from cursed_words_solver.rules.scoring_conditions import (
+        snapshot_copy_level,
+        snapshot_copy_slug,
+    )
+
+    if slugify_name(sticker.id or sticker.name) != "snapshot":
+        return state
+    copy_slug = snapshot_copy_slug(loadout)
+    if not copy_slug:
+        return state
+    _key, copy_rule = get_rule(rules, "stickers", copy_slug, copy_slug)
+    if not copy_rule or copy_rule.get("type") in PIPELINE_SKIP_TYPES:
+        return state
+    is_multiply = copy_rule.get("type") == "multiply_word_scaled"
+    if multiply_only != is_multiply:
+        return state
+    level = snapshot_copy_level(loadout, sticker.level)
+    state["_snapshot_proxy"] = True
+    state = apply_rule(
+        copy_rule,
+        state,
+        board,
+        path,
+        loadout,
+        level,
+        applying_sticker_id="snapshot",
+    )
+    state.pop("_snapshot_proxy", None)
+    _trace(
+        state,
+        phase="rule",
+        rule_id="snapshot",
+        detail=f"copy:{copy_slug}",
+    )
+    return state
+
+
 def apply_sticker_with_orchestration(
     *,
     rules: dict[str, Any],
@@ -183,10 +232,22 @@ def apply_sticker_with_orchestration(
     sticker: LoadoutItem,
     slot: int,
     apply_rule: Callable[..., dict[str, Any]],
+    multiply_only: bool = False,
 ) -> dict[str, Any]:
     _key, rule = get_rule(rules, "stickers", sticker.id, sticker.name)
     if not rule:
         return state
+    if slugify_name(sticker.id or sticker.name) == "snapshot":
+        return apply_snapshot_copy_sticker(
+            rules=rules,
+            loadout=loadout,
+            state=state,
+            board=board,
+            path=path,
+            sticker=sticker,
+            apply_rule=apply_rule,
+            multiply_only=multiply_only,
+        )
     if rule.get("type") == "frankenstein_stitch":
         return apply_frankenstein_stitch(
             rules=rules,

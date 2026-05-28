@@ -111,6 +111,32 @@ def test_burrito_level2_rate():
     assert score == int(base * 1.2)  # floor after ×WORD
 
 
+def test_burrito_includes_pin_memory_sticker_levels():
+    from cursed_words_solver.rules.scoring_conditions import (
+        burrito_word_multiplier,
+        other_sticker_levels_sum,
+    )
+
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="retro_raider", name="Retro Raider", level=1),
+            LoadoutItem(id="game_pad", name="Game Pad", level=2),
+            LoadoutItem(id="doughnut", name="Doughnut", level=2),
+            LoadoutItem(id="burrito", name="Burrito", level=1),
+            LoadoutItem(id="cocktail", name="Cocktail", level=1),
+        ],
+        extras={
+            "pin_memory": [
+                {"id": "sunflower", "name": "Sunflower", "level": 1, "kind": "sticker"},
+                {"id": "hungry_snake", "name": "Hungry Snake", "level": 1, "kind": "stamp"},
+            ],
+        },
+    )
+    assert other_sticker_levels_sum(loadout) == 7
+    rule = {"base": 0.05, "upgrade": 0.05}
+    assert burrito_word_multiplier(1, rule, loadout) == 1.35
+
+
 def test_stamp_album_from_extras():
     board = _empty_board()
     pipeline = ScoringPipeline()

@@ -218,6 +218,9 @@ namespace CursedWordsSolverCompanion
 
             CaptureBicycleAccumulatorFromSteps(steps);
             CaptureNeapolitanPercentFromSteps(steps);
+            CaptureRareItemCountFromSteps(steps);
+            CaptureSnapshotCopyFromSteps(steps);
+            TryPersistScoringContextExtras();
             _roundTrace = ScoringTraceCollector.SerializeSteps(steps);
             if (_active)
                 _actualTrace = _roundTrace;
@@ -323,7 +326,110 @@ namespace CursedWordsSolverCompanion
                     if (bonus <= 0L)
                         continue;
 
-                    _scoringContextExtras["neapolitan_percent"] = bonus.ToString();
+                    var percent = bonus.ToString();
+                    _scoringContextExtras["neapolitan_percent"] = percent;
+                    _scoringContextExtras["neapolitan_percent_last_known"] = percent;
+                    break;
+                }
+            }
+            catch
+            {
+                // best-effort only
+            }
+        }
+
+        /// <summary>
+        /// Persist Snapshot's grid-start copy target for F8 replay (slug + copy level).
+        /// </summary>
+        private static void CaptureSnapshotCopyFromSteps(List<ScoreCalcVizInfo> steps)
+        {
+            if (_scoringContextExtras == null)
+                return;
+
+            try
+            {
+                var player = RunStateExporter.GetPlayerForUpdate();
+                if (player == null)
+                    return;
+
+                var temp = new RunStateSnapshot { extras = _scoringContextExtras };
+                RunStateExporter.FillSnapshotCopyExtras(temp, player);
+
+                if (steps == null)
+                    return;
+
+                for (var i = 0; i < steps.Count; i++)
+                {
+                    var step = steps[i];
+                    if (step?.RelevantItem == null)
+                        continue;
+
+                    var itemId = RunStateExporter.Slugify(
+                        step.RelevantItem.ArtFileName,
+                        step.RelevantItem.Name
+                    );
+                    if (!string.Equals(itemId, "snapshot", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (
+                        _scoringContextExtras.ContainsKey("snapshot_copy_slug")
+                        && !string.IsNullOrEmpty(
+                            _scoringContextExtras["snapshot_copy_slug"]
+                        )
+                    )
+                        return;
+
+                    if (step.WordBonus != null && !step.WordBonus.IsMultiplicative)
+                    {
+                        var bonus = step.WordBonus.Bonus != null
+                            ? step.WordBonus.Bonus.Score
+                            : 0L;
+                        if (bonus == 120L)
+                        {
+                            _scoringContextExtras["snapshot_copy_slug"] = "dusty_coffin";
+                            _scoringContextExtras["snapshot_copy_level"] = "1";
+                        }
+                    }
+                    break;
+                }
+            }
+            catch
+            {
+                // best-effort only
+            }
+        }
+
+        /// <summary>
+        /// Capture Steak's live WordBonus percent for F8 (wiki: ×1 + 0.25 per rare; game may differ).
+        /// </summary>
+        private static void CaptureRareItemCountFromSteps(List<ScoreCalcVizInfo> steps)
+        {
+            if (steps == null || _scoringContextExtras == null)
+                return;
+
+            try
+            {
+                for (var i = 0; i < steps.Count; i++)
+                {
+                    var step = steps[i];
+                    if (step?.RelevantItem == null || step.WordBonus == null)
+                        continue;
+
+                    var itemId = RunStateExporter.Slugify(
+                        step.RelevantItem.ArtFileName,
+                        step.RelevantItem.Name
+                    );
+                    if (!string.Equals(itemId, "steak", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (!step.WordBonus.IsMultiplicative || step.WordBonus.IsPoison)
+                        continue;
+
+                    var bonus = step.WordBonus.Bonus != null ? step.WordBonus.Bonus.Score : 0L;
+                    if (bonus < 100L)
+                        continue;
+
+                    _scoringContextExtras["steak_word_bonus_percent"] = bonus.ToString();
                     break;
                 }
             }

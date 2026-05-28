@@ -497,15 +497,18 @@ class SolverApp:
             from cursed_words_solver.rules.scoring_conditions import rewind_setup_extras
 
             rewind_notes = rewind_setup_extras(loadout, board)
-            # Neapolitan (and similar) can improve on submit and that improved percent
-            # applies immediately to the submitted word. For F8 predictions, simulate
-            # that submit-time improvement so predicted scores match in-game scoring.
+            # Neapolitan +5% submit simulation only when live percent is not exported.
             if isinstance(loadout.extras, dict):
-                loadout.extras["simulate_submit_improvements"] = True
                 has_neapolitan = any(
                     str(getattr(stamp, "id", "") or "").strip().lower() == "neapolitan"
                     for stamp in (loadout.stamps or [])
                 )
+                from cursed_words_solver.rules.scoring_conditions import (
+                    neapolitan_has_live_percent,
+                )
+
+                if not has_neapolitan or not neapolitan_has_live_percent(loadout):
+                    loadout.extras["simulate_submit_improvements"] = True
                 if has_neapolitan:
                     from cursed_words_solver.rules.scoring_conditions import (
                         neapolitan_base_percent_from_loadout,
@@ -513,15 +516,30 @@ class SolverApp:
 
                     base_percent, source = neapolitan_base_percent_from_loadout(loadout)
                     source_label = {
-                        "live": "live extras",
+                        "live": "live export",
                         "cached": "cached fallback",
                         "default": "default fallback",
                     }.get(source, source)
-                    print(
-                        "  Setup: Neapolitan submit simulation active "
-                        f"({base_percent}% -> {base_percent + 5}% when condition met; {source_label}).",
-                        flush=True,
-                    )
+                    if neapolitan_has_live_percent(loadout):
+                        print(
+                            "  Setup: Neapolitan using "
+                            f"{base_percent}% ({source_label}).",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            "  Setup: Neapolitan submit simulation "
+                            f"({base_percent}% -> {base_percent + 5}% when 3+ colours; "
+                            f"{source_label}).",
+                            flush=True,
+                        )
+                        if source == "default":
+                            print(
+                                "  Warning: Neapolitan baseline missing from run_state — "
+                                "press F7 in-game or submit a word so melmod can capture "
+                                "neapolitan_percent.",
+                                flush=True,
+                            )
             self._searcher.setup_weight = self.config.setup_weight
             self._searcher.setup_discount = self.config.setup_discount
             self._searcher.mult_search_weight = self.config.mult_search_weight
@@ -538,6 +556,11 @@ class SolverApp:
             neap_warn = neapolitan_extras_stale_warning(loadout)
             if neap_warn:
                 print(f"  Warning: {neap_warn}", flush=True)
+            from cursed_words_solver.loadout import steak_extras_stale_warning
+
+            steak_warn = steak_extras_stale_warning(loadout)
+            if steak_warn:
+                print(f"  Warning: {steak_warn}", flush=True)
             if total:
                 msg = f"  Rules: {scoring}/{total} affect score"
                 if grid_only:

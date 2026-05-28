@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from cursed_words_solver.models import Board, CurseType, Tile, TileColor
 from cursed_words_solver.letter_values import SCRABBLE_VALUES
+
+if TYPE_CHECKING:
+    from cursed_words_solver.models import Loadout
 
 
 def _scrabble_value(letter: str) -> int:
@@ -24,7 +29,25 @@ _CHESS_VOID_VALUES: dict[CurseType, int] = {
 }
 
 
-def _void_face_value(tile: Tile) -> int:
+def _void_penalty_steps_for_tile(tile: Tile, loadout: Loadout | None) -> int:
+    """Per-tile void penalty steps from melmod export, else encounter-effective grid."""
+    raw = (tile.metadata or {}).get("void_penalty_steps")
+    if raw is not None and raw != "":
+        try:
+            return max(1, int(raw))
+        except (TypeError, ValueError):
+            pass
+    if loadout is None:
+        return 1
+    from cursed_words_solver.models import CurseType, TileColor
+    from cursed_words_solver.rules.scoring_conditions import grid_path_encounter_level
+
+    if tile.color == TileColor.VOID and tile.curse == CurseType.LETTER:
+        return grid_path_encounter_level(loadout)
+    return 1
+
+
+def _void_face_value(tile: Tile, loadout: Loadout | None = None) -> int:
     """Magnitude to negate for void tiles when packet.Score is 0."""
     if tile.curse == CurseType.NUMBER:
         if tile.number_value is not None:
@@ -34,7 +57,14 @@ def _void_face_value(tile: Tile) -> int:
     chess_val = _CHESS_VOID_VALUES.get(tile.curse)
     if chess_val is not None:
         return chess_val
-    return _scrabble_value(tile.letter)
+    face = _scrabble_value(tile.letter)
+    if (
+        loadout is not None
+        and tile.color == TileColor.VOID
+        and tile.curse == CurseType.LETTER
+    ):
+        face += 10 * _void_penalty_steps_for_tile(tile, loadout)
+    return face
 
 
 def _color_bonus(tile: Tile, letter_base: int) -> int:
@@ -65,7 +95,9 @@ def _cactus_growth_bonus(tile: Tile) -> int:
         return 1
 
 
-def tile_base_contribution(tile: Tile, money: int = 0) -> float:
+def tile_base_contribution(
+    tile: Tile, money: int = 0, loadout: Loadout | None = None
+) -> float:
     """Per-tile base score before stickers."""
     if tile.curse == CurseType.ITEM:
         return 0
@@ -91,9 +123,9 @@ def tile_base_contribution(tile: Tile, money: int = 0) -> float:
                 and tile.curse != CurseType.WILDCARD
                 and not tile.metadata.get("is_joker")
             ):
-                letter_base = -abs(_void_face_value(tile))
+                letter_base = -abs(_void_face_value(tile, loadout))
         elif letter_base == 0:
-            letter_base = -abs(_void_face_value(tile))
+            letter_base = -abs(_void_face_value(tile, loadout))
         else:
             letter_base = -abs(letter_base)
     elif color == TileColor.GOLD:
@@ -106,20 +138,27 @@ def tile_base_contribution(tile: Tile, money: int = 0) -> float:
     return letter_base + bonus
 
 
-def microscope_init_contribution(tile: Tile, money: int = 0) -> float:
+def microscope_init_contribution(
+    tile: Tile, money: int = 0, loadout: Loadout | None = None
+) -> float:
     """Microscope init: packet base_score, except VOID where 0 means pre-negation."""
     if tile.color == TileColor.VOID:
-        return tile_base_contribution(tile, money)
+        return tile_base_contribution(tile, money, loadout)
     return float(tile.base_score)
 
 
-def score_word_base(board: Board, path: list[int], word: str) -> tuple[float, dict]:
+def score_word_base(
+    board: Board,
+    path: list[int],
+    word: str,
+    loadout: Loadout | None = None,
+) -> tuple[float, dict]:
     """Sum base contributions along path."""
     total = 0
     breakdown: list[dict] = []
     for i, idx in enumerate(path):
         tile = board.get_by_index(idx)
-        contrib = tile_base_contribution(tile, board.money)
+        contrib = tile_base_contribution(tile, board.money, loadout)
         total += contrib
         breakdown.append(
             {

@@ -72,8 +72,8 @@ def test_steak_rare_items_increase_multiplier():
         extras={"rare_item_count": "2"},
     )
     score, bd = pipeline.score(board, [0, 1], "ab", loadout)
-    assert bd["multiplier"] == 3.0
-    assert score == 60
+    assert bd["multiplier"] == 1.5
+    assert score == 30
 
 
 def test_steak_no_rare_items_base_multiplier():

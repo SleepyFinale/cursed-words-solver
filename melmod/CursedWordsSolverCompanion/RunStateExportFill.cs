@@ -78,6 +78,7 @@ namespace CursedWordsSolverCompanion
             FillEncounterMode(snapshot, player);
             FillFutureProofTierA(snapshot, player);
             FillBossParams(snapshot, player);
+            RunStateExporter.FillSnapshotCopyExtras(snapshot, player);
         }
 
         public static void AppendEncounterFingerprint(StringBuilder sb, Player player)
@@ -627,6 +628,63 @@ namespace CursedWordsSolverCompanion
             return JsonConvert.SerializeObject(rows);
         }
 
+        private static bool ItemMatchesRarity(object item, string[] rarities)
+        {
+            if (item == null)
+                return false;
+            var rarity = TryGetRarityLabel(item, "Rarity", "ItemRarity", "rarity");
+            if (string.IsNullOrEmpty(rarity))
+                return false;
+            foreach (var r in rarities)
+            {
+                if (rarity.Equals(r, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>Rarity may be a string property or an enum (ToString).</summary>
+        private static string TryGetRarityLabel(object target, params string[] names)
+        {
+            if (target == null)
+                return "";
+            foreach (var name in names)
+            {
+                try
+                {
+                    var prop = target.GetType().GetProperty(name, MemberFlags);
+                    if (prop != null)
+                    {
+                        var val = prop.GetValue(target, null);
+                        if (val is string s && !string.IsNullOrEmpty(s))
+                            return s;
+                        if (val != null)
+                            return val.ToString();
+                    }
+                    var field = target.GetType().GetField(name, MemberFlags);
+                    if (field != null)
+                    {
+                        var val = field.GetValue(target);
+                        if (val is string s && !string.IsNullOrEmpty(s))
+                            return s;
+                        if (val != null)
+                            return val.ToString();
+                    }
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+            return "";
+        }
+
+        /// <summary>Count owned RARE stickers/stamps/pin for Steak export (returns -1 if unknown).</summary>
+        public static int CountRareItemsForPlayer(Player player)
+        {
+            return CountItemsMatchingRarity(player, "Rare", "RARE");
+        }
+
         private static int CountItemsMatchingRarity(Player player, params string[] rarities)
         {
             if (player == null)
@@ -642,18 +700,10 @@ namespace CursedWordsSolverCompanion
                 {
                     if (item == null)
                         continue;
-                    var rarity = TryGetStringProperty(item, "Rarity", "ItemRarity", "rarity");
-                    if (string.IsNullOrEmpty(rarity))
+                    if (!ItemMatchesRarity(item, rarities))
                         continue;
-                    foreach (var r in rarities)
-                    {
-                        if (rarity.Equals(r, StringComparison.OrdinalIgnoreCase))
-                        {
-                            count++;
-                            found = true;
-                            break;
-                        }
-                    }
+                    count++;
+                    found = true;
                 }
             }
 
@@ -662,17 +712,10 @@ namespace CursedWordsSolverCompanion
             try
             {
                 var pin = player.MyCharacter?.CharacterItem;
-                if (pin != null)
+                if (pin != null && ItemMatchesRarity(pin, rarities))
                 {
-                    var rarity = TryGetStringProperty(pin, "Rarity", "ItemRarity");
-                    foreach (var r in rarities)
-                    {
-                        if (rarity.Equals(r, StringComparison.OrdinalIgnoreCase))
-                        {
-                            count++;
-                            found = true;
-                        }
-                    }
+                    count++;
+                    found = true;
                 }
             }
             catch

@@ -631,7 +631,7 @@ namespace CursedWordsSolverCompanion
             var letter = MapLetter(tile, glyph, curse);
             var display = MapDisplay(tile, letter);
             var color = MapColor(tile, glyph);
-            var baseScore = MapBaseScore(tile);
+            var baseScore = MapBaseScore(tile, color, curse);
 
             var snap = new BoardTileSnapshot
             {
@@ -721,6 +721,9 @@ namespace CursedWordsSolverCompanion
                                 scattered.ArtFileName,
                                 scattered.Name
                             );
+                        var scatteredLevel = RunStateExporter.GetUpgradeableLevel(scattered);
+                        if (scatteredLevel >= 1)
+                            snap.scattered_item_level = scatteredLevel;
                     }
                 }
                 catch
@@ -753,7 +756,143 @@ namespace CursedWordsSolverCompanion
                 }
             }
 
+            var voidSteps = MapVoidPenaltySteps(tile, curse, color, letter);
+            if (voidSteps.HasValue)
+                snap.void_penalty_steps = voidSteps.Value;
+
             return snap;
+        }
+
+        private static int? MapVoidPenaltySteps(
+            Tile tile,
+            string curse,
+            string color,
+            string letter
+        )
+        {
+            if (color != "void" || curse != "letter")
+                return null;
+
+            var face = ScrabbleFaceValue(letter);
+
+            foreach (var name in new[]
+            {
+                "VoidPenaltySteps",
+                "VoidGridNumber",
+                "GridNumberWhenScattered",
+                "GridWhenScattered",
+                "CreatedGridNumber",
+                "SpawnGridNumber",
+                "GridIndexAtSpawn",
+                "GridsGeneratedWhenScattered",
+                "VoidGeneration",
+            })
+            {
+                var n = TryReadIntMember(tile, name);
+                if (n >= 1)
+                    return Math.Max(1, n);
+            }
+
+            try
+            {
+                var packet = tile.GetValue();
+                if (packet != null)
+                {
+                    var score = TryReadIntMember(packet, "Score");
+                    if (score > face)
+                    {
+                        var steps = (score - face + 9) / 10;
+                        if (steps >= 1)
+                            return steps;
+                    }
+                }
+            }
+            catch
+            {
+                // optional
+            }
+
+            return null;
+        }
+
+        private static int ScrabbleFaceValue(string letter)
+        {
+            if (string.IsNullOrWhiteSpace(letter))
+                return 1;
+            var ch = char.ToUpperInvariant(letter.Trim()[0]);
+            switch (ch)
+            {
+                case 'A':
+                case 'E':
+                case 'I':
+                case 'O':
+                case 'U':
+                case 'L':
+                case 'N':
+                case 'S':
+                case 'T':
+                case 'R':
+                    return 1;
+                case 'D':
+                case 'G':
+                    return 2;
+                case 'B':
+                case 'C':
+                case 'M':
+                case 'P':
+                    return 3;
+                case 'F':
+                case 'H':
+                case 'V':
+                case 'W':
+                case 'Y':
+                    return 4;
+                case 'K':
+                    return 5;
+                case 'J':
+                case 'X':
+                    return 8;
+                case 'Q':
+                case 'Z':
+                    return 10;
+                default:
+                    return 1;
+            }
+        }
+
+        private static int TryReadIntMember(object obj, string name)
+        {
+            if (obj == null || string.IsNullOrEmpty(name))
+                return -1;
+            try
+            {
+                var prop = obj.GetType().GetProperty(name, MemberFlags);
+                if (prop == null)
+                    return -1;
+                return TryCoerceInt(prop.GetValue(obj, null));
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+
+        private static int TryCoerceInt(object raw)
+        {
+            if (raw == null)
+                return -1;
+            if (raw is int i)
+                return i;
+            if (raw is long l)
+                return (int)l;
+            if (raw is float f)
+                return (int)f;
+            if (raw is double d)
+                return (int)d;
+            int parsed;
+            if (int.TryParse(raw.ToString(), out parsed))
+                return parsed;
+            return -1;
         }
 
         private static string MapDisplay(Tile tile, string letter)
@@ -858,14 +997,19 @@ namespace CursedWordsSolverCompanion
             return "?";
         }
 
-        private static double MapBaseScore(Tile tile)
+        private static double MapBaseScore(Tile tile, string color, string curse)
         {
             try
             {
                 var packet = tile.GetValue();
                 if (packet != null)
+                {
+                    // VOID letters keep signed packet.Score for void_penalty_steps inference.
+                    if (color == "void" && curse == "letter")
+                        return packet.Score;
                     // Keep full packet.Score (can exceed 10 after colour/manipulator bonuses).
                     return Math.Max(0, packet.Score);
+                }
             }
             catch
             {

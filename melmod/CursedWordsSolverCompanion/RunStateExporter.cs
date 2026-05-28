@@ -182,12 +182,28 @@ namespace CursedWordsSolverCompanion
         /// </summary>
         public static void TryMergeCachedGridNumber()
         {
-            if (RunStateExportFill.CachedGridNumber < 1)
+            var grid = -1;
+            try
+            {
+                var player = GetPlayer();
+                if (player != null)
+                    grid = RunStateExportFill.ResolveGridNumber(player);
+            }
+            catch
+            {
+                // fall through to cached
+            }
+
+            if (grid < 1 && RunStateExportFill.CachedGridNumber >= 1)
+                grid = RunStateExportFill.CachedGridNumber;
+
+            if (grid < 1)
                 return;
+
             TryMergeExtrasKeys(
                 new Dictionary<string, string>
                 {
-                    ["grid_number"] = RunStateExportFill.CachedGridNumber.ToString(),
+                    ["grid_number"] = grid.ToString(),
                 }
             );
         }
@@ -329,26 +345,29 @@ namespace CursedWordsSolverCompanion
             "bicycle_word_score_bonus",
             "cards_submitted",
             "birthday_cake_bonus",
-            "neapolitan_percent",
             "neapolitan_percent_last_known",
+            "rare_item_count_last_known",
+            "steak_word_bonus_percent",
+            "snapshot_copy_slug",
+            "snapshot_copy_level",
         };
 
         /// <summary>
         /// F7 full export rebuilds extras from reflection; keep post-submit scoring keys.
         /// </summary>
-        private static void MergePreservedExtrasFromDisk(RunStateSnapshot snapshot)
+        private static Dictionary<string, string> TryReadExtrasFromDisk()
         {
-            if (snapshot?.extras == null || !File.Exists(OutputPath))
-                return;
+            var onDisk = new Dictionary<string, string>();
+            if (!File.Exists(OutputPath))
+                return onDisk;
 
             try
             {
                 var json = File.ReadAllText(OutputPath, Encoding.UTF8);
                 var root = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
                 if (root == null || !root.TryGetValue("extras", out var extrasObj) || extrasObj == null)
-                    return;
+                    return onDisk;
 
-                var onDisk = new Dictionary<string, string>();
                 var existing = extrasObj as Dictionary<string, string>;
                 if (existing != null)
                 {
@@ -360,6 +379,52 @@ namespace CursedWordsSolverCompanion
                     foreach (var prop in jobj.Properties())
                         onDisk[prop.Name] = prop.Value?.ToString() ?? "";
                 }
+            }
+            catch
+            {
+                // ignore — fresh export still usable
+            }
+
+            return onDisk;
+        }
+
+        private static bool TryParseExtraPercent(string raw, out int percent)
+        {
+            percent = -1;
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+            if (!int.TryParse(raw.Trim(), out percent))
+                return false;
+            return percent >= 100 && percent <= 500;
+        }
+
+        /// <summary>
+        /// Neapolitan only increases within a run. Prefer max(reflected, on-disk last_known).
+        /// </summary>
+        private static int ResolveNeapolitanPercentForExport(Player player)
+        {
+            var reflected = TryGetNeapolitanPercent(player);
+            var onDisk = TryReadExtrasFromDisk();
+            var best = reflected >= 100 ? reflected : -1;
+            string cachedRaw;
+            if (
+                onDisk.TryGetValue("neapolitan_percent_last_known", out cachedRaw)
+                && TryParseExtraPercent(cachedRaw, out var cached)
+            )
+                best = best >= 100 ? Math.Max(best, cached) : cached;
+            return best;
+        }
+
+        private static void MergePreservedExtrasFromDisk(RunStateSnapshot snapshot)
+        {
+            if (snapshot?.extras == null)
+                return;
+
+            try
+            {
+                var onDisk = TryReadExtrasFromDisk();
+                if (onDisk.Count == 0)
+                    return;
 
                 foreach (var key in ExtrasPreserveFromDisk)
                 {
@@ -371,11 +436,75 @@ namespace CursedWordsSolverCompanion
                         continue;
                     snapshot.extras[key] = value;
                 }
+
+                // Stale reflected ×1.00 must not block a higher captured last_known.
+                string lastKnownRaw;
+                if (
+                    onDisk.TryGetValue("neapolitan_percent_last_known", out lastKnownRaw)
+                    && TryParseExtraPercent(lastKnownRaw, out var lastKnown)
+                )
+                {
+                    var reflected = -1;
+                    string liveRaw;
+                    if (
+                        snapshot.extras.TryGetValue("neapolitan_percent", out liveRaw)
+                        && TryParseExtraPercent(liveRaw, out var live)
+                    )
+                        reflected = live;
+                    var best = reflected >= 100 ? Math.Max(reflected, lastKnown) : lastKnown;
+                    snapshot.extras["neapolitan_percent"] = best.ToString();
+                }
+
+                ApplyResolvedRareItemCount(snapshot, onDisk);
             }
             catch
             {
                 // ignore — fresh export still usable
             }
+        }
+
+        /// <summary>
+        /// Steak counts can decrease when rare items are sold. Prefer live reflection;
+        /// else last submit capture (last_known), not a stale high rare_item_count.
+        /// </summary>
+        private static void ApplyResolvedRareItemCount(
+            RunStateSnapshot snapshot,
+            Dictionary<string, string> onDisk
+        )
+        {
+            if (snapshot?.extras == null)
+                return;
+
+            var lastKnown = TryParseNonNegativeExtra(snapshot.extras, "rare_item_count_last_known");
+            if (lastKnown < 0 && onDisk != null)
+                lastKnown = TryParseNonNegativeExtra(onDisk, "rare_item_count_last_known");
+
+            var live = TryParseNonNegativeExtra(snapshot.extras, "rare_item_count");
+
+            var best = lastKnown >= 0 ? lastKnown : live;
+            if (best < 0 && onDisk != null)
+                best = TryParseNonNegativeExtra(onDisk, "rare_item_count");
+
+            if (best < 0)
+                return;
+
+            snapshot.extras["rare_item_count"] = best.ToString();
+        }
+
+        private static int TryParseNonNegativeExtra(
+            Dictionary<string, string> extras,
+            string key
+        )
+        {
+            if (extras == null || string.IsNullOrEmpty(key))
+                return -1;
+            string raw;
+            if (!extras.TryGetValue(key, out raw) || string.IsNullOrWhiteSpace(raw))
+                return -1;
+            int value;
+            if (!int.TryParse(raw.Trim(), out value) || value < 0)
+                return -1;
+            return value;
         }
 
         private static void WriteSnapshot(RunStateSnapshot snapshot)
@@ -1031,6 +1160,10 @@ namespace CursedWordsSolverCompanion
             if (birthdayBonus >= 0)
                 snapshot.extras["birthday_cake_bonus"] = birthdayBonus.ToString();
 
+            var neapolitanPercent = ResolveNeapolitanPercentForExport(player);
+            if (neapolitanPercent >= 100)
+                snapshot.extras["neapolitan_percent"] = neapolitanPercent.ToString();
+
             var targetCurse = TryGetStringProperty(
                 player,
                 "TargetCurseType",
@@ -1137,6 +1270,53 @@ namespace CursedWordsSolverCompanion
                 name => name.IndexOf("Birthday", StringComparison.OrdinalIgnoreCase) >= 0,
                 art => art.IndexOf("birthday", StringComparison.OrdinalIgnoreCase) >= 0
             );
+        }
+
+        /// <summary>
+        /// Neapolitan stamp multiplicative WordBonus percent (e.g. 110 = ×1.1). Returns -1 if unknown.
+        /// </summary>
+        public static int TryGetNeapolitanPercent(Player player)
+        {
+            if (player?.Stamps == null)
+                return -1;
+
+            foreach (var stamp in player.Stamps)
+            {
+                if (stamp == null)
+                    continue;
+                var name = stamp.Name ?? "";
+                var art = stamp.ArtFileName ?? "";
+                if (
+                    name.IndexOf("Neapolitan", StringComparison.OrdinalIgnoreCase) < 0
+                    && art.IndexOf("neapolitan", StringComparison.OrdinalIgnoreCase) < 0
+                )
+                    continue;
+
+                var percent = TryGetNeapolitanPercentFromObject(stamp);
+                if (percent >= 0)
+                    return percent;
+
+                foreach (var nested in TryGetNestedStickerTargets(stamp))
+                {
+                    percent = TryGetNeapolitanPercentFromObject(nested);
+                    if (percent >= 0)
+                        return percent;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int TryGetNeapolitanPercentFromObject(object target)
+        {
+            if (target == null)
+                return -1;
+
+            var bonus = TryGetAccumulatedWordBonusFromObject(target);
+            if (bonus >= 100 && bonus <= 500)
+                return bonus;
+
+            return -1;
         }
 
         /// <summary>
@@ -2191,22 +2371,24 @@ namespace CursedWordsSolverCompanion
             return leftLevel > rightLevel ? "left" : "right";
         }
 
-        private static int GetUpgradeableLevel(object component)
+        internal static int GetUpgradeableLevel(object component)
         {
             if (component == null)
                 return 0;
 
+            var level = 0;
             var levelProp = component.GetType().GetProperty(
                 "Level",
                 BindingFlags.Public | BindingFlags.Instance
             );
             if (levelProp != null && levelProp.PropertyType == typeof(int))
-                return (int)levelProp.GetValue(component, null);
+                level = (int)levelProp.GetValue(component, null);
 
-            return 0;
+            var variable = GetUpgradeableVariableValue(component);
+            return Math.Max(level, variable);
         }
 
-        private static int GetUpgradeableVariableValue(object component)
+        internal static int GetUpgradeableVariableValue(object component)
         {
             if (component == null)
                 return 0;
@@ -2414,6 +2596,127 @@ namespace CursedWordsSolverCompanion
                     sb.Append(bonus);
                 }
             }
+        }
+
+        /// <summary>
+        /// Snapshot becomes a copy of a random grid sticker at grid start; export for F8 replay.
+        /// </summary>
+        public static void FillSnapshotCopyExtras(RunStateSnapshot snapshot, Player player)
+        {
+            if (snapshot?.extras == null || player?.Stickers == null)
+                return;
+
+            Item snapshotSticker = null;
+            foreach (var sticker in player.Stickers)
+            {
+                if (sticker == null)
+                    continue;
+                if (
+                    string.Equals(
+                        Slugify(sticker.ArtFileName, sticker.Name),
+                        "snapshot",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    snapshotSticker = sticker;
+                    break;
+                }
+            }
+
+            if (snapshotSticker == null)
+                return;
+
+            var copyItem = TryResolveSnapshotCopiedItem(snapshotSticker);
+            if (copyItem == null)
+                return;
+
+            var slug = Slugify(copyItem.ArtFileName, copyItem.Name);
+            if (string.IsNullOrEmpty(slug) || slug == "unknown")
+                return;
+
+            var copyLevel = GetUpgradeableLevel(snapshotSticker);
+            if (copyLevel < 1)
+                copyLevel = 1;
+
+            snapshot.extras["snapshot_copy_slug"] = slug;
+            snapshot.extras["snapshot_copy_level"] = copyLevel.ToString();
+        }
+
+        private static Item TryResolveSnapshotCopiedItem(Item snapshotSticker)
+        {
+            if (snapshotSticker == null)
+                return null;
+
+            foreach (
+                var propName in new[]
+                {
+                    "CopiedSticker",
+                    "CopiedItem",
+                    "CopyTarget",
+                    "TargetSticker",
+                    "SourceItem",
+                    "CopiedStickerItem",
+                    "StickerCopied",
+                    "CopiedStickerEffect",
+                }
+            )
+            {
+                try
+                {
+                    var prop = snapshotSticker.GetType().GetProperty(propName, MemberFlags);
+                    if (prop == null)
+                        continue;
+                    var val = prop.GetValue(snapshotSticker, null);
+                    if (val is Item item)
+                        return item;
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+
+            foreach (var nested in TryGetNestedStickerTargets(snapshotSticker))
+            {
+                if (nested is Item item && item != snapshotSticker)
+                {
+                    var slug = Slugify(item.ArtFileName, item.Name);
+                    if (
+                        !string.IsNullOrEmpty(slug)
+                        && !string.Equals(slug, "snapshot", StringComparison.OrdinalIgnoreCase)
+                    )
+                        return item;
+                }
+
+                foreach (
+                    var propName in new[]
+                    {
+                        "CopiedSticker",
+                        "CopiedItem",
+                        "CopyTarget",
+                        "TargetSticker",
+                        "SourceItem",
+                    }
+                )
+                {
+                    try
+                    {
+                        var prop = nested.GetType().GetProperty(propName, MemberFlags);
+                        if (prop == null)
+                            continue;
+                        var val = prop.GetValue(nested, null);
+                        if (val is Item nestedItem)
+                            return nestedItem;
+                    }
+                    catch
+                    {
+                        // try next
+                    }
+                }
+            }
+
+            return null;
         }
 
         public static string Slugify(string artFileName, string fallbackName)

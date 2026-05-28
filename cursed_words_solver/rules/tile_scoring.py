@@ -147,6 +147,7 @@ def initial_tile_scores(
     path: list[int],
     *,
     money: int,
+    loadout: Loadout | None = None,
     microscope_base: bool = False,
     blue_base_override: int | None = None,
 ) -> tuple[list[float], float]:
@@ -161,13 +162,13 @@ def initial_tile_scores(
             scores.append(0.0)
             continue
         if microscope_base:
-            contrib = microscope_init_contribution(tile, money)
+            contrib = microscope_init_contribution(tile, money, loadout)
         elif tile.color == TileColor.BLUE and blue_base_override is not None:
             contrib = float(blue_base_override)
         elif tile.curse == CT.CURRENCY and tile.metadata.get("source") == "melmod":
             contrib = float(tile.base_score)
         else:
-            contrib = float(tile_base_contribution(tile, money))
+            contrib = float(tile_base_contribution(tile, money, loadout))
         scores.append(contrib)
         total += contrib
     return scores, total
@@ -258,6 +259,7 @@ def apply_tile_init(
         work,
         path,
         money=max(board.money, loadout.money),
+        loadout=loadout,
         microscope_base=microscope_base,
         blue_base_override=blue_base_override,
     )

@@ -50,5 +50,9 @@ namespace CursedWordsSolverCompanion
         /// <summary>CactusGrowth packet value (+1 per grid start).</summary>
         public int? cactus_growth;
         public string scattered_item_id = "";
+        /// <summary>Upgrade level of the scattered sticker on this tile (when curse is item).</summary>
+        public int? scattered_item_level;
+        /// <summary>VOID letter: grid index when scattered (face + 10 × steps penalty).</summary>
+        public int? void_penalty_steps;
     }
 }

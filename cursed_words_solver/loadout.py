@@ -317,6 +317,34 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
         scattered = entry.get("scattered_item_id") or entry.get("scattered_item")
         if scattered:
             meta["scattered_item_id"] = slugify_name(str(scattered))
+        scattered_level = entry.get("scattered_item_level")
+        if scattered_level is not None:
+            try:
+                meta["scattered_item_level"] = max(1, int(scattered_level))
+            except (TypeError, ValueError):
+                pass
+        void_steps = entry.get("void_penalty_steps")
+        if void_steps is not None:
+            try:
+                meta["void_penalty_steps"] = int(void_steps)
+            except (TypeError, ValueError):
+                pass
+        elif (
+            is_active
+            and color == TileColor.VOID
+            and curse == CurseType.LETTER
+        ):
+            try:
+                raw_void_base = float(entry.get("base_score", 0) or 0)
+            except (TypeError, ValueError):
+                raw_void_base = 0.0
+            if raw_void_base < 0:
+                from cursed_words_solver.letter_values import SCRABBLE_VALUES
+
+                face = SCRABBLE_VALUES.get((letter or "?").upper(), 1)
+                meta["void_penalty_steps"] = max(
+                    1, (int(abs(raw_void_base)) - face + 9) // 10
+                )
 
         tile_obj = Tile(
             row=row,
@@ -504,6 +532,7 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
         "red_tiles_used_encounter",
         "consumable_rack_count",
         "rare_item_count",
+        "rare_item_count_last_known",
         "fairy_count",
         "animal_stamp_count",
         "money_lost_encounter",
@@ -728,6 +757,36 @@ def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:
             "press F7 in-game or wait for melmod refresh."
         )
     return None
+
+
+def steak_extras_stale_warning(loadout: Loadout | None) -> str | None:
+    """Warn when Steak is equipped but rare count was never captured from a submit."""
+    if loadout is None:
+        return None
+    from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
+
+    if not loadout_has_stamp(loadout, "steak"):
+        return None
+    extras = loadout.extras or {}
+    if _extra_int_positive(extras, "rare_item_count_last_known") is not None:
+        return None
+    if _extra_int_positive(extras, "rare_item_count") is not None:
+        return None
+    return (
+        "Steak: rare_item_count missing from run_state — submit a word or press F7 "
+        "so melmod can capture owned rare items."
+    )
+
+
+def _extra_int_positive(extras: dict, key: str) -> int | None:
+    raw = extras.get(key)
+    if raw is None or raw == "":
+        return None
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return val if val >= 0 else None
 
 
 def neapolitan_extras_stale_warning(loadout: Loadout | None) -> str | None:

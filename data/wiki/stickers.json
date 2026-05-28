@@ -2619,7 +2619,8 @@
       "base": 1,
       "upgrade": 0,
       "scale_from_extras": "rare_item_count",
-      "wiki_effect": "Get \u00d71 WORD SCORE (Increased by your RARE items)",
+      "scale_per_extra": 0.25,
+      "wiki_effect": "Get \u00d71 WORD SCORE (Increased by your RARE items; +0.25 per rare item)",
       "wiki_page": "Steak",
       "shop_price": 15,
       "game_class": "Steak"

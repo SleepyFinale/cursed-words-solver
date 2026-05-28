@@ -1233,6 +1233,60 @@ def void_tile_face_for_dusty_coffin(tile: Tile) -> str:
     return path_letter_for_count(tile)
 
 
+def void_letter_tile_count(board: Board) -> int:
+    """Active VOID letter tiles on the board."""
+    return sum(
+        1
+        for tile in board.flat
+        if tile.color == TileColor.VOID and tile.curse == CurseType.LETTER
+    )
+
+
+def snapshot_dusty_void_units(board: Board) -> int:
+    """VOID letters plus VOID items with a face (Snapshot copy of Dusty Coffin)."""
+    count = void_letter_tile_count(board)
+    for tile in board.flat:
+        if tile.color != TileColor.VOID or tile.curse != CurseType.ITEM:
+            continue
+        if void_tile_face_for_dusty_coffin(tile):
+            count += 1
+    return count
+
+
+def dusty_coffin_scattered_on_path(board: Board, path: list[int]) -> bool:
+    """True when a scattered Dusty Coffin sticker tile is on the word path."""
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.curse != CurseType.ITEM:
+            continue
+        slug = str((tile.metadata or {}).get("scattered_item_id", "")).strip().lower()
+        if slug == "dusty_coffin":
+            return True
+    return False
+
+
+def dusty_coffin_void_units(
+    board: Board,
+    word: str,
+    loadout: Loadout | None,
+    *,
+    applying_sticker_id: str = "",
+    path: list[int] | None = None,
+) -> int:
+    """Void units for Dusty Coffin / Snapshot copy (per_void_unused × level factor)."""
+    _ = loadout
+    slug = (applying_sticker_id or "").strip().lower()
+    if slug == "snapshot":
+        return snapshot_dusty_void_units(board)
+    if (
+        slug == "dusty_coffin"
+        and path is not None
+        and dusty_coffin_scattered_on_path(board, path)
+    ):
+        return 2 * void_letter_tile_count(board)
+    return void_tiles_letter_not_in_word(board, word)
+
+
 def void_tiles_letter_not_in_word(board: Board, word: str) -> int:
     """VOID tiles on the grid whose face is not in the submitted word (Dusty Coffin)."""
     letters_in_word = set((word or "").lower())
@@ -1385,7 +1439,14 @@ def consumable_rack_count(loadout: Loadout) -> int:
 
 
 def rare_item_count(loadout: Loadout) -> int:
-    return max(0, _extra_int(loadout, "rare_item_count", 0))
+    """Prefer live F8 export; fall back to last-known submit capture."""
+    live = _extra_int(loadout, "rare_item_count", -1)
+    if live >= 0:
+        return live
+    cached = _extra_int(loadout, "rare_item_count_last_known", -1)
+    if cached >= 0:
+        return cached
+    return 0
 
 
 def level_one_sticker_count(loadout: Loadout) -> int:
@@ -1590,10 +1651,9 @@ def adjacent_void_count(
     """VOID tiles that grant Tombstone +TILE SCORE for this path tile."""
     horizontal_wrap = False
     if loadout is not None:
-        # Hungry Snake pathing also affects Tombstone's adjacency neighborhood.
-        from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
+        from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 
-        horizontal_wrap = loadout_has_stamp(loadout, "hungry_snake")
+        horizontal_wrap = stamp_search_flags(loadout).horizontal_wrap
     count = 0
     scattered = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
     if path is not None and len(path) == 1:
@@ -2732,12 +2792,24 @@ def _extra_positive_int(extras: dict[str, Any], key: str) -> int | None:
     return val if val > 0 else None
 
 
+def neapolitan_has_live_percent(loadout: Loadout | None) -> bool:
+    """True when melmod exported the stamp's current multiplicative percent."""
+    if loadout is None:
+        return False
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    return _extra_positive_int(extras, "neapolitan_percent") is not None
+
+
 def neapolitan_base_percent_from_loadout(loadout: Loadout | None) -> tuple[int, str]:
     """Resolve baseline Neapolitan percent and source.
 
+    Neapolitan only increases within a run. When both live export and
+    ``neapolitan_percent_last_known`` exist, use max(live, cached) so a stale
+    reflected ×1.00 (100) does not override a prior capture (e.g. 110).
+
     Source priority:
-    1) live `neapolitan_percent` from current run_state export
-    2) persisted `neapolitan_percent_last_known` fallback from prior captures
+    1) max(live, cached) when both present (attribute ``live`` or ``cached``)
+    2) live or cached alone
     3) static rule baseline (100%)
     """
     extras = (
@@ -2746,9 +2818,13 @@ def neapolitan_base_percent_from_loadout(loadout: Loadout | None) -> tuple[int, 
         else {}
     )
     live_percent = _extra_positive_int(extras, "neapolitan_percent")
+    cached_percent = _extra_positive_int(extras, "neapolitan_percent_last_known")
+    if live_percent is not None and cached_percent is not None:
+        if cached_percent > live_percent:
+            return cached_percent, "cached"
+        return live_percent, "live"
     if live_percent is not None:
         return live_percent, "live"
-    cached_percent = _extra_positive_int(extras, "neapolitan_percent_last_known")
     if cached_percent is not None:
         return cached_percent, "cached"
     return 100, "default"
@@ -2767,11 +2843,12 @@ def _neapolitan_multiplier_from_extras(
     """
     if loadout is None or not _is_neapolitan_rule(rule):
         return None
-    base_percent, _source = neapolitan_base_percent_from_loadout(loadout)
+    base_percent, source = neapolitan_base_percent_from_loadout(loadout)
 
-    # In submit simulation mode, apply exactly one additional +5% step to the
-    # same word (matching in-game submit scoring).
-    effective_percent = base_percent + (5 if improve_on_submit else 0)
+    # Submit simulation (+5%) only when live export is missing (cached/default baseline).
+    # Live `neapolitan_percent` is already the value the game applies this word.
+    add_improve = improve_on_submit and source != "live"
+    effective_percent = base_percent + (5 if add_improve else 0)
     if effective_percent <= 0:
         return None
     return float(effective_percent) / 100.0
@@ -2798,7 +2875,16 @@ def scaled_word_multiplier(
         if scale == "tile_ninja_bonus":
             factor += tile_ninja_multiplier_bonus(loadout)
         elif scale == "rare_item_count":
-            factor += float(rare_item_count(loadout))
+            if loadout is not None:
+                raw_pct = (loadout.extras or {}).get("steak_word_bonus_percent")
+                if raw_pct not in (None, ""):
+                    try:
+                        return float(int(raw_pct)) / 100.0
+                    except (TypeError, ValueError):
+                        pass
+            factor += float(rare_item_count(loadout)) * float(
+                rule.get("scale_per_extra", 1.0)
+            )
         elif scale == "level_one_sticker_count":
             factor += float(level_one_sticker_count(loadout))
         elif scale == "fairy_count":
@@ -3046,24 +3132,472 @@ def consumable_rack_multiplier(level: int, rule: dict, loadout: Loadout) -> floa
     return 1.0 + step * count
 
 
-_BURRITO_LEVEL_EXCLUDE = frozenset({"burrito", "left_hand", "padlock_sticker"})
+_BURRITO_LEVEL_EXCLUDE = frozenset(
+    {"burrito", "left_hand", "padlock_sticker", "snapshot"}
+)
 
 
-def other_sticker_levels_sum(loadout: Loadout, *, exclude_slug: str = "burrito") -> int:
-    """Sum levels of equipped stickers except Burrito (RAM/pin_memory excluded)."""
+def scattered_grid_item_level(loadout: Loadout | None) -> int:
+    """Encounter-effective level for scattered grid stickers (grid − boss floor mod)."""
+    if loadout is None:
+        return 1
+    grid = grid_number(loadout)
+    if grid <= 0:
+        grid = 1
+    extras = loadout.extras or {}
+    raw_floor = extras.get("boss_floor_modification")
+    if raw_floor is None or raw_floor == "":
+        # Matches encounters where floor mod is not exported (effective level 1).
+        floor_mod = max(0, grid - 1)
+    else:
+        try:
+            floor_mod = max(0, int(raw_floor))
+        except (TypeError, ValueError):
+            floor_mod = max(0, grid - 1)
+    return max(1, grid - floor_mod)
+
+
+def grid_path_encounter_level(loadout: Loadout | None) -> int:
+    """Sticker level for scattered grid items on the path (not void penalty / inventory)."""
+    if loadout is None:
+        return 1
+    grid = grid_number(loadout)
+    if grid <= 0:
+        grid = 1
+    extras = loadout.extras or {}
+    raw_floor = extras.get("boss_floor_modification")
+    if raw_floor is None or raw_floor == "":
+        return max(1, grid)
+    return scattered_grid_item_level(loadout)
+
+
+def _tombstone_uses_grid_encounter_level(
+    board: Board, path: list[int], loadout: Loadout | None
+) -> bool:
+    """Tombstone uses grid encounter level when deep void letters are on the path."""
+    if loadout is None or grid_number(loadout) < 2:
+        return False
+    extras = loadout.extras or {}
+    if extras.get("boss_floor_modification") not in (None, ""):
+        return False
+    from cursed_words_solver.models import CurseType, TileColor
+    from cursed_words_solver.rules.base_scoring import _void_penalty_steps_for_tile
+
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.color == TileColor.VOID and tile.curse == CurseType.LETTER:
+            if _void_penalty_steps_for_tile(tile, loadout) >= 3:
+                return True
+    return False
+
+
+def grid_scatter_sticker_slugs(board: Board) -> set[str]:
+    """Distinct scattered sticker ids on the board (Snapshot copy pool)."""
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    slugs: set[str] = set()
+    for tile in board.flat:
+        raw = str((tile.metadata or {}).get("scattered_item_id") or "").strip()
+        if raw:
+            slugs.add(slugify_name(raw))
+    return slugs
+
+
+def loadout_has_snapshot_sticker(loadout: Loadout | None) -> bool:
+    if loadout is None:
+        return False
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    return any(
+        slugify_name(s.id or s.name) == "snapshot" for s in (loadout.stickers or [])
+    )
+
+
+def snapshot_phased_word_scoring(loadout: Loadout | None) -> bool:
+    """Nat-H4 RAM + equipped Snapshot: grid/path word mults before pin flush and snapshot."""
+    if not loadout_has_snapshot_sticker(loadout):
+        return False
+    from cursed_words_solver.rules.ram_memory import ram_has_active_pin
+
+    if ram_has_active_pin(loadout):
+        return True
+    return str((loadout.extras or {}).get("snapshot_phased_word_scoring", "")).lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+_GRID_PATH_IMMEDIATE_WORD_MULT_IDS = frozenset({"ferris_wheel", "ornate_key"})
+
+
+def grid_path_word_mult_is_immediate(
+    loadout: Loadout | None, rule_id: str, rule: dict | None
+) -> bool:
+    if loadout is None or not rule or rule.get("type") != "multiply_word_scaled":
+        return False
+    rid = str(rule_id or "").strip().lower()
+    if rid not in _GRID_PATH_IMMEDIATE_WORD_MULT_IDS:
+        return False
+    extras = loadout.extras or {}
+    if str(extras.get("grid_path_immediate_word_mults", "")).lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        return True
+    if rid == "ferris_wheel" and str(extras.get("ferris_immediate_grid", "")).lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        return True
+    return False
+
+
+def snapshot_copy_slug(loadout: Loadout | None) -> str:
+    if loadout is None:
+        return ""
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    raw = str((loadout.extras or {}).get("snapshot_copy_slug") or "").strip()
+    return slugify_name(raw) if raw else ""
+
+
+def snapshot_copy_level(loadout: Loadout | None, snapshot_level: int = 1) -> int:
+    if loadout is None:
+        return max(1, snapshot_level)
+    raw = (loadout.extras or {}).get("snapshot_copy_level")
+    if raw is not None and raw != "":
+        try:
+            return max(1, int(raw))
+        except (TypeError, ValueError):
+            pass
+    return max(1, snapshot_level)
+
+
+def snapshot_per_void_unused_override(loadout: Loadout | None) -> int | None:
+    if loadout is None:
+        return None
+    raw = (loadout.extras or {}).get("snapshot_per_void_unused_override")
+    if raw is None or raw == "":
+        return None
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+_SNAPSHOT_PROXY_SCORING_TYPES = frozenset(
+    {
+        "add_tile_score",
+        "tile_multiply",
+        "multiply_word_scaled",
+        "add_word_score",
+    }
+)
+
+_SNAPSHOT_COPY_POOL_SLUGS = frozenset(
+    {
+        "artist_s_palette",
+        "tombstone",
+        "dusty_coffin",
+        "down_under",
+        "deep_sea_horror",
+    }
+)
+
+_SNAPSHOT_COPY_PRIORITY = (
+    "dusty_coffin",
+    "down_under",
+    "deep_sea_horror",
+    "tombstone",
+    "artist_s_palette",
+)
+
+
+def _snapshot_copy_candidates(pool: set[str], rules: dict) -> list[str]:
+    from cursed_words_solver.rules.rule_lookup import get_rule
+
+    candidates: set[str] = set(pool) | _SNAPSHOT_COPY_POOL_SLUGS
+    valid: list[str] = []
+    for slug in sorted(candidates):
+        _key, rule = get_rule(rules, "stickers", slug, slug)
+        if rule and rule.get("type") in _SNAPSHOT_PROXY_SCORING_TYPES:
+            valid.append(slug)
+    return valid
+
+
+def apply_snapshot_phased_session_extras(
+    loadout: Loadout, board: Board | None = None
+) -> None:
+    """Ephemeral Nat-H4 RAM + Snapshot ordering hints (in-memory loadout only)."""
+    if not snapshot_phased_word_scoring(loadout):
+        return
+    if loadout.extras is None:
+        loadout.extras = {}
+    extras = loadout.extras
+    extras.setdefault("snapshot_phased_word_scoring", "true")
+    pool = grid_scatter_sticker_slugs(board) if board is not None else set()
+    if "down_under" in pool or snapshot_copy_slug(loadout) == "down_under":
+        extras.setdefault("grid_path_immediate_word_mults", "true")
+        extras.setdefault("grid_tile_multiply_first", "true")
+
+
+def ensure_snapshot_copy_slug(
+    loadout: Loadout,
+    board: Board,
+    *,
+    rules: dict,
+    path: list[int] | None = None,
+    word: str = "",
+    trial_score: Callable[[], int] | None = None,
+    expected_score: int | None = None,
+) -> None:
+    """Set snapshot_copy_slug when melmod did not export the grid-start pick."""
+    if snapshot_copy_slug(loadout):
+        return
+    if not loadout_has_snapshot_sticker(loadout):
+        return
+    pool = grid_scatter_sticker_slugs(board)
+    if not pool:
+        return
+    if loadout.extras is None:
+        loadout.extras = {}
+    extras = loadout.extras
+
+    on_pool = [s for s in _snapshot_copy_candidates(pool, rules) if s in pool]
+    if len(on_pool) == 1:
+        extras["snapshot_copy_slug"] = on_pool[0]
+        extras.setdefault("snapshot_copy_level", "1")
+        return
+
+    if trial_score is not None and expected_score is not None and path is not None:
+        best_slug: str | None = None
+        best_dist: int | None = None
+        for slug in _snapshot_copy_candidates(pool, rules):
+            extras["snapshot_copy_slug"] = slug
+            extras["snapshot_copy_level"] = "1"
+            extras.pop("snapshot_per_void_unused_override", None)
+            try:
+                score_i = int(trial_score())
+            except (TypeError, ValueError):
+                continue
+            dist = abs(score_i - expected_score)
+            if best_dist is None or dist < best_dist:
+                best_dist = dist
+                best_slug = slug
+        if best_slug is not None and best_dist is not None:
+            extras["snapshot_copy_slug"] = best_slug
+            extras.setdefault("snapshot_copy_level", "1")
+            return
+        extras.pop("snapshot_copy_slug", None)
+
+    for slug in _SNAPSHOT_COPY_PRIORITY:
+        if slug in pool:
+            extras["snapshot_copy_slug"] = slug
+            extras.setdefault("snapshot_copy_level", "1")
+            return
+
+
+def grid_path_sticker_level(
+    loadout: Loadout | None,
+    slug: str,
+    *,
+    board: Board | None = None,
+    path: list[int] | None = None,
+    path_tile_index: int | None = None,
+) -> int:
+    """Sticker level when a rule fires from a scattered tile on the path.
+
+    When melmod exports ``scattered_item_level`` on the path tile, that value wins.
+    Tombstone on grid ≥2 uses encounter level when path void letters have deep penalty;
+    otherwise scattered_grid_item_level (not equipped inventory level).
+
+    Down Under on grid 1 often matches max equipped sticker level when export is missing.
+    """
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    slug_norm = slugify_name(slug)
+    level = scattered_grid_item_level(loadout)
+
+    if board is not None and path is not None and path_tile_index is not None:
+        if 0 <= path_tile_index < len(path):
+            tile = board.get_by_index(path[path_tile_index])
+            raw = (tile.metadata or {}).get("scattered_item_level")
+            if raw is not None:
+                try:
+                    level = max(1, int(raw))
+                except (TypeError, ValueError):
+                    pass
+
+    if slug_norm == "down_under" and loadout is not None and loadout.stickers:
+        max_equipped = 1
+        for sticker in loadout.stickers:
+            try:
+                max_equipped = max(max_equipped, max(1, int(sticker.level)))
+            except (TypeError, ValueError):
+                pass
+        level = max(level, max_equipped)
+
+    if (
+        slug_norm == "tombstone"
+        and board is not None
+        and path
+        and _tombstone_uses_grid_encounter_level(board, path, loadout)
+    ):
+        return grid_path_encounter_level(loadout)
+    return level
+
+
+_PATH_SCATTER_SKIP_TYPES = frozenset(
+    {
+        "scatter_start_grid",
+        "scatter_start_encounter",
+        "unmodeled",
+        "custom",
+    }
+)
+
+
+def path_scoring_sticker_levels_on_path(
+    board: Board,
+    path: list[int],
+    loadout: Loadout | None,
+    rules: dict | None,
+    *,
+    include_equipped_on_path: bool = False,
+) -> int:
+    """Burrito counts each distinct scoring sticker scattered on the path as +1 level."""
+    if loadout is None or not path or not rules:
+        return 0
+    from cursed_words_solver.models import CurseType
+    from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
+
+    equipped = {
+        slugify_name(s.id or s.name) for s in loadout.stickers
+    }
+    seen: set[str] = set()
+    total = 0
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.curse != CurseType.ITEM:
+            continue
+        slug = slugify_name(str((tile.metadata or {}).get("scattered_item_id") or ""))
+        if not slug or slug in seen:
+            continue
+        if slug in equipped and not include_equipped_on_path:
+            continue
+        _key, rule = get_rule(rules, "stickers", slug, slug)
+        if not rule or rule.get("type") in _PATH_SCATTER_SKIP_TYPES:
+            continue
+        seen.add(slug)
+        total += 1
+    return total
+
+
+def other_sticker_levels_sum(
+    loadout: Loadout,
+    *,
+    exclude_slug: str = "burrito",
+    board: Board | None = None,
+    path: list[int] | None = None,
+    rules: dict | None = None,
+    include_equipped_path_scatter: bool = False,
+) -> int:
+    """Sum levels of other stickers for Burrito (+0.05 per level per Burrito level).
+
+    Includes equipped stickers and sticker entries in RAM pin_memory (not stamps).
+    """
+    from cursed_words_solver.rules.ram_memory import (
+        pin_memory_entries,
+        ram_entry_bucket,
+        ram_entry_level,
+        ram_entry_slug,
+    )
     from cursed_words_solver.rules.rule_lookup import slugify_name
 
     skip = _BURRITO_LEVEL_EXCLUDE | {exclude_slug}
-    return sum(
+    total = sum(
         s.level
         for s in loadout.stickers
         if slugify_name(s.id or s.name) not in skip
     )
+    if rules is not None and any(
+        slugify_name(s.id or s.name) == "snapshot" for s in loadout.stickers
+    ):
+        copy_slug = snapshot_copy_slug(loadout)
+        if copy_slug and copy_slug not in skip:
+            from cursed_words_solver.rules.rule_lookup import get_rule
+
+            _key, copy_rule = get_rule(rules, "stickers", copy_slug, copy_slug)
+            if copy_rule and copy_rule.get("type") not in (
+                "add_word_score",
+                "scatter_start_grid",
+                "scatter_start_encounter",
+                "unmodeled",
+            ):
+                total += snapshot_copy_level(loadout)
+    for entry in pin_memory_entries(loadout):
+        if ram_entry_bucket(entry) != "stickers":
+            continue
+        slug = ram_entry_slug(entry)
+        if slug in skip:
+            continue
+        total += ram_entry_level(entry)
+    if board is not None and path and rules is not None:
+        total += path_scoring_sticker_levels_on_path(
+            board,
+            path,
+            loadout,
+            rules,
+            include_equipped_on_path=include_equipped_path_scatter,
+        )
+    return total
 
 
-def burrito_word_multiplier(level: int, rule: dict, loadout: Loadout) -> float:
+def _burrito_counts_equipped_path_scatter(
+    loadout: Loadout,
+    *,
+    board: Board | None = None,
+    path: list[int] | None = None,
+    rules: dict | None = None,
+) -> bool:
+    """Path scattered scoring stickers count toward Burrito (Nat-H4 grid 1+)."""
+    extras = loadout.extras or {}
+    if extras.get("boss_floor_modification") not in (None, ""):
+        return False
+    if grid_number(loadout) >= 1:
+        return True
+    if board is not None and path and rules is not None:
+        return (
+            path_scoring_sticker_levels_on_path(
+                board, path, loadout, rules, include_equipped_on_path=True
+            )
+            > 0
+        )
+    return False
+
+
+def burrito_word_multiplier(
+    level: int,
+    rule: dict,
+    loadout: Loadout,
+    *,
+    board: Board | None = None,
+    path: list[int] | None = None,
+    rules: dict | None = None,
+) -> float:
     rate = sticker_rule_float(level, rule)
-    extra = rate * other_sticker_levels_sum(loadout)
+    extra = rate * other_sticker_levels_sum(
+        loadout,
+        board=board,
+        path=path,
+        rules=rules,
+        include_equipped_path_scatter=_burrito_counts_equipped_path_scatter(
+            loadout, board=board, path=path, rules=rules
+        ),
+    )
     return 1.0 + extra if extra else 1.0
 
 

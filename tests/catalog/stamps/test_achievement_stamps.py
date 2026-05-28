@@ -284,6 +284,45 @@ def test_neapolitan_uses_live_percent_from_extras():
     assert score == math.floor(base * 1.1)
 
 
+def test_neapolitan_prefers_cached_when_stale_live_export():
+    """Stale F7 export at 100% must not beat last_known 110% (hafting class)."""
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
+    board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
+    board.tiles[0][2] = _tile(0, 2, "C", 5, color=TileColor.COLORLESS)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
+        extras={
+            "neapolitan_percent": "100",
+            "neapolitan_percent_last_known": "110",
+        },
+    )
+    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
+    assert bd["multiplier"] == 1.1
+    assert score == math.floor(base * 1.1)
+
+
+def test_neapolitan_live_wins_when_higher_than_cached():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
+    board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
+    board.tiles[0][2] = _tile(0, 2, "C", 5, color=TileColor.SHINY)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
+        extras={
+            "neapolitan_percent": "110",
+            "neapolitan_percent_last_known": "105",
+        },
+    )
+    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
+    assert bd["multiplier"] == 1.1
+    assert score == math.floor(base * 1.1)
+
+
 def test_neapolitan_uses_cached_percent_when_live_missing():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
@@ -356,7 +395,7 @@ def test_neapolitan_submit_simulation_only_improves_with_three_colours():
     board_high.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
     board_high.tiles[0][2] = _tile(0, 2, "C", 5, color=TileColor.SHINY)
     _score_high, bd_high = pipeline.score(board_high, [0, 1, 2], "abc", loadout)
-    assert bd_high["multiplier"] == 1.15
+    assert bd_high["multiplier"] == 1.1
 
 
 def test_stiletto_red_half_grid_number():
