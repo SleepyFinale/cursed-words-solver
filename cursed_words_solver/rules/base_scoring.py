@@ -106,6 +106,13 @@ def tile_base_contribution(tile: Tile, money: int = 0) -> float:
     return letter_base + bonus
 
 
+def microscope_init_contribution(tile: Tile, money: int = 0) -> float:
+    """Microscope init: packet base_score, except VOID where 0 means pre-negation."""
+    if tile.color == TileColor.VOID:
+        return tile_base_contribution(tile, money)
+    return float(tile.base_score)
+
+
 def score_word_base(board: Board, path: list[int], word: str) -> tuple[float, dict]:
     """Sum base contributions along path."""
     total = 0

@@ -448,26 +448,37 @@ namespace CursedWordsSolverCompanion
                 return;
             }
 
-            var boss = bosses[0];
-            if (boss == null)
+            BossModifier displayBoss = null;
+            foreach (var b in bosses)
+            {
+                if (b == null)
+                    continue;
+                var wikiId = BossResolver.WikiBossIdFromRuntimeType(b);
+                if (
+                    string.IsNullOrEmpty(wikiId)
+                    && !string.IsNullOrEmpty(b.Name)
+                    && b.Name.IndexOf("Michael", StringComparison.OrdinalIgnoreCase) >= 0
+                )
+                    wikiId = "michael";
+                if (wikiId == "michael" || string.IsNullOrEmpty(wikiId))
+                    continue;
+                displayBoss = b;
+                break;
+            }
+            if (displayBoss == null)
+                displayBoss = bosses[0];
+            if (displayBoss == null)
                 return;
 
-            var bossName = boss.Name;
+            var bossName = displayBoss.Name;
             if (bossName == null)
                 bossName = "";
 
             snapshot.boss_name = bossName;
-            // Prefer runtime type (MaxWordLength → wolf) over prefab slug (bosssmallwords).
-            var wikiId = BossResolver.WikiBossIdFromRuntimeType(boss);
-            if (
-                string.IsNullOrEmpty(wikiId)
-                && !string.IsNullOrEmpty(bossName)
-                && bossName.IndexOf("Michael", StringComparison.OrdinalIgnoreCase) >= 0
-            )
-                wikiId = "michael";
-            if (string.IsNullOrEmpty(wikiId))
-                wikiId = Slugify(boss.PrefabFileName, bossName);
-            snapshot.boss_id = wikiId;
+            var wikiIdOut = BossResolver.WikiBossIdFromRuntimeType(displayBoss);
+            if (string.IsNullOrEmpty(wikiIdOut))
+                wikiIdOut = Slugify(displayBoss.PrefabFileName, bossName);
+            snapshot.boss_id = wikiIdOut;
             snapshot.boss_effect = "";
         }
 
@@ -546,7 +557,7 @@ namespace CursedWordsSolverCompanion
                     );
                 if (area < 0)
                     area = BossResolver.TryGetRunStage(player);
-                if (area >= 1 && area <= 5)
+                if (area >= 1)
                     snapshot.extras["boss_area_number"] = area.ToString();
 
                 try
@@ -1155,6 +1166,9 @@ namespace CursedWordsSolverCompanion
                 }
             }
 
+            if (targetNumber >= 0 && !IsValidLuckyDiceTarget(targetNumber))
+                targetNumber = -1;
+
             return targetNumber;
         }
 
@@ -1207,6 +1221,9 @@ namespace CursedWordsSolverCompanion
                 "ChosenTargetNumber",
                 "SelectedTargetNumber",
                 "LuckyNumber",
+                "DiceNumber",
+                "_diceNumber",
+                "diceNumber",
                 "Target",
                 "CurrentTarget",
                 "_targetNumber",
@@ -1214,11 +1231,17 @@ namespace CursedWordsSolverCompanion
                 "targetNumber",
                 "luckyDiceTarget"
             );
-            if (named >= 0)
+            if (named >= 0 && IsValidLuckyDiceTarget(named))
                 return named;
+
+            var invoked = TryInvokeTargetNumberMethod(target);
+            if (invoked >= 0)
+                return invoked;
 
             return TryScanTargetNumberMembers(target);
         }
+
+        private static bool IsValidLuckyDiceTarget(int value) => value >= 1 && value <= 6;
 
         private static int TryScanTargetNumberMembers(object target)
         {
@@ -1226,7 +1249,9 @@ namespace CursedWordsSolverCompanion
             foreach (var prop in type.GetProperties(MemberFlags))
             {
                 var value = TryReadIntLike(prop.GetValue(target, null));
-                if (value < 0 || !MemberNameLooksLikeTargetNumber(prop.Name))
+                if (value < 0 || !IsValidLuckyDiceTarget(value))
+                    continue;
+                if (!MemberNameLooksLikeTargetNumber(prop.Name))
                     continue;
                 return value;
             }
@@ -1234,9 +1259,54 @@ namespace CursedWordsSolverCompanion
             foreach (var field in type.GetFields(MemberFlags))
             {
                 var value = TryReadIntLike(field.GetValue(target));
-                if (value < 0 || !MemberNameLooksLikeTargetNumber(field.Name))
+                if (value < 0 || !IsValidLuckyDiceTarget(value))
+                    continue;
+                if (!MemberNameLooksLikeTargetNumber(field.Name))
                     continue;
                 return value;
+            }
+
+            return -1;
+        }
+
+        private static int TryInvokeTargetNumberMethod(object target)
+        {
+            var type = target.GetType();
+            foreach (var method in type.GetMethods(MemberFlags))
+            {
+                if (method.GetParameters().Length != 0)
+                    continue;
+                var lower = method.Name.ToLowerInvariant();
+                if (
+                    !lower.Contains("target")
+                    && !lower.Contains("dice")
+                    && !lower.Contains("lucky")
+                    && !lower.Contains("number")
+                )
+                    continue;
+                if (
+                    lower.Contains("set")
+                    || lower.Contains("add")
+                    || lower.Contains("init")
+                    || lower.Contains("sprite")
+                    || lower.Contains("description")
+                    || lower.Contains("animation")
+                    || lower.Contains("effect")
+                    || lower.Contains("bonus")
+                )
+                    continue;
+
+                try
+                {
+                    var raw = method.Invoke(target, null);
+                    var value = TryReadIntLike(raw);
+                    if (value >= 0 && IsValidLuckyDiceTarget(value))
+                        return value;
+                }
+                catch
+                {
+                    // try next
+                }
             }
 
             return -1;
@@ -1261,7 +1331,10 @@ namespace CursedWordsSolverCompanion
                 return false;
 
             return (lower.Contains("target") && lower.Contains("number"))
+                || (lower.Contains("dice") && lower.Contains("number"))
                 || lower == "targetnumber"
+                || lower == "dicenumber"
+                || lower == "_dicenumber"
                 || lower == "luckydicetarget"
                 || lower == "gridtargetnumber";
         }
@@ -2248,17 +2321,30 @@ namespace CursedWordsSolverCompanion
                 return;
             }
 
-            var boss = bosses[0];
-            if (boss == null)
+            var ids = new List<string>();
+            foreach (var boss in bosses)
+            {
+                if (boss == null)
+                    continue;
+                var wikiId = BossResolver.WikiBossIdFromRuntimeType(boss);
+                if (string.IsNullOrEmpty(wikiId)
+                    && !string.IsNullOrEmpty(boss.Name)
+                    && boss.Name.IndexOf("Michael", StringComparison.OrdinalIgnoreCase) >= 0)
+                    continue;
+                if (string.IsNullOrEmpty(wikiId))
+                    wikiId = Slugify(boss.PrefabFileName, boss.Name);
+                if (string.IsNullOrEmpty(wikiId) || wikiId == "michael")
+                    continue;
+                if (!ids.Contains(wikiId))
+                    ids.Add(wikiId);
+            }
+            if (ids.Count == 0)
             {
                 sb.Append("-");
                 return;
             }
-
-            var wikiId = BossResolver.WikiBossIdFromRuntimeType(boss);
-            if (string.IsNullOrEmpty(wikiId))
-                wikiId = Slugify(boss.PrefabFileName, boss.Name);
-            sb.Append(string.IsNullOrEmpty(wikiId) ? "-" : wikiId);
+            ids.Sort(StringComparer.Ordinal);
+            sb.Append(string.Join("+", ids));
         }
 
         public static void AppendPinFingerprint(StringBuilder sb, Character character)

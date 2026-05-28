@@ -25,7 +25,7 @@ Playing cards use `BespokeCard` or legacy `Card` enum name; joker uses `Suit.Jok
 
 ## Search rules
 
-- **Number**: position must match value (1 = first letter), unless Test Tube / Number Go Up / wildcards.
+- **Number**: position must match value (1 = first letter), unless Test Tube / Number Go Up / wildcards. **Microscope**: a tile may also use its `base_score` as an alternate number value (e.g. blue 5 with base 6 → position 5 or 6; letter V with base 4 → letter anywhere, or number at position 4).
 - **Fraction**: valid in numerator or denominator slot positions.
 - **Chess**: piece-specific movement; take metadata for scoring stickers.
 - **WHITE colour**: teleport neighbors (not a glyph).

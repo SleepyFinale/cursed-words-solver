@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
+import traceback
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -19,6 +21,15 @@ _mp_pipeline = None
 _pool: ProcessPoolExecutor | None = None
 _pool_key: tuple[str, int] | None = None
 _pool_warm = False
+_worker_errors: list[str] = []
+
+
+def drain_parallel_worker_errors() -> list[str]:
+    """Return and clear recent parallel worker error summaries (for terminal logging)."""
+    global _worker_errors
+    out = list(_worker_errors)
+    _worker_errors.clear()
+    return out
 
 
 def resolve_search_workers(requested: int | str) -> int:
@@ -107,8 +118,14 @@ def _mp_init(wordlist_path: str) -> None:
 
 
 def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[int, ...]]]:
-    from cursed_words_solver.search import WordSearcher, _CandidateHeap
+    from cursed_words_solver.mult_search import (
+        build_mult_neighbor_hints,
+        loadout_mult_rules,
+    )
+    from cursed_words_solver.search import WordSearcher, _CandidateHeap, _active_indices
 
+    if _mp_dictionary is None:
+        raise RuntimeError("parallel search worker: dictionary not initialized")
     board: Board = payload["board"]
     loadout: Loadout = payload["loadout"]
     starts: list[int] = payload["starts"]
@@ -137,7 +154,20 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
         use_fast_rank=use_fast_rank,
         search_workers=1,
     )
-    searcher.scoring = _mp_pipeline
+    if _mp_pipeline is not None:
+        searcher.scoring = _mp_pipeline
+    active = _active_indices(board)
+    searcher._mult_rules = loadout_mult_rules(
+        loadout,
+        searcher.scoring.rules,
+        board=board,
+        path=[active[0]] if active else [],
+    )
+    searcher._mult_hints = (
+        build_mult_neighbor_hints(searcher._mult_rules)
+        if searcher._mult_rules
+        else None
+    )
     mini = _CandidateHeap(heap_k)
     searcher._collect_words_fair_starts(
         board,
@@ -206,7 +236,11 @@ def parallel_collect_fair_starts(
         for fut in done:
             try:
                 entries = fut.result()
-            except Exception:
+            except Exception as exc:
+                global _worker_errors
+                if len(_worker_errors) < 3:
+                    _worker_errors.append(f"{type(exc).__name__}: {exc}")
+                    traceback.print_exc(file=sys.stderr)
                 continue
             for score, word, path in entries:
                 candidates.consider(score, word, list(path))

@@ -8,9 +8,12 @@ from cursed_words_solver.models import Board, Loadout
 from cursed_words_solver.rules.boss_effects import (
     boss_context,
     boss_rule_applies,
+    floor_mod_for_rule,
     get_active_boss_rule,
     get_active_boss_rules,
+    michael_summoned_bosses_defeated,
     resolve_boss_scaling,
+    resolve_boss_scaling_for_rule,
 )
 
 EARLY_BOSS_TYPES = frozenset(
@@ -22,7 +25,17 @@ EARLY_BOSS_TYPES = frozenset(
 )
 
 
-def _floor_modification(loadout: Loadout, ctx, rule: dict) -> int:
+def _floor_modification(
+    loadout: Loadout,
+    ctx,
+    rule: dict,
+    *,
+    rule_key: str | None = None,
+) -> int:
+    if rule_key:
+        live = floor_mod_for_rule(loadout, {}, rule_key, rule)
+        if live is not None and live > 0:
+            return live
     raw = loadout.extras.get("boss_floor_modification")
     if raw is not None:
         try:
@@ -40,11 +53,13 @@ def apply_boss_steal_money(
     loadout: Loadout,
     rule: dict,
     ctx,
+    *,
+    rule_key: str | None = None,
 ) -> None:
     """StealsMoney: deduct up to FloorAdjustedModification from step money."""
     if not boss_rule_applies(rule, ctx):
         return
-    mod = _floor_modification(loadout, ctx, rule)
+    mod = _floor_modification(loadout, ctx, rule, rule_key=rule_key)
     if mod <= 0:
         return
     available = max(
@@ -74,6 +89,9 @@ def apply_early_boss_scoring(
     """Early ApplyBossModifier pass (before items when no Hourglass)."""
     from cursed_words_solver.rules.boss_effects import boss_scoring_effect_type
 
+    if michael_summoned_bosses_defeated(loadout):
+        return state
+
     active = get_active_boss_rules(rules, loadout)
     if not active:
         key, boss = get_active_boss_rule(rules, loadout)
@@ -86,8 +104,9 @@ def apply_early_boss_scoring(
             continue
         effect = boss_scoring_effect_type(boss)
         rule_id = key or loadout.boss_id or "boss"
+        loadout.extras["_scoring_boss_rule_key"] = rule_id
         if effect == "boss_steal_money":
-            apply_boss_steal_money(state, loadout, boss, ctx)
+            apply_boss_steal_money(state, loadout, boss, ctx, rule_key=key)
             if trace_step:
                 trace_step(
                     state,

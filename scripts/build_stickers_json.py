@@ -1745,11 +1745,14 @@ TUNED_STAMPS: dict[str, dict] = {
     },
 }
 
-def _boss_grid(name: str, wiki_page: str, wiki_effect: str, scaling: list[dict]) -> dict:
+def _boss_grid(
+    name: str, wiki_page: str, wiki_effect: str, scaling: list[dict], game_class: str
+) -> dict:
     return {
         "name": name,
         "type": "custom",
         "effect_class": "grid",
+        "game_class": game_class,
         "wiki_page": wiki_page,
         "wiki_effect": wiki_effect,
         "scaling": scaling,
@@ -1768,6 +1771,7 @@ TUNED_BOSSES: dict[str, dict] = {
             {"area": 4, "value": 5, "cursed": 8},
             {"area": 5, "value": 6, "cursed": 10},
         ],
+        "ExtraVoids",
     ),
     "axolotl": _boss_grid(
         "Axolotl",
@@ -1780,6 +1784,7 @@ TUNED_BOSSES: dict[str, dict] = {
             {"area": 4, "value": 5, "cursed": 8},
             {"area": 5, "value": 6, "cursed": 10},
         ],
+        "ExtraQs",
     ),
     "bison": _boss_grid(
         "Bison",
@@ -1792,6 +1797,7 @@ TUNED_BOSSES: dict[str, dict] = {
             {"area": 4, "value": 12, "cursed": 15},
             {"area": 5, "value": 13, "cursed": 17},
         ],
+        "AddNumbers",
     ),
     "yeti_crab": _boss_grid(
         "Yeti Crab",
@@ -1804,6 +1810,7 @@ TUNED_BOSSES: dict[str, dict] = {
             {"area": 4, "value": 4, "cursed": 7},
             {"area": 5, "value": 5, "cursed": 8},
         ],
+        "DiscolourTiles",
     ),
     "robo_eel": _boss_grid(
         "Robo-Eel",
@@ -1816,11 +1823,13 @@ TUNED_BOSSES: dict[str, dict] = {
             {"area": 4, "value": 3, "cursed": 4},
             {"area": 5, "value": 3, "cursed": 5},
         ],
+        "DestroyGrid",
     ),
     "bat": {
         "name": "Bat",
         "type": "custom",
         "effect_class": "grid",
+        "game_class": "SmallGrid",
         "wiki_page": "Bat",
         "wiki_effect": "Shrinks playable grid (rows×cols)",
         "scaling": [
@@ -1835,6 +1844,7 @@ TUNED_BOSSES: dict[str, dict] = {
         "name": "Badger",
         "type": "custom",
         "effect_class": "encounter",
+        "game_class": "FewerGrids",
         "wiki_page": "Badger",
         "wiki_effect": "Fewer grids per encounter",
         "scaling": [
@@ -1845,6 +1855,7 @@ TUNED_BOSSES: dict[str, dict] = {
         "name": "Fox",
         "type": "custom",
         "effect_class": "encounter",
+        "game_class": "StealsMoney",
         "wiki_page": "Fox",
         "wiki_effect": "Steals money each grid",
         "scaling": [
@@ -1859,6 +1870,7 @@ TUNED_BOSSES: dict[str, dict] = {
         "name": "Hyena",
         "type": "custom",
         "effect_class": "encounter",
+        "game_class": "ForcedSell",
         "wiki_page": "Hyena",
         "wiki_effect": "Blocks submissions until a sticker or stamp is sold",
     },
@@ -1866,6 +1878,7 @@ TUNED_BOSSES: dict[str, dict] = {
         "name": "Cretaceous Meg",
         "type": "custom",
         "effect_class": "encounter",
+        "game_class": "CretaceousMegBoss",
         "wiki_page": "Cretaceous_Meg_(boss)",
         "wiki_effect": (
             "Strips loadout to special shop ($120/$160/$200 by stage); "

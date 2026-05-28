@@ -17,7 +17,11 @@ from typing import Any
 
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 
-from cursed_words_solver.rules.base_scoring import _scrabble_value, tile_base_contribution
+from cursed_words_solver.rules.base_scoring import (
+    _scrabble_value,
+    microscope_init_contribution,
+    tile_base_contribution,
+)
 
 from cursed_words_solver.rules.pin_effects import apply_pin_word_scoring
 from cursed_words_solver.rules.stamp_effects import (
@@ -47,6 +51,7 @@ from cursed_words_solver.rules.boss_effects import (
     get_active_boss_rule,
     get_active_boss_rules,
     resolve_boss_scaling,
+    resolve_boss_scaling_for_rule,
 )
 from cursed_words_solver.rules.boss_scoring import (
     EARLY_BOSS_TYPES,
@@ -173,7 +178,7 @@ def _init_tile_contribution(
     if tile.curse == CurseType.ITEM:
         return 0.0
     if microscope_base:
-        return float(tile.base_score)
+        return microscope_init_contribution(tile, money)
     if tile.color == TileColor.BLUE and blue_base_override is not None:
         return float(blue_base_override)
     return float(tile_base_contribution(tile, money))
@@ -227,6 +232,7 @@ def _init_state(
 
         "pending_word_multipliers": [],
         "pending_word_percent_bonuses": [],
+        "pending_word_finalize_steps": [],
 
         "salamander_post_mutating_mults": [],
 
@@ -321,6 +327,7 @@ def _queue_word_multiplier(
         _apply_immediate_word_multiplier(state, factor, rule_id)
         return
     state["pending_word_multipliers"].append((factor, rule_id))
+    state["pending_word_finalize_steps"].append(("mult", factor, rule_id))
     state["multiplier"] *= factor
 
 
@@ -339,6 +346,7 @@ def _queue_word_percent_bonus(
     if percent == 0:
         return
     state["pending_word_percent_bonuses"].append((int(percent), rule_id))
+    state["pending_word_finalize_steps"].append(("percent", int(percent), rule_id))
     if wiki_factor is not None and wiki_factor != 1.0:
         state["multiplier"] *= wiki_factor
 
@@ -382,8 +390,7 @@ def _trace_rule_snapshot(state: dict[str, Any]) -> tuple[Any, ...]:
     return (
         tuple(state["tile_scores"]),
         float(state["word_score"]),
-        len(state.get("pending_word_multipliers", [])),
-        len(state.get("pending_word_percent_bonuses", [])),
+        len(state.get("pending_word_finalize_steps", [])),
         int(state.get("money_bonus", 0)),
     )
 
@@ -454,29 +461,44 @@ def _salamander_defer_multiply_for_mutating(loadout: Loadout) -> bool:
     return 0 < prior < 8
 
 
-def _apply_percent_word_bonuses(
+def _apply_pending_word_finalize_steps(
     state: dict[str, Any],
     subtotal: float,
     *,
     trace: list[dict[str, Any]] | None = None,
 ) -> float:
-    """GetScoreFromScoreCalcInfo-style multiplicative WordBonus steps."""
-    entries = state.get("pending_word_percent_bonuses", [])
+    """GetScoreFromScoreCalcInfo: apply queued WordBonus steps in sticker order."""
+    entries = state.get("pending_word_finalize_steps", [])
     if not entries:
         return subtotal
     total = subtotal
-    for percent, rule_id in entries:
-        factor = float(percent) / 100.0
-        total = math.floor(total * factor)
-        if trace is not None:
-            fields: dict[str, Any] = {
-                "factor": float(factor),
-                "percent": int(percent),
-                "detail": f"×{factor:g} word (word_bonus:{percent})",
-            }
-            if rule_id:
-                fields["rule_id"] = rule_id
-            _trace_step(state, "multiply", **fields)
+    for kind, value, rule_id in entries:
+        if kind == "percent":
+            percent = int(value)
+            factor = float(percent) / 100.0
+            total = math.floor(total * factor)
+            if trace is not None:
+                fields: dict[str, Any] = {
+                    "factor": float(factor),
+                    "percent": percent,
+                    "detail": f"×{factor:g} word (word_bonus:{percent})",
+                }
+                if rule_id:
+                    fields["rule_id"] = rule_id
+                _trace_step(state, "multiply", **fields)
+        else:
+            factor = float(value)
+            if factor == 1.0:
+                continue
+            total = math.floor(total * factor)
+            if trace is not None:
+                fields: dict[str, Any] = {
+                    "factor": factor,
+                    "detail": f"×{factor} word (floor)",
+                }
+                if rule_id:
+                    fields["rule_id"] = rule_id
+                _trace_step(state, "multiply", **fields)
     return total
 
 
@@ -485,18 +507,13 @@ def _finalize(
     board: Board | None = None,
     path: list[int] | None = None,
 ) -> float:
-    """Sum tile + word scores, apply % WORD bonuses, then floor ×WORD multipliers."""
+    """Sum tile + word scores, apply queued WordBonus steps in sticker order."""
     if state.get("multiplier") == 0:
         return 0.0
     if board is not None and path is not None:
         apply_green_tile_word_transfer(board, path, state)
     subtotal = sum(state["tile_scores"]) + state["word_score"]
-    total = _apply_percent_word_bonuses(state, subtotal)
-    for entry in state.get("pending_word_multipliers", []):
-        factor = _pending_multiplier_factor(entry)
-        if factor != 1.0:
-            total = math.floor(total * factor)
-    return float(total)
+    return float(_apply_pending_word_finalize_steps(state, subtotal))
 
 
 def _finalize_with_trace(state: dict[str, Any]) -> tuple[float, list[dict[str, Any]]]:
@@ -507,20 +524,7 @@ def _finalize_with_trace(state: dict[str, Any]) -> tuple[float, list[dict[str, A
     subtotal = sum(state["tile_scores"]) + state["word_score"]
     if trace is not None:
         _trace_step(state, "pre_multiply", detail="tile sum + word score")
-    total = _apply_percent_word_bonuses(state, subtotal, trace=trace)
-    for entry in state.get("pending_word_multipliers", []):
-        factor = _pending_multiplier_factor(entry)
-        mult_rule_id = _pending_multiplier_rule_id(entry)
-        if factor != 1.0:
-            total = math.floor(total * factor)
-            if trace is not None:
-                fields: dict[str, Any] = {
-                    "factor": float(factor),
-                    "detail": f"×{factor} word (floor)",
-                }
-                if mult_rule_id:
-                    fields["rule_id"] = mult_rule_id
-                _trace_step(state, "multiply", **fields)
+    total = _apply_pending_word_finalize_steps(state, subtotal, trace=trace)
     return float(total), []
 
 
@@ -1867,7 +1871,12 @@ class ScoringPipeline:
 
         elif effect_type == "boss_tile_penalty":
             ctx = boss_context(loadout, self.rules)
-            penalty = resolve_boss_scaling(rule, ctx.area, ctx.cursed)
+            rule_key = str(loadout.extras.get("_scoring_boss_rule_key") or "")
+            penalty = resolve_boss_scaling_for_rule(
+                loadout, self.rules, rule_key or None, rule
+            )
+            if penalty is None:
+                penalty = resolve_boss_scaling(rule, ctx.area, ctx.cursed)
             if penalty is not None:
                 p = int(penalty)
                 for i in range(len(state["tile_scores"])):

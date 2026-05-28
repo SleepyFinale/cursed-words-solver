@@ -152,6 +152,19 @@ def get_rule(
 
 def boss_display_name(loadout: Loadout, rules: dict[str, Any]) -> str:
     """Wiki/catalog boss name for console (e.g. Bat), not prefab labels like 4x4 Grid."""
+    from cursed_words_solver.rules.boss_effects import active_boss_ids, get_active_boss_rules
+
+    ids = active_boss_ids(loadout)
+    if len(ids) > 1:
+        names: list[str] = []
+        for key, rule in get_active_boss_rules(rules, loadout):
+            if rule and rule.get("name"):
+                names.append(str(rule["name"]))
+            elif key:
+                names.append(key.replace("_", " ").title())
+        if names:
+            return ", ".join(names)
+
     _, rule = get_rule(rules, "bosses", loadout.boss_id, loadout.boss_name)
     if rule and rule.get("name"):
         return str(rule["name"])

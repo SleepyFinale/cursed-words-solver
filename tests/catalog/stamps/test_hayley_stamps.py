@@ -92,6 +92,37 @@ def test_full_battery_three_numbers_triples_word():
     assert score == 18
 
 
+def test_microscope_number_tile_dual_position():
+    """Blue 5 with base_score 6 may occupy position 5 or 6."""
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="microscope", name="Microscope", kind="stamp")]
+    )
+    flags = stamp_search_flags(loadout)
+    tile = _tile(
+        0,
+        0,
+        "5",
+        6,
+        color=TileColor.BLUE,
+        curse=CurseType.NUMBER,
+        number_value=5,
+    )
+    assert number_position_valid(tile, 4, flags=flags)
+    assert number_position_valid(tile, 5, flags=flags)
+    assert not number_position_valid(tile, 3, flags=flags)
+
+
+def test_microscope_letter_tile_unrestricted_as_letter():
+    """V with base_score 4: letter mode has no position lock; number mode uses base_score."""
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="microscope", name="Microscope", kind="stamp")]
+    )
+    flags = stamp_search_flags(loadout)
+    tile = _tile(0, 0, "V", 4, curse=CurseType.LETTER)
+    assert number_position_valid(tile, 3, flags=flags)
+    assert number_position_valid(tile, 0, flags=flags)
+
+
 def test_microscope_uses_packet_base_score():
     board = _empty_board()
     board.tiles[0][0] = Tile(
@@ -111,6 +142,32 @@ def test_microscope_uses_packet_base_score():
     base, _ = pipeline.score(board, [0], "a", Loadout())
     assert score == 1
     assert base == 2
+
+
+def test_microscope_void_number_uses_negated_face_value():
+    """Melmod void number base_score 0 is pre-negation; Microscope init must still score -face."""
+    board = _empty_board()
+    board.tiles[1][2] = _tile(
+        1,
+        2,
+        "4",
+        0,
+        color=TileColor.VOID,
+        curse=CurseType.NUMBER,
+        number_value=4,
+    )
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="microscope", name="Microscope", kind="stamp")]
+    )
+    score, _, trace = pipeline.score_with_trace(board, [7], "4", loadout)
+    init = next(
+        s
+        for s in trace
+        if s.get("phase") == "tile_init" and s.get("phase_detail") == "init_scores"
+    )
+    assert init["tile_scores"] == [-4.0]
+    assert score == -4.0
 
 
 def test_flamingo_shiny_resolves_as_one():

@@ -16,6 +16,18 @@ _RULES_PATH = (
 )
 _TAXONOMY_PATH = Path(__file__).resolve().parents[2] / "data" / "game" / "boss_taxonomy.json"
 
+# Meta bosses with no gameplay rules when stacked under Michael.
+_META_BOSS_SLUGS = frozenset(
+    {
+        "michael",
+        "ogre",
+        "sandy_saguaro",
+        "prismatic_bean",
+        "human_boy",
+        "human_boy_boss",
+    }
+)
+
 
 @lru_cache(maxsize=1)
 def load_rules_catalog() -> dict[str, Any]:
@@ -62,6 +74,112 @@ def boss_is_cursed(loadout: Loadout) -> bool:
     return _extra_bool(loadout, "boss_cursed")
 
 
+def michael_summoned_bosses_defeated(loadout: Loadout) -> bool:
+    return _extra_bool(loadout, "michael_summoned_bosses_defeated")
+
+
+def _michael_context(loadout: Loadout) -> bool:
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    boss_id = str(loadout.boss_id or "").strip().lower()
+    boss_name = str(loadout.boss_name or "").strip().lower()
+    if boss_id == "michael" or "michael" in boss_name:
+        return True
+    if any(k.startswith("michael_") for k in extras):
+        return True
+    raw_mods = extras.get("boss_modifiers")
+    if isinstance(raw_mods, list):
+        return any(str(entry or "").strip().lower() == "michael" for entry in raw_mods)
+    if isinstance(raw_mods, str):
+        try:
+            parsed = json.loads(raw_mods)
+            if isinstance(parsed, list):
+                return any(str(entry or "").strip().lower() == "michael" for entry in parsed)
+        except json.JSONDecodeError:
+            parts = [p.strip().lower() for p in raw_mods.split(",") if p.strip()]
+            return "michael" in parts
+    return False
+
+
+def _michael_phase_value(loadout: Loadout) -> int:
+    return _extra_int(loadout, "michael_phase", 0)
+
+
+def _michael_finale_fallback_active(loadout: Loadout, active_modifiers: list[str]) -> bool:
+    if not _michael_context(loadout):
+        return False
+    phase = _michael_phase_value(loadout)
+    if phase >= 4:
+        return True
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    # Michael finale removes copied boss effects; exports can encode this as explicit empty.
+    if "boss_modifiers" in extras and not active_modifiers and phase >= 3:
+        return True
+    return False
+
+
+def _parse_boss_modifier_floor_mods(loadout: Loadout) -> dict[str, int]:
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    raw = extras.get("boss_modifier_floor_mods")
+    if raw is None:
+        return {}
+    parsed: dict[str, Any]
+    if isinstance(raw, dict):
+        parsed = raw
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            loaded = json.loads(raw)
+            parsed = loaded if isinstance(loaded, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    else:
+        return {}
+    out: dict[str, int] = {}
+    for key, val in parsed.items():
+        slug = str(key or "").strip().lower()
+        if not slug:
+            continue
+        try:
+            out[slug] = max(0, int(val))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def floor_mod_for_rule(
+    loadout: Loadout,
+    rules: dict[str, Any],
+    rule_key: str | None,
+    rule: dict[str, Any] | None,
+) -> int | None:
+    """Live FloorAdjustedModification for one stacked boss (Michael drafts)."""
+    if not rule_key:
+        return None
+    key = str(rule_key).strip().lower()
+    floor_mods = _parse_boss_modifier_floor_mods(loadout)
+    if key in floor_mods:
+        return floor_mods[key]
+    canonical = resolve_rule_id(rules, "bosses", key, key) or key
+    if canonical in floor_mods:
+        return floor_mods[canonical]
+    return None
+
+
+def resolve_boss_scaling_for_rule(
+    loadout: Loadout,
+    rules: dict[str, Any],
+    rule_key: str | None,
+    rule: dict[str, Any],
+    *,
+    field: str = "value",
+) -> int | float | None:
+    """Scaling for one boss rule: per-modifier floor mod, else wiki area table."""
+    live = floor_mod_for_rule(loadout, rules, rule_key, rule)
+    if live is not None and live > 0 and field == "value":
+        return live
+    ctx = boss_context(loadout, rules)
+    return resolve_boss_scaling(rule, ctx.area, ctx.cursed, field=field)
+
+
 def get_active_boss_rule(
     rules: dict[str, Any], loadout: Loadout
 ) -> tuple[str | None, dict[str, Any] | None]:
@@ -90,11 +208,11 @@ def active_boss_ids(loadout: Loadout) -> list[str]:
         out: list[str] = []
         for entry in rows:
             item = str(entry or "").strip().lower()
-            if item and item not in out:
+            if item and item not in _META_BOSS_SLUGS and item not in out:
                 out.append(item)
         return out
     primary = str(loadout.boss_id or "").strip().lower()
-    if primary:
+    if primary and primary not in _META_BOSS_SLUGS:
         return [primary]
     return []
 
@@ -178,20 +296,24 @@ def resolve_boss_scaling(
 
 
 def effective_target_score_multiplier(loadout: Loadout, rules: dict[str, Any]) -> float:
+    mult = 1.0
     ctx = boss_context(loadout, rules)
-    if not ctx.rule or ctx.rule.get("type") != "boss_target_score_multiplier":
-        return 1.0
-    mult = resolve_boss_scaling(ctx.rule, ctx.area, ctx.cursed, field="multiplier")
-    if mult is None or mult <= 0:
-        return 1.0
-    return float(mult)
+    for key, rule in get_active_boss_rules(rules, loadout):
+        if not rule or rule.get("type") != "boss_target_score_multiplier":
+            continue
+        if not boss_rule_applies(rule, ctx):
+            continue
+        row_mult = resolve_boss_scaling(rule, ctx.area, ctx.cursed, field="multiplier")
+        if row_mult is not None and row_mult > 0:
+            mult *= float(row_mult)
+    return mult if mult > 0 else 1.0
 
 
 def boss_word_constraints(
     loadout: Loadout, rules: dict[str, Any], *, default_max_len: int = 15
 ) -> BossConstraints:
-    michael_min = 0
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    michael_min = 0
     for key in ("michael_min_word_length", "michael_phase_min_word_length"):
         if key not in extras:
             continue
@@ -200,6 +322,16 @@ def boss_word_constraints(
         except (TypeError, ValueError):
             continue
 
+    active_ids = active_boss_ids(loadout)
+    if michael_summoned_bosses_defeated(loadout) or _michael_finale_fallback_active(
+        loadout, active_ids
+    ):
+        active_count = default_max_len
+        return BossConstraints(
+            min_len=active_count,
+            max_len=active_count,
+        )
+
     if _extra_bool(loadout, "hyena_blocked"):
         return BossConstraints(
             blocked=True,
@@ -207,29 +339,55 @@ def boss_word_constraints(
         )
 
     ctx = boss_context(loadout, rules)
-    if not ctx.rule:
-        min_len = 1
-        if michael_min > 0:
-            min_len = max(min_len, michael_min)
-        return BossConstraints(min_len=min_len, max_len=default_max_len)
-
-    effect_type = ctx.rule.get("type", "")
+    active = get_active_boss_rules(rules, loadout)
     min_len = 1
     max_len = default_max_len
 
-    if effect_type == "boss_word_min_length":
-        v = resolve_boss_scaling(ctx.rule, ctx.area, ctx.cursed, field="min_length")
-        if v is not None:
-            min_len = max(1, int(v))
-    elif effect_type == "boss_word_max_length":
-        v = resolve_boss_scaling(ctx.rule, ctx.area, ctx.cursed, field="max_length")
-        if v is not None:
-            max_len = max(1, int(v))
+    for key, rule in active:
+        if not rule:
+            continue
+        effect_type = rule.get("type", "")
+        if effect_type == "boss_word_min_length":
+            live = extras.get("cobra_min_length")
+            if live is not None and str(key).lower() == "cobra":
+                try:
+                    min_len = max(min_len, int(live))
+                except (TypeError, ValueError):
+                    pass
+            v = resolve_boss_scaling_for_rule(
+                loadout, rules, key, rule, field="min_length"
+            )
+            if v is not None:
+                min_len = max(min_len, max(1, int(v)))
+            live_mod = floor_mod_for_rule(loadout, rules, key, rule)
+            if live_mod is not None and live_mod > 0:
+                min_len = max(min_len, live_mod)
+        elif effect_type == "boss_word_max_length":
+            live = extras.get("wolf_max_length")
+            if live is not None and str(key).lower() == "wolf":
+                try:
+                    max_len = min(max_len, int(live))
+                except (TypeError, ValueError):
+                    pass
+            v = resolve_boss_scaling_for_rule(
+                loadout, rules, key, rule, field="max_length"
+            )
+            if v is not None:
+                max_len = min(max_len, max(1, int(v)))
+            live_mod = floor_mod_for_rule(loadout, rules, key, rule)
+            if live_mod is not None and live_mod > 0:
+                max_len = min(max_len, live_mod)
+        elif (key or "").strip().lower() == "cretaceous_meg":
+            min_len = max(min_len, 3)
 
-    # Cretaceous Meg (bossdino alias) uses the standard minimum word length
-    # even though the wiki entry is `type="custom"` without explicit constraints.
-    if min_len == 1 and (ctx.rule_key or "").strip().lower() == "cretaceous_meg":
-        min_len = 3
+    if not active:
+        min_len = 1
+        if michael_min > 0:
+            min_len = max(min_len, michael_min)
+        elif _michael_context(loadout) and _michael_phase_value(loadout) >= 3:
+            # Defensive fallback: late Michael phases should never drop back to 1-letter words.
+            min_len = max(min_len, default_max_len)
+        return BossConstraints(min_len=min_len, max_len=default_max_len)
 
     if michael_min > 0:
         min_len = max(min_len, michael_min)
@@ -247,13 +405,34 @@ def boss_scoring_effect_type(rule: dict[str, Any] | None) -> str:
     """Resolved scoring handler id (catalog type or boss_effect_type)."""
     if not rule:
         return ""
-    return str(rule.get("boss_effect_type") or rule.get("type") or "")
+    effect = str(rule.get("boss_effect_type") or rule.get("type") or "")
+    if effect != "custom":
+        return effect
+    name = str(rule.get("name") or "").strip().lower()
+    wiki = str(rule.get("wiki_page") or "").strip().lower()
+    if name == "fox" or wiki == "fox":
+        return "boss_steal_money"
+    return effect
 
 
 def boss_grid_handler(rule: dict[str, Any] | None) -> str:
     if not rule:
         return ""
-    return str(rule.get("grid_handler") or "")
+    handler = str(rule.get("grid_handler") or "")
+    if handler:
+        return handler
+    name = str(rule.get("name") or "").strip().lower().replace(" ", "_")
+    fallback = {
+        "mole": "mole_void",
+        "axolotl": "axolotl_q",
+        "bison": "bison_numbers",
+        "yeti_crab": "yeti_colorless",
+        "robo-eel": "robo_eel_eat",
+        "robo_eel": "robo_eel_eat",
+        "bat": "bat_shrink",
+        "fox": "fox_grid_steal",
+    }
+    return fallback.get(name, "")
 
 
 def boss_rule_applies(rule: dict[str, Any], ctx: BossContext) -> bool:

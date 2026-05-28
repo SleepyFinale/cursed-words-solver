@@ -438,8 +438,17 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
             if item and item not in normalized:
                 normalized.append(item)
         out["boss_modifiers"] = normalized
-    elif raw_boss_modifiers is None:
-        out.setdefault("boss_modifiers", [])
+    raw_floor_mods = out.get("boss_modifier_floor_mods")
+    if isinstance(raw_floor_mods, str) and raw_floor_mods.strip():
+        try:
+            parsed_fm = json.loads(raw_floor_mods)
+            out["boss_modifier_floor_mods"] = (
+                parsed_fm if isinstance(parsed_fm, dict) else {}
+            )
+        except json.JSONDecodeError:
+            out["boss_modifier_floor_mods"] = {}
+    elif isinstance(raw_floor_mods, dict):
+        out["boss_modifier_floor_mods"] = raw_floor_mods
     raw_memory = out.get("pin_memory")
     if isinstance(raw_memory, str):
         try:
@@ -511,12 +520,16 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
         "wolf_max_length",
         "cobra_min_length",
         "michael_min_word_length",
+        "michael_phase",
     ):
         if key in out:
             try:
                 out[key] = int(out[key])
             except (TypeError, ValueError):
                 out[key] = 0
+    for key in ("michael_summoned_bosses_defeated",):
+        if key in out:
+            out[key] = out[key] in (True, "true", "True", "1", 1)
     if "target_chess_piece" in out and out["target_chess_piece"]:
         out["target_chess_piece"] = str(out["target_chess_piece"]).strip().lower()
     if "target_curse_type" in out and out["target_curse_type"]:
@@ -763,6 +776,9 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
                 parts.append(f"boss={bid}")
         elif bname:
             parts.append(f"boss={bname}")
+    mods = loadout.extras.get("boss_modifiers")
+    if isinstance(mods, list) and len(mods) > 1:
+        parts.append(f"modifiers=[{', '.join(str(m) for m in mods)}]")
     pin = loadout.extras.get("pin_effect")
     if pin:
         branch = f" ({loadout.pin_branch})" if loadout.pin_branch else ""

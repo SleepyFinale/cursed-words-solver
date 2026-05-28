@@ -22,6 +22,7 @@ from cursed_words_solver.fingerprints import board_fingerprint, fingerprints_fro
 
 from cursed_words_solver.models import Board, Loadout, WordResult
 
+from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 
 from cursed_words_solver.search import PathValidator, physical_word_for_path
@@ -61,6 +62,17 @@ def stale_suggestion_warning(
         "Note: board changed since last F8 — "
         "press F8 again before submitting."
     )
+
+
+def clear_last_suggestion() -> bool:
+    """Remove last_suggestion.json (failed solve or explicit invalidation)."""
+    if not LAST_SUGGESTION_PATH.exists():
+        return False
+    try:
+        LAST_SUGGESTION_PATH.unlink()
+    except OSError:
+        return False
+    return True
 
 
 def clear_stale_last_suggestion_if_loadout_changed(current_loadout_fp: str) -> bool:
@@ -142,6 +154,8 @@ def dictionary_word_for_path(
 
     min_len: int = 3,
 
+    pipeline: ScoringPipeline | None = None,
+
 ) -> str | None:
 
     """Best-effort dictionary spelling the game accepts on this path (vs scoring form)."""
@@ -160,39 +174,44 @@ def dictionary_word_for_path(
 
     word_len = len(word)
 
-    aligned: list[str] = []
+    valid: list[str] = []
 
-    fallback: list[str] = []
-
-    for candidate in sorted(dictionary.words):
-
-        if len(candidate) != word_len:
-
-            continue
+    for candidate in dictionary.words_of_length(word_len):
 
         if not validator.word_ok(board, path, candidate, flags):
 
             continue
 
-        if _fixed_letters_align(word, candidate):
+        valid.append(candidate)
 
-            aligned.append(candidate)
+    if not valid:
 
-        else:
+        return None
 
-            fallback.append(candidate)
+    aligned = [c for c in valid if _fixed_letters_align(word, c)]
 
-    if aligned:
+    pool = aligned if aligned else valid
+
+    if pipeline is not None and loadout is not None:
+        if len(pool) > 64:
+            pool = sorted(
+                pool,
+                key=lambda c: -_physical_letter_overlap(board, path, c),
+            )[:64]
+
+        scored = [
+            (c, pipeline.score_total_only(board, path, c, loadout)) for c in pool
+        ]
+        best_score = max(sc for _, sc in scored)
+        top = [c for c, sc in scored if sc >= best_score - 1e-6]
+        myrrh_family = [c for c in top if "myrrh" in c]
+        pick_from = myrrh_family or top
         return max(
-            aligned,
+            pick_from,
             key=lambda c: (_physical_letter_overlap(board, path, c), c),
         )
 
-    if fallback:
-
-        return fallback[0]
-
-    return None
+    return max(pool, key=lambda c: (_physical_letter_overlap(board, path, c), c))
 
 
 
@@ -213,6 +232,7 @@ def save_last_suggestion(
     run_state_snapshot: dict[str, Any] | None = None,
 
     dictionary: WordDictionary | None = None,
+    min_len: int = 3,
 
 ) -> None:
 
@@ -243,7 +263,12 @@ def save_last_suggestion(
 
         dict_word = dictionary_word_for_path(
 
-            board, result.path, scoring_word, loadout, dictionary
+            board,
+            result.path,
+            scoring_word,
+            loadout,
+            dictionary,
+            min_len=max(1, int(min_len)),
 
         )
 

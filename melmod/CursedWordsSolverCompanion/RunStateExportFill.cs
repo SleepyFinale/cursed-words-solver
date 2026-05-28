@@ -15,6 +15,7 @@ namespace CursedWordsSolverCompanion
     {
         private static readonly BindingFlags MemberFlags =
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+        private static bool _loggedMichaelMissingExtrasWarning = false;
 
         /// <summary>Last gridNumber from CalculateOverallScore (most accurate).</summary>
         public static int CachedGridNumber = -1;
@@ -33,6 +34,9 @@ namespace CursedWordsSolverCompanion
             "wolf_max_length",
             "cobra_min_length",
             "michael_min_word_length",
+            "michael_phase",
+            "michael_summoned_bosses_defeated",
+            "boss_modifier_floor_mods",
         };
 
         public static void ClearBossExtras(Dictionary<string, string> extras)
@@ -349,71 +353,207 @@ namespace CursedWordsSolverCompanion
             }
         }
 
+        private static bool IsMetaBossSlug(string wikiId)
+        {
+            if (string.IsNullOrEmpty(wikiId))
+                return false;
+            return wikiId == "michael"
+                || wikiId == "ogre"
+                || wikiId == "sandy_saguaro"
+                || wikiId == "prismatic_bean"
+                || wikiId == "human_boy"
+                || wikiId == "cretaceous_meg";
+        }
+
+        private static string WikiBossIdFromModifier(BossModifier b)
+        {
+            if (b == null)
+                return "";
+            var id = BossResolver.WikiBossIdFromRuntimeType(b);
+            if (!string.IsNullOrEmpty(id))
+                return id;
+            if (!string.IsNullOrEmpty(b.Name)
+                && b.Name.IndexOf("Michael", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "michael";
+            return RunStateExporter.Slugify(b.PrefabFileName, b.Name);
+        }
+
         private static void FillBossParams(RunStateSnapshot snapshot, Player player)
         {
-            if (string.IsNullOrEmpty(snapshot.boss_id))
-                return;
-
             var bosses = BossResolver.Resolve(player);
-            if (bosses == null || bosses.Count == 0 || bosses[0] == null)
+            if (bosses == null || bosses.Count == 0)
                 return;
 
-            var boss = bosses[0];
-            var maxLen = TryGetIntProperty(boss, "MaxWordLength", "MaximumWordLength");
-            if (maxLen > 0 && snapshot.boss_id == "wolf")
-                snapshot.extras["wolf_max_length"] = maxLen.ToString();
-
-            var minLen = TryGetIntProperty(boss, "MinWordLength", "MinimumWordLength");
-            if (minLen > 0 && snapshot.boss_id == "cobra")
-                snapshot.extras["cobra_min_length"] = minLen.ToString();
-
+            var floorMods = new Dictionary<string, int>();
             var ids = new List<string>();
             foreach (var b in bosses)
             {
                 if (b == null)
                     continue;
-                var id = BossResolver.WikiBossIdFromRuntimeType(b);
-                if (string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(b.Name)
-                    && b.Name.IndexOf("Michael", StringComparison.OrdinalIgnoreCase) >= 0)
-                    id = "michael";
-                if (string.IsNullOrEmpty(id))
-                    id = RunStateExporter.Slugify(b.PrefabFileName, b.Name);
-                if (!string.IsNullOrEmpty(id))
+                var id = WikiBossIdFromModifier(b);
+                if (string.IsNullOrEmpty(id) || IsMetaBossSlug(id))
+                    continue;
+                if (!ids.Contains(id))
                     ids.Add(id);
+                try
+                {
+                    var mod = b.FloorAdjustedModification;
+                    if (mod > 0)
+                        floorMods[id] = mod;
+                }
+                catch
+                {
+                    // optional
+                }
+
+                var maxLen = TryGetIntProperty(b, "MaxWordLength", "MaximumWordLength");
+                if (maxLen > 0)
+                    snapshot.extras["wolf_max_length"] = maxLen.ToString();
+
+                var minLen = TryGetIntProperty(b, "MinWordLength", "MinimumWordLength");
+                if (minLen > 0)
+                    snapshot.extras["cobra_min_length"] = minLen.ToString();
             }
             if (ids.Count > 0)
                 snapshot.extras["boss_modifiers"] = JsonConvert.SerializeObject(ids);
+            if (floorMods.Count > 0)
+                snapshot.extras["boss_modifier_floor_mods"] = JsonConvert.SerializeObject(floorMods);
 
-            var michaelMin = TryGetIntProperty(
+            var boss = bosses[0];
+            var michaelMin = TryGetIntMember(
                 boss,
                 "MinWordLength",
                 "MinimumWordLength",
                 "CurrentMinWordLength",
                 "RequiredWordLength",
-                "WordLengthRequirement"
+                "WordLengthRequirement",
+                "TargetWordLength",
+                "WordLengthGoal"
             );
             if (michaelMin < 0)
-                michaelMin = TryGetIntProperty(
+                michaelMin = TryGetIntMember(
                     player,
                     "MichaelMinWordLength",
                     "WordsmithMinWordLength",
-                    "BossMinWordLength"
+                    "BossMinWordLength",
+                    "MinWordLengthRequirement"
                 );
             if (michaelMin < 0)
             {
                 var encounter = BossResolver.TryGetEncounter();
                 if (encounter != null)
-                    michaelMin = TryGetIntProperty(
+                    michaelMin = TryGetIntMember(
                         encounter,
                         "MichaelMinWordLength",
                         "WordsmithMinWordLength",
                         "BossMinWordLength",
                         "MinWordLength",
-                        "RequiredWordLength"
+                        "RequiredWordLength",
+                        "WordLengthRequirement",
+                        "CurrentMinWordLength",
+                        "TargetWordLength"
                     );
             }
             if (michaelMin > 0)
                 snapshot.extras["michael_min_word_length"] = michaelMin.ToString();
+
+            var michaelBoss = bosses.Find(b =>
+                b != null
+                && (
+                    b.GetType().Name == "MichaelBoss"
+                    || (!string.IsNullOrEmpty(b.Name)
+                        && b.Name.IndexOf("Michael", StringComparison.OrdinalIgnoreCase) >= 0)
+                )
+            );
+            if (michaelBoss != null)
+            {
+                var draftedList = TryGetBossListMember(michaelBoss, "DraftedModifiers", isField: false);
+                if (draftedList == null)
+                    draftedList = TryGetBossListMember(michaelBoss, "DraftedModifiers", isField: true);
+                if (draftedList == null)
+                    draftedList = TryGetBossListMember(michaelBoss, "SummonedBosses", isField: false);
+                if (draftedList == null)
+                    draftedList = TryGetBossListMember(michaelBoss, "SummonedBosses", isField: true);
+                var drafted = draftedList != null ? draftedList.Count : -1;
+                if (drafted >= 1 && drafted <= 3)
+                    snapshot.extras["michael_phase"] = drafted.ToString();
+
+                var summonedDefeated = TryGetBoolMember(
+                    michaelBoss,
+                    "SummonedBossesDefeated",
+                    "AreSummonedBossesDefeated",
+                    "FinalPhaseComplete",
+                    "FinaleComplete"
+                );
+                if (summonedDefeated)
+                    snapshot.extras["michael_summoned_bosses_defeated"] = "true";
+                else
+                {
+                    var encounter = BossResolver.TryGetEncounter();
+                    if (
+                        TryGetBoolMember(
+                            encounter,
+                            "SummonedBossesDefeated",
+                            "AreSummonedBossesDefeated",
+                            "MichaelSummonedBossesDefeated",
+                            "MichaelFinaleComplete"
+                        )
+                    )
+                    {
+                        summonedDefeated = true;
+                        snapshot.extras["michael_summoned_bosses_defeated"] = "true";
+                    }
+                }
+                if (michaelMin <= 0 && !summonedDefeated && !_loggedMichaelMissingExtrasWarning)
+                {
+                    MelonLogger.Warning(
+                        "Michael boss detected but final-phase/min-length extras were unavailable; "
+                            + "run_state may miss Michael word-length enforcement."
+                    );
+                    _loggedMichaelMissingExtrasWarning = true;
+                }
+            }
+        }
+
+        private static List<BossModifier> TryGetBossListMember(
+            object target,
+            string name,
+            bool isField
+        )
+        {
+            try
+            {
+                object value;
+                if (isField)
+                {
+                    var field = target.GetType().GetField(name, MemberFlags);
+                    if (field == null)
+                        return null;
+                    value = field.GetValue(target);
+                }
+                else
+                {
+                    var prop = target.GetType().GetProperty(name, MemberFlags);
+                    if (prop == null)
+                        return null;
+                    value = prop.GetValue(target, null);
+                }
+                if (value is System.Collections.IList list)
+                {
+                    var result = new List<BossModifier>();
+                    foreach (var item in list)
+                    {
+                        if (item is BossModifier bm)
+                            result.Add(bm);
+                    }
+                    return result;
+                }
+            }
+            catch
+            {
+                // optional
+            }
+            return null;
         }
 
         private static string SerializeItemSlugOrder(Item[] items)
@@ -661,6 +801,63 @@ namespace CursedWordsSolverCompanion
                     if (prop == null)
                         continue;
                     var val = prop.GetValue(target, null);
+                    if (val is bool b)
+                        return b;
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+            return false;
+        }
+
+        private static bool TryGetBoolMember(object target, params string[] names)
+        {
+            return TryGetBoolProperty(target, names) || TryGetBoolField(target, names);
+        }
+
+        private static int TryGetIntMember(object target, params string[] names)
+        {
+            var fromProp = TryGetIntProperty(target, names);
+            if (fromProp >= 0)
+                return fromProp;
+            return TryGetIntField(target, names);
+        }
+
+        private static int TryGetIntField(object target, params string[] names)
+        {
+            if (target == null)
+                return -1;
+            foreach (var name in names)
+            {
+                try
+                {
+                    var field = target.GetType().GetField(name, MemberFlags);
+                    if (field == null)
+                        continue;
+                    return TryReadIntLike(field.GetValue(target));
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+            return -1;
+        }
+
+        private static bool TryGetBoolField(object target, params string[] names)
+        {
+            if (target == null)
+                return false;
+            foreach (var name in names)
+            {
+                try
+                {
+                    var field = target.GetType().GetField(name, MemberFlags);
+                    if (field == null)
+                        continue;
+                    var val = field.GetValue(target);
                     if (val is bool b)
                         return b;
                 }

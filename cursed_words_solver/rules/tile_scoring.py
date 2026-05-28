@@ -16,7 +16,10 @@ from cursed_words_solver.models import (
     TileColor,
     normalize_tile_glyph,
 )
-from cursed_words_solver.rules.base_scoring import tile_base_contribution
+from cursed_words_solver.rules.base_scoring import (
+    microscope_init_contribution,
+    tile_base_contribution,
+)
 
 # SettleGlitchTiles colour pool (excludes Glitch)
 _GLITCH_COLOR_POOL: list[TileColor] = [
@@ -158,7 +161,7 @@ def initial_tile_scores(
             scores.append(0.0)
             continue
         if microscope_base:
-            contrib = float(tile.base_score)
+            contrib = microscope_init_contribution(tile, money)
         elif tile.color == TileColor.BLUE and blue_base_override is not None:
             contrib = float(blue_base_override)
         elif tile.curse == CT.CURRENCY and tile.metadata.get("source") == "melmod":

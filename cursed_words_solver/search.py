@@ -93,6 +93,9 @@ class SearchTiming:
     mult_rank_sec: float = 0.0
     final_score_sec: float = 0.0
     score_calls: int = 0
+    worker_score_calls: int = 0
+    parallel_serial_fallback: bool = False
+    letter_dfs_added: int = 0
     dfs_expansions: int = 0
 
     @property
@@ -172,6 +175,11 @@ class _CandidateHeap:
             out.append((score, word, path))
         out.sort(key=lambda x: (-x[0], -len(x[1]), x[1]))
         return out
+
+    def all_words_max_len(self, max_len: int) -> bool:
+        if not self._heap:
+            return False
+        return all(len(entry[2]) <= max_len for entry in self._heap)
 
 
 def resolve_letter(
@@ -274,6 +282,63 @@ def resolve_letter_options(
     return [ch]
 
 
+def _tile_digit_face_matches(
+    ch: str,
+    tile: Tile,
+    stamp_flags: StampSearchFlags | None,
+) -> bool:
+    if tile.letter == ch:
+        return True
+    if stamp_flags and stamp_flags.microscope_base_score:
+        bp = _microscope_base_as_position(tile)
+        if bp is not None and str(bp) == ch:
+            return True
+    return False
+
+
+def _microscope_base_as_position(tile: Tile) -> int | None:
+    """Whole-number base_score usable as a 1-based word index (Microscope)."""
+    bs = tile.base_score
+    if bs < 1 - 1e-6:
+        return None
+    ival = int(round(bs))
+    if abs(bs - ival) > 1e-6 or ival < 1:
+        return None
+    return ival
+
+
+def tile_number_position_values(
+    tile: Tile,
+    flags: StampSearchFlags | None,
+) -> list[int]:
+    """1-based position indices this tile may claim (face number + Microscope base_score)."""
+    values: list[int] = []
+    if tile.curse == CurseType.NUMBER:
+        nv = tile.number_value
+        if nv is None and tile.letter.isdigit():
+            nv = int(tile.letter)
+        if nv is not None and nv >= 1:
+            values.append(nv)
+    if flags and flags.microscope_base_score:
+        bp = _microscope_base_as_position(tile)
+        if bp is not None and bp not in values:
+            values.append(bp)
+    return values
+
+
+def _position_matches_number_values(
+    position: int,
+    values: list[int],
+    flags: StampSearchFlags | None,
+) -> bool:
+    if not values:
+        return True
+    pos = position + 1
+    if flags and flags.number_plus_minus_one:
+        return any(pos in (v - 1, v, v + 1) and v >= 1 for v in values)
+    return any(pos == v for v in values)
+
+
 def number_position_valid(
     tile: Tile,
     position: int,
@@ -312,15 +377,10 @@ def number_position_valid(
             and segment[position].lower() == ROMAN_BY_NUMBER[nv_roman]
         ):
             return True
-    nv = tile.number_value
-    if nv is None and tile.letter.isdigit():
-        nv = int(tile.letter)
-    if nv is None:
+    values = tile_number_position_values(tile, flags)
+    if not values:
         return True
-    pos = position + 1
-    if flags and flags.number_plus_minus_one:
-        return pos in (nv - 1, nv, nv + 1) and nv >= 1
-    return pos == nv
+    return _position_matches_number_values(position, values, flags)
 
 
 class PathValidator:
@@ -521,7 +581,14 @@ class PathValidator:
                     pattern_chars.append("?")
                     continue
                 if stamp_flags and stamp_flags.number_plus_minus_one:
-                    if digit not in (nv - 1, nv, nv + 1) or nv < 1:
+                    values = tile_number_position_values(tile, stamp_flags)
+                    allowed = {
+                        x
+                        for v in values
+                        if v >= 1
+                        for x in (v - 1, v, v + 1)
+                    }
+                    if digit not in allowed:
                         return False
                 elif (
                     stamp_flags
@@ -529,7 +596,7 @@ class PathValidator:
                     and number_digits_ascending(word)
                 ):
                     pass
-                elif tile.letter != ch:
+                elif not _tile_digit_face_matches(ch, tile, stamp_flags):
                     return False
                 pattern_chars.append("?")
             else:
@@ -546,10 +613,23 @@ class PathValidator:
                         if nv in ROMAN_BY_NUMBER and ch.lower() == ROMAN_BY_NUMBER[nv]:
                             pattern_chars.append("?")
                             continue
+                    if ch.isalpha():
+                        pattern_chars.append("?")
+                        continue
                     return False
                 pattern_chars.append(ch)
         pattern = "".join(pattern_chars)
         if pattern and all(ch == "?" for ch in pattern):
+            if word.isdigit():
+                return True
+            if any(ch.isdigit() for ch in word) and any(ch.isalpha() for ch in word):
+                number_tiles = sum(
+                    1
+                    for idx in path
+                    if is_number_like_tile(board.get_by_index(idx))
+                )
+                if number_tiles >= 2:
+                    return True
             return self.dictionary.contains(word.lower())
         return self._wildcard_valid(pattern)
 
@@ -1269,6 +1349,7 @@ class WordSearcher:
             pool is not None
             and self.search_workers > 1
             and len(starts) > 1
+            and not digits_only
         ):
             from cursed_words_solver.search_parallel import parallel_collect_fair_starts
 
@@ -1347,6 +1428,8 @@ class WordSearcher:
         start_indices: list[int] | None = None,
     ) -> None:
         use_prune = self._use_mult_prune_for(loadout)
+        if any(is_number_like_tile(board.get_by_index(i)) for i in _active_indices(board)):
+            use_prune = False
         prev_heap = self._prune_heap
         prev_deadline = self._active_deadline
         self._prune_heap = candidates if use_prune else None
@@ -1389,6 +1472,22 @@ class WordSearcher:
                     board, path, phys, stamp_flags
                 ):
                     return True, phys
+            if loadout is not None and any(
+                is_number_like_tile(board.get_by_index(i)) for i in path
+            ):
+                from cursed_words_solver.suggestion import dictionary_word_for_path
+
+                alt = dictionary_word_for_path(
+                    board,
+                    path,
+                    search_word,
+                    loadout,
+                    self.dictionary,
+                    min_len=self.min_len,
+                    pipeline=self.scoring,
+                )
+                if alt and self.validator.word_ok(board, path, alt, stamp_flags):
+                    return True, scoring_word_for_path(path, alt)
             return False, search_word
 
         def score_path(path: list[int], word: str) -> float | None:
@@ -1617,6 +1716,36 @@ class WordSearcher:
 
         self._prune_heap = prev_heap
         self._active_deadline = prev_deadline
+
+    def _seed_single_number_tile_words(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: "_CandidateHeap",
+    ) -> None:
+        """Seed lone NUMBER tiles (e.g. word '1' on a 1-tile) the game accepts without a dictionary entry."""
+        flags = stamp_search_flags(loadout)
+        for idx in _active_indices(board):
+            tile = board.get_by_index(idx)
+            if tile.curse != CurseType.NUMBER:
+                continue
+            nv = tile_number_value(tile)
+            if nv is None:
+                continue
+            words_to_try = {str(nv)}
+            if flags.microscope_base_score:
+                bp = _microscope_base_as_position(tile)
+                if bp is not None:
+                    words_to_try.add(str(bp))
+            path = [idx]
+            for word in words_to_try:
+                if len(word) < self.min_len:
+                    continue
+                if not self.validator.word_ok(board, path, word, flags):
+                    continue
+                sc = self._rank_score_for_candidate(board, path, word, loadout)
+                if sc is not None:
+                    candidates.consider(sc, word, path)
 
     def _collect_joker_cluster_candidates(
         self,
@@ -2180,6 +2309,7 @@ class WordSearcher:
                 deadline,
                 self.max_len,
             )
+        heap_before_letter = len(candidates)
         try:
             for pass_idx, cap in enumerate(caps):
                 if time.monotonic() >= main_deadline:
@@ -2196,18 +2326,64 @@ class WordSearcher:
                         )
                     starts_for_cap = letter_starts
                     min_slice = self._adaptive_min_slice(candidates, pass_idx)
+                letter_pass_deadline = main_deadline
+                if use_parallel and starts_for_cap is letter_starts:
+                    now = time.monotonic()
+                    rem = max(0.0, main_deadline - now)
+                    letter_pass_deadline = min(
+                        main_deadline,
+                        now + min(12.0, rem * 0.45),
+                    )
                 self._collect_words_fair_starts(
                     board,
                     loadout,
                     candidates,
-                    main_deadline,
+                    letter_pass_deadline,
                     cap,
                     starts_for_cap,
                     min_slice_override=min_slice,
                     start_productivity=start_productivity if starts_for_cap is letter_starts else None,
                 )
 
+            timing.letter_dfs_added = len(candidates) - heap_before_letter
+            needs_serial_fallback = use_parallel and (
+                not candidates
+                or timing.letter_dfs_added == 0
+                or candidates.all_words_max_len(1)
+            )
+            if needs_serial_fallback:
+                timing.parallel_serial_fallback = True
+                self._parallel_executor = None
+                saved_workers = self.search_workers
+                self.search_workers = 1
+                fallback_caps = (
+                    range(self.min_len, self.max_len + 1)
+                    if self.time_budget >= 6.0 and self.max_len > self.min_len
+                    else [self.max_len]
+                )
+                try:
+                    for cap in fallback_caps:
+                        if time.monotonic() >= pre_extend_deadline:
+                            break
+                        self._collect_words_fair_starts(
+                            board,
+                            loadout,
+                            candidates,
+                            pre_extend_deadline,
+                            cap,
+                            letter_starts,
+                            min_slice_override=self._adaptive_min_slice(
+                                candidates, 0
+                            ),
+                            start_productivity=start_productivity,
+                        )
+                finally:
+                    self.search_workers = saved_workers
+                    self._parallel_executor = pool
+
             if has_number_tiles:
+                self._seed_single_number_tile_words(board, loadout, candidates)
+                self._parallel_executor = None
                 if fraction_cluster_reserve > 0 and time.monotonic() < pre_extend_deadline:
                     cluster_starts = _fraction_cluster_number_starts(board)
                     if cluster_starts:
@@ -2257,7 +2433,7 @@ class WordSearcher:
                 # the target length-8 word within the time slice.
                 if self.time_budget <= 2.0 and number_starts:
                     number_starts = number_starts[:1]
-                digit_start = 7 if self.max_len >= 7 else 6
+                digit_start = max(self.min_len, 1)
                 for cap in range(digit_start, self.max_len + 1):
                     if time.monotonic() >= pre_extend_deadline or not number_starts:
                         break
@@ -2372,7 +2548,6 @@ class WordSearcher:
                     rank_score=rank_sc if rank_sc else immediate + setup,
                 )
             )
-            if len(unique) >= top_n:
-                break
+        unique.sort(key=lambda r: (-r.score, -len(r.word), r.word))
         self._active_timing = None
-        return unique
+        return unique[:top_n]

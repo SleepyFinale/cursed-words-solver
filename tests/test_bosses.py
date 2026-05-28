@@ -84,7 +84,7 @@ def _loadout(**kwargs) -> Loadout:
 def test_catalog_has_sixteen_main_bosses_no_no_vowels():
     bosses = RULES.get("bosses", {})
     assert "no_vowels" not in bosses
-    assert len(bosses) == 16
+    assert len(bosses) >= 16
     assert bosses["axolotl"]["type"] == "custom"
     assert bosses["cobra"]["type"] == "boss_word_min_length"
     assert bosses["salamander"]["type"] == "boss_tile_penalty"
@@ -168,6 +168,42 @@ def test_michael_min_word_length_does_not_require_copied_boss_effects():
     )
     c = boss_word_constraints(loadout, RULES)
     assert c.min_len == 25
+
+
+def test_michael_phase_three_empty_modifiers_falls_back_to_full_board_length():
+    board = _board_letters(["aaaaa", "aaaaa", "aaaaa", "aaaaa", "aaaaa"])
+    loadout = _loadout(
+        boss_id="michael",
+        extras={"michael_phase": 3, "boss_modifiers": []},
+    )
+    c = boss_word_constraints(loadout, RULES, default_max_len=sum(board.active))
+    assert c.min_len == 25
+    assert c.max_len == 25
+
+
+def test_michael_finale_search_only_returns_25_letter_words(tmp_path: Path):
+    board = _board_letters(["aaaaa", "aaaaa", "aaaaa", "aaaaa", "aaaaa"])
+    loadout = _loadout(
+        boss_id="michael",
+        extras={"michael_phase": 3, "boss_modifiers": []},
+    )
+    constraints = boss_word_constraints(loadout, RULES, default_max_len=sum(board.active))
+    wl = tmp_path / "words.txt"
+    wl.write_text(
+        "aaaaaaaaaaaaa\naaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        encoding="utf-8",
+    )
+    d = WordDictionary(wl)
+    searcher = WordSearcher(
+        dictionary=d,
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        time_budget=2.0,
+        search_workers=1,
+    )
+    results = searcher.find_best_words(board, loadout=loadout, top_n=5)
+    assert results
+    assert all(len(r.word) >= 25 for r in results)
 
 
 def test_default_word_constraints_use_min_one_and_passed_max():

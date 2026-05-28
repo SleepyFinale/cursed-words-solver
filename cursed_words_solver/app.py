@@ -33,6 +33,7 @@ from cursed_words_solver.config import (
     resolve_wordlist,
 )
 from cursed_words_solver.suggestion import (
+    clear_last_suggestion,
     clear_stale_last_suggestion_if_loadout_changed,
     dictionary_word_for_path,
     format_suggestion_word,
@@ -613,13 +614,32 @@ class SolverApp:
                     if timing.wall_sec > 0
                     else "n/a"
                 )
+                worker_note = ""
+                if timing.parallel_workers > 1:
+                    worker_note = (
+                        f", {timing.score_calls} parent pipeline calls "
+                        "(worker scoring not counted)"
+                    )
+                else:
+                    worker_note = f", {timing.score_calls} pipeline calls"
+                fallback_note = (
+                    " (serial fallback after parallel)"
+                    if timing.parallel_serial_fallback
+                    else ""
+                )
                 print(
-                    f"  Timing: dfs {timing.dfs_sec:.1f}s, extend {timing.extend_sec:.1f}s, "
+                    f"  Timing: dfs {timing.dfs_sec:.1f}s{fallback_note}, "
+                    f"extend {timing.extend_sec:.1f}s, "
                     f"chess {timing.chess_sec:.1f}s, score {total_score:.1f}s "
-                    f"({score_pct} of {timing.wall_sec:.1f}s"
-                    f", {timing.score_calls} pipeline calls{pool_note})",
+                    f"({score_pct} of {timing.wall_sec:.1f}s{worker_note}{pool_note})",
                     flush=True,
                 )
+                from cursed_words_solver.search_parallel import (
+                    drain_parallel_worker_errors,
+                )
+
+                for err in drain_parallel_worker_errors():
+                    print(f"  Parallel worker error: {err}", flush=True)
 
             pred_trace: list | None = None
             if results:
@@ -636,6 +656,7 @@ class SolverApp:
                     predicted_trace=pred_trace,
                     run_state_snapshot=run_state_data,
                     dictionary=self._dictionary,
+                    min_len=effective_min,
                 )
 
             self._save_debug(
@@ -663,8 +684,14 @@ class SolverApp:
                     flush=True,
                 )
             else:
+                clear_last_suggestion()
                 print(
                     f"Done in {search_elapsed:.1f}s. No valid words found.",
+                    flush=True,
+                )
+                print(
+                    "  If the board changed since your last solve, press F7 "
+                    "in-game then F8 again.",
                     flush=True,
                 )
 

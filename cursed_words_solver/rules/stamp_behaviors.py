@@ -51,6 +51,7 @@ class StampSearchFlags:
     red_letter_plus_minus_one: bool = False
     chess_allies_can_take: bool = False
     chess_king_queen_item_movement: bool = False
+    microscope_base_score: bool = False
 
 
 @lru_cache(maxsize=1)
@@ -115,4 +116,5 @@ def stamp_search_flags(loadout: Loadout | None) -> StampSearchFlags:
         red_letter_plus_minus_one=merged.get("red_letter_plus_minus_one", False),
         chess_allies_can_take=merged.get("chess_allies_can_take", False),
         chess_king_queen_item_movement=merged.get("chess_king_queen_item_movement", False),
+        microscope_base_score=loadout_has_stamp(loadout, "microscope"),
     )

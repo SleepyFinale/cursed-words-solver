@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "c:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj": {}
+    "C:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj": {}
   },
   "projects": {
-    "c:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj": {
+    "C:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "c:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj",
+        "projectUniqueName": "C:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj",
         "projectName": "DecompileType",
-        "projectPath": "c:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj",
+        "projectPath": "C:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj",
         "packagesPath": "C:\\Users\\TheMi\\.nuget\\packages\\",
-        "outputPath": "c:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\obj\\",
+        "outputPath": "C:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\TheMi\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -37,7 +37,8 @@
           "enableAudit": "true",
           "auditLevel": "low",
           "auditMode": "direct"
-        }
+        },
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "net8.0": {
@@ -59,12 +60,30 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[8.0.22, 8.0.22]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Host.win-x64",
+              "version": "[8.0.22, 8.0.22]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[8.0.22, 8.0.22]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[8.0.22, 8.0.22]"
+            }
+          ],
           "frameworkReferences": {
             "Microsoft.NETCore.App": {
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.421/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

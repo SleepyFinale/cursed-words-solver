@@ -7,17 +7,21 @@ import random
 
 from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
 from cursed_words_solver.rules.boss_effects import (
+    active_boss_ids,
+    boss_grid_handler,
     boss_context,
     boss_is_cursed,
     boss_rule_applies,
-    get_active_boss_rule,
+    get_active_boss_rules,
+    michael_summoned_bosses_defeated,
     resolve_boss_scaling,
+    resolve_boss_scaling_for_rule,
 )
 from cursed_words_solver.rules.grid_effects import _clone_board
 
 
-def _boss_rng(loadout: Loadout, grid_number: int) -> random.Random:
-    seed = f"{loadout.boss_id}|{loadout.extras.get('run_seed', '')}|{grid_number}"
+def _boss_rng(loadout: Loadout, grid_number: int, rule_key: str = "") -> random.Random:
+    seed = f"{loadout.boss_id}|{rule_key}|{loadout.extras.get('run_seed', '')}|{grid_number}"
     digest = hashlib.sha256(seed.encode()).hexdigest()
     return random.Random(int(digest[:16], 16))
 
@@ -111,49 +115,42 @@ def _fox_grid_steal(board: Board, loadout: Loadout, amount: int) -> None:
     loadout.extras["fox_stolen_this_grid"] = str(stolen)
 
 
-def apply_boss_grid_mutations(
-    board: Board,
-    loadout: Loadout | None,
+def _apply_one_boss_grid_handler(
+    out: Board,
+    loadout: Loadout,
     rules: dict,
     *,
-    grid_number: int = 1,
-) -> Board:
-    if not loadout or not (loadout.boss_id or loadout.boss_name):
-        return board
-    if str(loadout.extras.get("board_from_melmod", "")).lower() in ("1", "true"):
-        return board
-    _key, boss = get_active_boss_rule(rules, loadout)
-    if not boss:
-        return board
-    handler = boss.get("grid_handler") or ""
-    if not handler and boss.get("effect_class") != "grid_start":
-        return board
+    boss: dict,
+    rule_key: str,
+    grid_number: int,
+) -> None:
+    handler = boss_grid_handler(boss)
+    effect_class = str(boss.get("effect_class") or "")
+    if not handler and effect_class not in ("grid_start", "grid"):
+        return
     ctx = boss_context(loadout, rules)
     if not boss_rule_applies(boss, ctx):
-        return board
+        return
 
-    out = _clone_board(board)
-    rng = _boss_rng(loadout, grid_number)
+    rng = _boss_rng(loadout, grid_number, rule_key)
     cursed = boss_is_cursed(loadout)
+    n = resolve_boss_scaling_for_rule(loadout, rules, rule_key, boss)
+    if n is None:
+        n = resolve_boss_scaling(boss, ctx.area, ctx.cursed)
 
     if handler == "mole_void":
-        n = resolve_boss_scaling(boss, ctx.area, ctx.cursed)
         if n is not None:
             _scatter_void(out, int(n), rng)
     elif handler == "axolotl_q":
-        n = resolve_boss_scaling(boss, ctx.area, ctx.cursed)
         if n is not None:
             _scatter_q(out, int(n), rng)
     elif handler == "bison_numbers":
-        max_n = resolve_boss_scaling(boss, ctx.area, ctx.cursed)
-        if max_n is not None:
-            _scatter_numbers(out, int(max_n), min(5, int(max_n) - 5), rng)
+        if n is not None:
+            _scatter_numbers(out, int(n), min(5, int(n) - 5), rng)
     elif handler == "yeti_colorless":
-        n = resolve_boss_scaling(boss, ctx.area, ctx.cursed)
         if n is not None:
             _yeti_colorless(out, int(n), rng)
     elif handler == "robo_eel_eat":
-        n = resolve_boss_scaling(boss, ctx.area, ctx.cursed)
         if n is not None:
             _robo_eel_eat(out, int(n), rng)
     elif handler == "bat_shrink":
@@ -172,8 +169,38 @@ def apply_boss_grid_mutations(
         if row and col:
             _bat_shrink(out, int(row), int(col))
     elif handler == "fox_grid_steal":
-        n = resolve_boss_scaling(boss, ctx.area, ctx.cursed)
         if n is not None:
             _fox_grid_steal(out, loadout, int(n))
 
+
+def apply_boss_grid_mutations(
+    board: Board,
+    loadout: Loadout | None,
+    rules: dict,
+    *,
+    grid_number: int = 1,
+) -> Board:
+    if not loadout or not active_boss_ids(loadout):
+        if not loadout or not (loadout.boss_id or loadout.boss_name):
+            return board
+    if michael_summoned_bosses_defeated(loadout):
+        return board
+    if str(loadout.extras.get("board_from_melmod", "")).lower() in ("1", "true"):
+        return board
+
+    active = get_active_boss_rules(rules, loadout)
+    if not active:
+        return board
+
+    out = _clone_board(board)
+    for rule_key, boss in active:
+        if boss:
+            _apply_one_boss_grid_handler(
+                out,
+                loadout,
+                rules,
+                boss=boss,
+                rule_key=rule_key or "",
+                grid_number=grid_number,
+            )
     return out

@@ -128,26 +128,39 @@ def _adjust_lucky_dice_target_extras(
     baseline_score, _ = ScoringPipeline().score(
         board, path, word, baseline_loadout
     )
-    if int(expected) - int(baseline_score) != observed:
+    delta = int(expected) - int(baseline_score)
+    if delta < observed:
+        return
+    # Lucky Dice adds +observed WORD SCORE; multipliers (e.g. Boomerang) scale the delta.
+    if delta != observed and delta % observed != 0:
         return
 
-    inferred = infer_lucky_dice_target_number(
-        board, path, expected_bonus=50, observed_bonus=observed
-    )
-    if inferred is None:
-        first_on_path = _first_number_value_on_path(board, path)
-        if first_on_path is None:
-            return
+    def _trial_target(candidate: int) -> bool:
         trial = dict(run_state)
         trial_extras = dict(extras)
-        trial_extras["target_number"] = str(first_on_path)
+        trial_extras["target_number"] = str(candidate)
         trial["extras"] = trial_extras
         trial_loadout = parse_run_state(trial)
         score, _ = ScoringPipeline().score(board, path, word, trial_loadout)
-        if int(score) != int(expected):
-            return
-        inferred = first_on_path
-    extras["target_number"] = str(inferred)
+        return int(score) == int(expected)
+
+    inferred = infer_lucky_dice_target_number(
+        board, path, expected_bonus=observed, observed_bonus=observed
+    )
+    if inferred is not None and _trial_target(inferred):
+        extras["target_number"] = str(inferred)
+        run_state["extras"] = extras
+        return
+
+    if delta != observed:
+        return
+
+    first_on_path = _first_number_value_on_path(board, path)
+    if first_on_path is None:
+        return
+    if not _trial_target(first_on_path):
+        return
+    extras["target_number"] = str(first_on_path)
     run_state["extras"] = extras
 
 
@@ -782,6 +795,41 @@ def test_lucky_dice_epicarps_mismatch_replay() -> None:
     loadout = parse_run_state(run_state)
     score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
     assert int(score) == int(data["actual_score"])
+
+
+def test_infer_lucky_dice_target_carets_singleton() -> None:
+    """carets: path has 1/2/4/6 but only 6 is a board singleton → target 6."""
+    case_path = FIXTURES / "20260527_171929.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260527_171929 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    path = data["path"]
+    assert _lucky_dice_trace_word_bonus(data) == 50
+    inferred = infer_lucky_dice_target_number(
+        board, path, expected_bonus=50, observed_bonus=50
+    )
+    assert inferred == 6
+    _adjust_lucky_dice_target_extras(run_state, data, board, path)
+    assert int((run_state.get("extras") or {})["target_number"]) == 6
+
+
+def test_lucky_dice_carets_mismatch_replay() -> None:
+    """Lucky Dice +50 then Boomerang ×2 word bonus → +100 vs missing target_number."""
+    case_path = FIXTURES / "20260527_171929.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260527_171929 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    path = data["path"]
+    _adjust_lucky_dice_target_extras(run_state, data, board, path)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 460
 
 
 def test_run_state_replay_keeps_michael_phase_boss_extras() -> None:

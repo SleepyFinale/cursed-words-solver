@@ -15,22 +15,29 @@ class WordDictionary:
         self.path = path
         self.words: set[str] = set()
         self.trie: dict[str, dict] = {}
+        self.words_by_length: dict[int, tuple[str, ...]] = {}
         self._build(path)
 
     def _build(self, path: Path) -> None:
         words: set[str] = set()
         trie: dict[str, dict] = {}
+        by_length: dict[int, list[str]] = {}
         text = path.read_text(encoding="utf-8", errors="ignore")
         for line in text.splitlines():
             w = line.strip().lower()
             if len(w) >= 2 and w.isalpha():
                 words.add(w)
+                by_length.setdefault(len(w), []).append(w)
                 node = trie
                 for ch in w:
                     node = node.setdefault(ch, {})
                 node[END_SENTINEL] = {}
         self.words = words
         self.trie = trie
+        self.words_by_length = {n: tuple(sorted(ws)) for n, ws in by_length.items()}
+
+    def words_of_length(self, length: int) -> tuple[str, ...]:
+        return self.words_by_length.get(length, ())
 
     def root_cursor(self) -> dict[str, dict]:
         return self.trie
