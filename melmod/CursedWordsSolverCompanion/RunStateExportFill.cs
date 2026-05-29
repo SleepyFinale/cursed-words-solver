@@ -341,17 +341,72 @@ namespace CursedWordsSolverCompanion
             if (gridsTotal >= 0)
                 snapshot.extras["grids_total"] = gridsTotal.ToString();
 
+            EnsureEncounterHistoricExtras(snapshot, player);
+        }
+
+        /// <summary>
+        /// Export per-word historic list for Telescope / Movie Camera (F7/F8 and submit).
+        /// </summary>
+        public static void EnsureEncounterHistoricExtras(RunStateSnapshot snapshot, Player player)
+        {
+            if (snapshot?.extras == null || player == null)
+                return;
+
             var historic = RunStateExporter.TryGetHistoricPreviousWordsPublic(player);
-            if (historic != null && historic.Count > 0)
-            {
+            if (historic == null || historic.Count == 0)
+                historic = RunStateExporter.GetCachedPreviousWords();
+            if (historic == null || historic.Count == 0)
+                return;
+
+            if (!snapshot.extras.ContainsKey("historic_words"))
                 snapshot.extras["historic_words"] = SerializeHistoricWords(historic, player);
-                if (!snapshot.extras.ContainsKey("previous_word_first_letter"))
-                {
-                    var prev = ScoringContextCapture.FirstLetterFromHistoricWords(historic);
-                    if (!string.IsNullOrEmpty(prev))
-                        snapshot.extras["previous_word_first_letter"] = prev;
-                }
+
+            if (!snapshot.extras.ContainsKey("red_tiles_used_encounter"))
+            {
+                var redSum = SumRedTilesInHistoricWords(historic);
+                if (redSum > 0)
+                    snapshot.extras["red_tiles_used_encounter"] = redSum.ToString();
             }
+
+            if (!snapshot.extras.ContainsKey("previous_word_first_letter"))
+            {
+                var prev = ScoringContextCapture.FirstLetterFromHistoricWords(historic);
+                if (!string.IsNullOrEmpty(prev))
+                    snapshot.extras["previous_word_first_letter"] = prev;
+            }
+        }
+
+        /// <summary>
+        /// Telescope / Movie Camera extras from live CalculateOverallScore previousWords.
+        /// </summary>
+        public static Dictionary<string, string> BuildTelescopeEncounterExtras(
+            List<HistoricWord> words,
+            Player player
+        )
+        {
+            var extras = new Dictionary<string, string>();
+            if (words == null || words.Count == 0)
+                return extras;
+
+            var serialized = SerializeHistoricWords(words, player);
+            if (!string.IsNullOrEmpty(serialized) && serialized != "[]")
+                extras["historic_words"] = serialized;
+
+            var redSum = SumRedTilesInHistoricWords(words);
+            if (redSum > 0)
+                extras["red_tiles_used_encounter"] = redSum.ToString();
+
+            return extras;
+        }
+
+        public static int SumRedTilesInHistoricWords(List<HistoricWord> words)
+        {
+            if (words == null || words.Count == 0)
+                return 0;
+            var total = 0;
+            foreach (var hw in words)
+                total += CountRedTilesInHistoric(hw);
+            return total;
         }
 
         private static bool IsMetaBossSlug(string wikiId)

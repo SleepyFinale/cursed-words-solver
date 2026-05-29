@@ -177,11 +177,10 @@ def dictionary_word_for_path(
     valid: list[str] = []
 
     for candidate in dictionary.words_of_length(word_len):
-
-        if not validator.word_ok(board, path, candidate, flags):
-
+        if "?" in word and not _fixed_letters_align(word, candidate):
             continue
-
+        if not validator.word_ok(board, path, candidate, flags):
+            continue
         valid.append(candidate)
 
     if not valid:

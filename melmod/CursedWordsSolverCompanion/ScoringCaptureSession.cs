@@ -139,6 +139,7 @@ namespace CursedWordsSolverCompanion
         public static void OnScoringContext(List<HistoricWord> previousWords)
         {
             var player = RunStateExporter.GetPlayerForUpdate();
+            RunStateExporter.CachePreviousWordsForExport(previousWords);
             var captured = ScoringContextCapture.ExtractFromPreviousWords(previousWords);
             var letterCounts = ScoringContextCapture.ResolveMutatingDnaLetterCounts(
                 player,
@@ -147,8 +148,18 @@ namespace CursedWordsSolverCompanion
             captured["mutating_dna_letter_counts"] =
                 ScoringContextCapture.SerializeLetterCounts(letterCounts);
 
+            var telescopeExtras = RunStateExportFill.BuildTelescopeEncounterExtras(
+                previousWords,
+                player
+            );
+            foreach (var kv in telescopeExtras)
+                captured[kv.Key] = kv.Value;
+
             foreach (var kv in captured)
                 _scoringContextExtras[kv.Key] = kv.Value;
+
+            if (telescopeExtras != null && telescopeExtras.Count > 0)
+                TryPersistScoringContextExtras();
 
             if (!_active)
                 return;

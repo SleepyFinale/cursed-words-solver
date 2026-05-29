@@ -30,6 +30,9 @@ from cursed_words_solver.rules.scoring_conditions import (
     path_letter_for_count,
     rewind_bicycle_pre_word_extras,
     rewind_birthday_cake_pre_word_extras,
+    rewind_movie_camera_pre_word_extras,
+    movie_camera_improve_for_path,
+    chess_take_strict_mode,
     sticker_rule_int,
     suited_cards_on_path_count,
     tile_numeric_value,
@@ -1251,6 +1254,40 @@ def _telescope_level(run_state: dict) -> int:
     return 1
 
 
+def _has_telescope_for_replay(
+    run_state: dict, data: dict, board, path: list[int]
+) -> bool:
+    if _has_sticker(run_state, "telescope"):
+        return True
+    trace = data.get("actual_trace") or []
+    for step in trace:
+        if not isinstance(step, dict):
+            continue
+        if str(step.get("item_id", "") or "").lower() == "telescope":
+            return True
+    if board is None:
+        return False
+    for row in board.tiles:
+        for tile in row:
+            if str(getattr(tile, "scattered_item_id", "") or "").lower() == "telescope":
+                return True
+    return False
+
+
+def _telescope_level_for_replay(run_state: dict, board, path: list[int]) -> int:
+    level = _telescope_level(run_state)
+    if board is None:
+        return level
+    for row in board.tiles:
+        for tile in row:
+            if str(getattr(tile, "scattered_item_id", "") or "").lower() != "telescope":
+                continue
+            scattered_level = getattr(tile, "scattered_item_level", None)
+            if scattered_level is not None:
+                return max(1, int(scattered_level))
+    return level
+
+
 def _infer_encounter_reds_before_word(
     data: dict, board, path: list[int], level: int
 ) -> int:
@@ -1287,23 +1324,58 @@ def _adjust_movie_camera_telescope_extras(
     board,
     path: list[int],
 ) -> None:
-    """Replay extras for encounter-total Movie Camera and cumulative Telescope."""
-    if not _has_sticker(run_state, "movie_camera") and not _has_sticker(
-        run_state, "telescope"
-    ):
+    """Replay extras for cumulative Telescope (Movie Camera handled separately)."""
+    if not _has_telescope_for_replay(run_state, data, board, path):
         return
     extras = dict(run_state.get("extras") or {})
-    mc_total = _movie_camera_trace_word_bonus(data)
-    if mc_total is not None and _has_sticker(run_state, "movie_camera"):
-        extras["movie_camera_word_score_bonus"] = str(mc_total)
-    if _has_sticker(run_state, "telescope") and not extras.get("historic_words"):
-        level = _telescope_level(run_state)
+    if not extras.get("historic_words"):
+        level = _telescope_level_for_replay(run_state, board, path)
         prior_reds = _infer_encounter_reds_before_word(data, board, path, level)
         if prior_reds > 0:
             extras["historic_words"] = json.dumps(
                 [{"word": "_encounter_prior_", "red_tile_count": prior_reds}]
             )
+            extras["red_tiles_used_encounter"] = str(prior_reds)
     run_state["extras"] = extras
+
+
+def _adjust_movie_camera_pre_word_extras(
+    run_state: dict,
+    data: dict,
+    board,
+    path: list[int],
+    loadout,
+) -> None:
+    """Set pre-word movie_camera_word_score_bonus so accumulated + improve = trace total."""
+    if not _has_sticker(run_state, "movie_camera"):
+        return
+    mc_total = _movie_camera_trace_word_bonus(data)
+    if mc_total is None:
+        return
+    pipeline = ScoringPipeline()
+    rule = pipeline.rules.get("stickers", {}).get("movie_camera") or {}
+    level = 1
+    for sticker in run_state.get("stickers") or []:
+        if isinstance(sticker, dict) and str(sticker.get("id", "")).lower() == "movie_camera":
+            level = int(sticker.get("level", 1))
+            break
+    n = sticker_rule_int(level, rule)
+    strict = chess_take_strict_mode(
+        board, path, strict_requested=rule.get("strict_takes", False)
+    )
+    improve = movie_camera_improve_for_path(board, path, n, strict=strict)
+    pre = max(0, mc_total - improve)
+    extras = dict(run_state.get("extras") or {})
+    try:
+        bonus = int(extras.get("movie_camera_word_score_bonus", -1))
+    except (TypeError, ValueError):
+        bonus = -1
+    if improve > 0 and bonus == mc_total:
+        rewind_movie_camera_pre_word_extras(loadout, board, path, n, strict=strict)
+        run_state["extras"] = dict(loadout.extras or {})
+    elif bonus != pre:
+        extras["movie_camera_word_score_bonus"] = str(pre)
+        run_state["extras"] = extras
 
 
 def _adjust_bicycle_pre_word_extras(
@@ -1726,6 +1798,8 @@ def test_scoring_mismatch(case_path: Path) -> None:
     loadout = parse_run_state(run_state)
     _adjust_birthday_cake_pre_word_extras(run_state, data, board, path, loadout)
     loadout = parse_run_state(run_state)
+    _adjust_movie_camera_pre_word_extras(run_state, data, board, path, loadout)
+    loadout = parse_run_state(run_state)
     _adjust_mutating_dna_extras(run_state, data, board, path)
     loadout = parse_run_state(run_state)
     replay_money = _bank_money_for_replay(data, board, path, loadout)
@@ -1891,6 +1965,8 @@ def test_nat_h4_ram_trace_checkpoints(
     _adjust_bicycle_pre_word_extras(run_state, data, board, data["path"], loadout)
     loadout = parse_run_state(run_state)
     _adjust_birthday_cake_pre_word_extras(run_state, data, board, data["path"], loadout)
+    loadout = parse_run_state(run_state)
+    _adjust_movie_camera_pre_word_extras(run_state, data, board, data["path"], loadout)
     loadout = parse_run_state(run_state)
     _adjust_mutating_dna_extras(run_state, data, board, data["path"])
     loadout = parse_run_state(run_state)

@@ -77,7 +77,10 @@ from cursed_words_solver.rules.scoring_conditions import (
     suited_cards_on_path_count,
     chess_takes_on_path,
     chess_take_strict_mode,
+    super_8_uses_melmod_take_metadata,
+    movie_camera_accumulated,
     movie_camera_encounter_word_bonus,
+    movie_camera_improve_for_path,
     telescope_running_red_count,
     is_take_at_path_position,
     is_chess_tile,
@@ -1920,7 +1923,7 @@ class ScoringPipeline:
                 for i, idx in enumerate(path):
                     tile = board.get_by_index(idx)
                     if target == "chess_take" and is_take_at_path_position(
-                        board, path, i, strict=strict_takes
+                        board, path, i, strict=strict_takes, loadout=loadout
                     ):
                         # Zebra: multiply the capturing piece (path[i-1]), not landing.
                         mult_idx = i - 1 if i > 0 else 0
@@ -2314,7 +2317,10 @@ class ScoringPipeline:
             if run >= 1:
                 factor = float(run)
                 _queue_word_multiplier(state, factor, rule_id)
-                state["effects"].append(f"×{factor} word (RED run {run})")
+                label = rule.get("name") or "Heart On Fire"
+                state["effects"].append(
+                    f"{label}: ×{factor} word (longest RED run {run})"
+                )
 
         elif effect_type == "multiply_word_per_path_tile":
             per_tile = float(rule.get("factor", -1.1))
@@ -2443,8 +2449,10 @@ class ScoringPipeline:
                         state["tile_scores"][i] += add
                         count += 1
                 if count:
+                    tele_label = rule.get("name") or "Telescope"
                     state["effects"].append(
-                        f"+{per_level}×running red count per red tile ({count})"
+                        f"{tele_label}: +{per_level}×encounter red count per red tile"
+                        f" ({count} tile(s))"
                     )
 
         elif effect_type == "multiply":
@@ -2522,28 +2530,37 @@ class ScoringPipeline:
                 path,
                 strict_requested=rule.get("strict_takes", False),
             )
+            rid_take = slugify_name(rule_id or applying_sticker_id or "")
+            if rid_take in ("super_8", "super_eight") and super_8_uses_melmod_take_metadata(
+                board, path
+            ):
+                strict_takes = True
             mode = rule.get("mode", "flat")
             if mode == "piece_value_first_n":
                 n = sticker_rule_int(level, rule)
-                bonus = movie_camera_encounter_word_bonus(
-                    board,
-                    path,
-                    n,
-                    loadout,
-                    strict=strict_takes,
+                improve = movie_camera_improve_for_path(
+                    board, path, n, strict=strict_takes, loadout=loadout
                 )
+                bonus = movie_camera_encounter_word_bonus(
+                    board, path, n, loadout, strict=strict_takes
+                )
+                accumulated = bonus - improve
                 if not bonus and level >= 3 and chess_takes_on_path(
-                    board, path, strict=strict_takes
+                    board, path, strict=strict_takes, loadout=loadout
                 ) == 0:
                     bonus = n * n
+                    accumulated = 0
+                    improve = bonus
                 if bonus:
                     _add_word_score(state, bonus)
                     state["effects"].append(
-                        f"+{bonus} word (Movie Camera encounter total, first {n} take(s))"
+                        f"+{bonus} word (Movie Camera: {accumulated} + {improve})"
                     )
             else:
                 per_take = super_8_take_word_bonus(loadout, rule)
-                takes = chess_takes_on_path(board, path, strict=strict_takes)
+                takes = chess_takes_on_path(
+                    board, path, strict=strict_takes, loadout=loadout
+                )
                 if takes:
                     bonus = per_take * takes
                     _add_word_score(state, bonus)

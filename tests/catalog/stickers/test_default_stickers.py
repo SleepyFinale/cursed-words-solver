@@ -594,9 +594,11 @@ def test_telescope_red_encounter_bonus():
             )
         },
     )
-    score, _ = pipeline.score(board, [0, 1], "ab", loadout)
+    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
     # 1st red: level×(2+1)=6; 2nd red: level×(2+2)=8
     assert score == (2 + 6) + (2 + 8)
+    effects = bd["pipeline"]["effects"]
+    assert any(e.startswith("Telescope:") for e in effects)
 
 
 def test_sunflower_money_multiplier():
@@ -676,3 +678,53 @@ def test_yellow_glasses_no_double_across_chess_bishop():
     score, bd = pipeline.score(board, [0, 1, 2], "ene", loadout)
     assert bd["multiplier"] == 1.0
     assert score == base
+
+
+def test_cherry_pie_grid_path_word_mult_before_additive_bonuses():
+    """Scattered Cherry Pie ×WORD applies on tile sum before +WORD (e.g. Super 8)."""
+    from cursed_words_solver.rules.scoring_conditions import grid_path_word_mult_is_immediate
+    from cursed_words_solver.rules.rule_lookup import get_rule
+
+    pipeline = ScoringPipeline()
+    _key, rule = get_rule(pipeline.rules, "stickers", "cherry_pie", "Cherry Pie")
+    assert rule is not None
+    assert grid_path_word_mult_is_immediate(Loadout(), "cherry_pie", rule)
+
+    board = _empty_board()
+    for col in range(3):
+        board.tiles[0][col] = _tile(0, col, "r", 10, color=TileColor.RED)
+    board.tiles[0][3] = Tile(
+        row=0,
+        col=3,
+        char="p",
+        letter="A",
+        base_score=0,
+        color=TileColor.VOID,
+        curse=CurseType.ITEM,
+        metadata={
+            "source": "melmod",
+            "scattered_item_id": "cherry_pie",
+            "scattered_item_level": 1,
+        },
+    )
+    board.tiles[1][0] = Tile(
+        row=1,
+        col=0,
+        char="k",
+        letter="?",
+        base_score=5,
+        color=TileColor.RED,
+        curse=CurseType.CHESS_KING,
+        metadata={"source": "melmod", "take": True},
+    )
+    loadout = Loadout(
+        extras={
+            "pin_effect": "super_8",
+            "pin_right_level": "8",
+            "pin_right_variable": "8",
+        },
+    )
+    path = [0, 1, 2, 3, 5]
+    score, _bd = pipeline.score(board, path, "rrra", loadout)
+    # tile sum 35; ×2 cherry on tiles → 70; +8 Super 8 (one melmod take)
+    assert int(score) == 78

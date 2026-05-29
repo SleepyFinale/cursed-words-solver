@@ -71,6 +71,7 @@ namespace CursedWordsSolverCompanion
             if (!RunStateExporter.TryMergeBicycleExtrasAfterScore())
                 RunStateExporter.QueueBicycleExtrasRetry();
             RunStateExporter.TryMergeMovieCameraExtrasAfterScore();
+            RunStateExporter.TryMergeTelescopeEncounterExtrasAfterScore();
             RunStateExporter.TryMergeCachedGridNumber();
         }
     }

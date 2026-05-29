@@ -1056,6 +1056,16 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
             parts.append(f"Birthday={int(bday)}")
         else:
             parts.append("Birthday=? (F7 in-game; rebuild melmod if stuck at 0)")
+    has_movie_camera = any(
+        (s.id or "").lower() == "movie_camera"
+        for s in loadout.stickers
+    )
+    if has_movie_camera:
+        mc = loadout.extras.get("movie_camera_word_score_bonus")
+        if mc is not None and int(mc) > 0:
+            parts.append(f"Movie Camera={int(mc)}")
+        else:
+            parts.append("Movie Camera=? (F7 in-game; rebuild melmod if stuck at 0)")
     if loadout.money:
         parts.append(f"${loadout.money}")
     return "loadout: " + (", ".join(parts) if parts else "empty")

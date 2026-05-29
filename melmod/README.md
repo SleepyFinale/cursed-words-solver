@@ -265,8 +265,8 @@ Run context extras (default-unlocked stickers):
 | `mutating_dna_letter_counts` | Mutating DNA (JSON map letter → use count) |
 | `tile_ninja_bonus` | Tile Ninja (additive ×WORD bonus; wiki +0.02 per consumable placed) |
 | `avocado_mushy` | Avocado frozen in shop (`true` → ×-2 WORD SCORE instead of ×2) |
-| `red_tiles_used_encounter` | Telescope fallback when `historic_words` lacks per-word red counts |
-| `movie_camera_word_score_bonus` | Movie Camera encounter running `WordScoreBonus` (merged after each score) |
+| `red_tiles_used_encounter` | Telescope fallback when `historic_words` lacks per-word red counts; also merged from the sum of prior-word RED tiles after each `CalculateOverallScore`, and derived on **F7** when the game property is missing |
+| `movie_camera_word_score_bonus` | Movie Camera encounter running `WordScoreBonus` (exported on **F7** and merged after each score). If the solver shows `Movie Camera: 0 + …`, press **F7** in-game; until then set `"movie_camera_word_score_bonus": "20"` in `run_state.json` → `extras` to match the sticker UI. |
 | `historic_words` | Prior words: `word`, `path`, `score`, `red_tile_count`, `chess_take_value` |
 | `consumable_rack_count` | Hi Vis Jacket (tiles on consumable rack) |
 | `grid_number` | Current grid index in the encounter (1-based; also updated from `CalculateOverallScore`) |

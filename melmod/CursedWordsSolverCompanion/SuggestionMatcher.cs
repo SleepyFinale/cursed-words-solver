@@ -57,6 +57,23 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
+        /// True when the player extended the F8 highlight (same board, longer path, same prefix).
+        /// </summary>
+        public static bool PathsIsPrefixExtension(List<int> suggestionPath, List<int> submittedPath)
+        {
+            if (suggestionPath == null || submittedPath == null)
+                return false;
+            if (suggestionPath.Count == 0 || submittedPath.Count <= suggestionPath.Count)
+                return false;
+            for (var i = 0; i < suggestionPath.Count; i++)
+            {
+                if (suggestionPath[i] != submittedPath[i])
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Solver scoring strings use digits / stamp substitutions; game submit uses dictionary spelling.
         /// </summary>
         public static bool LooksLikeScoringWord(string word)
@@ -176,10 +193,23 @@ namespace CursedWordsSolverCompanion
 
             if (!pathMatches)
             {
-                parts.Add(
-                    "path differs from F8 suggestion (score compare needs the exact highlighted path; "
-                        + "alternate routes for the same dictionary word are not captured)"
-                );
+                if (
+                    boardMatches
+                    && PathsIsPrefixExtension(suggestion.path, path)
+                )
+                {
+                    parts.Add(
+                        "submitted path extends F8 highlight (press F8 again after extending, "
+                            + "or play the exact highlighted path for score compare)"
+                    );
+                }
+                else
+                {
+                    parts.Add(
+                        "path differs from F8 suggestion (score compare needs the exact highlighted path; "
+                            + "alternate routes for the same dictionary word are not captured)"
+                    );
+                }
                 parts.Add(
                     "submitted ["
                         + string.Join(",", path ?? new List<int>())

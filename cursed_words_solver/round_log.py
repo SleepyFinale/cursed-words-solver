@@ -9,6 +9,7 @@ MATCH_STATUSES = frozenset(
         "score_match",
         "score_mismatch",
         "path_mismatch",
+        "path_extension",
         "no_suggestion",
     }
 )
@@ -18,13 +19,19 @@ def derive_match_status(
     *,
     solver_available: bool,
     path_matches: bool,
+    path_prefix_extension: bool = False,
+    board_matches: bool = True,
     predicted_score: int,
     actual_score: int,
 ) -> str:
     """Mirror RoundLogExporter.ResolveMatchStatus for tests."""
     if not solver_available:
         return "no_suggestion"
+    if not board_matches:
+        return "path_mismatch"
     if not path_matches:
+        if path_prefix_extension:
+            return "path_extension"
         return "path_mismatch"
     if predicted_score != actual_score:
         return "score_mismatch"

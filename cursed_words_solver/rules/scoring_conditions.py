@@ -25,6 +25,7 @@ from cursed_words_solver.rules.chess_tiles import (
     is_chess_capture_step,
     is_chess_piece,
 )
+from cursed_words_solver.rules.stamp_behaviors import StampSearchFlags, stamp_search_flags
 from cursed_words_solver.rules.fraction_tiles import fraction_parts, is_fraction_tile
 
 NON_COLOUR_FOR_NUMBER_BONUS = frozenset(
@@ -653,6 +654,23 @@ def is_take_tile(tile: Tile, *, strict: bool = False) -> bool:
     return False
 
 
+def _chess_take_search_flags(
+    loadout: Loadout | None,
+    *,
+    allies_can_take: bool = False,
+) -> StampSearchFlags:
+    if loadout is None:
+        return StampSearchFlags(chess_allies_can_take=allies_can_take)
+    flags = stamp_search_flags(loadout)
+    if allies_can_take:
+        return StampSearchFlags(
+            horizontal_wrap=flags.horizontal_wrap,
+            chess_allies_can_take=True,
+            chess_king_queen_item_movement=flags.chess_king_queen_item_movement,
+        )
+    return flags
+
+
 def is_take_at_path_position(
     board: Board,
     path: list[int],
@@ -660,14 +678,17 @@ def is_take_at_path_position(
     *,
     strict: bool = False,
     allies_can_take: bool = False,
+    loadout: Loadout | None = None,
 ) -> bool:
     """Whether path[pos] counts as a chess capture landing square."""
     tile = board.get_by_index(path[pos])
-    if _has_take_metadata(tile):
-        return True
+    if _has_take_metadata(tile) and is_chess_piece(tile):
+        if pos > 0 or strict:
+            return True
     if strict or pos == 0:
         return False
     prefix = path[:pos]
+    flags = _chess_take_search_flags(loadout, allies_can_take=allies_can_take)
     return is_chess_capture_step(
         board,
         path[pos - 1],
@@ -675,17 +696,24 @@ def is_take_at_path_position(
         allies_can_take=allies_can_take,
         path_prefix=prefix,
         visited=set(prefix),
+        flags=flags,
     )
 
 
 def chess_take_path_positions(
-    board: Board, path: list[int], *, strict: bool = False
+    board: Board,
+    path: list[int],
+    *,
+    strict: bool = False,
+    loadout: Loadout | None = None,
 ) -> list[int]:
     """Indices into path for tiles that count as takes."""
     return [
         i
         for i in range(len(path))
-        if is_take_at_path_position(board, path, i, strict=strict)
+        if is_take_at_path_position(
+            board, path, i, strict=strict, loadout=loadout
+        )
     ]
 
 
@@ -694,7 +722,11 @@ def chess_piece_value(tile: Tile) -> int:
 
 
 def _is_full_moon_chess_teleport_step(
-    board: Board, path: list[int], pos: int
+    board: Board,
+    path: list[int],
+    pos: int,
+    *,
+    loadout: Loadout | None = None,
 ) -> bool:
     """True when path step pos is a Full Moon jump between identical chess pieces."""
     if pos < 1:
@@ -707,12 +739,14 @@ def _is_full_moon_chess_teleport_step(
     if not identical_chess_piece(from_tile, to_tile):
         return False
     prefix = path[:pos]
+    flags = _chess_take_search_flags(loadout)
     return not is_chess_capture_step(
         board,
         from_idx,
         to_idx,
         path_prefix=prefix,
         visited=set(prefix),
+        flags=flags,
     )
 
 
@@ -788,7 +822,9 @@ def movie_camera_take_piece_value_at(
     carousel = _carousel_horse_level(loadout) >= 3
     mc_limit = _movie_camera_sticker_level(loadout)
     overflow = mc_limit > 0 and len(take_positions) > mc_limit
-    if pos >= 2 and _is_full_moon_chess_teleport_step(board, path, pos - 1):
+    if pos >= 2 and _is_full_moon_chess_teleport_step(
+        board, path, pos - 1, loadout=loadout
+    ):
         if overflow and carousel and multi_take:
             return _chess_prefix_score_on_path(board, path, pos)
         if from_base > from_piece * 4:
@@ -870,17 +906,20 @@ def movie_camera_take_piece_value_at(
             and is_chess_piece(from_tile)
         ):
             prefix = path[:pos]
+            flags = _chess_take_search_flags(loadout)
             if is_chess_capture_step(
                 board,
                 path[pos - 1],
                 path[pos],
                 path_prefix=prefix,
                 visited=set(prefix),
+                flags=flags,
             ):
                 return from_base + from_piece + (base - piece)
         if landing.curse == CurseType.CHESS_ROOK and base == piece:
             return piece * 2
     prefix = path[:pos] if pos > 0 else []
+    flags = _chess_take_search_flags(loadout)
     is_capture = (
         pos > 0
         and is_chess_capture_step(
@@ -889,6 +928,7 @@ def movie_camera_take_piece_value_at(
             path[pos],
             path_prefix=prefix,
             visited=set(prefix),
+            flags=flags,
         )
     )
     if (
@@ -968,7 +1008,9 @@ def _movie_camera_take_excluded(
     if landing.curse in (CurseType.CHESS_ROOK, CurseType.CHESS_QUEEN):
         return False
     for fm_pos in range(take_pos + 1, len(path)):
-        if not _is_full_moon_chess_teleport_step(board, path, fm_pos):
+        if not _is_full_moon_chess_teleport_step(
+            board, path, fm_pos, loadout=loadout
+        ):
             continue
         if not any(t > fm_pos for t in all_takes):
             continue
@@ -991,7 +1033,9 @@ def movie_camera_take_path_positions(
     loadout: Loadout | None = None,
 ) -> list[int]:
     """Path indices for captures that count toward Movie Camera's first-N takes."""
-    all_takes = chess_take_path_positions(board, path, strict=strict)
+    all_takes = chess_take_path_positions(
+        board, path, strict=strict, loadout=loadout
+    )
     return [
         pos
         for pos in all_takes
@@ -1740,7 +1784,7 @@ def movie_camera_prior_from_historic(loadout: Loadout | None) -> int:
 
 
 def movie_camera_word_score_bonus_exported(loadout: Loadout | None) -> int | None:
-    """Live post-score accumulator from melmod, when present."""
+    """Live WordScoreBonus from melmod (pre-submit on F7; may be post-submit after score)."""
     if not loadout:
         return None
     raw = (loadout.extras or {}).get("movie_camera_word_score_bonus")
@@ -1752,39 +1796,60 @@ def movie_camera_word_score_bonus_exported(loadout: Loadout | None) -> int | Non
         return None
 
 
+def movie_camera_accumulated(loadout: Loadout | None) -> int:
+    """Encounter Movie Camera WordScoreBonus before this word's capture improvement."""
+    exported = movie_camera_word_score_bonus_exported(loadout)
+    if exported is not None:
+        return exported
+    return movie_camera_prior_from_historic(loadout)
+
+
+def movie_camera_improve_for_path(
+    board: Board,
+    path: list[int],
+    level: int,
+    *,
+    strict: bool = False,
+    loadout: Loadout | None = None,
+) -> int:
+    """Piece values for the first N Movie Camera credits on this path."""
+    if _carousel_horse_level(loadout) >= 2:
+        return first_n_movie_camera_piece_value_sum(
+            board, path, level, strict=strict, loadout=loadout
+        )
+    return first_n_movie_camera_game_take_value_sum(
+        board, path, level, strict=strict, loadout=loadout
+    )
+
+
 def is_movie_camera_take_at_path_position(
     board: Board,
     path: list[int],
     pos: int,
     *,
     strict: bool = False,
+    loadout: Loadout | None = None,
 ) -> bool:
     """True when path[pos] is a ChessTake/EnPassant landing (Movie Camera parity)."""
-    if pos < 0 or pos >= len(path):
-        return False
-    tile = board.get_by_index(path[pos])
-    if _has_take_metadata(tile):
-        return True
-    if strict or pos == 0:
-        return False
-    prefix = path[:pos]
-    return is_chess_capture_step(
-        board,
-        path[pos - 1],
-        path[pos],
-        path_prefix=prefix,
-        visited=set(prefix),
+    return is_take_at_path_position(
+        board, path, pos, strict=strict, loadout=loadout
     )
 
 
 def movie_camera_game_take_path_positions(
-    board: Board, path: list[int], *, strict: bool = False
+    board: Board,
+    path: list[int],
+    *,
+    strict: bool = False,
+    loadout: Loadout | None = None,
 ) -> list[int]:
     """Path indices for ChessTake/EnPassant landings (first-N order, no sorting)."""
     return [
         i
         for i in range(len(path))
-        if is_movie_camera_take_at_path_position(board, path, i, strict=strict)
+        if is_movie_camera_take_at_path_position(
+            board, path, i, strict=strict, loadout=loadout
+        )
     ]
 
 
@@ -1794,11 +1859,14 @@ def first_n_movie_camera_game_take_value_sum(
     n: int,
     *,
     strict: bool = False,
+    loadout: Loadout | None = None,
 ) -> int:
     """Sum chess piece values for the first N Movie Camera takes in path order."""
     if n <= 0:
         return 0
-    positions = movie_camera_game_take_path_positions(board, path, strict=strict)
+    positions = movie_camera_game_take_path_positions(
+        board, path, strict=strict, loadout=loadout
+    )
     total = 0
     for pos in positions[:n]:
         total += chess_piece_value(board.get_by_index(path[pos]))
@@ -1813,15 +1881,15 @@ def movie_camera_encounter_word_bonus(
     *,
     strict: bool = False,
 ) -> int:
-    """Encounter-total Movie Camera word bonus (decompiled WordScoreBonus token)."""
-    exported = movie_camera_word_score_bonus_exported(loadout)
-    if exported is not None:
-        return exported
-    prior = movie_camera_prior_from_historic(loadout)
-    this_word = first_n_movie_camera_game_take_value_sum(
-        board, path, level, strict=strict
+    """Word bonus for this Movie Camera application (matches in-game WordScoreBonus)."""
+    improve = movie_camera_improve_for_path(
+        board, path, level, strict=strict, loadout=loadout
     )
-    return prior + this_word
+    accumulated = movie_camera_accumulated(loadout)
+    prior = movie_camera_prior_from_historic(loadout)
+    if improve > 0 and prior + improve == accumulated:
+        return accumulated
+    return accumulated + improve
 
 
 def subtotal_before_mult(state: dict) -> float:
@@ -2302,7 +2370,7 @@ def _evaluate_sticker_condition(
             min_n = int(condition.split(":", 1)[1])
         except (ValueError, IndexError):
             return False
-        return chess_takes_on_path(board, path) >= min_n
+        return chess_takes_on_path(board, path, loadout=loadout) >= min_n
     if condition == "word_starts_face_card":
         return word_starts_with_face_card(board, path)
     if condition == "word_starts_ends_different_suit":
@@ -2444,8 +2512,31 @@ def chess_take_strict_mode(
     return path_has_melmod_take_metadata(board, path)
 
 
-def chess_takes_on_path(board: Board, path: list[int], *, strict: bool = False) -> int:
-    return len(chess_take_path_positions(board, path, strict=strict))
+def super_8_uses_melmod_take_metadata(board: Board, path: list[int]) -> bool:
+    """Super 8 pin: post-submit ``take`` flags replace inferred capture count.
+
+    Partial exports (one flagged tile during animation) still infer; a small
+    set of melmod takes below the inference count signals a submit snapshot.
+    """
+    if not path_has_melmod_take_metadata(board, path):
+        return False
+    strict_count = chess_takes_on_path(board, path, strict=True)
+    inferred_count = chess_takes_on_path(board, path, strict=False)
+    if strict_count < 2:
+        return False
+    return strict_count < inferred_count
+
+
+def chess_takes_on_path(
+    board: Board,
+    path: list[int],
+    *,
+    strict: bool = False,
+    loadout: Loadout | None = None,
+) -> int:
+    return len(
+        chess_take_path_positions(board, path, strict=strict, loadout=loadout)
+    )
 
 
 def abacus_colored_number_bonus(loadout: Loadout, rule: dict) -> int:
@@ -2914,6 +3005,33 @@ def rewind_birthday_cake_pre_word_extras(
     loadout.extras = extras
 
 
+def rewind_movie_camera_pre_word_extras(
+    loadout: Loadout,
+    board: Board,
+    path: list[int],
+    level: int,
+    *,
+    strict: bool = False,
+) -> None:
+    """Subtract this word's improve from extras when snapshot is post-submit."""
+    improve = movie_camera_improve_for_path(
+        board, path, level, strict=strict, loadout=loadout
+    )
+    if improve <= 0:
+        return
+    bonus = movie_camera_accumulated(loadout)
+    prior = movie_camera_prior_from_historic(loadout)
+    if prior + improve == bonus:
+        pre = prior
+    elif bonus > prior + improve:
+        pre = bonus - improve
+    else:
+        return
+    extras = dict(loadout.extras or {})
+    extras["movie_camera_word_score_bonus"] = str(pre)
+    loadout.extras = extras
+
+
 def rewind_setup_extras(
     loadout: Loadout,
     board: Board,
@@ -2921,6 +3039,7 @@ def rewind_setup_extras(
     *,
     pin_rule: dict | None = None,
     birthday_rule: dict | None = None,
+    movie_camera_rule: dict | None = None,
     post_bicycle_bonus: int | None = None,
 ) -> list[str]:
     """Normalize extras before F8 search or regression replay."""
@@ -2946,6 +3065,21 @@ def rewind_setup_extras(
         after = birthday_cake_accumulated(loadout)
         if after != before:
             notes.append(f"birthday cake bonus {before}→{after}")
+
+    if path and movie_camera_rule is not None:
+        before = movie_camera_accumulated(loadout)
+        level = int(movie_camera_rule.get("level", 1))
+        strict = chess_take_strict_mode(
+            board,
+            path,
+            strict_requested=movie_camera_rule.get("strict_takes", False),
+        )
+        rewind_movie_camera_pre_word_extras(
+            loadout, board, path, level, strict=strict
+        )
+        after = movie_camera_accumulated(loadout)
+        if after != before:
+            notes.append(f"movie camera bonus {before}→{after}")
 
     from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
 
@@ -3514,22 +3648,25 @@ def grid_path_word_mult_is_immediate(
     if loadout is None or not rule or rule.get("type") != "multiply_word_scaled":
         return False
     rid = str(rule_id or "").strip().lower()
-    if rid not in _GRID_PATH_IMMEDIATE_WORD_MULT_IDS:
+    if rid in _GRID_PATH_IMMEDIATE_WORD_MULT_IDS:
+        extras = loadout.extras or {}
+        if str(extras.get("grid_path_immediate_word_mults", "")).lower() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            return True
+        if rid == "ferris_wheel" and str(
+            extras.get("ferris_immediate_grid", "")
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            return True
         return False
-    extras = loadout.extras or {}
-    if str(extras.get("grid_path_immediate_word_mults", "")).lower() in (
-        "1",
-        "true",
-        "yes",
-    ):
-        return True
-    if rid == "ferris_wheel" and str(extras.get("ferris_immediate_grid", "")).lower() in (
-        "1",
-        "true",
-        "yes",
-    ):
-        return True
-    return False
+    # Scattered path ×WORD (e.g. Cherry Pie): apply before pin / +WORD additives.
+    return rid != "ferris_wheel"
 
 
 def snapshot_copy_slug(loadout: Loadout | None) -> str:

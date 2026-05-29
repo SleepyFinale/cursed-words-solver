@@ -512,3 +512,66 @@ def test_twigloo_extension_beats_short_chess_path():
     assert results[0].score > short_score
     assert results[0].score >= 1900.0
     assert len(results[0].path) > len(short_path)
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_extension_from_short_chess_item_prefix():
+    """Regression: item-aware extension finds 9-tile path from 8-tile prefix (20260529)."""
+    import json
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from cursed_words_solver.search import (
+        _CandidateHeap,
+        search_word_from_path,
+    )
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260529_hemiolias_extension.json"
+    )
+    if not fixture.exists():
+        pytest.skip("20260529_hemiolias_extension.json fixture required")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data["run_state_snapshot"])
+    loadout = parse_run_state(data["run_state_snapshot"])
+    assert board is not None
+
+    short_path = data["short_path"]
+    expected_path = data["expected_path"]
+    pipeline = ScoringPipeline()
+    short_score = pipeline.score_total_only(
+        board, short_path, data["short_word"], loadout
+    )
+    expected_score = pipeline.score_total_only(
+        board, expected_path, data["expected_word"], loadout
+    )
+
+    flags = stamp_search_flags(loadout)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=15,
+        time_budget=10.0,
+    )
+    candidates = _CandidateHeap(200)
+    sw = search_word_from_path(board, short_path, flags=flags)
+    sc = searcher._rank_score_for_candidate(board, short_path, sw, loadout)
+    candidates.consider(sc or 0, sw, short_path)
+    searcher._extend_top_candidates(
+        board, loadout, candidates, top_paths=30, max_rounds=16
+    )
+    extended = [
+        (rank_sc, word, list(path))
+        for rank_sc, word, path in candidates.best_sorted()
+        if list(path) == expected_path
+    ]
+    assert extended
+    assert extended[0][0] >= expected_score - 1
+    assert extended[0][0] > short_score
+

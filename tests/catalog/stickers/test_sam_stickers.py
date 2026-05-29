@@ -163,6 +163,54 @@ def test_movie_camera_first_take_piece_value():
     assert score == base + 9
 
 
+def test_movie_camera_accumulated_plus_improve():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(
+        0,
+        0,
+        "Q",
+        4,
+        curse=CurseType.CHESS_QUEEN,
+        metadata={"take": True},
+    )
+    board.tiles[0][1] = _tile(0, 1, "A", 2)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="movie_camera", name="Movie Camera", level=1)],
+        extras={"movie_camera_word_score_bonus": 20},
+    )
+    score, bd = pipeline.score(board, [0, 1], "qa", loadout)
+    base, base_bd = pipeline.score(board, [0, 1], "qa", Loadout())
+    assert bd["word_score"] == base_bd["word_score"] + 29
+    assert score == base + 29
+    effects = bd["pipeline"]["effects"]
+    assert any("Movie Camera: 20 + 9" in e for e in effects)
+
+
+def test_movie_camera_rewind_pre_word_extras():
+    from cursed_words_solver.rules.scoring_conditions import (
+        movie_camera_accumulated,
+        rewind_movie_camera_pre_word_extras,
+    )
+
+    board = _empty_board()
+    board.tiles[0][0] = _tile(
+        0,
+        0,
+        "Q",
+        4,
+        curse=CurseType.CHESS_QUEEN,
+        metadata={"take": True},
+    )
+    board.tiles[0][1] = _tile(0, 1, "A", 2)
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="movie_camera", name="Movie Camera", level=1)],
+        extras={"movie_camera_word_score_bonus": 29},
+    )
+    rewind_movie_camera_pre_word_extras(loadout, board, [0, 1], 1, strict=True)
+    assert movie_camera_accumulated(loadout) == 20
+
+
 def test_movie_camera_level2_sums_first_two_takes():
     board = _empty_board()
     board.tiles[0][0] = _tile(

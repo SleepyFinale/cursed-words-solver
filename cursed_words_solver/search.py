@@ -233,6 +233,23 @@ def hanafuda_sticker_level(loadout: Loadout) -> int:
     return 0
 
 
+def search_word_from_path(
+    board: Board,
+    path: list[int],
+    *,
+    flags: StampSearchFlags | None = None,
+) -> str:
+    """Search trie / dictionary resolve string; scattered items count as wildcards."""
+    parts: list[str] = []
+    for i, idx in enumerate(path):
+        tile = board.get_by_index(idx)
+        if tile.curse == CurseType.ITEM:
+            parts.append("?")
+        else:
+            parts.append(resolve_letter(tile, i, flags=flags))
+    return "".join(parts).lower()
+
+
 def physical_word_for_path(
     board: Board,
     path: list[int],
@@ -1264,6 +1281,7 @@ class WordSearcher:
         )
         self._use_fast_rank_override = use_fast_rank
         self._score_cache: dict[tuple[tuple[int, ...], str], tuple[float, float, float]] = {}
+        self._dict_path_cache: dict[tuple[int, ...], str] = {}
         self._number_extend_cache: dict[tuple[frozenset[int], int], bool] = {}
         self._prune_heap: _CandidateHeap | None = None
         self._parallel_executor: ProcessPoolExecutor | None = None
@@ -1417,6 +1435,83 @@ class WordSearcher:
                     len(candidates) - before
                 )
 
+    def _path_needs_dictionary_resolve(
+        self, board: Board, path: list[int], search_word: str
+    ) -> bool:
+        if "?" in search_word:
+            return True
+        for idx in path:
+            tile = board.get_by_index(idx)
+            if tile.curse == CurseType.ITEM or tile.curse in CHESS_CURSES:
+                return True
+        return False
+
+    def _accept_path_for_search(
+        self,
+        board: Board,
+        path: list[int],
+        search_word: str,
+        loadout: Loadout,
+        stamp_flags: StampSearchFlags,
+        *,
+        trie_compatible: bool = False,
+        prefix_cursor: dict[str, dict] | None = None,
+        use_hanafuda_physical: bool = False,
+    ) -> tuple[bool, str]:
+        """Whether a path is playable and which word form to score/rank."""
+        if len(search_word) < self.min_len:
+            return False, search_word
+
+        def scoring_word_for_path_local(sw: str) -> str:
+            if use_hanafuda_physical:
+                return physical_word_for_path(board, path, flags=stamp_flags)
+            return sw
+
+        if (
+            trie_compatible
+            and prefix_cursor is not None
+            and self.dictionary.cursor_is_word(prefix_cursor)
+            and self.validator._path_constraints_ok(
+                board, path, search_word, stamp_flags
+            )
+        ):
+            return True, scoring_word_for_path_local(search_word)
+        if self.validator.word_ok(board, path, search_word, stamp_flags):
+            return True, scoring_word_for_path_local(search_word)
+        if use_hanafuda_physical:
+            phys = physical_word_for_path(board, path, flags=stamp_flags)
+            if phys != search_word and self.validator.word_ok(
+                board, path, phys, stamp_flags
+            ):
+                return True, phys
+        if loadout is not None and (
+            any(is_number_like_tile(board.get_by_index(i)) for i in path)
+            or self._path_needs_dictionary_resolve(board, path, search_word)
+        ):
+            path_key = tuple(path)
+            alt = self._dict_path_cache.get(path_key)
+            if alt is None:
+                from cursed_words_solver.suggestion import dictionary_word_for_path
+
+                resolve_word = search_word
+                if self._path_needs_dictionary_resolve(board, path, search_word):
+                    resolve_word = search_word_from_path(
+                        board, path, flags=stamp_flags
+                    )
+                alt = dictionary_word_for_path(
+                    board,
+                    path,
+                    resolve_word,
+                    loadout,
+                    self.dictionary,
+                    min_len=self.min_len,
+                    pipeline=self.scoring,
+                )
+                self._dict_path_cache[path_key] = alt or ""
+            if alt and self.validator.word_ok(board, path, alt, stamp_flags):
+                return True, scoring_word_for_path_local(alt)
+        return False, search_word
+
     def _collect_words(
         self,
         board: Board,
@@ -1440,11 +1535,6 @@ class WordSearcher:
         hanafuda_level = hanafuda_sticker_level(loadout)
         use_hanafuda_physical = hanafuda_level > 0
 
-        def scoring_word_for_path(path: list[int], search_word: str) -> str:
-            if use_hanafuda_physical:
-                return physical_word_for_path(board, path, flags=stamp_flags)
-            return search_word
-
         def path_accepted(
             path: list[int],
             search_word: str,
@@ -1452,43 +1542,16 @@ class WordSearcher:
             trie_compatible: bool,
             prefix_cursor: dict[str, dict] | None,
         ) -> tuple[bool, str]:
-            if len(search_word) < self.min_len:
-                return False, search_word
-            # Fast-path: letter-only prefix that is a complete trie word.
-            if (
-                trie_compatible
-                and prefix_cursor is not None
-                and self.dictionary.cursor_is_word(prefix_cursor)
-                and self.validator._path_constraints_ok(
-                    board, path, search_word, stamp_flags
-                )
-            ):
-                return True, scoring_word_for_path(path, search_word)
-            if self.validator.word_ok(board, path, search_word, stamp_flags):
-                return True, scoring_word_for_path(path, search_word)
-            if use_hanafuda_physical:
-                phys = physical_word_for_path(board, path, flags=stamp_flags)
-                if phys != search_word and self.validator.word_ok(
-                    board, path, phys, stamp_flags
-                ):
-                    return True, phys
-            if loadout is not None and any(
-                is_number_like_tile(board.get_by_index(i)) for i in path
-            ):
-                from cursed_words_solver.suggestion import dictionary_word_for_path
-
-                alt = dictionary_word_for_path(
-                    board,
-                    path,
-                    search_word,
-                    loadout,
-                    self.dictionary,
-                    min_len=self.min_len,
-                    pipeline=self.scoring,
-                )
-                if alt and self.validator.word_ok(board, path, alt, stamp_flags):
-                    return True, scoring_word_for_path(path, alt)
-            return False, search_word
+            return self._accept_path_for_search(
+                board,
+                path,
+                search_word,
+                loadout,
+                stamp_flags,
+                trie_compatible=trie_compatible,
+                prefix_cursor=prefix_cursor,
+                use_hanafuda_physical=use_hanafuda_physical,
+            )
 
         def score_path(path: list[int], word: str) -> float | None:
             return self._rank_score_for_candidate(
@@ -1591,9 +1654,15 @@ class WordSearcher:
             )
             if ok:
                 if not digits_only or any(ch.isdigit() for ch in score_word):
-                    sc = score_path(path, score_word)
-                    if sc is not None:
-                        candidates.consider(sc, score_word, path)
+                    self._consider_path_candidate(
+                        board,
+                        loadout,
+                        candidates,
+                        path,
+                        score_word,
+                        stamp_flags,
+                        score_path,
+                    )
 
             if len(path) >= max_len or timed_out:
                 return
@@ -1993,28 +2062,35 @@ class WordSearcher:
                         continue
                     seen_prefixes.add(key)
                     visited_mask = sum(1 << idx for idx in path)
-                    letters = "".join(
-                        resolve_letter(board.get_by_index(idx), j, flags=stamp_flags)
-                        for j, idx in enumerate(path)
-                    )
                     for idx in neighbors_from_tile(
                         board, path, visited_mask, flags=stamp_flags
                     ):
                         if deadline is not None and time.monotonic() >= deadline:
                             break
-                        tile = board.get_by_index(idx)
-                        ch = resolve_letter(tile, len(letters), flags=stamp_flags)
-                        word = (letters + ch).lower()
                         new_path = path + [idx]
+                        word = search_word_from_path(
+                            board, new_path, flags=stamp_flags
+                        )
                         if len(word) < self.min_len:
                             continue
-                        if not self.validator.word_ok(
-                            board, new_path, word, stamp_flags
-                        ):
+                        accepted, scoring_word = self._accept_path_for_search(
+                            board,
+                            new_path,
+                            word,
+                            loadout,
+                            stamp_flags,
+                        )
+                        if not accepted:
                             continue
-                        sc = score_path(new_path, word)
-                        if sc is not None:
-                            candidates.consider(sc, word, new_path)
+                        if self._consider_path_candidate(
+                            board,
+                            loadout,
+                            candidates,
+                            new_path,
+                            scoring_word,
+                            stamp_flags,
+                            score_path,
+                        ):
                             extended = True
                 if not extended:
                     break
@@ -2050,6 +2126,30 @@ class WordSearcher:
             candidates.consider(score, word, list(path))
         for score, word, path in main_entries:
             candidates.consider(score, word, list(path))
+
+    def _consider_path_candidate(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        path: list[int],
+        score_word: str,
+        stamp_flags: StampSearchFlags,
+        score_path: Callable[[list[int], str], float | None],
+    ) -> bool:
+        """Push path to heap; also index item-aware search_word when it differs."""
+        added = False
+        sc = score_path(path, score_word)
+        if sc is not None:
+            candidates.consider(sc, score_word, path)
+            added = True
+        alt_sw = search_word_from_path(board, path, flags=stamp_flags)
+        if alt_sw != score_word.lower():
+            sc_alt = score_path(path, alt_sw)
+            if sc_alt is not None:
+                candidates.consider(sc_alt, alt_sw, path)
+                added = True
+        return added
 
     def _rank_score_for_candidate(
         self,
@@ -2167,6 +2267,7 @@ class WordSearcher:
         if self.blocked:
             return []
         self._score_cache.clear()
+        self._dict_path_cache.clear()
         self._number_extend_cache.clear()
         clear_chess_attack_cache()
         loadout = loadout or Loadout(money=board.money)
@@ -2527,14 +2628,20 @@ class WordSearcher:
         timing.wall_sec = time.monotonic() - solve_start
         self.last_search_timing = timing
 
-        seen_words: set[str] = set()
-        unique: list[WordResult] = []
+        best_by_word: dict[
+            str, tuple[float, float, float, str, tuple[int, ...]]
+        ] = {}
         for rank_sc, word, path_tuple in candidates.best_sorted():
-            if word in seen_words:
-                continue
-            seen_words.add(word)
             path = list(path_tuple)
             immediate, setup = self._immediate_and_setup(board, path, word, loadout)
+            prev = best_by_word.get(word)
+            if prev is not None and immediate <= prev[0]:
+                continue
+            best_by_word[word] = (immediate, setup, rank_sc, word, path_tuple)
+
+        unique: list[WordResult] = []
+        for immediate, setup, rank_sc, word, path_tuple in best_by_word.values():
+            path = list(path_tuple)
             t_final = time.perf_counter()
             _, bd = self.scoring.score(board, path, word, loadout)
             timing.final_score_sec += time.perf_counter() - t_final
@@ -2548,6 +2655,5 @@ class WordSearcher:
                     rank_score=rank_sc if rank_sc else immediate + setup,
                 )
             )
-        unique.sort(key=lambda r: (-r.score, -len(r.word), r.word))
         self._active_timing = None
         return unique[:top_n]

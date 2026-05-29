@@ -258,6 +258,8 @@ def test_heart_on_fire_red_run_multiplier():
     base, _ = pipeline.score(board, [0, 1, 2], "aaa", Loadout())
     assert bd["multiplier"] == 3.0
     assert score == base * 3
+    effects = bd["pipeline"]["effects"]
+    assert any("Heart On Fire:" in e and "longest RED run 3" in e for e in effects)
 
 
 def test_neapolitan_three_colours():

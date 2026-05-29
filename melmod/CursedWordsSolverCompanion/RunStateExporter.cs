@@ -13,6 +13,7 @@ namespace CursedWordsSolverCompanion
     {
         private const int BicycleMergeRetryBudget = 12;
         private static int _pendingBicycleMergeRetries = 0;
+        private static List<HistoricWord> _cachedPreviousWords;
 
         private static readonly string OutputPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -131,6 +132,101 @@ namespace CursedWordsSolverCompanion
         public static List<HistoricWord> TryGetHistoricPreviousWordsPublic(Player player)
         {
             return TryGetHistoricPreviousWords(player);
+        }
+
+        public static void CachePreviousWordsForExport(List<HistoricWord> previousWords)
+        {
+            if (previousWords != null && previousWords.Count > 0)
+                _cachedPreviousWords = previousWords;
+        }
+
+        public static List<HistoricWord> GetCachedPreviousWords()
+        {
+            return _cachedPreviousWords;
+        }
+
+        /// <summary>
+        /// Merge historic_words and red_tiles_used_encounter after CalculateOverallScore.
+        /// </summary>
+        public static bool TryMergeTelescopeEncounterExtras(List<HistoricWord> previousWords)
+        {
+            try
+            {
+                CachePreviousWordsForExport(previousWords);
+                if (previousWords == null || previousWords.Count == 0)
+                    return false;
+
+                var player = GetPlayer();
+                var built = RunStateExportFill.BuildTelescopeEncounterExtras(previousWords, player);
+                if (built == null || built.Count == 0)
+                    return false;
+
+                var keys = new Dictionary<string, string>();
+                string existingHistoric = null;
+                if (built.ContainsKey("historic_words"))
+                {
+                    existingHistoric = TryReadExtraValue("historic_words");
+                    var newHistoric = built["historic_words"];
+                    if (ShouldMergeHistoricWords(existingHistoric, newHistoric))
+                        keys["historic_words"] = newHistoric;
+                }
+
+                if (built.ContainsKey("red_tiles_used_encounter"))
+                    keys["red_tiles_used_encounter"] = built["red_tiles_used_encounter"];
+
+                if (keys.Count == 0)
+                    return true;
+
+                TryMergeExtrasKeys(keys);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static bool TryMergeTelescopeEncounterExtrasAfterScore()
+        {
+            return TryMergeTelescopeEncounterExtras(_cachedPreviousWords);
+        }
+
+        private static bool ShouldMergeHistoricWords(string existing, string incoming)
+        {
+            if (string.IsNullOrEmpty(incoming) || incoming == "[]")
+                return false;
+            if (string.IsNullOrEmpty(existing) || existing == "[]")
+                return true;
+            return incoming.Length > existing.Length;
+        }
+
+        private static string TryReadExtraValue(string key)
+        {
+            if (!File.Exists(OutputPath) || string.IsNullOrEmpty(key))
+                return null;
+            try
+            {
+                var json = File.ReadAllText(OutputPath, Encoding.UTF8);
+                var root = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
+                if (root == null)
+                    return null;
+                object extrasObj;
+                if (!root.TryGetValue("extras", out extrasObj) || extrasObj == null)
+                    return null;
+                var existing = extrasObj as Dictionary<string, string>;
+                if (existing != null && existing.TryGetValue(key, out var val))
+                    return val;
+                if (extrasObj is Newtonsoft.Json.Linq.JObject jobj)
+                {
+                    var token = jobj[key];
+                    return token?.ToString();
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+            return null;
         }
 
         /// <summary>
@@ -1169,6 +1265,9 @@ namespace CursedWordsSolverCompanion
                 snapshot.extras["is_first_grid_of_encounter"] = firstGrid > 0 ? "true" : "false";
 
             var historicWords = TryGetHistoricPreviousWords(player);
+            if (historicWords == null || historicWords.Count == 0)
+                historicWords = GetCachedPreviousWords();
+            RunStateExportFill.EnsureEncounterHistoricExtras(snapshot, player);
 
             var prevLetter = TryGetStringProperty(
                 player,
@@ -1199,6 +1298,8 @@ namespace CursedWordsSolverCompanion
                     "RedTilesUsedThisEncounter",
                     "RedTilesUsedEncounter"
                 );
+            if (redUsed < 0 && historicWords != null && historicWords.Count > 0)
+                redUsed = RunStateExportFill.SumRedTilesInHistoricWords(historicWords);
             if (redUsed >= 0)
                 snapshot.extras["red_tiles_used_encounter"] = redUsed.ToString();
 
@@ -1306,6 +1407,10 @@ namespace CursedWordsSolverCompanion
             var birthdayBonus = TryGetBirthdayCakeBonus(player);
             if (birthdayBonus >= 0)
                 snapshot.extras["birthday_cake_bonus"] = birthdayBonus.ToString();
+
+            var movieCameraBonus = TryGetMovieCameraWordScoreBonus(player);
+            if (movieCameraBonus >= 0)
+                snapshot.extras["movie_camera_word_score_bonus"] = movieCameraBonus.ToString();
 
             var neapolitanPercent = ResolveNeapolitanPercentForExport(player);
             if (neapolitanPercent >= 100)

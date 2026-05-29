@@ -51,6 +51,35 @@ def index_of(row: int, col: int) -> int:
     return row * 5 + col
 
 
+def _wrap_partner_col(col: int) -> int | None:
+    """Hungry Snake: col 0 and col 4 on the same row are adjacent."""
+    if col == 0:
+        return 4
+    if col == 4:
+        return 0
+    return None
+
+
+def _wrap_col_distance(c1: int, c2: int) -> int:
+    """Column separation with horizontal wrap (5-wide grid)."""
+    d = abs(c1 - c2)
+    return min(d, 5 - d)
+
+
+def _attack_origins(
+    row: int,
+    col: int,
+    *,
+    horizontal_wrap: bool,
+) -> list[tuple[int, int]]:
+    origins = [(row, col)]
+    if horizontal_wrap:
+        partner = _wrap_partner_col(col)
+        if partner is not None:
+            origins.append((row, partner))
+    return origins
+
+
 def _visited_has(visited: int | set[int], idx: int) -> bool:
     if isinstance(visited, set):
         return idx in visited
@@ -141,6 +170,43 @@ def can_land_on_chess_square(
     return True
 
 
+def _step_col_toward(
+    col: int,
+    target_col: int,
+    *,
+    horizontal_wrap: bool,
+) -> int:
+    if col == target_col:
+        return col
+    if horizontal_wrap and col == 4 and target_col < col:
+        return 0 if target_col == 0 else col - 1
+    if horizontal_wrap and col == 0 and target_col > col:
+        return 4 if target_col == 4 else col + 1
+    return col + (1 if target_col > col else -1)
+
+
+def _ray_step(
+    row: int,
+    col: int,
+    dr: int,
+    dc: int,
+    *,
+    horizontal_wrap: bool,
+) -> tuple[int, int] | None:
+    """Next cell along a ray; col 0 and col 4 connect when horizontal_wrap."""
+    nr, nc = row + dr, col + dc
+    if 0 <= nr < 5 and 0 <= nc < 5:
+        return nr, nc
+    if not horizontal_wrap or not (0 <= nr < 5):
+        return None
+    # Only wrap when stepping off the left/right edge (not when already past the board).
+    if col == 4 and dc > 0:
+        return nr, 0
+    if col == 0 and dc < 0:
+        return nr, 4
+    return None
+
+
 def _ray_neighbors(
     board: Board,
     start_idx: int,
@@ -150,6 +216,7 @@ def _ray_neighbors(
     allies_can_take: bool,
     straight: bool = False,
     diagonal: bool = False,
+    horizontal_wrap: bool = False,
 ) -> list[int]:
     row, col = start_idx // 5, start_idx % 5
     dirs: list[tuple[int, int]] = []
@@ -159,14 +226,17 @@ def _ray_neighbors(
         dirs.extend(DIAG_DIRS)
     out: list[int] = []
     for dr, dc in dirs:
-        step = 1
+        r, c = row, col
+        seen: set[tuple[int, int]] = set()
         while True:
-            nr, nc = row + dr * step, col + dc * step
-            if not (0 <= nr < 5 and 0 <= nc < 5):
+            nxt = _ray_step(r, c, dr, dc, horizontal_wrap=horizontal_wrap)
+            if nxt is None or nxt in seen:
                 break
+            seen.add(nxt)
+            nr, nc = nxt
             idx = index_of(nr, nc)
             if not board.is_active_index(idx):
-                step += 1
+                r, c = nr, nc
                 continue
             if _chess_piece_at(board, idx) is not None:
                 if can_land_on_chess_square(
@@ -179,10 +249,10 @@ def _ray_neighbors(
                     out.append(idx)
                 break
             if _visited_has(visited, idx):
-                step += 1
+                r, c = nr, nc
                 continue
             out.append(idx)
-            step += 1
+            r, c = nr, nc
     return out
 
 
@@ -370,8 +440,10 @@ def pawn_neighbors(
     return out
 
 
-def _is_square_attacked_by_pawn(
+def _pawn_at_attacks_target(
     board: Board,
+    pawn_row: int,
+    pawn_col: int,
     target_row: int,
     target_col: int,
     side: str,
@@ -379,20 +451,72 @@ def _is_square_attacked_by_pawn(
 ) -> bool:
     dr = _pawn_forward_delta(side)
     for dc in (-1, 1):
+        if pawn_row + dr == target_row and pawn_col + dc == target_col:
+            idx = index_of(pawn_row, pawn_col)
+            tile = _unvisited_chess_at(board, idx, visited)
+            if tile is None:
+                return False
+            return (
+                tile.curse == CurseType.CHESS_PAWN
+                and chess_side_known(tile)
+                and chess_side(tile) == side
+            )
+    return False
+
+
+def _is_square_attacked_by_pawn(
+    board: Board,
+    target_row: int,
+    target_col: int,
+    side: str,
+    visited: int | set[int],
+    *,
+    horizontal_wrap: bool = False,
+) -> bool:
+    dr = _pawn_forward_delta(side)
+    for dc in (-1, 1):
         pr, pc = target_row - dr, target_col - dc
         if not (0 <= pr < 5 and 0 <= pc < 5):
             continue
-        idx = index_of(pr, pc)
-        tile = _unvisited_chess_at(board, idx, visited)
-        if tile is None:
-            continue
-        if (
-            tile.curse == CurseType.CHESS_PAWN
-            and chess_side_known(tile)
-            and chess_side(tile) == side
+        if _pawn_at_attacks_target(
+            board, pr, pc, target_row, target_col, side, visited
         ):
             return True
+    if horizontal_wrap:
+        partner = _wrap_partner_col(target_col)
+        if partner is not None:
+            pr, pc = target_row - dr, partner
+            if 0 <= pr < 5 and _pawn_at_attacks_target(
+                board, pr, pc, target_row, target_col, side, visited
+            ):
+                return True
     return False
+
+
+def _knight_at_attacks_target(
+    board: Board,
+    knight_row: int,
+    knight_col: int,
+    target_row: int,
+    target_col: int,
+    side: str,
+    visited: int | set[int],
+) -> bool:
+    if abs(knight_row - target_row) == 2 and abs(knight_col - target_col) == 1:
+        pass
+    elif abs(knight_row - target_row) == 1 and abs(knight_col - target_col) == 2:
+        pass
+    else:
+        return False
+    idx = index_of(knight_row, knight_col)
+    tile = _unvisited_chess_at(board, idx, visited)
+    if tile is None:
+        return False
+    return (
+        tile.curse == CurseType.CHESS_KNIGHT
+        and chess_side_known(tile)
+        and chess_side(tile) == side
+    )
 
 
 def _is_square_attacked_by_knight(
@@ -401,22 +525,49 @@ def _is_square_attacked_by_knight(
     target_col: int,
     side: str,
     visited: int | set[int],
+    *,
+    horizontal_wrap: bool = False,
 ) -> bool:
-    for dr, dc in KNIGHT_DIRS:
-        nr, nc = target_row + dr, target_col + dc
-        if not (0 <= nr < 5 and 0 <= nc < 5):
-            continue
-        idx = index_of(nr, nc)
+    for idx in _active_indices(board):
         tile = _unvisited_chess_at(board, idx, visited)
         if tile is None:
             continue
         if (
-            tile.curse == CurseType.CHESS_KNIGHT
-            and chess_side_known(tile)
-            and chess_side(tile) == side
+            tile.curse != CurseType.CHESS_KNIGHT
+            or not chess_side_known(tile)
+            or chess_side(tile) != side
         ):
-            return True
+            continue
+        fr, fc = idx // 5, idx % 5
+        for orow, ocol in _attack_origins(
+            fr, fc, horizontal_wrap=horizontal_wrap
+        ):
+            for dr, dc in KNIGHT_DIRS:
+                if orow + dr == target_row and ocol + dc == target_col:
+                    return True
     return False
+
+
+def _king_at_attacks_target(
+    board: Board,
+    king_row: int,
+    king_col: int,
+    target_row: int,
+    target_col: int,
+    side: str,
+    visited: int | set[int],
+) -> bool:
+    if max(abs(king_row - target_row), abs(king_col - target_col)) != 1:
+        return False
+    idx = index_of(king_row, king_col)
+    tile = _unvisited_chess_at(board, idx, visited)
+    if tile is None:
+        return False
+    return (
+        tile.curse == CurseType.CHESS_KING
+        and chess_side_known(tile)
+        and chess_side(tile) == side
+    )
 
 
 def _is_square_attacked_by_king(
@@ -425,22 +576,119 @@ def _is_square_attacked_by_king(
     target_col: int,
     side: str,
     visited: int | set[int],
+    *,
+    horizontal_wrap: bool = False,
 ) -> bool:
     for dr, dc in DIRS_8:
         nr, nc = target_row + dr, target_col + dc
         if not (0 <= nr < 5 and 0 <= nc < 5):
             continue
-        idx = index_of(nr, nc)
-        tile = _unvisited_chess_at(board, idx, visited)
-        if tile is None:
-            continue
-        if (
-            tile.curse == CurseType.CHESS_KING
-            and chess_side_known(tile)
-            and chess_side(tile) == side
+        if _king_at_attacks_target(
+            board, nr, nc, target_row, target_col, side, visited
         ):
             return True
+    if horizontal_wrap:
+        partner = _wrap_partner_col(target_col)
+        if partner is not None:
+            for dr in (-1, 0, 1):
+                nr = target_row + dr
+                if not (0 <= nr < 5):
+                    continue
+                if _king_at_attacks_target(
+                    board, nr, partner, target_row, target_col, side, visited
+                ):
+                    return True
     return False
+
+
+def _ray_path_clear(
+    board: Board,
+    from_row: int,
+    from_col: int,
+    to_row: int,
+    to_col: int,
+    visited: int | set[int],
+    *,
+    horizontal_wrap: bool,
+) -> bool:
+    """True when no chess piece blocks between from and to (exclusive of from)."""
+    r, c = from_row, from_col
+    seen: set[tuple[int, int]] = {(from_row, from_col)}
+    for _ in range(25):
+        if (r, c) == (to_row, to_col):
+            return True
+        dr = 0 if r == to_row else (1 if to_row > r else -1)
+        dc_raw = 0 if c == to_col else (1 if to_col > c else -1)
+        if dr != 0 and c != to_col:
+            nc = _step_col_toward(c, to_col, horizontal_wrap=horizontal_wrap)
+            nr = r + dr
+        elif dr == 0 and c != to_col:
+            nc = _step_col_toward(c, to_col, horizontal_wrap=horizontal_wrap)
+            nr = r
+        else:
+            nr, nc = r + dr, c + dc_raw
+        if not (0 <= nr < 5 and 0 <= nc < 5):
+            return False
+        if (nr, nc) in seen:
+            return False
+        seen.add((nr, nc))
+        idx = index_of(nr, nc)
+        if not board.is_active_index(idx):
+            r, c = nr, nc
+            continue
+        if is_chess_piece(board.get_by_index(idx)):
+            return False
+        if _visited_has(visited, idx):
+            r, c = nr, nc
+            continue
+        r, c = nr, nc
+    return False
+
+
+def _sliding_piece_attacks(
+    board: Board,
+    from_row: int,
+    from_col: int,
+    target_row: int,
+    target_col: int,
+    piece: Tile,
+    visited: int | set[int],
+    *,
+    horizontal_wrap: bool,
+) -> bool:
+    curse = piece.curse
+    row_delta = abs(target_row - from_row)
+    col_delta = abs(target_col - from_col)
+    wcol = (
+        _wrap_col_distance(from_col, target_col)
+        if horizontal_wrap
+        else col_delta
+    )
+    if from_row == target_row and from_col == target_col:
+        return False
+    if curse in (CurseType.CHESS_ROOK, CurseType.CHESS_QUEEN):
+        if row_delta != 0 and wcol != 0:
+            return False
+        if row_delta == 0 and wcol == 0:
+            return False
+    if curse in (CurseType.CHESS_BISHOP, CurseType.CHESS_QUEEN):
+        if row_delta == 0:
+            return False
+        if row_delta != wcol:
+            return False
+    if curse == CurseType.CHESS_ROOK and row_delta != 0:
+        return False
+    if curse == CurseType.CHESS_BISHOP and row_delta == 0:
+        return False
+    return _ray_path_clear(
+        board,
+        from_row,
+        from_col,
+        target_row,
+        target_col,
+        visited,
+        horizontal_wrap=horizontal_wrap,
+    )
 
 
 def _is_square_attacked_by_sliding(
@@ -452,6 +700,7 @@ def _is_square_attacked_by_sliding(
     *,
     straight: bool,
     diagonal: bool,
+    horizontal_wrap: bool = False,
 ) -> bool:
     dirs: list[tuple[int, int]] = []
     if straight:
@@ -459,14 +708,17 @@ def _is_square_attacked_by_sliding(
     if diagonal:
         dirs.extend(DIAG_DIRS)
     for dr, dc in dirs:
-        step = 1
+        r, c = target_row, target_col
+        seen: set[tuple[int, int]] = set()
         while True:
-            nr, nc = target_row + dr * step, target_col + dc * step
-            if not (0 <= nr < 5 and 0 <= nc < 5):
+            nxt = _ray_step(r, c, dr, dc, horizontal_wrap=horizontal_wrap)
+            if nxt is None or nxt in seen:
                 break
+            seen.add(nxt)
+            nr, nc = nxt
             idx = index_of(nr, nc)
             if not board.is_active_index(idx):
-                step += 1
+                r, c = nr, nc
                 continue
             tile = board.get_by_index(idx)
             if is_chess_piece(tile):
@@ -483,9 +735,37 @@ def _is_square_attacked_by_sliding(
                         return True
                 break
             if _visited_has(visited, idx):
-                step += 1
+                r, c = nr, nc
                 continue
-            step += 1
+            r, c = nr, nc
+    if horizontal_wrap:
+        for idx in _active_indices(board):
+            tile = _unvisited_chess_at(board, idx, visited)
+            if tile is None or not chess_side_known(tile) or chess_side(tile) != side:
+                continue
+            curse = tile.curse
+            ok = False
+            if straight and curse in (CurseType.CHESS_ROOK, CurseType.CHESS_QUEEN):
+                ok = True
+            if diagonal and curse in (
+                CurseType.CHESS_BISHOP,
+                CurseType.CHESS_QUEEN,
+            ):
+                ok = True
+            if not ok:
+                continue
+            fr, fc = idx // 5, idx % 5
+            if _sliding_piece_attacks(
+                board,
+                fr,
+                fc,
+                target_row,
+                target_col,
+                tile,
+                visited,
+                horizontal_wrap=True,
+            ):
+                return True
     return False
 
 
@@ -495,19 +775,41 @@ def _is_square_attacked_uncached(
     col: int,
     by_side: str,
     visited: int | set[int],
+    *,
+    horizontal_wrap: bool = False,
 ) -> bool:
-    if _is_square_attacked_by_pawn(board, row, col, by_side, visited):
+    if _is_square_attacked_by_pawn(
+        board, row, col, by_side, visited, horizontal_wrap=horizontal_wrap
+    ):
         return True
-    if _is_square_attacked_by_knight(board, row, col, by_side, visited):
+    if _is_square_attacked_by_knight(
+        board, row, col, by_side, visited, horizontal_wrap=horizontal_wrap
+    ):
         return True
-    if _is_square_attacked_by_king(board, row, col, by_side, visited):
-        return True
-    if _is_square_attacked_by_sliding(
-        board, row, col, by_side, visited, straight=True, diagonal=False
+    if _is_square_attacked_by_king(
+        board, row, col, by_side, visited, horizontal_wrap=horizontal_wrap
     ):
         return True
     if _is_square_attacked_by_sliding(
-        board, row, col, by_side, visited, straight=False, diagonal=True
+        board,
+        row,
+        col,
+        by_side,
+        visited,
+        straight=True,
+        diagonal=False,
+        horizontal_wrap=horizontal_wrap,
+    ):
+        return True
+    if _is_square_attacked_by_sliding(
+        board,
+        row,
+        col,
+        by_side,
+        visited,
+        straight=False,
+        diagonal=True,
+        horizontal_wrap=horizontal_wrap,
     ):
         return True
     return False
@@ -519,6 +821,8 @@ def is_square_attacked(
     col: int,
     by_side: str,
     visited: int | set[int],
+    *,
+    horizontal_wrap: bool = False,
 ) -> bool:
     key = (
         board_fingerprint(board),
@@ -526,16 +830,46 @@ def is_square_attacked(
         row,
         col,
         by_side,
+        horizontal_wrap,
     )
     hit = _attack_cache.get(key)
     if hit is not None:
         _attack_cache.move_to_end(key)
         return hit
-    result = _is_square_attacked_uncached(board, row, col, by_side, visited)
+    result = _is_square_attacked_uncached(
+        board, row, col, by_side, visited, horizontal_wrap=horizontal_wrap
+    )
     _attack_cache[key] = result
     if len(_attack_cache) > _ATTACK_CACHE_MAX:
         _attack_cache.popitem(last=False)
     return result
+
+
+def _try_king_destination(
+    board: Board,
+    idx: int,
+    *,
+    moving_side: str,
+    opp: str,
+    visited: int | set[int],
+    allies_can_take: bool,
+    horizontal_wrap: bool,
+    out: list[int],
+) -> None:
+    nr, nc = idx // 5, idx % 5
+    if not can_land_on_chess_square(
+        board,
+        idx,
+        moving_side,
+        visited,
+        allies_can_take=allies_can_take,
+    ):
+        return
+    if is_square_attacked(
+        board, nr, nc, opp, visited, horizontal_wrap=horizontal_wrap
+    ):
+        return
+    out.append(idx)
 
 
 def king_neighbors(
@@ -545,6 +879,7 @@ def king_neighbors(
     *,
     moving_side: str,
     allies_can_take: bool = False,
+    horizontal_wrap: bool = False,
 ) -> list[int]:
     row, col = start_idx // 5, start_idx % 5
     opp = opposite_side(moving_side)
@@ -553,18 +888,29 @@ def king_neighbors(
         nr, nc = row + dr, col + dc
         if not (0 <= nr < 5 and 0 <= nc < 5):
             continue
-        idx = index_of(nr, nc)
-        if not can_land_on_chess_square(
+        _try_king_destination(
             board,
-            idx,
-            moving_side,
-            visited,
+            index_of(nr, nc),
+            moving_side=moving_side,
+            opp=opp,
+            visited=visited,
             allies_can_take=allies_can_take,
-        ):
-            continue
-        if is_square_attacked(board, nr, nc, opp, visited):
-            continue
-        out.append(idx)
+            horizontal_wrap=horizontal_wrap,
+            out=out,
+        )
+    if horizontal_wrap:
+        partner = _wrap_partner_col(col)
+        if partner is not None:
+            _try_king_destination(
+                board,
+                index_of(row, partner),
+                moving_side=moving_side,
+                opp=opp,
+                visited=visited,
+                allies_can_take=allies_can_take,
+                horizontal_wrap=horizontal_wrap,
+                out=out,
+            )
     return out
 
 
@@ -593,6 +939,7 @@ def chess_neighbors(
     start_idx = path[-1]
     side = chess_side(last_tile)
     allies = flags.chess_allies_can_take
+    wrap = flags.horizontal_wrap
 
     curse = last_tile.curse
     if curse == CurseType.CHESS_KNIGHT:
@@ -607,6 +954,7 @@ def chess_neighbors(
             moving_side=side,
             allies_can_take=allies,
             straight=True,
+            horizontal_wrap=wrap,
         )
     elif curse == CurseType.CHESS_BISHOP:
         out = _ray_neighbors(
@@ -616,6 +964,7 @@ def chess_neighbors(
             moving_side=side,
             allies_can_take=allies,
             diagonal=True,
+            horizontal_wrap=wrap,
         )
     elif curse == CurseType.CHESS_QUEEN:
         out = _ray_neighbors(
@@ -626,10 +975,16 @@ def chess_neighbors(
             allies_can_take=allies,
             straight=True,
             diagonal=True,
+            horizontal_wrap=wrap,
         )
     elif curse == CurseType.CHESS_KING:
         out = king_neighbors(
-            board, start_idx, visited, moving_side=side, allies_can_take=allies
+            board,
+            start_idx,
+            visited,
+            moving_side=side,
+            allies_can_take=allies,
+            horizontal_wrap=wrap,
         )
     elif curse == CurseType.CHESS_PAWN:
         out = pawn_neighbors(
@@ -667,6 +1022,7 @@ def is_chess_capture_step(
     allies_can_take: bool = False,
     path_prefix: list[int] | None = None,
     visited: int | set[int] | None = None,
+    flags: StampSearchFlags | None = None,
 ) -> bool:
     """True when a chess step lands on an opponent (or ally take) or en passant."""
     from_tile = board.get_by_index(from_idx)
@@ -678,8 +1034,17 @@ def is_chess_capture_step(
         visited if visited is not None else {from_idx}
     )
 
-    flags = StampSearchFlags(chess_allies_can_take=allies_can_take)
-    if to_idx not in chess_neighbors(board, prefix, visited_set, flags):
+    if flags is None:
+        search_flags = StampSearchFlags(chess_allies_can_take=allies_can_take)
+    elif allies_can_take and not flags.chess_allies_can_take:
+        search_flags = StampSearchFlags(
+            horizontal_wrap=flags.horizontal_wrap,
+            chess_allies_can_take=True,
+            chess_king_queen_item_movement=flags.chess_king_queen_item_movement,
+        )
+    else:
+        search_flags = flags
+    if to_idx not in chess_neighbors(board, prefix, visited_set, search_flags):
         return False
 
     to_tile = board.get_by_index(to_idx)

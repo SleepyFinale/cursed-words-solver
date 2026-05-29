@@ -123,7 +123,7 @@ namespace CursedWordsSolverCompanion
                         StringComparison.Ordinal
                     );
                 var statusLabel = matchStatus;
-                if (staleSuggestion && matchStatus == "path_mismatch")
+                if (staleSuggestion && (matchStatus == "path_mismatch" || matchStatus == "path_extension"))
                     statusLabel = matchStatus + " (stale F8 board)";
                 MelonLogger.Msg("Round log: " + outPath + " (" + statusLabel + ")");
                 return outPath;
@@ -150,8 +150,20 @@ namespace CursedWordsSolverCompanion
                 StringComparison.Ordinal
             );
 
-            if (!pathMatch || !boardMatch)
+            if (!boardMatch)
                 return "path_mismatch";
+
+            if (!pathMatch)
+            {
+                if (
+                    SuggestionMatcher.PathsIsPrefixExtension(
+                        ctx.Suggestion.path,
+                        ctx.SubmittedPath
+                    )
+                )
+                    return "path_extension";
+                return "path_mismatch";
+            }
 
             var predicted = ctx.Suggestion.predicted_score;
             if (predicted != ctx.ActualScore)
@@ -173,6 +185,14 @@ namespace CursedWordsSolverCompanion
             block["predicted_score"] = ctx.Suggestion.predicted_score;
             block["board_fingerprint"] = ctx.Suggestion.board_fingerprint ?? "";
             block["loadout_fingerprint"] = ctx.Suggestion.loadout_fingerprint ?? "";
+            var submittedPath = ctx.SubmittedPath ?? new List<int>();
+            var suggestedPath = ctx.Suggestion.path ?? new List<int>();
+            block["f8_path_prefix_match"] = SuggestionMatcher.PathsIsPrefixExtension(
+                suggestedPath,
+                submittedPath
+            );
+            block["suggested_path_length"] = suggestedPath.Count;
+            block["submitted_path_length"] = submittedPath.Count;
 
             if (ctx.Suggestion.predicted_trace != null)
                 block["predicted_trace"] = ctx.Suggestion.predicted_trace;

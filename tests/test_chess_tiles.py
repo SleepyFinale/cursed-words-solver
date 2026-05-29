@@ -196,6 +196,63 @@ def test_king_cannot_move_into_check():
     assert index_of(3, 3) in nbrs
 
 
+DROWSINESS_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "boards" / "20260529_drowsiness_wrap.json"
+)
+DROWSINESS_PREFIX = [2, 6, 17, 5]
+DROWSINESS_PATH = [2, 6, 17, 5, 0, 1, 7, 13, 18, 9]
+
+
+def _drowsiness_board_and_loadout():
+    data = json.loads(DROWSINESS_FIXTURE.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data)
+    loadout = parse_run_state(data)
+    assert board is not None
+    return board, loadout
+
+
+def test_drowsiness_king_cannot_step_to_wrap_attacked_square():
+    """Hungry Snake: white bishop (1,4) threatens (0,0) via wrap diagonal."""
+    board, loadout = _drowsiness_board_and_loadout()
+    flags = stamp_search_flags(loadout)
+    assert flags.horizontal_wrap is True
+    visited = set(DROWSINESS_PREFIX)
+    nbrs = neighbors_from_tile(board, DROWSINESS_PREFIX, visited, flags=flags)
+    assert index_of(0, 0) not in nbrs
+    assert is_square_attacked(
+        board, 0, 0, "white", visited, horizontal_wrap=True
+    )
+
+
+def test_drowsiness_king_step_allowed_without_hungry_snake():
+    board, loadout = _drowsiness_board_and_loadout()
+    loadout = Loadout(
+        stickers=list(loadout.stickers),
+        stamps=[s for s in loadout.stamps if s.id != "hungry_snake"],
+        extras=dict(loadout.extras or {}),
+    )
+    flags = stamp_search_flags(loadout)
+    assert flags.horizontal_wrap is False
+    visited = set(DROWSINESS_PREFIX)
+    nbrs = neighbors_from_tile(board, DROWSINESS_PREFIX, visited, flags=flags)
+    assert index_of(0, 0) in nbrs
+
+
+def test_drowsiness_not_in_search_with_hungry_snake(tmp_path):
+    board, loadout = _drowsiness_board_and_loadout()
+    wl = tmp_path / "words.txt"
+    wl.write_text("drowsiness\n", encoding="utf-8")
+    searcher = WordSearcher(
+        dictionary=WordDictionary(wl),
+        min_len=3,
+        max_len=15,
+        time_budget=5.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=20)
+    paths = [r.path for r in results]
+    assert DROWSINESS_PATH not in paths
+
+
 def test_king_of_the_bridge_allows_ally_take():
     board = _empty_board()
     board.tiles[2][2] = _chess(2, 2, CurseType.CHESS_KNIGHT, "black")
@@ -473,12 +530,12 @@ def test_markkaa_eight_tile_scores_180_with_movie_camera():
         for j, i in enumerate(MARKKAA_PATH)
     )
     pipeline = ScoringPipeline()
-    score, _, trace = pipeline.score_with_trace(
+    score, bd, _ = pipeline.score_with_trace(
         board, MARKKAA_PATH, letters.lower(), loadout
     )
     assert score == 198.0
-    details = [t.get("detail", "") for t in trace]
-    assert any("+9 word (first 1 take piece value)" in d for d in details)
+    effects = bd["pipeline"]["effects"]
+    assert any("+9 word (Movie Camera:" in e for e in effects)
 
 
 def test_movie_camera_strict_when_melmod_take_metadata():
@@ -498,25 +555,25 @@ def test_movie_camera_strict_when_melmod_take_metadata():
 
     board.get_by_index(MARKKAA_PATH[2]).metadata["take"] = True
     assert chess_take_strict_mode(board, MARKKAA_PATH, strict_requested=True)
-    score_strict, _, trace = pipeline.score_with_trace(
+    score_strict, bd_strict, _ = pipeline.score_with_trace(
         board, MARKKAA_PATH, letters.lower(), loadout
     )
     assert score_strict >= score_inferred
-    details = [t.get("detail", "") for t in trace]
-    assert any("+9 word (first 1 take piece value)" in d for d in details)
+    effects = bd_strict["pipeline"]["effects"]
+    assert any("+9 word (Movie Camera:" in e for e in effects)
 
 
 def test_faldstool_movie_camera_after_full_moon_capture():
     """Capture after Full Moon teleport uses boosted from-tile base for Movie Camera."""
     board, loadout = _faldstool_board_and_loadout()
     pipeline = ScoringPipeline()
-    score, _, trace = pipeline.score_with_trace(
+    score, bd, _ = pipeline.score_with_trace(
         board, FALDSTOOL_PATH, "faldstool", loadout
     )
     assert score == 280.0
-    details = [t.get("detail", "") for t in trace]
-    assert any("+9 word (first 2 take piece value)" in d for d in details)
-    assert any("+16 word (2 take(s))" in d for d in details)
+    effects = bd["pipeline"]["effects"]
+    assert any("+9 word (Movie Camera:" in e for e in effects)
+    assert any("+16 word (2 take(s))" in e for e in effects)
 
 
 def test_coannexes_movie_camera_full_moon_chain():
@@ -525,13 +582,13 @@ def test_coannexes_movie_camera_full_moon_chain():
     data = json.loads(COANNEXES_FIXTURE.read_text(encoding="utf-8"))
     path = data["path"]
     pipeline = ScoringPipeline()
-    score, _, trace = pipeline.score_with_trace(
+    score, bd, _ = pipeline.score_with_trace(
         board, path, "coannexes", loadout
     )
     assert score == 316.0
-    details = [t.get("detail", "") for t in trace]
-    assert any("+9 word (first 2 take piece value)" in d for d in details)
-    assert any("+24 word (3 take(s))" in d for d in details)
+    effects = bd["pipeline"]["effects"]
+    assert any("+9 word (Movie Camera:" in e for e in effects)
+    assert any("+24 word (3 take(s))" in e for e in effects)
 
 
 def test_fasciitis_movie_camera_carousel_chess_chain():
@@ -540,13 +597,13 @@ def test_fasciitis_movie_camera_carousel_chess_chain():
     data = json.loads(FASCIITIS_FIXTURE.read_text(encoding="utf-8"))
     path = data["path"]
     pipeline = ScoringPipeline()
-    score, _, trace = pipeline.score_with_trace(
+    score, bd, _ = pipeline.score_with_trace(
         board, path, "fasciitis", loadout
     )
     assert score == 1548.0
-    details = [t.get("detail", "") for t in trace]
-    assert any("+46 word (first 3 take piece value)" in d for d in details)
-    assert any("+24 word (3 take(s))" in d for d in details)
+    effects = bd["pipeline"]["effects"]
+    assert any("+46 word (Movie Camera:" in e for e in effects)
+    assert any("+24 word (3 take(s))" in e for e in effects)
 
 
 def test_knaurring_movie_camera_carousel_first_take():
@@ -555,13 +612,13 @@ def test_knaurring_movie_camera_carousel_first_take():
     data = json.loads(KNAURRING_FIXTURE.read_text(encoding="utf-8"))
     path = data["path"]
     pipeline = ScoringPipeline()
-    score, _, trace = pipeline.score_with_trace(
+    score, bd, _ = pipeline.score_with_trace(
         board, path, "knaurring", loadout
     )
     assert score == 3464.0
-    details = [t.get("detail", "") for t in trace]
-    assert any("+80 word (first 3 take piece value)" in d for d in details)
-    assert any("+40 word (5 take(s))" in d for d in details)
+    effects = bd["pipeline"]["effects"]
+    assert any("+80 word (Movie Camera:" in e for e in effects)
+    assert any("+40 word (5 take(s))" in e for e in effects)
 
 
 def test_skokiaans_movie_camera_carousel_chain():
@@ -570,13 +627,62 @@ def test_skokiaans_movie_camera_carousel_chain():
     data = json.loads(SKOKIAANS_FIXTURE.read_text(encoding="utf-8"))
     path = data["path"]
     pipeline = ScoringPipeline()
-    score, _, trace = pipeline.score_with_trace(
+    score, bd, _ = pipeline.score_with_trace(
         board, path, "skokiaans", loadout
     )
     assert score == 4380.0
-    details = [t.get("detail", "") for t in trace]
-    assert any("+101 word (first 3 take piece value)" in d for d in details)
-    assert any("+32 word (4 take(s))" in d for d in details)
+    effects = bd["pipeline"]["effects"]
+    assert any("+101 word (Movie Camera:" in e for e in effects)
+    assert any("+32 word (4 take(s))" in e for e in effects)
+
+
+def test_hungry_snake_wrap_enables_third_rook_take():
+    """White rook at (0,1) captures (0,3) through wrap when Hungry Snake is equipped."""
+    board = _empty_board()
+    board.tiles[1][1] = _chess(1, 1, CurseType.CHESS_BISHOP, "white")
+    board.tiles[0][2] = _chess(0, 2, CurseType.CHESS_ROOK, "black")
+    board.tiles[0][1] = _chess(0, 1, CurseType.CHESS_ROOK, "white")
+    board.tiles[0][3] = _chess(0, 3, CurseType.CHESS_ROOK, "black")
+    path = [index_of(1, 1), index_of(0, 2), index_of(0, 1), index_of(0, 3)]
+    lo = Loadout(
+        stamps=[LoadoutItem(id="hungry_snake", name="Hungry Snake", level=1)],
+        extras={
+            "pin_effect": "super_8",
+            "pin_right_variable": "8",
+            "movie_camera_word_score_bonus": "20",
+        },
+    )
+    from cursed_words_solver.rules.scoring_conditions import chess_take_path_positions
+
+    without = Loadout(extras={"pin_effect": "super_8", "pin_right_variable": "8"})
+    assert chess_take_path_positions(board, path, loadout=without) == [1, 2]
+    assert chess_take_path_positions(board, path, loadout=lo) == [1, 2, 3]
+
+    pipeline = ScoringPipeline()
+    score, bd = pipeline.score(board, path, "xxxx", lo)
+    assert bd["pipeline"]["word_score"] == 24.0
+    assert score == 24.0 + sum(bd["pipeline"]["tile_scores"])
+
+
+def test_letter_take_metadata_not_counted_as_chess_take():
+    """Melmod take flag on a letter tile must not count toward Super 8."""
+    board = _empty_board()
+    board.tiles[0][3] = _chess(0, 3, CurseType.CHESS_BISHOP, "white")
+    board.tiles[2][0] = _chess(2, 0, CurseType.CHESS_KNIGHT, "black", letter="?")
+    board.tiles[3][2] = _chess(3, 2, CurseType.CHESS_ROOK, "white")
+    board.tiles[1][2] = _tile(1, 2, letter="A", metadata={"take": True})
+    path = [
+        index_of(0, 3),
+        index_of(2, 0),
+        index_of(3, 2),
+        index_of(1, 2),
+    ]
+    from cursed_words_solver.rules.scoring_conditions import chess_take_path_positions
+
+    lo = Loadout(extras={"pin_effect": "super_8", "pin_right_variable": "8"})
+    takes = chess_take_path_positions(board, path, loadout=lo)
+    assert 3 not in takes
+    assert takes == [2]
 
 
 @pytest.mark.skipif(
@@ -598,4 +704,4 @@ def test_markkaa_extension_found_in_search():
     assert match, "expected 8-tile markkaa path in search results"
     assert match[0].score >= 180.0
     effects = match[0].breakdown.get("pipeline", {}).get("effects", [])
-    assert any("first 1 take piece value" in e for e in effects)
+    assert any("Movie Camera:" in e for e in effects)
