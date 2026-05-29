@@ -18,6 +18,7 @@ from cursed_words_solver.rules.chess_tiles import (
     index_of,
     is_chess_capture_step,
     is_square_attacked,
+    king_neighbors,
     missing_chess_color_warnings,
 )
 from cursed_words_solver.rules.scoring_conditions import chess_balanced_colors, chess_take_strict_mode
@@ -251,6 +252,57 @@ def test_drowsiness_not_in_search_with_hungry_snake(tmp_path):
     results = searcher.find_best_words(board, loadout, top_n=20)
     paths = [r.path for r in results]
     assert DROWSINESS_PATH not in paths
+
+
+STYROFOAMS_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "boards" / "20260529_styrofoams_king_check.json"
+)
+STYROFOAMS_PATH = [18, 5, 14, 8, 13, 12, 19, 23, 22, 21]
+STYROFOAMS_PREFIX = [18, 5, 14, 8, 13, 12, 19]
+
+
+def _styrofoams_board_and_loadout():
+    data = json.loads(STYROFOAMS_FIXTURE.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data)
+    loadout = parse_run_state(data)
+    assert board is not None
+    return board, loadout
+
+
+def test_styrofoams_king_cannot_step_into_check():
+    """Visited black rook (1,3) still controls (4,3); king at (3,4) may not step there."""
+    board, loadout = _styrofoams_board_and_loadout()
+    flags = stamp_search_flags(loadout)
+    assert flags.horizontal_wrap is True
+    visited = set(STYROFOAMS_PREFIX)
+    king_idx = index_of(3, 4)
+    assert is_square_attacked(
+        board, 4, 3, "black", visited, horizontal_wrap=True
+    )
+    nbrs = neighbors_from_tile(board, STYROFOAMS_PREFIX, visited, flags=flags)
+    assert index_of(4, 3) not in nbrs
+    assert index_of(4, 3) not in king_neighbors(
+        board,
+        king_idx,
+        visited,
+        moving_side="white",
+        horizontal_wrap=True,
+    )
+
+
+def test_styrofoams_path_not_in_search(tmp_path):
+    board, loadout = _styrofoams_board_and_loadout()
+    wl = tmp_path / "words.txt"
+    wl.write_text("styrofoams\n", encoding="utf-8")
+    searcher = WordSearcher(
+        dictionary=WordDictionary(wl),
+        min_len=3,
+        max_len=15,
+        time_budget=5.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=20)
+    paths = [r.path for r in results]
+    assert STYROFOAMS_PATH not in paths
 
 
 def test_king_of_the_bridge_allows_ally_take():

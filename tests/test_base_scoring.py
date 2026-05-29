@@ -4,6 +4,7 @@ from pathlib import Path
 from cursed_words_solver.loadout import parse_board_from_run_state
 from cursed_words_solver.models import Board, CurseType, Tile, TileColor
 from cursed_words_solver.rules.base_scoring import score_word_base, tile_base_contribution
+from cursed_words_solver.rules.scoring_conditions import is_red_note_tile
 
 DEBUG_DIR = Path.home() / ".cursed_words_solver" / "debug"
 
@@ -128,6 +129,22 @@ def test_melmod_void_chess_king_zero_base_score():
 def test_red_bonus():
     t = Tile(0, 0, "A", "A", 1, TileColor.RED, CurseType.LETTER)
     assert tile_base_contribution(t) == 2  # 1 + 1
+
+
+def test_red_note_excludes_scattered_item_tiles():
+    item = Tile(
+        0,
+        4,
+        "🎸",
+        "G",
+        0,
+        TileColor.RED,
+        CurseType.ITEM,
+        metadata={"scattered_item_id": "electric_guitar"},
+    )
+    letter = Tile(0, 0, "G", "G", 3, TileColor.RED, CurseType.LETTER)
+    assert not is_red_note_tile(item)
+    assert is_red_note_tile(letter)
 
 
 def test_red_r_baked_in_base_score_virge():

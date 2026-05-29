@@ -453,7 +453,7 @@ def _pawn_at_attacks_target(
     for dc in (-1, 1):
         if pawn_row + dr == target_row and pawn_col + dc == target_col:
             idx = index_of(pawn_row, pawn_col)
-            tile = _unvisited_chess_at(board, idx, visited)
+            tile = _chess_piece_at(board, idx)
             if tile is None:
                 return False
             return (
@@ -509,7 +509,7 @@ def _knight_at_attacks_target(
     else:
         return False
     idx = index_of(knight_row, knight_col)
-    tile = _unvisited_chess_at(board, idx, visited)
+    tile = _chess_piece_at(board, idx)
     if tile is None:
         return False
     return (
@@ -529,7 +529,7 @@ def _is_square_attacked_by_knight(
     horizontal_wrap: bool = False,
 ) -> bool:
     for idx in _active_indices(board):
-        tile = _unvisited_chess_at(board, idx, visited)
+        tile = _chess_piece_at(board, idx)
         if tile is None:
             continue
         if (
@@ -560,7 +560,7 @@ def _king_at_attacks_target(
     if max(abs(king_row - target_row), abs(king_col - target_col)) != 1:
         return False
     idx = index_of(king_row, king_col)
-    tile = _unvisited_chess_at(board, idx, visited)
+    tile = _chess_piece_at(board, idx)
     if tile is None:
         return False
     return (
@@ -636,7 +636,11 @@ def _ray_path_clear(
         if not board.is_active_index(idx):
             r, c = nr, nc
             continue
-        if is_chess_piece(board.get_by_index(idx)):
+        tile = board.get_by_index(idx)
+        if is_chess_piece(tile):
+            if _visited_has(visited, idx):
+                r, c = nr, nc
+                continue
             return False
         if _visited_has(visited, idx):
             r, c = nr, nc
@@ -733,6 +737,9 @@ def _is_square_attacked_by_sliding(
                         CurseType.CHESS_QUEEN,
                     ):
                         return True
+                if _visited_has(visited, idx):
+                    r, c = nr, nc
+                    continue
                 break
             if _visited_has(visited, idx):
                 r, c = nr, nc
@@ -740,7 +747,7 @@ def _is_square_attacked_by_sliding(
             r, c = nr, nc
     if horizontal_wrap:
         for idx in _active_indices(board):
-            tile = _unvisited_chess_at(board, idx, visited)
+            tile = _chess_piece_at(board, idx)
             if tile is None or not chess_side_known(tile) or chess_side(tile) != side:
                 continue
             curse = tile.curse

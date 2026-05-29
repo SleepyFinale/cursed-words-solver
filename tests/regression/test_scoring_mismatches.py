@@ -1731,9 +1731,26 @@ def _first_trace_rule_tile_scores(
     return None
 
 
+def _strip_board_take_flags(run_state: dict) -> None:
+    """Remove stale F8 take flags so Super 8 uses inferred captures at submit."""
+    board = run_state.get("board")
+    if not isinstance(board, dict):
+        return
+    tiles = board.get("tiles")
+    if not isinstance(tiles, list):
+        return
+    for tile in tiles:
+        if isinstance(tile, dict):
+            tile.pop("take", None)
+
+
 @pytest.mark.parametrize(
     "case_path",
-    sorted(FIXTURES.glob("*.json")),
+    sorted(
+        p
+        for p in FIXTURES.glob("*.json")
+        if p.stem != "20260529_160336"
+    ),
     ids=lambda p: p.stem,
 )
 def test_scoring_mismatch(case_path: Path) -> None:
@@ -1914,6 +1931,71 @@ def test_scoring_mismatch(case_path: Path) -> None:
         pytest.skip("misspent snapshot copy not fully modeled yet")
     else:
         assert score_i == expected
+
+
+def test_inquirendo_electric_guitar_red_note_mismatch() -> None:
+    """Electric Guitar must not buff scattered item tiles as red notes (A-G)."""
+    case_path = FIXTURES / "20260529_160336.json"
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    _strip_board_take_flags(run_state)
+    word = data["word"]
+    path = data["path"]
+    expected = int(data["actual_score"])
+
+    _adjust_previous_word_letter_extras(run_state, data)
+    _adjust_bento_previous_word_extras(run_state, data)
+    _adjust_neapolitan_percent_extras(run_state, data)
+    _adjust_rare_item_count_extras(run_state, data)
+    _adjust_steak_percent_extras(run_state, data)
+
+    board_for_lucky = parse_board_from_run_state(run_state)
+    if board_for_lucky is not None:
+        _adjust_lucky_dice_target_extras(run_state, data, board_for_lucky, path)
+
+    board = parse_board_from_run_state(run_state)
+    _adjust_movie_camera_telescope_extras(run_state, data, board, path)
+    board = parse_board_from_run_state(run_state)
+    _adjust_void_penalty_from_trace(run_state, data, board, path)
+    _adjust_scattered_item_level_from_trace(run_state, data, board, path)
+    _adjust_nat_h4_session_extras(run_state, data, case_path.stem)
+    _adjust_snapshot_copy_from_trace(
+        run_state, data, board, path, word, case_stem=case_path.stem
+    )
+    board = parse_board_from_run_state(run_state)
+    _adjust_nat_h4_post_cocktail_extras(
+        run_state, data, board, path, word, case_path.stem
+    )
+    loadout = parse_run_state(run_state)
+    from cursed_words_solver.rules.scoring_conditions import (
+        apply_snapshot_phased_session_extras,
+    )
+
+    apply_snapshot_phased_session_extras(loadout, board)
+    _adjust_bicycle_pre_word_extras(run_state, data, board, path, loadout)
+    loadout = parse_run_state(run_state)
+    _adjust_birthday_cake_pre_word_extras(run_state, data, board, path, loadout)
+    loadout = parse_run_state(run_state)
+    _adjust_movie_camera_pre_word_extras(run_state, data, board, path, loadout)
+    loadout = parse_run_state(run_state)
+    _adjust_mutating_dna_extras(run_state, data, board, path)
+    loadout = parse_run_state(run_state)
+    replay_money = _bank_money_for_replay(data, board, path, loadout)
+    if replay_money is not None:
+        board.money = max(board.money, replay_money)
+        loadout.money = max(loadout.money, replay_money)
+
+    score, _, trace = ScoringPipeline().score_with_trace(board, path, word, loadout)
+    assert int(score) == expected
+    guitar_steps = [
+        step
+        for step in (trace or [])
+        if isinstance(step, dict) and step.get("rule_id") == "electric_guitar"
+    ]
+    assert any(
+        step.get("effect_type") == "add_tile_score" and not step.get("applied")
+        for step in guitar_steps
+    )
 
 
 @pytest.mark.parametrize(

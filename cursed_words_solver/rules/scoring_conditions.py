@@ -1104,6 +1104,8 @@ def is_consonant_letter(ch: str) -> bool:
 
 
 def is_red_note_tile(tile: Tile) -> bool:
+    if tile.curse == CurseType.ITEM:
+        return False
     return tile.color == TileColor.RED and tile.letter.lower() in RED_NOTES
 
 
