@@ -84,6 +84,11 @@ namespace CursedWordsSolverCompanion
                 var pathTiles = BuildPathTiles(ctx);
                 var runStateDict = SerializeRunState(ctx.RunState);
 
+                var f8Extras = ctx.Suggestion != null
+                    ? ExtrasDiffHelper.ExtrasFromRunStateObject(ctx.Suggestion.run_state_snapshot)
+                    : new Dictionary<string, string>();
+                var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, ctx.ScoringExtras);
+
                 var payload = new Dictionary<string, object>
                 {
                     ["schema_version"] = SchemaVersion,
@@ -97,6 +102,13 @@ namespace CursedWordsSolverCompanion
                     ["run_state"] = runStateDict,
                     ["consumables"] = BuildConsumablesBlock(ctx),
                     ["comparison"] = BuildComparisonBlock(ctx, matchStatus),
+                    ["extras_diff"] = extrasDiff,
+                    ["export_diagnostics_at_submit"] = ctx.RunState?.export_diagnostics,
+                    ["export_diagnostics_at_f8"] = ctx.Suggestion != null
+                        ? ExtrasDiffHelper.ExportDiagnosticsFromRunState(
+                            ctx.Suggestion.run_state_snapshot
+                        )
+                        : null,
                 };
 
                 var json = JsonConvert.SerializeObject(payload, Formatting.Indented);
@@ -273,13 +285,14 @@ namespace CursedWordsSolverCompanion
             if (board?.tiles == null || ctx.SubmittedPath == null)
                 return result;
 
+            var cols = board.cols > 0 ? board.cols : 5;
             var byIndex = new Dictionary<int, BoardTileSnapshot>();
             foreach (var t in board.tiles)
             {
                 if (t == null || !t.active)
                     continue;
                 // Path indices match melmod export row (0 = top) per loadout.py.
-                var idx = t.row * 5 + t.col;
+                var idx = t.row * cols + t.col;
                 byIndex[idx] = t;
             }
 
@@ -291,8 +304,8 @@ namespace CursedWordsSolverCompanion
                         new Dictionary<string, object>
                         {
                             ["path_index"] = idx,
-                            ["row"] = idx / 5,
-                            ["col"] = idx % 5,
+                            ["row"] = idx / cols,
+                            ["col"] = idx % cols,
                         }
                     );
                     continue;

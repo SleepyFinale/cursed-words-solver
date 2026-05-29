@@ -60,12 +60,105 @@ def load_run_state_raw(path: Path | None = None) -> dict[str, Any] | None:
     return _read_run_state_json(path)
 
 
+_BICYCLE_POST_EXTRAS = frozenset({"bicycle_word_score_bonus", "cards_submitted"})
+
+
+def merge_extras_diff_submit(extras: dict[str, Any], data: dict[str, Any]) -> None:
+    """Apply melmod submit-time extras when F8 snapshot lagged."""
+    diff = data.get("extras_diff")
+    if not isinstance(diff, dict):
+        return
+    for key, entry in diff.items():
+        if not isinstance(entry, dict):
+            continue
+        submit_val = entry.get("submit")
+        if submit_val in (None, ""):
+            continue
+        extras[key] = submit_val
+
+
+def merge_extras_snapshot_into(extras: dict[str, Any], snapshot: dict[str, Any]) -> None:
+    """Merge submit-time extras_snapshot (skip Bicycle post-submit counters)."""
+    if not isinstance(snapshot, dict):
+        return
+    for key, value in snapshot.items():
+        if key in _BICYCLE_POST_EXTRAS:
+            continue
+        if value in (None, ""):
+            continue
+        extras[key] = value
+
+
+def merge_submit_board_tile_state(run_state: dict[str, Any], data: dict[str, Any]) -> None:
+    """Apply submit-time board tile fields when F8 snapshot predates melmod merge."""
+    submit_tiles = data.get("submit_board_tiles")
+    if not isinstance(submit_tiles, list):
+        return
+    board = run_state.get("board")
+    if not isinstance(board, dict):
+        return
+    tiles = board.get("tiles")
+    if not isinstance(tiles, list):
+        return
+    submit_at: dict[tuple[int, int], dict[str, Any]] = {}
+    for entry in submit_tiles:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            key = (int(entry["row"]), int(entry["col"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        submit_at[key] = entry
+    if not submit_at:
+        return
+    merge_fields = (
+        "color",
+        "curse",
+        "letter",
+        "void_penalty_steps",
+        "scattered_item_id",
+        "scattered_item_level",
+    )
+    for tile in tiles:
+        if not isinstance(tile, dict):
+            continue
+        key = (int(tile.get("row", -1)), int(tile.get("col", -1)))
+        submit = submit_at.get(key)
+        if submit is None:
+            continue
+        if submit.get("take"):
+            tile["take"] = True
+        for field in merge_fields:
+            if field not in submit:
+                continue
+            value = submit[field]
+            if value is not None and value != "":
+                tile[field] = value
+
+
+def merge_submit_board_take_flags(run_state: dict[str, Any], data: dict[str, Any]) -> None:
+    """Backward-compatible alias for submit-time board merge."""
+    merge_submit_board_tile_state(run_state, data)
+
+
+def prepare_run_state_dict_for_scoring(data: dict[str, Any]) -> dict[str, Any]:
+    """Merge submit-time fields into run_state before scoring (live or replay)."""
+    run_state = dict(data)
+    extras = dict(run_state.get("extras") or {})
+    merge_extras_snapshot_into(extras, data.get("extras_snapshot") or {})
+    merge_extras_diff_submit(extras, data)
+    if extras:
+        run_state["extras"] = extras
+    merge_submit_board_tile_state(run_state, data)
+    return run_state
+
+
 def load_run_state(path: Path | None = None) -> Loadout | None:
     """Load run state exported by companion mod or manual JSON."""
     data = load_run_state_raw(path)
     if data is None:
         return None
-    return parse_run_state(data)
+    return parse_run_state(prepare_run_state_dict_for_scoring(data))
 
 
 def mod_money_from_run_state(data: dict[str, Any] | None) -> int:
@@ -614,6 +707,95 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_SESSION_EXTRA_KEYS = (
+    "snapshot_copy_slug",
+    "snapshot_copy_level",
+    "snapshot_copy_export_note",
+    "grid_path_immediate_word_mults",
+    "flush_word_mults_after_pin",
+    "flush_word_mults_before_cocktail",
+    "compound_word_percents_on_tile_sum",
+    "compound_word_finalize_at_cocktail",
+    "defer_post_cocktail_sunflower",
+    "post_cocktail_word_percent",
+    "grid_tile_multiply_first",
+)
+
+
+def export_diagnostics_from_run_state(data: dict[str, Any] | None) -> dict[str, Any]:
+    """Top-level export_diagnostics block from melmod run_state.json."""
+    if not data:
+        return {}
+    diag = data.get("export_diagnostics")
+    return dict(diag) if isinstance(diag, dict) else {}
+
+
+def solver_session_extras_from_loadout(loadout: Loadout | None) -> dict[str, Any]:
+    """Phasing/session keys the scoring pipeline applied (for F8 replay/debug)."""
+    if loadout is None:
+        return {}
+    extras = loadout.extras or {}
+    return {key: extras[key] for key in _SESSION_EXTRA_KEYS if key in extras}
+
+
+def validate_run_state_for_scoring(
+    loadout: Loadout | None,
+    *,
+    board: Board | None = None,
+    raw: dict[str, Any] | None = None,
+) -> list[str]:
+    """Python-side checks mirroring melmod ExportCompleteness."""
+    if loadout is None:
+        return ["loadout missing"]
+
+    warnings: list[str] = []
+    extras = loadout.extras or {}
+    diag = export_diagnostics_from_run_state(raw) if raw else {}
+    for key in diag.get("missing_keys") or []:
+        if isinstance(key, str) and key.strip():
+            warnings.append(f"melmod export missing: {key.strip()}")
+
+    sticker_ids = {str(s.id or "").strip().lower() for s in loadout.stickers}
+    stamp_ids = {str(s.id or "").strip().lower() for s in loadout.stamps}
+    pin = str(extras.get("pin_effect") or "").strip().lower()
+
+    if "snapshot" in sticker_ids:
+        note = str(extras.get("snapshot_copy_export_note") or "").strip().lower()
+        slug = str(extras.get("snapshot_copy_slug") or "").strip()
+        if not slug and note not in ("no_copy_yet",):
+            warnings.append("snapshot equipped but snapshot_copy_slug is missing")
+
+    if pin == "random_access_memory":
+        memory = extras.get("pin_memory")
+        note = str(extras.get("pin_memory_export_note") or "").strip()
+        if note == "field_missing":
+            warnings.append("RAM pin: pin_memory unreadable (ItemsInMemory)")
+        elif memory in (None, "", "[]"):
+            if note not in ("empty_valid", "no_pin"):
+                warnings.append("RAM pin: pin_memory empty (press F7 after boss picks)")
+
+    if any("lucky" in sid and "dice" in sid for sid in sticker_ids):
+        if extras.get("target_number") in (None, ""):
+            if extras.get("lucky_dice_target_missing") not in (True, "true", "True", "1", 1):
+                warnings.append("Lucky Dice equipped but target_number missing")
+
+    if board is None and extras.get("encounter_mode") == "encounter":
+        warnings.append("encounter active but board could not be parsed")
+
+    if board is not None:
+        scattered = [
+            t
+            for t in board.flat
+            if board.is_active_index(t.index)
+            and t.curse == CurseType.ITEM
+            and str((t.metadata or {}).get("scattered_item_id") or "").strip()
+        ]
+        if scattered and not extras.get("grid_scattered_items"):
+            warnings.append("grid has scattered items but grid_scattered_items extra missing")
+
+    return warnings
+
+
 def parse_run_state(data: dict[str, Any]) -> Loadout:
     stickers = [
         LoadoutItem(
@@ -876,6 +1058,11 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
     if loadout.money:
         parts.append(f"${loadout.money}")
     return "loadout: " + (", ".join(parts) if parts else "empty")
+
+
+def parse_board_from_prepared_run_state(data: dict[str, Any]) -> Board | None:
+    """Parse board after submit-time merge (take flags, etc.)."""
+    return parse_board_from_run_state(prepare_run_state_dict_for_scoring(data))
 
 
 def merge_loadout_with_board(

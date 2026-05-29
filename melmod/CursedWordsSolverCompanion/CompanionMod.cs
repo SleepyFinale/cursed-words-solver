@@ -29,7 +29,14 @@ namespace CursedWordsSolverCompanion
             MelonLogger.Msg("Output: " + RunStateExporter.OutputFilePath);
             MelonLogger.Msg("Dictionary: " + DictionaryExporter.WordsFilePath);
             RoundLogExporter.EnsurePrefs();
+            CompanionDiagnostics.EnsurePrefs();
             MelonLogger.Msg("Round logs: " + RoundLogExporter.RoundLogDir);
+            MelonLogger.Msg(
+                "Diagnostics: verbose="
+                    + CompanionDiagnostics.VerboseLogging
+                    + ", audit jsonl="
+                    + CompanionDiagnostics.WriteAuditJsonl
+            );
 
             try
             {

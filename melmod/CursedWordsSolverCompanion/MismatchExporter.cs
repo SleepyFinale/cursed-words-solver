@@ -62,6 +62,9 @@ namespace CursedWordsSolverCompanion
                 BoardExporter.MergeSubmitCardMetadataIntoRunState(runStateSnapshot, submitBoard);
             }
 
+            var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(suggestion.run_state_snapshot);
+            var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, extrasSnapshot);
+
             var payload = new Dictionary<string, object>
             {
                 ["word"] = word,
@@ -75,7 +78,13 @@ namespace CursedWordsSolverCompanion
                 ["run_state_snapshot"] = runStateSnapshot,
                 ["actual_trace"] = actualTrace ?? new List<Dictionary<string, object>>(),
                 ["extras_snapshot"] = extrasSnapshot ?? new Dictionary<string, string>(),
+                ["extras_diff"] = extrasDiff,
                 ["submit_board_tiles"] = submitBoard?.tiles,
+                ["f8_sequence"] = suggestion.f8_sequence,
+                ["solver_version"] = suggestion.solver_version ?? "",
+                ["export_diagnostics_at_f8"] = ExtrasDiffHelper.ExportDiagnosticsFromRunState(
+                    suggestion.run_state_snapshot
+                ),
                 ["game_types"] = new Dictionary<string, string>
                 {
                     ["submit_method"] = submitMethod ?? "",

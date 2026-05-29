@@ -108,7 +108,7 @@ Pressing **F8** starts `_solve_worker` in `[app.py](cursed_words_solver/app.py)`
 3. **Dictionary** — `[dictionary.py](cursed_words_solver/dictionary.py)` loads `game_words.txt` when present (from melmod), else ENABLE1 (`[config.py](cursed_words_solver/config.py)` `resolve_wordlist`).
 4. **Search** — `[search.py](cursed_words_solver/search.py)` `WordSearcher.find_best_words` runs DFS over active tiles with curse-specific neighbors (standard adjacency, double-letter teleports, chess piece rules, wildcards). Chess movement follows [wiki rules](https://cursedwords.wiki.gg/wiki/Curses#Chess_pieces): piece-specific rays, same-color blocking, pawn forward/double/capture, en passant, and king cannot move into check — see `[chess_tiles.py](cursed_words_solver/rules/chess_tiles.py)`. `PathValidator` prunes invalid prefixes and enforces stamp-specific rules. Search is time-budgeted (`search_time_budget_sec`) with fair per-start slices; extra passes cover void/number words on boards with NUMBER tiles. Boss limits (e.g. Wolf max length, Hyena block) come from `[boss_effects.py](cursed_words_solver/rules/boss_effects.py)`.
 5. **Score** — Each candidate is scored by `[ScoringPipeline](cursed_words_solver/rules/pipeline.py)` using rules from `[data/wiki/stickers.json](data/wiki/stickers.json)` (`[rule_lookup.py](cursed_words_solver/rules/rule_lookup.py)`): base tile sum → Salamander/Robo-Monkey (boss) → grid path bonuses → pin → stickers → stamps, matching [wiki order](https://cursedwords.wiki.gg/wiki/Scoring).
-6. **Output** — Top `top_n_results` words are kept; the best is re-scored with a full trace, written to `last_suggestion.json`, and debug JSON under `debug/parse_*.json`.
+6. **Output** — Top `top_n_results` words are kept; the best is re-scored with a full trace, written to `last_suggestion.json` (with `export_diagnostics`, `export_warnings`, `solver_session_extras`), and debug JSON under `debug/parse_*.json`.
 
 ### Display layer (overlays)
 
@@ -154,7 +154,8 @@ All paths under `%USERPROFILE%\.cursed_words_solver\`:
 | `game_words.txt`, `game_words_meta.json` | Melmod           | Solver                              |
 | `last_suggestion.json`                   | Solver (each F8) | Melmod (scoring capture)            |
 | `scoring_mismatches/`                    | Melmod           | You → `scripts/mismatch_to_test.py` |
-| `debug/`                                 | Solver           | You (parse traces, board captures)  |
+| `debug/`                                 | Solver           | You (parse traces, board captures, export warnings) |
+| `export_audit.jsonl`                     | Melmod (verbose) | Per-export audit trail              |
 
 
 ## Project layout

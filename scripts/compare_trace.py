@@ -24,6 +24,49 @@ from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_st
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 
 
+def _replay_mismatch(data: dict) -> tuple[int, list[dict]]:
+    """Apply regression replay adjustments (Nat-H4 / trace inference) before scoring."""
+    from tests.regression.test_scoring_mismatches import (
+        _adjust_bento_previous_word_extras,
+        _adjust_nat_h4_session_extras,
+        _adjust_neapolitan_percent_extras,
+        _adjust_previous_word_letter_extras,
+        _adjust_rare_item_count_extras,
+        _adjust_scattered_item_level_from_trace,
+        _adjust_snapshot_copy_from_trace,
+        _adjust_steak_percent_extras,
+        _adjust_void_penalty_from_trace,
+        _run_state_for_replay,
+    )
+
+    run_state = _run_state_for_replay(data)
+    if not run_state:
+        raise ValueError("missing run_state_snapshot")
+    word = data.get("word") or ""
+    path = data.get("path") or []
+    case_stem = Path(str(data.get("_source_path", "unknown"))).stem
+    for fn in (
+        _adjust_previous_word_letter_extras,
+        _adjust_bento_previous_word_extras,
+        _adjust_neapolitan_percent_extras,
+        _adjust_rare_item_count_extras,
+        _adjust_steak_percent_extras,
+    ):
+        fn(run_state, data)
+    board = parse_board_from_run_state(run_state)
+    _adjust_void_penalty_from_trace(run_state, data, board, path)
+    _adjust_scattered_item_level_from_trace(run_state, data, board, path)
+    _adjust_nat_h4_session_extras(run_state, data, case_stem)
+    _adjust_snapshot_copy_from_trace(
+        run_state, data, board, path, word, case_stem=case_stem
+    )
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    pipe = ScoringPipeline()
+    pred_score, _, pred_trace = pipe.score_with_trace(board, path, word, loadout)
+    return int(pred_score), pred_trace
+
+
 def _load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -75,21 +118,26 @@ def _first_trace_diff(pred_trace: list[dict], actual_trace: list[dict]) -> str:
     return "none"
 
 
-def _compare_file(path: Path) -> DiffResult:
+def _compare_file(path: Path, *, replay: bool = False) -> DiffResult:
     data = _load(path)
-    run_state = data.get("run_state_snapshot") or data.get("run_state") or {}
-    board = parse_board_from_run_state(run_state)
-    if board is None:
-        raise ValueError(f"{path.name}: missing board in snapshot")
-    loadout = parse_run_state(run_state)
-    extras = data.get("extras_snapshot") or {}
-    if isinstance(extras, dict):
-        loadout.extras.update(extras)
+    data["_source_path"] = str(path)
+    if replay:
+        pred_score, pred_trace = _replay_mismatch(data)
+    else:
+        run_state = data.get("run_state_snapshot") or data.get("run_state") or {}
+        board = parse_board_from_run_state(run_state)
+        if board is None:
+            raise ValueError(f"{path.name}: missing board in snapshot")
+        loadout = parse_run_state(run_state)
+        extras = data.get("extras_snapshot") or {}
+        if isinstance(extras, dict):
+            loadout.extras.update(extras)
 
-    path_idxs = data.get("path") or []
-    word = data.get("word") or ""
-    pipe = ScoringPipeline()
-    pred_score, _, pred_trace = pipe.score_with_trace(board, path_idxs, word, loadout)
+        path_idxs = data.get("path") or []
+        word = data.get("word") or ""
+        pipe = ScoringPipeline()
+        pred_score, _, pred_trace = pipe.score_with_trace(board, path_idxs, word, loadout)
+        pred_score = int(pred_score)
     actual_trace = data.get("actual_trace") or []
     actual_score = int(data.get("actual_score") or 0)
     first_diff = _first_trace_diff(pred_trace, actual_trace)
@@ -107,6 +155,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("mismatch_json", type=Path, nargs="?")
     ap.add_argument("--glob", dest="glob_pattern", default="")
+    ap.add_argument(
+        "--replay",
+        action="store_true",
+        help="apply regression replay adjustments (void/dusty/Nat-H4 extras)",
+    )
     args = ap.parse_args()
 
     files: list[Path] = []
@@ -120,7 +173,7 @@ def main() -> int:
     failures = 0
     for f in files:
         try:
-            r = _compare_file(f)
+            r = _compare_file(f, replay=args.replay)
         except Exception as exc:  # noqa: BLE001
             failures += 1
             print(f"{f.name}: ERROR {exc}")

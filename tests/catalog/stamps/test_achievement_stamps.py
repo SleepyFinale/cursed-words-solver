@@ -14,6 +14,9 @@ from cursed_words_solver.models import (
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
+from cursed_words_solver.rules.scoring_conditions import (
+    neapolitan_base_percent_from_loadout,
+)
 
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
@@ -302,6 +305,26 @@ def test_neapolitan_prefers_cached_when_stale_live_export():
     base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
     assert bd["multiplier"] == 1.1
     assert score == math.floor(base * 1.1)
+
+
+def test_neapolitan_prefers_live_over_stale_higher_cache():
+    """F7 live export must not be inflated by stale last_known (qi class)."""
+    loadout = Loadout(
+        extras={
+            "neapolitan_percent": "125",
+            "neapolitan_percent_last_known": "130",
+        },
+    )
+    pct, src = neapolitan_base_percent_from_loadout(loadout)
+    assert pct == 125
+    assert src == "live"
+
+
+def test_neapolitan_uses_last_known_when_live_missing_only():
+    loadout = Loadout(extras={"neapolitan_percent_last_known": "125"})
+    pct, src = neapolitan_base_percent_from_loadout(loadout)
+    assert pct == 125
+    assert src == "cached"
 
 
 def test_neapolitan_live_wins_when_higher_than_cached():

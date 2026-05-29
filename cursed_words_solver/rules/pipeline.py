@@ -502,9 +502,10 @@ def _apply_pending_word_finalize_steps(
     subtotal: float,
     *,
     trace: list[dict[str, Any]] | None = None,
+    steps: list[tuple] | None = None,
 ) -> float:
     """GetScoreFromScoreCalcInfo: apply queued WordBonus steps in sticker order."""
-    entries = state.get("pending_word_finalize_steps", [])
+    entries = steps if steps is not None else state.get("pending_word_finalize_steps", [])
     if not entries:
         return subtotal
     total = subtotal
@@ -648,12 +649,109 @@ def _flush_pending_word_mults(state: dict[str, Any]) -> None:
     state["pending_word_multipliers"] = []
 
 
+def _flush_pending_through_rule(state: dict[str, Any], through_rule_id: str) -> None:
+    """Apply queued ×WORD through ``through_rule_id`` (inclusive), keep the rest pending."""
+    steps = state.get("pending_word_finalize_steps")
+    if not steps:
+        return
+    target = str(through_rule_id or "").strip().lower()
+    if not target:
+        return
+    cut = -1
+    for i, step in enumerate(steps):
+        if not isinstance(step, tuple) or len(step) < 3:
+            continue
+        rid = str(step[2] or "").strip().lower()
+        if rid == target:
+            cut = i
+            break
+    if cut < 0:
+        return
+    apply_steps = steps[: cut + 1]
+    keep_steps = steps[cut + 1 :]
+    if not apply_steps:
+        return
+    tile_sum = sum(state["tile_scores"])
+    subtotal = tile_sum + state["word_score"]
+    trace = state.get("_trace")
+    new_total = _apply_pending_word_finalize_steps(
+        state, subtotal, trace=trace if trace is not None else None, steps=apply_steps
+    )
+    state["word_score"] = new_total - tile_sum
+    state["pending_word_finalize_steps"] = keep_steps
+    state["pending_word_percent_bonuses"] = [
+        entry
+        for entry in state.get("pending_word_percent_bonuses", [])
+        if isinstance(entry, tuple)
+        and len(entry) >= 2
+        and str(entry[1] or "").strip().lower() not in {
+            str(s[2] or "").strip().lower()
+            for s in apply_steps
+            if isinstance(s, tuple) and len(s) >= 3
+        }
+    ]
+    state["pending_word_multipliers"] = [
+        entry
+        for entry in state.get("pending_word_multipliers", [])
+        if isinstance(entry, tuple)
+        and len(entry) >= 2
+        and str(entry[1] or "").strip().lower() not in {
+            str(s[2] or "").strip().lower()
+            for s in apply_steps
+            if isinstance(s, tuple) and len(s) >= 3
+        }
+    ]
+
+
+def _strip_sunflower_from_pending(state: dict[str, Any]) -> None:
+    """Remove Sunflower from queued ×WORD (applied post-Cocktail instead)."""
+    skip = frozenset({"sunflower"})
+
+    def _keep(step: object) -> bool:
+        if not isinstance(step, tuple) or len(step) < 3:
+            return True
+        return str(step[2] or "").strip().lower() not in skip
+
+    state["pending_word_finalize_steps"] = [
+        s for s in state.get("pending_word_finalize_steps", []) if _keep(s)
+    ]
+    state["pending_word_percent_bonuses"] = [
+        s for s in state.get("pending_word_percent_bonuses", []) if _keep(s)
+    ]
+    state["pending_word_multipliers"] = [
+        s for s in state.get("pending_word_multipliers", []) if _keep(s)
+    ]
+
+
+def _pending_compound_percents_from_state(
+    state: dict[str, Any], loadout: Loadout | None
+) -> list[int] | None:
+    """Build compound ×WORD list from pending queue (skip Dango if flushed at grid)."""
+    steps = state.get("pending_word_finalize_steps")
+    if not steps:
+        return None
+    percents: list[int] = []
+    for step in steps:
+        if not isinstance(step, tuple) or len(step) < 3:
+            continue
+        kind, value, rule_id = step[0], step[1], step[2]
+        if kind != "percent":
+            continue
+        rid = str(rule_id or "").strip().lower()
+        if rid == "dango" and state.get("_grid_dango_word_flushed"):
+            continue
+        try:
+            percents.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return percents or None
+
+
 def _apply_snapshot_phased_word_finalize(
     state: dict[str, Any], loadout: Loadout | None
 ) -> None:
     """Apply queued ×WORD on final tile sum (Nat-H4 Snapshot sessions)."""
     from cursed_words_solver.rules.scoring_conditions import (
-        snapshot_copy_slug,
         snapshot_phased_word_scoring,
     )
 
@@ -664,6 +762,21 @@ def _apply_snapshot_phased_word_finalize(
     steps = state.get("pending_word_finalize_steps")
     if not steps:
         return
+    extras = (loadout.extras or {}) if loadout is not None else {}
+    if str(extras.get("defer_post_cocktail_sunflower", "")).lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        steps = [
+            s
+            for s in steps
+            if not (
+                isinstance(s, tuple)
+                and len(s) >= 3
+                and str(s[2] or "").strip().lower() == "sunflower"
+            )
+        ]
     trace = state.get("_trace")
     tile_sum = int(sum(state["tile_scores"]))
     word_add = int(round(state.get("word_score", 0)))
@@ -691,6 +804,7 @@ def _apply_snapshot_phased_word_finalize(
                     "multiply",
                     factor=factor,
                     percent=int(value),
+                    rule_id=str(_rule_id or ""),
                     detail=f"×{factor:g} word (snapshot-phased tile sum)",
                 )
         elif kind == "multiply":
@@ -700,6 +814,7 @@ def _apply_snapshot_phased_word_finalize(
                     state,
                     "multiply",
                     factor=float(value),
+                    rule_id=str(_rule_id or ""),
                     detail=f"×{value:g} word (snapshot-phased tile sum)",
                 )
     if word_add:
@@ -717,12 +832,151 @@ def _apply_snapshot_phased_word_finalize(
     state["_snapshot_phased_finalize_applied"] = True
 
 
+def _build_tombstone_compound_percents(
+    state: dict[str, Any],
+    loadout: Loadout,
+    board: Board,
+    path: list[int],
+    rules: dict[str, Any],
+) -> list[int] | None:
+    """Sunflower + Burrito + Steak + Neo stacked on post-Cocktail tile sum."""
+    from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
+    from cursed_words_solver.rules.scoring_conditions import (
+        burrito_word_multiplier,
+        post_cocktail_sunflower_percent,
+        tombstone_heavy_grid_compound_session,
+        word_percent_bonus_from_multiplier,
+    )
+
+    if not tombstone_heavy_grid_compound_session(loadout, board):
+        return None
+    percents: list[int] = []
+    sun = post_cocktail_sunflower_percent(
+        loadout, board, path, state=state, rules=rules
+    )
+    if sun is not None:
+        percents.append(int(sun))
+    burrito_level = 1
+    for sticker in loadout.stickers:
+        if slugify_name(sticker.id or sticker.name) == "burrito":
+            burrito_level = max(1, int(sticker.level))
+            break
+    _key, burrito_rule = get_rule(rules, "stickers", "burrito", "burrito")
+    if burrito_rule:
+        factor = burrito_word_multiplier(
+            burrito_level,
+            burrito_rule,
+            loadout,
+            board=board,
+            path=path,
+            rules=rules,
+        )
+        if factor != 1.0:
+            percents.append(
+                word_percent_bonus_from_multiplier(
+                    factor, burrito_rule, level=burrito_level
+                )
+            )
+    extras = loadout.extras or {}
+    raw_steak = extras.get("steak_word_bonus_percent")
+    if raw_steak not in (None, ""):
+        try:
+            percents.append(int(raw_steak))
+        except (TypeError, ValueError):
+            pass
+    else:
+        for step in state.get("pending_word_finalize_steps", []):
+            if (
+                isinstance(step, tuple)
+                and len(step) >= 3
+                and step[0] == "percent"
+                and str(step[2] or "").strip().lower() == "steak"
+            ):
+                percents.append(int(step[1]))
+                break
+    raw_neo = extras.get("neapolitan_percent")
+    if raw_neo not in (None, ""):
+        try:
+            percents.append(int(raw_neo))
+        except (TypeError, ValueError):
+            pass
+    else:
+        for step in state.get("pending_word_finalize_steps", []):
+            if (
+                isinstance(step, tuple)
+                and len(step) >= 3
+                and step[0] == "percent"
+                and str(step[2] or "").strip().lower() == "neapolitan"
+            ):
+                percents.append(int(step[1]))
+                break
+    return percents or None
+
+
+def _apply_compound_word_finalize_after_stickers(
+    state: dict[str, Any],
+    loadout: Loadout,
+    board: Board,
+    path: list[int],
+    rules: dict[str, Any],
+) -> None:
+    """Stack queued ×WORD on tile sum after all equipped sticker passes (down_under sessions)."""
+    from cursed_words_solver.rules.scoring_conditions import (
+        compound_word_finalize_at_cocktail,
+    )
+
+    if state.get("_compound_word_percents_applied"):
+        return
+    if not compound_word_finalize_at_cocktail(loadout, board):
+        return
+    compound = _compound_word_percents_from_loadout(loadout)
+    if not compound:
+        compound = _build_tombstone_compound_percents(
+            state, loadout, board, path, rules
+        )
+    if not compound:
+        compound = _pending_compound_percents_from_state(state, loadout)
+    if not compound:
+        return
+    state["word_score"] = 0.0
+    _apply_compound_word_percents_on_tile_sum(
+        state,
+        compound,
+        trace=state.get("_trace"),
+    )
+
+
 def _apply_post_cocktail_word_percent_if_needed(
-    state: dict[str, Any], loadout: Loadout | None
+    state: dict[str, Any],
+    loadout: Loadout | None,
+    *,
+    board: Board | None = None,
+    path: list[int] | None = None,
+    rules: dict[str, Any] | None = None,
 ) -> None:
     if state.get("_post_cocktail_applied") or loadout is None:
         return
-    raw = str((loadout.extras or {}).get("post_cocktail_word_percent", "")).strip()
+    extras = loadout.extras or {}
+    raw = str(extras.get("post_cocktail_word_percent", "")).strip()
+    if not raw and str(extras.get("defer_post_cocktail_sunflower", "")).lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        if board is not None and path is not None and rules is not None:
+            from cursed_words_solver.rules.scoring_conditions import (
+                post_cocktail_sunflower_percent,
+            )
+
+            pct = post_cocktail_sunflower_percent(
+                loadout,
+                board,
+                path,
+                state=state,
+                rules=rules,
+            )
+            if pct is not None:
+                raw = str(pct)
     if not raw:
         return
     try:
@@ -750,6 +1004,8 @@ def _finalize(
     board: Board | None = None,
     path: list[int] | None = None,
     loadout: Loadout | None = None,
+    *,
+    rules: dict[str, Any] | None = None,
 ) -> float:
     """Sum tile + word scores, apply queued WordBonus steps in sticker order."""
     if state.get("multiplier") == 0:
@@ -766,10 +1022,22 @@ def _finalize(
         return float(sum(state["tile_scores"]) + state["word_score"])
     if board is not None and path is not None:
         apply_green_tile_word_transfer(board, path, state)
-    _apply_post_cocktail_word_percent_if_needed(state, loadout)
+    _apply_post_cocktail_word_percent_if_needed(
+        state, loadout, board=board, path=path, rules=rules
+    )
     _apply_compound_post_cocktail_finalize(state, loadout)
+    from cursed_words_solver.rules.scoring_conditions import (
+        snapshot_dusty_interleaved_word_scoring,
+        snapshot_phased_word_scoring,
+    )
+
+    dusty_interleaved = (
+        snapshot_dusty_interleaved_word_scoring(loadout)
+        and not str(extras.get("compound_word_percents_on_tile_sum", "")).strip()
+    )
     if not state.get("_compound_word_percents_applied"):
-        _apply_snapshot_phased_word_finalize(state, loadout)
+        if snapshot_phased_word_scoring(loadout) and not dusty_interleaved:
+            _apply_snapshot_phased_word_finalize(state, loadout)
     if state.get("_snapshot_phased_finalize_applied") or state.get(
         "_compound_post_cocktail_applied"
     ):
@@ -781,6 +1049,10 @@ def _finalize(
 def _finalize_with_trace(
     state: dict[str, Any],
     loadout: Loadout | None = None,
+    *,
+    board: Board | None = None,
+    path: list[int] | None = None,
+    rules: dict[str, Any] | None = None,
 ) -> tuple[float, list[dict[str, Any]]]:
     """Like _finalize but records each ×WORD floor step in trace."""
     if state.get("multiplier") == 0:
@@ -796,10 +1068,22 @@ def _finalize_with_trace(
     if state.get("_compound_word_percents_applied") and not has_compound_post:
         return float(sum(state["tile_scores"]) + state["word_score"]), []
     trace = state.get("_trace")
-    _apply_post_cocktail_word_percent_if_needed(state, loadout)
+    _apply_post_cocktail_word_percent_if_needed(
+        state, loadout, board=board, path=path, rules=rules
+    )
     _apply_compound_post_cocktail_finalize(state, loadout)
+    from cursed_words_solver.rules.scoring_conditions import (
+        snapshot_dusty_interleaved_word_scoring,
+        snapshot_phased_word_scoring,
+    )
+
+    dusty_interleaved = (
+        snapshot_dusty_interleaved_word_scoring(loadout)
+        and not str(extras.get("compound_word_percents_on_tile_sum", "")).strip()
+    )
     if not state.get("_compound_word_percents_applied"):
-        _apply_snapshot_phased_word_finalize(state, loadout)
+        if snapshot_phased_word_scoring(loadout) and not dusty_interleaved:
+            _apply_snapshot_phased_word_finalize(state, loadout)
     if state.get("_snapshot_phased_finalize_applied") or state.get(
         "_compound_post_cocktail_applied"
     ):
@@ -890,7 +1174,11 @@ class ScoringPipeline:
                         )
                         return int(
                             _finalize(
-                                trial_state, board=board, path=path, loadout=loadout
+                                trial_state,
+                                board=board,
+                                path=path,
+                                loadout=loadout,
+                                rules=self.rules,
                             )
                         )
                     finally:
@@ -937,7 +1225,9 @@ class ScoringPipeline:
         )
 
         compound_percents = _compound_word_percents_from_loadout(loadout)
-        if compound_percents:
+        if compound_percents or str(
+            (loadout.extras or {}).get("compound_word_finalize_at_cocktail", "")
+        ).lower() in ("1", "true", "yes"):
             state["_defer_word_mults_for_compound"] = True
 
         grid_refs = [
@@ -984,6 +1274,8 @@ class ScoringPipeline:
                 and rule.get("type") == "multiply_word_by_unique_colour_count"
                 and state.get("pending_word_finalize_steps")
             ):
+                if slugify_name(ref.rule_id) == "dango":
+                    state["_grid_dango_word_flushed"] = True
                 _flush_pending_word_mults(state)
             state["_immediate_word_percent"] = prev_immediate_pct
             _trace_step(state, "grid_item", rule_id=ref.rule_id, detail="scattered grid item")
@@ -1000,12 +1292,36 @@ class ScoringPipeline:
             _trace_step(state, "pin", rule_id=pin_effect, detail="pin applied")
         from cursed_words_solver.rules.scoring_conditions import snapshot_phased_word_scoring
 
-        if (
-            str((loadout.extras or {}).get("flush_word_mults_after_pin", "")).lower()
-            in ("1", "true", "yes")
-            and not snapshot_phased_word_scoring(loadout)
+        from cursed_words_solver.rules.scoring_conditions import (
+            snapshot_dusty_interleaved_word_scoring,
+            snapshot_phased_word_scoring,
+        )
+
+        from cursed_words_solver.rules.scoring_conditions import (
+            post_cocktail_sunflower_session,
+        )
+
+        if post_cocktail_sunflower_session(loadout, board):
+            _strip_sunflower_from_pending(state)
+        if snapshot_dusty_interleaved_word_scoring(loadout, board) and (
+            str((loadout.extras or {}).get("pin_effect", "") or "").strip().lower()
+            == "random_access_memory"
         ):
-            _flush_pending_word_mults(state)
+            _flush_pending_through_rule(state, "burrito")
+        elif str((loadout.extras or {}).get("flush_word_mults_after_pin", "")).lower() in (
+            "1",
+            "true",
+            "yes",
+        ) and (
+            not snapshot_phased_word_scoring(loadout)
+            or snapshot_dusty_interleaved_word_scoring(loadout, board)
+        ):
+            from cursed_words_solver.rules.scoring_conditions import (
+                compound_word_finalize_at_cocktail,
+            )
+
+            if not compound_word_finalize_at_cocktail(loadout, board):
+                _flush_pending_word_mults(state)
         defer_multiply_stickers = _salamander_defer_multiply_for_mutating(loadout)
 
         _skip_types = _STAMP_SKIP_TYPES
@@ -1033,24 +1349,37 @@ class ScoringPipeline:
                 is_multiply = rule.get("type") == "multiply_word_scaled"
                 if slug != "snapshot" and multiply_only != is_multiply:
                     continue
-                if state.get("_defer_word_mults_for_compound") and slug not in (
-                    "snapshot",
-                    "cocktail",
-                ):
-                    continue
+                if state.get("_defer_word_mults_for_compound"):
+                    if multiply_only:
+                        if not is_multiply:
+                            continue
+                    elif is_multiply:
+                        continue
                 if state.get("_compound_word_percents_applied") and multiply_only:
                     continue
                 if (
                     not multiply_only
                     and slug == "cocktail"
-                    and str(
-                        (loadout.extras or {}).get("flush_word_mults_before_cocktail", "")
-                    ).lower()
-                    in ("1", "true", "yes")
                     and state.get("pending_word_finalize_steps")
-                    and not snapshot_phased_word_scoring(loadout)
                 ):
-                    _flush_pending_word_mults(state)
+                    from cursed_words_solver.rules.scoring_conditions import (
+                        snapshot_dusty_interleaved_word_scoring,
+                        snapshot_phased_word_scoring,
+                    )
+
+                    if snapshot_dusty_interleaved_word_scoring(loadout, board):
+                        from cursed_words_solver.rules.scoring_conditions import (
+                            compound_word_finalize_at_cocktail,
+                        )
+
+                        if not compound_word_finalize_at_cocktail(loadout, board):
+                            _flush_pending_through_rule(state, "burrito")
+                    elif str(
+                        (loadout.extras or {}).get("flush_word_mults_before_cocktail", "")
+                    ).lower() in ("1", "true", "yes") and not (
+                        snapshot_phased_word_scoring(loadout)
+                    ):
+                        _flush_pending_word_mults(state)
                 pre_compound, post_compound = _compound_pre_post_percents(loadout)
                 if not multiply_only and slug == "cocktail" and pre_compound:
                     _apply_compound_word_percents_on_tile_sum(
@@ -1070,7 +1399,18 @@ class ScoringPipeline:
                     multiply_only=multiply_only,
                 )
                 if not multiply_only and slug == "cocktail":
-                    if pre_compound is None and post_compound is None:
+                    from cursed_words_solver.rules.scoring_conditions import (
+                        compound_word_finalize_at_cocktail,
+                    )
+
+                    defer_compound_finalize = compound_word_finalize_at_cocktail(
+                        loadout, board
+                    )
+                    if (
+                        not defer_compound_finalize
+                        and pre_compound is None
+                        and post_compound is None
+                    ):
                         compound = _compound_word_percents_from_loadout(loadout)
                         if compound:
                             state["word_score"] = 0.0
@@ -1086,10 +1426,6 @@ class ScoringPipeline:
                             post_compound,
                             trace=state.get("_trace"),
                         )
-                    elif str(
-                        (loadout.extras or {}).get("post_cocktail_word_percent", "")
-                    ).strip():
-                        _apply_post_cocktail_word_percent_if_needed(state, loadout)
 
         state["_immediate_word_mult"] = True
         if hourglass:
@@ -1137,6 +1473,9 @@ class ScoringPipeline:
         else:
             _apply_sticker_pass(multiply_only=False)
             _apply_sticker_pass(multiply_only=True)
+        _apply_compound_word_finalize_after_stickers(
+            state, loadout, board, path, self.rules
+        )
         state["_immediate_word_mult"] = False
         if not hourglass:
             for slot in _stamp_slots():
@@ -1234,7 +1573,7 @@ class ScoringPipeline:
         """Final score without building the breakdown dict (search hot path)."""
         loadout = loadout or Loadout(money=board.money)
         state = self._compute_state(board, path, word, loadout)
-        return _finalize(state, board, path, loadout)
+        return _finalize(state, board, path, loadout, rules=self.rules)
 
     def score(
         self,
@@ -1245,7 +1584,7 @@ class ScoringPipeline:
     ) -> tuple[float, dict[str, Any]]:
         loadout = loadout or Loadout(money=board.money)
         state = self._compute_state(board, path, word, loadout)
-        final = _finalize(state, board, path, loadout)
+        final = _finalize(state, board, path, loadout, rules=self.rules)
         breakdown: dict[str, Any] = {
             "base_total": state["base_score"],
             "tile_total": sum(state["tile_scores"]),
@@ -1274,7 +1613,9 @@ class ScoringPipeline:
         loadout = loadout or Loadout(money=board.money)
         trace: list[dict[str, Any]] = []
         state = self._compute_state(board, path, word, loadout, trace=trace)
-        final, _ = _finalize_with_trace(state, loadout)
+        final, _ = _finalize_with_trace(
+            state, loadout, board=board, path=path, rules=self.rules
+        )
         breakdown: dict[str, Any] = {
             "base_total": state["base_score"],
             "tile_total": sum(state["tile_scores"]),
@@ -1924,15 +2265,15 @@ class ScoringPipeline:
                                 factor, rule, level=level
                             )
                     elif rid == "neapolitan" and loadout is not None:
-                        base_pct, _neo_src = neapolitan_base_percent_from_loadout(
+                        base_pct, neo_src = neapolitan_base_percent_from_loadout(
                             loadout
                         )
-                        if neapolitan_has_live_percent(loadout) or _neo_src in (
-                            "live",
-                            "cached",
-                        ):
-                            percent = int(base_pct)
-                            factor = float(base_pct) / 100.0
+                        if neo_src != "default":
+                            if improve_neapolitan:
+                                percent = int(round(float(factor) * 100.0))
+                            else:
+                                percent = int(base_pct)
+                                factor = float(base_pct) / 100.0
                         else:
                             percent = word_percent_bonus_from_multiplier(
                                 factor, rule, level=level
@@ -2039,6 +2380,18 @@ class ScoringPipeline:
                 )
 
         elif effect_type == "multiply_money_bonus":
+            if str(rule_id or "").strip().lower() == "sunflower" and loadout is not None:
+                from cursed_words_solver.rules.scoring_conditions import (
+                    compound_word_finalize_at_cocktail,
+                )
+
+                extras = loadout.extras or {}
+                if str(extras.get("defer_post_cocktail_sunflower", "")).lower() in (
+                    "1",
+                    "true",
+                    "yes",
+                ) or compound_word_finalize_at_cocktail(loadout, board):
+                    return state
             factor = money_word_multiplier(
                 level, rule, money_for_scoring(board, path, loadout, state=state)
             )

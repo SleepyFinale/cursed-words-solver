@@ -90,3 +90,19 @@ Round logs include solver prediction (from `last_suggestion.json` when present),
 `%USERPROFILE%\.cursed_words_solver\scoring_mismatches\<timestamp>.json`
 
 See root `README.md` and `melmod/README.md` for the F8 → play word workflow.
+
+## Snapshot sticker (`Snapshot` class)
+
+Decompiled from `Assembly-CSharp.dll`:
+
+| Member | Type | Role |
+|--------|------|------|
+| `SnapshottedItem` | `Item` (public field) | Copy target chosen at **start of grid** |
+| `SnapshottedDescription` | `string` | Polaroid UI text when equipped |
+| `ApplyStartOfGridEffect` | method | Picks a random scattered grid sticker, clones it into `SnapshottedItem`, then delegates grid-start effects |
+
+**Timing:** Copy slug is fixed when `ApplyStartOfGridEffect` runs (board generation), **not** on first word score. The companion patches this method (postfix) and reads `SnapshottedItem` on every export via reflection.
+
+**Export keys:** `extras.snapshot_copy_slug`, `extras.snapshot_copy_level`, `extras.snapshot_copy_export_note` (`ok`, `not_equipped`, `no_copy_yet`, `reflection_failed`), `extras.snapshot_copy_captured_at` (UTC ISO8601 when captured from grid start).
+
+**Trace fallback:** If `SnapshottedItem` is null but a Snapshot scoring step shows additive word bonus `120`, infer `dusty_coffin` (logged as `trace_fallback` in `export_diagnostics.snapshot_copy_source`).

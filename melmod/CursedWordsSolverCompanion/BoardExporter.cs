@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
@@ -61,6 +62,39 @@ namespace CursedWordsSolverCompanion
             };
             FillPlayableBounds(snapshot);
             return snapshot;
+        }
+
+        /// <summary>
+        /// JSON array of scattered grid stickers for solver cross-check.
+        /// </summary>
+        public static void FillGridScatteredItemsExtra(RunStateSnapshot snapshot)
+        {
+            if (snapshot?.extras == null || snapshot.board?.tiles == null)
+                return;
+
+            var rows = new List<Dictionary<string, object>>();
+            foreach (var tile in snapshot.board.tiles)
+            {
+                if (tile == null || !tile.active)
+                    continue;
+                if (!string.Equals(tile.curse, "item", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (string.IsNullOrEmpty(tile.scattered_item_id))
+                    continue;
+
+                var level = tile.scattered_item_level ?? 1;
+                rows.Add(
+                    new Dictionary<string, object>
+                    {
+                        ["row"] = tile.row,
+                        ["col"] = tile.col,
+                        ["id"] = tile.scattered_item_id,
+                        ["level"] = level,
+                    }
+                );
+            }
+
+            snapshot.extras["grid_scattered_items"] = JsonConvert.SerializeObject(rows);
         }
 
         public static string ComputeBoardFingerprint(BoardSnapshot board)
@@ -722,8 +756,7 @@ namespace CursedWordsSolverCompanion
                                 scattered.Name
                             );
                         var scatteredLevel = RunStateExporter.GetUpgradeableLevel(scattered);
-                        if (scatteredLevel >= 1)
-                            snap.scattered_item_level = scatteredLevel;
+                        snap.scattered_item_level = scatteredLevel >= 1 ? scatteredLevel : 1;
                     }
                 }
                 catch

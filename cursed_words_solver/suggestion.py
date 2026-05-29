@@ -233,6 +233,9 @@ def save_last_suggestion(
 
     dictionary: WordDictionary | None = None,
     min_len: int = 3,
+    export_diagnostics: dict[str, Any] | None = None,
+    export_warnings: list[str] | None = None,
+    solver_session_extras: dict[str, Any] | None = None,
 
 ) -> None:
 
@@ -307,6 +310,15 @@ def save_last_suggestion(
     if run_state_snapshot is not None:
 
         payload["run_state_snapshot"] = run_state_snapshot
+
+    if export_diagnostics:
+        payload["export_diagnostics"] = export_diagnostics
+
+    if export_warnings:
+        payload["export_warnings"] = list(export_warnings)
+
+    if solver_session_extras:
+        payload["solver_session_extras"] = dict(solver_session_extras)
 
     LAST_SUGGESTION_PATH.write_text(
 

@@ -236,3 +236,14 @@ def test_red_envelope_ram_resolve():
 def test_pin_memory_entries_parsed():
     lo = Loadout(extras={"pin_memory": [{"id": "a", "name": "A", "kind": "stamp"}]})
     assert len(pin_memory_entries(lo)) == 1
+
+
+def test_pin_memory_entries_parses_json_string():
+    lo = Loadout(
+        extras={
+            "pin_memory": '[{"id":"sunflower","name":"Sunflower","level":1,"kind":"sticker"}]'
+        }
+    )
+    entries = pin_memory_entries(lo)
+    assert len(entries) == 1
+    assert entries[0]["id"] == "sunflower"

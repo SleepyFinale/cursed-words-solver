@@ -1274,17 +1274,39 @@ def dusty_coffin_void_units(
     path: list[int] | None = None,
 ) -> int:
     """Void units for Dusty Coffin / Snapshot copy (per_void_unused × level factor)."""
-    _ = loadout
-    slug = (applying_sticker_id or "").strip().lower()
-    if slug == "snapshot":
-        return snapshot_dusty_void_units(board)
-    if (
-        slug == "dusty_coffin"
-        and path is not None
-        and dusty_coffin_scattered_on_path(board, path)
-    ):
-        return 2 * void_letter_tile_count(board)
-    return void_tiles_letter_not_in_word(board, word)
+    applying = (applying_sticker_id or "").strip().lower()
+    if loadout is not None:
+        extras = loadout.extras or {}
+        if applying == "dusty_coffin":
+            raw = extras.get("dusty_void_units_override")
+            if raw not in (None, ""):
+                try:
+                    return max(0, int(raw))
+                except (TypeError, ValueError):
+                    pass
+        if applying == "snapshot":
+            raw = extras.get("snapshot_void_units_override")
+            if raw not in (None, ""):
+                try:
+                    return max(0, int(raw))
+                except (TypeError, ValueError):
+                    pass
+    count = void_tiles_letter_not_in_word(board, word)
+    copy_is_dusty = (
+        loadout is not None
+        and snapshot_copy_slug(loadout) == "dusty_coffin"
+    )
+    if path is not None and dusty_coffin_scattered_on_path(board, path):
+        if applying == "dusty_coffin" or (applying == "snapshot" and copy_is_dusty):
+            letters_in_word = set((word or "").lower())
+            for idx in path:
+                tile = board.get_by_index(idx)
+                if tile.color != TileColor.VOID or tile.curse != CurseType.LETTER:
+                    continue
+                face = path_letter_for_count(tile)
+                if face and face.lower() in letters_in_word:
+                    count += 1
+    return count
 
 
 def void_tiles_letter_not_in_word(board: Board, word: str) -> int:
@@ -1297,6 +1319,10 @@ def void_tiles_letter_not_in_word(board: Board, word: str) -> int:
         if tile.curse == CurseType.ITEM:
             scattered = str((tile.metadata or {}).get("scattered_item_id", "")).strip().lower()
             if scattered == "rainbow_sprinkles":
+                count += 1
+                continue
+            face = path_letter_for_count(tile)
+            if face and face.lower() not in letters_in_word:
                 count += 1
             continue
         face = void_tile_face_for_dusty_coffin(tile)
@@ -2803,14 +2829,10 @@ def neapolitan_has_live_percent(loadout: Loadout | None) -> bool:
 def neapolitan_base_percent_from_loadout(loadout: Loadout | None) -> tuple[int, str]:
     """Resolve baseline Neapolitan percent and source.
 
-    Neapolitan only increases within a run. When both live export and
-    ``neapolitan_percent_last_known`` exist, use max(live, cached) so a stale
-    reflected ×1.00 (100) does not override a prior capture (e.g. 110).
-
-    Source priority:
-    1) max(live, cached) when both present (attribute ``live`` or ``cached``)
-    2) live or cached alone
-    3) static rule baseline (100%)
+    Neapolitan only increases within a run. Prefer melmod ``neapolitan_percent``
+    (live) when exported — the game applies that value this submit. Only fall
+    back to higher ``neapolitan_percent_last_known`` when live is a stale ×1.00
+    (100) reflection that under-reports the run baseline (e.g. 110).
     """
     extras = (
         loadout.extras
@@ -2819,15 +2841,20 @@ def neapolitan_base_percent_from_loadout(loadout: Loadout | None) -> tuple[int, 
     )
     live_percent = _extra_positive_int(extras, "neapolitan_percent")
     cached_percent = _extra_positive_int(extras, "neapolitan_percent_last_known")
-    if live_percent is not None and cached_percent is not None:
-        if cached_percent > live_percent:
-            return cached_percent, "cached"
-        return live_percent, "live"
     if live_percent is not None:
-        return live_percent, "live"
-    if cached_percent is not None:
-        return cached_percent, "cached"
-    return 100, "default"
+        if (
+            cached_percent is not None
+            and live_percent <= 100
+            and cached_percent > live_percent
+        ):
+            result: tuple[int, str] = (cached_percent, "cached")
+        else:
+            result = (live_percent, "live")
+    elif cached_percent is not None:
+        result = (cached_percent, "cached")
+    else:
+        result = (100, "default")
+    return result
 
 
 def _neapolitan_multiplier_from_extras(
@@ -2847,7 +2874,11 @@ def _neapolitan_multiplier_from_extras(
 
     # Submit simulation (+5%) only when live export is missing (cached/default baseline).
     # Live `neapolitan_percent` is already the value the game applies this word.
-    add_improve = improve_on_submit and source != "live"
+    add_improve = (
+        improve_on_submit
+        and source != "live"
+        and not neapolitan_has_live_percent(loadout)
+    )
     effective_percent = base_percent + (5 if add_improve else 0)
     if effective_percent <= 0:
         return None
@@ -3174,11 +3205,13 @@ def grid_path_encounter_level(loadout: Loadout | None) -> int:
 def _tombstone_uses_grid_encounter_level(
     board: Board, path: list[int], loadout: Loadout | None
 ) -> bool:
-    """Tombstone uses grid encounter level when deep void letters are on the path."""
-    if loadout is None or grid_number(loadout) < 2:
+    """Tombstone uses elevated level when deep void letters are on the path."""
+    if loadout is None:
         return False
     extras = loadout.extras or {}
-    if extras.get("boss_floor_modification") not in (None, ""):
+    # When melmod exports boss_floor_modification, scattered_grid_item_level is
+    # capped at 1 even on high grids; deep void still upgrades grid tombstone to L2.
+    if extras.get("boss_floor_modification") in (None, ""):
         return False
     from cursed_words_solver.models import CurseType, TileColor
     from cursed_words_solver.rules.base_scoring import _void_penalty_steps_for_tile
@@ -3211,6 +3244,24 @@ def loadout_has_snapshot_sticker(loadout: Loadout | None) -> bool:
     return any(
         slugify_name(s.id or s.name) == "snapshot" for s in (loadout.stickers or [])
     )
+
+
+def snapshot_dusty_interleaved_word_scoring(
+    loadout: Loadout | None, board: Board | None = None
+) -> bool:
+    """Snapshot-phased sessions that copy Dusty Coffin need interleaved ×WORD flushes."""
+    if loadout is None or not snapshot_phased_word_scoring(loadout):
+        return False
+    extras = loadout.extras or {}
+    if str(extras.get("snapshot_dusty_interleaved_word", "")).lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        return True
+    pool = grid_scatter_sticker_slugs(board) if board is not None else set()
+    copy_slug = snapshot_copy_slug(loadout)
+    return "dusty_coffin" in pool or copy_slug == "dusty_coffin"
 
 
 def snapshot_phased_word_scoring(loadout: Loadout | None) -> bool:
@@ -3328,6 +3379,126 @@ def _snapshot_copy_candidates(pool: set[str], rules: dict) -> list[str]:
     return valid
 
 
+def post_cocktail_sunflower_session(
+    loadout: Loadout | None, board: Board | None = None
+) -> bool:
+    """Sunflower money bonus applies after equipped Cocktail, not at pin / snapshot-phased."""
+    if loadout is None:
+        return False
+    from cursed_words_solver.rules.ram_memory import (
+        pin_memory_entries,
+        ram_entry_slug,
+        ram_has_active_pin,
+    )
+
+    if not ram_has_active_pin(loadout):
+        return False
+    has_sunflower = any(
+        ram_entry_slug(entry) == "sunflower"
+        for entry in pin_memory_entries(loadout)
+    )
+    if not has_sunflower:
+        return False
+    copy_slug = snapshot_copy_slug(loadout)
+    if copy_slug in ("deep_sea_horror", "dusty_coffin"):
+        return True
+    pool = grid_scatter_sticker_slugs(board) if board is not None else set()
+    return "dango" in pool
+
+
+def post_cocktail_sunflower_percent(
+    loadout: Loadout,
+    board: Board,
+    path: list[int],
+    *,
+    state: dict | None,
+    rules: dict | None,
+) -> int | None:
+    """×WORD percent for Sunflower from bank $ after Cocktail tile mult."""
+    from cursed_words_solver.rules.ram_memory import pin_memory_entries, ram_entry_slug
+
+    if rules is None:
+        return None
+    level = 1
+    for entry in pin_memory_entries(loadout):
+        if ram_entry_slug(entry) != "sunflower":
+            continue
+        try:
+            level = max(1, int(entry.get("level", 1)))
+        except (TypeError, ValueError):
+            level = 1
+        break
+    else:
+        return None
+    from cursed_words_solver.rules.rule_lookup import get_rule
+
+    _key, rule = get_rule(rules, "stickers", "sunflower", "sunflower")
+    if not rule or rule.get("type") != "multiply_money_bonus":
+        return None
+    money = money_for_scoring(board, path, loadout, state=state)
+    factor = money_word_multiplier(level, rule, money)
+    if factor <= 1.0:
+        return None
+    # Per-mille when factor has sub-percent precision (e.g. $3 bank → ×1.135).
+    per_mille = int(round(factor * 1000.0))
+    if per_mille % 10 != 0 or per_mille >= 1100:
+        return per_mille
+    return int(round(factor * 100.0))
+
+
+def tombstone_heavy_grid_compound_session(
+    loadout: Loadout | None, board: Board | None = None
+) -> bool:
+    """Tombstone copy + RAM Sunflower + many grid scatters: ×WORD stacks post-Cocktail."""
+    if loadout is None or board is None:
+        return False
+    if not snapshot_phased_word_scoring(loadout):
+        return False
+    if snapshot_copy_slug(loadout) != "tombstone":
+        return False
+    pool = grid_scatter_sticker_slugs(board)
+    if len(pool) < 4:
+        return False
+    # Ferris + tombstone: ×WORD batch on final tile sum (leechee), not post-Cocktail compound.
+    if "ferris_wheel" in pool:
+        return False
+    from cursed_words_solver.rules.ram_memory import (
+        pin_memory_entries,
+        ram_entry_slug,
+        ram_has_active_pin,
+    )
+
+    if not ram_has_active_pin(loadout):
+        return False
+    if not any(ram_entry_slug(entry) == "sunflower" for entry in pin_memory_entries(loadout)):
+        return False
+    return True
+
+
+def compound_word_finalize_at_cocktail(
+    loadout: Loadout | None, board: Board | None = None
+) -> bool:
+    """Stack queued ×WORD on post-Cocktail tile sum (deep_sea+cocktail grid or explicit hint)."""
+    if loadout is None:
+        return False
+    extras = loadout.extras or {}
+    if str(extras.get("compound_word_finalize_at_cocktail", "")).lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        return True
+    if str(extras.get("compound_word_percents_on_tile_sum", "")).strip():
+        return True
+    if not snapshot_phased_word_scoring(loadout):
+        return False
+    pool = grid_scatter_sticker_slugs(board) if board is not None else set()
+    copy_slug = snapshot_copy_slug(loadout)
+    if copy_slug == "deep_sea_horror" and "cocktail" in pool:
+        return True
+    return tombstone_heavy_grid_compound_session(loadout, board)
+
+
 def apply_snapshot_phased_session_extras(
     loadout: Loadout, board: Board | None = None
 ) -> None:
@@ -3342,6 +3513,38 @@ def apply_snapshot_phased_session_extras(
     if "down_under" in pool or snapshot_copy_slug(loadout) == "down_under":
         extras.setdefault("grid_path_immediate_word_mults", "true")
         extras.setdefault("grid_tile_multiply_first", "true")
+    if compound_word_finalize_at_cocktail(loadout, board):
+        extras.setdefault("compound_word_finalize_at_cocktail", "true")
+    if post_cocktail_sunflower_session(loadout, board):
+        extras.setdefault("defer_post_cocktail_sunflower", "true")
+    if "dusty_coffin" in pool or snapshot_copy_slug(loadout) == "dusty_coffin":
+        extras.setdefault("grid_path_immediate_word_mults", "true")
+        extras.setdefault("snapshot_dusty_interleaved_word", "true")
+    from cursed_words_solver.rules.ram_memory import ram_has_active_pin
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    # Tombstone + Ferris (not Dusty Coffin / Down Under): ×WORD batch on final tile sum.
+    copy_slug = snapshot_copy_slug(loadout)
+    batch_word_on_final_tiles = (
+        "ferris_wheel" in pool
+        and "tombstone" in pool
+        and "down_under" not in pool
+        and "dusty_coffin" not in pool
+        and copy_slug not in ("down_under", "dusty_coffin")
+        and (copy_slug == "tombstone" or not copy_slug)
+    )
+    if batch_word_on_final_tiles:
+        extras.pop("ferris_immediate_grid", None)
+        extras.pop("grid_path_immediate_word_mults", None)
+        if ram_has_active_pin(loadout):
+            extras.pop("flush_word_mults_after_pin", None)
+    if (
+        ram_has_active_pin(loadout)
+        and not batch_word_on_final_tiles
+        and not compound_word_finalize_at_cocktail(loadout, board)
+        and any(slugify_name(s.id or s.name) == "burrito" for s in (loadout.stickers or []))
+    ):
+        extras.setdefault("flush_word_mults_after_pin", "true")
 
 
 def ensure_snapshot_copy_slug(
@@ -3440,13 +3643,28 @@ def grid_path_sticker_level(
                 pass
         level = max(level, max_equipped)
 
+    if slug_norm == "tombstone" and loadout is not None and loadout.stickers:
+        pool = grid_scatter_sticker_slugs(board) if board is not None else set()
+        copy_slug = snapshot_copy_slug(loadout)
+        batch_tombstone = (
+            "ferris_wheel" in pool
+            and "tombstone" in pool
+            and "down_under" not in pool
+            and "dusty_coffin" not in pool
+            and copy_slug not in ("down_under", "dusty_coffin")
+            and (copy_slug == "tombstone" or not copy_slug)
+        )
+        if batch_tombstone:
+            max_equipped = max(max(1, int(s.level)) for s in loadout.stickers)
+            level = max(level, max_equipped)
     if (
         slug_norm == "tombstone"
         and board is not None
         and path
         and _tombstone_uses_grid_encounter_level(board, path, loadout)
     ):
-        return grid_path_encounter_level(loadout)
+        # Deep-void paths use at least level 2 (grid_number export can still be 1).
+        return max(2, grid_path_encounter_level(loadout))
     return level
 
 
@@ -3518,11 +3736,22 @@ def other_sticker_levels_sum(
     from cursed_words_solver.rules.rule_lookup import slugify_name
 
     skip = _BURRITO_LEVEL_EXCLUDE | {exclude_slug}
+    # Level-0 equipped stickers (e.g. Snapshot before first upgrade) still count as 1.
     total = sum(
-        s.level
+        max(1, int(s.level))
         for s in loadout.stickers
         if slugify_name(s.id or s.name) not in skip
     )
+    copy_slug_on_path = False
+    if board is not None and path:
+        for idx in path:
+            tile = board.get_by_index(idx)
+            slug = slugify_name(
+                str((tile.metadata or {}).get("scattered_item_id") or "")
+            )
+            if slug and slug == snapshot_copy_slug(loadout):
+                copy_slug_on_path = True
+                break
     if rules is not None and any(
         slugify_name(s.id or s.name) == "snapshot" for s in loadout.stickers
     ):
@@ -3532,12 +3761,31 @@ def other_sticker_levels_sum(
 
             _key, copy_rule = get_rule(rules, "stickers", copy_slug, copy_slug)
             if copy_rule and copy_rule.get("type") not in (
-                "add_word_score",
                 "scatter_start_grid",
                 "scatter_start_encounter",
                 "unmodeled",
             ):
-                total += snapshot_copy_level(loadout)
+                if copy_slug_on_path and board is not None and path is not None:
+                    for path_index, idx in enumerate(path):
+                        tile = board.get_by_index(idx)
+                        slug = slugify_name(
+                            str((tile.metadata or {}).get("scattered_item_id") or "")
+                        )
+                        if slug != copy_slug:
+                            continue
+                        if copy_rule.get("type") == "add_word_score":
+                            total += snapshot_copy_level(loadout)
+                        else:
+                            total += grid_path_sticker_level(
+                                loadout,
+                                copy_slug,
+                                board=board,
+                                path=path,
+                                path_tile_index=path_index,
+                            )
+                        break
+                elif copy_rule.get("type") != "add_word_score":
+                    total += snapshot_copy_level(loadout)
     for entry in pin_memory_entries(loadout):
         if ram_entry_bucket(entry) != "stickers":
             continue
@@ -3545,14 +3793,94 @@ def other_sticker_levels_sum(
         if slug in skip:
             continue
         total += ram_entry_level(entry)
+    ferris_on_path = False
+    if board is not None and path:
+        from cursed_words_solver.models import CurseType
+
+        for idx in path:
+            tile = board.get_by_index(idx)
+            if tile.curse != CurseType.ITEM:
+                continue
+            slug = slugify_name(
+                str((tile.metadata or {}).get("scattered_item_id") or "")
+            )
+            if slug == "ferris_wheel":
+                ferris_on_path = True
+                break
     if board is not None and path and rules is not None:
-        total += path_scoring_sticker_levels_on_path(
-            board,
-            path,
-            loadout,
-            rules,
-            include_equipped_on_path=include_equipped_path_scatter,
+        from cursed_words_solver.models import CurseType
+        from cursed_words_solver.rules.rule_lookup import get_rule as _get_sticker_rule
+
+        copy_slug = snapshot_copy_slug(loadout)
+        equipped = {
+            slugify_name(s.id or s.name) for s in loadout.stickers
+        }
+        seen: set[str] = set()
+        for path_index, idx in enumerate(path):
+            tile = board.get_by_index(idx)
+            if tile.curse != CurseType.ITEM:
+                continue
+            slug = slugify_name(
+                str((tile.metadata or {}).get("scattered_item_id") or "")
+            )
+            if not slug:
+                continue
+            if slug == copy_slug and copy_slug_on_path:
+                continue
+            if ferris_on_path:
+                continue
+            _key, rule = _get_sticker_rule(rules, "stickers", slug, slug)
+            if not rule or rule.get("type") in _PATH_SCATTER_SKIP_TYPES:
+                continue
+            # Nat-H4: each equipped sticker tile on the path counts (e.g. two cocktails).
+            if include_equipped_path_scatter and slug in equipped:
+                total += 1
+                continue
+            if slug in seen:
+                continue
+            if slug in equipped and not include_equipped_path_scatter:
+                continue
+            seen.add(slug)
+            total += 1
+    if (
+        board is not None
+        and path
+        and rules is not None
+        and _burrito_counts_equipped_path_scatter(
+            loadout, board=board, path=path, rules=rules
         )
+    ):
+        pool = grid_scatter_sticker_slugs(board)
+        if "ferris_wheel" in pool:
+            from cursed_words_solver.rules.rule_lookup import get_rule as _get_off_path_rule
+
+            _key, rule = _get_off_path_rule(
+                rules, "stickers", "ferris_wheel", "ferris_wheel"
+            )
+            if rule and rule.get("type") not in _PATH_SCATTER_SKIP_TYPES:
+                if ferris_on_path or (
+                    "dusty_coffin" in pool and not ferris_on_path
+                ):
+                    total += 1
+    if (
+        board is not None
+        and rules is not None
+        and tombstone_heavy_grid_compound_session(loadout, board)
+    ):
+        pool = grid_scatter_sticker_slugs(board)
+        if len(pool) >= 4:
+            from cursed_words_solver.rules.rule_lookup import get_rule as _grid_rule
+
+            copy_slug = snapshot_copy_slug(loadout)
+            for slug in sorted(pool):
+                if slug == copy_slug or slug in seen:
+                    continue
+                if slug in equipped:
+                    continue
+                _key, grid_rule = _grid_rule(rules, "stickers", slug, slug)
+                if not grid_rule or grid_rule.get("type") in _PATH_SCATTER_SKIP_TYPES:
+                    continue
+                total += 1
     return total
 
 

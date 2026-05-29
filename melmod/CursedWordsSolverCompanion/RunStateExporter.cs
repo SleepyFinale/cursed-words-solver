@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text;
@@ -26,14 +27,28 @@ namespace CursedWordsSolverCompanion
 
         public static bool TryExport(bool logSuccess)
         {
+            var sw = Stopwatch.StartNew();
+            var trigger = logSuccess ? "f7" : "auto";
+            ExportDiagnostics.ClearMergeErrors();
             try
             {
                 var player = GetPlayer();
                 if (player == null)
                     return false;
 
+                var fingerprint = ComputeFingerprint(player);
                 var snapshot = BuildSnapshot(player);
                 MergePreservedExtrasFromDisk(snapshot);
+                FillSnapshotCopyExtras(snapshot, player);
+                BoardExporter.FillGridScatteredItemsExtra(snapshot);
+                sw.Stop();
+                ExportDiagnostics.ApplyToSnapshot(
+                    snapshot,
+                    player,
+                    trigger,
+                    fingerprint,
+                    sw.ElapsedMilliseconds
+                );
                 WriteSnapshot(snapshot);
                 DictionaryExporter.TryExport(logSuccess);
                 if (logSuccess)
@@ -48,7 +63,25 @@ namespace CursedWordsSolverCompanion
                                 + "scores may show Birthday 0; rebuild melmod or set "
                                 + "run_state.extras.birthday_cake_bonus manually"
                         );
-                    ExportCompleteness.LogWarningsIfNeeded(snapshot, player, true);
+                }
+                else
+                {
+                    var missing = ExportCompleteness.CollectMissing(snapshot, player);
+                    if (missing.Count > 0)
+                    {
+                        CompanionDiagnostics.LogVerbose(
+                            "Auto-export: fp="
+                                + TruncateFingerprint(fingerprint)
+                                + " missing="
+                                + string.Join(",", missing.ToArray())
+                        );
+                    }
+                    else
+                    {
+                        CompanionDiagnostics.LogVerbose(
+                            "Auto-export: fp=" + TruncateFingerprint(fingerprint)
+                        );
+                    }
                 }
                 return true;
             }
@@ -57,6 +90,13 @@ namespace CursedWordsSolverCompanion
                 MelonLogger.Error("Failed to export run state: " + ex);
                 return false;
             }
+        }
+
+        private static string TruncateFingerprint(string fp)
+        {
+            if (string.IsNullOrEmpty(fp))
+                return "";
+            return fp.Length <= 48 ? fp : fp.Substring(0, 48) + "…";
         }
 
         public static string ComputeFingerprint(Player player)
@@ -112,9 +152,11 @@ namespace CursedWordsSolverCompanion
                 BoardExporter.MergeSubmitCardMetadataIntoRunState(root, submitBoard);
                 WriteJsonRoot(root);
             }
-            catch
+            catch (Exception ex)
             {
-                // ignore — F7 full export still available
+                ExportDiagnostics.RecordMergeError(
+                    "TryMergeSubmitBoardMetadata: " + ex.Message
+                );
             }
         }
 
@@ -144,9 +186,9 @@ namespace CursedWordsSolverCompanion
                         result[kv.Key] = kv.Value ?? "";
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // ignore
+                ExportDiagnostics.RecordMergeError("BuildExtrasSnapshot: " + ex.Message);
             }
             return result;
         }
@@ -169,10 +211,41 @@ namespace CursedWordsSolverCompanion
                 TryMergeExtrasKeys(freshExtras);
                 if (!TryMergeBicycleExtrasAfterScore())
                     QueueBicycleExtrasRetry();
+
+                RefreshDiagnosticsAfterMerge("submit_merge");
             }
-            catch
+            catch (Exception ex)
             {
-                // ignore — F7 full export still available
+                ExportDiagnostics.RecordMergeError("TryMergeExtrasAfterSubmit: " + ex.Message);
+            }
+        }
+
+        private static void RefreshDiagnosticsAfterMerge(string trigger)
+        {
+            try
+            {
+                var player = GetPlayer();
+                if (player == null || !File.Exists(OutputPath))
+                    return;
+
+                var json = File.ReadAllText(OutputPath, Encoding.UTF8);
+                var snapshot = JsonConvert.DeserializeObject<RunStateSnapshot>(json);
+                if (snapshot == null)
+                    return;
+
+                ExportDiagnostics.ClearMergeErrors();
+                ExportDiagnostics.ApplyToSnapshot(
+                    snapshot,
+                    player,
+                    trigger,
+                    ComputeFingerprint(player),
+                    0
+                );
+                WriteSnapshot(snapshot);
+            }
+            catch (Exception ex)
+            {
+                ExportDiagnostics.RecordMergeError("RefreshDiagnosticsAfterMerge: " + ex.Message);
             }
         }
 
@@ -234,6 +307,9 @@ namespace CursedWordsSolverCompanion
         public static void QueueBicycleExtrasRetry()
         {
             _pendingBicycleMergeRetries = BicycleMergeRetryBudget;
+            CompanionDiagnostics.LogVerbose(
+                "Bicycle extras merge queued (budget " + BicycleMergeRetryBudget + ")"
+            );
         }
 
         public static void TryFlushPendingBicycleExtrasRetry()
@@ -246,6 +322,12 @@ namespace CursedWordsSolverCompanion
                 return;
             }
             _pendingBicycleMergeRetries = Math.Max(0, _pendingBicycleMergeRetries - 1);
+            if (_pendingBicycleMergeRetries == 0)
+            {
+                ExportDiagnostics.RecordMergeError(
+                    "Bicycle extras merge exhausted retry budget (" + BicycleMergeRetryBudget + ")"
+                );
+            }
         }
 
         public static void TryMergeExtrasKeys(Dictionary<string, string> keysToMerge)
@@ -399,20 +481,23 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
-        /// Neapolitan only increases within a run. Prefer max(reflected, on-disk last_known).
+        /// Neapolitan only increases within a run. Prefer current in-game reflection for F7;
+        /// use on-disk last_known only when reflection is missing or below 100 (stale ×1.00).
         /// </summary>
         private static int ResolveNeapolitanPercentForExport(Player player)
         {
             var reflected = TryGetNeapolitanPercent(player);
+            if (reflected >= 100)
+                return reflected;
             var onDisk = TryReadExtrasFromDisk();
-            var best = reflected >= 100 ? reflected : -1;
             string cachedRaw;
             if (
                 onDisk.TryGetValue("neapolitan_percent_last_known", out cachedRaw)
                 && TryParseExtraPercent(cachedRaw, out var cached)
+                && cached >= 100
             )
-                best = best >= 100 ? Math.Max(best, cached) : cached;
-            return best;
+                return cached;
+            return reflected;
         }
 
         private static void MergePreservedExtrasFromDisk(RunStateSnapshot snapshot)
@@ -437,7 +522,7 @@ namespace CursedWordsSolverCompanion
                     snapshot.extras[key] = value;
                 }
 
-                // Stale reflected ×1.00 must not block a higher captured last_known.
+                // Prefer current reflection; only use last_known when live is stale/missing.
                 string lastKnownRaw;
                 if (
                     onDisk.TryGetValue("neapolitan_percent_last_known", out lastKnownRaw)
@@ -451,15 +536,17 @@ namespace CursedWordsSolverCompanion
                         && TryParseExtraPercent(liveRaw, out var live)
                     )
                         reflected = live;
-                    var best = reflected >= 100 ? Math.Max(reflected, lastKnown) : lastKnown;
-                    snapshot.extras["neapolitan_percent"] = best.ToString();
+                    if (reflected >= 100)
+                        snapshot.extras["neapolitan_percent"] = reflected.ToString();
+                    else if (lastKnown >= 100)
+                        snapshot.extras["neapolitan_percent"] = lastKnown.ToString();
                 }
 
                 ApplyResolvedRareItemCount(snapshot, onDisk);
             }
-            catch
+            catch (Exception ex)
             {
-                // ignore — fresh export still usable
+                ExportDiagnostics.RecordMergeError("MergePreservedExtrasFromDisk: " + ex.Message);
             }
         }
 
@@ -2603,8 +2690,14 @@ namespace CursedWordsSolverCompanion
         /// </summary>
         public static void FillSnapshotCopyExtras(RunStateSnapshot snapshot, Player player)
         {
-            if (snapshot?.extras == null || player?.Stickers == null)
+            if (snapshot?.extras == null)
                 return;
+
+            if (player?.Stickers == null)
+            {
+                snapshot.extras["snapshot_copy_export_note"] = "not_equipped";
+                return;
+            }
 
             Item snapshotSticker = null;
             foreach (var sticker in player.Stickers)
@@ -2625,15 +2718,35 @@ namespace CursedWordsSolverCompanion
             }
 
             if (snapshotSticker == null)
+            {
+                snapshot.extras["snapshot_copy_export_note"] = "not_equipped";
                 return;
+            }
+
+            if (
+                snapshot.extras.ContainsKey("snapshot_copy_slug")
+                && !string.IsNullOrEmpty(snapshot.extras["snapshot_copy_slug"])
+            )
+            {
+                snapshot.extras["snapshot_copy_export_note"] = "ok";
+                if (!snapshot.extras.ContainsKey("snapshot_copy_source"))
+                    ExportDiagnostics.SetSnapshotCopySource("preserved");
+                return;
+            }
 
             var copyItem = TryResolveSnapshotCopiedItem(snapshotSticker);
             if (copyItem == null)
+            {
+                snapshot.extras["snapshot_copy_export_note"] = "no_copy_yet";
                 return;
+            }
 
             var slug = Slugify(copyItem.ArtFileName, copyItem.Name);
             if (string.IsNullOrEmpty(slug) || slug == "unknown")
+            {
+                snapshot.extras["snapshot_copy_export_note"] = "reflection_failed";
                 return;
+            }
 
             var copyLevel = GetUpgradeableLevel(snapshotSticker);
             if (copyLevel < 1)
@@ -2641,6 +2754,51 @@ namespace CursedWordsSolverCompanion
 
             snapshot.extras["snapshot_copy_slug"] = slug;
             snapshot.extras["snapshot_copy_level"] = copyLevel.ToString();
+            snapshot.extras["snapshot_copy_export_note"] = "ok";
+            ExportDiagnostics.SetSnapshotCopySource("reflection");
+        }
+
+        /// <summary>
+        /// Called from Snapshot.ApplyStartOfGridEffect postfix when grid copy is chosen.
+        /// </summary>
+        public static void CaptureSnapshotCopyFromGridStart(Snapshot snapshotSticker)
+        {
+            if (snapshotSticker == null)
+                return;
+
+            try
+            {
+                var copyItem = snapshotSticker.SnapshottedItem;
+                if (copyItem == null)
+                    return;
+
+                var slug = Slugify(copyItem.ArtFileName, copyItem.Name);
+                if (string.IsNullOrEmpty(slug) || slug == "unknown")
+                    return;
+
+                var copyLevel = GetUpgradeableLevel(snapshotSticker);
+                if (copyLevel < 1)
+                    copyLevel = 1;
+
+                var keys = new Dictionary<string, string>
+                {
+                    ["snapshot_copy_slug"] = slug,
+                    ["snapshot_copy_level"] = copyLevel.ToString(),
+                    ["snapshot_copy_export_note"] = "ok",
+                    ["snapshot_copy_captured_at"] = DateTime.UtcNow.ToString("o"),
+                };
+                ExportDiagnostics.SetSnapshotCopySource("grid_start_hook");
+                TryMergeExtrasKeys(keys);
+                CompanionDiagnostics.LogVerbose(
+                    "Snapshot grid-start copy: " + slug + " level " + copyLevel
+                );
+            }
+            catch (Exception ex)
+            {
+                ExportDiagnostics.RecordMergeError(
+                    "CaptureSnapshotCopyFromGridStart: " + ex.Message
+                );
+            }
         }
 
         private static Item TryResolveSnapshotCopiedItem(Item snapshotSticker)
@@ -2648,72 +2806,43 @@ namespace CursedWordsSolverCompanion
             if (snapshotSticker == null)
                 return null;
 
-            foreach (
-                var propName in new[]
-                {
-                    "CopiedSticker",
-                    "CopiedItem",
-                    "CopyTarget",
-                    "TargetSticker",
-                    "SourceItem",
-                    "CopiedStickerItem",
-                    "StickerCopied",
-                    "CopiedStickerEffect",
-                }
-            )
+            if (snapshotSticker is Snapshot snap && snap.SnapshottedItem != null)
+                return snap.SnapshottedItem;
+
+            try
             {
-                try
+                var field = snapshotSticker.GetType().GetField(
+                    "SnapshottedItem",
+                    MemberFlags
+                );
+                if (field != null)
                 {
-                    var prop = snapshotSticker.GetType().GetProperty(propName, MemberFlags);
-                    if (prop == null)
-                        continue;
-                    var val = prop.GetValue(snapshotSticker, null);
-                    if (val is Item item)
-                        return item;
-                }
-                catch
-                {
-                    // try next
+                    var val = field.GetValue(snapshotSticker);
+                    if (val is Item fieldItem)
+                        return fieldItem;
                 }
             }
-
-            foreach (var nested in TryGetNestedStickerTargets(snapshotSticker))
+            catch
             {
-                if (nested is Item item && item != snapshotSticker)
-                {
-                    var slug = Slugify(item.ArtFileName, item.Name);
-                    if (
-                        !string.IsNullOrEmpty(slug)
-                        && !string.Equals(slug, "snapshot", StringComparison.OrdinalIgnoreCase)
-                    )
-                        return item;
-                }
+                // fall through
+            }
 
-                foreach (
-                    var propName in new[]
-                    {
-                        "CopiedSticker",
-                        "CopiedItem",
-                        "CopyTarget",
-                        "TargetSticker",
-                        "SourceItem",
-                    }
-                )
+            try
+            {
+                var prop = snapshotSticker.GetType().GetProperty(
+                    "SnapshottedItem",
+                    MemberFlags
+                );
+                if (prop != null)
                 {
-                    try
-                    {
-                        var prop = nested.GetType().GetProperty(propName, MemberFlags);
-                        if (prop == null)
-                            continue;
-                        var val = prop.GetValue(nested, null);
-                        if (val is Item nestedItem)
-                            return nestedItem;
-                    }
-                    catch
-                    {
-                        // try next
-                    }
+                    var val = prop.GetValue(snapshotSticker, null);
+                    if (val is Item propItem)
+                        return propItem;
                 }
+            }
+            catch
+            {
+                // fall through
             }
 
             return null;

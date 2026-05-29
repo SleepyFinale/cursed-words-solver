@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from cursed_words_solver.models import Loadout
@@ -51,6 +52,11 @@ def pin_memory_entries(loadout: Loadout | None) -> list[dict[str, Any]]:
     if loadout is None:
         return []
     raw = (loadout.extras or {}).get("pin_memory")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
     if not isinstance(raw, list):
         return []
     return [e for e in raw if isinstance(e, dict)]

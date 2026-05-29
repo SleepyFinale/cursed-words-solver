@@ -16,6 +16,9 @@ namespace CursedWordsSolverCompanion
         public string loadout_fingerprint;
         public JArray predicted_trace;
         public JObject run_state_snapshot;
+        public int f8_sequence;
+        public string solver_version;
+        public string created_at;
     }
 
     public static class SuggestionMatcher

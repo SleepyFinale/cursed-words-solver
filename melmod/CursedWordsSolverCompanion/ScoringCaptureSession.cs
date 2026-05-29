@@ -83,6 +83,17 @@ namespace CursedWordsSolverCompanion
                 );
             }
 
+            var f8Seq = "";
+            try
+            {
+                if (_suggestion != null && _suggestion.f8_sequence > 0)
+                    f8Seq = " f8#" + _suggestion.f8_sequence;
+            }
+            catch
+            {
+                // optional
+            }
+
             if (
                 SuggestionMatcher.MatchesSuggestion(
                     _suggestion,
@@ -100,12 +111,15 @@ namespace CursedWordsSolverCompanion
                         + "' (predicted "
                         + (_suggestion != null ? _suggestion.predicted_score.ToString() : "?")
                         + " pts)"
+                        + f8Seq
                 );
             }
             else if (_suggestion != null)
             {
-                MelonLogger.Msg(
-                    "Scoring capture skipped: "
+                CompanionDiagnostics.LogVerbose(
+                    "Scoring capture skipped"
+                        + f8Seq
+                        + ": "
                         + SuggestionMatcher.DescribeMismatch(
                             _suggestion,
                             _word,
@@ -221,7 +235,7 @@ namespace CursedWordsSolverCompanion
             CaptureRareItemCountFromSteps(steps);
             CaptureSnapshotCopyFromSteps(steps);
             TryPersistScoringContextExtras();
-            _roundTrace = ScoringTraceCollector.SerializeSteps(steps);
+            _roundTrace = ScoringTraceCollector.SerializeSteps(steps, _path);
             if (_active)
                 _actualTrace = _roundTrace;
         }
@@ -371,12 +385,13 @@ namespace CursedWordsSolverCompanion
                     if (!string.Equals(itemId, "snapshot", StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    if (
+                    var hadSlug =
                         _scoringContextExtras.ContainsKey("snapshot_copy_slug")
                         && !string.IsNullOrEmpty(
                             _scoringContextExtras["snapshot_copy_slug"]
-                        )
-                    )
+                        );
+
+                    if (hadSlug)
                         return;
 
                     if (step.WordBonus != null && !step.WordBonus.IsMultiplicative)
@@ -388,6 +403,10 @@ namespace CursedWordsSolverCompanion
                         {
                             _scoringContextExtras["snapshot_copy_slug"] = "dusty_coffin";
                             _scoringContextExtras["snapshot_copy_level"] = "1";
+                            ExportDiagnostics.SetSnapshotCopySource("trace_fallback");
+                            CompanionDiagnostics.LogVerboseWarning(
+                                "Snapshot copy inferred as dusty_coffin from trace (+120 word bonus)"
+                            );
                         }
                     }
                     break;

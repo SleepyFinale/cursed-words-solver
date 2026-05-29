@@ -88,9 +88,94 @@ namespace CursedWordsSolverCompanion
                     missing.Add("target_number");
             }
 
+            CollectSnapshotWarnings(snapshot, player, extras, missing);
+            CollectGridScatteredWarnings(snapshot, missing);
+            CollectCounterStickerWarnings(player, extras, missing);
+
             CollectRamMemoryWarnings(snapshot, player, missing);
 
             return missing;
+        }
+
+        private static void CollectSnapshotWarnings(
+            RunStateSnapshot snapshot,
+            Player player,
+            Dictionary<string, string> extras,
+            List<string> missing
+        )
+        {
+            if (!HasSticker(player, "snapshot"))
+                return;
+
+            string note;
+            extras.TryGetValue("snapshot_copy_export_note", out note);
+            if (string.Equals(note, "no_copy_yet", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (
+                !extras.ContainsKey("snapshot_copy_slug")
+                || string.IsNullOrWhiteSpace(extras["snapshot_copy_slug"])
+            )
+                missing.Add("snapshot_copy_slug");
+        }
+
+        private static void CollectGridScatteredWarnings(
+            RunStateSnapshot snapshot,
+            List<string> missing
+        )
+        {
+            if (snapshot?.board?.tiles == null)
+                return;
+
+            var hasScattered = false;
+            foreach (var tile in snapshot.board.tiles)
+            {
+                if (tile == null || !tile.active)
+                    continue;
+                if (
+                    string.Equals(tile.curse, "item", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrEmpty(tile.scattered_item_id)
+                )
+                {
+                    hasScattered = true;
+                    if (!tile.scattered_item_level.HasValue)
+                        missing.Add("scattered_item_level@" + tile.row + "," + tile.col);
+                }
+            }
+
+            if (hasScattered && !snapshot.extras.ContainsKey("grid_scattered_items"))
+                missing.Add("grid_scattered_items");
+        }
+
+        private static void CollectCounterStickerWarnings(
+            Player player,
+            Dictionary<string, string> extras,
+            List<string> missing
+        )
+        {
+            if (HasStamp(player, "hourglass") && !extras.ContainsKey("hourglass_count"))
+                missing.Add("hourglass_count");
+
+            if (HasStamp(player, "neapolitan") && !extras.ContainsKey("neapolitan_percent"))
+                missing.Add("neapolitan_percent");
+
+            if (HasStamp(player, "steak") && !extras.ContainsKey("steak_word_bonus_percent"))
+                missing.Add("steak_word_bonus_percent");
+        }
+
+        private static bool HasSticker(Player player, string slugPart)
+        {
+            if (player?.Stickers == null)
+                return false;
+            foreach (var sticker in player.Stickers)
+            {
+                if (sticker == null)
+                    continue;
+                var slug = RunStateExporter.Slugify(sticker.ArtFileName, sticker.Name);
+                if (slug.IndexOf(slugPart, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            return false;
         }
 
         private static readonly HashSet<string> RamNonGeneratableSlugs = new HashSet<string>(

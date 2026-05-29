@@ -89,6 +89,28 @@ Each log includes: full `run_state` at submit, solver block (when `last_suggesti
 
 MelonPreference **Round log enabled** (default on). Startup logs the round log directory.
 
+## Export diagnostics (v1.2.0+)
+
+Every `run_state.json` write includes top-level **`export_diagnostics`**:
+
+| Field | Meaning |
+| ----- | ------- |
+| `companion_version` | Melmod build |
+| `export_trigger` | `auto`, `f7`, or `submit_merge` |
+| `fingerprint` / `fingerprint_changed` | Loadout+board fingerprint |
+| `missing_keys` | Completeness warnings (Snapshot copy, RAM, counters, …) |
+| `merge_errors` | Post-submit merge failures (no longer silent) |
+| `snapshot_copy_source` | `reflection`, `grid_start_hook`, `trace_fallback`, or `preserved` |
+| `pin_memory_count` | Items exported from RAM pin |
+
+**Verbose logging** (MelonPreference, default **on**) prints auto-export lines and capture decisions. When enabled, also appends to `%USERPROFILE%\.cursed_words_solver\export_audit.jsonl`.
+
+**Snapshot copy:** Game field `Snapshot.SnapshottedItem` (set in `ApplyStartOfGridEffect`). Exported as `extras.snapshot_copy_slug` / `snapshot_copy_level`. If unreadable: `snapshot_copy_export_note` = `no_copy_yet` | `reflection_failed` | `not_equipped`.
+
+**Grid scattered items:** `extras.grid_scattered_items` JSON array `[{row,col,id,level},…]` plus per-tile `scattered_item_level` (defaults to 1).
+
+Python F8 mirrors diagnostics in `last_suggestion.json` (`export_diagnostics`, `export_warnings`, `solver_session_extras`) and `debug/parse_*.json`.
+
 ### Turn a round log into a fixture
 
 ```powershell

@@ -53,7 +53,11 @@ from cursed_words_solver.loadout import (
     merge_loadout_with_board,
     neapolitan_extras_stale_warning,
     mod_money_from_run_state,
+    export_diagnostics_from_run_state,
     parse_board_from_run_state,
+    prepare_run_state_dict_for_scoring,
+    solver_session_extras_from_loadout,
+    validate_run_state_for_scoring,
     save_loadout,
     save_run_state_template,
 )
@@ -434,7 +438,12 @@ class SolverApp:
             run_state_data = load_run_state_raw()
 
             mod_money = mod_money_from_run_state(run_state_data)
-            board = parse_board_from_run_state(run_state_data)
+            prepared_state = (
+                prepare_run_state_dict_for_scoring(run_state_data)
+                if run_state_data
+                else None
+            )
+            board = parse_board_from_run_state(prepared_state)
             board_img = None
 
             if board is None:
@@ -665,6 +674,7 @@ class SolverApp:
                     print(f"  Parallel worker error: {err}", flush=True)
 
             pred_trace: list | None = None
+            export_warnings: list[str] = []
             if results:
                 top = results[0]
                 pred_score, pred_bd, pred_trace = self._scoring.score_with_trace(
@@ -672,6 +682,13 @@ class SolverApp:
                 )
                 top.score = pred_score
                 top.breakdown = pred_bd
+                export_diag = export_diagnostics_from_run_state(run_state_data)
+                export_warnings = validate_run_state_for_scoring(
+                    loadout,
+                    board=board,
+                    raw=run_state_data,
+                )
+                session_extras = solver_session_extras_from_loadout(loadout)
                 save_last_suggestion(
                     board=board,
                     loadout=loadout,
@@ -680,7 +697,12 @@ class SolverApp:
                     run_state_snapshot=run_state_data,
                     dictionary=self._dictionary,
                     min_len=effective_min,
+                    export_diagnostics=export_diag,
+                    export_warnings=export_warnings,
+                    solver_session_extras=session_extras,
                 )
+                for warn in export_warnings:
+                    print(f"  Export warning: {warn}", flush=True)
 
             self._save_debug(
                 board_img,
@@ -689,6 +711,9 @@ class SolverApp:
                 board_source=board_source,
                 money_source=money_source,
                 top_predicted_trace=pred_trace,
+                loadout=loadout,
+                run_state_data=run_state_data,
+                export_warnings=export_warnings if results else None,
             )
             print(f"Board source: {board_source}", flush=True)
 
@@ -791,14 +816,29 @@ class SolverApp:
         board_source: str = "melmod",
         money_source: str = "mod",
         top_predicted_trace: list | None = None,
+        loadout: Loadout | None = None,
+        run_state_data: dict | None = None,
+        export_warnings: list[str] | None = None,
     ) -> None:
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         if img is not None:
             save_debug_image(img, DEBUG_DIR / f"board_{ts}.png")
+        board_fp = ""
+        loadout_fp = ""
+        if run_state_data is not None:
+            from cursed_words_solver.fingerprints import fingerprints_from_run_state
+
+            board_fp, loadout_fp = fingerprints_from_run_state(run_state_data)
         payload = {
             "board_source": board_source,
             "money_source": money_source,
+            "board_fingerprint": board_fp,
+            "loadout_fingerprint": loadout_fp,
+            "export_diagnostics": export_diagnostics_from_run_state(run_state_data),
+            "export_warnings": list(export_warnings or []),
+            "extras": dict(loadout.extras) if loadout is not None else {},
+            "solver_session_extras": solver_session_extras_from_loadout(loadout),
             "grid": format_board_grid(board).split("\n"),
             "tiles": [
                 {

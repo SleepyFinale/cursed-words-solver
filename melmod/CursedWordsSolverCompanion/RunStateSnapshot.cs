@@ -15,6 +15,7 @@ namespace CursedWordsSolverCompanion
         public string boss_name = "";
         public string boss_effect = "";
         public Dictionary<string, string> extras = new Dictionary<string, string>();
+        public Dictionary<string, object> export_diagnostics;
         public BoardSnapshot board;
     }
 
