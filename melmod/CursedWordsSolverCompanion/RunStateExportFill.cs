@@ -344,7 +344,7 @@ namespace CursedWordsSolverCompanion
             var historic = RunStateExporter.TryGetHistoricPreviousWordsPublic(player);
             if (historic != null && historic.Count > 0)
             {
-                snapshot.extras["historic_words"] = SerializeHistoricWords(historic);
+                snapshot.extras["historic_words"] = SerializeHistoricWords(historic, player);
                 if (!snapshot.extras.ContainsKey("previous_word_first_letter"))
                 {
                     var prev = ScoringContextCapture.FirstLetterFromHistoricWords(historic);
@@ -572,8 +572,9 @@ namespace CursedWordsSolverCompanion
             return JsonConvert.SerializeObject(slugs);
         }
 
-        private static string SerializeHistoricWords(List<HistoricWord> words)
+        private static string SerializeHistoricWords(List<HistoricWord> words, Player player)
         {
+            var takeLimit = TryGetMovieCameraTakeLimit(player);
             var rows = new List<Dictionary<string, object>>();
             foreach (var hw in words)
             {
@@ -622,10 +623,107 @@ namespace CursedWordsSolverCompanion
                 if (path.Count > 0)
                     row["path"] = path;
 
+                try
+                {
+                    var redCount = CountRedTilesInHistoric(hw);
+                    if (redCount > 0)
+                        row["red_tile_count"] = redCount;
+                }
+                catch
+                {
+                    // optional
+                }
+
+                try
+                {
+                    var takeValue = ComputeHistoricMovieCameraTakeValue(hw, takeLimit);
+                    if (takeValue > 0)
+                        row["chess_take_value"] = takeValue;
+                }
+                catch
+                {
+                    // optional
+                }
+
                 if (row.Count > 0)
                     rows.Add(row);
             }
             return JsonConvert.SerializeObject(rows);
+        }
+
+        private static int CountRedTilesInHistoric(HistoricWord hw)
+        {
+            if (hw?.Tiles == null)
+                return 0;
+            var count = 0;
+            foreach (var tile in hw.Tiles)
+            {
+                if (tile != null && tile.IsTileType(TileType.Red))
+                    count++;
+            }
+            return count;
+        }
+
+        private static int ComputeHistoricMovieCameraTakeValue(HistoricWord hw, int takeLimit)
+        {
+            if (hw?.TileSelections == null || takeLimit <= 0)
+                return 0;
+            var takeNum = 0;
+            var total = 0;
+            for (var i = 0; i < hw.TileSelections.Count; i++)
+            {
+                var sel = hw.TileSelections[i];
+                if (sel == null)
+                    continue;
+                if (
+                    sel.SelectionMethod != TileSelectionMethod.ChessTake
+                    && sel.SelectionMethod != TileSelectionMethod.EnPassant
+                )
+                    continue;
+                if (takeNum < takeLimit)
+                {
+                    Tile tile = null;
+                    if (hw.Tiles != null && i < hw.Tiles.Count)
+                        tile = hw.Tiles[i];
+                    if (tile == null)
+                        tile = sel.SelectedTile;
+                    if (tile != null)
+                        total += Alphabet.GetChessValue(tile.PieceType);
+                }
+                takeNum++;
+            }
+            return total;
+        }
+
+        private static int TryGetMovieCameraTakeLimit(Player player)
+        {
+            if (player == null)
+                return 1;
+            try
+            {
+                var stickers = player.GetStickers(forItemComparison: true);
+                if (stickers == null)
+                    return 1;
+                foreach (var item in stickers)
+                {
+                    if (item == null)
+                        continue;
+                    var mc = item as MovieCamera;
+                    if (mc?.UpgradeableComponents != null && mc.UpgradeableComponents.Count > 0)
+                        return Math.Max(1, mc.UpgradeableComponents[0].VariableValue);
+                    var slug = RunStateExporter.Slugify(item.ArtFileName, item.Name);
+                    if (slug != "movie_camera")
+                        continue;
+                    var comps = item.UpgradeableComponents;
+                    if (comps != null && comps.Count > 0)
+                        return Math.Max(1, comps[0].VariableValue);
+                }
+            }
+            catch
+            {
+                // fall through
+            }
+            return 1;
         }
 
         private static bool ItemMatchesRarity(object item, string[] rarities)

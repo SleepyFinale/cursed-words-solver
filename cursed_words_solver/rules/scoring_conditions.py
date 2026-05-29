@@ -863,9 +863,87 @@ def movie_camera_take_piece_value_at(
             ):
                 return base + from_piece
             return base
+        if (
+            base > piece
+            and landing.curse
+            in (CurseType.CHESS_QUEEN, CurseType.CHESS_ROOK, CurseType.CHESS_KING)
+            and is_chess_piece(from_tile)
+        ):
+            prefix = path[:pos]
+            if is_chess_capture_step(
+                board,
+                path[pos - 1],
+                path[pos],
+                path_prefix=prefix,
+                visited=set(prefix),
+            ):
+                return from_base + from_piece + (base - piece)
         if landing.curse == CurseType.CHESS_ROOK and base == piece:
             return piece * 2
+    prefix = path[:pos] if pos > 0 else []
+    is_capture = (
+        pos > 0
+        and is_chess_capture_step(
+            board,
+            path[pos - 1],
+            path[pos],
+            path_prefix=prefix,
+            visited=set(prefix),
+        )
+    )
+    if (
+        is_capture
+        and is_chess_piece(landing)
+        and landing.curse == CurseType.CHESS_PAWN
+    ):
+        if base > piece:
+            return base
+        if is_chess_piece(from_tile):
+            from_val = chess_piece_value(from_tile)
+            if from_val > piece:
+                return from_val
+    if (
+        pos > 0
+        and is_chess_piece(landing)
+        and not is_chess_piece(from_tile)
+        and not is_capture
+    ):
+        return max(piece, base)
     return piece
+
+
+def movie_camera_chess_entry_landing_positions(
+    board: Board, path: list[int]
+) -> list[int]:
+    """Path indices where the word first steps onto a chess tile (no capture)."""
+    return [
+        i
+        for i in range(1, len(path))
+        if is_chess_piece(board.get_by_index(path[i]))
+        and not is_chess_piece(board.get_by_index(path[i - 1]))
+    ]
+
+
+def movie_camera_credit_positions(
+    board: Board,
+    path: list[int],
+    *,
+    strict: bool = False,
+    loadout: Loadout | None = None,
+) -> list[int]:
+    """Positions that count toward Movie Camera's first-N take piece values."""
+    if strict and path_has_melmod_take_metadata(board, path):
+        return [
+            i
+            for i in range(len(path))
+            if _has_take_metadata(board.get_by_index(path[i]))
+        ]
+    captures = movie_camera_take_path_positions(
+        board, path, strict=strict, loadout=loadout
+    )
+    if captures:
+        return captures
+    return movie_camera_chess_entry_landing_positions(board, path)
 
 
 def _movie_camera_take_excluded(
@@ -931,7 +1009,7 @@ def first_n_movie_camera_piece_value_sum(
     strict: bool = False,
     loadout: Loadout | None = None,
 ) -> int:
-    positions = movie_camera_take_path_positions(
+    positions = movie_camera_credit_positions(
         board, path, strict=strict, loadout=loadout
     )
     if not positions or n <= 0:
@@ -942,6 +1020,13 @@ def first_n_movie_camera_piece_value_sum(
         )
         for pos in positions
     ]
+    has_captures = bool(
+        movie_camera_take_path_positions(
+            board, path, strict=strict, loadout=loadout
+        )
+    )
+    if not has_captures:
+        return sum(values[:n])
     if len(values) > n:
         values.sort(reverse=True)
         values = values[:n]
@@ -1596,6 +1681,147 @@ def max_qualifying_letter_half_multiplier(
 
 def red_tiles_used_encounter(loadout: Loadout) -> int:
     return max(0, _extra_int(loadout, "red_tiles_used_encounter", 0))
+
+
+def parse_historic_words(loadout: Loadout | None) -> list[dict]:
+    """Parse melmod ``historic_words`` extra (list of prior submitted words)."""
+    if not loadout:
+        return []
+    raw = (loadout.extras or {}).get("historic_words")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        return [row for row in parsed if isinstance(row, dict)]
+    if isinstance(raw, list):
+        return [row for row in raw if isinstance(row, dict)]
+    return []
+
+
+def encounter_red_tiles_before_current_word(loadout: Loadout | None) -> int:
+    """RED tiles from prior submitted words this encounter (Telescope historic list)."""
+    total = 0
+    for row in parse_historic_words(loadout):
+        try:
+            total += max(0, int(row.get("red_tile_count", 0)))
+        except (TypeError, ValueError):
+            continue
+    if total:
+        return total
+    return max(0, red_tiles_used_encounter(loadout))
+
+
+def telescope_running_red_count(
+    loadout: Loadout | None,
+    board: Board,
+    path: list[int],
+    path_index: int,
+) -> int:
+    """Running RED count for Telescope at path index (game: historic reds + path prefix)."""
+    prior = encounter_red_tiles_before_current_word(loadout)
+    prefix_reds = sum(
+        1
+        for j in range(path_index + 1)
+        if board.get_by_index(path[j]).color == TileColor.RED
+    )
+    return prior + prefix_reds
+
+
+def movie_camera_prior_from_historic(loadout: Loadout | None) -> int:
+    """Encounter Movie Camera WordScoreBonus before the current word."""
+    total = 0
+    for row in parse_historic_words(loadout):
+        try:
+            total += max(0, int(row.get("chess_take_value", 0)))
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+def movie_camera_word_score_bonus_exported(loadout: Loadout | None) -> int | None:
+    """Live post-score accumulator from melmod, when present."""
+    if not loadout:
+        return None
+    raw = (loadout.extras or {}).get("movie_camera_word_score_bonus")
+    if raw is None or raw == "":
+        return None
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def is_movie_camera_take_at_path_position(
+    board: Board,
+    path: list[int],
+    pos: int,
+    *,
+    strict: bool = False,
+) -> bool:
+    """True when path[pos] is a ChessTake/EnPassant landing (Movie Camera parity)."""
+    if pos < 0 or pos >= len(path):
+        return False
+    tile = board.get_by_index(path[pos])
+    if _has_take_metadata(tile):
+        return True
+    if strict or pos == 0:
+        return False
+    prefix = path[:pos]
+    return is_chess_capture_step(
+        board,
+        path[pos - 1],
+        path[pos],
+        path_prefix=prefix,
+        visited=set(prefix),
+    )
+
+
+def movie_camera_game_take_path_positions(
+    board: Board, path: list[int], *, strict: bool = False
+) -> list[int]:
+    """Path indices for ChessTake/EnPassant landings (first-N order, no sorting)."""
+    return [
+        i
+        for i in range(len(path))
+        if is_movie_camera_take_at_path_position(board, path, i, strict=strict)
+    ]
+
+
+def first_n_movie_camera_game_take_value_sum(
+    board: Board,
+    path: list[int],
+    n: int,
+    *,
+    strict: bool = False,
+) -> int:
+    """Sum chess piece values for the first N Movie Camera takes in path order."""
+    if n <= 0:
+        return 0
+    positions = movie_camera_game_take_path_positions(board, path, strict=strict)
+    total = 0
+    for pos in positions[:n]:
+        total += chess_piece_value(board.get_by_index(path[pos]))
+    return total
+
+
+def movie_camera_encounter_word_bonus(
+    board: Board,
+    path: list[int],
+    level: int,
+    loadout: Loadout | None,
+    *,
+    strict: bool = False,
+) -> int:
+    """Encounter-total Movie Camera word bonus (decompiled WordScoreBonus token)."""
+    exported = movie_camera_word_score_bonus_exported(loadout)
+    if exported is not None:
+        return exported
+    prior = movie_camera_prior_from_historic(loadout)
+    this_word = first_n_movie_camera_game_take_value_sum(
+        board, path, level, strict=strict
+    )
+    return prior + this_word
 
 
 def subtotal_before_mult(state: dict) -> float:

@@ -1208,6 +1208,104 @@ def _adjust_birthday_cake_pre_word_extras(
         run_state["extras"] = dict(loadout.extras or {})
 
 
+def _has_sticker(run_state: dict, sticker_id: str) -> bool:
+    stickers = run_state.get("stickers")
+    if not isinstance(stickers, list):
+        return False
+    key = sticker_id.lower()
+    for sticker in stickers:
+        if not isinstance(sticker, dict):
+            continue
+        if str(sticker.get("id", "") or "").lower() == key:
+            return True
+        if key.replace("_", " ") in str(sticker.get("name", "") or "").lower():
+            return True
+    return False
+
+
+def _movie_camera_trace_word_bonus(data: dict) -> int | None:
+    trace = data.get("actual_trace")
+    if not isinstance(trace, list):
+        return None
+    for step in trace:
+        if not isinstance(step, dict):
+            continue
+        if str(step.get("item_id", "") or "").lower() != "movie_camera":
+            continue
+        try:
+            return int(step.get("word_bonus", 0))
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _telescope_level(run_state: dict) -> int:
+    stickers = run_state.get("stickers")
+    if not isinstance(stickers, list):
+        return 1
+    for sticker in stickers:
+        if not isinstance(sticker, dict):
+            continue
+        if str(sticker.get("id", "") or "").lower() == "telescope":
+            return max(1, int(sticker.get("level", 1)))
+    return 1
+
+
+def _infer_encounter_reds_before_word(
+    data: dict, board, path: list[int], level: int
+) -> int:
+    """Infer encounter RED count before this word from Telescope trace deltas."""
+    trace = data.get("actual_trace") or []
+    init_tiles: list | None = None
+    tele_tiles: list | None = None
+    for step in trace:
+        if not isinstance(step, dict):
+            continue
+        if step.get("item_id") == "telescope":
+            vals = step.get("tile_scores")
+            tele_tiles = vals if isinstance(vals, list) else None
+        if step.get("step_index") == 0:
+            vals = step.get("tile_scores")
+            init_tiles = vals if isinstance(vals, list) else None
+    if not tele_tiles or not init_tiles or len(tele_tiles) != len(path):
+        return 0
+    for i, idx in enumerate(path):
+        if board.get_by_index(idx).color.value != "red":
+            continue
+        try:
+            delta = int(tele_tiles[i]) - int(init_tiles[i])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if delta > 0 and level > 0:
+            return max(0, delta // level - 1)
+    return 0
+
+
+def _adjust_movie_camera_telescope_extras(
+    run_state: dict,
+    data: dict,
+    board,
+    path: list[int],
+) -> None:
+    """Replay extras for encounter-total Movie Camera and cumulative Telescope."""
+    if not _has_sticker(run_state, "movie_camera") and not _has_sticker(
+        run_state, "telescope"
+    ):
+        return
+    extras = dict(run_state.get("extras") or {})
+    mc_total = _movie_camera_trace_word_bonus(data)
+    if mc_total is not None and _has_sticker(run_state, "movie_camera"):
+        extras["movie_camera_word_score_bonus"] = str(mc_total)
+    if _has_sticker(run_state, "telescope") and not extras.get("historic_words"):
+        level = _telescope_level(run_state)
+        prior_reds = _infer_encounter_reds_before_word(data, board, path, level)
+        if prior_reds > 0:
+            extras["historic_words"] = json.dumps(
+                [{"word": "_encounter_prior_", "red_tile_count": prior_reds}]
+            )
+    run_state["extras"] = extras
+
+
 def _adjust_bicycle_pre_word_extras(
     run_state: dict,
     data: dict,
@@ -1605,6 +1703,8 @@ def test_scoring_mismatch(case_path: Path) -> None:
         assert int(score) == expected
         return
 
+    board = parse_board_from_run_state(run_state)
+    _adjust_movie_camera_telescope_extras(run_state, data, board, path)
     board = parse_board_from_run_state(run_state)
     _adjust_void_penalty_from_trace(run_state, data, board, path)
     _adjust_scattered_item_level_from_trace(run_state, data, board, path)

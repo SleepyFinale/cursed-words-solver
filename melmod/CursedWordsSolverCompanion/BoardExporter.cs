@@ -314,9 +314,9 @@ namespace CursedWordsSolverCompanion
             {
                 if (sel?.SelectedTile == null)
                     continue;
-                var tile = sel.SelectedTile;
-                if (!TileHasTake(tile))
+                if (!SelectionIsMovieCameraTake(sel) && !TileHasTake(sel.SelectedTile))
                     continue;
+                var tile = sel.SelectedTile;
                 try
                 {
                     var coords = tile.GetCoordinates();
@@ -334,6 +334,17 @@ namespace CursedWordsSolverCompanion
         public static bool TileHasTake(Tile tile)
         {
             return MapTake(tile);
+        }
+
+        /// <summary>
+        /// Movie Camera counts ChessTake/EnPassant selection methods (not Full Moon chains).
+        /// </summary>
+        public static bool SelectionIsMovieCameraTake(TileSelection sel)
+        {
+            if (sel == null)
+                return false;
+            return sel.SelectionMethod == TileSelectionMethod.ChessTake
+                || sel.SelectionMethod == TileSelectionMethod.EnPassant;
         }
 
         private static Dictionary<string, bool> CollectTakeFlags(BoardSnapshot submitBoard)

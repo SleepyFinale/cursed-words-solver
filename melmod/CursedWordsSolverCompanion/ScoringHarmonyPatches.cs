@@ -70,6 +70,7 @@ namespace CursedWordsSolverCompanion
             ScoringCaptureSession.OnScoreStepsCalculated(__result);
             if (!RunStateExporter.TryMergeBicycleExtrasAfterScore())
                 RunStateExporter.QueueBicycleExtrasRetry();
+            RunStateExporter.TryMergeMovieCameraExtrasAfterScore();
             RunStateExporter.TryMergeCachedGridNumber();
         }
     }

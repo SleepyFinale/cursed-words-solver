@@ -588,11 +588,15 @@ def test_telescope_red_encounter_bonus():
     pipeline = ScoringPipeline()
     loadout = Loadout(
         stickers=[LoadoutItem(id="telescope", name="Telescope", level=2)],
-        extras={"red_tiles_used_encounter": 3},
+        extras={
+            "historic_words": json.dumps(
+                [{"word": "prior", "red_tile_count": 2}]
+            )
+        },
     )
     score, _ = pipeline.score(board, [0, 1], "ab", loadout)
-    # each red: + level * reds_used = +6 per tile
-    assert score == (2 + 6) + (2 + 6)
+    # 1st red: level×(2+1)=6; 2nd red: level×(2+2)=8
+    assert score == (2 + 6) + (2 + 8)
 
 
 def test_sunflower_money_multiplier():

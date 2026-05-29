@@ -591,6 +591,7 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
     for int_key in (
         "cards_submitted",
         "bicycle_word_score_bonus",
+        "movie_camera_word_score_bonus",
         "bicycle_suited_on_path",
         "neapolitan_percent",
         "pin_left_level",

@@ -304,6 +304,66 @@ namespace CursedWordsSolverCompanion
             }
         }
 
+        /// <summary>
+        /// Merge Movie Camera WordScoreBonus after CalculateOverallScore (encounter running total).
+        /// </summary>
+        public static bool TryMergeMovieCameraExtrasAfterScore()
+        {
+            try
+            {
+                var player = GetPlayer();
+                if (player == null)
+                    return false;
+
+                var accumulated = TryGetMovieCameraWordScoreBonus(player);
+                if (accumulated < 0)
+                    return true;
+
+                TryMergeExtrasKeys(
+                    new Dictionary<string, string>
+                    {
+                        ["movie_camera_word_score_bonus"] = accumulated.ToString(),
+                    }
+                );
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static int TryGetMovieCameraWordScoreBonus(Player player)
+        {
+            if (player == null)
+                return -1;
+            try
+            {
+                var stickers = player.GetStickers(forItemComparison: true);
+                if (stickers == null)
+                    return -1;
+                foreach (var item in stickers)
+                {
+                    if (item == null)
+                        continue;
+                    var camera = item as MovieCamera;
+                    if (camera != null)
+                        return camera.WordScoreBonus;
+                    var slug = Slugify(item.ArtFileName, item.Name);
+                    if (slug != "movie_camera")
+                        continue;
+                    var bonus = TryGetIntMember(item, "WordScoreBonus");
+                    if (bonus >= 0)
+                        return bonus;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+            return -1;
+        }
+
         public static void QueueBicycleExtrasRetry()
         {
             _pendingBicycleMergeRetries = BicycleMergeRetryBudget;

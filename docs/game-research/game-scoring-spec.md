@@ -71,6 +71,21 @@ Solver parity requirement:
 - `Wrestlers.ApplyWordBonus`:
   - checks path endpoint tiles and multiplies when both suits exist and differ, or start suit is joker.
 
+## Movie Camera (`MovieCamera.ApplyWordBonus`)
+
+- Counts path tiles in order where `TileSelection.SelectionMethod` is `ChessTake` or `EnPassant` (Full Moon chains and plain `ChessMove` landings do **not** count).
+- For the first `VariableValue` (= sticker level) qualifying takes, adds `Alphabet.GetChessValue(tiles[i].PieceType)` to the item’s persistent `WordScoreBonus` field (P=1, N/B=3, R=5, Q=9, K=15).
+- Emits an additive `WordBonusToken(WordScoreBonus)` using the **encounter running total** on the sticker instance (same accumulator pattern as Bicycle), not just this word’s increment.
+- Solver: use melmod `movie_camera_word_score_bonus` when exported post-score; otherwise `sum(historic chess_take_value) + first-N takes on current path`.
+
+## Telescope (`Telescope.ApplyTileBonus`)
+
+- Only applies on RED path tiles.
+- Per path index `i` that is red: `bonus = level × list.Count`, where `list` is every RED tile in `tiles[0..i]` plus every RED tile from each `HistoricWord.Tiles` in the encounter.
+- The multiplier increases for each red tile played on the path (3rd red on path with 2 prior encounter reds → `level × 3`).
+- Does not reset across Michael boss phases (encounter-wide historic list).
+- Solver: sum `red_tile_count` from `historic_words` extras for prior encounter reds; melmod should export per-word `red_tile_count` and `chess_take_value` on historic entries.
+
 ## Tile-value implications
 
 `Tile.GetValue` feeds `GetInitialScoreInfo`; this is where shield/colour/chess/card base-value interactions begin before item effects.

@@ -77,7 +77,8 @@ from cursed_words_solver.rules.scoring_conditions import (
     suited_cards_on_path_count,
     chess_takes_on_path,
     chess_take_strict_mode,
-    first_n_movie_camera_piece_value_sum,
+    movie_camera_encounter_word_bonus,
+    telescope_running_red_count,
     is_take_at_path_position,
     is_chess_tile,
     burrito_word_multiplier,
@@ -2430,18 +2431,20 @@ class ScoringPipeline:
                 state["effects"].append(f"×{factor} word (other sticker levels)")
 
         elif effect_type == "red_encounter_tile_bonus":
-            reds_used = red_tiles_used_encounter(loadout)
-            per_red = level
-            if reds_used and per_red:
+            per_level = level
+            if per_level:
                 count = 0
                 for i, idx in enumerate(path):
                     if board.get_by_index(idx).color.value == "red":
-                        add = per_red * reds_used
+                        running = telescope_running_red_count(
+                            loadout, board, path, i
+                        )
+                        add = per_level * running
                         state["tile_scores"][i] += add
                         count += 1
                 if count:
                     state["effects"].append(
-                        f"+{per_red * reds_used} per red tile ({count}, encounter reds={reds_used})"
+                        f"+{per_level}×running red count per red tile ({count})"
                     )
 
         elif effect_type == "multiply":
@@ -2522,12 +2525,12 @@ class ScoringPipeline:
             mode = rule.get("mode", "flat")
             if mode == "piece_value_first_n":
                 n = sticker_rule_int(level, rule)
-                bonus = first_n_movie_camera_piece_value_sum(
+                bonus = movie_camera_encounter_word_bonus(
                     board,
                     path,
                     n,
+                    loadout,
                     strict=strict_takes,
-                    loadout=loadout,
                 )
                 if not bonus and level >= 3 and chess_takes_on_path(
                     board, path, strict=strict_takes
@@ -2536,7 +2539,7 @@ class ScoringPipeline:
                 if bonus:
                     _add_word_score(state, bonus)
                     state["effects"].append(
-                        f"+{bonus} word (first {n} take piece value)"
+                        f"+{bonus} word (Movie Camera encounter total, first {n} take(s))"
                     )
             else:
                 per_take = super_8_take_word_bonus(loadout, rule)
