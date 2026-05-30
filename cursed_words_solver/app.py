@@ -38,6 +38,7 @@ from cursed_words_solver.suggestion import (
     clear_stale_last_suggestion_if_loadout_changed,
     dictionary_word_for_path,
     format_suggestion_word,
+    poll_invalidate_last_suggestion,
     save_last_suggestion,
     stale_suggestion_warning,
 )
@@ -59,6 +60,7 @@ from cursed_words_solver.loadout import (
     prepare_run_state_dict_for_scoring,
     solver_session_extras_from_loadout,
     validate_run_state_for_scoring,
+    sanitize_run_state_snapshot_for_f8,
     save_loadout,
     save_run_state_template,
 )
@@ -110,6 +112,7 @@ class SolverApp:
         self._highlight_board_fingerprint: str | None = None
         self._highlight_loadout_fingerprint: str | None = None
         self._highlight_watch_run_state = False
+        self._last_invalidation_reason: str | None = None
         self._loadout_cache = load_run_state()
         self._loadout_source = self._detect_loadout_source()
         self._scoring = ScoringPipeline()
@@ -235,7 +238,7 @@ class SolverApp:
         self.overlay.show_idle()
 
         self._run_state_poll_timer = QTimer()
-        self._run_state_poll_timer.timeout.connect(self._maybe_clear_stale_highlights)
+        self._run_state_poll_timer.timeout.connect(self._poll_run_state_stale)
         self._run_state_poll_timer.start(500)
 
         print(
@@ -357,6 +360,36 @@ class SolverApp:
         self._highlight_loadout_fingerprint = None
         self._highlight_watch_run_state = False
 
+    def _poll_run_state_stale(self) -> None:
+        """Invalidate stale F8 suggestions and drop highlights when run_state drifts."""
+        from cursed_words_solver.config import LAST_SUGGESTION_PATH
+        from cursed_words_solver.fingerprints import fingerprints_from_run_state
+
+        data = load_run_state_raw()
+        extras = data.get("extras") if isinstance(data, dict) else None
+        board_fp = ""
+        loadout_fp = ""
+        if data:
+            board_fp, loadout_fp = fingerprints_from_run_state(data)
+
+        if LAST_SUGGESTION_PATH.exists():
+            reason = poll_invalidate_last_suggestion(
+                extras if isinstance(extras, dict) else None,
+                current_board_fp=board_fp,
+                current_loadout_fp=loadout_fp,
+            )
+            if reason and reason != self._last_invalidation_reason:
+                self._last_invalidation_reason = reason
+                self._clear_highlight_state()
+                self.overlay.show_stale_notice(
+                    "Suggestion cleared — press F8 again before submitting."
+                )
+                print(f"  Suggestion cleared — {reason}", flush=True)
+            elif reason is None:
+                self._last_invalidation_reason = None
+
+        self._maybe_clear_stale_highlights()
+
     def _maybe_clear_stale_highlights(self) -> None:
         """Drop on-board path when melmod reports a new round, shop, or missing board."""
         if self._highlight_board_fingerprint is None:
@@ -379,18 +412,6 @@ class SolverApp:
             and current_loadout_fp != self._highlight_loadout_fingerprint
         ):
             self._clear_highlight_state()
-            clear_stale_last_suggestion_if_context_changed(
-                current_board_fp,
-                current_loadout_fp=current_loadout_fp,
-                run_state_extras=(data.get("extras") if isinstance(data, dict) else None),
-            )
-            return
-        extras = data.get("extras") if isinstance(data, dict) else None
-        clear_stale_last_suggestion_if_context_changed(
-            current_board_fp,
-            current_loadout_fp=current_loadout_fp,
-            run_state_extras=extras if isinstance(extras, dict) else None,
-        )
 
     def _apply_solve_ui(self, update: _SolveUIUpdate) -> None:
         """Show overlay and board highlights on the Qt GUI thread."""
@@ -706,18 +727,23 @@ class SolverApp:
                     raw=run_state_data,
                 )
                 session_extras = solver_session_extras_from_loadout(loadout)
+                f8_snapshot = sanitize_run_state_snapshot_for_f8(
+                    run_state_data,
+                    loadout,
+                )
                 save_last_suggestion(
                     board=board,
                     loadout=loadout,
                     result=top,
                     predicted_trace=pred_trace,
-                    run_state_snapshot=run_state_data,
+                    run_state_snapshot=f8_snapshot,
                     dictionary=self._dictionary,
                     min_len=effective_min,
                     export_diagnostics=export_diag,
                     export_warnings=export_warnings,
                     solver_session_extras=session_extras,
                 )
+                self._last_invalidation_reason = None
                 for warn in export_warnings:
                     print(f"  Export warning: {warn}", flush=True)
 

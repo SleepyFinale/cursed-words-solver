@@ -203,10 +203,10 @@ def _axolotl_loadout(grid_number: int) -> Loadout:
 
 
 def test_void_currency_grid1_axolotl_full_penalty():
-    """ngwees: grid 1 void € cv=1 → -15 under axolotl boss floor."""
+    """Melmod void currency on path scores 0 (export base_score is final)."""
     loadout = _axolotl_loadout(1)
     tile = _void_currency_tile(0, 4, "€", letter="E")
-    assert tile_base_contribution(tile, loadout=loadout) == -15
+    assert tile_base_contribution(tile, loadout=loadout) == 0
 
 
 def test_void_currency_grid3_axolotl_row1_waived():
@@ -217,28 +217,28 @@ def test_void_currency_grid3_axolotl_row1_waived():
 
 
 def test_void_currency_grid4_axolotl_row3_full_penalty():
-    """busses: grid 4+, row >= 3 → standard void currency penalty."""
+    """Melmod void currency stays 0 regardless of axolotl row/grid."""
     loadout = _axolotl_loadout(4)
     tile = _void_currency_tile(3, 4, "$", letter="S")
-    assert tile_base_contribution(tile, loadout=loadout) == -15
+    assert tile_base_contribution(tile, loadout=loadout) == 0
 
 
 def test_void_currency_grid5_axolotl_row1_full_penalty():
-    """abbes: grid 5 row 1 still gets full penalty (waiver only grids 2–3)."""
+    """Melmod void currency stays 0 regardless of axolotl row/grid."""
     loadout = _axolotl_loadout(5)
     tile = _void_currency_tile(1, 2, "฿", letter="B")
-    assert tile_base_contribution(tile, loadout=loadout) == -15
+    assert tile_base_contribution(tile, loadout=loadout) == 0
 
 
 def test_void_currency_cedilla_full_penalty():
-    """narcissist: void ₡ (cv 3) on grid 1 → −15, not the old −10 glyph special."""
+    """Melmod void ₡ on path scores 0 (no synthetic letter-value penalty)."""
     tile = _void_currency_tile(3, 2, "₡", letter="₡")
     loadout = Loadout(extras={"grid_number": "1"})
-    assert tile_base_contribution(tile, loadout=loadout) == -15
+    assert tile_base_contribution(tile, loadout=loadout) == 0
 
 
 def test_void_currency_mole_grid3_path_row2_not_waived():
-    """feen/cann: mole boss floor must not waive void currency on grid 3."""
+    """Melmod void currency on path scores 0 even with mole boss modifiers."""
     tile = _void_currency_tile(2, 3, "€", letter="E")
     loadout = Loadout(
         extras={
@@ -248,7 +248,13 @@ def test_void_currency_mole_grid3_path_row2_not_waived():
             "grid_number": "3",
         }
     )
-    assert tile_base_contribution(tile, loadout=loadout) == -15
+    assert tile_base_contribution(tile, loadout=loadout) == 0
+
+
+def test_void_currency_offcast_path_dollar():
+    """Round log 20260530_160654: void $ on offcast path scores 0 not -15."""
+    tile = _void_currency_tile(3, 3, "$", letter="$")
+    assert tile_base_contribution(tile, loadout=Loadout(extras={"grid_number": "1"})) == 0
 
 
 def test_void_currency_axolotl_grid1_multi_boss_bottom_row_waived():

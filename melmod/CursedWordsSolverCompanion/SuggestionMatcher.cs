@@ -51,12 +51,15 @@ namespace CursedWordsSolverCompanion
         {
             try
             {
-                if (File.Exists(SuggestionFilePath))
-                    File.Delete(SuggestionFilePath);
+                if (!File.Exists(SuggestionFilePath))
+                    return;
+                File.Delete(SuggestionFilePath);
             }
-            catch
+            catch (Exception ex)
             {
-                // best-effort
+                CompanionDiagnostics.LogVerboseWarning(
+                    "Could not delete last_suggestion.json: " + ex.Message
+                );
             }
         }
 
@@ -244,7 +247,14 @@ namespace CursedWordsSolverCompanion
                     suggestion.run_state_snapshot
                 );
                 var liveExtras = RunStateExporter.BuildExtrasSnapshot();
-                var stale = ExtrasDiffHelper.DescribeStaleF8LoadoutDrift(f8Extras, liveExtras);
+                var staleCtx = RunStateExporter.BuildStaleF8Context(
+                    RunStateExporter.GetPlayerForUpdate()
+                );
+                var stale = ExtrasDiffHelper.DescribeStaleF8LoadoutDrift(
+                    f8Extras,
+                    liveExtras,
+                    staleCtx
+                );
                 if (!string.IsNullOrEmpty(stale))
                     parts.Add(stale);
             }

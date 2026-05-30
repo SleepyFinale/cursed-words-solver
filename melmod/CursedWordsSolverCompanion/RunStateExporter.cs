@@ -44,9 +44,10 @@ namespace CursedWordsSolverCompanion
 
                 var fingerprint = ComputeFingerprint(player);
                 var snapshot = BuildSnapshot(player);
-                MergePreservedExtrasFromDisk(snapshot);
+                MergePreservedExtrasFromDisk(snapshot, player);
                 SyncLiveBicycleExtrasIntoSnapshot(snapshot, player);
                 FillSnapshotCopyExtras(snapshot, player);
+                SanitizeLoadoutSpecificExtras(snapshot, player);
                 BoardExporter.FillGridScatteredItemsExtra(snapshot);
                 sw.Stop();
                 ExportDiagnostics.ApplyToSnapshot(
@@ -57,6 +58,7 @@ namespace CursedWordsSolverCompanion
                     sw.ElapsedMilliseconds
                 );
                 WriteSnapshot(snapshot);
+                TryClearLastSuggestionIfWorkflowStale(snapshot, player);
                 DictionaryExporter.TryExport(logSuccess);
                 if (logSuccess)
                 {
@@ -104,6 +106,34 @@ namespace CursedWordsSolverCompanion
             if (string.IsNullOrEmpty(fp))
                 return "";
             return fp.Length <= 48 ? fp : fp.Substring(0, 48) + "…";
+        }
+
+        /// <summary>
+        /// Drop last_suggestion.json when run_state workflow extras advanced past the F8 embed.
+        /// </summary>
+        private static void TryClearLastSuggestionIfWorkflowStale(
+            RunStateSnapshot snapshot,
+            Player player
+        )
+        {
+            if (snapshot?.extras == null)
+                return;
+
+            var suggestion = SuggestionMatcher.Load();
+            if (suggestion?.run_state_snapshot == null)
+                return;
+
+            var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                suggestion.run_state_snapshot
+            );
+            var diff = ExtrasDiffHelper.DiffExtras(f8Extras, snapshot.extras);
+            var ctx = BuildStaleF8Context(player);
+            var workflow = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(diff, ctx);
+            if (string.IsNullOrEmpty(workflow))
+                return;
+
+            SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+            CompanionDiagnostics.LogVerbose("Cleared stale F8 suggestion (" + workflow + ")");
         }
 
         public static string ComputeFingerprint(Player player)
@@ -203,7 +233,7 @@ namespace CursedWordsSolverCompanion
                 return false;
             if (string.IsNullOrEmpty(existing) || existing == "[]")
                 return true;
-            return incoming.Length > existing.Length;
+            return !string.Equals(existing, incoming, StringComparison.Ordinal);
         }
 
         private static string TryReadExtraValue(string key)
@@ -707,7 +737,10 @@ namespace CursedWordsSolverCompanion
             return reflected;
         }
 
-        private static void MergePreservedExtrasFromDisk(RunStateSnapshot snapshot)
+        private static void MergePreservedExtrasFromDisk(
+            RunStateSnapshot snapshot,
+            Player player
+        )
         {
             if (snapshot?.extras == null)
                 return;
@@ -718,8 +751,20 @@ namespace CursedWordsSolverCompanion
                 if (onDisk.Count == 0)
                     return;
 
+                var hasBicyclePin = player?.MyCharacter?.CharacterItem != null
+                    && IsBicyclePin(player.MyCharacter.CharacterItem);
+
                 foreach (var key in ExtrasPreserveFromDisk)
                 {
+                    if (
+                        !hasBicyclePin
+                        && (
+                            string.Equals(key, "bicycle_word_score_bonus", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(key, "cards_submitted", StringComparison.OrdinalIgnoreCase)
+                        )
+                    )
+                        continue;
+
                     if (snapshot.extras.ContainsKey(key)
                         && !string.IsNullOrEmpty(snapshot.extras[key]))
                         continue;
@@ -799,6 +844,95 @@ namespace CursedWordsSolverCompanion
             if (!int.TryParse(raw.Trim(), out value) || value < 0)
                 return -1;
             return value;
+        }
+
+        /// <summary>
+        /// Drop preserved extras from prior runs when the current loadout no longer uses them.
+        /// </summary>
+        private static void SanitizeLoadoutSpecificExtras(
+            RunStateSnapshot snapshot,
+            Player player
+        )
+        {
+            if (snapshot?.extras == null)
+                return;
+
+            var pin = player?.MyCharacter?.CharacterItem;
+            if (pin == null || !IsBicyclePin(pin))
+            {
+                snapshot.extras.Remove("bicycle_word_score_bonus");
+                snapshot.extras.Remove("cards_submitted");
+            }
+
+            var mutatingDna = MutatingDnaLetterCounts.TryReadFromPlayer(player);
+            if (mutatingDna == null || mutatingDna.Count == 0)
+                snapshot.extras.Remove("mutating_dna_letter_counts");
+
+            if (!PlayerHasStampSlug(player, "neapolitan"))
+            {
+                snapshot.extras.Remove("neapolitan_percent");
+                snapshot.extras.Remove("neapolitan_percent_last_known");
+            }
+
+            if (!PlayerHasStampSlug(player, "steak"))
+            {
+                snapshot.extras.Remove("steak_word_bonus_percent");
+                snapshot.extras.Remove("rare_item_count");
+                snapshot.extras.Remove("rare_item_count_last_known");
+            }
+
+            if (!PlayerHasStickerSlug(player, "snapshot"))
+            {
+                snapshot.extras.Remove("snapshot_copy_slug");
+                snapshot.extras.Remove("snapshot_copy_level");
+                snapshot.extras.Remove("snapshot_copy_captured_at");
+                snapshot.extras.Remove("snapshot_copy_source");
+            }
+        }
+
+        public static bool PlayerHasStampSlug(Player player, string slug)
+        {
+            if (player?.Stamps == null || string.IsNullOrEmpty(slug))
+                return false;
+
+            foreach (var stamp in player.Stamps)
+            {
+                if (stamp == null)
+                    continue;
+                var id = Slugify(stamp.ArtFileName, stamp.Name);
+                if (string.Equals(id, slug, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        public static bool PlayerHasStickerSlug(Player player, string slug)
+        {
+            if (player?.Stickers == null || string.IsNullOrEmpty(slug))
+                return false;
+
+            foreach (var sticker in player.Stickers)
+            {
+                if (sticker == null)
+                    continue;
+                var id = Slugify(sticker.ArtFileName, sticker.Name);
+                if (string.Equals(id, slug, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        public static StaleF8Context BuildStaleF8Context(Player player)
+        {
+            var ctx = new StaleF8Context();
+            if (player?.MyCharacter?.CharacterItem != null)
+                ctx.HasBicyclePin = IsBicyclePin(player.MyCharacter.CharacterItem);
+
+            var mutatingDna = MutatingDnaLetterCounts.TryReadFromPlayer(player);
+            ctx.HasMutatingDnaStamp = mutatingDna != null && mutatingDna.Count > 0;
+            return ctx;
         }
 
         private static void WriteSnapshot(RunStateSnapshot snapshot)
@@ -889,42 +1023,11 @@ namespace CursedWordsSolverCompanion
                 return;
             }
 
-            var michaelBoss = RunStateExportFill.FindMichaelBoss(bosses);
-            if (michaelBoss != null)
+            var finale = RunStateExportFill.ResolveMichaelFinaleState(snapshot, player, bosses);
+            if (finale.IsFinale)
             {
-                var michaelMin = RunStateExportFill.ResolveMichaelMinWordLength(
-                    bosses[0],
-                    michaelBoss,
-                    player
-                );
-                var draftedList = RunStateExportFill.TryGetBossListMember(
-                    michaelBoss,
-                    "DraftedModifiers",
-                    isField: false
-                );
-                if (draftedList == null)
-                    draftedList = RunStateExportFill.TryGetBossListMember(
-                        michaelBoss,
-                        "SummonedBosses",
-                        isField: false
-                    );
-                var drafted = draftedList != null ? draftedList.Count : -1;
-                if (
-                    RunStateExportFill.TryResolveMichaelFinale(
-                        michaelBoss,
-                        player,
-                        drafted,
-                        michaelMin
-                    )
-                )
-                {
-                    snapshot.boss_id = "michael";
-                    snapshot.boss_name = string.IsNullOrEmpty(michaelBoss.Name)
-                        ? "Michael"
-                        : michaelBoss.Name;
-                    snapshot.boss_effect = "";
-                    return;
-                }
+                RunStateExportFill.ApplyMichaelFinaleExport(snapshot, finale.MinWordLength);
+                return;
             }
 
             BossModifier displayBoss = null;

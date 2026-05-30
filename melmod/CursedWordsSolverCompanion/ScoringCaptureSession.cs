@@ -108,12 +108,30 @@ namespace CursedWordsSolverCompanion
                     _suggestion?.run_state_snapshot
                 );
                 var liveExtras = RunStateExporter.BuildExtrasSnapshot();
-                var staleDrift = ExtrasDiffHelper.DescribeStaleF8LoadoutDrift(
-                    f8Extras,
+                var historicOverlay = RunStateExportFill.BuildBestHistoricExtras(
+                    player,
                     liveExtras
                 );
-                if (!string.IsNullOrEmpty(staleDrift))
-                    MelonLogger.Warning(staleDrift);
+                if (historicOverlay != null)
+                {
+                    foreach (var kv in historicOverlay)
+                        liveExtras[kv.Key] = kv.Value ?? "";
+                }
+
+                var staleCtx = RunStateExporter.BuildStaleF8Context(player);
+                var diff = ExtrasDiffHelper.DiffExtras(f8Extras, liveExtras);
+                var workflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(
+                    diff,
+                    staleCtx
+                );
+                if (!string.IsNullOrEmpty(workflowStale))
+                {
+                    MelonLogger.Warning(workflowStale);
+                    SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                    return;
+                }
+
+                ExtrasDiffHelper.LogStaleF8DriftWarnings(f8Extras, liveExtras, staleCtx);
 
                 _active = true;
                 MelonLogger.Msg(

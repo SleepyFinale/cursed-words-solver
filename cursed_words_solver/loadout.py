@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import time
 from pathlib import Path
@@ -664,7 +665,7 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
                 out[key] = int(out[key])
             except (TypeError, ValueError):
                 out[key] = 0
-    for key in ("michael_summoned_bosses_defeated",):
+    for key in ("michael_summoned_bosses_defeated", "michael_puzzle_grid"):
         if key in out:
             out[key] = out[key] in (True, "true", "True", "1", 1)
     if "target_chess_piece" in out and out["target_chess_piece"]:
@@ -909,6 +910,70 @@ def _has_neapolitan_stamp(loadout: Loadout) -> bool:
     return any(
         str((s.id or "")).strip().lower() == "neapolitan" for s in (loadout.stamps or [])
     )
+
+
+def _has_mutating_dna_stamp(loadout: Loadout) -> bool:
+    return any(
+        "mutating" in (stamp.id or "").lower()
+        or "dna" in (stamp.id or "").lower()
+        or "mutating" in (stamp.name or "").lower()
+        for stamp in (loadout.stamps or [])
+    )
+
+
+def _has_steak_stamp(loadout: Loadout) -> bool:
+    return any(
+        str((s.id or "")).strip().lower() == "steak" for s in (loadout.stamps or [])
+    )
+
+
+def _has_snapshot_sticker(loadout: Loadout) -> bool:
+    return any(
+        str((s.id or "")).strip().lower() == "snapshot"
+        for s in (loadout.stickers or [])
+    )
+
+
+def sanitize_run_state_snapshot_for_f8(
+    run_state: dict | None,
+    loadout: Loadout,
+) -> dict | None:
+    """Drop prior-run extras from the F8 embed when the current loadout no longer uses them."""
+    if run_state is None:
+        return None
+
+    snapshot = copy.deepcopy(run_state)
+    extras = snapshot.get("extras")
+    if not isinstance(extras, dict):
+        return snapshot
+
+    if not _is_bicycle_pin(loadout):
+        extras.pop("bicycle_word_score_bonus", None)
+        extras.pop("cards_submitted", None)
+
+    if not _has_mutating_dna_stamp(loadout):
+        extras.pop("mutating_dna_letter_counts", None)
+
+    if not _has_neapolitan_stamp(loadout):
+        extras.pop("neapolitan_percent", None)
+        extras.pop("neapolitan_percent_last_known", None)
+
+    if not _has_steak_stamp(loadout):
+        extras.pop("steak_word_bonus_percent", None)
+        extras.pop("rare_item_count", None)
+        extras.pop("rare_item_count_last_known", None)
+
+    if not _has_snapshot_sticker(loadout):
+        for key in (
+            "snapshot_copy_slug",
+            "snapshot_copy_level",
+            "snapshot_copy_captured_at",
+            "snapshot_copy_source",
+        ):
+            extras.pop(key, None)
+
+    snapshot["extras"] = extras
+    return snapshot
 
 
 def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:

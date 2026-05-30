@@ -29,6 +29,7 @@ class ResultOverlay(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._has_solved = False
+        self._stale_notice_active = False
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.FramelessWindowHint
@@ -75,6 +76,7 @@ class ResultOverlay(QWidget):
 
     def show_idle(self) -> None:
         self._has_solved = False
+        self._stale_notice_active = False
         self.idle_label.show()
         self.hero_result.hide()
         self.warnings_label.hide()
@@ -83,6 +85,35 @@ class ResultOverlay(QWidget):
         self._position_panel()
         self.show()
         self.raise_()
+
+    def show_stale_notice(self, message: str) -> None:
+        """Warn that the F8 suggestion is stale — user should press F8 again."""
+        self._has_solved = False
+        self._stale_notice_active = True
+        self.idle_label.hide()
+        self.hero_result.setText(
+            "<span style='font-size:13px;font-weight:bold;color:#fa0'>"
+            "STALE — press F8</span>"
+        )
+        self.hero_result.show()
+        detail = (message or "").strip()
+        if detail:
+            self.warnings_label.setText(detail)
+            self.warnings_label.show()
+        else:
+            self.warnings_label.hide()
+        self.preview.hide()
+        self._resize_for_content(compact=True)
+        self._position_panel()
+        self.show()
+        self.raise_()
+
+    def clear_stale_notice(self) -> None:
+        """Remove stale warning (fresh F8 solve will replace content)."""
+        if not self._stale_notice_active:
+            return
+        self._stale_notice_active = False
+        self.warnings_label.hide()
 
     def show_results(
         self,
@@ -95,6 +126,7 @@ class ResultOverlay(QWidget):
     ) -> None:
         self._has_solved = True
         self.idle_label.hide()
+        self.clear_stale_notice()
 
         if warnings_html:
             self.warnings_label.setText(warnings_html)

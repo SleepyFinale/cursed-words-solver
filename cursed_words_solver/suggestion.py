@@ -107,6 +107,139 @@ def _mutating_dna_letter_counts_equal(previous: str, current: str) -> bool:
     return prev_norm == cur_norm
 
 
+def _historic_words_count(raw: str) -> int:
+    """Parse historic_words JSON array length safely."""
+    raw = (raw or "").strip()
+    if not raw or raw == "[]":
+        return 0
+    try:
+        arr = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return 0
+    return len(arr) if isinstance(arr, list) else 0
+
+
+def _f8_snapshot_extras(data: dict[str, Any]) -> dict[str, Any]:
+    snapshot = data.get("run_state_snapshot")
+    if isinstance(snapshot, dict):
+        raw = snapshot.get("extras")
+        if isinstance(raw, dict):
+            return raw
+    return {}
+
+
+def workflow_stale_vs_f8_snapshot(
+    run_state_extras: dict[str, Any] | None,
+    f8_snapshot_extras: dict[str, Any] | None,
+) -> str | None:
+    """Human-readable reason when workflow extras drifted since F8 (mirrors melmod)."""
+    extras = run_state_extras if isinstance(run_state_extras, dict) else {}
+    f8_extras = f8_snapshot_extras if isinstance(f8_snapshot_extras, dict) else {}
+    notes: list[str] = []
+
+    prev_letter_f8 = str(f8_extras.get("previous_word_first_letter", "") or "").strip()
+    prev_letter_cur = str(extras.get("previous_word_first_letter", "") or "").strip()
+    if (
+        prev_letter_f8
+        and prev_letter_cur
+        and prev_letter_f8.lower() != prev_letter_cur.lower()
+    ):
+        notes.append(f"previous word letter {prev_letter_f8}→{prev_letter_cur}")
+
+    hist_f8 = str(f8_extras.get("historic_words", "") or "").strip()
+    hist_cur = str(extras.get("historic_words", "") or "").strip()
+    if hist_f8 != hist_cur and (hist_f8 or hist_cur):
+        count_f8 = _historic_words_count(hist_f8)
+        count_cur = _historic_words_count(hist_cur)
+        if count_cur > count_f8:
+            notes.append(f"historic words changed ({count_f8}→{count_cur})")
+        elif hist_f8 and hist_cur:
+            notes.append("historic words changed")
+
+    prev_dna = str(f8_extras.get("mutating_dna_letter_counts", "") or "").strip()
+    cur_dna = str(extras.get("mutating_dna_letter_counts", "") or "").strip()
+    has_dna = (prev_dna and prev_dna != "{}") or (cur_dna and cur_dna != "{}")
+    if (
+        has_dna
+        and prev_dna
+        and cur_dna
+        and not _mutating_dna_letter_counts_equal(prev_dna, cur_dna)
+    ):
+        notes.append("mutating DNA counts changed")
+
+    if not notes:
+        return None
+    return "; ".join(notes)
+
+
+def clear_stale_last_suggestion_if_workflow_changed(
+    run_state_extras: dict[str, Any] | None,
+) -> str | None:
+    """Remove last_suggestion.json when a word was played since F8 (no board-fp gate)."""
+    data = _last_suggestion_fingerprint_data()
+    if data is None:
+        return None
+    reason = workflow_stale_vs_f8_snapshot(
+        run_state_extras,
+        _f8_snapshot_extras(data),
+    )
+    if reason is None:
+        return None
+    if clear_last_suggestion():
+        return reason
+    return None
+
+
+def clear_stale_last_suggestion_if_fingerprint_changed(
+    current_board_fp: str,
+    *,
+    current_loadout_fp: str | None = None,
+) -> str | None:
+    """Remove last_suggestion.json when board or loadout fingerprint drifted since F8."""
+    if not LAST_SUGGESTION_PATH.exists():
+        return None
+    note = stale_suggestion_warning(
+        current_board_fp,
+        current_loadout_fp=current_loadout_fp,
+    )
+    if note is None:
+        return None
+    if clear_last_suggestion():
+        return note
+    return None
+
+
+def poll_invalidate_last_suggestion(
+    run_state_extras: dict[str, Any] | None,
+    *,
+    current_board_fp: str = "",
+    current_loadout_fp: str | None = None,
+) -> str | None:
+    """Clear last_suggestion.json when workflow or fingerprint drift is detected."""
+    if not LAST_SUGGESTION_PATH.exists():
+        return None
+
+    reason = clear_stale_last_suggestion_if_workflow_changed(run_state_extras)
+    if reason:
+        return f"Played word since F8 ({reason})"
+
+    fp_reason = clear_stale_last_suggestion_if_fingerprint_changed(
+        current_board_fp,
+        current_loadout_fp=current_loadout_fp,
+    )
+    if fp_reason:
+        return fp_reason
+
+    if clear_stale_last_suggestion_if_context_changed(
+        current_board_fp,
+        current_loadout_fp=current_loadout_fp,
+        run_state_extras=run_state_extras,
+    ):
+        return "loadout or scoring extras changed on same board"
+
+    return None
+
+
 def clear_stale_last_suggestion_if_context_changed(
     current_board_fp: str,
     *,
@@ -127,22 +260,16 @@ def clear_stale_last_suggestion_if_context_changed(
     if current_loadout and previous_loadout and previous_loadout != current_loadout:
         return clear_last_suggestion()
 
-    snapshot = data.get("run_state_snapshot")
-    snapshot_extras: dict[str, Any] = {}
-    if isinstance(snapshot, dict):
-        raw = snapshot.get("extras")
-        if isinstance(raw, dict):
-            snapshot_extras = raw
+    snapshot_extras = _f8_snapshot_extras(data)
     extras = run_state_extras if isinstance(run_state_extras, dict) else {}
-    for key in ("bicycle_word_score_bonus", "cards_submitted", "previous_word_first_letter"):
+    if workflow_stale_vs_f8_snapshot(extras, snapshot_extras):
+        return clear_last_suggestion()
+
+    for key in ("bicycle_word_score_bonus", "cards_submitted"):
         prev = str(snapshot_extras.get(key, "") or "").strip()
         cur = str(extras.get(key, "") or "").strip()
         if prev and cur and prev != cur:
             return clear_last_suggestion()
-    prev_dna = str(snapshot_extras.get("mutating_dna_letter_counts", "") or "").strip()
-    cur_dna = str(extras.get("mutating_dna_letter_counts", "") or "").strip()
-    if prev_dna and cur_dna and not _mutating_dna_letter_counts_equal(prev_dna, cur_dna):
-        return clear_last_suggestion()
     return False
 
 

@@ -6,10 +6,13 @@ import json
 from pathlib import Path
 
 from cursed_words_solver.suggestion import (
+    _historic_words_count,
     _mutating_dna_letter_counts_equal,
     clear_stale_last_suggestion_if_context_changed,
     clear_stale_last_suggestion_if_loadout_changed,
+    clear_stale_last_suggestion_if_workflow_changed,
     stale_suggestion_warning,
+    workflow_stale_vs_f8_snapshot,
 )
 
 
@@ -42,27 +45,32 @@ def _stale_f8_extras_note(
     extras_diff: dict[str, dict[str, str]],
     *,
     per_card: int = 1,
+    has_bicycle_pin: bool = True,
+    has_mutating_dna_stamp: bool = True,
 ) -> str | None:
     """Mirror melmod ExtrasDiffHelper stale-key rules (post fix)."""
     notes: list[str] = []
-    for key in ("cards_submitted", "bicycle_word_score_bonus"):
-        entry = extras_diff.get(key)
-        if not entry:
-            continue
-        f8_raw = str(entry.get("f8", "") or "")
-        submit_raw = str(entry.get("submit", "") or "")
-        try:
-            f8_val = int(f8_raw)
-            submit_val = int(submit_raw)
-        except ValueError:
-            if not f8_raw and submit_raw:
-                notes.append(f"{key} f8=(empty) submit={submit_raw}")
-            continue
-        if submit_val > f8_val:
-            if not _is_same_submit_bicycle_increment(
-                extras_diff, submit_val - f8_val, per_card=per_card
-            ):
-                notes.append(f"{key} f8={f8_val} submit={submit_val}")
+    if has_bicycle_pin:
+        for key in ("cards_submitted", "bicycle_word_score_bonus"):
+            entry = extras_diff.get(key)
+            if not entry:
+                continue
+            f8_raw = str(entry.get("f8", "") or "")
+            submit_raw = str(entry.get("submit", "") or "")
+            try:
+                f8_val = int(f8_raw)
+                submit_val = int(submit_raw)
+            except ValueError:
+                if not f8_raw and submit_raw:
+                    notes.append(f"{key} f8=(empty) submit={submit_raw}")
+                elif f8_raw and not submit_raw:
+                    notes.append(f"{key} f8={f8_raw} submit=(empty)")
+                continue
+            if submit_val > f8_val:
+                if not _is_same_submit_bicycle_increment(
+                    extras_diff, submit_val - f8_val, per_card=per_card
+                ):
+                    notes.append(f"{key} f8={f8_val} submit={submit_val}")
 
     if entry := extras_diff.get("historic_words"):
         f8_raw = str(entry.get("f8", "") or "").strip()
@@ -70,11 +78,12 @@ def _stale_f8_extras_note(
         if f8_raw != submit_raw and (f8_raw or submit_raw):
             notes.append("historic_words changed")
 
-    if entry := extras_diff.get("mutating_dna_letter_counts"):
-        f8_raw = str(entry.get("f8", "") or "")
-        submit_raw = str(entry.get("submit", "") or "")
-        if not _mutating_dna_letter_counts_equal(f8_raw, submit_raw):
-            notes.append("mutating_dna_letter_counts changed")
+    if has_mutating_dna_stamp:
+        if entry := extras_diff.get("mutating_dna_letter_counts"):
+            f8_raw = str(entry.get("f8", "") or "")
+            submit_raw = str(entry.get("submit", "") or "")
+            if not _mutating_dna_letter_counts_equal(f8_raw, submit_raw):
+                notes.append("mutating_dna_letter_counts changed")
 
     if entry := extras_diff.get("previous_word_first_letter"):
         f8_raw = str(entry.get("f8", "") or "").strip()
@@ -349,3 +358,207 @@ def test_stale_f8_mirror_bicycle_per_card_one_delta_two_still_stale():
     )
     assert note is not None
     assert "cards_submitted f8=39 submit=41" in note
+
+
+def test_stale_f8_bicycle_keys_ignored_without_bicycle_pin():
+    note = _stale_f8_extras_note(
+        {
+            "cards_submitted": {"f8": "203", "submit": ""},
+            "bicycle_word_score_bonus": {"f8": "203", "submit": ""},
+        },
+        has_bicycle_pin=False,
+    )
+    assert note is None
+
+
+def test_stale_f8_mutating_dna_ignored_without_stamp():
+    note = _stale_f8_extras_note(
+        {
+            "mutating_dna_letter_counts": {
+                "f8": '{"a":99}',
+                "submit": "{}",
+            }
+        },
+        has_mutating_dna_stamp=False,
+    )
+    assert note is None
+
+
+def test_stale_f8_workflow_drift_still_detected_without_bicycle_pin():
+    note = _stale_f8_extras_note(
+        {
+            "historic_words": {"f8": "", "submit": '[{"word":"foo"}]'},
+            "previous_word_first_letter": {"f8": "y", "submit": "f"},
+        },
+        has_bicycle_pin=False,
+        has_mutating_dna_stamp=False,
+    )
+    assert note is not None
+    assert "historic_words changed" in note
+    assert "previous_word_first_letter f8='y' submit='f'" in note
+
+
+def test_sanitize_run_state_snapshot_strips_stale_bicycle_for_bucket_pin():
+    from cursed_words_solver.loadout import sanitize_run_state_snapshot_for_f8
+    from cursed_words_solver.models import Loadout
+
+    loadout = Loadout(
+        character="Octacles",
+        stickers=[],
+        stamps=[],
+        extras={"pin_effect": "bucket"},
+    )
+    run_state = {
+        "extras": {
+            "bicycle_word_score_bonus": "203",
+            "cards_submitted": "203",
+            "pin_effect": "bucket",
+            "previous_word_first_letter": "f",
+        }
+    }
+    cleaned = sanitize_run_state_snapshot_for_f8(run_state, loadout)
+    assert cleaned is not None
+    extras = cleaned["extras"]
+    assert "bicycle_word_score_bonus" not in extras
+    assert "cards_submitted" not in extras
+    assert extras["previous_word_first_letter"] == "f"
+
+
+def test_historic_words_count_edge_cases():
+    assert _historic_words_count("") == 0
+    assert _historic_words_count("[]") == 0
+    assert _historic_words_count('[{"word":"a"}]') == 1
+    assert _historic_words_count("not json") == 0
+
+
+def test_workflow_stale_reason_string():
+    reason = workflow_stale_vs_f8_snapshot(
+        {"previous_word_first_letter": "f", "historic_words": '[{"word":"x"}]'},
+        {"previous_word_first_letter": "s", "historic_words": "[]"},
+    )
+    assert reason is not None
+    assert "previous word letter s→f" in reason
+    assert "historic words changed (0→1)" in reason
+
+
+def test_workflow_stale_when_historic_count_increases():
+    hist_f8 = '[{"word":"a"},{"word":"b"}]'
+    hist_cur = '[{"word":"a"},{"word":"b"},{"word":"c"}]'
+    reason = workflow_stale_vs_f8_snapshot(
+        {"historic_words": hist_cur},
+        {"historic_words": hist_f8},
+    )
+    assert reason is not None
+    assert "historic words changed (2→3)" in reason
+
+
+def test_workflow_stale_when_historic_same_count_content_differs():
+    hist_f8 = '[{"word":"nek"},{"word":"not"}]'
+    hist_cur = '[{"word":"nek"},{"word":"effs"}]'
+    reason = workflow_stale_vs_f8_snapshot(
+        {"historic_words": hist_cur},
+        {"historic_words": hist_f8},
+    )
+    assert reason is not None
+    assert "historic words changed" in reason
+    assert "(2→3)" not in reason
+
+
+def test_clear_when_historic_count_increases_reason(tmp_path, monkeypatch):
+    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
+    hist_f8 = '[{"word":"a"},{"word":"b"}]'
+    hist_cur = '[{"word":"a"},{"word":"b"},{"word":"c"}]'
+    suggestion_path.write_text(
+        json.dumps(
+            {
+                "board_fingerprint": "board-a",
+                "run_state_snapshot": {
+                    "extras": {"historic_words": hist_f8},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    reason = clear_stale_last_suggestion_if_workflow_changed(
+        {"historic_words": hist_cur}
+    )
+    assert reason is not None
+    assert "historic words changed (2→3)" in reason
+    assert not suggestion_path.exists()
+
+
+def test_clear_when_historic_words_grows(tmp_path, monkeypatch):
+    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
+    suggestion_path.write_text(
+        json.dumps(
+            {
+                "board_fingerprint": "board-a",
+                "run_state_snapshot": {
+                    "extras": {
+                        "historic_words": '[{"word":"a"},{"word":"b"},{"word":"c"}]',
+                        "previous_word_first_letter": "s",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    reason = clear_stale_last_suggestion_if_workflow_changed(
+        {
+            "historic_words": '[{"word":"a"},{"word":"b"},{"word":"c"},{"word":"d"}]',
+            "previous_word_first_letter": "s",
+        }
+    )
+    assert reason is not None
+    assert "historic words changed (3→4)" in reason
+    assert not suggestion_path.exists()
+
+
+def test_clear_when_prev_letter_changes(tmp_path, monkeypatch):
+    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
+    suggestion_path.write_text(
+        json.dumps(
+            {
+                "board_fingerprint": "board-a",
+                "run_state_snapshot": {
+                    "extras": {"previous_word_first_letter": "s"}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    reason = clear_stale_last_suggestion_if_workflow_changed(
+        {"previous_word_first_letter": "f"}
+    )
+    assert reason is not None
+    assert "previous word letter s→f" in reason
+    assert not suggestion_path.exists()
+
+
+def test_no_clear_when_historic_unchanged(tmp_path, monkeypatch):
+    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
+    historic = '[{"word":"a"},{"word":"b"}]'
+    suggestion_path.write_text(
+        json.dumps(
+            {
+                "board_fingerprint": "board-a",
+                "run_state_snapshot": {
+                    "extras": {
+                        "historic_words": historic,
+                        "previous_word_first_letter": "s",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert (
+        clear_stale_last_suggestion_if_workflow_changed(
+            {
+                "historic_words": historic,
+                "previous_word_first_letter": "s",
+            }
+        )
+        is None
+    )
+    assert suggestion_path.exists()

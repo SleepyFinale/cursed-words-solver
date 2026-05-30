@@ -64,7 +64,10 @@ namespace CursedWordsSolverCompanion
 
             var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(suggestion.run_state_snapshot);
             var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, extrasSnapshot);
-            var staleNote = ExtrasDiffHelper.DescribeStaleF8Extras(extrasDiff);
+            var staleCtx = submitPlayer != null
+                ? RunStateExporter.BuildStaleF8Context(submitPlayer)
+                : StaleF8Context.Default();
+            var staleNote = ExtrasDiffHelper.DescribeStaleF8Extras(extrasDiff, staleCtx);
             if (!string.IsNullOrEmpty(staleNote))
             {
                 MelonLogger.Warning(staleNote);
@@ -79,7 +82,11 @@ namespace CursedWordsSolverCompanion
                 )
                 {
                     MelonLogger.Msg(
-                        "Scoring drift skipped (stale F8 snapshot — re-run F8 after your last word)"
+                        "Scoring drift skipped (stale F8): predicted "
+                            + predicted
+                            + ", actual "
+                            + actualScore
+                            + " — re-run F8 after your last word."
                     );
                     return;
                 }

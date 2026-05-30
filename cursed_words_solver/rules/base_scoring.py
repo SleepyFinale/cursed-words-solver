@@ -196,10 +196,12 @@ def tile_base_contribution(
             return 50
     if color == TileColor.VOID:
         if _is_melmod_tile(tile):
-            # packet.Score 0 on void letters/numbers/chess is pre-negation; wildcards stay 0.
+            # packet.Score 0 on void letters/numbers/chess is pre-negation;
+            # wildcards and currency stay 0 (melmod export is final for currency).
             if (
                 letter_base == 0
                 and tile.curse != CurseType.WILDCARD
+                and tile.curse != CurseType.CURRENCY
                 and not tile.metadata.get("is_joker")
             ):
                 letter_base = -abs(_void_face_value(tile, loadout))

@@ -120,6 +120,29 @@ def test_michael_finale_skips_boss_penalties_with_stale_modifiers() -> None:
     assert not any("per tile (boss)" in e for e in effects)
 
 
+def test_michael_puzzle_grid_stale_modifiers_25_tile_word() -> None:
+    """Regression: puzzle finale export clears yeti+whale even when boss_modifiers stale."""
+    board = _board()
+    loadout = Loadout(
+        boss_id="yeti_crab",
+        extras={
+            "boss_modifiers": ["yeti_crab", "toothed_whale"],
+            "boss_modifier_floor_mods": '{"yeti_crab": 4, "toothed_whale": 160}',
+            "michael_puzzle_grid": True,
+            "michael_min_word_length": 25,
+            "encounter_mode": "puzzle",
+        },
+    )
+    assert michael_finale_active(loadout, default_max_len=25)
+    assert active_boss_ids(loadout) == []
+    c = boss_word_constraints(loadout, RULES, default_max_len=25)
+    assert c.min_len == 25
+    assert c.max_len == 25
+    name = boss_display_name(loadout, RULES)
+    assert "Yeti Crab" not in name
+    assert "Toothed Whale" not in name
+
+
 def test_michael_finale_skips_boss_penalties() -> None:
     board = _board()
     loadout = Loadout(

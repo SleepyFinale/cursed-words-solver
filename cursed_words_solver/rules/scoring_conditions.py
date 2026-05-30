@@ -2143,15 +2143,6 @@ def unique_colour_count_on_path(board: Board, path: list[int]) -> int:
     return len(unique_colours_on_path(board, path))
 
 
-def distinct_curse_types_on_path(board: Board, path: list[int]) -> int:
-    types = {
-        curse_type_key(board.get_by_index(idx))
-        for idx in path
-        if is_cursed_tile(board.get_by_index(idx))
-    }
-    return len(types)
-
-
 _ODEN_CURSE_CATEGORIES: dict[CurseType, str] = {
     CurseType.WILDCARD: "wildcard",
     CurseType.BLANK: "wildcard",
@@ -2169,11 +2160,20 @@ _ODEN_CURSE_CATEGORIES: dict[CurseType, str] = {
 }
 
 
+def _oden_category_for_tile(tile: Tile) -> str | None:
+    """Single Oden bucket for a tile (wiki: joker wilds are Cards, other ? are Wild Tiles)."""
+    if tile.curse in (CurseType.WILDCARD, CurseType.BLANK):
+        if is_joker_tile(tile) or card_suit(tile) == "joker":
+            return "card"
+        return "wildcard"
+    return _ODEN_CURSE_CATEGORIES.get(tile.curse)
+
+
 def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
     """Distinct Oden curse categories on the path (wiki buckets, not per-piece chess)."""
     categories: set[str] = set()
     for idx in path:
-        category = _ODEN_CURSE_CATEGORIES.get(board.get_by_index(idx).curse)
+        category = _oden_category_for_tile(board.get_by_index(idx))
         if category:
             categories.add(category)
     return len(categories)
@@ -2499,7 +2499,7 @@ def _evaluate_sticker_condition(
             n = int(condition.split(":", 1)[1])
         except (ValueError, IndexError):
             return False
-        return distinct_curse_types_on_path(board, path) >= n
+        return unique_curse_type_count_on_path(board, path) >= n
     if condition.startswith("distinct_card_suits_gte:"):
         try:
             n = int(condition.split(":", 1)[1])

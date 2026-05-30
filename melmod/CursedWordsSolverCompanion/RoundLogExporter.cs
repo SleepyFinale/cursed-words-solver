@@ -172,7 +172,10 @@ namespace CursedWordsSolverCompanion
                     ctx.Suggestion.run_state_snapshot
                 );
                 var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, ctx.ScoringExtras);
-                if (ExtrasDiffHelper.HasStaleF8ExtrasDrift(extrasDiff))
+                var staleCtx = RunStateExporter.BuildStaleF8Context(
+                    RunStateExporter.GetPlayerForUpdate()
+                );
+                if (ExtrasDiffHelper.HasStaleF8ExtrasDrift(extrasDiff, staleCtx))
                     return "stale_f8_extras";
                 return "score_mismatch";
             }
@@ -296,6 +299,19 @@ namespace CursedWordsSolverCompanion
                 ctx.Suggestion != null && !boardFingerprintMatches;
             var staleF8Extras = matchStatus == "stale_f8_extras";
 
+            string staleF8Reason = null;
+            if (ctx.Suggestion != null && ctx.ScoringExtras != null)
+            {
+                var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                    ctx.Suggestion.run_state_snapshot
+                );
+                var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, ctx.ScoringExtras);
+                var staleCtx = RunStateExporter.BuildStaleF8Context(
+                    RunStateExporter.GetPlayerForUpdate()
+                );
+                staleF8Reason = ExtrasDiffHelper.DescribeStaleF8Extras(extrasDiff, staleCtx);
+            }
+
             return new Dictionary<string, object>
             {
                 ["score_delta"] = ctx.ActualScore - predicted,
@@ -303,6 +319,7 @@ namespace CursedWordsSolverCompanion
                 ["board_fingerprint_matches_suggestion"] = boardFingerprintMatches,
                 ["stale_suggestion"] = staleSuggestion || staleF8Extras,
                 ["stale_f8_extras"] = staleF8Extras,
+                ["stale_f8_reason"] = staleF8Reason ?? "",
                 ["capture_active"] = ctx.CaptureActive,
                 ["match_status"] = matchStatus,
             };

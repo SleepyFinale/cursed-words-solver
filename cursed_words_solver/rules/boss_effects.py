@@ -78,6 +78,10 @@ def michael_summoned_bosses_defeated(loadout: Loadout) -> bool:
     return _extra_bool(loadout, "michael_summoned_bosses_defeated")
 
 
+def michael_puzzle_grid_active(loadout: Loadout) -> bool:
+    return _extra_bool(loadout, "michael_puzzle_grid")
+
+
 def _michael_min_word_length_value(loadout: Loadout) -> int:
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
     michael_min = 0
@@ -113,7 +117,12 @@ def _parse_boss_modifier_ids(loadout: Loadout) -> list[str]:
 
 def michael_finale_active(loadout: Loadout, *, default_max_len: int = 0) -> bool:
     """Michael phase 4 / wordsmith finale: no stacked draft bosses, 25-tile word."""
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
     if michael_summoned_bosses_defeated(loadout):
+        return True
+    if michael_puzzle_grid_active(loadout):
+        return True
+    if str(extras.get("encounter_mode") or "").strip().lower() == "puzzle":
         return True
     if _michael_phase_value(loadout) >= 4:
         return True
@@ -132,6 +141,10 @@ def michael_finale_active(loadout: Loadout, *, default_max_len: int = 0) -> bool
 
 def _michael_context(loadout: Loadout) -> bool:
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    if michael_puzzle_grid_active(loadout):
+        return True
+    if str(extras.get("encounter_mode") or "").strip().lower() == "puzzle":
+        return True
     boss_id = str(loadout.boss_id or "").strip().lower()
     boss_name = str(loadout.boss_name or "").strip().lower()
     if boss_id == "michael" or "michael" in boss_name:
