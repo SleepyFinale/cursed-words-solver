@@ -44,6 +44,22 @@ namespace CursedWordsSolverCompanion
             }
         }
 
+        /// <summary>
+        /// Remove last_suggestion.json after a word submit so the next scored word requires F8.
+        /// </summary>
+        public static void TryClearLastSuggestionAfterSubmit()
+        {
+            try
+            {
+                if (File.Exists(SuggestionFilePath))
+                    File.Delete(SuggestionFilePath);
+            }
+            catch
+            {
+                // best-effort
+            }
+        }
+
         public static bool PathsEqual(List<int> a, List<int> b)
         {
             if (a == null || b == null || a.Count != b.Count)
@@ -221,6 +237,17 @@ namespace CursedWordsSolverCompanion
 
             if (!boardMatches)
                 parts.Add("board_fingerprint differs (board changed since F8?)");
+
+            if (pathMatches && boardMatches && suggestion.run_state_snapshot != null)
+            {
+                var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                    suggestion.run_state_snapshot
+                );
+                var liveExtras = RunStateExporter.BuildExtrasSnapshot();
+                var stale = ExtrasDiffHelper.DescribeStaleF8LoadoutDrift(f8Extras, liveExtras);
+                if (!string.IsNullOrEmpty(stale))
+                    parts.Add(stale);
+            }
 
             if (!wordMatches && pathMatches && boardMatches)
             {

@@ -296,7 +296,7 @@ def test_bicycle_suited_cards_on_path():
 
 
 def test_bicycle_hadjees_multi_suit_same_rank_counts_tiles():
-    """Regression: hadjees path awards +1 per suited tile on path (3 suited tiles)."""
+    """Regression: hadjees — acc 5 + 2 unique suited ranks (H, E), not per-tile."""
     pipeline = ScoringPipeline()
     grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
     path: list[int] = []
@@ -322,8 +322,8 @@ def test_bicycle_hadjees_multi_suit_same_rank_counts_tiles():
         }
     )
     score, bd = pipeline.score(board, path, "hadjees", lo)
-    assert bd["pipeline"]["word_score"] == 8
-    assert int(score) == 25
+    assert bd["pipeline"]["word_score"] == 7
+    assert int(score) == 24
 
 
 def test_bicycle_ricinolic_single_suit_multi_rank_counts_one():
@@ -413,6 +413,54 @@ def test_bicycle_extras_ahead_of_stale_fingerprint_suffix():
     score, bd = pipeline.score(board, path, "snahq", lo)
     assert bd["pipeline"]["word_score"] == 39
     assert int(score) == 260
+
+
+def test_bicycle_stale_fingerprint_pre_word_acc_didder():
+    """Regression didder: extras=11, fingerprint|9, +1 suited, Peacock x2 → 42."""
+    pipeline = ScoringPipeline()
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    configs = [
+        (2, 4, "Y", 4, {"card_suit": "diamonds", "card_rank": "Y"}),
+        (3, 3, "I", 1, {}),
+        (2, 2, "T", 1, {"card_suit": "diamonds", "card_rank": "T"}),
+        (2, 1, "E", 1, {"card_suit": "diamonds", "card_rank": "E"}),
+        (0, 2, "E", 1, {}),
+        (1, 2, "R", 1, {}),
+    ]
+    path: list[int] = []
+    for row, col, ch, sc, meta in configs:
+        grid[row][col] = _tile(row, col, ch, sc, metadata=meta)
+        path.append(row * 5 + col)
+    board = Board(tiles=grid, money=9)
+    fp = (
+        "Bones The Dog|9|postal_horn:0,peacock:0|"
+        "martini:0,full_moon:0,card_shark:0|-|bicycle:left|9"
+    )
+    lo = Loadout(
+        character="Bones The Dog",
+        stickers=[
+            LoadoutItem(id="postal_horn", name="Postal Horn", level=1),
+            LoadoutItem(id="peacock", name="Peacock", level=1),
+        ],
+        stamps=[
+            LoadoutItem(id="martini", name="Martini", level=1),
+            LoadoutItem(id="full_moon", name="Full Moon", level=1),
+            LoadoutItem(id="card_shark", name="Card Shark", level=1),
+        ],
+        extras={
+            "pin_effect": "bicycle",
+            "pin_left_level": "4",
+            "pin_right_level": "1",
+            "pin_right_variable": "1",
+            "bicycle_word_score_bonus": "11",
+            "cards_submitted": "11",
+            "bicycle_suited_on_path": "1",
+            "loadout_fingerprint": fp,
+        },
+    )
+    score, bd = pipeline.score(board, path, "didder", lo)
+    assert bd["pipeline"]["word_score"] == 12
+    assert int(score) == 42
 
 
 def test_rewind_setup_does_not_cache_neapolitan_without_stamp():
@@ -544,3 +592,79 @@ def test_both_pin_tracks_independent_of_branch():
     )
     _, bd = pipeline.score(board, [0, 1], "aa", lo)
     assert bd["pipeline"]["word_score"] == 2  # +1 per suited card × 2 on path
+
+
+def test_bicycle_ashy_joker_multi_suit_scores_1100():
+    """Regression 20260530_005432: joker start + multi-suit path, ×20 mult stack."""
+    import json
+    from pathlib import Path
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+
+    fixture = (
+        Path(__file__).resolve().parents[0]
+        / "fixtures"
+        / "mismatches"
+        / "20260530_005432.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = data["run_state_snapshot"]
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = data["path"]
+    word = data["word"]
+
+    score, bd = ScoringPipeline().score(board, path, word, loadout)
+    assert bd["pipeline"]["word_score"] == 46.0
+    assert int(score) == 1100
+
+
+def test_bicycle_godsons_two_jokers_multi_suit_scores_1080():
+    """Regression 20260530_010221: two jokers + multi-suit path, ×20 mult stack."""
+    import json
+    from pathlib import Path
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+
+    fixture = (
+        Path(__file__).resolve().parents[0]
+        / "fixtures"
+        / "mismatches"
+        / "20260530_010221.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = data["run_state_snapshot"]
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = data["path"]
+    word = data["word"]
+
+    score, bd = ScoringPipeline().score(board, path, word, loadout)
+    assert bd["pipeline"]["word_score"] == 47.0
+    assert int(score) == 1080
+
+
+def test_bicycle_ass_joker_two_spades_scores_1980():
+    """Regression 20260530_010829: Wrestlers + mono-suit joker path, ×30 mult stack."""
+    import json
+    from pathlib import Path
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+
+    fixture = (
+        Path(__file__).resolve().parents[0]
+        / "fixtures"
+        / "mismatches"
+        / "20260530_010829.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = data["run_state_snapshot"]
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = data["path"]
+    word = data["word"]
+
+    score, bd = ScoringPipeline().score(board, path, word, loadout)
+    assert bd["pipeline"]["word_score"] == 55.0
+    assert int(score) == 1980
+    assert any("word_starts_ends_different_suit" in e for e in bd["pipeline"]["effects"])

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cursed_words_solver.models import Board, CurseType, Tile, TileColor
+from cursed_words_solver.models import Board, CurseType, Tile, TileColor, normalize_tile_glyph
 from cursed_words_solver.letter_values import SCRABBLE_VALUES
 
 if TYPE_CHECKING:
@@ -47,8 +47,87 @@ def _void_penalty_steps_for_tile(tile: Tile, loadout: Loadout | None) -> int:
     return 1
 
 
+def _axolotl_in_boss_modifiers(loadout: Loadout) -> bool:
+    """True when axolotl is an active stacked boss (not mole floor-mod alone)."""
+    if loadout.boss_id == "axolotl":
+        return True
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    raw = extras.get("boss_modifiers")
+    mods: list[str] = []
+    if isinstance(raw, list):
+        mods = [str(entry or "").strip().lower() for entry in raw]
+    elif isinstance(raw, str) and raw.strip():
+        import json
+
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                mods = [str(entry or "").strip().lower() for entry in parsed]
+        except json.JSONDecodeError:
+            mods = [s.strip().lower() for s in raw.split(",") if s.strip()]
+    return "axolotl" in mods
+
+
+def _axolotl_floor_modification(loadout: Loadout) -> int | None:
+    from cursed_words_solver.rules.boss_effects import _parse_boss_modifier_floor_mods
+
+    floor_mods = _parse_boss_modifier_floor_mods(loadout)
+    if "axolotl" in floor_mods:
+        return floor_mods["axolotl"]
+    if loadout.boss_id == "axolotl":
+        extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+        raw = extras.get("boss_floor_modification")
+        if raw not in (None, ""):
+            try:
+                return max(0, int(raw))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _void_currency_face_value(tile: Tile, loadout: Loadout | None = None) -> int:
+    """Void currency penalty magnitude (melmod packet.Score is 0 pre-negation)."""
+    from cursed_words_solver.rules.scoring_conditions import (
+        currency_letter_value,
+        grid_number,
+    )
+
+    cv = currency_letter_value(tile)
+    if loadout is not None and _axolotl_in_boss_modifiers(loadout):
+        floor_mod = _axolotl_floor_modification(loadout)
+        if floor_mod is not None:
+            grid = grid_number(loadout) or 1
+            scattered_level = max(1, grid - floor_mod)
+            extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+            raw_mods = extras.get("boss_modifiers")
+            boss_count = 1
+            if isinstance(raw_mods, list):
+                boss_count = len([m for m in raw_mods if str(m or "").strip()])
+            elif loadout.boss_id:
+                boss_count = 1
+            grid_ok = (1 < grid <= 3) or (
+                grid == 1 and boss_count > 1 and floor_mod >= grid
+            )
+            row_ok = tile.row < 3
+            if grid == 1 and boss_count > 1:
+                # top_first grid 1: bottom row (4) void currency also waived when stacked bosses.
+                row_ok = row_ok or tile.row > 3
+            if (
+                floor_mod >= grid
+                and scattered_level <= 1
+                and grid_ok
+                and row_ok
+            ):
+                return 0
+    if cv >= 3:
+        return 15
+    return 5 * max(3, cv + 1)
+
+
 def _void_face_value(tile: Tile, loadout: Loadout | None = None) -> int:
     """Magnitude to negate for void tiles when packet.Score is 0."""
+    if tile.curse == CurseType.CURRENCY:
+        return _void_currency_face_value(tile, loadout)
     if tile.curse == CurseType.NUMBER:
         if tile.number_value is not None:
             return tile.number_value

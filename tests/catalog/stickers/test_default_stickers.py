@@ -680,6 +680,21 @@ def test_yellow_glasses_no_double_across_chess_bishop():
     assert score == base
 
 
+def test_yellow_glasses_double_letter_currency_path_uses_word():
+    """Currency tiles hide path letters; double letters in the submitted word still count."""
+    board = _empty_board()
+    for col, glyph in enumerate(("₱", "₣", "₣", "₮")):
+        board.tiles[0][col] = _tile(0, col, glyph, 16, curse=CurseType.CURRENCY)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=3)]
+    )
+    score, bd = pipeline.score(board, [0, 1, 2, 3], "pfft", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2, 3], "pfft", Loadout())
+    assert bd["multiplier"] == 2.5
+    assert score == int(base * 2.5)
+
+
 def test_cherry_pie_grid_path_word_mult_before_additive_bonuses():
     """Scattered Cherry Pie ×WORD applies on tile sum before +WORD (e.g. Super 8)."""
     from cursed_words_solver.rules.scoring_conditions import grid_path_word_mult_is_immediate

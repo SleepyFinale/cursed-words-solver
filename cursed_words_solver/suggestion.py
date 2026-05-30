@@ -40,7 +40,7 @@ def stale_suggestion_warning(
     *,
     current_loadout_fp: str | None = None,
 ) -> str | None:
-    """Return a startup note when last F8 was for a different board or run."""
+    """Return a startup note when last F8 was for a different board or run context."""
     current = (current_board_fp or "").strip()
     if not current or not LAST_SUGGESTION_PATH.exists():
         return None
@@ -49,10 +49,17 @@ def stale_suggestion_warning(
     except (json.JSONDecodeError, OSError):
         return None
     previous_board = str(data.get("board_fingerprint") or "").strip()
-    if not previous_board or previous_board == current:
-        return None
     loadout = (current_loadout_fp or "").strip()
     previous_loadout = str(data.get("loadout_fingerprint") or "").strip()
+    if previous_board and previous_board == current:
+        if loadout and previous_loadout and previous_loadout != loadout:
+            return (
+                "Note: loadout changed since last F8 (e.g. Bicycle acc) — "
+                "press F8 again before submitting."
+            )
+        return None
+    if not previous_board:
+        return None
     if loadout and previous_loadout and previous_loadout != loadout:
         return (
             "Note: last F8 was for a different run — "
@@ -62,6 +69,81 @@ def stale_suggestion_warning(
         "Note: board changed since last F8 — "
         "press F8 again before submitting."
     )
+
+
+def _last_suggestion_fingerprint_data() -> dict[str, Any] | None:
+    if not LAST_SUGGESTION_PATH.exists():
+        return None
+    try:
+        data = json.loads(LAST_SUGGESTION_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _mutating_dna_letter_counts_equal(previous: str, current: str) -> bool:
+    """True when JSON letter-count maps match (key order ignored)."""
+    prev = (previous or "").strip() or "{}"
+    cur = (current or "").strip() or "{}"
+    if prev == cur:
+        return True
+    try:
+        prev_obj = json.loads(prev)
+        cur_obj = json.loads(cur)
+    except (json.JSONDecodeError, TypeError):
+        return prev == cur
+    if not isinstance(prev_obj, dict) or not isinstance(cur_obj, dict):
+        return prev == cur
+    prev_norm = {
+        str(k).lower(): int(v)
+        for k, v in prev_obj.items()
+        if str(k).strip()
+    }
+    cur_norm = {
+        str(k).lower(): int(v)
+        for k, v in cur_obj.items()
+        if str(k).strip()
+    }
+    return prev_norm == cur_norm
+
+
+def clear_stale_last_suggestion_if_context_changed(
+    current_board_fp: str,
+    *,
+    current_loadout_fp: str | None = None,
+    run_state_extras: dict[str, Any] | None = None,
+) -> bool:
+    """Remove last_suggestion.json when board/loadout/extras drift on the same board."""
+    data = _last_suggestion_fingerprint_data()
+    if data is None:
+        return False
+    previous_board = str(data.get("board_fingerprint") or "").strip()
+    current_board = (current_board_fp or "").strip()
+    if not previous_board or not current_board or previous_board != current_board:
+        return False
+
+    previous_loadout = str(data.get("loadout_fingerprint") or "").strip()
+    current_loadout = (current_loadout_fp or "").strip()
+    if current_loadout and previous_loadout and previous_loadout != current_loadout:
+        return clear_last_suggestion()
+
+    snapshot = data.get("run_state_snapshot")
+    snapshot_extras: dict[str, Any] = {}
+    if isinstance(snapshot, dict):
+        raw = snapshot.get("extras")
+        if isinstance(raw, dict):
+            snapshot_extras = raw
+    extras = run_state_extras if isinstance(run_state_extras, dict) else {}
+    for key in ("bicycle_word_score_bonus", "cards_submitted", "previous_word_first_letter"):
+        prev = str(snapshot_extras.get(key, "") or "").strip()
+        cur = str(extras.get(key, "") or "").strip()
+        if prev and cur and prev != cur:
+            return clear_last_suggestion()
+    prev_dna = str(snapshot_extras.get("mutating_dna_letter_counts", "") or "").strip()
+    cur_dna = str(extras.get("mutating_dna_letter_counts", "") or "").strip()
+    if prev_dna and cur_dna and not _mutating_dna_letter_counts_equal(prev_dna, cur_dna):
+        return clear_last_suggestion()
+    return False
 
 
 def clear_last_suggestion() -> bool:

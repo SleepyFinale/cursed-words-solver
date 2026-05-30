@@ -13,7 +13,7 @@ from cursed_words_solver.rules.boss_effects import (
     boss_is_cursed,
     boss_rule_applies,
     get_active_boss_rules,
-    michael_summoned_bosses_defeated,
+    michael_finale_active,
     resolve_boss_scaling,
     resolve_boss_scaling_for_rule,
 )
@@ -183,7 +183,7 @@ def apply_boss_grid_mutations(
     if not loadout or not active_boss_ids(loadout):
         if not loadout or not (loadout.boss_id or loadout.boss_name):
             return board
-    if michael_summoned_bosses_defeated(loadout):
+    if michael_finale_active(loadout):
         return board
     if str(loadout.extras.get("board_from_melmod", "")).lower() in ("1", "true"):
         return board

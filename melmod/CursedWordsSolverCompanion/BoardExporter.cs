@@ -162,32 +162,46 @@ namespace CursedWordsSolverCompanion
         /// </summary>
         public static bool TileHasSuitedCard(Tile tile)
         {
-            return !string.IsNullOrEmpty(MapCardSuit(tile));
+            return !string.IsNullOrEmpty(MapCardSuitStrict(tile));
         }
 
         /// <summary>
-        /// Bicycle suited credit on path: unique suits when at most one suit, else unique ranks.
+        /// Bicycle suited credit on path: 1 when at most one suit, else unique suited card ranks.
         /// </summary>
         public static int CountSuitedCardsOnSelections(List<TileSelection> selections)
         {
             if (selections == null)
                 return 0;
 
-            var suitedCount = 0;
+            var valid = new List<TileSelection>();
             foreach (var sel in selections)
             {
-                if (sel?.SelectedTile == null)
-                    continue;
-                var tile = sel.SelectedTile;
-                var suit = MapCardSuit(tile);
+                if (sel?.SelectedTile != null)
+                    valid.Add(sel);
+            }
+            if (valid.Count == 0)
+                return 0;
+
+            var suits = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var ranks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var jokerNotAtEnd = false;
+            var suitedTileCount = 0;
+            var nonJokerSuited = 0;
+
+            for (var i = 0; i < valid.Count; i++)
+            {
+                var tile = valid[i].SelectedTile;
+                var isPathEnd = i == valid.Count - 1;
+                var isJoker = false;
+                var suit = MapCardSuitStrict(tile);
                 if (string.IsNullOrEmpty(suit))
                 {
-                    // Bicycle counts any `CardSuit != 0` tile; jokers may not expose a suit,
-                    // but still count as suited credit.
                     try
                     {
                         var glyph = tile.GetGlyphType();
-                        if (!IsJokerGlyph(glyph) && !MapIsJoker(tile, glyph))
+                        if (IsJokerGlyph(glyph) || MapIsJoker(tile, glyph))
+                            isJoker = true;
+                        else
                             continue;
                     }
                     catch
@@ -195,9 +209,36 @@ namespace CursedWordsSolverCompanion
                         continue;
                     }
                 }
-                suitedCount += 1;
+                else if (string.Equals(suit, "joker", StringComparison.OrdinalIgnoreCase))
+                {
+                    isJoker = true;
+                }
+                else
+                {
+                    suits.Add(suit);
+                    nonJokerSuited++;
+                    var rank = MapCardRank(tile, null);
+                    if (!string.IsNullOrEmpty(rank))
+                        ranks.Add(rank.Substring(0, 1).ToUpperInvariant());
+                }
+
+                if (isJoker && !isPathEnd)
+                    jokerNotAtEnd = true;
+                if (isJoker && isPathEnd)
+                    continue;
+
+                suitedTileCount++;
             }
-            return suitedCount;
+
+            if (suitedTileCount == 0)
+                return 0;
+            if (jokerNotAtEnd && nonJokerSuited >= 2)
+                return suitedTileCount;
+            if (suits.Count <= 1)
+                return 1;
+            if (jokerNotAtEnd)
+                return suitedTileCount;
+            return ranks.Count > 0 ? ranks.Count : suits.Count;
         }
 
         /// <summary>
@@ -217,7 +258,7 @@ namespace CursedWordsSolverCompanion
                     continue;
 
                 var tile = sel.SelectedTile;
-                var suit = MapCardSuit(tile);
+                var suit = MapCardSuitStrict(tile);
                 if (string.IsNullOrEmpty(suit))
                     continue;
 
@@ -700,7 +741,7 @@ namespace CursedWordsSolverCompanion
                 snap.letter = "?";
             }
 
-            var cardSuit = MapCardSuit(tile);
+            var cardSuit = MapCardSuitStrict(tile);
             if (cardSuit == "joker")
             {
                 // Void letter tiles can mis-read as Joker suit; game uses CardSuit == 0 for Hanafuda unused.
@@ -1295,7 +1336,11 @@ namespace CursedWordsSolverCompanion
             return MapTile(tile, row, col);
         }
 
-        private static string MapCardSuit(Tile tile)
+        /// <summary>
+        /// In-game CardSuit only (packet + GetCardSuit methods). Skips display/field
+        /// heuristics that false-positive on plain letter tiles (Bicycle/Hanafuda).
+        /// </summary>
+        private static string MapCardSuitStrict(Tile tile)
         {
             if (tile == null)
                 return "";
@@ -1303,6 +1348,14 @@ namespace CursedWordsSolverCompanion
             var fromPacket = TryMapCardSuitFromPacket(tile);
             if (!string.IsNullOrEmpty(fromPacket))
                 return fromPacket;
+
+            return TryMapCardSuitFromMethods(tile);
+        }
+
+        private static string TryMapCardSuitFromMethods(Tile tile)
+        {
+            if (tile == null)
+                return "";
 
             foreach (var methodName in new[]
             {
@@ -1328,6 +1381,18 @@ namespace CursedWordsSolverCompanion
                     // try next
                 }
             }
+
+            return "";
+        }
+
+        private static string MapCardSuit(Tile tile)
+        {
+            if (tile == null)
+                return "";
+
+            var strict = MapCardSuitStrict(tile);
+            if (!string.IsNullOrEmpty(strict))
+                return strict;
 
             foreach (var name in new[]
             {

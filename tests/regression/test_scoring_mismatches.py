@@ -238,6 +238,7 @@ def _adjust_neapolitan_percent_extras(run_state: dict, data: dict) -> None:
         text = str(best)
         extras["neapolitan_percent"] = text
         extras["neapolitan_percent_last_known"] = text
+        extras["neapolitan_percent_submit_final"] = "true"
         return
     if extras.get("neapolitan_percent"):
         return

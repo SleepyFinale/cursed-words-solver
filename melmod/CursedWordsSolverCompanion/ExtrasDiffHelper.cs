@@ -1,11 +1,260 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace CursedWordsSolverCompanion
 {
     public static class ExtrasDiffHelper
     {
+        private static readonly string[] StaleF8IntKeys =
+        {
+            "cards_submitted",
+            "bicycle_word_score_bonus",
+        };
+
+        private static readonly string[] StaleF8StringKeys =
+        {
+            "historic_words",
+            "mutating_dna_letter_counts",
+        };
+
+        /// <summary>
+        /// True when submit-time extras drifted from the F8 snapshot (workflow stale, not a solver bug).
+        /// </summary>
+        public static bool HasStaleF8ExtrasDrift(Dictionary<string, object> extrasDiff)
+        {
+            return !string.IsNullOrEmpty(DescribeStaleF8Extras(extrasDiff));
+        }
+
+        /// <summary>
+        /// Human-readable note when submit-time extras advanced past the F8 snapshot (e.g. Bicycle acc).
+        /// </summary>
+        public static string DescribeStaleF8Extras(Dictionary<string, object> extrasDiff)
+        {
+            if (extrasDiff == null || extrasDiff.Count == 0)
+                return null;
+
+            var notes = new List<string>();
+            foreach (var key in StaleF8IntKeys)
+            {
+                TryAddStaleIntDriftNote(extrasDiff, key, notes, requireSubmitHigher: true);
+            }
+
+            foreach (var key in StaleF8StringKeys)
+            {
+                TryAddStaleStringDriftNote(extrasDiff, key, notes);
+            }
+
+            if (extrasDiff.TryGetValue("previous_word_first_letter", out var letterRaw))
+            {
+                var letterEntry = letterRaw as Dictionary<string, string>;
+                if (letterEntry != null)
+                {
+                    string f8Letter;
+                    string submitLetter;
+                    letterEntry.TryGetValue("f8", out f8Letter);
+                    letterEntry.TryGetValue("submit", out submitLetter);
+                    f8Letter = (f8Letter ?? "").Trim();
+                    submitLetter = (submitLetter ?? "").Trim();
+                    if (
+                        !string.IsNullOrEmpty(f8Letter)
+                        && !string.IsNullOrEmpty(submitLetter)
+                        && !string.Equals(f8Letter, submitLetter, StringComparison.OrdinalIgnoreCase)
+                    )
+                        notes.Add(
+                            "previous_word_first_letter f8='"
+                                + f8Letter
+                                + "' submit='"
+                                + submitLetter
+                                + "'"
+                        );
+                }
+            }
+
+            if (notes.Count == 0)
+                return null;
+
+            var sb = new StringBuilder();
+            sb.Append(
+                "F8 snapshot stale — re-run F8 after your last word before trusting predicted scores ("
+            );
+            sb.Append(string.Join("; ", notes.ToArray()));
+            sb.Append(")");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Compare F8 snapshot extras to live export (Bicycle acc, previous word letter).
+        /// </summary>
+        public static string DescribeStaleF8LoadoutDrift(
+            Dictionary<string, string> f8Extras,
+            Dictionary<string, string> liveExtras
+        )
+        {
+            if (f8Extras == null || liveExtras == null)
+                return null;
+
+            var diff = DiffExtras(f8Extras, liveExtras);
+            return DescribeStaleF8Extras(diff);
+        }
+
+        private static void TryAddStaleIntDriftNote(
+            Dictionary<string, object> extrasDiff,
+            string key,
+            List<string> notes,
+            bool requireSubmitHigher
+        )
+        {
+            if (!extrasDiff.TryGetValue(key, out var raw))
+                return;
+            var entry = raw as Dictionary<string, string>;
+            if (entry == null)
+                return;
+            string f8Raw;
+            string submitRaw;
+            entry.TryGetValue("f8", out f8Raw);
+            entry.TryGetValue("submit", out submitRaw);
+            f8Raw = f8Raw ?? "";
+            submitRaw = submitRaw ?? "";
+            int f8Val;
+            int submitVal;
+            if (!int.TryParse(f8Raw, out f8Val) || !int.TryParse(submitRaw, out submitVal))
+            {
+                if (string.IsNullOrEmpty(f8Raw) && !string.IsNullOrEmpty(submitRaw))
+                    notes.Add(key + " f8=(empty) submit=" + submitRaw);
+                else if (!string.IsNullOrEmpty(f8Raw) && string.IsNullOrEmpty(submitRaw))
+                    notes.Add(key + " f8=" + f8Raw + " submit=(empty)");
+                return;
+            }
+            if (requireSubmitHigher)
+            {
+                if (submitVal > f8Val)
+                {
+                    if (!IsSameSubmitBicycleIncrement(extrasDiff, submitVal - f8Val))
+                        notes.Add(key + " f8=" + f8Val + " submit=" + submitVal);
+                }
+            }
+            else if (submitVal != f8Val)
+            {
+                notes.Add(key + " f8=" + f8Val + " submit=" + submitVal);
+            }
+        }
+
+        /// <summary>
+        /// Post-word pin increment on this submit equals suited cards — not workflow drift.
+        /// </summary>
+        private static bool IsSameSubmitBicycleIncrement(
+            Dictionary<string, object> extrasDiff,
+            int delta
+        )
+        {
+            if (delta <= 0 || extrasDiff == null)
+                return false;
+
+            var perCard = RunStateExporter.TryGetBicyclePerCardRate();
+            if (perCard <= 0)
+                perCard = 1;
+
+            var suited = 0;
+            object raw;
+            if (extrasDiff.TryGetValue("bicycle_suited_on_path", out raw))
+            {
+                var entry = raw as Dictionary<string, string>;
+                if (entry != null)
+                {
+                    string submitRaw;
+                    entry.TryGetValue("submit", out submitRaw);
+                    int.TryParse(submitRaw ?? "", out suited);
+                }
+            }
+
+            if (suited <= 0)
+                return false;
+
+            return delta == suited * perCard;
+        }
+
+        private static void TryAddStaleStringDriftNote(
+            Dictionary<string, object> extrasDiff,
+            string key,
+            List<string> notes
+        )
+        {
+            if (!extrasDiff.TryGetValue(key, out var raw))
+                return;
+            var entry = raw as Dictionary<string, string>;
+            if (entry == null)
+                return;
+            string f8Raw;
+            string submitRaw;
+            entry.TryGetValue("f8", out f8Raw);
+            entry.TryGetValue("submit", out submitRaw);
+            f8Raw = (f8Raw ?? "").Trim();
+            submitRaw = (submitRaw ?? "").Trim();
+            if (string.Equals(f8Raw, submitRaw, StringComparison.Ordinal))
+                return;
+            if (string.IsNullOrEmpty(f8Raw) && string.IsNullOrEmpty(submitRaw))
+                return;
+            if (key == "historic_words")
+            {
+                notes.Add("historic_words changed");
+                return;
+            }
+            if (key == "mutating_dna_letter_counts")
+            {
+                if (!MutatingDnaLetterCountsEqual(f8Raw, submitRaw))
+                    notes.Add("mutating_dna_letter_counts changed");
+                return;
+            }
+            notes.Add(key + " changed");
+        }
+
+        public static bool MutatingDnaLetterCountsEqual(string f8Raw, string submitRaw)
+        {
+            var f8Counts = ParseLetterCountMap(f8Raw);
+            var submitCounts = ParseLetterCountMap(submitRaw);
+            if (f8Counts == null || submitCounts == null)
+                return string.Equals(f8Raw ?? "", submitRaw ?? "", StringComparison.Ordinal);
+
+            if (f8Counts.Count != submitCounts.Count)
+                return false;
+
+            foreach (var kv in f8Counts)
+            {
+                int submitVal;
+                if (!submitCounts.TryGetValue(kv.Key, out submitVal) || submitVal != kv.Value)
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static Dictionary<string, int> ParseLetterCountMap(string raw)
+        {
+            raw = (raw ?? "").Trim();
+            if (string.IsNullOrEmpty(raw) || raw == "{}")
+                return new Dictionary<string, int>();
+
+            try
+            {
+                var jobj = JObject.Parse(raw);
+                var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (var prop in jobj.Properties())
+                {
+                    int val;
+                    if (int.TryParse(prop.Value?.ToString(), out val))
+                        result[prop.Name.Trim().ToLowerInvariant()] = val;
+                }
+                return result;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         public static Dictionary<string, object> DiffExtras(
             Dictionary<string, string> before,
             Dictionary<string, string> after

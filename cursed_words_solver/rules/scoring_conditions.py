@@ -36,6 +36,15 @@ NON_COLOUR_FOR_NUMBER_BONUS = frozenset(
     }
 )
 
+NON_COLOUR_FOR_NEAPOLITAN = frozenset(
+    {
+        TileColor.COLORLESS,
+        TileColor.UNKNOWN,
+        TileColor.WHITE,
+        TileColor.VOID,
+    }
+)
+
 VOWELS = frozenset("aeiou")
 VWXYZ = frozenset("vwxyz")
 RED_NOTES = frozenset("abcdefg")
@@ -508,6 +517,29 @@ def _first_last_suited_path_positions(
     return first, last
 
 
+def _first_last_different_suited_path_positions(
+    board: Board, path: list[int]
+) -> tuple[int, int] | None:
+    """First suited tile and last suited tile whose suit differs from the first."""
+    first: int | None = None
+    first_suit: str | None = None
+    last: int | None = None
+    for i, idx in enumerate(path):
+        tile = board.get_by_index(idx)
+        suit = _wrestlers_real_suit(tile)
+        if suit is None:
+            continue
+        if first is None:
+            first = i
+            first_suit = suit
+            continue
+        if suit != first_suit:
+            last = i
+    if first is None or last is None or first == last:
+        return None
+    return first, last
+
+
 def _wrestlers_letter_endpoints_qualify(
     board: Board, path: list[int], start: Tile, end: Tile
 ) -> bool:
@@ -558,17 +590,25 @@ def word_starts_ends_different_suit(board: Board, path: list[int]) -> bool:
     if start_suit and is_joker_tile(path_end):
         return True
 
-    # Joker at start: first/last non-joker suited tiles on the path (not path endpoints).
+    # Joker at start: proc when path end is suited and ≥2 non-joker suited tiles on path.
     if is_joker_tile(path_start):
-        endpoints = _first_last_suited_path_positions(board, path)
+        non_joker_suited = sum(
+            1
+            for idx in path
+            if _wrestlers_real_suit(board.get_by_index(idx)) is not None
+        )
+        if non_joker_suited < 2:
+            return False
+        if end_suit is not None:
+            return True
+        if not is_joker_tile(path_end):
+            return False
+        endpoints = _first_last_different_suited_path_positions(board, path)
         if endpoints is None:
             return False
         first_i, last_i = endpoints
         start = board.get_by_index(path[first_i])
         end = board.get_by_index(path[last_i])
-        s0, s1 = _wrestlers_real_suit(start), _wrestlers_real_suit(end)
-        if not (s0 and s1 and s0 != s1):
-            return False
         if start.curse == CurseType.LETTER and end.curse == CurseType.LETTER:
             if path_letter_for_count(start) == path_letter_for_count(end):
                 return _wrestlers_letter_endpoints_qualify(
@@ -1334,6 +1374,16 @@ def unique_colours_on_path(board: Board, path: list[int]) -> set[str]:
     return colours
 
 
+def unique_colours_for_neapolitan_improve(board: Board, path: list[int]) -> set[str]:
+    """Distinct tile colours that count toward Neapolitan +5% improve on submit."""
+    colours: set[str] = set()
+    for idx in path:
+        color = board.get_by_index(idx).color
+        if color not in NON_COLOUR_FOR_NEAPOLITAN:
+            colours.add(color.value)
+    return colours
+
+
 def count_color_on_path(board: Board, path: list[int], color: str) -> int:
     try:
         want = TileColor(color)
@@ -1529,17 +1579,45 @@ def path_letter_for_double_letter(tile: Tile) -> str:
     return ""
 
 
-def has_consecutive_double_letter_on_path(board: Board, path: list[int]) -> bool:
-    """Yellow Glasses: consecutive path tiles with the same letter (game behavior)."""
-    prev: str | None = None
-    for idx in path:
-        ch = path_letter_for_double_letter(board.get_by_index(idx))
-        if not ch:
+def _double_letter_char_at_path_step(
+    board: Board, idx: int, step: int, word: str
+) -> tuple[str, str] | None:
+    """Resolved letter and source ('currency'|'letter') for Yellow Glasses doubles."""
+    tile = board.get_by_index(idx)
+    w = word.lower()
+    if tile.curse == CurseType.CURRENCY:
+        if w and step < len(w):
+            cand = w[step]
+            if cand.isalpha():
+                return cand, "currency"
+        return None
+    ch = path_letter_for_double_letter(tile)
+    if ch:
+        return ch, "letter"
+    return None
+
+
+def has_consecutive_double_letter_on_path(
+    board: Board, path: list[int], word: str = ""
+) -> bool:
+    """Yellow Glasses: consecutive path tiles with the same letter (game behavior).
+
+    Currency tiles use the submitted word character at that path step; letter tiles
+    use their path letter. A double counts only when both consecutive steps resolve
+    to the same letter **and** the same source (both currency or both letter).
+    """
+    w = word.lower()
+    steps = normalize_scoring_path(path) if w else path
+    prev: tuple[str, str] | None = None
+    for i, idx in enumerate(steps):
+        resolved = _double_letter_char_at_path_step(board, idx, i, w)
+        if resolved is None:
             prev = None
             continue
-        if prev is not None and ch == prev:
+        ch, source = resolved
+        if prev is not None and ch == prev[0] and source == prev[1]:
             return True
-        prev = ch
+        prev = (ch, source)
     return False
 
 
@@ -2349,7 +2427,7 @@ def _evaluate_sticker_condition(
             return False
         return first > prev
     if condition == "has_double_letter":
-        return has_consecutive_double_letter_on_path(board, path)
+        return has_consecutive_double_letter_on_path(board, path, word)
     if condition == "first_grid_of_encounter":
         return _extra_bool(loadout, "is_first_grid_of_encounter")
     if condition == "word_starts_ends_different_color":
@@ -2639,13 +2717,28 @@ def bicycle_word_score_accumulator_for_submit(
         return acc
     suited_extra = bicycle_suited_on_path_from_extras(loadout)
     if pin_acc is not None and suited_extra > 0:
-        applied_floor = pin_acc + per_card * suited_extra
-        if acc > applied_floor:
+        post_pattern = pin_acc + per_card * suited_extra
+        if acc == post_pattern:
+            suited_board = bicycle_suited_credit_on_path(board, path)
+            if (
+                acc > pin_acc
+                and suited_board > 0
+                and pin_acc + per_card * suited_board
+                < acc + per_card * suited_board
+            ):
+                # Stale pin fingerprint: live pre-word acc equals pin + export lag.
+                return acc
+            return pin_acc
+        double_pattern = pin_acc + 2 * per_card * suited_extra
+        if acc == double_pattern and acc > post_pattern:
+            # Stale fingerprint (F8 lag): acc is live pre-word, not post-submit.
+            return acc
+        if acc > post_pattern:
             pre = acc - per_card * suited_extra
             if 0 <= pre <= acc:
                 return pre
-    suited_board = suited_tiles_on_path_count(board, path)
-    if suited_board != suited_extra:
+    suited_board = bicycle_suited_credit_on_path(board, path)
+    if suited_extra > 0 and suited_board != suited_extra:
         pre = acc - per_card * suited_extra
         if 0 <= pre < acc:
             return pre
@@ -2684,6 +2777,18 @@ def unique_suited_suits_on_path_count(board: Board, path: list[int]) -> int:
 def _is_joker_glyph_char(tile: Tile) -> bool:
     ch = str(tile.char or "")
     return "🃏" in ch
+
+
+def _bicycle_joker_path_tile(tile: Tile) -> bool:
+    """True when tile is a joker for Bicycle suited credit (CardSuit joker / is_joker / glyph)."""
+    if is_joker_tile(tile):
+        return True
+    suit = card_suit(tile)
+    if suit and suit.lower() == "joker":
+        return True
+    if _is_joker_glyph_char(tile):
+        return True
+    return False
 
 
 def _bicycle_suited_path_tile(tile: Tile) -> bool:
@@ -2930,8 +3035,8 @@ def suited_tiles_on_path_count(board: Board, path: list[int]) -> int:
 
 
 def suited_cards_on_path_count(board: Board, path: list[int]) -> int:
-    """Suited path tiles for Bicycle pin (each ``CardSuit != 0`` tile)."""
-    return suited_tiles_on_path_count(board, path)
+    """Bicycle suited credit on path (single-suit paths credit 1, else unique ranks)."""
+    return bicycle_suited_credit_on_path(board, path)
 
 
 def bicycle_suited_on_path_from_extras(loadout: Loadout) -> int:
@@ -2943,18 +3048,49 @@ def bicycle_suited_on_path_from_extras(loadout: Loadout) -> int:
 
 
 def bicycle_suited_credit_on_path(board: Board, path: list[int]) -> int:
-    """Bicycle suited credit is the count of suited tiles on this path."""
-    return suited_cards_on_path_count(board, path)
+    """Bicycle suited credit: mono-suit → 1; multi-suit + non-end joker → per-tile; else unique ranks."""
+    if not path:
+        return 0
+    path_end = path[-1]
+    suits: set[str] = set()
+    joker_not_at_end = False
+    suited_tile_count = 0
+    non_joker_suited = 0
+    for idx in path:
+        tile = board.get_by_index(idx)
+        is_joker = _bicycle_joker_path_tile(tile)
+        if not is_joker and not _bicycle_suited_path_tile(tile):
+            continue
+        if is_joker and idx != path_end:
+            joker_not_at_end = True
+        if is_joker and idx == path_end:
+            continue
+        suited_tile_count += 1
+        if not is_joker:
+            non_joker_suited += 1
+            suit = card_suit(tile)
+            if suit and suit not in ("none", "joker"):
+                suits.add(suit)
+    if suited_tile_count == 0:
+        return 0
+    if joker_not_at_end and non_joker_suited >= 2:
+        return suited_tile_count
+    if len(suits) <= 1:
+        return 1
+    if joker_not_at_end:
+        return suited_tile_count
+    return unique_suited_card_ranks_on_path_count(board, path)
 
 
 def effective_suited_cards_on_path(
     board: Board, path: list[int], loadout: Loadout
 ) -> int:
-    """Suited tiles credit for Bicycle (melmod submit count when present)."""
+    """Suited tiles credit for Bicycle (board when metadata present, else melmod extra)."""
+    board_credit = bicycle_suited_credit_on_path(board, path)
     from_extras = bicycle_suited_on_path_from_extras(loadout)
-    if from_extras > 0:
-        return from_extras
-    return bicycle_suited_credit_on_path(board, path)
+    if board_credit > 0:
+        return board_credit
+    return from_extras
 
 
 def bicycle_suited_tiles_on_path(board: Board, path: list[int], loadout: Loadout) -> int:
@@ -3188,6 +3324,13 @@ def neapolitan_has_live_percent(loadout: Loadout | None) -> bool:
     return _extra_positive_int(extras, "neapolitan_percent") is not None
 
 
+def neapolitan_grid_cap_percent(loadout: Loadout | None) -> int:
+    """Per-grid ceiling for Neapolitan percent (165 + 5×grid)."""
+    if loadout is None:
+        return 170
+    return 165 + 5 * max(1, grid_number(loadout))
+
+
 def neapolitan_base_percent_from_loadout(loadout: Loadout | None) -> tuple[int, str]:
     """Resolve baseline Neapolitan percent and source.
 
@@ -3210,6 +3353,12 @@ def neapolitan_base_percent_from_loadout(loadout: Loadout | None) -> tuple[int, 
             and cached_percent > live_percent
         ):
             result: tuple[int, str] = (cached_percent, "cached")
+        elif (
+            cached_percent is not None
+            and live_percent > cached_percent
+            and cached_percent >= 145
+        ):
+            result = (cached_percent, "cached")
         else:
             result = (live_percent, "live")
     elif cached_percent is not None:
@@ -3224,6 +3373,8 @@ def _neapolitan_multiplier_from_extras(
     rule: dict,
     *,
     improve_on_submit: bool = False,
+    board: Board | None = None,
+    path: list[int] | None = None,
 ) -> float | None:
     """Neapolitan is a live, multiplicative WordBonus percent exported by melmod.
 
@@ -3232,16 +3383,84 @@ def _neapolitan_multiplier_from_extras(
     """
     if loadout is None or not _is_neapolitan_rule(rule):
         return None
-    base_percent, source = neapolitan_base_percent_from_loadout(loadout)
+    base_percent, _source = neapolitan_base_percent_from_loadout(loadout)
+    grid_cap = neapolitan_grid_cap_percent(loadout)
 
-    # Submit simulation (+5%) only when live export is missing (cached/default baseline).
-    # Live `neapolitan_percent` is already the value the game applies this word.
-    add_improve = (
-        improve_on_submit
-        and source != "live"
-        and not neapolitan_has_live_percent(loadout)
+    improve_eligible = improve_on_submit
+    if board is not None and path is not None:
+        improve_eligible = len(unique_colours_on_path(board, path)) >= 3
+
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    submit_final = str(extras.get("neapolitan_percent_submit_final", "")).lower() in (
+        "1",
+        "true",
+        "yes",
     )
-    effective_percent = base_percent + (5 if add_improve else 0)
+    live = _extra_positive_int(extras, "neapolitan_percent")
+    cached = _extra_positive_int(extras, "neapolitan_percent_last_known")
+    simulate = str(extras.get("simulate_submit_improvements", "")).lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+    if (
+        improve_eligible
+        and not submit_final
+        and (live is not None or simulate)
+    ):
+        if live is not None and live > grid_cap + 5:
+            if (
+                (live % 10 == 0 and live > grid_cap + 10)
+                or (live % 10 == 5 and live > grid_cap + 15)
+            ):
+                effective_percent = live
+            else:
+                effective_percent = grid_cap + 10
+        elif base_percent > grid_cap:
+            if (
+                grid_number(loadout) == 1
+                and live is not None
+                and live <= grid_cap + 5
+            ):
+                effective_percent = grid_cap
+            elif base_percent <= grid_cap + 5:
+                effective_percent = base_percent + 5
+            else:
+                effective_percent = grid_cap
+        else:
+            effective_percent = base_percent + 5
+    else:
+        effective_percent = base_percent
+        # F8 melmod may bundle +5 improve preview into both keys when the path
+        # has <3 colours (ngwees: export 155, submit 150). Stored baselines
+        # ending in 0 (160, 170) are not preview-inflated.
+        if (
+            not improve_eligible
+            and not submit_final
+            and live is not None
+            and cached is not None
+            and live == cached
+            and base_percent == live
+            and base_percent > 100
+            and base_percent % 10 == 5
+            and base_percent <= 155
+        ):
+            stripped = base_percent - 5
+            if stripped >= 100:
+                effective_percent = stripped
+        elif (
+            not improve_eligible
+            and not submit_final
+            and live is not None
+            and live > grid_cap + 5
+            and live % 10 == 5
+            and live <= grid_cap + 15
+        ):
+            stripped = grid_cap - 5
+            if stripped >= 100:
+                effective_percent = stripped
+
     if effective_percent <= 0:
         return None
     return float(effective_percent) / 100.0
@@ -3253,6 +3472,7 @@ def scaled_word_multiplier(
     loadout: Loadout | None = None,
     path: list[int] | None = None,
     *,
+    board: Board | None = None,
     improve_neapolitan_on_submit: bool = False,
 ) -> float:
     factor = sticker_rule_float(level, rule)
@@ -3260,6 +3480,8 @@ def scaled_word_multiplier(
         loadout,
         rule,
         improve_on_submit=improve_neapolitan_on_submit,
+        board=board,
+        path=path,
     )
     if neapolitan_mult is not None:
         return neapolitan_mult
@@ -3642,6 +3864,14 @@ def snapshot_phased_word_scoring(loadout: Loadout | None) -> bool:
 
 
 _GRID_PATH_IMMEDIATE_WORD_MULT_IDS = frozenset({"ferris_wheel", "ornate_key"})
+
+
+def grid_path_word_mult_defer_for_pin(loadout: Loadout | None) -> bool:
+    """Defer scattered grid ×WORD until after +TILE pin (Wad of Cash)."""
+    if loadout is None:
+        return False
+    pin = str((loadout.extras or {}).get("pin_effect") or "").strip().lower()
+    return pin == "wad_of_cash"
 
 
 def grid_path_word_mult_is_immediate(
@@ -4030,6 +4260,8 @@ def grid_path_sticker_level(
     ):
         # Deep-void paths use at least level 2 (grid_number export can still be 1).
         return max(2, grid_path_encounter_level(loadout))
+    if loadout is not None and str(loadout.boss_id or "").strip().lower() == "badger":
+        level = max(level, grid_number(loadout))
     return level
 
 

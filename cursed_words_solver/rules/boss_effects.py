@@ -78,6 +78,58 @@ def michael_summoned_bosses_defeated(loadout: Loadout) -> bool:
     return _extra_bool(loadout, "michael_summoned_bosses_defeated")
 
 
+def _michael_min_word_length_value(loadout: Loadout) -> int:
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    michael_min = 0
+    for key in ("michael_min_word_length", "michael_phase_min_word_length"):
+        if key not in extras:
+            continue
+        try:
+            michael_min = max(michael_min, int(extras.get(key) or 0))
+        except (TypeError, ValueError):
+            continue
+    return michael_min
+
+
+def _parse_boss_modifier_ids(loadout: Loadout) -> list[str]:
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    if "boss_modifiers" not in extras:
+        return []
+    raw = extras.get("boss_modifiers")
+    rows: list[Any]
+    if isinstance(raw, list):
+        rows = raw
+    elif isinstance(raw, str):
+        rows = [s.strip() for s in raw.split(",") if s.strip()]
+    else:
+        rows = []
+    out: list[str] = []
+    for entry in rows:
+        item = str(entry or "").strip().lower()
+        if item and item not in _META_BOSS_SLUGS and item not in out:
+            out.append(item)
+    return out
+
+
+def michael_finale_active(loadout: Loadout, *, default_max_len: int = 0) -> bool:
+    """Michael phase 4 / wordsmith finale: no stacked draft bosses, 25-tile word."""
+    if michael_summoned_bosses_defeated(loadout):
+        return True
+    if _michael_phase_value(loadout) >= 4:
+        return True
+    michael_min = _michael_min_word_length_value(loadout)
+    if michael_min >= 25 and _michael_context(loadout):
+        return True
+    if (
+        michael_min > 0
+        and default_max_len > 0
+        and michael_min >= default_max_len
+        and _michael_context(loadout)
+    ):
+        return True
+    return _michael_finale_fallback_active(loadout, _parse_boss_modifier_ids(loadout))
+
+
 def _michael_context(loadout: Loadout) -> bool:
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
     boss_id = str(loadout.boss_id or "").strip().lower()
@@ -195,6 +247,8 @@ def active_boss_ids(loadout: Loadout) -> list[str]:
     When `extras.boss_modifiers` is present, it is treated as source of truth and can be empty
     (important for Michael phases with no copied effects).
     """
+    if michael_finale_active(loadout):
+        return []
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
     if "boss_modifiers" in extras:
         raw = extras.get("boss_modifiers")
@@ -313,23 +367,15 @@ def boss_word_constraints(
     loadout: Loadout, rules: dict[str, Any], *, default_max_len: int = 15
 ) -> BossConstraints:
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
-    michael_min = 0
-    for key in ("michael_min_word_length", "michael_phase_min_word_length"):
-        if key not in extras:
-            continue
-        try:
-            michael_min = max(michael_min, int(extras.get(key) or 0))
-        except (TypeError, ValueError):
-            continue
+    michael_min = _michael_min_word_length_value(loadout)
 
-    active_ids = active_boss_ids(loadout)
-    if michael_summoned_bosses_defeated(loadout) or _michael_finale_fallback_active(
-        loadout, active_ids
-    ):
-        active_count = default_max_len
+    if michael_finale_active(loadout, default_max_len=default_max_len):
+        fin_len = (
+            max(michael_min, default_max_len) if michael_min > 0 else default_max_len
+        )
         return BossConstraints(
-            min_len=active_count,
-            max_len=active_count,
+            min_len=fin_len,
+            max_len=fin_len,
         )
 
     if _extra_bool(loadout, "hyena_blocked"):

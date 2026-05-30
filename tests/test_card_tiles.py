@@ -3,6 +3,7 @@
 from cursed_words_solver.loadout import parse_board_from_run_state
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile
 from cursed_words_solver.rules.scoring_conditions import (
+    bicycle_suited_credit_on_path,
     detect_card_hand,
     effective_suited_cards_on_path,
     is_card_tile,
@@ -241,6 +242,49 @@ def test_suited_cards_deduplicate_same_suit_on_path():
     assert suited_cards_on_path_count(board, [0, 1, 2]) == 1
 
 
+def test_bicycle_nebbish_only_real_card_on_path_counts_one():
+    """Regression: nebbish — only N♥ is a playing card; plain S/H letters are not suited."""
+    board = _empty_board()
+    path: list[int] = []
+    layout = [
+        (0, 1, "N", 1, {"card_suit": "hearts", "card_rank": "N"}),
+        (1, 1, "E", 1, {}),
+        (2, 0, "B", 3, {}),
+        (3, 1, "B", 3, {}),
+        (3, 2, "I", 1, {}),
+        (4, 3, "S", 4, {}),
+        (3, 4, "H", 1, {}),
+    ]
+    for row, col, ch, score, meta in layout:
+        if meta:
+            board.tiles[row][col] = Tile(
+                row=row,
+                col=col,
+                char=ch,
+                letter=ch,
+                base_score=float(score),
+                curse=CurseType.LETTER,
+                metadata={"source": "melmod", **meta},
+            )
+        else:
+            board.tiles[row][col] = _plain(row, col, ch, score)
+        path.append(row * 5 + col)
+    assert bicycle_suited_credit_on_path(board, path) == 1
+    loadout = Loadout(
+        extras={
+            "pin_effect": "bicycle",
+            "pin_right_level": "1",
+            "pin_right_variable": "1",
+            "bicycle_word_score_bonus": "0",
+        }
+    )
+    from cursed_words_solver.rules.pipeline import ScoringPipeline
+
+    score, bd = ScoringPipeline().score(board, path, "nebbish", loadout)
+    assert bd["pipeline"]["word_score"] == 1.0
+    assert int(score) == 15
+
+
 def test_suited_cards_deduplicate_duplicate_ranks_on_path():
     board = _empty_board()
     board.tiles[0][0] = Tile(
@@ -289,6 +333,134 @@ def test_effective_suited_uses_melmod_extra_when_board_lacks_suits():
     loadout = Loadout(extras={"bicycle_suited_on_path": 2})
     assert suited_cards_on_path_count(board, [0, 1]) == 0
     assert effective_suited_cards_on_path(board, [0, 1], loadout) == 2
+
+
+def test_effective_suited_ignores_stale_low_melmod_extra():
+    """Board metadata wins when melmod submit extra under-counts (ashy regression)."""
+    board = _empty_board()
+    board.tiles[0][1] = Tile(
+        row=0,
+        col=1,
+        char="🃏",
+        letter="?",
+        base_score=0,
+        curse=CurseType.WILDCARD,
+        metadata={"source": "melmod", "is_joker": True, "card_suit": "joker"},
+    )
+    board.tiles[1][0] = Tile(
+        row=1,
+        col=0,
+        char="W",
+        letter="W",
+        base_score=4,
+        curse=CurseType.LETTER,
+        metadata={"source": "melmod", "card_suit": "spades", "card_rank": "W"},
+    )
+    board.tiles[1][4] = Tile(
+        row=1,
+        col=4,
+        char="S",
+        letter="S",
+        base_score=4,
+        curse=CurseType.LETTER,
+        metadata={"source": "melmod", "card_suit": "hearts", "card_rank": "S"},
+    )
+    board.tiles[2][4] = Tile(
+        row=2,
+        col=4,
+        char="Y",
+        letter="Y",
+        base_score=4,
+        curse=CurseType.LETTER,
+        metadata={"source": "melmod", "card_suit": "spades", "card_rank": "Y"},
+    )
+    path = [1, 5, 9, 14]
+    loadout = Loadout(extras={"bicycle_suited_on_path": 2})
+    assert bicycle_suited_credit_on_path(board, path) == 4
+    assert effective_suited_cards_on_path(board, path, loadout) == 4
+
+
+def test_bicycle_joker_multi_suit_adds_joker_to_rank_credit():
+    """Regression 20260530_005432 ashy: joker + W♠ + S♥ + Y♠ → 4 suited credit."""
+    board = _empty_board()
+    board.tiles[0][1] = Tile(
+        row=0,
+        col=1,
+        char="🃏",
+        letter="?",
+        base_score=0,
+        curse=CurseType.WILDCARD,
+        metadata={"source": "melmod", "is_joker": True, "card_suit": "joker"},
+    )
+    board.tiles[1][0] = _card(1, 0, "W", "spades", 4)
+    board.tiles[1][4] = _card(1, 4, "S", "hearts", 4)
+    board.tiles[2][4] = _card(2, 4, "Y", "spades", 4)
+    path = [1, 5, 9, 14]
+    assert bicycle_suited_credit_on_path(board, path) == 4
+    assert suited_cards_on_path_count(board, path) == 4
+
+
+def test_bicycle_joker_at_path_end_multi_suit_does_not_add_credit():
+    """Regression scourers: path-end joker does not add to multi-suit rank credit."""
+    board = _empty_board()
+    board.tiles[0][1] = _card(0, 1, "J", "spades", 1)
+    board.tiles[0][2] = _card(0, 2, "O", "clubs", 1)
+    board.tiles[1][4] = Tile(
+        row=1,
+        col=4,
+        char="?",
+        letter="?",
+        base_score=0,
+        curse=CurseType.WILDCARD,
+        metadata={"source": "melmod", "is_joker": True},
+    )
+    path = [1, 2, 9]
+    assert bicycle_suited_credit_on_path(board, path) == 2
+
+
+def test_bicycle_two_jokers_multi_suit_per_tile_credit():
+    """Regression 20260530_010221 godsons: two non-end jokers + 3 suited → credit 5."""
+    board = _empty_board()
+    board.tiles[3][2] = Tile(
+        row=3,
+        col=2,
+        char="?",
+        letter="?",
+        base_score=0,
+        curse=CurseType.WILDCARD,
+        metadata={"source": "melmod", "is_joker": True, "card_suit": "joker"},
+    )
+    board.tiles[2][3] = Tile(
+        row=2,
+        col=3,
+        char="?",
+        letter="?",
+        base_score=0,
+        curse=CurseType.WILDCARD,
+        metadata={"source": "melmod", "is_joker": True, "card_suit": "joker"},
+    )
+    board.tiles[2][4] = _card(2, 4, "E", "diamonds", 1)
+    board.tiles[1][1] = _card(1, 1, "E", "spades", 1)
+    board.tiles[0][0] = _card(0, 0, "M", "spades", 3)
+    path = [17, 13, 14, 6, 10, 5, 0]
+    assert bicycle_suited_credit_on_path(board, path) == 5
+
+
+def test_bicycle_mono_suit_joker_two_non_joker_per_tile_credit():
+    """Regression ass: joker + E♠ + Q♠ mono-suit → per-tile credit 3."""
+    board = _empty_board()
+    board.tiles[2][4] = Tile(
+        row=2,
+        col=4,
+        char="?",
+        letter="?",
+        base_score=0,
+        curse=CurseType.WILDCARD,
+        metadata={"source": "melmod", "is_joker": True, "card_suit": "joker"},
+    )
+    board.tiles[1][4] = _card(1, 4, "E", "spades", 1)
+    board.tiles[0][3] = _card(0, 3, "Q", "spades", 10)
+    assert bicycle_suited_credit_on_path(board, [14, 9, 3]) == 3
 
 
 def test_detect_card_overlay_symbols_and_joker():

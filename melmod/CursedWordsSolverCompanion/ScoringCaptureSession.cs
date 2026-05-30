@@ -104,6 +104,17 @@ namespace CursedWordsSolverCompanion
                 )
             )
             {
+                var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                    _suggestion?.run_state_snapshot
+                );
+                var liveExtras = RunStateExporter.BuildExtrasSnapshot();
+                var staleDrift = ExtrasDiffHelper.DescribeStaleF8LoadoutDrift(
+                    f8Extras,
+                    liveExtras
+                );
+                if (!string.IsNullOrEmpty(staleDrift))
+                    MelonLogger.Warning(staleDrift);
+
                 _active = true;
                 MelonLogger.Msg(
                     "Scoring capture: tracking suggested word '"
@@ -236,6 +247,163 @@ namespace CursedWordsSolverCompanion
             return false;
         }
 
+        /// <summary>
+        /// Scoring-time extras for round logs / mismatch export (pre-word Bicycle, no next-word letter).
+        /// </summary>
+        private static Dictionary<string, string> BuildExportExtras()
+        {
+            var extras = new Dictionary<string, string>();
+            if (_scoringContextExtras != null)
+            {
+                foreach (var kv in _scoringContextExtras)
+                    extras[kv.Key] = kv.Value ?? "";
+            }
+
+            var live = RunStateExporter.BuildExtrasSnapshot();
+            if (live == null)
+                return extras;
+
+            foreach (var kv in live)
+            {
+                if (IsBicyclePinExtraKey(kv.Key))
+                {
+                    if (!extras.ContainsKey(kv.Key))
+                        extras[kv.Key] = kv.Value ?? "";
+                    continue;
+                }
+                extras[kv.Key] = kv.Value ?? "";
+            }
+
+            ApplyBicyclePreWordRewindFallback(extras);
+            ApplyF8SnapshotBicycleOverlay(extras);
+
+            return extras;
+        }
+
+        private static bool IsBicycleFamilySlug(string slug)
+        {
+            if (string.IsNullOrEmpty(slug))
+                return false;
+            var s = slug.ToLowerInvariant();
+            return s == "bicycle" || s == "bones_the_dog" || s == "bones";
+        }
+
+        private static int TryGetF8SnapshotBicycleAcc()
+        {
+            if (_suggestion?.run_state_snapshot == null)
+                return -1;
+
+            var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                _suggestion.run_state_snapshot
+            );
+            string raw;
+            if (
+                f8Extras.TryGetValue("bicycle_word_score_bonus", out raw)
+                && int.TryParse(raw, out var bonus)
+                && bonus >= 0
+            )
+                return bonus;
+            if (
+                f8Extras.TryGetValue("cards_submitted", out raw)
+                && int.TryParse(raw, out bonus)
+                && bonus >= 0
+            )
+                return bonus;
+            return -1;
+        }
+
+        private static int GetSuitedCountFromContext()
+        {
+            var suited = 0;
+            if (
+                _scoringContextExtras != null
+                && _scoringContextExtras.TryGetValue("bicycle_suited_on_path", out var suitedRaw)
+            )
+                int.TryParse(suitedRaw, out suited);
+            return suited;
+        }
+
+        /// <summary>
+        /// Use F8 embed pre-word acc for export when capture matches (prediction baseline).
+        /// </summary>
+        private static void ApplyF8SnapshotBicycleOverlay(Dictionary<string, string> extras)
+        {
+            if (!_active || _suggestion == null || extras == null)
+                return;
+
+            if (
+                !SuggestionMatcher.MatchesSuggestion(
+                    _suggestion,
+                    _word,
+                    _path,
+                    _boardFingerprint,
+                    _loadoutFingerprint
+                )
+            )
+                return;
+
+            var f8Acc = TryGetF8SnapshotBicycleAcc();
+            if (f8Acc < 0)
+                return;
+
+            extras["bicycle_word_score_bonus"] = f8Acc.ToString();
+            extras["cards_submitted"] = f8Acc.ToString();
+        }
+
+        /// <summary>
+        /// When step capture missed, rewind live post-word pin to pre-word using suited count.
+        /// </summary>
+        private static void ApplyBicyclePreWordRewindFallback(Dictionary<string, string> extras)
+        {
+            if (extras == null)
+                return;
+
+            string capturedRaw;
+            if (
+                extras.TryGetValue("bicycle_word_score_bonus", out capturedRaw)
+                && !string.IsNullOrEmpty(capturedRaw)
+            )
+            {
+                var livePin = RunStateExporter.TryGetLiveBicycleWordScoreBonus();
+                int captured;
+                if (livePin >= 0 && int.TryParse(capturedRaw, out captured) && captured < livePin)
+                    return;
+            }
+
+            var liveBonus = RunStateExporter.TryGetLiveBicycleWordScoreBonus();
+            if (liveBonus < 0)
+                return;
+
+            var perCard = RunStateExporter.TryGetBicyclePerCardRate();
+            if (perCard <= 0)
+                perCard = 1;
+
+            var suited = 0;
+            if (extras.TryGetValue("bicycle_suited_on_path", out var suitedRaw))
+                int.TryParse(suitedRaw, out suited);
+
+            if (suited <= 0)
+            {
+                var f8Acc = TryGetF8SnapshotBicycleAcc();
+                if (f8Acc >= 0 && liveBonus > f8Acc)
+                {
+                    var delta = liveBonus - f8Acc;
+                    if (delta > 0 && delta % perCard == 0)
+                        suited = delta / perCard;
+                }
+            }
+
+            if (suited <= 0)
+                return;
+
+            var pre = liveBonus - perCard * suited;
+            if (pre < 0 || pre >= liveBonus)
+                return;
+
+            extras["bicycle_word_score_bonus"] = pre.ToString();
+            extras["cards_submitted"] = pre.ToString();
+        }
+
         public static void OnScoreStepsCalculated(List<ScoreCalcVizInfo> steps)
         {
             if (steps == null)
@@ -262,63 +430,140 @@ namespace CursedWordsSolverCompanion
 
             try
             {
-                for (var i = 0; i < steps.Count; i++)
-                {
-                    var step = steps[i];
-                    if (step?.RelevantItem == null || step.WordBonus == null)
-                        continue;
-
-                    var itemId = RunStateExporter.Slugify(
-                        step.RelevantItem.ArtFileName,
-                        step.RelevantItem.Name
-                    );
-                    if (!string.Equals(itemId, "bicycle", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    if (step.WordBonus.IsMultiplicative || step.WordBonus.IsPoison)
-                        continue;
-
-                    var score = step.WordBonus.Bonus != null ? step.WordBonus.Bonus.Score : 0L;
-                    if (score <= 0L)
-                        continue;
-
-                    // Step bonus is the total applied this word; mismatch capture needs pre-word acc.
-                    // run_state.json uses live pin via TryMergeBicycleExtrasAfterScore (not merged here).
-                    var stored = score;
-                    var suited = 0;
-                    if (
-                        _scoringContextExtras.TryGetValue(
-                            "bicycle_suited_on_path",
-                            out var suitedRaw
-                        )
-                    )
-                        int.TryParse(suitedRaw, out suited);
-
-                    var perCard = suited > 0 ? RunStateExporter.TryGetBicyclePerCardRate() : 0;
-                    if (perCard > 0 && suited > 0)
-                    {
-                        var pre = score - perCard * suited;
-                        if (pre >= 0L)
-                            stored = pre;
-                    }
-
-                    var pinBonus = RunStateExporter.TryGetLiveBicycleWordScoreBonus();
-                    if (pinBonus >= 0 && perCard > 0 && suited > 0)
-                    {
-                        var preFromPin = pinBonus - perCard * suited;
-                        if (preFromPin >= 0L)
-                            stored = preFromPin;
-                    }
-
-                    _scoringContextExtras["bicycle_word_score_bonus"] = stored.ToString();
-                    _scoringContextExtras["cards_submitted"] = stored.ToString();
+                if (TryCaptureBicycleFromSteps(steps))
                     return;
-                }
+
+                CaptureBicycleFromLivePinFallback();
             }
             catch
             {
                 // best-effort only
             }
+        }
+
+        private static bool TryCaptureBicycleFromSteps(List<ScoreCalcVizInfo> steps)
+        {
+            for (var i = 0; i < steps.Count; i++)
+            {
+                var step = steps[i];
+                if (step?.WordBonus == null)
+                    continue;
+
+                if (step.WordBonus.IsMultiplicative || step.WordBonus.IsPoison)
+                    continue;
+
+                var score = step.WordBonus.Bonus != null ? step.WordBonus.Bonus.Score : 0L;
+                if (score <= 0L)
+                    continue;
+
+                if (step.RelevantItem != null)
+                {
+                    if (RunStateExporter.IsBicyclePinItem(step.RelevantItem))
+                    {
+                        StorePreWordBicycleAccumulator(score);
+                        return true;
+                    }
+
+                    var itemId = RunStateExporter.Slugify(
+                        step.RelevantItem.ArtFileName,
+                        step.RelevantItem.Name
+                    );
+                    if (IsBicycleFamilySlug(itemId))
+                    {
+                        StorePreWordBicycleAccumulator(score);
+                        return true;
+                    }
+                }
+
+                var suited = GetSuitedCountFromContext();
+                var perCard = suited > 0 ? RunStateExporter.TryGetBicyclePerCardRate() : 0;
+                if (perCard <= 0)
+                    perCard = 1;
+                if (suited > 0 && score == perCard * suited)
+                {
+                    StorePreWordBicycleAccumulator(score);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Derive pre-word pin acc from live post-score pin when trace steps did not capture.
+        /// </summary>
+        private static void CaptureBicycleFromLivePinFallback()
+        {
+            if (_scoringContextExtras == null)
+                return;
+            if (_scoringContextExtras.ContainsKey("bicycle_word_score_bonus"))
+                return;
+
+            var suited = GetSuitedCountFromContext();
+            var perCard = RunStateExporter.TryGetBicyclePerCardRate();
+            if (perCard <= 0)
+                perCard = 1;
+
+            if (suited <= 0)
+            {
+                var f8Acc = TryGetF8SnapshotBicycleAcc();
+                var liveBonus = RunStateExporter.TryGetLiveBicycleWordScoreBonus();
+                if (f8Acc >= 0 && liveBonus > f8Acc)
+                {
+                    var delta = liveBonus - f8Acc;
+                    if (delta > 0 && delta % perCard == 0)
+                        suited = delta / perCard;
+                }
+            }
+
+            if (suited <= 0)
+                return;
+
+            var pinBonus = RunStateExporter.TryGetLiveBicycleWordScoreBonus();
+            if (pinBonus < 0)
+                return;
+
+            var pre = pinBonus - perCard * suited;
+            if (pre < 0)
+                return;
+
+            _scoringContextExtras["bicycle_word_score_bonus"] = pre.ToString();
+            _scoringContextExtras["cards_submitted"] = pre.ToString();
+        }
+
+        private static void StorePreWordBicycleAccumulator(long score)
+        {
+            if (_scoringContextExtras == null)
+                return;
+
+            var stored = score;
+            var suited = 0;
+            if (
+                _scoringContextExtras.TryGetValue(
+                    "bicycle_suited_on_path",
+                    out var suitedRaw
+                )
+            )
+                int.TryParse(suitedRaw, out suited);
+
+            var perCard = suited > 0 ? RunStateExporter.TryGetBicyclePerCardRate() : 0;
+            if (perCard > 0 && suited > 0)
+            {
+                var pre = score - perCard * suited;
+                if (pre >= 0L)
+                    stored = pre;
+            }
+
+            var pinBonus = RunStateExporter.TryGetLiveBicycleWordScoreBonus();
+            if (pinBonus >= 0 && perCard > 0 && suited > 0)
+            {
+                var preFromPin = pinBonus - perCard * suited;
+                if (preFromPin >= 0L)
+                    stored = preFromPin;
+            }
+
+            _scoringContextExtras["bicycle_word_score_bonus"] = stored.ToString();
+            _scoringContextExtras["cards_submitted"] = stored.ToString();
         }
 
         /// <summary>
@@ -495,16 +740,12 @@ namespace CursedWordsSolverCompanion
         {
             try
             {
-                PersistLastSubmittedWordFirstLetter();
-
                 var actualScore = ComputeActualScore();
                 var submitPlayer = RunStateExporter.GetPlayerForUpdate();
                 var runState = RunStateExporter.CaptureRunState(submitPlayer);
                 var rackAfter = ConsumableRackExporter.Export(submitPlayer);
 
-                var extras = RunStateExporter.BuildExtrasSnapshot();
-                foreach (var kv in _scoringContextExtras)
-                    extras[kv.Key] = kv.Value;
+                var extras = BuildExportExtras();
 
                 var ctx = new RoundCaptureContext
                 {
@@ -548,6 +789,8 @@ namespace CursedWordsSolverCompanion
                         _submitBoardSnapshot
                     );
                 }
+
+                PersistLastSubmittedWordFirstLetter();
 
                 ConsumablePlacementTracker.ResetAfterSubmit(_boardAtSubmit);
             }

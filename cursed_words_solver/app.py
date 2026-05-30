@@ -34,6 +34,7 @@ from cursed_words_solver.config import (
 )
 from cursed_words_solver.suggestion import (
     clear_last_suggestion,
+    clear_stale_last_suggestion_if_context_changed,
     clear_stale_last_suggestion_if_loadout_changed,
     dictionary_word_for_path,
     format_suggestion_word,
@@ -279,11 +280,17 @@ class SolverApp:
             print("Melmod board ready in run_state.json.", flush=True)
             board_fp, loadout_fp = fingerprints_from_run_state(board_data)
             if not clear_stale_last_suggestion_if_loadout_changed(loadout_fp):
-                stale_note = stale_suggestion_warning(
-                    board_fp, current_loadout_fp=loadout_fp
-                )
-                if stale_note:
-                    print(f"  {stale_note}", flush=True)
+                extras = board_data.get("extras") if isinstance(board_data, dict) else {}
+                if not clear_stale_last_suggestion_if_context_changed(
+                    board_fp,
+                    current_loadout_fp=loadout_fp,
+                    run_state_extras=extras if isinstance(extras, dict) else None,
+                ):
+                    stale_note = stale_suggestion_warning(
+                        board_fp, current_loadout_fp=loadout_fp
+                    )
+                    if stale_note:
+                        print(f"  {stale_note}", flush=True)
         elif self._loadout_source == "mod":
             print(
                 "Melmod loadout found but no board in run_state.json — "
@@ -372,6 +379,18 @@ class SolverApp:
             and current_loadout_fp != self._highlight_loadout_fingerprint
         ):
             self._clear_highlight_state()
+            clear_stale_last_suggestion_if_context_changed(
+                current_board_fp,
+                current_loadout_fp=current_loadout_fp,
+                run_state_extras=(data.get("extras") if isinstance(data, dict) else None),
+            )
+            return
+        extras = data.get("extras") if isinstance(data, dict) else None
+        clear_stale_last_suggestion_if_context_changed(
+            current_board_fp,
+            current_loadout_fp=current_loadout_fp,
+            run_state_extras=extras if isinstance(extras, dict) else None,
+        )
 
     def _apply_solve_ui(self, update: _SolveUIUpdate) -> None:
         """Show overlay and board highlights on the Qt GUI thread."""
@@ -450,7 +469,8 @@ class SolverApp:
                 print(melmod_install_hint(), flush=True)
                 if run_state_data is None:
                     print(
-                        "Could not read run_state.json (file locked or invalid JSON).",
+                        "Could not read run_state.json (file locked or invalid JSON). "
+                        "Press F7 in-game, wait a moment, then press F8 again.",
                         flush=True,
                     )
                 elif not isinstance(run_state_data.get("board"), dict):
@@ -506,7 +526,7 @@ class SolverApp:
             from cursed_words_solver.rules.scoring_conditions import rewind_setup_extras
 
             rewind_notes = rewind_setup_extras(loadout, board)
-            # Neapolitan +5% submit simulation only when live percent is not exported.
+            # Neapolitan +5% submit simulation when 3+ colours (F8 export is pre-submit).
             if isinstance(loadout.extras, dict):
                 has_neapolitan = any(
                     str(getattr(stamp, "id", "") or "").strip().lower() == "neapolitan"
@@ -516,7 +536,11 @@ class SolverApp:
                     neapolitan_has_live_percent,
                 )
 
-                if not has_neapolitan or not neapolitan_has_live_percent(loadout):
+                if (
+                    not has_neapolitan
+                    or not neapolitan_has_live_percent(loadout)
+                    or has_neapolitan
+                ):
                     loadout.extras["simulate_submit_improvements"] = True
                 if has_neapolitan:
                     from cursed_words_solver.rules.scoring_conditions import (
@@ -529,26 +553,19 @@ class SolverApp:
                         "cached": "cached fallback",
                         "default": "default fallback",
                     }.get(source, source)
-                    if neapolitan_has_live_percent(loadout):
+                    print(
+                        "  Setup: Neapolitan submit simulation "
+                        f"({base_percent}% -> {base_percent + 5}% when 3+ colours; "
+                        f"{source_label}).",
+                        flush=True,
+                    )
+                    if source == "default" and not neapolitan_has_live_percent(loadout):
                         print(
-                            "  Setup: Neapolitan using "
-                            f"{base_percent}% ({source_label}).",
+                            "  Warning: Neapolitan baseline missing from run_state — "
+                            "press F7 in-game or submit a word so melmod can capture "
+                            "neapolitan_percent.",
                             flush=True,
                         )
-                    else:
-                        print(
-                            "  Setup: Neapolitan submit simulation "
-                            f"({base_percent}% -> {base_percent + 5}% when 3+ colours; "
-                            f"{source_label}).",
-                            flush=True,
-                        )
-                        if source == "default":
-                            print(
-                                "  Warning: Neapolitan baseline missing from run_state — "
-                                "press F7 in-game or submit a word so melmod can capture "
-                                "neapolitan_percent.",
-                                flush=True,
-                            )
             self._searcher.setup_weight = self.config.setup_weight
             self._searcher.setup_discount = self.config.setup_discount
             self._searcher.mult_search_weight = self.config.mult_search_weight

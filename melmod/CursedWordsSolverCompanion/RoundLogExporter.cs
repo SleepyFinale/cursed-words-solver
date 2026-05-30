@@ -167,7 +167,15 @@ namespace CursedWordsSolverCompanion
 
             var predicted = ctx.Suggestion.predicted_score;
             if (predicted != ctx.ActualScore)
+            {
+                var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                    ctx.Suggestion.run_state_snapshot
+                );
+                var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, ctx.ScoringExtras);
+                if (ExtrasDiffHelper.HasStaleF8ExtrasDrift(extrasDiff))
+                    return "stale_f8_extras";
                 return "score_mismatch";
+            }
 
             return "score_match";
         }
@@ -286,13 +294,15 @@ namespace CursedWordsSolverCompanion
 
             var staleSuggestion =
                 ctx.Suggestion != null && !boardFingerprintMatches;
+            var staleF8Extras = matchStatus == "stale_f8_extras";
 
             return new Dictionary<string, object>
             {
                 ["score_delta"] = ctx.ActualScore - predicted,
                 ["path_matches_suggestion"] = pathMatches,
                 ["board_fingerprint_matches_suggestion"] = boardFingerprintMatches,
-                ["stale_suggestion"] = staleSuggestion,
+                ["stale_suggestion"] = staleSuggestion || staleF8Extras,
+                ["stale_f8_extras"] = staleF8Extras,
                 ["capture_active"] = ctx.CaptureActive,
                 ["match_status"] = matchStatus,
             };

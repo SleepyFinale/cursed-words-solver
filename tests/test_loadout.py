@@ -184,3 +184,39 @@ def test_parse_run_state_normalizes_michael_min_word_length():
         }
     )
     assert lo.extras["michael_min_word_length"] == 25
+
+
+def test_read_run_state_json_retries_during_atomic_replace(tmp_path, monkeypatch):
+    import threading
+
+    from cursed_words_solver.loadout import _read_run_state_json
+
+    path = tmp_path / "run_state.json"
+    payload = {"character": "Test", "board": {"tiles": [{}] * 25}}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    stop = threading.Event()
+
+    def hammer_replace() -> None:
+        while not stop.is_set():
+            temp = path.with_suffix(".json.tmp")
+            temp.write_text("{", encoding="utf-8")
+            if path.exists():
+                temp.replace(path)
+            else:
+                temp.rename(path)
+            time.sleep(0.005)
+
+    import time
+
+    t = threading.Thread(target=hammer_replace, daemon=True)
+    t.start()
+    try:
+        data = _read_run_state_json(path, retries=20, delay_sec=0.01)
+    finally:
+        stop.set()
+        t.join(timeout=1.0)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert data is not None
+    assert data["character"] == "Test"

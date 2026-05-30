@@ -13,6 +13,7 @@ from cursed_words_solver.rules.boss_effects import (
     boss_word_constraints,
     floor_mod_for_rule,
     load_rules_catalog,
+    michael_finale_active,
     resolve_boss_scaling_for_rule,
 )
 from cursed_words_solver.rules.boss_grid_effects import apply_boss_grid_mutations
@@ -99,6 +100,24 @@ def test_michael_finale_requires_all_active_tiles() -> None:
     c = boss_word_constraints(loadout, RULES, default_max_len=25)
     assert c.min_len == 25
     assert c.max_len == 25
+
+
+def test_michael_finale_skips_boss_penalties_with_stale_modifiers() -> None:
+    board = _board()
+    loadout = Loadout(
+        money=10,
+        extras={
+            "michael_summoned_bosses_defeated": True,
+            "boss_modifiers": ["salamander"],
+            "boss_modifier_floor_mods": '{"salamander": 9}',
+        },
+    )
+    assert michael_finale_active(loadout)
+    assert active_boss_ids(loadout) == []
+    pipe = ScoringPipeline()
+    _, bd = pipe.score(board, list(range(5)), "abcde", loadout)
+    effects = bd.get("pipeline", {}).get("effects", [])
+    assert not any("per tile (boss)" in e for e in effects)
 
 
 def test_michael_finale_skips_boss_penalties() -> None:

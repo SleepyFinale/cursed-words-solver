@@ -83,6 +83,12 @@ FIXTURE_YINCE = (
     / "mismatches"
     / "20260527_013139_yince.json"
 )
+FIXTURE_ALHIDADE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260530_011426.json"
+)
 
 
 def _tile(
@@ -220,6 +226,109 @@ def test_wrestlers_joker_start_two_suited_on_path():
     board = Board(tiles=grid, money=0)
     path = [24, 18, 12]
     assert word_starts_ends_different_suit(board, path)
+
+
+def test_wrestlers_joker_start_repeated_end_suit_uses_middle():
+    """Joker + spades/hearts/spades: endpoints are spades/hearts, not both spades."""
+    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
+    grid[3][2] = _tile(
+        3,
+        2,
+        "?",
+        0,
+        curse=CurseType.WILDCARD,
+        metadata={"is_joker": True},
+    )
+    grid[3][1] = _tile(
+        3,
+        1,
+        "D",
+        2,
+        metadata={"card_suit": "spades", "card_rank": "D"},
+    )
+    grid[2][0] = _tile(
+        2,
+        0,
+        "E",
+        1,
+        metadata={"card_suit": "hearts", "card_rank": "E"},
+    )
+    grid[1][1] = _tile(
+        1,
+        1,
+        "P",
+        2,
+        metadata={"card_suit": "spades", "card_rank": "P"},
+    )
+    board = Board(tiles=grid, money=0)
+    path = [17, 16, 10, 6]
+    assert word_starts_ends_different_suit(board, path)
+
+
+def test_wrestlers_joker_start_two_same_suit_proc():
+    """Regression 20260530_010829 ass: joker + E♠ + Q♠ proc despite same suit."""
+    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
+    grid[2][4] = _tile(
+        2,
+        4,
+        "?",
+        0,
+        curse=CurseType.WILDCARD,
+        metadata={"is_joker": True, "card_suit": "joker"},
+    )
+    grid[1][4] = _tile(
+        1,
+        4,
+        "E",
+        1,
+        metadata={"card_suit": "spades", "card_rank": "E"},
+    )
+    grid[0][3] = _tile(
+        0,
+        3,
+        "Q",
+        10,
+        metadata={"card_suit": "spades", "card_rank": "Q"},
+    )
+    board = Board(tiles=grid, money=0)
+    assert word_starts_ends_different_suit(board, [14, 9, 3])
+
+
+def test_wrestlers_joker_start_unsuited_end_no_proc():
+    """Regression 20260530_011426 alhidade: joker start + inner suited, unsuited E end."""
+    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
+    grid[0][1] = _tile(
+        0,
+        1,
+        "?",
+        0,
+        curse=CurseType.WILDCARD,
+        metadata={"is_joker": True, "card_suit": "joker"},
+    )
+    grid[1][2] = _tile(
+        1,
+        2,
+        "T",
+        1,
+        metadata={"card_suit": "diamonds", "card_rank": "T"},
+    )
+    grid[1][4] = _tile(
+        1,
+        4,
+        "D",
+        2,
+        metadata={"card_suit": "hearts", "card_rank": "D"},
+    )
+    grid[0][4] = _tile(
+        0,
+        4,
+        "B",
+        3,
+        metadata={"card_suit": "diamonds", "card_rank": "B"},
+    )
+    grid[0][0] = _tile(0, 0, "E", 1)
+    board = Board(tiles=grid, money=0)
+    assert not word_starts_ends_different_suit(board, [1, 7, 9, 4, 0])
 
 
 def test_wrestlers_suited_start_joker_end():
@@ -459,6 +568,24 @@ def test_mismatch_fixture_yince_scores_8320():
     rewind_bicycle_pre_word_extras(loadout, board, path, rule)
     score, bd = ScoringPipeline().score(board, path, data["word"], loadout)
     assert any("word_starts_ends_different_suit" in e for e in bd["pipeline"]["effects"])
+    assert score == float(data["actual_score"])
+
+
+def test_mismatch_fixture_alhidade_scores_792():
+    """Regression 20260530_011426: joker start + unsuited E end skips Wrestlers."""
+    if not FIXTURE_ALHIDADE.exists():
+        return
+    data = json.loads(FIXTURE_ALHIDADE.read_text(encoding="utf-8"))
+    snap = data["run_state_snapshot"]
+    board = parse_board_from_run_state(snap)
+    assert board is not None
+    loadout = parse_run_state(snap)
+    loadout.extras["loadout_fingerprint"] = data["loadout_fingerprint"]
+    path = data["path"]
+    assert not word_starts_ends_different_suit(board, path)
+    score, bd = ScoringPipeline().score(board, path, data["word"], loadout)
+    effects = bd["pipeline"]["effects"]
+    assert not any("word_starts_ends_different_suit" in e for e in effects)
     assert score == float(data["actual_score"])
 
 

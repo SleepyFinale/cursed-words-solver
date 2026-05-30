@@ -11,7 +11,7 @@ from cursed_words_solver.rules.boss_effects import (
     floor_mod_for_rule,
     get_active_boss_rule,
     get_active_boss_rules,
-    michael_summoned_bosses_defeated,
+    michael_finale_active,
     resolve_boss_scaling,
     resolve_boss_scaling_for_rule,
 )
@@ -89,7 +89,7 @@ def apply_early_boss_scoring(
     """Early ApplyBossModifier pass (before items when no Hourglass)."""
     from cursed_words_solver.rules.boss_effects import boss_scoring_effect_type
 
-    if michael_summoned_bosses_defeated(loadout):
+    if michael_finale_active(loadout):
         return state
 
     active = get_active_boss_rules(rules, loadout)

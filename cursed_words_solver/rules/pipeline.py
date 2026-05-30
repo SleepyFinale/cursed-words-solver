@@ -512,6 +512,43 @@ def _apply_pending_word_finalize_steps(
     entries = steps if steps is not None else state.get("pending_word_finalize_steps", [])
     if not entries:
         return subtotal
+    if state.get("_wad_deferred_grid_word_mult"):
+        percent_entries = [(int(v), rule_id) for kind, v, rule_id in entries if kind == "percent"]
+        mult_entries = [(float(v), rule_id) for kind, v, rule_id in entries if kind != "percent"]
+        total = float(subtotal)
+        if percent_entries:
+            combined_percent = 100
+            for percent, _rule_id in percent_entries:
+                combined_percent = combined_percent * int(percent) // 100
+            total = math.floor(total * combined_percent / 100.0)
+            if trace is not None:
+                factor = float(combined_percent) / 100.0
+                rule_ids = [
+                    str(rid or "").strip().lower()
+                    for _pct, rid in percent_entries
+                    if str(rid or "").strip()
+                ]
+                fields: dict[str, Any] = {
+                    "factor": factor,
+                    "percent": int(combined_percent),
+                    "detail": f"×{factor:g} word (word_bonus:{combined_percent})",
+                }
+                if len(rule_ids) == 1:
+                    fields["rule_id"] = rule_ids[0]
+                _trace_step(state, "multiply", **fields)
+        for factor, rule_id in mult_entries:
+            if factor == 1.0:
+                continue
+            total = math.floor(total * factor)
+            if trace is not None:
+                fields = {
+                    "factor": factor,
+                    "detail": f"×{factor} word (floor)",
+                }
+                if rule_id:
+                    fields["rule_id"] = rule_id
+                _trace_step(state, "multiply", **fields)
+        return total
     total = subtotal
     for kind, value, rule_id in entries:
         if kind == "percent":
@@ -1224,6 +1261,7 @@ class ScoringPipeline:
         _apply_void_path_bonuses(board, path, loadout, state)
 
         from cursed_words_solver.rules.scoring_conditions import (
+            grid_path_word_mult_defer_for_pin,
             grid_path_word_mult_is_immediate,
             snapshot_phased_word_scoring,
         )
@@ -1257,9 +1295,15 @@ class ScoringPipeline:
             ):
                 continue
             prev_immediate_pct = state.get("_immediate_word_percent")
+            defer_grid_mult = grid_path_word_mult_defer_for_pin(loadout)
+            if defer_grid_mult and grid_path_word_mult_is_immediate(
+                loadout, ref.rule_id, rule
+            ):
+                state["_wad_deferred_grid_word_mult"] = True
             if (
                 not state.get("_defer_word_mults_for_compound")
                 and grid_path_word_mult_is_immediate(loadout, ref.rule_id, rule)
+                and not defer_grid_mult
             ):
                 state["_immediate_word_percent"] = True
             state = self._apply_rule(
@@ -2178,19 +2222,20 @@ class ScoringPipeline:
                 )
             rid = (rule_id or applying_sticker_id or "").lower()
             is_neapolitan = rid == "neapolitan"
-            if not met and not is_neapolitan:
+            apply_neapolitan = is_neapolitan
+            if not met and not apply_neapolitan:
                 rule_trace_context["skip_reason"] = cond_explanation
-            if met or is_neapolitan:
-                simulate_improve = bool(
-                    isinstance(getattr(loadout, "extras", None), dict)
-                    and (loadout.extras or {}).get("simulate_submit_improvements")
-                )
-                improve_neapolitan = (
-                    simulate_improve
-                    and is_neapolitan
-                    and met
-                    and not neapolitan_has_live_percent(loadout)
-                )
+            if met or apply_neapolitan:
+                if is_neapolitan:
+                    improve_colours = unique_colours_on_path(board, path)
+                    improve_eligible = len(improve_colours) >= 3
+                    improve_neapolitan = improve_eligible
+                    rule_trace_context["condition_met"] = improve_eligible
+                    rule_trace_context["neapolitan_improve_colours"] = sorted(
+                        improve_colours
+                    )
+                else:
+                    improve_neapolitan = False
                 if is_neapolitan:
                     base_percent, source = neapolitan_base_percent_from_loadout(loadout)
                     rule_trace_context["neapolitan_base_percent"] = int(base_percent)
@@ -2198,24 +2243,31 @@ class ScoringPipeline:
                     rule_trace_context["neapolitan_simulate_submit_improve"] = bool(
                         improve_neapolitan
                     )
-                    if met:
-                        if improve_neapolitan:
-                            rule_trace_context[
-                                "condition_explanation"
-                            ] = "applied: base multiplier + submit improve"
-                        else:
-                            rule_trace_context[
-                                "condition_explanation"
-                            ] = "applied: base multiplier (improve available)"
+                    if improve_neapolitan:
+                        rule_trace_context[
+                            "condition_explanation"
+                        ] = "applied: stored multiplier + submit improve"
                     else:
                         rule_trace_context[
                             "condition_explanation"
-                        ] = "applied: base multiplier (improve requires 3+ colours)"
+                        ] = "applied: stored multiplier (no improve this submit)"
+                effective_level = level
+                if (
+                    rid == "yellow_glasses"
+                    and state.get("_wad_deferred_grid_word_mult")
+                    and any(
+                        str(step[2] or "").strip().lower() == "cherry_pie"
+                        for step in state.get("pending_word_finalize_steps", [])
+                        if step[0] == "percent"
+                    )
+                ):
+                    effective_level = max(1, level - 1)
                 factor = scaled_word_multiplier(
-                    level,
+                    effective_level,
                     rule,
                     loadout,
                     path=path,
+                    board=board,
                     improve_neapolitan_on_submit=improve_neapolitan,
                 )
                 if rid == "neapolitan":
@@ -2269,19 +2321,7 @@ class ScoringPipeline:
                                 factor, rule, level=level
                             )
                     elif rid == "neapolitan" and loadout is not None:
-                        base_pct, neo_src = neapolitan_base_percent_from_loadout(
-                            loadout
-                        )
-                        if neo_src != "default":
-                            if improve_neapolitan:
-                                percent = int(round(float(factor) * 100.0))
-                            else:
-                                percent = int(base_pct)
-                                factor = float(base_pct) / 100.0
-                        else:
-                            percent = word_percent_bonus_from_multiplier(
-                                factor, rule, level=level
-                            )
+                        percent = int(round(float(factor) * 100.0))
                     else:
                         percent = word_percent_bonus_from_multiplier(
                             factor, rule, level=level

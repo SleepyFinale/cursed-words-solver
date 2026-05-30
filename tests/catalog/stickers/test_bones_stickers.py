@@ -532,6 +532,54 @@ def test_yellow_glasses_path_double_not_word_string():
     assert score == base
 
 
+def test_yellow_glasses_skips_mixed_currency_letter_double():
+    """preppy: word pp with currency then letter p — mixed source does not count."""
+    board = _empty_board()
+    board.tiles[0][0] = Tile(
+        row=0,
+        col=0,
+        char="₱",
+        letter="₱",
+        base_score=16,
+        color=TileColor.RED,
+        curse=CurseType.CURRENCY,
+        metadata={"source": "melmod"},
+    )
+    board.tiles[0][1] = _letter(0, 1, "P", 18)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=3)]
+    )
+    base, _ = pipeline.score(board, [0, 1], "pp", Loadout())
+    score, bd = pipeline.score(board, [0, 1], "pp", loadout)
+    assert bd["multiplier"] == 1.0
+    assert score == base
+
+
+def test_yellow_glasses_currency_pair_double():
+    """bott: consecutive currency tiles with tt in the submitted word."""
+    board = _empty_board()
+    for col, glyph in enumerate(("₮", "₮")):
+        board.tiles[0][col] = Tile(
+            row=0,
+            col=col,
+            char=glyph,
+            letter=glyph,
+            base_score=16,
+            color=TileColor.BLUE,
+            curse=CurseType.CURRENCY,
+            metadata={"source": "melmod"},
+        )
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=3)]
+    )
+    base, _ = pipeline.score(board, [0, 1], "tt", Loadout())
+    score, bd = pipeline.score(board, [0, 1], "tt", loadout)
+    assert bd["multiplier"] == 2.5
+    assert score == int(base * 2.5)
+
+
 def test_celestial_before_yellow_glasses_with_bicycle_pin():
     """Celestial +tile, then ×WORD on subtotal (sticker list order; dooses board)."""
     board = _empty_board()

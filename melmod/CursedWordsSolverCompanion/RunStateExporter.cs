@@ -13,6 +13,8 @@ namespace CursedWordsSolverCompanion
     {
         private const int BicycleMergeRetryBudget = 12;
         private static int _pendingBicycleMergeRetries = 0;
+        private static float _lastMutatingDnaMergeTime = -999f;
+        private const float MutatingDnaMergeIntervalSec = 0.5f;
         private static List<HistoricWord> _cachedPreviousWords;
 
         private static readonly string OutputPath = Path.Combine(
@@ -37,9 +39,13 @@ namespace CursedWordsSolverCompanion
                 if (player == null)
                     return false;
 
+                TryFlushPendingBicycleExtrasRetry();
+                TryMergeBicycleExtrasAfterScore();
+
                 var fingerprint = ComputeFingerprint(player);
                 var snapshot = BuildSnapshot(player);
                 MergePreservedExtrasFromDisk(snapshot);
+                SyncLiveBicycleExtrasIntoSnapshot(snapshot, player);
                 FillSnapshotCopyExtras(snapshot, player);
                 BoardExporter.FillGridScatteredItemsExtra(snapshot);
                 sw.Stop();
@@ -309,6 +315,7 @@ namespace CursedWordsSolverCompanion
                     QueueBicycleExtrasRetry();
 
                 RefreshDiagnosticsAfterMerge("submit_merge");
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
             }
             catch (Exception ex)
             {
@@ -522,6 +529,50 @@ namespace CursedWordsSolverCompanion
             WriteJsonRoot(root);
         }
 
+        /// <summary>
+        /// Keep mutating_dna_letter_counts in run_state.json aligned with live stamp counters
+        /// (fingerprint auto-export does not fire when only DNA counts change).
+        /// </summary>
+        public static void TryMergeMutatingDnaExtrasIfChanged()
+        {
+            try
+            {
+                if (UnityEngine.Time.unscaledTime - _lastMutatingDnaMergeTime < MutatingDnaMergeIntervalSec)
+                    return;
+
+                var player = GetPlayer();
+                if (player == null || !HasMutatingDnaStamp(player))
+                    return;
+
+                if (!File.Exists(OutputPath))
+                    return;
+
+                var previousWords = TryGetHistoricPreviousWords(player);
+                var letterCounts = ScoringContextCapture.ResolveMutatingDnaLetterCounts(
+                    player,
+                    previousWords
+                );
+                var serialized = ScoringContextCapture.SerializeLetterCounts(letterCounts);
+                var onDisk = TryReadExtraValue("mutating_dna_letter_counts") ?? "{}";
+                if (ExtrasDiffHelper.MutatingDnaLetterCountsEqual(onDisk, serialized))
+                    return;
+
+                TryMergeExtrasKeys(
+                    new Dictionary<string, string>
+                    {
+                        ["mutating_dna_letter_counts"] = serialized,
+                    }
+                );
+                _lastMutatingDnaMergeTime = UnityEngine.Time.unscaledTime;
+            }
+            catch (Exception ex)
+            {
+                ExportDiagnostics.RecordMergeError(
+                    "TryMergeMutatingDnaExtrasIfChanged: " + ex.Message
+                );
+            }
+        }
+
         private static void WriteJsonRoot(Dictionary<string, object> root)
         {
             var updated = JsonConvert.SerializeObject(root, Formatting.Indented);
@@ -563,7 +614,7 @@ namespace CursedWordsSolverCompanion
                 ClearBossState(snapshot);
             else
             {
-                FillBoss(snapshot, bosses);
+                FillBoss(snapshot, player, bosses);
                 FillBossExtras(snapshot, player, bosses);
             }
             FillPinExtras(snapshot, player.MyCharacter);
@@ -768,9 +819,26 @@ namespace CursedWordsSolverCompanion
 
             var temp = path + ".tmp";
             File.WriteAllText(temp, content, new UTF8Encoding(false));
-            if (File.Exists(path))
-                File.Delete(path);
-            File.Move(temp, path);
+            try
+            {
+                if (File.Exists(path))
+                    File.Replace(temp, path, null);
+                else
+                    File.Move(temp, path);
+            }
+            catch
+            {
+                try
+                {
+                    if (File.Exists(temp))
+                        File.Delete(temp);
+                }
+                catch
+                {
+                    // ignore cleanup failure
+                }
+                throw;
+            }
         }
 
         private static List<RunStateItem> MapItems(Item[] items, bool stampsOnly)
@@ -811,6 +879,7 @@ namespace CursedWordsSolverCompanion
 
         private static void FillBoss(
             RunStateSnapshot snapshot,
+            Player player,
             List<BossModifier> bosses
         )
         {
@@ -818,6 +887,44 @@ namespace CursedWordsSolverCompanion
             {
                 ClearBossState(snapshot);
                 return;
+            }
+
+            var michaelBoss = RunStateExportFill.FindMichaelBoss(bosses);
+            if (michaelBoss != null)
+            {
+                var michaelMin = RunStateExportFill.ResolveMichaelMinWordLength(
+                    bosses[0],
+                    michaelBoss,
+                    player
+                );
+                var draftedList = RunStateExportFill.TryGetBossListMember(
+                    michaelBoss,
+                    "DraftedModifiers",
+                    isField: false
+                );
+                if (draftedList == null)
+                    draftedList = RunStateExportFill.TryGetBossListMember(
+                        michaelBoss,
+                        "SummonedBosses",
+                        isField: false
+                    );
+                var drafted = draftedList != null ? draftedList.Count : -1;
+                if (
+                    RunStateExportFill.TryResolveMichaelFinale(
+                        michaelBoss,
+                        player,
+                        drafted,
+                        michaelMin
+                    )
+                )
+                {
+                    snapshot.boss_id = "michael";
+                    snapshot.boss_name = string.IsNullOrEmpty(michaelBoss.Name)
+                        ? "Michael"
+                        : michaelBoss.Name;
+                    snapshot.boss_effect = "";
+                    return;
+                }
             }
 
             BossModifier displayBoss = null;
@@ -1143,6 +1250,49 @@ namespace CursedWordsSolverCompanion
                 snapshot.extras[kv.Key] = kv.Value;
         }
 
+        /// <summary>
+        /// After disk merge, ensure snapshot bicycle extras match live pin (fixes stale run_state).
+        /// </summary>
+        private static void SyncLiveBicycleExtrasIntoSnapshot(
+            RunStateSnapshot snapshot,
+            Player player
+        )
+        {
+            if (snapshot?.extras == null || player?.MyCharacter == null)
+                return;
+
+            var pin = player.MyCharacter.CharacterItem;
+            var bicycleExtras = BuildBicycleExtras(pin);
+            if (bicycleExtras == null || bicycleExtras.Count == 0)
+                return;
+
+            var live = TryGetBicycleWordScoreBonus(pin);
+            if (live < 0)
+                return;
+
+            var prior = -1;
+            string priorRaw;
+            if (
+                snapshot.extras.TryGetValue("bicycle_word_score_bonus", out priorRaw)
+                && !string.IsNullOrEmpty(priorRaw)
+            )
+                int.TryParse(priorRaw, out prior);
+
+            foreach (var kv in bicycleExtras)
+                snapshot.extras[kv.Key] = kv.Value;
+
+            if (live > prior && prior >= 0)
+            {
+                CompanionDiagnostics.LogVerbose(
+                    "Bicycle extras synced from live pin: "
+                        + prior
+                        + " → "
+                        + live
+                        + " (run_state was stale)"
+                );
+            }
+        }
+
         private static Dictionary<string, string> BuildBicycleExtras(Item pin)
         {
             if (pin == null || !IsBicyclePin(pin))
@@ -1173,6 +1323,12 @@ namespace CursedWordsSolverCompanion
 
             var s = slug.ToLowerInvariant();
             return s == "bicycle" || s == "bones_the_dog" || s == "bones";
+        }
+
+        /// <summary>Bicycle-family pin (Bicycle, Bones The Dog, etc.).</summary>
+        public static bool IsBicyclePinItem(Item pin)
+        {
+            return IsBicyclePin(pin);
         }
 
         /// <summary>

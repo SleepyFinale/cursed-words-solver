@@ -150,13 +150,14 @@ def initial_tile_scores(
     loadout: Loadout | None = None,
     microscope_base: bool = False,
     blue_base_override: int | None = None,
+    word: str = "",
 ) -> tuple[list[float], float]:
     """Per-path tile scores after GetValue parity."""
     from cursed_words_solver.models import CurseType as CT
 
     scores: list[float] = []
     total = 0.0
-    for idx in path:
+    for i, idx in enumerate(path):
         tile = board.get_by_index(idx)
         if tile.curse == CT.ITEM:
             scores.append(0.0)
@@ -165,7 +166,11 @@ def initial_tile_scores(
             contrib = microscope_init_contribution(tile, money, loadout)
         elif tile.color == TileColor.BLUE and blue_base_override is not None:
             contrib = float(blue_base_override)
-        elif tile.curse == CT.CURRENCY and tile.metadata.get("source") == "melmod":
+        elif (
+            tile.curse == CT.CURRENCY
+            and tile.metadata.get("source") == "melmod"
+            and tile.color != TileColor.VOID
+        ):
             contrib = float(tile.base_score)
         else:
             contrib = float(tile_base_contribution(tile, money, loadout))
@@ -262,6 +267,7 @@ def apply_tile_init(
         loadout=loadout,
         microscope_base=microscope_base,
         blue_base_override=blue_base_override,
+        word=word,
     )
     state["tile_scores"] = scores
     state["base_score"] = base_total

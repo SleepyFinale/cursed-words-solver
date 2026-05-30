@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -44,19 +45,32 @@ def _taxonomy_sets() -> tuple[set[str], set[str]]:
     return _VALID_COLORS, _VALID_CURSES
 
 
-def _read_run_state_json(path: Path) -> dict[str, Any] | None:
-    """Parse run_state.json (melmod writes UTF-8 with BOM on Windows)."""
-    try:
-        return json.loads(path.read_text(encoding="utf-8-sig"))
-    except (json.JSONDecodeError, OSError):
-        return None
+def _read_run_state_json(
+    path: Path,
+    *,
+    retries: int = 12,
+    delay_sec: float = 0.04,
+) -> dict[str, Any] | None:
+    """Parse run_state.json (melmod writes UTF-8 with BOM on Windows).
+
+    Retries briefly when melmod replaces the file atomically (Windows can lock or
+    remove the path for a moment between delete and move).
+    """
+    for attempt in range(max(1, retries)):
+        try:
+            if not path.exists():
+                raise FileNotFoundError(path)
+            return json.loads(path.read_text(encoding="utf-8-sig"))
+        except (json.JSONDecodeError, OSError, FileNotFoundError):
+            if attempt + 1 >= retries:
+                return None
+            time.sleep(delay_sec)
+    return None
 
 
 def load_run_state_raw(path: Path | None = None) -> dict[str, Any] | None:
     """Load raw run_state.json dict from companion mod or manual edit."""
     path = path or RUN_STATE_PATH
-    if not path.exists():
-        return None
     return _read_run_state_json(path)
 
 

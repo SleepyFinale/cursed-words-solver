@@ -9,10 +9,12 @@ import pytest
 
 from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
 from cursed_words_solver.rules.boss_effects import (
+    active_boss_ids,
     boss_context,
     boss_word_constraints,
     effective_target_score_multiplier,
     load_rules_catalog,
+    michael_finale_active,
     resolve_boss_scaling,
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
@@ -168,6 +170,49 @@ def test_michael_min_word_length_does_not_require_copied_boss_effects():
     )
     c = boss_word_constraints(loadout, RULES)
     assert c.min_len == 25
+
+
+def test_michael_finale_ignores_stale_boss_modifiers_when_defeated_flag_set() -> None:
+    loadout = _loadout(
+        boss_id="bison",
+        extras={
+            "boss_modifiers": ["bison", "badger"],
+            "michael_summoned_bosses_defeated": True,
+        },
+    )
+    assert active_boss_ids(loadout) == []
+    assert michael_finale_active(loadout, default_max_len=25)
+    c = boss_word_constraints(loadout, RULES, default_max_len=25)
+    assert c.min_len == 25
+    assert c.max_len == 25
+
+
+def test_michael_finale_stale_modifiers_with_min_word_length() -> None:
+    loadout = _loadout(
+        boss_id="michael",
+        extras={
+            "boss_modifiers": ["bison", "badger"],
+            "michael_min_word_length": 25,
+        },
+    )
+    assert active_boss_ids(loadout) == []
+    c = boss_word_constraints(loadout, RULES, default_max_len=25)
+    assert c.min_len == 25
+    assert c.max_len == 25
+
+
+def test_michael_phase_four_stale_modifiers() -> None:
+    loadout = _loadout(
+        boss_id="bison",
+        extras={
+            "boss_modifiers": ["bison", "badger"],
+            "michael_phase": 4,
+        },
+    )
+    assert active_boss_ids(loadout) == []
+    c = boss_word_constraints(loadout, RULES, default_max_len=25)
+    assert c.min_len == 25
+    assert c.max_len == 25
 
 
 def test_michael_phase_three_empty_modifiers_falls_back_to_full_board_length():

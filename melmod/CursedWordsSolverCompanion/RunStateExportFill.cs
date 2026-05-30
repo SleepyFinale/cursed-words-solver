@@ -470,14 +470,171 @@ namespace CursedWordsSolverCompanion
                 if (minLen > 0)
                     snapshot.extras["cobra_min_length"] = minLen.ToString();
             }
-            if (ids.Count > 0)
-                snapshot.extras["boss_modifiers"] = JsonConvert.SerializeObject(ids);
-            if (floorMods.Count > 0)
-                snapshot.extras["boss_modifier_floor_mods"] = JsonConvert.SerializeObject(floorMods);
-
+            var michaelBoss = FindMichaelBoss(bosses);
             var boss = bosses[0];
+            var michaelMin = ResolveMichaelMinWordLength(boss, michaelBoss, player);
+            if (michaelMin > 0)
+                snapshot.extras["michael_min_word_length"] = michaelMin.ToString();
+
+            var isFinale = false;
+            if (michaelBoss != null)
+            {
+                var draftedList = TryGetBossListMember(michaelBoss, "DraftedModifiers", isField: false);
+                if (draftedList == null)
+                    draftedList = TryGetBossListMember(michaelBoss, "DraftedModifiers", isField: true);
+                if (draftedList == null)
+                    draftedList = TryGetBossListMember(michaelBoss, "SummonedBosses", isField: false);
+                if (draftedList == null)
+                    draftedList = TryGetBossListMember(michaelBoss, "SummonedBosses", isField: true);
+                var drafted = draftedList != null ? draftedList.Count : -1;
+
+                isFinale = TryResolveMichaelFinale(michaelBoss, player, drafted, michaelMin);
+                if (isFinale)
+                {
+                    snapshot.extras["michael_summoned_bosses_defeated"] = "true";
+                    snapshot.extras["michael_phase"] = "4";
+                    snapshot.extras["boss_modifiers"] = "[]";
+                    snapshot.extras.Remove("boss_modifier_floor_mods");
+                    var finaleMin = michaelMin > 0 ? michaelMin : CountActiveBoardTiles(snapshot);
+                    if (finaleMin <= 0)
+                        finaleMin = 25;
+                    snapshot.extras["michael_min_word_length"] = finaleMin.ToString();
+                }
+                else if (drafted >= 1 && drafted <= 3)
+                {
+                    snapshot.extras["michael_phase"] = drafted.ToString();
+                }
+
+                if (!isFinale)
+                {
+                    if (ids.Count > 0)
+                        snapshot.extras["boss_modifiers"] = JsonConvert.SerializeObject(ids);
+                    if (floorMods.Count > 0)
+                        snapshot.extras["boss_modifier_floor_mods"] =
+                            JsonConvert.SerializeObject(floorMods);
+                }
+
+                if (michaelMin <= 0 && !isFinale && !_loggedMichaelMissingExtrasWarning)
+                {
+                    MelonLogger.Warning(
+                        "Michael boss detected but final-phase/min-length extras were unavailable; "
+                            + "run_state may miss Michael word-length enforcement."
+                    );
+                    _loggedMichaelMissingExtrasWarning = true;
+                }
+            }
+            else
+            {
+                if (ids.Count > 0)
+                    snapshot.extras["boss_modifiers"] = JsonConvert.SerializeObject(ids);
+                if (floorMods.Count > 0)
+                    snapshot.extras["boss_modifier_floor_mods"] = JsonConvert.SerializeObject(floorMods);
+            }
+        }
+
+        /// <summary>
+        /// Michael finale (phase 4): summoned draft bosses inactive; 25-tile word required.
+        /// </summary>
+        public static bool TryResolveMichaelFinale(
+            BossModifier michaelBoss,
+            Player player,
+            int draftedCount,
+            int michaelMin
+        )
+        {
+            if (michaelBoss == null)
+                return false;
+
+            if (
+                TryGetBoolMember(
+                    michaelBoss,
+                    "SummonedBossesDefeated",
+                    "AreSummonedBossesDefeated",
+                    "FinalPhaseComplete",
+                    "FinaleComplete",
+                    "IsFinalePhase",
+                    "FinalePhase",
+                    "IsWordsmithPhase",
+                    "InFinalePhase"
+                )
+            )
+                return true;
+
+            var encounter = BossResolver.TryGetEncounter();
+            if (
+                TryGetBoolMember(
+                    encounter,
+                    "SummonedBossesDefeated",
+                    "AreSummonedBossesDefeated",
+                    "MichaelSummonedBossesDefeated",
+                    "MichaelFinaleComplete",
+                    "IsFinalePhase",
+                    "FinalePhase"
+                )
+            )
+                return true;
+
+            if (player != null)
+            {
+                if (
+                    TryGetBoolMember(
+                        player,
+                        "MichaelSummonedBossesDefeated",
+                        "MichaelFinaleComplete",
+                        "SummonedBossesDefeated"
+                    )
+                )
+                    return true;
+            }
+
+            var phase = TryGetIntMember(
+                michaelBoss,
+                "CurrentPhase",
+                "Phase",
+                "MichaelPhase",
+                "ActivePhase",
+                "BossPhase"
+            );
+            if (phase < 0 && encounter != null)
+                phase = TryGetIntMember(
+                    encounter,
+                    "CurrentPhase",
+                    "Phase",
+                    "MichaelPhase",
+                    "ActivePhase"
+                );
+            if (phase >= 4)
+                return true;
+
+            if (draftedCount >= 3 && michaelMin >= 25)
+                return true;
+
+            return false;
+        }
+
+        public static BossModifier FindMichaelBoss(List<BossModifier> bosses)
+        {
+            if (bosses == null || bosses.Count == 0)
+                return null;
+            return bosses.Find(b =>
+                b != null
+                && (
+                    b.GetType().Name == "MichaelBoss"
+                    || (!string.IsNullOrEmpty(b.Name)
+                        && b.Name.IndexOf("Michael", StringComparison.OrdinalIgnoreCase) >= 0)
+                )
+            );
+        }
+
+        public static int ResolveMichaelMinWordLength(
+            BossModifier primaryBoss,
+            BossModifier michaelBoss,
+            Player player
+        )
+        {
+            var probe = michaelBoss ?? primaryBoss;
             var michaelMin = TryGetIntMember(
-                boss,
+                probe,
                 "MinWordLength",
                 "MinimumWordLength",
                 "CurrentMinWordLength",
@@ -486,6 +643,19 @@ namespace CursedWordsSolverCompanion
                 "TargetWordLength",
                 "WordLengthGoal"
             );
+            if (michaelMin < 0 && michaelBoss != null && michaelBoss != primaryBoss)
+            {
+                michaelMin = TryGetIntMember(
+                    primaryBoss,
+                    "MinWordLength",
+                    "MinimumWordLength",
+                    "CurrentMinWordLength",
+                    "RequiredWordLength",
+                    "WordLengthRequirement",
+                    "TargetWordLength",
+                    "WordLengthGoal"
+                );
+            }
             if (michaelMin < 0)
                 michaelMin = TryGetIntMember(
                     player,
@@ -510,68 +680,23 @@ namespace CursedWordsSolverCompanion
                         "TargetWordLength"
                     );
             }
-            if (michaelMin > 0)
-                snapshot.extras["michael_min_word_length"] = michaelMin.ToString();
-
-            var michaelBoss = bosses.Find(b =>
-                b != null
-                && (
-                    b.GetType().Name == "MichaelBoss"
-                    || (!string.IsNullOrEmpty(b.Name)
-                        && b.Name.IndexOf("Michael", StringComparison.OrdinalIgnoreCase) >= 0)
-                )
-            );
-            if (michaelBoss != null)
-            {
-                var draftedList = TryGetBossListMember(michaelBoss, "DraftedModifiers", isField: false);
-                if (draftedList == null)
-                    draftedList = TryGetBossListMember(michaelBoss, "DraftedModifiers", isField: true);
-                if (draftedList == null)
-                    draftedList = TryGetBossListMember(michaelBoss, "SummonedBosses", isField: false);
-                if (draftedList == null)
-                    draftedList = TryGetBossListMember(michaelBoss, "SummonedBosses", isField: true);
-                var drafted = draftedList != null ? draftedList.Count : -1;
-                if (drafted >= 1 && drafted <= 3)
-                    snapshot.extras["michael_phase"] = drafted.ToString();
-
-                var summonedDefeated = TryGetBoolMember(
-                    michaelBoss,
-                    "SummonedBossesDefeated",
-                    "AreSummonedBossesDefeated",
-                    "FinalPhaseComplete",
-                    "FinaleComplete"
-                );
-                if (summonedDefeated)
-                    snapshot.extras["michael_summoned_bosses_defeated"] = "true";
-                else
-                {
-                    var encounter = BossResolver.TryGetEncounter();
-                    if (
-                        TryGetBoolMember(
-                            encounter,
-                            "SummonedBossesDefeated",
-                            "AreSummonedBossesDefeated",
-                            "MichaelSummonedBossesDefeated",
-                            "MichaelFinaleComplete"
-                        )
-                    )
-                    {
-                        summonedDefeated = true;
-                        snapshot.extras["michael_summoned_bosses_defeated"] = "true";
-                    }
-                }
-                if (michaelMin <= 0 && !summonedDefeated && !_loggedMichaelMissingExtrasWarning)
-                {
-                    MelonLogger.Warning(
-                        "Michael boss detected but final-phase/min-length extras were unavailable; "
-                            + "run_state may miss Michael word-length enforcement."
-                    );
-                    _loggedMichaelMissingExtrasWarning = true;
-                }
-            }
+            return michaelMin;
         }
 
-        private static List<BossModifier> TryGetBossListMember(
+        private static int CountActiveBoardTiles(RunStateSnapshot snapshot)
+        {
+            if (snapshot?.board?.tiles == null)
+                return 0;
+            var count = 0;
+            foreach (var tile in snapshot.board.tiles)
+            {
+                if (tile != null && tile.active)
+                    count++;
+            }
+            return count;
+        }
+
+        public static List<BossModifier> TryGetBossListMember(
             object target,
             string name,
             bool isField

@@ -64,6 +64,26 @@ namespace CursedWordsSolverCompanion
 
             var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(suggestion.run_state_snapshot);
             var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, extrasSnapshot);
+            var staleNote = ExtrasDiffHelper.DescribeStaleF8Extras(extrasDiff);
+            if (!string.IsNullOrEmpty(staleNote))
+            {
+                MelonLogger.Warning(staleNote);
+                if (
+                    SuggestionMatcher.MatchesSuggestion(
+                        suggestion,
+                        word,
+                        path,
+                        boardFingerprint,
+                        loadoutFingerprint
+                    )
+                )
+                {
+                    MelonLogger.Msg(
+                        "Scoring drift skipped (stale F8 snapshot — re-run F8 after your last word)"
+                    );
+                    return;
+                }
+            }
 
             var payload = new Dictionary<string, object>
             {

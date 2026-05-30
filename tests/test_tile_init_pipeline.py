@@ -7,6 +7,7 @@ from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.tile_scoring import (
     apply_tile_init,
     currency_money_from_path,
+    initial_tile_scores,
     pink_store_money,
     settle_glitch_tiles,
 )
@@ -42,6 +43,27 @@ def test_glitch_settle_deterministic() -> None:
 def test_currency_adds_money() -> None:
     board = _board_with((0, TileColor.COLORLESS, CurseType.CURRENCY))
     assert currency_money_from_path(board, [0]) == 1
+
+
+def test_initial_tile_scores_void_cedilla_grid1_not_zero() -> None:
+    """narcissist: grid-1 void ₡ on path (row≥3, i>0) must not be waived to 0 at init."""
+    board = _board_with()
+    r, c = divmod(17, 5)
+    board.tiles[r][c] = Tile(
+        r,
+        c,
+        "₡",
+        "₡",
+        0,
+        TileColor.VOID,
+        CurseType.CURRENCY,
+        metadata={"source": "melmod"},
+    )
+    loadout = Loadout(extras={"grid_number": "1"})
+    scores, _ = initial_tile_scores(
+        board, [0, 1, 2, 17], money=0, loadout=loadout
+    )
+    assert scores[3] == -15
 
 
 def test_pink_spends_money() -> None:

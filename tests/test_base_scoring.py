@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from cursed_words_solver.loadout import parse_board_from_run_state
-from cursed_words_solver.models import Board, CurseType, Tile, TileColor
+from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
 from cursed_words_solver.rules.base_scoring import score_word_base, tile_base_contribution
 from cursed_words_solver.rules.scoring_conditions import is_red_note_tile
 
@@ -169,6 +169,122 @@ def test_score_word_path():
     # c at 0,0 -> index 0; a at 0,1 -> 1; t at 0,2 -> 2
     score, _ = score_word_base(board, [0, 1, 2], "cat")
     assert score == 3.0
+
+
+def _void_currency_tile(
+    row: int,
+    col: int,
+    char: str,
+    *,
+    letter: str = "",
+) -> Tile:
+    return Tile(
+        row,
+        col,
+        char,
+        letter or char,
+        0,
+        TileColor.VOID,
+        CurseType.CURRENCY,
+        metadata={"source": "melmod"},
+    )
+
+
+def _axolotl_loadout(grid_number: int) -> Loadout:
+    return Loadout(
+        boss_id="axolotl",
+        extras={
+            "boss_floor_modification": "10",
+            "boss_modifiers": ["axolotl"],
+            "boss_modifier_floor_mods": {"axolotl": 10},
+            "grid_number": str(grid_number),
+        },
+    )
+
+
+def test_void_currency_grid1_axolotl_full_penalty():
+    """ngwees: grid 1 void € cv=1 → -15 under axolotl boss floor."""
+    loadout = _axolotl_loadout(1)
+    tile = _void_currency_tile(0, 4, "€", letter="E")
+    assert tile_base_contribution(tile, loadout=loadout) == -15
+
+
+def test_void_currency_grid3_axolotl_row1_waived():
+    """yappy: grid 2–3, row < 3 → void currency penalty 0."""
+    loadout = _axolotl_loadout(3)
+    tile = _void_currency_tile(1, 4, "₱", letter="P")
+    assert tile_base_contribution(tile, loadout=loadout) == 0
+
+
+def test_void_currency_grid4_axolotl_row3_full_penalty():
+    """busses: grid 4+, row >= 3 → standard void currency penalty."""
+    loadout = _axolotl_loadout(4)
+    tile = _void_currency_tile(3, 4, "$", letter="S")
+    assert tile_base_contribution(tile, loadout=loadout) == -15
+
+
+def test_void_currency_grid5_axolotl_row1_full_penalty():
+    """abbes: grid 5 row 1 still gets full penalty (waiver only grids 2–3)."""
+    loadout = _axolotl_loadout(5)
+    tile = _void_currency_tile(1, 2, "฿", letter="B")
+    assert tile_base_contribution(tile, loadout=loadout) == -15
+
+
+def test_void_currency_cedilla_full_penalty():
+    """narcissist: void ₡ (cv 3) on grid 1 → −15, not the old −10 glyph special."""
+    tile = _void_currency_tile(3, 2, "₡", letter="₡")
+    loadout = Loadout(extras={"grid_number": "1"})
+    assert tile_base_contribution(tile, loadout=loadout) == -15
+
+
+def test_void_currency_mole_grid3_path_row2_not_waived():
+    """feen/cann: mole boss floor must not waive void currency on grid 3."""
+    tile = _void_currency_tile(2, 3, "€", letter="E")
+    loadout = Loadout(
+        extras={
+            "boss_floor_modification": "7",
+            "boss_modifiers": ["mole", "toothed_whale"],
+            "boss_modifier_floor_mods": {"mole": 7, "toothed_whale": 175},
+            "grid_number": "3",
+        }
+    )
+    assert tile_base_contribution(tile, loadout=loadout) == -15
+
+
+def test_void_currency_axolotl_grid1_multi_boss_bottom_row_waived():
+    """kaases: axolotl+mole grid 1 top_first row 4 void $ → penalty 0."""
+    tile = _void_currency_tile(4, 2, "$", letter="S")
+    loadout = Loadout(
+        extras={
+            "boss_floor_modification": "7",
+            "boss_modifiers": ["axolotl", "mole", "toothed_whale"],
+            "boss_modifier_floor_mods": {
+                "mole": 7,
+                "toothed_whale": 175,
+                "axolotl": 5,
+            },
+            "grid_number": "1",
+        }
+    )
+    assert tile_base_contribution(tile, loadout=loadout) == 0
+
+
+def test_void_currency_axolotl_grid1_multi_boss_mid_row_waived():
+    """kaases: axolotl+mole on grid 1, row < 3 → void currency penalty 0."""
+    tile = _void_currency_tile(1, 4, "₭", letter="K")
+    loadout = Loadout(
+        extras={
+            "boss_floor_modification": "7",
+            "boss_modifiers": ["axolotl", "mole", "toothed_whale"],
+            "boss_modifier_floor_mods": {
+                "mole": 7,
+                "toothed_whale": 175,
+                "axolotl": 5,
+            },
+            "grid_number": "1",
+        }
+    )
+    assert tile_base_contribution(tile, loadout=loadout) == 0
 
 
 def _board_from_debug_parse(name: str) -> Board | None:
