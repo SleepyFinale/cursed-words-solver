@@ -244,6 +244,8 @@ namespace CursedWordsSolverCompanion
             var rare = CountItemsMatchingRarity(player, "Rare", "RARE");
             if (rare >= 0)
                 snapshot.extras["rare_item_count"] = rare.ToString();
+            else if (RunStateExporter.PlayerHasStampSlug(player, "steak"))
+                snapshot.extras["rare_item_count"] = "0";
 
             var fairies = CountUnpackedOfTypeName(player, "Fairy");
             if (fairies < 0)
@@ -358,8 +360,89 @@ namespace CursedWordsSolverCompanion
                 return;
 
             var built = BuildBestHistoricExtras(player, snapshot.extras);
+            if (built == null || built.Count == 0)
+            {
+                if (ShouldClearEncounterHistoricOnEmptyExport(snapshot))
+                    ClearStaleEncounterHistoricExtras(snapshot, player, "live_empty");
+                return;
+            }
+
             foreach (var kv in built)
                 snapshot.extras[kv.Key] = kv.Value ?? "";
+            snapshot.extras["encounter_historic_source"] = "live";
+        }
+
+        /// <summary>
+        /// Only telescope grid-start resets encounter historic for F8; other Snapshot copies keep it.
+        /// </summary>
+        private static bool ShouldClearEncounterHistoricOnEmptyExport(RunStateSnapshot snapshot)
+        {
+            if (snapshot?.extras == null)
+                return false;
+
+            string source;
+            if (snapshot.extras.TryGetValue("encounter_historic_source", out source)
+                && string.Equals(source, "grid_start_cleared", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            string copySlug;
+            if (snapshot.extras.TryGetValue("snapshot_copy_slug", out copySlug)
+                && string.Equals(copySlug, "telescope", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Remove stale encounter historic from export; set live red count (including 0).
+        /// </summary>
+        public static void ClearStaleEncounterHistoricExtras(
+            RunStateSnapshot snapshot,
+            Player player,
+            string source
+        )
+        {
+            if (snapshot?.extras == null)
+                return;
+
+            snapshot.extras.Remove("historic_words");
+            snapshot.extras.Remove("red_tiles_used_encounter");
+
+            var redUsed = RunStateExporter.TryGetRedTilesUsedEncounterPublic(player);
+            if (redUsed >= 0)
+                snapshot.extras["red_tiles_used_encounter"] = redUsed.ToString();
+
+            snapshot.extras["encounter_historic_source"] = source ?? "cleared";
+
+            string prev;
+            if (snapshot.extras.TryGetValue("previous_word_first_letter", out prev)
+                && !string.IsNullOrEmpty(prev))
+            {
+                CompanionDiagnostics.LogVerbose(
+                    "Encounter historic empty ("
+                        + (source ?? "cleared")
+                        + "; previous_word_first_letter="
+                        + prev
+                        + ")"
+                );
+            }
+        }
+
+        /// <summary>
+        /// Keys to merge after Snapshot grid-start: clear cached/submit historic, export live reds.
+        /// </summary>
+        public static Dictionary<string, string> BuildEncounterHistoricClearMergeKeys(Player player)
+        {
+            RunStateExporter.ClearCachedPreviousWordsForExport();
+            var keys = new Dictionary<string, string>
+            {
+                ["historic_words"] = "",
+                ["encounter_historic_source"] = "grid_start_cleared",
+            };
+            var redUsed = RunStateExporter.TryGetRedTilesUsedEncounterPublic(player);
+            if (redUsed >= 0)
+                keys["red_tiles_used_encounter"] = redUsed.ToString();
+            return keys;
         }
 
         /// <summary>
@@ -432,6 +515,36 @@ namespace CursedWordsSolverCompanion
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Workflow extras as they will be at score time (live player historic, not debounced run_state).
+        /// </summary>
+        public static Dictionary<string, string> BuildSubmitWorkflowExtras(
+            Player player,
+            Dictionary<string, string> liveExtras
+        )
+        {
+            var projected = liveExtras != null
+                ? new Dictionary<string, string>(liveExtras)
+                : new Dictionary<string, string>();
+
+            var previousWords = PickBestHistoricWordList(player);
+            if (previousWords != null && previousWords.Count > 0)
+            {
+                var captured = ScoringContextCapture.ExtractFromPreviousWords(previousWords);
+                foreach (var kv in captured)
+                    projected[kv.Key] = kv.Value ?? "";
+            }
+
+            var overlay = BuildBestHistoricExtras(player, projected);
+            if (overlay != null)
+            {
+                foreach (var kv in overlay)
+                    projected[kv.Key] = kv.Value ?? "";
+            }
+
+            return projected;
         }
 
         private static List<HistoricWord> PickBestHistoricWordList(Player player)

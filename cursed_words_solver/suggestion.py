@@ -172,6 +172,27 @@ def workflow_stale_vs_f8_snapshot(
     return "; ".join(notes)
 
 
+def f8_prior_suggestion_stale_note(
+    run_state_extras: dict[str, Any] | None,
+) -> str | None:
+    """Note when run_state workflow drifted since the prior F8 embed (before overwriting)."""
+    if not LAST_SUGGESTION_PATH.exists():
+        return None
+    data = _last_suggestion_fingerprint_data()
+    if data is None:
+        return None
+    reason = workflow_stale_vs_f8_snapshot(
+        run_state_extras if isinstance(run_state_extras, dict) else {},
+        _f8_snapshot_extras(data),
+    )
+    if reason is None:
+        return None
+    return (
+        "Played a word since last F8 "
+        f"({reason}) — prior overlay suggestion was stale; this F8 refreshes it."
+    )
+
+
 def clear_stale_last_suggestion_if_workflow_changed(
     run_state_extras: dict[str, Any] | None,
 ) -> str | None:

@@ -8,6 +8,8 @@ from cursed_words_solver.loadout import (
     neapolitan_extras_stale_warning,
     parse_run_state,
     save_loadout,
+    steak_extras_stale_warning,
+    validate_run_state_for_scoring,
 )
 from cursed_words_solver.models import Loadout, LoadoutItem
 
@@ -160,6 +162,33 @@ def test_neapolitan_warning_default_when_no_percent_available():
     warning = neapolitan_extras_stale_warning(lo)
     assert warning is not None
     assert "defaulting to 100%" in warning
+
+
+def test_steak_warning_when_percent_and_count_missing():
+    lo = Loadout(
+        stamps=[LoadoutItem(id="steak", name="Steak", kind="stamp")],
+        extras={},
+    )
+    warning = steak_extras_stale_warning(lo)
+    assert warning is not None
+    assert "steak_word_bonus_percent" in warning
+
+
+def test_steak_warning_none_when_percent_exported():
+    lo = Loadout(
+        stamps=[LoadoutItem(id="steak", name="Steak", kind="stamp")],
+        extras={"steak_word_bonus_percent": "250"},
+    )
+    assert steak_extras_stale_warning(lo) is None
+
+
+def test_validate_run_state_steak_missing_percent():
+    lo = Loadout(
+        stamps=[LoadoutItem(id="steak", name="Steak", kind="stamp")],
+        extras={},
+    )
+    warnings = validate_run_state_for_scoring(lo)
+    assert any("steak_word_bonus_percent" in w for w in warnings)
 
 
 def test_parse_run_state_normalizes_boss_modifiers_json_string():

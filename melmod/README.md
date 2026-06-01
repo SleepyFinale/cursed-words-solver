@@ -272,6 +272,8 @@ Run context extras (default-unlocked stickers):
 | `grid_number` | Current grid index in the encounter (1-based; also updated from `CalculateOverallScore`) |
 | `run_seed` | Run RNG seed when readable from player/progress |
 | `rare_item_count` | Owned RARE stickers/stamps/pin |
+| `steak_word_bonus_percent` | Steak multiplicative ×WORD percent (e.g. `250` = ×2.5). Auto-exported from live stamp reflection or `100 + 25 × rare_item_count`; submit/F8 trace overwrites when the game formula differs. Press **F7** after equipping Steak if the solver warns it is missing. |
+| `rare_item_count_last_known` | Last submit-captured rare count (Steak); used when live reflection is unavailable |
 | `fairy_count` | Fairy-related stamp count |
 | `animal_stamp_count` | Animal-themed stamps equipped |
 | `money_lost_encounter` | Money lost this encounter |

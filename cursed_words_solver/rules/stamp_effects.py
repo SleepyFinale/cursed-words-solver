@@ -201,7 +201,8 @@ def apply_snapshot_copy_sticker(
     is_multiply = copy_rule.get("type") == "multiply_word_scaled"
     if multiply_only != is_multiply:
         return state
-    level = snapshot_copy_level(loadout, sticker.level)
+    copy_grid_level = snapshot_copy_level(loadout, sticker.level)
+    level = max(copy_grid_level, max(1, sticker.level))
     state["_snapshot_proxy"] = True
     state = apply_rule(
         copy_rule,

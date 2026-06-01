@@ -38,6 +38,7 @@ from cursed_words_solver.suggestion import (
     clear_stale_last_suggestion_if_loadout_changed,
     dictionary_word_for_path,
     format_suggestion_word,
+    f8_prior_suggestion_stale_note,
     poll_invalidate_last_suggestion,
     save_last_suggestion,
     stale_suggestion_warning,
@@ -731,6 +732,16 @@ class SolverApp:
                     run_state_data,
                     loadout,
                 )
+                run_extras = (
+                    run_state_data.get("extras")
+                    if isinstance(run_state_data, dict)
+                    else None
+                )
+                stale_note = f8_prior_suggestion_stale_note(
+                    run_extras if isinstance(run_extras, dict) else None
+                )
+                if stale_note:
+                    print(f"  Warning: {stale_note}", flush=True)
                 save_last_suggestion(
                     board=board,
                     loadout=loadout,

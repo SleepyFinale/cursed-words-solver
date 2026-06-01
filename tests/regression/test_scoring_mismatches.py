@@ -1292,7 +1292,11 @@ def _telescope_level_for_replay(run_state: dict, board, path: list[int]) -> int:
 def _infer_encounter_reds_before_word(
     data: dict, board, path: list[int], level: int
 ) -> int:
-    """Infer encounter RED count before this word from Telescope trace deltas."""
+    """Infer encounter RED count before this word from Telescope trace deltas.
+
+    Unreliable when reds on the path are separated by non-red tiles (gap bonus)
+    or when historic was cleared after Snapshot grid-start; prefer live export.
+    """
     trace = data.get("actual_trace") or []
     init_tiles: list | None = None
     tele_tiles: list | None = None
@@ -1319,6 +1323,24 @@ def _infer_encounter_reds_before_word(
     return 0
 
 
+def _snapshot_grid_start_historic_reset(run_state: dict) -> bool:
+    """True when encounter reds were reset after Snapshot grid-start (telescope copy grid).
+
+    Only Snapshot copying Telescope clears encounter historic for telescope scoring;
+    other copy targets (e.g. dusty_coffin) still need trace-inferred prior reds.
+    """
+    extras = run_state.get("extras") or {}
+    if extras.get("historic_words"):
+        return False
+    copy_slug = str(extras.get("snapshot_copy_slug") or "").lower()
+    if copy_slug != "telescope":
+        return False
+    red_raw = extras.get("red_tiles_used_encounter")
+    if red_raw not in (None, "", "0"):
+        return False
+    return True
+
+
 def _adjust_movie_camera_telescope_extras(
     run_state: dict,
     data: dict,
@@ -1330,6 +1352,9 @@ def _adjust_movie_camera_telescope_extras(
         return
     extras = dict(run_state.get("extras") or {})
     if not extras.get("historic_words"):
+        if _snapshot_grid_start_historic_reset(run_state):
+            run_state["extras"] = extras
+            return
         level = _telescope_level_for_replay(run_state, board, path)
         prior_reds = _infer_encounter_reds_before_word(data, board, path, level)
         if prior_reds > 0:
@@ -1785,9 +1810,18 @@ def test_scoring_mismatch(case_path: Path) -> None:
     # For a couple of early plain-letter fixtures the raw F8 snapshot already
     # matches the game's scoring without any extras reconciliation; replay
     # adjustments (Bicycle, birthday cake, etc.) only introduce drift there.
-    if case_path.stem in {"20260526_103842", "20260526_134420"}:
+    if case_path.stem in {
+        "20260526_103842",
+        "20260526_134420",
+        "20260530_175032",
+    }:
         board = parse_board_from_run_state(data.get("run_state_snapshot") or {})
         loadout = parse_run_state(data.get("run_state_snapshot") or {})
+        from cursed_words_solver.rules.scoring_conditions import (
+            apply_snapshot_phased_session_extras,
+        )
+
+        apply_snapshot_phased_session_extras(loadout, board)
         pipeline = ScoringPipeline()
         score, _ = pipeline.score(board, path, word, loadout)
         assert int(score) == expected

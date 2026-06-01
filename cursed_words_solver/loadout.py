@@ -795,6 +795,18 @@ def validate_run_state_for_scoring(
             if extras.get("lucky_dice_target_missing") not in (True, "true", "True", "1", 1):
                 warnings.append("Lucky Dice equipped but target_number missing")
 
+    if "steak" in stamp_ids:
+        has_pct = False
+        raw_pct = extras.get("steak_word_bonus_percent")
+        if raw_pct not in (None, ""):
+            try:
+                has_pct = int(raw_pct) >= 100
+            except (TypeError, ValueError):
+                has_pct = False
+        has_rare = extras.get("rare_item_count") not in (None, "")
+        if not has_pct and not has_rare:
+            warnings.append("Steak equipped but steak_word_bonus_percent missing")
+
     if board is None and extras.get("encounter_mode") == "encounter":
         warnings.append("encounter active but board could not be parsed")
 
@@ -1022,7 +1034,7 @@ def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:
 
 
 def steak_extras_stale_warning(loadout: Loadout | None) -> str | None:
-    """Warn when Steak is equipped but rare count was never captured from a submit."""
+    """Warn when Steak is equipped but scoring extras were never captured."""
     if loadout is None:
         return None
     from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
@@ -1030,13 +1042,20 @@ def steak_extras_stale_warning(loadout: Loadout | None) -> str | None:
     if not loadout_has_stamp(loadout, "steak"):
         return None
     extras = loadout.extras or {}
+    raw_pct = extras.get("steak_word_bonus_percent")
+    if raw_pct not in (None, ""):
+        try:
+            if int(raw_pct) >= 100:
+                return None
+        except (TypeError, ValueError):
+            pass
     if _extra_int_positive(extras, "rare_item_count_last_known") is not None:
         return None
     if _extra_int_positive(extras, "rare_item_count") is not None:
         return None
     return (
-        "Steak: rare_item_count missing from run_state — submit a word or press F7 "
-        "so melmod can capture owned rare items."
+        "Steak: steak_word_bonus_percent and rare_item_count missing from run_state — "
+        "press F7 in-game or submit a word so melmod can export Steak scoring."
     )
 
 

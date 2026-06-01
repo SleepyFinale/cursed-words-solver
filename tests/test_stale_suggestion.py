@@ -11,6 +11,7 @@ from cursed_words_solver.suggestion import (
     clear_stale_last_suggestion_if_context_changed,
     clear_stale_last_suggestion_if_loadout_changed,
     clear_stale_last_suggestion_if_workflow_changed,
+    f8_prior_suggestion_stale_note,
     stale_suggestion_warning,
     workflow_stale_vs_f8_snapshot,
 )
@@ -562,3 +563,38 @@ def test_no_clear_when_historic_unchanged(tmp_path, monkeypatch):
         is None
     )
     assert suggestion_path.exists()
+
+
+def test_f8_prior_suggestion_stale_note_when_workflow_drifted(tmp_path, monkeypatch):
+    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
+    suggestion_path.write_text(
+        json.dumps(
+            {
+                "board_fingerprint": "board-a",
+                "run_state_snapshot": {
+                    "extras": {"previous_word_first_letter": "j"}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    note = f8_prior_suggestion_stale_note({"previous_word_first_letter": "f"})
+    assert note is not None
+    assert "Played a word since last F8" in note
+    assert "j→f" in note
+
+
+def test_f8_prior_suggestion_stale_note_none_when_aligned(tmp_path, monkeypatch):
+    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
+    suggestion_path.write_text(
+        json.dumps(
+            {
+                "board_fingerprint": "board-a",
+                "run_state_snapshot": {
+                    "extras": {"previous_word_first_letter": "j"}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert f8_prior_suggestion_stale_note({"previous_word_first_letter": "j"}) is None

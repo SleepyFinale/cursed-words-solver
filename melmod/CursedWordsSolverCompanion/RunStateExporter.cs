@@ -182,6 +182,37 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
+        /// Drop submit-hook cached previousWords (e.g. after Snapshot grid-start encounter reset).
+        /// </summary>
+        public static void ClearCachedPreviousWordsForExport()
+        {
+            _cachedPreviousWords = null;
+        }
+
+        /// <summary>
+        /// Live encounter RED tile count from player properties (0 is valid).
+        /// </summary>
+        public static int TryGetRedTilesUsedEncounterPublic(Player player)
+        {
+            if (player == null)
+                return -1;
+
+            var redUsed = TryGetIntProperty(
+                player,
+                "RedTilesUsedThisEncounter",
+                "RedTilesUsedEncounter",
+                "RedTilesPlayedThisEncounter"
+            );
+            if (redUsed < 0)
+                redUsed = TryGetIntProperty(
+                    GameStatics.GetPlayer(),
+                    "RedTilesUsedThisEncounter",
+                    "RedTilesUsedEncounter"
+                );
+            return redUsed;
+        }
+
+        /// <summary>
         /// Merge historic_words and red_tiles_used_encounter after CalculateOverallScore.
         /// </summary>
         public static bool TryMergeTelescopeEncounterExtras(List<HistoricWord> previousWords)
@@ -338,6 +369,7 @@ namespace CursedWordsSolverCompanion
 
                 var freshExtras = BuildExtrasSnapshot();
                 ScoringCaptureSession.MergeScoringContextIntoExtras(freshExtras);
+                TryMergeSteakExtrasAfterSubmit(freshExtras);
                 if (freshExtras == null || freshExtras.Count == 0)
                     return;
                 TryMergeExtrasKeys(freshExtras);
@@ -350,6 +382,37 @@ namespace CursedWordsSolverCompanion
             catch (Exception ex)
             {
                 ExportDiagnostics.RecordMergeError("TryMergeExtrasAfterSubmit: " + ex.Message);
+            }
+        }
+
+        private static void TryMergeSteakExtrasAfterSubmit(Dictionary<string, string> freshExtras)
+        {
+            if (freshExtras == null)
+                return;
+
+            try
+            {
+                var player = GetPlayer();
+                if (player == null || !PlayerHasStampSlug(player, "steak"))
+                    return;
+
+                var rare = TryParseNonNegativeExtra(freshExtras, "rare_item_count");
+                if (rare >= 0)
+                    freshExtras["rare_item_count_last_known"] = rare.ToString();
+
+                if (
+                    !freshExtras.ContainsKey("steak_word_bonus_percent")
+                    || string.IsNullOrEmpty(freshExtras["steak_word_bonus_percent"])
+                )
+                {
+                    var steakPercent = ResolveSteakPercentForExport(player, freshExtras);
+                    if (steakPercent >= 100)
+                        freshExtras["steak_word_bonus_percent"] = steakPercent.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                ExportDiagnostics.RecordMergeError("TryMergeSteakExtrasAfterSubmit: " + ex.Message);
             }
         }
 
@@ -820,7 +883,7 @@ namespace CursedWordsSolverCompanion
 
             var live = TryParseNonNegativeExtra(snapshot.extras, "rare_item_count");
 
-            var best = lastKnown >= 0 ? lastKnown : live;
+            var best = live >= 0 ? live : lastKnown;
             if (best < 0 && onDisk != null)
                 best = TryParseNonNegativeExtra(onDisk, "rare_item_count");
 
@@ -828,6 +891,41 @@ namespace CursedWordsSolverCompanion
                 return;
 
             snapshot.extras["rare_item_count"] = best.ToString();
+        }
+
+        /// <summary>
+        /// Steak multiplicative WordBonus percent (e.g. 250 = ×2.5). Prefer live reflection,
+        /// then rare-item formula (100 + 25 × count), then on-disk capture.
+        /// </summary>
+        public static int ResolveSteakPercentForExport(
+            Player player,
+            Dictionary<string, string> extras = null
+        )
+        {
+            var reflected = TryGetSteakWordBonusPercent(player);
+            if (reflected >= 100)
+                return reflected;
+
+            var rareCount = -1;
+            if (extras != null)
+                rareCount = TryParseNonNegativeExtra(extras, "rare_item_count");
+            if (rareCount < 0)
+                rareCount = RunStateExportFill.CountRareItemsForPlayer(player);
+            if (rareCount < 0 && PlayerHasStampSlug(player, "steak"))
+                rareCount = 0;
+            if (rareCount >= 0)
+                return 100 + 25 * rareCount;
+
+            var onDisk = TryReadExtrasFromDisk();
+            string cachedRaw;
+            if (
+                onDisk.TryGetValue("steak_word_bonus_percent", out cachedRaw)
+                && TryParseExtraPercent(cachedRaw, out var cached)
+                && cached >= 100
+            )
+                return cached;
+
+            return reflected;
         }
 
         private static int TryParseNonNegativeExtra(
@@ -1675,6 +1773,13 @@ namespace CursedWordsSolverCompanion
             if (neapolitanPercent >= 100)
                 snapshot.extras["neapolitan_percent"] = neapolitanPercent.ToString();
 
+            if (PlayerHasStampSlug(player, "steak"))
+            {
+                var steakPercent = ResolveSteakPercentForExport(player, snapshot.extras);
+                if (steakPercent >= 100)
+                    snapshot.extras["steak_word_bonus_percent"] = steakPercent.ToString();
+            }
+
             var targetCurse = TryGetStringProperty(
                 player,
                 "TargetCurseType",
@@ -1819,6 +1924,53 @@ namespace CursedWordsSolverCompanion
         }
 
         private static int TryGetNeapolitanPercentFromObject(object target)
+        {
+            if (target == null)
+                return -1;
+
+            var bonus = TryGetAccumulatedWordBonusFromObject(target);
+            if (bonus >= 100 && bonus <= 500)
+                return bonus;
+
+            return -1;
+        }
+
+        /// <summary>
+        /// Steak stamp multiplicative WordBonus percent (e.g. 250 = ×2.5). Returns -1 if unknown.
+        /// </summary>
+        public static int TryGetSteakWordBonusPercent(Player player)
+        {
+            if (player?.Stamps == null)
+                return -1;
+
+            foreach (var stamp in player.Stamps)
+            {
+                if (stamp == null)
+                    continue;
+                var name = stamp.Name ?? "";
+                var art = stamp.ArtFileName ?? "";
+                if (
+                    name.IndexOf("Steak", StringComparison.OrdinalIgnoreCase) < 0
+                    && art.IndexOf("steak", StringComparison.OrdinalIgnoreCase) < 0
+                )
+                    continue;
+
+                var percent = TryGetSteakWordBonusPercentFromObject(stamp);
+                if (percent >= 0)
+                    return percent;
+
+                foreach (var nested in TryGetNestedStickerTargets(stamp))
+                {
+                    percent = TryGetSteakWordBonusPercentFromObject(nested);
+                    if (percent >= 0)
+                        return percent;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int TryGetSteakWordBonusPercentFromObject(object target)
         {
             if (target == null)
                 return -1;
@@ -3212,6 +3364,12 @@ namespace CursedWordsSolverCompanion
                     ["snapshot_copy_captured_at"] = DateTime.UtcNow.ToString("o"),
                 };
                 ExportDiagnostics.SetSnapshotCopySource("grid_start_hook");
+                var player = GetPlayer();
+                if (string.Equals(slug, "telescope", StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (var kv in RunStateExportFill.BuildEncounterHistoricClearMergeKeys(player))
+                        keys[kv.Key] = kv.Value;
+                }
                 TryMergeExtrasKeys(keys);
                 CompanionDiagnostics.LogVerbose(
                     "Snapshot grid-start copy: " + slug + " level " + copyLevel

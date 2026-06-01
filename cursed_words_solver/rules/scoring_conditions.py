@@ -1472,7 +1472,7 @@ def dusty_coffin_void_units(
                     return max(0, int(raw))
                 except (TypeError, ValueError):
                     pass
-    count = void_tiles_letter_not_in_word(board, word)
+    count = void_tiles_letter_not_in_word(board, word, path=path)
     copy_is_dusty = (
         loadout is not None
         and snapshot_copy_slug(loadout) == "dusty_coffin"
@@ -1482,6 +1482,12 @@ def dusty_coffin_void_units(
             letters_in_word = set((word or "").lower())
             for idx in path:
                 tile = board.get_by_index(idx)
+                slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
+                if slug == "dusty_coffin":
+                    face = path_letter_for_count(tile)
+                    if face and face.lower() not in letters_in_word:
+                        count += 1
+                    continue
                 if tile.color != TileColor.VOID or tile.curse != CurseType.LETTER:
                     continue
                 face = path_letter_for_count(tile)
@@ -1490,12 +1496,21 @@ def dusty_coffin_void_units(
     return count
 
 
-def void_tiles_letter_not_in_word(board: Board, word: str) -> int:
-    """VOID tiles on the grid whose face is not in the submitted word (Dusty Coffin)."""
+def void_tiles_letter_not_in_word(
+    board: Board, word: str, *, path: list[int] | None = None
+) -> int:
+    """VOID tiles on the grid whose face is not in the submitted word (Dusty Coffin).
+
+    When ``path`` is provided, void tiles on the word path are excluded (game
+    treats path voids separately via dusty_coffin_void_units additive logic).
+    """
     letters_in_word = set((word or "").lower())
+    on_path = path_indices_set(path) if path else None
     count = 0
     for tile in board.flat:
         if tile.color != TileColor.VOID:
+            continue
+        if on_path is not None and tile.index in on_path:
             continue
         if tile.curse == CurseType.ITEM:
             scattered = str((tile.metadata or {}).get("scattered_item_id", "")).strip().lower()
@@ -1585,6 +1600,8 @@ def _double_letter_char_at_path_step(
     """Resolved letter and source ('currency'|'letter') for Yellow Glasses doubles."""
     tile = board.get_by_index(idx)
     w = word.lower()
+    if tile.curse == CurseType.ITEM:
+        return None
     if tile.curse == CurseType.CURRENCY:
         if w and step < len(w):
             cand = w[step]
@@ -1603,8 +1620,9 @@ def has_consecutive_double_letter_on_path(
     """Yellow Glasses: consecutive path tiles with the same letter (game behavior).
 
     Currency tiles use the submitted word character at that path step; letter tiles
-    use their path letter. A double counts only when both consecutive steps resolve
-    to the same letter **and** the same source (both currency or both letter).
+    use their path letter. Scattered sticker (ITEM) path tiles are ignored.
+    A double counts only when both consecutive steps resolve to the same letter
+    **and** the same source (both currency or both letter).
     """
     w = word.lower()
     steps = normalize_scoring_path(path) if w else path
@@ -1842,14 +1860,27 @@ def telescope_running_red_count(
     path: list[int],
     path_index: int,
 ) -> int:
-    """Running RED count for Telescope at path index (game: historic reds + path prefix)."""
+    """Running RED count for Telescope at path index (game: historic reds + path prefix).
+
+    When a red tile on the path is not immediately preceded by another red tile,
+    the game adds +1 to the running count (gap-separated reds on the word path).
+    """
     prior = encounter_red_tiles_before_current_word(loadout)
     prefix_reds = sum(
         1
         for j in range(path_index + 1)
         if board.get_by_index(path[j]).color == TileColor.RED
     )
-    return prior + prefix_reds
+    reds_before = sum(
+        1
+        for j in range(path_index)
+        if board.get_by_index(path[j]).color == TileColor.RED
+    )
+    has_gap = (
+        reds_before > 0
+        and board.get_by_index(path[path_index - 1]).color != TileColor.RED
+    )
+    return prior + prefix_reds + (1 if has_gap else 0)
 
 
 def movie_camera_prior_from_historic(loadout: Loadout | None) -> int:
@@ -3901,6 +3932,26 @@ def grid_path_word_mult_is_immediate(
     return rid != "ferris_wheel"
 
 
+def snapshot_copies_down_under_above_grid_scatter(
+    loadout: Loadout | None,
+    scatter_level: int,
+) -> bool:
+    """Grid Down Under uses scattered tier when Snapshot copy will apply at higher level."""
+    if loadout is None or snapshot_copy_slug(loadout) != "down_under":
+        return False
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    for sticker in loadout.stickers:
+        if slugify_name(sticker.id or sticker.name) != "snapshot":
+            continue
+        try:
+            snap_level = max(1, int(sticker.level))
+        except (TypeError, ValueError):
+            return False
+        return snap_level > max(1, scatter_level)
+    return False
+
+
 def snapshot_copy_slug(loadout: Loadout | None) -> str:
     if loadout is None:
         return ""
@@ -3911,6 +3962,11 @@ def snapshot_copy_slug(loadout: Loadout | None) -> str:
 
 
 def snapshot_copy_level(loadout: Loadout | None, snapshot_level: int = 1) -> int:
+    """Grid scatter tier of the copied sticker (snapshot_copy_level extra).
+
+    Copy scoring also uses equipped Snapshot level via apply_snapshot_copy_sticker
+    (max of grid tier and Snapshot sticker level).
+    """
     if loadout is None:
         return max(1, snapshot_level)
     raw = (loadout.extras or {}).get("snapshot_copy_level")
@@ -4213,11 +4269,14 @@ def grid_path_sticker_level(
     otherwise scattered_grid_item_level (not equipped inventory level).
 
     Down Under on grid 1 often matches max equipped sticker level when export is missing.
+    When Snapshot copies Down Under at a higher level than the grid scatter tier, the
+    grid path keeps the exported scattered level (copy uses max separately).
     """
     from cursed_words_solver.rules.rule_lookup import slugify_name
 
     slug_norm = slugify_name(slug)
     level = scattered_grid_item_level(loadout)
+    tile_level_known = False
 
     if board is not None and path is not None and path_tile_index is not None:
         if 0 <= path_tile_index < len(path):
@@ -4226,10 +4285,19 @@ def grid_path_sticker_level(
             if raw is not None:
                 try:
                     level = max(1, int(raw))
+                    tile_level_known = True
                 except (TypeError, ValueError):
                     pass
 
-    if slug_norm == "down_under" and loadout is not None and loadout.stickers:
+    if (
+        slug_norm == "down_under"
+        and loadout is not None
+        and loadout.stickers
+        and not (
+            tile_level_known
+            and snapshot_copies_down_under_above_grid_scatter(loadout, level)
+        )
+    ):
         max_equipped = 1
         for sticker in loadout.stickers:
             try:

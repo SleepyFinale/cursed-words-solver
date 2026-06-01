@@ -88,3 +88,21 @@ def test_steak_no_rare_items_base_multiplier():
     base, _ = pipeline.score(board, [0], "a", Loadout())
     assert bd["multiplier"] == 1.0
     assert score == base
+
+
+def test_steak_word_bonus_percent_overrides_rare_count():
+    """Melmod-exported percent (from trace) beats wiki rare-count formula."""
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 10)
+    board.tiles[0][1] = _tile(0, 1, "B", 10)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="steak", name="Steak", kind="stamp")],
+        extras={
+            "rare_item_count": "2",
+            "steak_word_bonus_percent": "275",
+        },
+    )
+    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
+    assert bd["multiplier"] == 2.75
+    assert score == 55

@@ -108,18 +108,13 @@ namespace CursedWordsSolverCompanion
                     _suggestion?.run_state_snapshot
                 );
                 var liveExtras = RunStateExporter.BuildExtrasSnapshot();
-                var historicOverlay = RunStateExportFill.BuildBestHistoricExtras(
+                var projectedExtras = RunStateExportFill.BuildSubmitWorkflowExtras(
                     player,
                     liveExtras
                 );
-                if (historicOverlay != null)
-                {
-                    foreach (var kv in historicOverlay)
-                        liveExtras[kv.Key] = kv.Value ?? "";
-                }
 
                 var staleCtx = RunStateExporter.BuildStaleF8Context(player);
-                var diff = ExtrasDiffHelper.DiffExtras(f8Extras, liveExtras);
+                var diff = ExtrasDiffHelper.DiffExtras(f8Extras, projectedExtras);
                 var workflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(
                     diff,
                     staleCtx
@@ -131,7 +126,7 @@ namespace CursedWordsSolverCompanion
                     return;
                 }
 
-                ExtrasDiffHelper.LogStaleF8DriftWarnings(f8Extras, liveExtras, staleCtx);
+                ExtrasDiffHelper.LogStaleF8DriftWarnings(f8Extras, projectedExtras, staleCtx);
 
                 _active = true;
                 MelonLogger.Msg(
@@ -239,6 +234,25 @@ namespace CursedWordsSolverCompanion
             "cards_submitted",
         };
 
+        private static readonly string[] WorkflowExtrasPreserveKeys =
+        {
+            "previous_word_first_letter",
+            "historic_words",
+            "mutating_dna_letter_counts",
+        };
+
+        private static bool IsWorkflowExtrasPreserveKey(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+                return false;
+            foreach (var preserveKey in WorkflowExtrasPreserveKeys)
+            {
+                if (string.Equals(key, preserveKey, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
         /// <summary>Overlay scoring-time extras onto a snapshot before post-submit merge.</summary>
         public static void MergeScoringContextIntoExtras(Dictionary<string, string> target)
         {
@@ -289,6 +303,12 @@ namespace CursedWordsSolverCompanion
                         extras[kv.Key] = kv.Value ?? "";
                     continue;
                 }
+                if (
+                    IsWorkflowExtrasPreserveKey(kv.Key)
+                    && extras.ContainsKey(kv.Key)
+                    && !string.IsNullOrEmpty(extras[kv.Key])
+                )
+                    continue;
                 extras[kv.Key] = kv.Value ?? "";
             }
 
