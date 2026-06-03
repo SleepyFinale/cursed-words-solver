@@ -1,0 +1,13 @@
+{
+  "description": "Repro from round_logs/20260603_145436_675.json: teepee grid 2 F8 has 4 stale words, submit iliacus only.",
+  "grid_number_submit": "2",
+  "extras_diff": {
+    "historic_words": {
+      "f8": "[{\"word\":\"ANOMI\",\"score\":564},{\"word\":\"AGEISM\",\"score\":966},{\"word\":\"AAS\",\"score\":1080},{\"word\":\"ARK\",\"score\":738}]",
+      "submit": "[{\"word\":\"ILIACUS\",\"score\":880,\"path\":[16,12,11,5,9,13,17]}]"
+    }
+  },
+  "expected_stale_note_contains": [
+    "historic_words changed"
+  ]
+}

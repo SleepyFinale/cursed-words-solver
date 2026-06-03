@@ -1,0 +1,17 @@
+{
+  "description": "Repro from round_logs/20260603_142337_992.json: abided grid 4 F8 embed empty historic, submit has 3 encounter words.",
+  "grid_number_submit": "4",
+  "extras_diff": {
+    "historic_words": {
+      "f8": "",
+      "submit": "[{\"word\":\"TWEE\",\"score\":532,\"path\":[9,8,13,18,22],\"red_tile_count\":1},{\"word\":\"SORRE\",\"score\":564,\"path\":[5,1,6,11,17,23]},{\"word\":\"NUP\",\"score\":480,\"path\":[24,19,14,9]}]"
+    },
+    "red_tiles_used_encounter": {
+      "f8": "",
+      "submit": "1"
+    }
+  },
+  "expected_stale_note_contains": [
+    "historic_words changed"
+  ]
+}

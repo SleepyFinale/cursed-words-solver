@@ -1726,6 +1726,25 @@ def grid_number_half(loadout: Loadout) -> float:
     return grid_number(loadout) / 2.0
 
 
+def _limnophila_previous_word_available(loadout: Loadout) -> bool:
+    """Prior word on this grid exists (melmod scoring previousWords cache, not encounter historic)."""
+    if _extra_bool(loadout, "is_first_grid_of_encounter"):
+        return False
+    if grid_number(loadout) == 1:
+        return False
+    extras = loadout.extras or {}
+    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
+    if source in ("grid_start_cleared", "grid_advanced"):
+        return False
+    raw = extras.get("scoring_previous_words_count")
+    if raw is not None and str(raw).strip() != "":
+        try:
+            return int(str(raw).strip()) > 0
+        except (ValueError, TypeError):
+            return False
+    return bool(_extra_letter(loadout, "previous_word_first_letter"))
+
+
 def consumable_count_on_path(board: Board, path: list[int]) -> int:
     return sum(
         1 for idx in path if is_consumable_tile(board.get_by_index(idx))
@@ -2354,6 +2373,8 @@ def explain_sticker_condition(
         return True, f"applied: word starts '{first}' same as previous"
 
     if condition == "word_starts_after_previous":
+        if not _limnophila_previous_word_available(loadout):
+            return False, "skipped: no previous word on this grid"
         prev = _extra_letter(loadout, "previous_word_first_letter")
         first = _effective_word_start_letter(board, path, word)
         if not prev or not first:
@@ -2452,6 +2473,8 @@ def _evaluate_sticker_condition(
             return False
         return first == prev
     if condition == "word_starts_after_previous":
+        if not _limnophila_previous_word_available(loadout):
+            return False
         prev = _extra_letter(loadout, "previous_word_first_letter")
         first = _effective_word_start_letter(board, path, word)
         if not prev or not first:

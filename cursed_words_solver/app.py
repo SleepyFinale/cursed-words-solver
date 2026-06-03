@@ -35,13 +35,15 @@ from cursed_words_solver.config import (
 from cursed_words_solver.suggestion import (
     clear_last_suggestion,
     clear_stale_last_suggestion_if_context_changed,
+    clear_stale_last_suggestion_if_fingerprint_changed,
     clear_stale_last_suggestion_if_loadout_changed,
     dictionary_word_for_path,
     format_suggestion_word,
     f8_prior_suggestion_stale_note,
     poll_invalidate_last_suggestion,
+    empty_historic_on_later_grid_warning,
+    run_state_historic_stale_warnings,
     save_last_suggestion,
-    stale_suggestion_warning,
 )
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, WordResult
@@ -53,6 +55,7 @@ from cursed_words_solver.loadout import (
     load_run_state_raw,
     melmod_board_available,
     melmod_install_hint,
+    merge_encounter_historic_for_f8_snapshot,
     merge_loadout_with_board,
     neapolitan_extras_stale_warning,
     mod_money_from_run_state,
@@ -120,6 +123,7 @@ class SolverApp:
         self._dictionary: WordDictionary | None = None
         self._searcher: WordSearcher | None = None
         self._busy = False
+        self._solve_active = False
         self._calibrating = False
         self._hotkey_handle = None
         self._shutting_down = False
@@ -290,11 +294,17 @@ class SolverApp:
                     current_loadout_fp=loadout_fp,
                     run_state_extras=extras if isinstance(extras, dict) else None,
                 ):
-                    stale_note = stale_suggestion_warning(
-                        board_fp, current_loadout_fp=loadout_fp
+                    cleared = clear_stale_last_suggestion_if_fingerprint_changed(
+                        board_fp,
+                        current_loadout_fp=loadout_fp,
                     )
-                    if stale_note:
-                        print(f"  {stale_note}", flush=True)
+                    if cleared:
+                        self._last_invalidation_reason = cleared
+                        print(
+                            "  Cleared stale F8 suggestion from a prior board — "
+                            "press F8 on this board.",
+                            flush=True,
+                        )
         elif self._loadout_source == "mod":
             print(
                 "Melmod loadout found but no board in run_state.json — "
@@ -363,6 +373,9 @@ class SolverApp:
 
     def _poll_run_state_stale(self) -> None:
         """Invalidate stale F8 suggestions and drop highlights when run_state drifts."""
+        if self._solve_active:
+            return
+
         from cursed_words_solver.config import LAST_SUGGESTION_PATH
         from cursed_words_solver.fingerprints import fingerprints_from_run_state
 
@@ -378,6 +391,7 @@ class SolverApp:
                 extras if isinstance(extras, dict) else None,
                 current_board_fp=board_fp,
                 current_loadout_fp=loadout_fp,
+                search_budget_sec=self.config.search_time_budget_sec,
             )
             if reason and reason != self._last_invalidation_reason:
                 self._last_invalidation_reason = reason
@@ -469,6 +483,7 @@ class SolverApp:
 
     def _solve_worker(self) -> None:
         self._busy = True
+        self._solve_active = True
         unmapped: list[str] = []
         board_source = "melmod"
         money_source = "mod"
@@ -513,6 +528,15 @@ class SolverApp:
                 return
 
             print("Board from melmod (run_state.json).", flush=True)
+            run_extras = (
+                run_state_data.get("extras")
+                if isinstance(run_state_data, dict)
+                else None
+            )
+            for warn in run_state_historic_stale_warnings(
+                run_extras if isinstance(run_extras, dict) else None
+            ):
+                print(f"  Warning: {warn}", flush=True)
             if mod_money:
                 print(f"Money: ${mod_money} (mod)", flush=True)
             print("Parsed board:", flush=True)
@@ -716,25 +740,45 @@ class SolverApp:
             export_warnings: list[str] = []
             if results:
                 top = results[0]
+                # Re-read run_state after search so F8 embed matches melmod export.
+                self._reload_run_state()
+                fresh_run_state = load_run_state_raw()
+                fresh_mod_money = mod_money_from_run_state(fresh_run_state)
+                save_loadout = merge_loadout_with_board(
+                    self._loadout_cache,
+                    board.money,
+                    mod_money=fresh_mod_money if fresh_mod_money > 0 else None,
+                )
                 pred_score, pred_bd, pred_trace = self._scoring.score_with_trace(
-                    board, top.path, top.word, loadout
+                    board, top.path, top.word, save_loadout
                 )
                 top.score = pred_score
                 top.breakdown = pred_bd
-                export_diag = export_diagnostics_from_run_state(run_state_data)
+                export_diag = export_diagnostics_from_run_state(fresh_run_state)
                 export_warnings = validate_run_state_for_scoring(
-                    loadout,
+                    save_loadout,
                     board=board,
-                    raw=run_state_data,
+                    raw=fresh_run_state,
                 )
-                session_extras = solver_session_extras_from_loadout(loadout)
+                session_extras = solver_session_extras_from_loadout(save_loadout)
                 f8_snapshot = sanitize_run_state_snapshot_for_f8(
-                    run_state_data,
-                    loadout,
+                    fresh_run_state,
+                    save_loadout,
                 )
+                if f8_snapshot is not None:
+                    fresh_again = load_run_state_raw()
+                    if isinstance(fresh_again, dict):
+                        remerged = merge_encounter_historic_for_f8_snapshot(
+                            f8_snapshot
+                        )
+                        if remerged is not None:
+                            f8_snapshot = sanitize_run_state_snapshot_for_f8(
+                                remerged,
+                                save_loadout,
+                            )
                 run_extras = (
-                    run_state_data.get("extras")
-                    if isinstance(run_state_data, dict)
+                    fresh_run_state.get("extras")
+                    if isinstance(fresh_run_state, dict)
                     else None
                 )
                 stale_note = f8_prior_suggestion_stale_note(
@@ -742,9 +786,14 @@ class SolverApp:
                 )
                 if stale_note:
                     print(f"  Warning: {stale_note}", flush=True)
+                empty_hist_warn = empty_historic_on_later_grid_warning(
+                    run_extras if isinstance(run_extras, dict) else None
+                )
+                if empty_hist_warn:
+                    print(f"  Warning: {empty_hist_warn}", flush=True)
                 save_last_suggestion(
                     board=board,
-                    loadout=loadout,
+                    loadout=save_loadout,
                     result=top,
                     predicted_trace=pred_trace,
                     run_state_snapshot=f8_snapshot,
@@ -821,6 +870,7 @@ class SolverApp:
             (DEBUG_DIR / "last_error.txt").write_text(err, encoding="utf-8")
         finally:
             self._busy = False
+            self._solve_active = False
 
     def _reload_run_state(self) -> None:
         """Reload run_state.json (e.g. after melmod F7 export)."""

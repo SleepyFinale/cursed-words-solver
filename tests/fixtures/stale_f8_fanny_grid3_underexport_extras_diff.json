@@ -1,0 +1,13 @@
+{
+  "description": "Repro from round_logs/20260603_150309_521.json: fanny grid 3 F8 missing teepee in historic.",
+  "grid_number_submit": "3",
+  "extras_diff": {
+    "historic_words": {
+      "f8": "[{\"word\":\"ILIACUS\",\"score\":880,\"path\":[16,12,11,5,9,13,17]}]",
+      "submit": "[{\"word\":\"ILIACUS\",\"score\":880,\"path\":[16,12,11,5,9,13,17]},{\"word\":\"TEEPEE\",\"score\":492,\"path\":[8,13,2,1,6,5],\"red_tile_count\":1}]"
+    }
+  },
+  "expected_stale_note_contains": [
+    "historic_words changed"
+  ]
+}

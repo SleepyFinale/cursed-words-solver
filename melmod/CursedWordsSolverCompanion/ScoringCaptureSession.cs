@@ -113,6 +113,14 @@ namespace CursedWordsSolverCompanion
                     liveExtras
                 );
 
+                SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
+                    _suggestion,
+                    projectedExtras
+                );
+                f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                    _suggestion?.run_state_snapshot
+                );
+
                 var staleCtx = RunStateExporter.BuildStaleF8Context(player);
                 var diff = ExtrasDiffHelper.DiffExtras(f8Extras, projectedExtras);
                 var workflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(

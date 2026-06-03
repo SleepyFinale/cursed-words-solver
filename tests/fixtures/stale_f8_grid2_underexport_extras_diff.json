@@ -1,0 +1,21 @@
+{
+  "description": "Repro from round_logs/20260603_135247_934.json: F8 embed had empty historic on grid 2 while submit used grid-1 ATTEST for encounter scoring.",
+  "grid_number_submit": "2",
+  "extras_diff": {
+    "historic_words": {
+      "f8": "",
+      "submit": "[{\"word\":\"ATTEST\",\"score\":164,\"path\":[19,13,6,11,7,8],\"red_tile_count\":1}]"
+    },
+    "previous_word_first_letter": {
+      "f8": "",
+      "submit": "a"
+    },
+    "red_tiles_used_encounter": {
+      "f8": "",
+      "submit": "1"
+    }
+  },
+  "expected_stale_note_contains": [
+    "historic_words changed"
+  ]
+}

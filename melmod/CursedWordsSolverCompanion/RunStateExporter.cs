@@ -41,6 +41,7 @@ namespace CursedWordsSolverCompanion
 
                 TryFlushPendingBicycleExtrasRetry();
                 TryMergeBicycleExtrasAfterScore();
+                RunStateExportFill.TryClearStaleHistoricCacheOnGridAdvance(player);
 
                 var fingerprint = ComputeFingerprint(player);
                 var snapshot = BuildSnapshot(player);
@@ -265,6 +266,11 @@ namespace CursedWordsSolverCompanion
             if (string.IsNullOrEmpty(existing) || existing == "[]")
                 return true;
             return !string.Equals(existing, incoming, StringComparison.Ordinal);
+        }
+
+        public static string TryReadRunStateExtra(string key)
+        {
+            return TryReadExtraValue(key);
         }
 
         private static string TryReadExtraValue(string key)
@@ -722,6 +728,8 @@ namespace CursedWordsSolverCompanion
 
         private static readonly string[] ExtrasPreserveFromDisk =
         {
+            "historic_words",
+            "red_tiles_used_encounter",
             "previous_word_first_letter",
             "mutating_dna_letter_counts",
             "bicycle_word_score_bonus",
@@ -1621,27 +1629,39 @@ namespace CursedWordsSolverCompanion
             if (firstGrid >= 0)
                 snapshot.extras["is_first_grid_of_encounter"] = firstGrid > 0 ? "true" : "false";
 
-            var historicWords = TryGetHistoricPreviousWords(player);
-            if (historicWords == null || historicWords.Count == 0)
-                historicWords = GetCachedPreviousWords();
             RunStateExportFill.EnsureEncounterHistoricExtras(snapshot, player);
+            var historicWords = RunStateExportFill.PickBestHistoricWordList(player);
 
-            var prevLetter = TryGetStringProperty(
-                player,
-                "PreviousWordFirstLetter",
-                "LastWordFirstLetter",
-                "PreviousSubmittedWordFirstLetter"
-            );
-            if (string.IsNullOrEmpty(prevLetter))
-                prevLetter = TryGetStringProperty(
-                    GameStatics.GetPlayer(),
+            RunStateExportFill.ApplyScoringCachedPreviousWordLetter(snapshot.extras);
+            string exportedPrev;
+            if (
+                !snapshot.extras.TryGetValue("previous_word_first_letter", out exportedPrev)
+                || string.IsNullOrEmpty(exportedPrev)
+            )
+            {
+                var prevLetter = TryGetStringProperty(
+                    player,
                     "PreviousWordFirstLetter",
-                    "LastWordFirstLetter"
+                    "LastWordFirstLetter",
+                    "PreviousSubmittedWordFirstLetter"
                 );
-            if (string.IsNullOrEmpty(prevLetter))
-                prevLetter = ScoringContextCapture.FirstLetterFromHistoricWords(historicWords);
-            if (!string.IsNullOrEmpty(prevLetter))
-                snapshot.extras["previous_word_first_letter"] = prevLetter.Substring(0, 1).ToLowerInvariant();
+                if (string.IsNullOrEmpty(prevLetter))
+                    prevLetter = TryGetStringProperty(
+                        GameStatics.GetPlayer(),
+                        "PreviousWordFirstLetter",
+                        "LastWordFirstLetter"
+                    );
+                if (string.IsNullOrEmpty(prevLetter))
+                {
+                    var scoringPrevious = GetCachedPreviousWords();
+                    prevLetter = ScoringContextCapture.FirstLetterFromHistoricWords(
+                        scoringPrevious
+                    );
+                }
+                if (!string.IsNullOrEmpty(prevLetter))
+                    snapshot.extras["previous_word_first_letter"] =
+                        prevLetter.Substring(0, 1).ToLowerInvariant();
+            }
 
             var redUsed = TryGetIntProperty(
                 player,

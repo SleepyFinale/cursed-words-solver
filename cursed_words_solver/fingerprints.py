@@ -137,3 +137,11 @@ def fingerprints_from_run_state(data: dict) -> tuple[str, str]:
     lo_parts.append(":")
     lo_parts.append(str(data.get("pin_branch") or ""))
     return board_fp, "".join(lo_parts)
+
+
+def board_tiles_fingerprint_suffix(board_fp: str) -> str:
+    """Tile portion of melmod board fingerprint (after leading money|)."""
+    fp = (board_fp or "").strip()
+    if "|" in fp:
+        return fp.split("|", 1)[1]
+    return fp

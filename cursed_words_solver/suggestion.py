@@ -18,7 +18,11 @@ from cursed_words_solver.config import LAST_SUGGESTION_PATH
 
 from cursed_words_solver.dictionary import WordDictionary
 
-from cursed_words_solver.fingerprints import board_fingerprint, fingerprints_from_run_state
+from cursed_words_solver.fingerprints import (
+    board_fingerprint,
+    board_tiles_fingerprint_suffix,
+    fingerprints_from_run_state,
+)
 
 from cursed_words_solver.models import Board, Loadout, WordResult
 
@@ -33,6 +37,22 @@ SOLVER_VERSION = "0.1.0"
 
 _F8_SEQUENCE_PATH = LAST_SUGGESTION_PATH.parent / ".f8_sequence"
 
+# Melmod auto-export can update workflow extras shortly after F8 save.
+F8_EXPORT_CATCHUP_GRACE_SEC = 2.5
+
+
+def f8_export_catchup_grace_sec(search_budget_sec: float | None = None) -> float:
+    """Grace period for post-F8 export catch-up (covers long searches)."""
+    base = F8_EXPORT_CATCHUP_GRACE_SEC
+    if search_budget_sec is None:
+        return base
+    return max(base, float(search_budget_sec) + 5.0)
+
+
+def _board_tiles_match(saved_board_fp: str, cur_board_fp: str) -> bool:
+    saved_tiles = board_tiles_fingerprint_suffix(saved_board_fp)
+    cur_tiles = board_tiles_fingerprint_suffix(cur_board_fp)
+    return bool(saved_tiles and cur_tiles and saved_tiles == cur_tiles)
 
 
 def stale_suggestion_warning(
@@ -117,6 +137,181 @@ def _historic_words_count(raw: str) -> int:
     except (json.JSONDecodeError, TypeError):
         return 0
     return len(arr) if isinstance(arr, list) else 0
+
+
+def _last_historic_word_first_letter(raw: str) -> str:
+    """First letter of the last word in melmod historic_words JSON."""
+    from cursed_words_solver.loadout import _previous_letter_from_historic_words
+
+    return _previous_letter_from_historic_words(raw)
+
+
+def historic_previous_letter_mismatch_warning(
+    run_state_extras: dict[str, Any] | None,
+) -> str | None:
+    """Warn when previous_word_first_letter disagrees with the last historic word."""
+    extras = run_state_extras if isinstance(run_state_extras, dict) else {}
+    prev = str(extras.get("previous_word_first_letter", "") or "").strip().lower()
+    hist = str(extras.get("historic_words", "") or "").strip()
+    last_letter = _last_historic_word_first_letter(hist)
+    if not prev or not last_letter or prev == last_letter:
+        return None
+    return (
+        f"run_state previous_word_first_letter ({prev}) does not match "
+        f"last historic word ({last_letter}) — press F7 in-game, then F8."
+    )
+
+
+def empty_historic_on_later_grid_warning(
+    run_state_extras: dict[str, Any] | None,
+) -> str | None:
+    """Warn when grid 2+ has no encounter historic in run_state (F8 score may be wrong)."""
+    extras = run_state_extras if isinstance(run_state_extras, dict) else {}
+    try:
+        grid = int(str(extras.get("grid_number") or "0"))
+    except ValueError:
+        return None
+    if grid < 2:
+        return None
+    hist = str(extras.get("historic_words", "") or "").strip()
+    if hist and hist != "[]":
+        return None
+    return (
+        f"run_state has no encounter historic on grid {grid} — "
+        "press F7 in-game before trusting F8 scores."
+    )
+
+
+def grid_advanced_since_last_f8_warning(
+    run_state_extras: dict[str, Any] | None,
+) -> str | None:
+    """Warn when grid_number advanced since the prior F8 embed."""
+    if not LAST_SUGGESTION_PATH.exists():
+        return None
+    data = _last_suggestion_fingerprint_data()
+    if data is None:
+        return None
+    f8_extras = _f8_snapshot_extras(data)
+    cur = run_state_extras if isinstance(run_state_extras, dict) else {}
+    try:
+        grid_f8 = int(str(f8_extras.get("grid_number") or "0"))
+        grid_cur = int(str(cur.get("grid_number") or "0"))
+    except ValueError:
+        return None
+    if grid_cur > grid_f8 >= 1:
+        return (
+            f"Grid advanced ({grid_f8}→{grid_cur}) since last F8 — "
+            "press F7 in-game, then F8 before trusting scores."
+        )
+    return None
+
+
+def _last_suggestion_age_sec(data: dict[str, Any] | None = None) -> float | None:
+    """Seconds since last_suggestion.json was written, or None if unknown."""
+    if data is None:
+        data = _last_suggestion_fingerprint_data()
+    if not data:
+        return None
+    raw = str(data.get("created_at") or "").strip()
+    if not raw:
+        return None
+    try:
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        created = datetime.fromisoformat(raw)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        return max(0.0, (now - created).total_seconds())
+    except (ValueError, TypeError):
+        return None
+
+
+def is_export_catchup_drift(
+    f8_extras: dict[str, Any] | None,
+    cur_extras: dict[str, Any] | None,
+) -> bool:
+    """True when run_state workflow extras likely caught up from melmod export, not a new word."""
+    f8 = f8_extras if isinstance(f8_extras, dict) else {}
+    cur = cur_extras if isinstance(cur_extras, dict) else {}
+    hist_f8 = str(f8.get("historic_words", "") or "").strip()
+    hist_cur = str(cur.get("historic_words", "") or "").strip()
+    if hist_f8 == hist_cur:
+        prev_f8 = str(f8.get("previous_word_first_letter", "") or "").strip().lower()
+        prev_cur = str(cur.get("previous_word_first_letter", "") or "").strip().lower()
+        return bool(prev_f8 and prev_cur and prev_f8 != prev_cur)
+    count_f8 = _historic_words_count(hist_f8)
+    count_cur = _historic_words_count(hist_cur)
+    if count_cur > count_f8:
+        return True
+    if count_cur == count_f8:
+        prev_f8 = str(f8.get("previous_word_first_letter", "") or "").strip().lower()
+        prev_cur = str(cur.get("previous_word_first_letter", "") or "").strip().lower()
+        if prev_f8 and prev_cur and prev_f8 != prev_cur:
+            return True
+    return False
+
+
+def fingerprint_invalidate_suppressed_for_post_f8_export(
+    current_board_fp: str,
+    *,
+    search_budget_sec: float | None = None,
+) -> bool:
+    """Skip board-fp poll clear when melmod refreshed money but tiles are unchanged."""
+    if not LAST_SUGGESTION_PATH.exists():
+        return False
+    data = _last_suggestion_fingerprint_data()
+    if data is None:
+        return False
+    age = _last_suggestion_age_sec(data)
+    grace = f8_export_catchup_grace_sec(search_budget_sec)
+    if age is None or age > grace:
+        return False
+    saved_board = str(data.get("board_fingerprint") or "").strip()
+    cur_board = (current_board_fp or "").strip()
+    if not saved_board or not cur_board:
+        return False
+    return _board_tiles_match(saved_board, cur_board)
+
+
+def workflow_invalidate_suppressed_for_export_catchup(
+    run_state_extras: dict[str, Any] | None,
+    *,
+    current_board_fp: str = "",
+    search_budget_sec: float | None = None,
+) -> bool:
+    """Skip workflow invalidation when melmod export likely lagged right after F8."""
+    data = _last_suggestion_fingerprint_data()
+    if data is None:
+        return False
+    age = _last_suggestion_age_sec(data)
+    grace = f8_export_catchup_grace_sec(search_budget_sec)
+    if age is None or age > grace:
+        return False
+    f8_board = str(data.get("board_fingerprint") or "").strip()
+    cur_board = (current_board_fp or "").strip()
+    if not f8_board or not cur_board or not _board_tiles_match(f8_board, cur_board):
+        return False
+    return is_export_catchup_drift(
+        _f8_snapshot_extras(data),
+        run_state_extras if isinstance(run_state_extras, dict) else {},
+    )
+
+
+def run_state_historic_stale_warnings(
+    run_state_extras: dict[str, Any] | None,
+) -> list[str]:
+    """Collect workflow warnings for stale encounter historic before solving."""
+    warnings: list[str] = []
+    for fn in (
+        grid_advanced_since_last_f8_warning,
+        historic_previous_letter_mismatch_warning,
+        empty_historic_on_later_grid_warning,
+    ):
+        note = fn(run_state_extras)
+        if note:
+            warnings.append(note)
+    return warnings
 
 
 def _f8_snapshot_extras(data: dict[str, Any]) -> dict[str, Any]:
@@ -235,23 +430,36 @@ def poll_invalidate_last_suggestion(
     *,
     current_board_fp: str = "",
     current_loadout_fp: str | None = None,
+    search_budget_sec: float | None = None,
 ) -> str | None:
     """Clear last_suggestion.json when workflow or fingerprint drift is detected."""
     if not LAST_SUGGESTION_PATH.exists():
         return None
 
-    reason = clear_stale_last_suggestion_if_workflow_changed(run_state_extras)
-    if reason:
-        return f"Played word since F8 ({reason})"
-
-    fp_reason = clear_stale_last_suggestion_if_fingerprint_changed(
-        current_board_fp,
-        current_loadout_fp=current_loadout_fp,
+    suppress_catchup = workflow_invalidate_suppressed_for_export_catchup(
+        run_state_extras,
+        current_board_fp=current_board_fp,
+        search_budget_sec=search_budget_sec,
     )
-    if fp_reason:
-        return fp_reason
+    suppress_fp = fingerprint_invalidate_suppressed_for_post_f8_export(
+        current_board_fp,
+        search_budget_sec=search_budget_sec,
+    )
 
-    if clear_stale_last_suggestion_if_context_changed(
+    if not suppress_catchup:
+        reason = clear_stale_last_suggestion_if_workflow_changed(run_state_extras)
+        if reason:
+            return f"Played word since F8 ({reason})"
+
+    if not suppress_fp and not suppress_catchup:
+        fp_reason = clear_stale_last_suggestion_if_fingerprint_changed(
+            current_board_fp,
+            current_loadout_fp=current_loadout_fp,
+        )
+        if fp_reason:
+            return fp_reason
+
+    if not suppress_catchup and clear_stale_last_suggestion_if_context_changed(
         current_board_fp,
         current_loadout_fp=current_loadout_fp,
         run_state_extras=run_state_extras,

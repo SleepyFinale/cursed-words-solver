@@ -294,6 +294,68 @@ namespace CursedWordsSolverCompanion
 
             return string.Join("; ", parts);
         }
+
+        /// <summary>
+        /// Align embedded F8 workflow extras with submit-time projection (same board/path).
+        /// </summary>
+        public static bool TrySyncWorkflowExtrasToProjected(
+            LastSuggestion suggestion,
+            Dictionary<string, string> projectedExtras
+        )
+        {
+            if (suggestion == null || projectedExtras == null)
+                return false;
+            if (suggestion.run_state_snapshot == null)
+                return false;
+
+            try
+            {
+                var extras = suggestion.run_state_snapshot["extras"] as JObject;
+                if (extras == null)
+                {
+                    extras = new JObject();
+                    suggestion.run_state_snapshot["extras"] = extras;
+                }
+
+                var changed = false;
+                foreach (var key in new[]
+                {
+                    "historic_words",
+                    "previous_word_first_letter",
+                    "red_tiles_used_encounter",
+                })
+                {
+                    string val;
+                    if (!projectedExtras.TryGetValue(key, out val) || string.IsNullOrEmpty(val))
+                        continue;
+                    var cur = extras[key]?.ToString() ?? "";
+                    if (!string.Equals(cur, val, StringComparison.Ordinal))
+                    {
+                        extras[key] = val;
+                        changed = true;
+                    }
+                }
+
+                if (!changed)
+                    return false;
+
+                File.WriteAllText(
+                    SuggestionFilePath,
+                    JsonConvert.SerializeObject(suggestion, Formatting.Indented)
+                );
+                CompanionDiagnostics.LogVerbose(
+                    "Synced F8 run_state_snapshot workflow extras to submit projection"
+                );
+                return true;
+            }
+            catch (Exception ex)
+            {
+                CompanionDiagnostics.LogVerboseWarning(
+                    "Could not sync last_suggestion workflow extras: " + ex.Message
+                );
+                return false;
+            }
+        }
     }
 }
 

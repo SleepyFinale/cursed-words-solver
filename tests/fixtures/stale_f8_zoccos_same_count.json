@@ -1,0 +1,15 @@
+{
+  "description": "zoccos f8#270: same historic count, different word (penne-like vs chipotle)",
+  "grid_number": "2",
+  "extras_diff": {
+    "historic_words": {
+      "f8": "[{\"word\":\"PENNE\",\"score\":23,\"path\":[6,11,12,18,23]}]",
+      "submit": "[{\"word\":\"CHIPOTLE\",\"score\":36,\"path\":[18,14,9,8,12,11,7,2],\"red_tile_count\":1}]"
+    },
+    "previous_word_first_letter": {
+      "f8": "p",
+      "submit": "c"
+    }
+  },
+  "expected_merge_fresh": true
+}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -519,9 +520,20 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
     )
 
 
+_FONT_TAG_RE = re.compile(r"<font[^>]*>|</font>", re.IGNORECASE)
+
+
+def _plain_word_from_historic_field(word: str) -> str:
+    """Strip Unity rich-text tags so Limnophila does not read 'f' from '<font'."""
+    w = (word or "").strip()
+    if "<font" not in w.lower():
+        return w
+    return _FONT_TAG_RE.sub("", w)
+
+
 def _first_alphabetic_letter(word: str) -> str:
     """First A–Z letter in a submitted word (lowercase), matching game/melmod capture."""
-    for ch in (word or "").strip().lower():
+    for ch in _plain_word_from_historic_field(word).strip().lower():
         if ch.isalpha():
             return ch
     return ""
@@ -681,13 +693,7 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
             "1",
             1,
         )
-    prev = str(out.get("previous_word_first_letter") or "").strip().lower()[:1]
-    if not prev and out.get("historic_words"):
-        prev = _previous_letter_from_historic_words(out.get("historic_words"))
-    if prev:
-        out["previous_word_first_letter"] = prev
-    elif "previous_word_first_letter" in out:
-        out.pop("previous_word_first_letter", None)
+    reconcile_previous_word_first_letter_from_historic(out)
     for key in ("boss_area_number", "grids_remaining"):
         if key in out:
             try:
@@ -946,6 +952,144 @@ def _has_snapshot_sticker(loadout: Loadout) -> bool:
     )
 
 
+def _encounter_historic_intentionally_cleared(extras: dict[str, Any]) -> bool:
+    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
+    return source in ("grid_start_cleared", "grid_advanced")
+
+
+def _historic_words_count(raw: str) -> int:
+    """Parse melmod historic_words JSON array length safely."""
+    raw = (raw or "").strip()
+    if not raw or raw == "[]":
+        return 0
+    try:
+        arr = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return 0
+    return len(arr) if isinstance(arr, list) else 0
+
+
+def reconcile_previous_word_first_letter_from_historic(
+    extras: dict[str, Any],
+) -> None:
+    """Normalize exported previous_word_first_letter (Limnophila uses scoring cache, not encounter historic)."""
+    prev = str(extras.get("previous_word_first_letter") or "").strip().lower()[:1]
+    if prev:
+        extras["previous_word_first_letter"] = prev
+    elif "previous_word_first_letter" in extras:
+        extras.pop("previous_word_first_letter", None)
+
+
+def _apply_fresh_encounter_historic_to_extras(
+    extras: dict[str, Any],
+    fresh_extras: dict[str, Any],
+    fresh_hist: str,
+) -> None:
+    extras["historic_words"] = fresh_hist
+    for key in ("red_tiles_used_encounter", "previous_word_first_letter"):
+        val = fresh_extras.get(key)
+        if val is not None and str(val).strip() != "":
+            extras[key] = val
+    reconcile_previous_word_first_letter_from_historic(extras)
+
+
+def _grid_number_from_extras(extras: dict[str, Any]) -> int:
+    try:
+        return int(str(extras.get("grid_number") or "0"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _historic_words_json_prefer_fresh(
+    embed_hist: str,
+    fresh_hist: str,
+    *,
+    embed_grid: int,
+    fresh_grid: int,
+) -> str | None:
+    """Pick disk/live historic for F8 embed (mirrors melmod PickBestHistoricWordList shrink)."""
+    embed_hist = (embed_hist or "").strip()
+    fresh_hist = (fresh_hist or "").strip()
+    if not fresh_hist or fresh_hist == "[]":
+        return None
+    if not embed_hist or embed_hist == "[]":
+        return fresh_hist
+
+    embed_count = _historic_words_count(embed_hist)
+    fresh_count = _historic_words_count(fresh_hist)
+
+    if embed_grid == fresh_grid and embed_grid >= 1:
+        if fresh_count < embed_count:
+            return fresh_hist
+        if fresh_count > embed_count:
+            return fresh_hist
+        if embed_hist != fresh_hist:
+            return fresh_hist
+        return None
+
+    if embed_grid >= 2 and embed_grid == fresh_grid:
+        if embed_count == 0 or fresh_count != embed_count:
+            return fresh_hist
+        if embed_hist != fresh_hist:
+            return fresh_hist
+        return None
+
+    if embed_grid >= 2 and (embed_count == 0 or fresh_count != embed_count):
+        return fresh_hist
+
+    return None
+
+
+def merge_encounter_historic_for_f8_snapshot(
+    run_state: dict | None,
+) -> dict | None:
+    """Re-read run_state when F8 embed historic lags disk (same grid or grid 2+)."""
+    if run_state is None:
+        return None
+
+    snapshot = copy.deepcopy(run_state)
+    extras = snapshot.get("extras")
+    if not isinstance(extras, dict):
+        return snapshot
+
+    if _encounter_historic_intentionally_cleared(extras):
+        return snapshot
+
+    hist = str(extras.get("historic_words", "") or "").strip()
+    embed_grid = _grid_number_from_extras(extras)
+
+    fresh = load_run_state_raw()
+    if not isinstance(fresh, dict):
+        return snapshot
+    fresh_extras = fresh.get("extras")
+    if not isinstance(fresh_extras, dict):
+        return snapshot
+    if _encounter_historic_intentionally_cleared(fresh_extras):
+        return snapshot
+
+    fresh_hist = str(fresh_extras.get("historic_words", "") or "").strip()
+    if not fresh_hist or fresh_hist == "[]":
+        reconcile_previous_word_first_letter_from_historic(extras)
+        snapshot["extras"] = extras
+        return snapshot
+
+    fresh_grid = _grid_number_from_extras(fresh_extras)
+    preferred = _historic_words_json_prefer_fresh(
+        hist,
+        fresh_hist,
+        embed_grid=embed_grid,
+        fresh_grid=fresh_grid,
+    )
+
+    if preferred is not None:
+        _apply_fresh_encounter_historic_to_extras(extras, fresh_extras, preferred)
+    else:
+        reconcile_previous_word_first_letter_from_historic(extras)
+
+    snapshot["extras"] = extras
+    return snapshot
+
+
 def sanitize_run_state_snapshot_for_f8(
     run_state: dict | None,
     loadout: Loadout,
@@ -954,7 +1098,10 @@ def sanitize_run_state_snapshot_for_f8(
     if run_state is None:
         return None
 
-    snapshot = copy.deepcopy(run_state)
+    snapshot = merge_encounter_historic_for_f8_snapshot(run_state)
+    if snapshot is None:
+        return None
+    snapshot = copy.deepcopy(snapshot)
     extras = snapshot.get("extras")
     if not isinstance(extras, dict):
         return snapshot
@@ -984,6 +1131,7 @@ def sanitize_run_state_snapshot_for_f8(
         ):
             extras.pop(key, None)
 
+    reconcile_previous_word_first_letter_from_historic(extras)
     snapshot["extras"] = extras
     return snapshot
 

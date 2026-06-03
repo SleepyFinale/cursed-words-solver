@@ -1,0 +1,11 @@
+{
+  "description": "joey f8#273: F8 embed longer than submit projection (live historic shrank)",
+  "grid_number": "2",
+  "extras_diff": {
+    "historic_words": {
+      "f8": "[{\"word\":\"A\"},{\"word\":\"B\"},{\"word\":\"C\"}]",
+      "submit": "[{\"word\":\"TIFFANY\"}]"
+    }
+  },
+  "expected_merge_fresh": true
+}

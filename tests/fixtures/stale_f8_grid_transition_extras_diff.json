@@ -1,0 +1,22 @@
+{
+  "description": "Repro from round_logs/20260603_134317_841.json: F8 embed kept grid-1 historic while submit on grid 2 had rexine only.",
+  "grid_number_submit": "2",
+  "extras_diff": {
+    "historic_words": {
+      "f8": "[{\"word\":\"AXINITE\",\"score\":60,\"path\":[24,19,13,12,6,11,15]},{\"word\":\"JOINTY\",\"score\":68,\"path\":[7,6,12,16,15,11],\"red_tile_count\":2}]",
+      "submit": "[{\"word\":\"REXINE\",\"score\":30,\"path\":[15,11,16,10,6,2]}]"
+    },
+    "red_tiles_used_encounter": {
+      "f8": "2",
+      "submit": "0"
+    },
+    "previous_word_first_letter": {
+      "f8": "j",
+      "submit": "r"
+    }
+  },
+  "expected_stale_note_contains": [
+    "historic_words changed",
+    "previous_word_first_letter f8='j' submit='r'"
+  ]
+}

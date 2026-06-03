@@ -1,0 +1,22 @@
+{
+  "description": "Repro from round_logs/20260603_141438_927.json: ruin grid 3 F8 embed empty historic, submit has REIN+TTO, a→f.",
+  "grid_number_submit": "3",
+  "extras_diff": {
+    "historic_words": {
+      "f8": "",
+      "submit": "[{\"word\":\"REIN\",\"score\":360,\"path\":[4,0,1,2]},{\"word\":\"TTO\",\"score\":243,\"path\":[13,9,22,23],\"red_tile_count\":1}]"
+    },
+    "previous_word_first_letter": {
+      "f8": "a",
+      "submit": "f"
+    },
+    "red_tiles_used_encounter": {
+      "f8": "",
+      "submit": "1"
+    }
+  },
+  "expected_stale_note_contains": [
+    "historic_words changed",
+    "previous_word_first_letter f8='a' submit='f'"
+  ]
+}

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using MelonLoader;
 using Newtonsoft.Json;
 using UnityEngine;
@@ -19,6 +20,44 @@ namespace CursedWordsSolverCompanion
 
         /// <summary>Last gridNumber from CalculateOverallScore (most accurate).</summary>
         public static int CachedGridNumber = -1;
+
+        public static int TryParseGridNumber(string raw)
+        {
+            if (string.IsNullOrEmpty(raw))
+                return -1;
+            int n;
+            if (!int.TryParse(raw.Trim(), out n))
+                return -1;
+            return n >= 1 ? n : -1;
+        }
+
+        /// <summary>
+        /// Clear submit-hook previousWords cache when grid_number advances.
+        /// Does not wipe encounter historic in run_state — live reflection stays authoritative.
+        /// </summary>
+        public static void TryClearStaleHistoricCacheOnGridAdvance(Player player)
+        {
+            if (player == null)
+                return;
+            var liveGrid = ResolveGridNumber(player);
+            var onDiskGrid = TryParseGridNumber(
+                RunStateExporter.TryReadRunStateExtra("grid_number")
+            );
+            if (liveGrid < 1 || onDiskGrid < 1 || liveGrid <= onDiskGrid)
+                return;
+            RunStateExporter.ClearCachedPreviousWordsForExport();
+            RunStateExporter.TryMergeExtrasKeys(
+                new Dictionary<string, string>
+                {
+                    ["previous_word_first_letter"] = "",
+                    ["scoring_previous_words_count"] = "0",
+                    ["encounter_historic_source"] = "grid_advanced",
+                }
+            );
+            var liveHistoric = RunStateExporter.TryGetHistoricPreviousWordsPublic(player);
+            if (liveHistoric != null && liveHistoric.Count > 0)
+                RunStateExporter.TryMergeTelescopeEncounterExtras(liveHistoric);
+        }
 
         private static readonly string[] BossExtraKeys =
         {
@@ -359,7 +398,8 @@ namespace CursedWordsSolverCompanion
             if (snapshot?.extras == null || player == null)
                 return;
 
-            var built = BuildBestHistoricExtras(player, snapshot.extras);
+            var fallbackExtras = BuildEncounterHistoricFallbackExtras(snapshot, player);
+            var built = BuildBestHistoricExtras(player, fallbackExtras);
             if (built == null || built.Count == 0)
             {
                 if (ShouldClearEncounterHistoricOnEmptyExport(snapshot))
@@ -369,7 +409,255 @@ namespace CursedWordsSolverCompanion
 
             foreach (var kv in built)
                 snapshot.extras[kv.Key] = kv.Value ?? "";
+            ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
             snapshot.extras["encounter_historic_source"] = "live";
+        }
+
+        /// <summary>
+        /// Merge submit-time workflow extras so run_state.json matches score projection.
+        /// </summary>
+        public static void ApplyProjectedWorkflowExtrasToSnapshot(
+            RunStateSnapshot snapshot,
+            Player player
+        )
+        {
+            if (snapshot?.extras == null || player == null)
+                return;
+
+            var live = new Dictionary<string, string>();
+            foreach (var kv in snapshot.extras)
+                live[kv.Key] = kv.Value ?? "";
+
+            var projected = BuildSubmitWorkflowExtras(player, live);
+            foreach (var key in new[]
+            {
+                "historic_words",
+                "previous_word_first_letter",
+                "red_tiles_used_encounter",
+            })
+            {
+                string val;
+                if (projected.TryGetValue(key, out val) && !string.IsNullOrEmpty(val))
+                    snapshot.extras[key] = val;
+            }
+
+            ApplyScoringCachedPreviousWordLetter(snapshot.extras);
+        }
+
+        /// <summary>
+        /// No-op: Limnophila previous comes from scoring hook cache, not encounter historic_words JSON.
+        /// </summary>
+        public static void ReconcilePreviousWordFirstLetterWithHistoric(
+            Dictionary<string, string> extras
+        )
+        {
+            ApplyScoringCachedPreviousWordLetter(extras);
+        }
+
+        /// <summary>
+        /// Set previous_word_first_letter from last CalculateOverallScore previousWords cache only.
+        /// </summary>
+        public static void ApplyScoringCachedPreviousWordLetter(
+            Dictionary<string, string> extras
+        )
+        {
+            if (extras == null)
+                return;
+
+            extras.Remove("previous_word_first_letter");
+            var scoringPrevious = RunStateExporter.GetCachedPreviousWords();
+            var cacheCount = scoringPrevious != null ? scoringPrevious.Count : 0;
+            extras["scoring_previous_words_count"] = cacheCount.ToString();
+            if (scoringPrevious == null || scoringPrevious.Count == 0)
+                return;
+
+            var prev = ScoringContextCapture.FirstLetterFromHistoricWords(scoringPrevious);
+            if (!string.IsNullOrEmpty(prev))
+                extras["previous_word_first_letter"] = prev;
+        }
+
+        private static readonly Regex HistoricFontTagRegex = new Regex(
+            @"<font[^>]*>|</font>",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled
+        );
+
+        /// <summary>Strip Unity rich-text so Limnophila does not read 'f' from "&lt;font".</summary>
+        internal static string StripHistoricWordRichText(string word)
+        {
+            if (string.IsNullOrEmpty(word))
+                return word ?? "";
+            if (word.IndexOf("<font", StringComparison.OrdinalIgnoreCase) < 0)
+                return word;
+            return HistoricFontTagRegex.Replace(word, "").Trim();
+        }
+
+        private static string FirstLetterFromHistoricJson(string json)
+        {
+            if (string.IsNullOrEmpty(json) || json == "[]")
+                return "";
+            try
+            {
+                var arr = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(
+                    json
+                );
+                if (arr == null || arr.Count == 0)
+                    return "";
+                for (var i = arr.Count - 1; i >= 0; i--)
+                {
+                    object wordObj;
+                    if (!arr[i].TryGetValue("word", out wordObj))
+                        continue;
+                    var word = StripHistoricWordRichText((wordObj ?? "").ToString());
+                    if (string.IsNullOrEmpty(word))
+                        continue;
+                    foreach (var ch in word)
+                    {
+                        if (char.IsLetter(ch))
+                            return char.ToLowerInvariant(ch).ToString();
+                    }
+                }
+            }
+            catch
+            {
+                // ignore parse errors
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// Snapshot extras plus on-disk encounter historic when live reflection is empty,
+        /// unless encounter historic was intentionally cleared (grid start / grid advance).
+        /// </summary>
+        private static Dictionary<string, string> BuildEncounterHistoricFallbackExtras(
+            RunStateSnapshot snapshot,
+            Player player
+        )
+        {
+            var fallback = new Dictionary<string, string>();
+            if (snapshot?.extras != null)
+            {
+                foreach (var kv in snapshot.extras)
+                    fallback[kv.Key] = kv.Value ?? "";
+            }
+
+            if (ShouldSkipOnDiskHistoricFallback(snapshot, player))
+                return fallback;
+
+            MergeOnDiskEncounterHistoricInto(fallback);
+            return fallback;
+        }
+
+        private static bool ShouldSkipOnDiskHistoricFallback(
+            RunStateSnapshot snapshot,
+            Player player
+        )
+        {
+            if (ShouldClearEncounterHistoricOnEmptyExport(snapshot))
+                return true;
+
+            var diskSource = RunStateExporter.TryReadRunStateExtra("encounter_historic_source");
+            if (IsIntentionallyClearedEncounterHistoricSource(diskSource))
+                return true;
+
+            if (snapshot?.extras == null)
+                return false;
+
+            string snapSource;
+            if (snapshot.extras.TryGetValue("encounter_historic_source", out snapSource)
+                && IsIntentionallyClearedEncounterHistoricSource(snapSource))
+                return true;
+
+            if (player == null)
+                return false;
+
+            var liveGrid = ResolveGridNumber(player);
+            var onDiskGrid = TryParseGridNumber(
+                RunStateExporter.TryReadRunStateExtra("grid_number")
+            );
+            if (liveGrid < 1 || onDiskGrid < 1 || liveGrid <= onDiskGrid)
+                return false;
+
+            var live = PickBestHistoricWordList(player);
+            var liveCount = live != null ? live.Count : 0;
+            var diskHistoric = RunStateExporter.TryReadRunStateExtra("historic_words");
+            var diskCount = CountHistoricWordsInJson(diskHistoric);
+
+            if (liveCount == 0 && diskCount > 0)
+                return true;
+
+            if (diskCount > liveCount)
+                return true;
+
+            return false;
+        }
+
+        private static int CountHistoricWordsInJson(string json)
+        {
+            if (string.IsNullOrEmpty(json) || json == "[]")
+                return 0;
+            try
+            {
+                var arr = JsonConvert.DeserializeObject<List<object>>(json);
+                return arr != null ? arr.Count : 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private static bool IsIntentionallyClearedEncounterHistoricSource(string source)
+        {
+            if (string.IsNullOrEmpty(source))
+                return false;
+
+            return string.Equals(source, "grid_start_cleared", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(source, "grid_advanced", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void MergeOnDiskEncounterHistoricInto(Dictionary<string, string> fallback)
+        {
+            if (fallback == null)
+                return;
+
+            var diskHistoric = RunStateExporter.TryReadRunStateExtra("historic_words");
+            if (!string.IsNullOrEmpty(diskHistoric) && diskHistoric != "[]")
+            {
+                string cur;
+                if (
+                    !fallback.TryGetValue("historic_words", out cur)
+                    || string.IsNullOrEmpty(cur)
+                    || cur == "[]"
+                )
+                    fallback["historic_words"] = diskHistoric;
+
+            }
+            else
+            {
+                var diskPrev = RunStateExporter.TryReadRunStateExtra(
+                    "previous_word_first_letter"
+                );
+                if (!string.IsNullOrEmpty(diskPrev))
+                {
+                    string curPrev;
+                    if (
+                        !fallback.TryGetValue("previous_word_first_letter", out curPrev)
+                        || string.IsNullOrEmpty(curPrev)
+                    )
+                        fallback["previous_word_first_letter"] = diskPrev;
+                }
+            }
+
+            var diskRed = RunStateExporter.TryReadRunStateExtra("red_tiles_used_encounter");
+            if (!string.IsNullOrEmpty(diskRed))
+            {
+                string curRed;
+                if (
+                    !fallback.TryGetValue("red_tiles_used_encounter", out curRed)
+                    || string.IsNullOrEmpty(curRed)
+                )
+                    fallback["red_tiles_used_encounter"] = diskRed;
+            }
         }
 
         /// <summary>
@@ -468,6 +756,29 @@ namespace CursedWordsSolverCompanion
                 fallbackHistoric = fallbackHistoric ?? "";
 
             var bestHistoric = PreferHistoricJson(serialized, fallbackHistoric);
+            if (
+                !string.IsNullOrEmpty(serialized)
+                && serialized != "[]"
+                && !string.IsNullOrEmpty(fallbackHistoric)
+                && fallbackHistoric != "[]"
+            )
+            {
+                var liveCount = historic != null ? historic.Count : CountHistoricWordsInJson(serialized);
+                var fallbackCount = CountHistoricWordsInJson(fallbackHistoric);
+                if (liveCount > 0 && liveCount < fallbackCount)
+                    bestHistoric = serialized;
+                else if (
+                    liveCount > 0
+                    && liveCount == fallbackCount
+                    && !string.Equals(serialized, fallbackHistoric, StringComparison.Ordinal)
+                )
+                    bestHistoric = serialized;
+                else if (fallbackHistoric.Length > serialized.Length && liveCount == 0)
+                    bestHistoric = fallbackHistoric;
+                else if (serialized.Length >= fallbackHistoric.Length)
+                    bestHistoric = serialized;
+            }
+
             if (string.IsNullOrEmpty(bestHistoric) || bestHistoric == "[]")
                 return result;
 
@@ -486,10 +797,6 @@ namespace CursedWordsSolverCompanion
                 var redSum = SumRedTilesInHistoricWords(historic);
                 if (redSum > 0)
                     result["red_tiles_used_encounter"] = redSum.ToString();
-
-                var prev = ScoringContextCapture.FirstLetterFromHistoricWords(historic);
-                if (!string.IsNullOrEmpty(prev))
-                    result["previous_word_first_letter"] = prev;
             }
 
             if (fallbackExtras != null)
@@ -501,17 +808,6 @@ namespace CursedWordsSolverCompanion
                     && !string.IsNullOrEmpty(fallbackRed)
                 )
                     result["red_tiles_used_encounter"] = fallbackRed;
-
-                string fallbackPrev;
-                if (
-                    (!result.ContainsKey("previous_word_first_letter") || usedFallbackJson)
-                    && fallbackExtras.TryGetValue(
-                        "previous_word_first_letter",
-                        out fallbackPrev
-                    )
-                    && !string.IsNullOrEmpty(fallbackPrev)
-                )
-                    result["previous_word_first_letter"] = fallbackPrev;
             }
 
             return result;
@@ -529,10 +825,11 @@ namespace CursedWordsSolverCompanion
                 ? new Dictionary<string, string>(liveExtras)
                 : new Dictionary<string, string>();
 
-            var previousWords = PickBestHistoricWordList(player);
-            if (previousWords != null && previousWords.Count > 0)
+            projected.Remove("previous_word_first_letter");
+            var scoringPrevious = RunStateExporter.GetCachedPreviousWords();
+            if (scoringPrevious != null && scoringPrevious.Count > 0)
             {
-                var captured = ScoringContextCapture.ExtractFromPreviousWords(previousWords);
+                var captured = ScoringContextCapture.ExtractFromPreviousWords(scoringPrevious);
                 foreach (var kv in captured)
                     projected[kv.Key] = kv.Value ?? "";
             }
@@ -541,18 +838,34 @@ namespace CursedWordsSolverCompanion
             if (overlay != null)
             {
                 foreach (var kv in overlay)
+                {
+                    if (
+                        string.Equals(
+                            kv.Key,
+                            "previous_word_first_letter",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                        continue;
                     projected[kv.Key] = kv.Value ?? "";
+                }
             }
 
+            ApplyScoringCachedPreviousWordLetter(projected);
             return projected;
         }
 
-        private static List<HistoricWord> PickBestHistoricWordList(Player player)
+        public static List<HistoricWord> PickBestHistoricWordList(Player player)
         {
             var fromPlayer = RunStateExporter.TryGetHistoricPreviousWordsPublic(player);
             var fromCached = RunStateExporter.GetCachedPreviousWords();
             var playerCount = fromPlayer != null ? fromPlayer.Count : 0;
             var cachedCount = fromCached != null ? fromCached.Count : 0;
+
+            // Submit-hook cache can still list prior-grid words when live reflection reset.
+            if (cachedCount > playerCount)
+                return playerCount > 0 ? fromPlayer : null;
+
             if (cachedCount >= playerCount && cachedCount > 0)
                 return fromCached;
             if (playerCount > 0)
@@ -594,10 +907,6 @@ namespace CursedWordsSolverCompanion
             var redSum = SumRedTilesInHistoricWords(best);
             if (redSum > 0)
                 extras["red_tiles_used_encounter"] = redSum.ToString();
-
-            var prev = ScoringContextCapture.FirstLetterFromHistoricWords(best);
-            if (!string.IsNullOrEmpty(prev))
-                extras["previous_word_first_letter"] = prev;
 
             return extras;
         }
@@ -1200,6 +1509,7 @@ namespace CursedWordsSolverCompanion
                 try
                 {
                     var word = hw.GetSubmittedWordString();
+                    word = StripHistoricWordRichText(word);
                     if (!string.IsNullOrEmpty(word))
                         row["word"] = word;
                 }
