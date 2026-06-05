@@ -155,6 +155,19 @@ def initial_tile_scores(
     """Per-path tile scores after GetValue parity."""
     from cursed_words_solver.models import CurseType as CT
 
+    from cursed_words_solver.rules.base_scoring import melmod_void_currency_init_contribution
+
+    first_void_currency_path_index: int | None = None
+    for i, idx in enumerate(path):
+        tile = board.get_by_index(idx)
+        if (
+            tile.color == TileColor.VOID
+            and tile.curse == CT.CURRENCY
+            and tile.metadata.get("source") == "melmod"
+        ):
+            first_void_currency_path_index = i
+            break
+
     scores: list[float] = []
     total = 0.0
     for i, idx in enumerate(path):
@@ -166,6 +179,19 @@ def initial_tile_scores(
             contrib = microscope_init_contribution(tile, money, loadout)
         elif tile.color == TileColor.BLUE and blue_base_override is not None:
             contrib = float(blue_base_override)
+        elif (
+            tile.curse == CT.CURRENCY
+            and tile.metadata.get("source") == "melmod"
+            and tile.color == TileColor.VOID
+        ):
+            contrib = melmod_void_currency_init_contribution(
+                tile,
+                first_void_currency_on_path=(
+                    i == first_void_currency_path_index
+                ),
+                path_index=i,
+                loadout=loadout,
+            )
         elif (
             tile.curse == CT.CURRENCY
             and tile.metadata.get("source") == "melmod"

@@ -15,7 +15,7 @@ Capybara / `RandomiseItemOrder` shuffles sticker and stamp arrays on submit (see
 These run inside `ScoreCalculation.CalculateOverallScore` after each `ApplyItemToScore`:
 
 | Mechanism | Kind | Behavior |
-|-----------|------|----------|
+| ----------- | ---- | ---------- |
 | Random Access Memory | Pin | Replays `ItemsInMemory` |
 | Frankenstein | Sticker | Replays each `StitchedItems` sticker |
 | Human Hands | Pin | Favourite stamp scored `right.VariableValue - 1` extra times |
@@ -24,7 +24,7 @@ These run inside `ScoreCalculation.CalculateOverallScore` after each `ApplyItemT
 ## Stamp categories (solver)
 
 | Category | Catalog signal | Solver |
-|----------|----------------|--------|
+| -------- | ---------------- | -------- |
 | Word/tile score | `type` ∈ scored taxonomy | [`pipeline._apply_rule`](cursed_words_solver/rules/pipeline.py) |
 | Grid scatter | `scatter_start_grid` / `effect_class: scatter` | [`grid_effects`](cursed_words_solver/rules/grid_effects.py) |
 | Movement / letters | `effect_class: movement` + `search_flags` | [`stamp_behaviors`](cursed_words_solver/rules/stamp_behaviors.py), [`search.py`](cursed_words_solver/search.py) |
@@ -34,7 +34,7 @@ These run inside `ScoreCalculation.CalculateOverallScore` after each `ApplyItemT
 ## Orchestration stamps (high priority)
 
 | Slug | Game class | Notes |
-|------|------------|-------|
+| ---- | ---------- | ----- |
 | `hourglass` | `Hourglass` | Odd count reverses item order |
 | `mutating_dna` / similar | Mutating DNA | Historic letter counts → tile/word bonus; melmod `mutating_dna_letter_counts` |
 | `bento_box` | `BentoBox` | ×WORD if word starts with same letter as previous; `previous_word_first_letter` extra |
@@ -43,7 +43,7 @@ These run inside `ScoreCalculation.CalculateOverallScore` after each `ApplyItemT
 ## Movement stamps (`search_flags`)
 
 | Slug | Flag |
-|------|------|
+| ---- | ---- |
 | `hungry_snake` | `horizontal_wrap` |
 | `full_moon` | `double_letter_teleport` |
 | `queenie` | `q_as_qu` |
@@ -64,7 +64,7 @@ These run inside `ScoreCalculation.CalculateOverallScore` after each `ApplyItemT
 ## Melmod extras (stamps)
 
 | Extra | Stamps |
-|-------|--------|
+| ------- | -------- |
 | `previous_word_first_letter` | Bento Box, Limnophila, Chips, … |
 | `hourglass_count` | Hourglass |
 | `capybara_shuffle` | Capybara sticker (shuffle flag) |

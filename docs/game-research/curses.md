@@ -5,7 +5,7 @@ Source: `GlyphType`, `Tile.GetGlyphType()`, melmod `BoardExporter.MapCurse`, [wi
 ## GlyphType → solver `CurseType` / melmod string
 
 | Game `GlyphType` | Melmod curse | Solver `CurseType` | Base score |
-|------------------|--------------|-------------------|------------|
+| ---------------- | ------------ | ------------------- | ---------- |
 | Letter | letter | letter | Scrabble letter value |
 | Blank | wildcard | wildcard | 0 |
 | Number | number | number | Tile number value |

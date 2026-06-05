@@ -117,10 +117,9 @@ namespace CursedWordsSolverCompanion
 
                 var staleSuggestion =
                     ctx.Suggestion != null
-                    && !string.Equals(
-                        ctx.Suggestion.board_fingerprint ?? "",
-                        ctx.BoardFingerprint ?? "",
-                        StringComparison.Ordinal
+                    && !ConsumablePlacementHelper.BoardFingerprintMatchesSuggestion(
+                        ctx.Suggestion,
+                        ctx.BoardFingerprint
                     );
                 var statusLabel = matchStatus;
                 if (staleSuggestion && (matchStatus == "path_mismatch" || matchStatus == "path_extension"))
@@ -144,10 +143,9 @@ namespace CursedWordsSolverCompanion
                 ctx.Suggestion.path,
                 ctx.SubmittedPath
             );
-            var boardMatch = string.Equals(
-                ctx.Suggestion.board_fingerprint ?? "",
-                ctx.BoardFingerprint ?? "",
-                StringComparison.Ordinal
+            var boardMatch = ConsumablePlacementHelper.BoardFingerprintMatchesSuggestion(
+                ctx.Suggestion,
+                ctx.BoardFingerprint
             );
 
             if (!boardMatch)
@@ -285,11 +283,11 @@ namespace CursedWordsSolverCompanion
             var pathMatches = false;
             if (ctx.Suggestion != null && ctx.Suggestion.path != null)
             {
-                boardFingerprintMatches = string.Equals(
-                    ctx.Suggestion.board_fingerprint ?? "",
-                    ctx.BoardFingerprint ?? "",
-                    StringComparison.Ordinal
-                );
+                boardFingerprintMatches =
+                    ConsumablePlacementHelper.BoardFingerprintMatchesSuggestion(
+                        ctx.Suggestion,
+                        ctx.BoardFingerprint
+                    );
                 pathMatches =
                     SuggestionMatcher.PathsEqual(ctx.Suggestion.path, ctx.SubmittedPath)
                     && boardFingerprintMatches;

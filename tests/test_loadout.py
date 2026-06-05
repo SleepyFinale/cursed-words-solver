@@ -127,6 +127,28 @@ def test_format_loadout_summary_boss_id_only_when_name_matches_slug():
     assert "(wolf)" not in format_loadout_summary(lo)
 
 
+def test_format_loadout_summary_wad_of_cash_raw_pin_levels():
+    """pin_*_level = upgrade picks; pin_*_variable = runtime scatter/bonus (not L/R display)."""
+    lo = parse_run_state(
+        {
+            "character": "Cretaceous Meg",
+            "pin_branch": "left",
+            "stickers": [],
+            "stamps": [],
+            "extras": {
+                "pin_effect": "wad_of_cash",
+                "pin_left_level": "2",
+                "pin_right_level": "0",
+                "pin_left_variable": "3",
+                "pin_right_variable": "10",
+            },
+        }
+    )
+    summary = format_loadout_summary(lo)
+    assert "pin=wad_of_cash L2/R0 (left)" in summary
+    assert "L3/R10" not in summary
+
+
 def test_loadout_to_dict_matches_melmod_keys():
     lo = parse_run_state(MELMOD_EXAMPLE)
     data = loadout_to_dict(lo)

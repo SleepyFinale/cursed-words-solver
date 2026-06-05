@@ -513,41 +513,34 @@ def _apply_pending_word_finalize_steps(
     if not entries:
         return subtotal
     if state.get("_wad_deferred_grid_word_mult"):
-        percent_entries = [(int(v), rule_id) for kind, v, rule_id in entries if kind == "percent"]
-        mult_entries = [(float(v), rule_id) for kind, v, rule_id in entries if kind != "percent"]
         total = float(subtotal)
-        if percent_entries:
-            combined_percent = 100
-            for percent, _rule_id in percent_entries:
-                combined_percent = combined_percent * int(percent) // 100
-            total = math.floor(total * combined_percent / 100.0)
-            if trace is not None:
-                factor = float(combined_percent) / 100.0
-                rule_ids = [
-                    str(rid or "").strip().lower()
-                    for _pct, rid in percent_entries
-                    if str(rid or "").strip()
-                ]
-                fields: dict[str, Any] = {
-                    "factor": factor,
-                    "percent": int(combined_percent),
-                    "detail": f"×{factor:g} word (word_bonus:{combined_percent})",
-                }
-                if len(rule_ids) == 1:
-                    fields["rule_id"] = rule_ids[0]
-                _trace_step(state, "multiply", **fields)
-        for factor, rule_id in mult_entries:
-            if factor == 1.0:
-                continue
-            total = math.floor(total * factor)
-            if trace is not None:
-                fields = {
-                    "factor": factor,
-                    "detail": f"×{factor} word (floor)",
-                }
-                if rule_id:
-                    fields["rule_id"] = rule_id
-                _trace_step(state, "multiply", **fields)
+        for kind, value, rule_id in entries:
+            if kind == "percent":
+                percent = int(value)
+                factor = float(percent) / 100.0
+                total = math.floor(float(total) * percent / 100.0)
+                if trace is not None:
+                    fields: dict[str, Any] = {
+                        "factor": factor,
+                        "percent": percent,
+                        "detail": f"×{factor:g} word (word_bonus:{percent})",
+                    }
+                    if rule_id:
+                        fields["rule_id"] = rule_id
+                    _trace_step(state, "multiply", **fields)
+            else:
+                factor = float(value)
+                if factor == 1.0:
+                    continue
+                total = math.floor(total * factor)
+                if trace is not None:
+                    fields = {
+                        "factor": factor,
+                        "detail": f"×{factor} word (floor)",
+                    }
+                    if rule_id:
+                        fields["rule_id"] = rule_id
+                    _trace_step(state, "multiply", **fields)
         return total
     total = subtotal
     for kind, value, rule_id in entries:

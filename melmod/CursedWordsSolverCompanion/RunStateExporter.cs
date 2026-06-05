@@ -46,6 +46,7 @@ namespace CursedWordsSolverCompanion
                 var fingerprint = ComputeFingerprint(player);
                 var snapshot = BuildSnapshot(player);
                 MergePreservedExtrasFromDisk(snapshot, player);
+                RunStateExportFill.EnsureEncounterHistoricExtras(snapshot, player);
                 SyncLiveBicycleExtrasIntoSnapshot(snapshot, player);
                 FillSnapshotCopyExtras(snapshot, player);
                 SanitizeLoadoutSpecificExtras(snapshot, player);
@@ -130,11 +131,45 @@ namespace CursedWordsSolverCompanion
             var diff = ExtrasDiffHelper.DiffExtras(f8Extras, snapshot.extras);
             var ctx = BuildStaleF8Context(player);
             var workflow = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(diff, ctx);
-            if (string.IsNullOrEmpty(workflow))
+            if (!string.IsNullOrEmpty(workflow))
+            {
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                CompanionDiagnostics.LogVerbose("Cleared stale F8 suggestion (" + workflow + ")");
                 return;
+            }
 
-            SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
-            CompanionDiagnostics.LogVerbose("Cleared stale F8 suggestion (" + workflow + ")");
+            int f8Grid;
+            int liveGrid;
+            if (
+                TryParseGridNumberFromExtras(f8Extras, out f8Grid)
+                && TryParseGridNumberFromExtras(snapshot.extras, out liveGrid)
+                && liveGrid > f8Grid
+                && f8Grid >= 1
+            )
+            {
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                CompanionDiagnostics.LogVerbose(
+                    "Cleared stale F8 suggestion (grid "
+                        + f8Grid
+                        + "→"
+                        + liveGrid
+                        + ")"
+                );
+            }
+        }
+
+        private static bool TryParseGridNumberFromExtras(
+            Dictionary<string, string> extras,
+            out int grid
+        )
+        {
+            grid = -1;
+            if (extras == null)
+                return false;
+            string raw;
+            if (!extras.TryGetValue("grid_number", out raw) || string.IsNullOrEmpty(raw))
+                return false;
+            return int.TryParse(raw.Trim(), out grid) && grid >= 1;
         }
 
         public static string ComputeFingerprint(Player player)
@@ -1293,10 +1328,10 @@ namespace CursedWordsSolverCompanion
 
             if (pin.UpgradeableComponents != null && pin.UpgradeableComponents.Count >= 2)
             {
-                snapshot.extras["pin_left_level"] = GetUpgradeableLevel(
+                snapshot.extras["pin_left_level"] = GetUpgradeableComponentLevel(
                     pin.UpgradeableComponents[0]
                 ).ToString();
-                snapshot.extras["pin_right_level"] = GetUpgradeableLevel(
+                snapshot.extras["pin_right_level"] = GetUpgradeableComponentLevel(
                     pin.UpgradeableComponents[1]
                 ).ToString();
                 snapshot.extras["pin_left_variable"] = GetUpgradeableVariableValue(
@@ -1727,6 +1762,17 @@ namespace CursedWordsSolverCompanion
                 consumables = TryGetConsumableRackCount(player);
             if (consumables >= 0)
                 snapshot.extras["consumable_rack_count"] = consumables.ToString();
+
+            try
+            {
+                var rackTiles = ConsumableRackExporter.Export(player);
+                if (rackTiles != null && rackTiles.Count > 0)
+                    snapshot.extras["consumable_rack"] = JsonConvert.SerializeObject(rackTiles);
+            }
+            catch
+            {
+                // optional rack export
+            }
 
             var targetNumber = TryGetLuckyDiceTargetNumber(player);
             if (targetNumber >= 0)
@@ -3046,12 +3092,30 @@ namespace CursedWordsSolverCompanion
             if (components.Count < 2)
                 return "";
 
-            var leftLevel = GetUpgradeableLevel(components[0]);
-            var rightLevel = GetUpgradeableLevel(components[1]);
+            var leftLevel = GetUpgradeableComponentLevel(components[0]);
+            var rightLevel = GetUpgradeableComponentLevel(components[1]);
 
             if (leftLevel == rightLevel)
                 return "";
             return leftLevel > rightLevel ? "left" : "right";
+        }
+
+        /// <summary>
+        /// Raw upgrade pick count (UpgradeableComponent.Level only).
+        /// </summary>
+        internal static int GetUpgradeableComponentLevel(object component)
+        {
+            if (component == null)
+                return 0;
+
+            var levelProp = component.GetType().GetProperty(
+                "Level",
+                BindingFlags.Public | BindingFlags.Instance
+            );
+            if (levelProp != null && levelProp.PropertyType == typeof(int))
+                return (int)levelProp.GetValue(component, null);
+
+            return 0;
         }
 
         internal static int GetUpgradeableLevel(object component)
@@ -3059,14 +3123,7 @@ namespace CursedWordsSolverCompanion
             if (component == null)
                 return 0;
 
-            var level = 0;
-            var levelProp = component.GetType().GetProperty(
-                "Level",
-                BindingFlags.Public | BindingFlags.Instance
-            );
-            if (levelProp != null && levelProp.PropertyType == typeof(int))
-                level = (int)levelProp.GetValue(component, null);
-
+            var level = GetUpgradeableComponentLevel(component);
             var variable = GetUpgradeableVariableValue(component);
             return Math.Max(level, variable);
         }

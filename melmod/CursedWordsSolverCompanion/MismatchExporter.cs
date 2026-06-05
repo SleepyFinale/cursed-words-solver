@@ -68,28 +68,39 @@ namespace CursedWordsSolverCompanion
                 ? RunStateExporter.BuildStaleF8Context(submitPlayer)
                 : StaleF8Context.Default();
             var staleNote = ExtrasDiffHelper.DescribeStaleF8Extras(extrasDiff, staleCtx);
-            if (!string.IsNullOrEmpty(staleNote))
+            var pathBoardMatch = SuggestionMatcher.MatchesSuggestion(
+                suggestion,
+                word,
+                path,
+                boardFingerprint,
+                loadoutFingerprint
+            );
+            var staleF8Extras = !string.IsNullOrEmpty(staleNote);
+            if (staleF8Extras)
             {
                 MelonLogger.Warning(staleNote);
-                if (
-                    SuggestionMatcher.MatchesSuggestion(
-                        suggestion,
-                        word,
-                        path,
-                        boardFingerprint,
-                        loadoutFingerprint
-                    )
-                )
+                if (pathBoardMatch)
                 {
                     MelonLogger.Msg(
-                        "Scoring drift skipped (stale F8): predicted "
+                        "Scoring drift with stale F8 embed (path/board match): predicted "
                             + predicted
                             + ", actual "
                             + actualScore
-                            + " — re-run F8 after your last word."
+                            + " — exporting mismatch with submit-projected extras."
                     );
-                    return;
                 }
+            }
+
+            if (staleF8Extras && !pathBoardMatch)
+            {
+                MelonLogger.Msg(
+                    "Scoring drift skipped (stale F8, path/board mismatch): predicted "
+                        + predicted
+                        + ", actual "
+                        + actualScore
+                        + " — re-run F8 after your last word."
+                );
+                return;
             }
 
             var payload = new Dictionary<string, object>
@@ -109,6 +120,8 @@ namespace CursedWordsSolverCompanion
                 ["submit_board_tiles"] = submitBoard?.tiles,
                 ["f8_sequence"] = suggestion.f8_sequence,
                 ["solver_version"] = suggestion.solver_version ?? "",
+                ["stale_f8_extras"] = staleF8Extras,
+                ["stale_f8_reason"] = staleNote ?? "",
                 ["export_diagnostics_at_f8"] = ExtrasDiffHelper.ExportDiagnosticsFromRunState(
                     suggestion.run_state_snapshot
                 ),
@@ -122,6 +135,7 @@ namespace CursedWordsSolverCompanion
 
             var json = JsonConvert.SerializeObject(payload, Formatting.Indented);
             File.WriteAllText(outPath, json, new UTF8Encoding(false));
+            var label = staleF8Extras ? " (stale F8 embed)" : "";
             MelonLogger.Warning(
                 "Scoring MISMATCH for '"
                     + word
@@ -129,6 +143,7 @@ namespace CursedWordsSolverCompanion
                     + predicted
                     + ", actual "
                     + actualScore
+                    + label
                     + " → "
                     + outPath
             );

@@ -124,6 +124,50 @@ def _void_currency_face_value(tile: Tile, loadout: Loadout | None = None) -> int
     return 5 * max(3, cv + 1)
 
 
+def _void_currency_path_init_penalty(tile: Tile, loadout: Loadout | None = None) -> int:
+    """First void-currency tile on path: 5×(cv+1), or 15 when cv≥3 (not max(3,cv+1)×5)."""
+    if _void_currency_face_value(tile, loadout) == 0:
+        return 0
+    from cursed_words_solver.rules.scoring_conditions import currency_letter_value
+
+    cv = currency_letter_value(tile)
+    if cv >= 3:
+        return 15
+    return 5 * (cv + 1)
+
+
+def _void_currency_top_row_path_start_penalty(tile: Tile, loadout: Loadout | None = None) -> int:
+    """Void non-$ currency on row 0 at path start: 5×max(2,cv), or 15 when cv≥3."""
+    if _void_currency_face_value(tile, loadout) == 0:
+        return 0
+    from cursed_words_solver.rules.scoring_conditions import currency_letter_value
+
+    cv = currency_letter_value(tile)
+    if cv >= 3:
+        return 15
+    return 5 * max(2, cv)
+
+
+def melmod_void_currency_init_contribution(
+    tile: Tile,
+    *,
+    first_void_currency_on_path: bool,
+    path_index: int = 0,
+    loadout: Loadout | None = None,
+) -> float:
+    """Melmod void currency path init: $ waived at word start; non-$ row 0 penalized."""
+    if not first_void_currency_on_path:
+        return 0.0
+    glyph = normalize_tile_glyph(tile.char or tile.letter or "")
+    if glyph == "$":
+        if path_index <= 0:
+            return 0.0
+        return -float(_void_currency_path_init_penalty(tile, loadout))
+    if path_index <= 0 and tile.row == 0:
+        return -float(_void_currency_top_row_path_start_penalty(tile, loadout))
+    return 0.0
+
+
 def _void_face_value(tile: Tile, loadout: Loadout | None = None) -> int:
     """Magnitude to negate for void tiles when packet.Score is 0."""
     if tile.curse == CurseType.CURRENCY:
@@ -174,6 +218,15 @@ def _cactus_growth_bonus(tile: Tile) -> int:
         return 1
 
 
+def _cactus_packet_is_final(tile: Tile) -> bool:
+    """Melmod/rack/placed consumable base_score already includes CactusGrowth."""
+    if _is_melmod_tile(tile):
+        return True
+    if tile.metadata.get("was_consumable") is True:
+        return True
+    return tile.metadata.get("source") == "consumable_rack"
+
+
 def tile_base_contribution(
     tile: Tile, money: int = 0, loadout: Loadout | None = None
 ) -> float:
@@ -213,6 +266,8 @@ def tile_base_contribution(
         letter_base = money
 
     if color == TileColor.CACTUS:
+        if _cactus_packet_is_final(tile):
+            return letter_base
         return letter_base + _cactus_growth_bonus(tile)
 
     bonus = _color_bonus(tile, letter_base)

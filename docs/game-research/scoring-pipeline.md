@@ -24,7 +24,7 @@ Special cases in the item loop:
 ## `CalculateOverallScore` step sequence
 
 | Step | Condition | Game method |
-|------|-----------|-------------|
+| ---- | ----------- | ------------- |
 | Glitch settle | Path has glitch tiles | `SettleGlitchTiles` |
 | Init tile values | Always | `GetInitialScoreInfo` (uses `Tile.GetValue()`) |
 | Early bosses | No Hourglass | `ApplyBossModifier` per boss |
@@ -41,19 +41,19 @@ Final score: `GetScoreFromScoreCalcInfo` — sum of **last step** tile scores, t
 ## Tile init (before items)
 
 | Step | Game method | Solver (`tile_scoring.py`) |
-|------|-------------|---------------------------|
+| ---- | ------------- | --------------------------- |
 | Glitch settle | `SettleGlitchTiles` | `settle_glitch_tiles` — deterministic when colour still `glitch` |
 | Init tile values | `GetInitialScoreInfo` / `Tile.GetValue` | `_init_state` + `initial_tile_scores` |
 | Currency money | `GetMoneyFromCurrencyTiles` | `currency_money_from_path` → `money_bonus` |
 | Pink piggy bank | `StoreMoneyInPinkTiles` | `pink_store_money` — −$1 per pink while money > 0 |
 | Poison (later words) | `ApplyPoisonEffect` | `poison_from_previous_words` — from `extras.green_poison_bonus` |
 
-Cactus: `CactusGrowth` packet incremented at grid start (`encounter_board.apply_cactus_grid_growth`). Purple: `IsTileType(Red|Blue)` via `tile_counts_as_color`.
+Cactus ([wiki Tiles — CACTUS](https://cursedwords.wiki.gg/wiki/Tiles)): grid tiles gain +1 BASE SCORE at each grid start. Melmod `base_score` is the post-growth packet (`GetValue`); do not add `cactus_growth` metadata again. `apply_cactus_grid_growth` runs only for OCR/simulated boards (not `board_from_melmod`). [Sandy Saguaro](https://cursedwords.wiki.gg/wiki/Sandy_Saguaro_(boss)) consumables placed mid-round use rack/board `base_score` as-is and skip grid growth. Purple: `IsTileType(Red|Blue)` via `tile_counts_as_color`.
 
 ## Boss modifiers
 
 | Timing | Game | Solver |
-|--------|------|--------|
+| ------ | ---- | ------ |
 | Early (no Hourglass) | `ApplyBossModifier` each boss | `boss_scoring.apply_early_boss_scoring` — Salamander, Robo-Monkey, Fox steal |
 | Late (Hourglass) | Reversed boss list after items | `_apply_late_boss_rules` + trace `boss_late` |
 | Grid start | Fox per-grid steal, Axolotl/Mole/etc. | `boss_grid_effects.apply_boss_grid_mutations` |

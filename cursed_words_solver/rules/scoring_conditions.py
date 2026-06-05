@@ -180,6 +180,18 @@ def is_consumable_tile(tile: Tile) -> bool:
     return val is True or val == "true" or val == 1 or val == "1"
 
 
+def is_placed_consumable_tile(tile: Tile) -> bool:
+    return tile.metadata.get("was_consumable") is True
+
+
+def placed_consumable_indices(board: Board) -> frozenset[int]:
+    return frozenset(
+        i
+        for i, tile in enumerate(board.flat)
+        if board.active[i] and is_placed_consumable_tile(tile)
+    )
+
+
 def is_cursed_tile(tile: Tile) -> bool:
     return tile.curse not in (CurseType.LETTER, CurseType.UNKNOWN)
 
@@ -1688,7 +1700,12 @@ def word_same_start_end_letter(word: str) -> bool:
 
 
 def consumable_rack_count(loadout: Loadout) -> int:
-    return max(0, _extra_int(loadout, "consumable_rack_count", 0))
+    count = _extra_int(loadout, "consumable_rack_count", -1)
+    if count >= 0:
+        return count
+    from cursed_words_solver.consumable_placement import consumable_rack_tiles
+
+    return len(consumable_rack_tiles(loadout))
 
 
 def rare_item_count(loadout: Loadout) -> int:
@@ -1734,7 +1751,7 @@ def _limnophila_previous_word_available(loadout: Loadout) -> bool:
         return False
     extras = loadout.extras or {}
     source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
-    if source in ("grid_start_cleared", "grid_advanced"):
+    if source == "grid_start_cleared":
         return False
     raw = extras.get("scoring_previous_words_count")
     if raw is not None and str(raw).strip() != "":
@@ -1742,6 +1759,8 @@ def _limnophila_previous_word_available(loadout: Loadout) -> bool:
             return int(str(raw).strip()) > 0
         except (ValueError, TypeError):
             return False
+    if source == "grid_advanced":
+        return False
     return bool(_extra_letter(loadout, "previous_word_first_letter"))
 
 

@@ -14,7 +14,7 @@ This MelonLoader mod writes files under `%USERPROFILE%\.cursed_words_solver\` wh
 
 - **Auto-export** when loadout or board changes (~0.5s debounce)
 
-- **F7** in-game forces an immediate refresh (MelonLoader console log)
+- **F7** in-game forces an immediate refresh (MelonLoader console log). Auto-export runs when the fingerprint changes (~0.5s debounce), including consumable rack tiles (`extras.consumable_rack`). F8 in the solver re-reads `run_state.json` each solve; F7 is only needed to force export when auto-export has not caught up yet.
 
 - **Boss context** — `boss_id`, `boss_name`, plus `extras.boss_area_number` (from `Player.CurrentRunProgress.GetStage()`), `extras.boss_cursed` (from `BossModifier.IsCursed`), `extras.hyena_blocked`, `extras.boss_floor_modification`, `extras.grids_remaining`, live `wolf_max_length` / `cobra_min_length` when applicable. Boss discovery uses live `EncounterController.GetBossModifiers()` (then player `ActiveBossModifiers`); boss fields and boss-specific extras are **cleared** when no boss is active. Scoring hooks clear their cache when `bossModifiers` is empty. Wolf maps from game type `MaxWordLength` → wiki id `wolf`. **Bat** boards export all 25 slots with `active: false` on unused cells plus `rows`/`cols` (height × width from `GridData.Dimensions`), `playable_origin`, and `playable_min_row`…`playable_max_col` for overlay alignment. After rebuilding the companion, press **F7** in-game before **F8** solve so shrunk grids (e.g. game **4×3**) export with the correct active columns.
 
@@ -52,7 +52,7 @@ On startup the mod prints the mismatch folder path. After each word submit you s
 
 If you only see a score difference in-game but **no** `scoring_mismatches` file, the mod did not recognize the submit as the F8 suggestion — check the skip message (alternate path vs board changed), press **F8** again, then submit on the **highlighted path** before the board changes.
 
-If the board changed since F8, melmod logs a **Warning** at submit (`Solver suggestion is stale…`) and round logs set `comparison.stale_suggestion: true` when `board_fingerprint` on `last_suggestion.json` does not match the current board. The Python solver prints a startup note when an old `last_suggestion.json` does not match the current board (and clears the file when the loadout changed); press **F8** to refresh before submitting.
+If the board changed since F8, melmod logs a **Warning** at submit (`Solver suggestion is stale…`) and round logs set `comparison.stale_suggestion: true` when `board_fingerprint` on `last_suggestion.json` does not match the current board. **Exception:** when F8 wrote `consumable_placements` (Sandy Saguaro rack tiles), placing those consumables on the suggested cells — including one at a time before submit — is treated as valid board drift; scoring capture and round logs should not mark the suggestion stale for that change alone. The Python overlay uses the same rule (`tests/test_suggestion_placement.py`). For any other board change, press **F8** to refresh before submitting.
 
 ### Turn a mismatch into a regression fixture
 
@@ -230,7 +230,7 @@ Sticker/stamp `id` values are derived from the game's `ArtFileName` (slugified) 
 
 `extras.pin_effect` is the pin **art** slug (e.g. `abacus`, `sam_gambit` for Super 8, `bones_the_dog` for Bicycle). Pins are not stickers/stamps.
 
-`pin_left_level` and `pin_right_level` are cumulative counts of left- and right-side pin upgrades (after each stage you pick one side, or both with ID Card). **`pin_left_variable`** and **`pin_right_variable`** mirror in-game `UpgradeableComponents[i].VariableValue` (used for bonuses; preferred over level when present). For **Abacus**, only the right track affects word scoring (+N TILE SCORE per coloured number on the path, N = `pin_right_variable`); the left track is the grid scatter only. **VOID** number tiles count as coloured (void is a tile colour, not colourless). The solver does not use `pin_branch` for math (that field is display-only: which side is ahead).
+`pin_left_level` and `pin_right_level` are the raw `UpgradeableComponents[i].Level` values: cumulative counts of left- and right-side pin **upgrade picks** (after each stage you pick one side, or both with ID Card). They must **not** be `max(Level, VariableValue)` — that conflates picks with runtime magnitudes. **`pin_left_variable`** and **`pin_right_variable`** mirror in-game `UpgradeableComponents[i].VariableValue` (runtime scatter counts, +TILE bonuses, etc.; the solver prefers these for scoring math where applicable). Example **Wad of Cash** with 2 left / 0 right picks: `pin_left_level` = `2`, `pin_right_level` = `0`, `pin_left_variable` = `3` (scatters 3 currencies), `pin_right_variable` = `10` (+10 TILE SCORE) — display shows `L2/R0`, not `L3/R10`. For **Abacus**, only the right track affects word scoring (+N TILE SCORE per coloured number on the path, N = `pin_right_variable`); the left track is the grid scatter only. **VOID** number tiles count as coloured (void is a tile colour, not colourless). The solver does not use `pin_branch` for math (that field is display-only: which side has more upgrade picks).
 
 Optional extras for specific pins:
 
@@ -269,6 +269,7 @@ Run context extras (default-unlocked stickers):
 | `movie_camera_word_score_bonus` | Movie Camera encounter running `WordScoreBonus` (exported on **F7** and merged after each score). If the solver shows `Movie Camera: 0 + …`, press **F7** in-game; until then set `"movie_camera_word_score_bonus": "20"` in `run_state.json` → `extras` to match the sticker UI. |
 | `historic_words` | Prior words: `word`, `path`, `score`, `red_tile_count`, `chess_take_value` |
 | `consumable_rack_count` | Hi Vis Jacket (tiles on consumable rack) |
+| `consumable_rack` | JSON array of rack tile snapshots (letters, colors, `cactus_growth`); Sandy Saguaro CACTUS tiles for solver placement simulation |
 | `grid_number` | Current grid index in the encounter (1-based; also updated from `CalculateOverallScore`) |
 | `run_seed` | Run RNG seed when readable from player/progress |
 | `rare_item_count` | Owned RARE stickers/stamps/pin |

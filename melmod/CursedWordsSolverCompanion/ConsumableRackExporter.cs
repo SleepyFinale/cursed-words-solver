@@ -10,6 +10,7 @@ namespace CursedWordsSolverCompanion
         public string color = "colorless";
         public string curse = "letter";
         public double base_score;
+        public int? cactus_growth;
     }
 
     public static class ConsumableRackExporter
@@ -39,6 +40,7 @@ namespace CursedWordsSolverCompanion
                         color = mapped.color,
                         curse = mapped.curse,
                         base_score = mapped.base_score,
+                        cactus_growth = mapped.cactus_growth,
                     }
                 );
             }

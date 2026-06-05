@@ -140,6 +140,8 @@ namespace CursedWordsSolverCompanion
                     return "toothed_whale";
                 case "CretaceousMegBoss":
                     return "cretaceous_meg";
+                case "SandySaguaroBoss":
+                    return "sandy_saguaro";
                 default:
                     return "";
             }

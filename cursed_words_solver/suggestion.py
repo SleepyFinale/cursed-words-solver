@@ -55,6 +55,107 @@ def _board_tiles_match(saved_board_fp: str, cur_board_fp: str) -> bool:
     return bool(saved_tiles and cur_tiles and saved_tiles == cur_tiles)
 
 
+def _parse_board_fp_tiles(fp: str) -> dict[tuple[int, int], str]:
+    """Parse melmod-style board fingerprint tile segments."""
+    tiles: dict[tuple[int, int], str] = {}
+    suffix = board_tiles_fingerprint_suffix(fp)
+    for segment in suffix.split(";"):
+        segment = segment.strip()
+        if not segment or ":" not in segment:
+            continue
+        coord, _, rest = segment.partition(":")
+        if "," not in coord:
+            continue
+        row_s, _, col_s = coord.partition(",")
+        try:
+            key = (int(row_s), int(col_s))
+        except ValueError:
+            continue
+        tiles[key] = rest
+    return tiles
+
+
+def _placement_cells_from_records(
+    placements: list[Any],
+) -> dict[tuple[int, int], str]:
+    placement_cells: dict[tuple[int, int], str] = {}
+    for rec in placements:
+        if isinstance(rec, dict):
+            row = rec.get("row")
+            col = rec.get("col")
+            letter = str(rec.get("letter") or "").strip().upper()
+        else:
+            row = getattr(rec, "row", None)
+            col = getattr(rec, "col", None)
+            letter = str(getattr(rec, "letter", "") or "").strip().upper()
+        if row is None or col is None or not letter:
+            continue
+        placement_cells[(int(row), int(col))] = letter
+    return placement_cells
+
+
+def fingerprint_change_is_consumable_placement_progress(
+    saved_board_fp: str,
+    current_board_fp: str,
+    placements: list[Any],
+) -> bool:
+    """True when board drift is only rack consumables placed at suggested cells (partial OK)."""
+    if not placements:
+        return False
+    saved = _parse_board_fp_tiles(saved_board_fp)
+    current = _parse_board_fp_tiles(current_board_fp)
+    if not saved or not current:
+        return False
+    placement_cells = _placement_cells_from_records(placements)
+    if not placement_cells:
+        return False
+    all_keys = set(saved) | set(current)
+    changed_keys = {key for key in all_keys if saved.get(key) != current.get(key)}
+    if not changed_keys:
+        return False
+    for key in changed_keys:
+        if key not in placement_cells:
+            return False
+        cur_tile = current.get(key, "")
+        if not cur_tile or not cur_tile.upper().startswith(placement_cells[key]):
+            return False
+    return True
+
+
+def fingerprint_change_is_suggested_consumable_placement_only(
+    saved_board_fp: str,
+    current_board_fp: str,
+    placements: list[Any],
+) -> bool:
+    """Alias for placement-progress check (supports one-at-a-time rack placement)."""
+    return fingerprint_change_is_consumable_placement_progress(
+        saved_board_fp,
+        current_board_fp,
+        placements,
+    )
+
+
+def fingerprint_invalidate_suppressed_for_consumable_placement(
+    current_board_fp: str,
+) -> bool:
+    """Keep F8 suggestion/highlight when user placed suggested consumables only."""
+    data = _last_suggestion_fingerprint_data()
+    if data is None:
+        return False
+    placements = data.get("consumable_placements")
+    if not isinstance(placements, list) or not placements:
+        return False
+    saved_board = str(data.get("board_fingerprint") or "").strip()
+    cur_board = (current_board_fp or "").strip()
+    if not saved_board or not cur_board or saved_board == cur_board:
+        return False
+    return fingerprint_change_is_suggested_consumable_placement_only(
+        saved_board,
+        cur_board,
+        placements,
+    )
+
+
 def stale_suggestion_warning(
     current_board_fp: str,
     *,
@@ -451,7 +552,11 @@ def poll_invalidate_last_suggestion(
         if reason:
             return f"Played word since F8 ({reason})"
 
-    if not suppress_fp and not suppress_catchup:
+    suppress_placement = fingerprint_invalidate_suppressed_for_consumable_placement(
+        current_board_fp
+    )
+
+    if not suppress_fp and not suppress_catchup and not suppress_placement:
         fp_reason = clear_stale_last_suggestion_if_fingerprint_changed(
             current_board_fp,
             current_loadout_fp=current_loadout_fp,
@@ -673,6 +778,7 @@ def save_last_suggestion(
     export_diagnostics: dict[str, Any] | None = None,
     export_warnings: list[str] | None = None,
     solver_session_extras: dict[str, Any] | None = None,
+    consumable_placements: list[Any] | None = None,
 
 ) -> None:
 
@@ -756,6 +862,18 @@ def save_last_suggestion(
 
     if solver_session_extras:
         payload["solver_session_extras"] = dict(solver_session_extras)
+
+    if consumable_placements:
+        payload["consumable_placements"] = [
+            {
+                "row": p.row,
+                "col": p.col,
+                "index": p.index,
+                "letter": p.letter,
+                "rack_index": p.rack_index,
+            }
+            for p in consumable_placements
+        ]
 
     LAST_SUGGESTION_PATH.write_text(
 

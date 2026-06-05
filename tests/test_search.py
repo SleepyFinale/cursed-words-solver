@@ -575,3 +575,96 @@ def test_extension_from_short_chess_item_prefix():
     assert extended[0][0] >= expected_score - 1
     assert extended[0][0] > short_score
 
+
+def _tile(
+    ch: str,
+    row: int,
+    col: int,
+    *,
+    was_consumable: bool = False,
+) -> Tile:
+    meta: dict = {}
+    if was_consumable:
+        meta["was_consumable"] = True
+    return Tile(
+        row=row,
+        col=col,
+        char=ch,
+        letter=ch,
+        base_score=1,
+        color=TileColor.COLORLESS,
+        curse=CurseType.LETTER,
+        metadata=meta,
+    )
+
+
+def test_was_consumable_does_not_block_without_mandatory_indices(tmp_path):
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    v = PathValidator(d, min_len=3)
+
+    tiles = [[_tile("x", r, c) for c in range(5)] for r in range(5)]
+    tiles[0][0] = _tile("c", 0, 0)
+    tiles[0][1] = _tile("a", 0, 1)
+    tiles[0][2] = _tile("t", 0, 2)
+    tiles[1][2] = _tile("s", 1, 2, was_consumable=True)
+    board = Board(tiles=tiles)
+
+    assert v.word_ok(board, [0, 1, 2], "cat")
+
+
+def test_path_must_include_placed_consumable_when_required(tmp_path):
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\ncast\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    v = PathValidator(d, min_len=3)
+    v.required_consumable_indices = frozenset({7})
+
+    tiles = [[_tile("x", r, c) for c in range(5)] for r in range(5)]
+    tiles[0][0] = _tile("c", 0, 0)
+    tiles[0][1] = _tile("a", 0, 1)
+    tiles[0][2] = _tile("t", 0, 2)
+    tiles[1][2] = _tile("s", 1, 2, was_consumable=True)
+    board = Board(tiles=tiles)
+
+    assert not v.word_ok(board, [0, 1, 2], "cat")
+    assert v.word_ok(board, [0, 1, 7, 2], "cast")
+
+
+def test_path_must_include_all_required_consumables(tmp_path):
+    wl = tmp_path / "words.txt"
+    wl.write_text("cats\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    v = PathValidator(d, min_len=3)
+    v.required_consumable_indices = frozenset({2, 7})
+
+    tiles = [[_tile("x", r, c) for c in range(5)] for r in range(5)]
+    tiles[0][0] = _tile("c", 0, 0)
+    tiles[0][1] = _tile("a", 0, 1)
+    tiles[0][2] = _tile("t", 0, 2, was_consumable=True)
+    tiles[1][2] = _tile("s", 1, 2, was_consumable=True)
+    board = Board(tiles=tiles)
+
+    assert not v.word_ok(board, [0, 1, 2], "cat")
+    assert v.word_ok(board, [0, 1, 2, 7], "cats")
+
+
+def test_searcher_skips_words_missing_required_consumables(tmp_path):
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\ncats\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    tiles = [[_tile("x", r, c) for c in range(5)] for r in range(5)]
+    tiles[0][0] = _tile("c", 0, 0)
+    tiles[0][1] = _tile("a", 0, 1)
+    tiles[0][2] = _tile("t", 0, 2, was_consumable=True)
+    tiles[1][2] = _tile("s", 1, 2, was_consumable=True)
+    board = Board(tiles=tiles)
+
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=3.0)
+    searcher.validator.required_consumable_indices = frozenset({2, 7})
+    results = searcher.find_best_words(board, top_n=10)
+    words = [r.word for r in results]
+    assert "cat" not in words
+    assert "cats" in words
+

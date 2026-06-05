@@ -55,12 +55,15 @@ from cursed_words_solver.loadout import (
     load_run_state_raw,
     melmod_board_available,
     melmod_install_hint,
+    describe_f8_historic_catchup,
+    f8_historic_stale_after_merge_warning,
     merge_encounter_historic_for_f8_snapshot,
     merge_loadout_with_board,
     neapolitan_extras_stale_warning,
     mod_money_from_run_state,
     export_diagnostics_from_run_state,
     parse_board_from_run_state,
+    parse_run_state,
     prepare_run_state_dict_for_scoring,
     solver_session_extras_from_loadout,
     validate_run_state_for_scoring,
@@ -73,7 +76,23 @@ from cursed_words_solver.rules.boss_effects import (
     boss_area_number,
     boss_word_constraints,
 )
-from cursed_words_solver.rules.rule_lookup import boss_display_name
+from cursed_words_solver.rules.rule_lookup import boss_display_name, resolve_rule_id
+from cursed_words_solver.consumable_placement import (
+    consumable_rack_tiles,
+    format_placement_instructions,
+    mandatory_consumable_indices,
+    sandy_placement_search_active,
+    sandy_requires_rack_export,
+    wait_for_sandy_rack_export,
+    search_target_rescue,
+    search_with_consumable_placements,
+    target_rescue_worth_trying,
+)
+from cursed_words_solver.rules.scoring_conditions import (
+    consumable_rack_count,
+    placed_consumable_indices,
+    target_score_from_loadout,
+)
 from cursed_words_solver.rules.chess_tiles import missing_chess_color_warnings
 from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.ui.board_highlight import BoardHighlightOverlay
@@ -91,6 +110,7 @@ class _SolveUIUpdate:
     board_bgr: np.ndarray | None
     warnings_html: str
     on_game_highlight: bool
+    consumable_placements: list | None = None
     # Fingerprints from run_state.json at solve time (melmod); used to detect shop/round end.
     melmod_board_fingerprint: str | None = None
     melmod_loadout_fingerprint: str | None = None
@@ -387,6 +407,16 @@ class SolverApp:
             board_fp, loadout_fp = fingerprints_from_run_state(data)
 
         if LAST_SUGGESTION_PATH.exists():
+            from cursed_words_solver.suggestion import (
+                fingerprint_invalidate_suppressed_for_consumable_placement,
+            )
+
+            placement_in_progress = fingerprint_invalidate_suppressed_for_consumable_placement(
+                board_fp
+            )
+            if placement_in_progress:
+                self._last_invalidation_reason = None
+                self.overlay.clear_stale_notice()
             reason = poll_invalidate_last_suggestion(
                 extras if isinstance(extras, dict) else None,
                 current_board_fp=board_fp,
@@ -420,7 +450,14 @@ class SolverApp:
         if data:
             current_board_fp, current_loadout_fp = fingerprints_from_run_state(data)
         if current_board_fp != self._highlight_board_fingerprint:
-            self._clear_highlight_state()
+            from cursed_words_solver.suggestion import (
+                fingerprint_invalidate_suppressed_for_consumable_placement,
+            )
+
+            if not fingerprint_invalidate_suppressed_for_consumable_placement(
+                current_board_fp
+            ):
+                self._clear_highlight_state()
             return
         if (
             self._highlight_loadout_fingerprint is not None
@@ -436,6 +473,7 @@ class SolverApp:
             board_bgr=update.board_bgr,
             warnings_html=update.warnings_html,
             on_game_highlight=update.on_game_highlight,
+            consumable_placements=update.consumable_placements,
         )
         if update.on_game_highlight and self.config.board_region.is_valid():
             if update.melmod_board_fingerprint is not None:
@@ -450,6 +488,7 @@ class SolverApp:
                 self.config.board_region,
                 update.results[0].path,
                 update.board,
+                placements=update.consumable_placements,
             )
         else:
             self._clear_highlight_state()
@@ -646,6 +685,55 @@ class SolverApp:
                     "rebuild melmod if you are fighting a boss.",
                     flush=True,
                 )
+            placed_consumables = placed_consumable_indices(board)
+            mandatory = mandatory_consumable_indices(
+                loadout, board, self._scoring.rules
+            )
+
+            def _reload_solve_loadout() -> Loadout:
+                self._reload_run_state()
+                fresh_money = mod_money_from_run_state(load_run_state_raw())
+                return merge_loadout_with_board(
+                    self._loadout_cache,
+                    board.money,
+                    mod_money=fresh_money if fresh_money > 0 else None,
+                )
+
+            loadout = wait_for_sandy_rack_export(
+                loadout,
+                board,
+                self._scoring.rules,
+                reload_loadout=_reload_solve_loadout,
+            )
+            if sandy_requires_rack_export(loadout, board, self._scoring.rules):
+                print(
+                    "  Sandy Saguaro: consumable rack not in run_state yet — "
+                    "wait a moment and press F8 again, or press F7 in-game "
+                    "to force export.",
+                    flush=True,
+                )
+                clear_last_suggestion()
+                return
+            sandy_auto_place = sandy_placement_search_active(
+                loadout, board, self._scoring.rules
+            )
+            rack_tiles: list = []
+            placement_records: list = []
+            has_target = "target_score" in (loadout.extras or {})
+            grid_target = target_score_from_loadout(loadout) if has_target else 0
+            if mandatory:
+                print(
+                    f"  Sandy Saguaro: {len(mandatory)} placed consumable(s) "
+                    "must be in word path",
+                    flush=True,
+                )
+            elif sandy_auto_place:
+                rack_tiles = consumable_rack_tiles(loadout, cactus_only=True)
+                print(
+                    f"  Sandy Saguaro: {len(rack_tiles)} CACTUS consumable(s) on rack "
+                    "— simulating placements…",
+                    flush=True,
+                )
             board_max_len = max(1, sum(board.active))
             constraints = boss_word_constraints(
                 loadout,
@@ -660,6 +748,7 @@ class SolverApp:
             self._searcher.max_len = effective_max
             self._searcher.time_budget = search_budget
             self._searcher.validator.min_len = self._searcher.min_len
+            self._searcher.validator.required_consumable_indices = mandatory
             self._searcher.blocked = constraints.blocked
             self._searcher.block_reason = constraints.block_reason
             search_msg = (
@@ -681,14 +770,147 @@ class SolverApp:
                     "(pool reused for this solve)",
                     flush=True,
                 )
-            results = self._searcher.find_best_words(
-                board,
-                loadout=loadout,
-                top_n=self.config.top_n_results,
-            )
+            search_board = board
+            results: list = []
+            rescue_budget = search_budget * 0.4
+            if sandy_auto_place and rack_tiles:
+                search_board, placement_records, results = (
+                    search_with_consumable_placements(
+                        self._searcher,
+                        board,
+                        loadout,
+                        rack_tiles,
+                        time_budget=search_budget,
+                        top_n=self.config.top_n_results,
+                    )
+                )
+                self._searcher.validator.required_consumable_indices = (
+                    mandatory_consumable_indices(
+                        loadout, search_board, self._scoring.rules
+                    )
+                )
+                if placement_records:
+                    print(
+                        f"  Place consumables: {format_placement_instructions(placement_records)}",
+                        flush=True,
+                    )
+                elif not results:
+                    print(
+                        "  No valid word found with simulated consumable placements.",
+                        flush=True,
+                    )
+                if has_target and results:
+                    print(
+                        f"  Target: {grid_target} pts (best {int(results[0].score)})",
+                        flush=True,
+                    )
+            else:
+                results = self._searcher.find_best_words(
+                    board,
+                    loadout=loadout,
+                    top_n=self.config.top_n_results,
+                )
+
+            baseline_score = results[0].score if results else 0.0
+            if (
+                has_target
+                and grid_target > 0
+                and baseline_score < grid_target
+                and not sandy_auto_place
+            ):
+                rescue_rack = consumable_rack_tiles(loadout, cactus_only=False)
+                if target_rescue_worth_trying(
+                    baseline_score, grid_target, rescue_rack
+                ):
+                    print(
+                        f"  Target: {grid_target} pts (best {int(baseline_score)} "
+                        "— trying consumables…)",
+                        flush=True,
+                    )
+                    rescue_board, rescue_records, rescue_results = (
+                        search_target_rescue(
+                            self._searcher,
+                            board,
+                            loadout,
+                            rescue_rack,
+                            target=grid_target,
+                            time_budget=rescue_budget,
+                            top_n=self.config.top_n_results,
+                        )
+                    )
+                    if rescue_results and rescue_results[0].score >= grid_target:
+                        search_board = rescue_board
+                        placement_records = rescue_records
+                        results = rescue_results
+                        print(
+                            f"  Place consumables: "
+                            f"{format_placement_instructions(rescue_records)}",
+                            flush=True,
+                        )
+                        print(
+                            f"  Target met with {len(rescue_records)} consumable(s) "
+                            f"({int(rescue_results[0].score)} pts)",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            "  Target not reachable even with consumables",
+                            flush=True,
+                        )
+                elif consumable_rack_count(loadout) > 0 and not rescue_rack:
+                    print(
+                        "  Warning: consumable rack not exported — rebuild melmod "
+                        "and press F7 to enable target rescue.",
+                        flush=True,
+                    )
+            elif (
+                has_target
+                and grid_target > 0
+                and sandy_auto_place
+                and baseline_score < grid_target
+            ):
+                rescue_rack = consumable_rack_tiles(loadout, cactus_only=False)
+                if target_rescue_worth_trying(
+                    baseline_score, grid_target, rescue_rack
+                ):
+                    print(
+                        f"  Target: {grid_target} pts (best {int(baseline_score)} "
+                        "— trying extra consumables…)",
+                        flush=True,
+                    )
+                    rescue_board, rescue_records, rescue_results = (
+                        search_target_rescue(
+                            self._searcher,
+                            board,
+                            loadout,
+                            rescue_rack,
+                            target=grid_target,
+                            time_budget=rescue_budget,
+                            top_n=self.config.top_n_results,
+                        )
+                    )
+                    if rescue_results and rescue_results[0].score >= grid_target:
+                        search_board = rescue_board
+                        placement_records = rescue_records
+                        results = rescue_results
+                        self._searcher.validator.required_consumable_indices = (
+                            mandatory_consumable_indices(
+                                loadout, search_board, self._scoring.rules
+                            )
+                        )
+                        print(
+                            f"  Place consumables: "
+                            f"{format_placement_instructions(rescue_records)}",
+                            flush=True,
+                        )
+                        print(
+                            f"  Target met with {len(rescue_records)} consumable(s) "
+                            f"({int(rescue_results[0].score)} pts)",
+                            flush=True,
+                        )
             for result in results:
                 result.dictionary_word = dictionary_word_for_path(
-                    board,
+                    search_board,
                     result.path,
                     result.word,
                     loadout,
@@ -740,45 +962,93 @@ class SolverApp:
             export_warnings: list[str] = []
             if results:
                 top = results[0]
-                # Re-read run_state after search so F8 embed matches melmod export.
+                # Re-read run_state after search; merge encounter historic before score + embed.
                 self._reload_run_state()
                 fresh_run_state = load_run_state_raw()
-                fresh_mod_money = mod_money_from_run_state(fresh_run_state)
+                embed_hist_before = ""
+                if isinstance(fresh_run_state, dict):
+                    raw_extras = fresh_run_state.get("extras")
+                    if isinstance(raw_extras, dict):
+                        embed_hist_before = str(
+                            raw_extras.get("historic_words", "") or ""
+                        ).strip()
+                merged_run_state: dict | None = (
+                    fresh_run_state if isinstance(fresh_run_state, dict) else None
+                )
+                if merged_run_state is not None:
+                    catchup = merge_encounter_historic_for_f8_snapshot(merged_run_state)
+                    if catchup is not None:
+                        merged_run_state = catchup
+                    fresh_again = load_run_state_raw()
+                    if isinstance(fresh_again, dict):
+                        remerged = merge_encounter_historic_for_f8_snapshot(
+                            merged_run_state
+                        )
+                        if remerged is not None:
+                            merged_run_state = remerged
+                merged_extras = (
+                    merged_run_state.get("extras")
+                    if isinstance(merged_run_state, dict)
+                    and isinstance(merged_run_state.get("extras"), dict)
+                    else None
+                )
+                merged_hist = ""
+                merged_grid = 0
+                if isinstance(merged_extras, dict):
+                    merged_hist = str(
+                        merged_extras.get("historic_words", "") or ""
+                    ).strip()
+                    try:
+                        merged_grid = int(str(merged_extras.get("grid_number") or "0"))
+                    except ValueError:
+                        merged_grid = 0
+                catchup_note = describe_f8_historic_catchup(
+                    embed_hist_before,
+                    merged_hist,
+                    grid_number=merged_grid,
+                )
+                if catchup_note:
+                    print(f"  Warning: {catchup_note}", flush=True)
+                hist_stale_note = f8_historic_stale_after_merge_warning(merged_extras)
+                if hist_stale_note:
+                    print(f"  Warning: {hist_stale_note}", flush=True)
+                fresh_mod_money = mod_money_from_run_state(merged_run_state)
+                merged_loadout = (
+                    parse_run_state(
+                        prepare_run_state_dict_for_scoring(merged_run_state)
+                    )
+                    if merged_run_state is not None
+                    else self._loadout_cache
+                )
                 save_loadout = merge_loadout_with_board(
-                    self._loadout_cache,
+                    merged_loadout,
                     board.money,
                     mod_money=fresh_mod_money if fresh_mod_money > 0 else None,
                 )
                 pred_score, pred_bd, pred_trace = self._scoring.score_with_trace(
-                    board, top.path, top.word, save_loadout
+                    search_board, top.path, top.word, save_loadout
                 )
                 top.score = pred_score
                 top.breakdown = pred_bd
-                export_diag = export_diagnostics_from_run_state(fresh_run_state)
+                export_diag = export_diagnostics_from_run_state(merged_run_state)
                 export_warnings = validate_run_state_for_scoring(
                     save_loadout,
                     board=board,
-                    raw=fresh_run_state,
+                    raw=merged_run_state,
                 )
                 session_extras = solver_session_extras_from_loadout(save_loadout)
                 f8_snapshot = sanitize_run_state_snapshot_for_f8(
-                    fresh_run_state,
+                    merged_run_state,
                     save_loadout,
                 )
-                if f8_snapshot is not None:
-                    fresh_again = load_run_state_raw()
-                    if isinstance(fresh_again, dict):
-                        remerged = merge_encounter_historic_for_f8_snapshot(
-                            f8_snapshot
-                        )
-                        if remerged is not None:
-                            f8_snapshot = sanitize_run_state_snapshot_for_f8(
-                                remerged,
-                                save_loadout,
-                            )
+                f8_extras = (
+                    f8_snapshot.get("extras")
+                    if isinstance(f8_snapshot, dict)
+                    else None
+                )
                 run_extras = (
-                    fresh_run_state.get("extras")
-                    if isinstance(fresh_run_state, dict)
+                    merged_run_state.get("extras")
+                    if isinstance(merged_run_state, dict)
                     else None
                 )
                 stale_note = f8_prior_suggestion_stale_note(
@@ -787,12 +1057,12 @@ class SolverApp:
                 if stale_note:
                     print(f"  Warning: {stale_note}", flush=True)
                 empty_hist_warn = empty_historic_on_later_grid_warning(
-                    run_extras if isinstance(run_extras, dict) else None
+                    f8_extras if isinstance(f8_extras, dict) else run_extras
                 )
                 if empty_hist_warn:
                     print(f"  Warning: {empty_hist_warn}", flush=True)
                 save_last_suggestion(
-                    board=board,
+                    board=search_board,
                     loadout=save_loadout,
                     result=top,
                     predicted_trace=pred_trace,
@@ -802,6 +1072,7 @@ class SolverApp:
                     export_diagnostics=export_diag,
                     export_warnings=export_warnings,
                     solver_session_extras=session_extras,
+                    consumable_placements=placement_records or None,
                 )
                 self._last_invalidation_reason = None
                 for warn in export_warnings:
@@ -822,11 +1093,15 @@ class SolverApp:
 
             if results:
                 top = results[0]
-                print(
+                done_msg = (
                     f"Done in {search_elapsed:.1f}s. Best: {format_suggestion_word(top)} "
-                    f"({int(top.score)} pts)",
-                    flush=True,
+                    f"({int(top.score)} pts)"
                 )
+                if placement_records:
+                    done_msg += (
+                        " — place consumables first, then trace the highlighted path"
+                    )
+                print(done_msg, flush=True)
                 effects = (top.breakdown or {}).get("pipeline", {}).get("effects")
                 if effects:
                     print(f"  Score effects: {'; '.join(str(e) for e in effects)}", flush=True)
@@ -854,11 +1129,12 @@ class SolverApp:
             )
             self._bridge.solve_finished.emit(
                 _SolveUIUpdate(
-                    board=board,
+                    board=search_board,
                     results=results,
                     board_bgr=board_img,
                     warnings_html=warnings,
                     on_game_highlight=highlight,
+                    consumable_placements=placement_records or None,
                     melmod_board_fingerprint=melmod_board_fp,
                     melmod_loadout_fingerprint=melmod_loadout_fp,
                 )

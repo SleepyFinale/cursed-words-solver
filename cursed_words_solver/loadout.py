@@ -131,9 +131,12 @@ def merge_submit_board_tile_state(run_state: dict[str, Any], data: dict[str, Any
         "color",
         "curse",
         "letter",
+        "char",
+        "base_score",
         "void_penalty_steps",
         "scattered_item_id",
         "scattered_item_level",
+        "cactus_growth",
     )
     for tile in tiles:
         if not isinstance(tile, dict):
@@ -144,12 +147,20 @@ def merge_submit_board_tile_state(run_state: dict[str, Any], data: dict[str, Any
             continue
         if submit.get("take"):
             tile["take"] = True
+        if submit.get("was_consumable") in (True, "true", "True", "1", 1):
+            tile["was_consumable"] = True
+        if submit.get("consumable") in (True, "true", "True", "1", 1):
+            tile["consumable"] = True
         for field in merge_fields:
             if field not in submit:
                 continue
             value = submit[field]
             if value is not None and value != "":
                 tile[field] = value
+            elif field == "cactus_growth" and submit.get(field) == 0:
+                tile[field] = 0
+            elif field == "base_score" and submit.get(field) == 0:
+                tile[field] = 0.0
 
 
 def merge_submit_board_take_flags(run_state: dict[str, Any], data: dict[str, Any]) -> None:
@@ -402,6 +413,8 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
             meta["inactive"] = True
         if entry.get("consumable"):
             meta["consumable"] = True
+        if entry.get("was_consumable") in (True, "true", "True", "1", 1):
+            meta["was_consumable"] = True
         if entry.get("take"):
             meta["take"] = True
         chess_color = entry.get("chess_color")
@@ -586,6 +599,18 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
             if item and item not in normalized:
                 normalized.append(item)
         out["boss_modifiers"] = normalized
+    raw_consumable_rack = out.get("consumable_rack")
+    if isinstance(raw_consumable_rack, str) and raw_consumable_rack.strip():
+        try:
+            parsed_rack = json.loads(raw_consumable_rack)
+            if isinstance(parsed_rack, list):
+                out["consumable_rack"] = parsed_rack
+        except json.JSONDecodeError:
+            pass
+    elif isinstance(raw_consumable_rack, list):
+        out["consumable_rack"] = [
+            entry for entry in raw_consumable_rack if isinstance(entry, dict)
+        ]
     raw_floor_mods = out.get("boss_modifier_floor_mods")
     if isinstance(raw_floor_mods, str) and raw_floor_mods.strip():
         try:
@@ -954,7 +979,7 @@ def _has_snapshot_sticker(loadout: Loadout) -> bool:
 
 def _encounter_historic_intentionally_cleared(extras: dict[str, Any]) -> bool:
     source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
-    return source in ("grid_start_cleared", "grid_advanced")
+    return source == "grid_start_cleared"
 
 
 def _historic_words_count(raw: str) -> int:
@@ -1018,6 +1043,9 @@ def _historic_words_json_prefer_fresh(
     embed_count = _historic_words_count(embed_hist)
     fresh_count = _historic_words_count(fresh_hist)
 
+    if fresh_grid > embed_grid >= 1:
+        return fresh_hist
+
     if embed_grid == fresh_grid and embed_grid >= 1:
         if fresh_count < embed_count:
             return fresh_hist
@@ -1040,6 +1068,52 @@ def _historic_words_json_prefer_fresh(
     return None
 
 
+def describe_f8_historic_catchup(
+    embed_hist: str,
+    merged_hist: str,
+    *,
+    grid_number: int = 0,
+) -> str | None:
+    """Human-readable note when F8 embed historic was refreshed from a fresher disk export."""
+    embed_hist = (embed_hist or "").strip()
+    merged_hist = (merged_hist or "").strip()
+    if not merged_hist or merged_hist == embed_hist:
+        return None
+    embed_count = _historic_words_count(embed_hist)
+    merged_count = _historic_words_count(merged_hist)
+    grid_part = f" on grid {grid_number}" if grid_number >= 1 else ""
+    if merged_count > embed_count:
+        return (
+            f"Encounter historic caught up from disk "
+            f"({embed_count}→{merged_count} words{grid_part}) — F8 embed refreshed."
+        )
+    if merged_count < embed_count:
+        return (
+            f"Encounter historic replaced from disk "
+            f"({embed_count}→{merged_count} words{grid_part}) — F8 embed refreshed."
+        )
+    return (
+        f"Encounter historic updated from disk "
+        f"({embed_count} words{grid_part}) — F8 embed refreshed."
+    )
+
+
+def f8_historic_stale_after_merge_warning(
+    extras: dict[str, Any] | None,
+) -> str | None:
+    """Warn when merged extras still disagree on previous word letter vs historic list."""
+    data = extras if isinstance(extras, dict) else {}
+    prev = str(data.get("previous_word_first_letter", "") or "").strip().lower()
+    hist = str(data.get("historic_words", "") or "").strip()
+    last_letter = _previous_letter_from_historic_words(hist)
+    if not prev or not last_letter or prev == last_letter:
+        return None
+    return (
+        f"run_state previous_word_first_letter ({prev}) does not match "
+        f"last historic word ({last_letter}) — press F7 in-game, then F8."
+    )
+
+
 def merge_encounter_historic_for_f8_snapshot(
     run_state: dict | None,
 ) -> dict | None:
@@ -1052,11 +1126,9 @@ def merge_encounter_historic_for_f8_snapshot(
     if not isinstance(extras, dict):
         return snapshot
 
-    if _encounter_historic_intentionally_cleared(extras):
-        return snapshot
-
     hist = str(extras.get("historic_words", "") or "").strip()
     embed_grid = _grid_number_from_extras(extras)
+    embed_cleared = _encounter_historic_intentionally_cleared(extras)
 
     fresh = load_run_state_raw()
     if not isinstance(fresh, dict):
@@ -1064,16 +1136,41 @@ def merge_encounter_historic_for_f8_snapshot(
     fresh_extras = fresh.get("extras")
     if not isinstance(fresh_extras, dict):
         return snapshot
-    if _encounter_historic_intentionally_cleared(fresh_extras):
-        return snapshot
 
     fresh_hist = str(fresh_extras.get("historic_words", "") or "").strip()
+    fresh_grid = _grid_number_from_extras(fresh_extras)
+
+    if embed_cleared:
+        if fresh_hist and fresh_hist != "[]" and (
+            fresh_grid != embed_grid or fresh_hist != hist
+        ):
+            _apply_fresh_encounter_historic_to_extras(extras, fresh_extras, fresh_hist)
+        elif fresh_grid > embed_grid or (hist and hist != "[]" and not fresh_hist):
+            extras.pop("historic_words", None)
+            extras.pop("red_tiles_used_encounter", None)
+            for key in (
+                "encounter_historic_source",
+                "previous_word_first_letter",
+                "grid_number",
+            ):
+                val = fresh_extras.get(key)
+                if val is not None:
+                    extras[key] = val
+        snapshot["extras"] = extras
+        return snapshot
+
     if not fresh_hist or fresh_hist == "[]":
+        if fresh_grid > embed_grid and hist and hist != "[]":
+            extras.pop("historic_words", None)
+            extras.pop("red_tiles_used_encounter", None)
+            for key in ("encounter_historic_source", "grid_number"):
+                val = fresh_extras.get(key)
+                if val is not None:
+                    extras[key] = val
         reconcile_previous_word_first_letter_from_historic(extras)
         snapshot["extras"] = extras
         return snapshot
 
-    fresh_grid = _grid_number_from_extras(fresh_extras)
     preferred = _historic_words_json_prefer_fresh(
         hist,
         fresh_hist,

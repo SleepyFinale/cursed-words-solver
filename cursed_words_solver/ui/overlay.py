@@ -12,6 +12,7 @@ from PySide6.QtGui import QCloseEvent, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from cursed_words_solver.config import Region
+from cursed_words_solver.consumable_placement import format_placement_path_hints
 from cursed_words_solver.suggestion import format_suggestion_word
 from cursed_words_solver.ui.board_highlight import path_geometry
 
@@ -123,6 +124,7 @@ class ResultOverlay(QWidget):
         board_bgr: np.ndarray | None = None,
         warnings_html: str = "",
         on_game_highlight: bool = False,
+        consumable_placements: list | None = None,
     ) -> None:
         self._has_solved = True
         self.idle_label.hide()
@@ -145,6 +147,35 @@ class ResultOverlay(QWidget):
                     f"<br><span style='font-size:12px;color:#8cf'>"
                     f"+{top.setup_bonus:,.0f} setup (rank {top.rank_score:,.0f})</span>"
                 )
+            placement_line = ""
+            if consumable_placements:
+                hint = ""
+                if top.path:
+                    hint = format_placement_path_hints(top.path, consumable_placements)
+                if not hint:
+                    parts: list[str] = []
+                    for rec in consumable_placements:
+                        letter = getattr(rec, "letter", None) or (
+                            rec.get("letter") if isinstance(rec, dict) else "?"
+                        )
+                        row = int(
+                            getattr(rec, "row", 0)
+                            if not isinstance(rec, dict)
+                            else rec.get("row", 0)
+                        )
+                        col = int(
+                            getattr(rec, "col", 0)
+                            if not isinstance(rec, dict)
+                            else rec.get("col", 0)
+                        )
+                        parts.append(f"{letter} (row {row + 1}, col {col + 1})")
+                    if parts:
+                        hint = f"Place {'; '.join(parts)} first"
+                if hint:
+                    placement_line = (
+                        "<br><span style='font-size:11px;color:#fa0'>"
+                        f"{hint}</span>"
+                    )
             self.hero_result.setText(
                 f"<span style='font-size:22px;font-weight:bold;color:#fff'>"
                 f"{word_html}</span>"
@@ -152,6 +183,7 @@ class ResultOverlay(QWidget):
                 f"<span style='font-size:18px;font-weight:bold;color:#0f8'>"
                 f"{top.score:,.0f} pts</span>"
                 f"{setup_line}"
+                f"{placement_line}"
             )
             self.hero_result.show()
         else:

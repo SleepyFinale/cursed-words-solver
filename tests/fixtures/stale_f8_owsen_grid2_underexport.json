@@ -1,0 +1,25 @@
+{
+  "description": "Round 20260605_142843: F8 embed empty historic on grid 2; submit had tackey from grid 1.",
+  "grid_number_submit": "2",
+  "extras_diff": {
+    "historic_words": {
+      "f8": "",
+      "submit": "[{\"word\":\"₮🃏︎₡₭🃏︎¥\",\"score\":1140,\"path\":[20,16,10,15,11,6],\"red_tile_count\":1}]"
+    },
+    "previous_word_first_letter": {
+      "f8": "",
+      "submit": "f"
+    },
+    "red_tiles_used_encounter": {
+      "f8": "0",
+      "submit": "1"
+    },
+    "scoring_previous_words_count": {
+      "f8": "0",
+      "submit": "2"
+    }
+  },
+  "expected_stale_note_contains": [
+    "historic_words changed"
+  ]
+}

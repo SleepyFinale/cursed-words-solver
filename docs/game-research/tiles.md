@@ -9,13 +9,13 @@ Default shop/scatter pool: **RED**, **BLUE**, **VOID**, **SHINY**. Other colours
 ## TileType → solver `TileColor`
 
 | Game `TileType` | Solver | Base score (GetValue) | Notes |
-|-----------------|--------|----------------------|-------|
+| --------------- | ------ | ---------------------- | ----- |
 | Normal | colorless | Letter scrabble value | Not a “colour” for Dango |
 | Red | red | +1 on packet | |
 | Blue | blue | +1 on packet | Shield pin can override blue base |
 | Shiny | shiny | Flat 50 | Ignores letter manipulators |
 | Void | void | Packet × −1 | Sticky Plaster subtracts; Tombstone adds tile score normally |
-| Cactus | cactus | +`CactusGrowth` packet | +1 per grid start; immutable colour |
+| Cactus | cactus | +`CactusGrowth` packet | +1 BASE SCORE per grid start ([wiki](https://cursedwords.wiki.gg/wiki/Tiles)); immutable colour. Melmod `base_score` is authoritative. Mid-round [Sandy consumables](https://cursedwords.wiki.gg/wiki/Sandy_Saguaro_(boss)) skip grid growth. |
 | Pink | pink | Letter base | `StoreMoneyInPinkTiles`: −$1 per pink in word while money > 0 |
 | Gold | gold | Current player money | |
 | Green | green | Letter base | 10% of tile score → word score at finalize; poison on later words |

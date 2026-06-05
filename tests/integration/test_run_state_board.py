@@ -318,6 +318,31 @@ def test_parse_run_state_bosssmallwords_alias_is_wolf():
     assert boss_word_constraints(loadout, rules, default_max_len=15).max_len == 4
 
 
+def test_parse_run_state_bosscactus_alias_is_sandy_saguaro():
+    data = {
+        "character": "Cretaceous Meg",
+        "boss_id": "bosscactus",
+        "boss_name": "Sandy Saguaro",
+        "extras": {"boss_area_number": 3},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        boss_display_name,
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "sandy_saguaro"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+    assert boss_display_name(loadout, rules) == "Sandy Saguaro"
+
+
 def test_parse_run_state_bossqs_alias_is_axolotl():
     """In-game Axolotl prefab/display name is Extra Qs / bossqs."""
     data = {
@@ -725,6 +750,153 @@ def test_parse_board_tile_extras_metadata():
     assert tile.metadata.get("consumable") is True
     assert tile.metadata.get("was_glitch") is True
     assert tile.metadata.get("cactus_growth") == 2
+
+
+def test_parse_board_was_consumable_metadata():
+    data = {
+        "board": {
+            "source": "melmod",
+            "row_order": "top_first",
+            "tiles": [
+                {
+                    "row": 1,
+                    "col": 2,
+                    "char": "e",
+                    "letter": "E",
+                    "curse": "letter",
+                    "color": "blue",
+                    "base_score": 2,
+                    "was_consumable": True,
+                },
+                *[
+                    {
+                        "row": r,
+                        "col": c,
+                        "char": "X",
+                        "letter": "X",
+                        "curse": "letter",
+                        "color": "colorless",
+                        "base_score": 1,
+                    }
+                    for r in range(5)
+                    for c in range(5)
+                    if not (r == 1 and c == 2)
+                ],
+            ],
+        }
+    }
+    board = parse_board_from_run_state(data)
+    assert board is not None
+    tile = board.get(1, 2)
+    assert tile.metadata.get("was_consumable") is True
+
+
+def test_effective_board_skips_cactus_growth_on_melmod_and_consumables():
+    from cursed_words_solver.encounter_board import effective_board_for_loadout
+    from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
+    from cursed_words_solver.rules.pipeline import ScoringPipeline
+
+    def _blank(row: int, col: int) -> Tile:
+        return Tile(
+            row=row,
+            col=col,
+            char="X",
+            letter="X",
+            base_score=1,
+            color=TileColor.COLORLESS,
+            curse=CurseType.LETTER,
+            metadata={"source": "melmod"},
+        )
+
+    def _cactus(row: int, col: int, *, growth: int, was_consumable: bool = False) -> Tile:
+        meta: dict = {"source": "melmod", "cactus_growth": growth}
+        if was_consumable:
+            meta["was_consumable"] = True
+        return Tile(
+            row=row,
+            col=col,
+            char="A",
+            letter="A",
+            base_score=float(1 + growth),
+            color=TileColor.CACTUS,
+            curse=CurseType.LETTER,
+            metadata=meta,
+        )
+
+    tiles = [[_blank(r, c) for c in range(5)] for r in range(5)]
+    tiles[0][0] = _cactus(0, 0, growth=2)
+    tiles[1][1] = _cactus(1, 1, growth=0, was_consumable=True)
+    board = Board(tiles=tiles)
+    loadout = Loadout(extras={"board_from_melmod": "true"})
+    rules = ScoringPipeline().rules
+    out = effective_board_for_loadout(board, loadout, rules)
+    assert out.get(0, 0).metadata.get("cactus_growth") == 2
+    assert out.get(1, 1).metadata.get("cactus_growth") == 0
+
+
+def test_merge_submit_board_tile_state_includes_consumable_fields():
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+
+    data = {
+        "run_state_snapshot": {
+            "board": {
+                "source": "melmod",
+                "row_order": "top_first",
+                "tiles": [
+                    {
+                        "row": 2,
+                        "col": 1,
+                        "char": "?",
+                        "letter": "?",
+                        "curse": "wildcard",
+                        "color": "void",
+                        "base_score": 0,
+                    },
+                    *[
+                        {
+                            "row": r,
+                            "col": c,
+                            "char": "X",
+                            "letter": "X",
+                            "curse": "letter",
+                            "color": "colorless",
+                            "base_score": 1,
+                        }
+                        for r in range(5)
+                        for c in range(5)
+                        if not (r == 2 and c == 1)
+                    ],
+                ],
+            }
+        },
+        "submit_board_tiles": [
+            {
+                "row": 2,
+                "col": 1,
+                "char": "l",
+                "letter": "L",
+                "curse": "letter",
+                "color": "cactus",
+                "base_score": 1.0,
+                "was_consumable": True,
+                "cactus_growth": 0,
+            }
+        ],
+    }
+    merged = prepare_run_state_dict_for_scoring(
+        {**data["run_state_snapshot"], **data}
+    )
+    board = parse_board_from_run_state(merged)
+    assert board is not None
+    tile = board.get(2, 1)
+    assert tile.letter == "L"
+    assert tile.color.value == "cactus"
+    assert tile.base_score == 1.0
+    assert tile.metadata.get("was_consumable") is True
+    assert tile.metadata.get("cactus_growth") == 0
 
 
 def test_parse_run_state_schema_version_passthrough():

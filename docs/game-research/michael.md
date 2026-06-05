@@ -16,6 +16,7 @@ Source: `Assembly-CSharp.dll` (`MichaelBoss`, `EncounterController`, `TileSelect
 Michael can only draft boss modifiers where `CanBeSummonedByMichael = true`.
 
 Draftable:
+
 - salamander
 - yeti_crab
 - robo_eel
@@ -29,6 +30,7 @@ Draftable:
 - wolf **or** cobra (one family removed each run)
 
 Not draftable:
+
 - robo_monkey
 - fox
 - hyena

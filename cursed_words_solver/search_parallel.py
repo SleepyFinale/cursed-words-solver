@@ -138,6 +138,7 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
     setup_weight: float = payload["setup_weight"]
     setup_discount: float = payload["setup_discount"]
     use_fast_rank: bool = payload["use_fast_rank"]
+    required_raw = payload.get("required_consumable_indices") or []
 
     now = time.monotonic()
     local_deadline = min(pass_deadline, now + budget_sec)
@@ -156,6 +157,9 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
     )
     if _mp_pipeline is not None:
         searcher.scoring = _mp_pipeline
+    searcher.validator.required_consumable_indices = frozenset(
+        int(idx) for idx in required_raw
+    )
     active = _active_indices(board)
     searcher._mult_rules = loadout_mult_rules(
         loadout,
@@ -196,6 +200,7 @@ def parallel_collect_fair_starts(
     setup_weight: float,
     setup_discount: float,
     use_fast_rank: bool,
+    required_consumable_indices: frozenset[int] | None = None,
 ) -> None:
     """Run start slices on a reused process pool and merge into candidates."""
     if time.monotonic() >= deadline:
@@ -222,6 +227,7 @@ def parallel_collect_fair_starts(
         "setup_weight": setup_weight,
         "setup_discount": setup_discount,
         "use_fast_rank": use_fast_rank,
+        "required_consumable_indices": sorted(required_consumable_indices or ()),
     }
     payloads = [{**base_payload, "starts": chunk} for chunk in chunks]
 

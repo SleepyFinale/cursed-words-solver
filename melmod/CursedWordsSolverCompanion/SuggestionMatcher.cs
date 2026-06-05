@@ -19,6 +19,7 @@ namespace CursedWordsSolverCompanion
         public int f8_sequence;
         public string solver_version;
         public string created_at;
+        public List<SuggestedConsumablePlacement> consumable_placements;
     }
 
     public static class SuggestionMatcher
@@ -36,12 +37,30 @@ namespace CursedWordsSolverCompanion
                 if (!File.Exists(SuggestionFilePath))
                     return null;
                 var json = File.ReadAllText(SuggestionFilePath);
-                return JsonConvert.DeserializeObject<LastSuggestion>(json);
+                var suggestion = JsonConvert.DeserializeObject<LastSuggestion>(json);
+                if (suggestion != null)
+                    TryRefreshWorkflowExtrasOnLoad(suggestion);
+                return suggestion;
             }
             catch
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Patch embedded F8 workflow extras when live export caught up after last_suggestion was written.
+        /// </summary>
+        public static bool TryRefreshWorkflowExtrasOnLoad(LastSuggestion suggestion)
+        {
+            if (suggestion == null)
+                return false;
+            var player = RunStateExporter.GetPlayerForUpdate();
+            if (player == null)
+                return false;
+            var liveExtras = RunStateExporter.BuildExtrasSnapshot();
+            var projected = RunStateExportFill.BuildSubmitWorkflowExtras(player, liveExtras);
+            return TrySyncWorkflowExtrasToProjected(suggestion, projected);
         }
 
         /// <summary>
@@ -180,10 +199,9 @@ namespace CursedWordsSolverCompanion
                 return false;
             if (!PathsEqual(suggestion.path, path))
                 return false;
-            if (!string.Equals(
-                    suggestion.board_fingerprint ?? "",
-                    boardFingerprint ?? "",
-                    StringComparison.Ordinal))
+            if (!ConsumablePlacementHelper.BoardFingerprintMatchesSuggestion(
+                    suggestion,
+                    boardFingerprint))
                 return false;
             return true;
         }
@@ -201,10 +219,9 @@ namespace CursedWordsSolverCompanion
 
             var parts = new List<string>();
             var pathMatches = PathsEqual(suggestion.path, path);
-            var boardMatches = string.Equals(
-                suggestion.board_fingerprint ?? "",
-                boardFingerprint ?? "",
-                StringComparison.Ordinal);
+            var boardMatches = ConsumablePlacementHelper.BoardFingerprintMatchesSuggestion(
+                suggestion,
+                boardFingerprint);
             var wordMatches = string.Equals(
                 suggestion.word?.Trim() ?? "",
                 word ?? "",
@@ -323,6 +340,9 @@ namespace CursedWordsSolverCompanion
                     "historic_words",
                     "previous_word_first_letter",
                     "red_tiles_used_encounter",
+                    "scoring_previous_words_count",
+                    "mutating_dna_letter_counts",
+                    "encounter_historic_source",
                 })
                 {
                     string val;

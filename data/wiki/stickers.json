@@ -59,7 +59,9 @@
       "extra_qs": "axolotl",
       "bossvoids": "mole",
       "extra_voids": "mole",
-      "extravoids": "mole"
+      "extravoids": "mole",
+      "bosscactus": "sandy_saguaro",
+      "sandysaguaroboss": "sandy_saguaro"
     },
     "pins": {
       "abacus": "abacus",
@@ -3404,6 +3406,14 @@
       "game_class": "CretaceousMegBoss",
       "wiki_page": "Cretaceous_Meg_(boss)",
       "wiki_effect": "Strips loadout to special shop ($120/$160/$200 by stage); rebuild before challenge grids"
+    },
+    "sandy_saguaro": {
+      "name": "Sandy Saguaro",
+      "type": "custom",
+      "effect_class": "encounter",
+      "game_class": "SandySaguaroBoss",
+      "wiki_page": "Sandy_Saguaro_(boss)",
+      "wiki_effect": "Gives 2 CACTUS consumable tiles; must be used in submitted words"
     }
   },
   "pins": {

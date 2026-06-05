@@ -1886,6 +1886,16 @@ TUNED_BOSSES: dict[str, dict] = {
             "rebuild before challenge grids"
         ),
     },
+    "sandy_saguaro": {
+        "name": "Sandy Saguaro",
+        "type": "custom",
+        "effect_class": "encounter",
+        "game_class": "SandySaguaroBoss",
+        "wiki_page": "Sandy_Saguaro_(boss)",
+        "wiki_effect": (
+            "Gives 2 CACTUS consumable tiles; must be used in submitted words"
+        ),
+    },
     "capybara": {
         "name": "Capybara",
         "type": "shuffle_loadout_order",
@@ -2212,6 +2222,8 @@ ALIASES: dict[str, dict[str, str]] = {
         "bossvoids": "mole",
         "extra_voids": "mole",
         "extravoids": "mole",
+        "bosscactus": "sandy_saguaro",
+        "sandysaguaroboss": "sandy_saguaro",
     },
     "pins": {
         "abacus": "abacus",

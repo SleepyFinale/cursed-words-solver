@@ -1,0 +1,17 @@
+{
+  "description": "Round 20260605_143044: F8 embed had tackey only; submit added owsen from prior grid.",
+  "grid_number_submit": "1",
+  "embed_extras": {
+    "historic_words": "[{\"word\":\"₮🃏︎₡₭🃏︎¥\",\"score\":1140,\"path\":[20,16,10,15,11,6],\"red_tile_count\":1}]",
+    "grid_number": "1",
+    "encounter_historic_source": "live"
+  },
+  "disk_extras": {
+    "historic_words": "[{\"word\":\"₮🃏︎₡₭🃏︎¥\",\"score\":1140,\"path\":[20,16,10,15,11,6],\"red_tile_count\":1},{\"word\":\"🧹₩🃏︎€₦\",\"score\":1758,\"path\":[15,20,21,22,18],\"red_tile_count\":2}]",
+    "grid_number": "1",
+    "encounter_historic_source": "live",
+    "previous_word_first_letter": "f",
+    "red_tiles_used_encounter": "3"
+  },
+  "expected_catchup_contains": "1→2 words"
+}

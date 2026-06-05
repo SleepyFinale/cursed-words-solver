@@ -7,7 +7,7 @@ Filter mismatch traces for boss phases:
 ```
 
 | Phase | Typical cause |
-|-------|----------------|
+| ----- | ---------------- |
 | `boss_early` | Salamander penalty, Robo-Monkey money subtract, Fox submit steal |
 | `boss_late` | Hourglass-reordered boss pass |
 

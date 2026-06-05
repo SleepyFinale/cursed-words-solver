@@ -16,7 +16,7 @@ Pin scoring hooks:
 ## Per-pin summary
 
 | Slug | Game class | Left (component 0) | Right (component 1) |
-|------|------------|--------------------|---------------------|
+| ---- | ---------- | -------------------- | --------------------- |
 | `abacus` | `Abacus` | Scatter unique numbers 1–5 on grid | +`VariableValue` TILE SCORE per coloured number on path |
 | `milky_way` | `MilkyWay` | Scatter VOID tiles | VOID tiles % chance → SHINY (`VariableValue` on right) |
 | `rainbow` | `Rainbow` | Scatter unusual colour tile | +`VariableValue` WORD SCORE per unique colour on path |
@@ -54,7 +54,7 @@ Character item `HumanHands` adds `LeftHumanHand` / `RightHumanHand` stickers. Fa
 ## Solver mapping
 
 | Game | Solver |
-|------|--------|
+| ---- | ------ |
 | `UpgradeableComponents[i].VariableValue` | `extras.pin_left_variable` / `pin_right_variable` (melmod) |
 | `UpgradeableComponents[i].Level` | `extras.pin_left_level` / `pin_right_level` |
 | Left scatter | `pins[].left` → `grid_effects.apply_pin_grid_mutations` |

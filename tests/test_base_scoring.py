@@ -337,3 +337,169 @@ def test_virge_word_score_from_debug_board():
         return
     score, _ = score_word_base(board, [21, 16, 17, 18, 24], "virge")
     assert score == 10.0
+
+
+def test_melmod_void_currency_first_on_path_penalty_only():
+    """Void $ at path start: no penalty; first void $ at path_index > 0 gets -10."""
+    from cursed_words_solver.rules.tile_scoring import initial_tile_scores
+
+    def _cell(r: int, c: int) -> Tile:
+        if (r, c) == (0, 0) or (r, c) == (1, 0):
+            return Tile(
+                r,
+                c,
+                "$",
+                "S",
+                0,
+                TileColor.VOID,
+                CurseType.CURRENCY,
+                metadata={"source": "melmod"},
+            )
+        return Tile(
+            r,
+            c,
+            "a",
+            "A",
+            1,
+            TileColor.COLORLESS,
+            CurseType.LETTER,
+            metadata={"source": "melmod"},
+        )
+
+    board = Board(tiles=[[_cell(r, c) for c in range(5)] for r in range(5)], money=10)
+    path_start_dollar = [0, 1, 2]
+    scores_start, total_start = initial_tile_scores(board, path_start_dollar, money=10)
+    assert scores_start == [0.0, 1.0, 1.0]
+    assert total_start == 2.0
+
+    path = [1, 0, 5]
+    scores, total = initial_tile_scores(board, path, money=10)
+    assert scores == [1.0, -10.0, 0.0]
+    assert total == -9.0
+
+
+def test_pissers_round_log_void_currency_wad_tombstone_cocktail():
+    """Round log 20260605_132641: stale F8 embed predicted 188; game scored 168."""
+    from cursed_words_solver.loadout import (
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.pipeline import ScoringPipeline
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "round_logs"
+        / "20260605_132641_801.json"
+    )
+    if not fixture.exists():
+        return
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state"])
+    loadout = parse_run_state(run_state)
+    board = parse_board_from_run_state(run_state)
+    path = data["actual"]["path"]
+    word = data["actual"]["word"]
+    pipeline = ScoringPipeline()
+    score, _ = pipeline.score(board, path, word, loadout)
+    assert score == data["actual"]["score"]
+    assert score == 168
+
+
+def _score_mismatch_fixture(fixture_name: str, expected_score: int) -> None:
+    from cursed_words_solver.loadout import (
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.pipeline import ScoringPipeline
+
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "mismatches" / fixture_name
+    )
+    if not fixture.exists():
+        return
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    loadout = parse_run_state(run_state)
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    word = data["word"]
+    pipeline = ScoringPipeline()
+    score, _ = pipeline.score(board, path, word, loadout)
+    assert score == data["actual_score"]
+    assert score == expected_score
+
+
+def test_fegs_mismatch_void_currency_not_at_path_start():
+    """Mismatch 20260605_134008: void ₣ at path start — no init penalty; game 332."""
+    _score_mismatch_fixture("20260605_134008.json", 332)
+
+
+def test_recrafts_mismatch_void_currency_not_dollar():
+    """Mismatch 20260605_134100: void ₡ mid-path — no init penalty; game 556."""
+    _score_mismatch_fixture("20260605_134100.json", 556)
+
+
+def test_owsen_mismatch_wad_deferred_sequential_floor():
+    """Mismatch 20260605_142843: Wad-deferred grid word bonuses floor per step; game 1758."""
+    _score_mismatch_fixture("20260605_142843.json", 1758)
+
+
+def test_gyrene_mismatch_void_currency_path_start():
+    """Mismatch 20260605_143044: void ₲ at path start init -10; game 1196."""
+    _score_mismatch_fixture("20260605_143044.json", 1196)
+
+
+def test_melmod_void_non_dollar_currency_top_row_path_start_penalty():
+    """Void ₲ on row 0 at word start gets -10 init; void $ at word start stays 0."""
+    from cursed_words_solver.models import Board, CurseType, Tile, TileColor
+    from cursed_words_solver.rules.tile_scoring import initial_tile_scores
+
+    def _void_currency_cell(r: int, c: int, glyph: str) -> Tile:
+        return Tile(
+            r,
+            c,
+            glyph,
+            glyph,
+            0,
+            TileColor.VOID,
+            CurseType.CURRENCY,
+            metadata={"source": "melmod"},
+        )
+
+    board = Board(
+        tiles=[[_void_currency_cell(0, c, "₲" if c == 0 else "a") for c in range(5)] for _ in range(5)],
+        money=5,
+    )
+    for r in range(1, 5):
+        for c in range(5):
+            board.tiles[r][c] = Tile(
+                r, c, "a", "A", 1, TileColor.COLORLESS, CurseType.LETTER,
+                metadata={"source": "melmod"},
+            )
+    path_start = [0, 1, 2, 3, 4, 5]
+    scores, _ = initial_tile_scores(board, path_start, money=5)
+    assert scores[0] == -10.0
+
+    board2 = Board(
+        tiles=[[_void_currency_cell(0, c, "$" if c == 0 else "a") for c in range(5)] for _ in range(5)],
+        money=5,
+    )
+    for r in range(1, 5):
+        for c in range(5):
+            board2.tiles[r][c] = Tile(
+                r, c, "a", "A", 1, TileColor.COLORLESS, CurseType.LETTER,
+                metadata={"source": "melmod"},
+            )
+    scores_d, _ = initial_tile_scores(board2, path_start, money=5)
+    assert scores_d[0] == 0.0
+
+    board3 = Board(
+        tiles=[[Tile(2, c, "a", "A", 1, TileColor.COLORLESS, CurseType.LETTER,
+                   metadata={"source": "melmod"}) for c in range(5)] for _ in range(5)],
+        money=5,
+    )
+    board3.tiles[2][0] = _void_currency_cell(2, 0, "₣")
+    path_fegs = [10, 11, 12, 13]
+    scores_f, _ = initial_tile_scores(board3, path_fegs, money=5)
+    assert scores_f[0] == 0.0

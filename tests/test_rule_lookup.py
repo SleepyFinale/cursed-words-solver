@@ -1,4 +1,6 @@
+from cursed_words_solver.loadout import parse_run_state
 from cursed_words_solver.models import Loadout, LoadoutItem
+from cursed_words_solver.rules.boss_effects import load_rules_catalog
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.rule_lookup import (
     collect_unmapped_items,
@@ -6,6 +8,25 @@ from cursed_words_solver.rules.rule_lookup import (
     get_pin_scoring_rule,
     resolve_rule_id,
 )
+
+
+def test_bosscactus_alias_resolves_to_sandy_saguaro():
+    rules = load_rules_catalog()
+    loadout = parse_run_state(
+        {
+            "character": "Cretaceous Meg",
+            "boss_id": "bosscactus",
+            "boss_name": "Sandy Saguaro",
+            "extras": {"boss_area_number": 3},
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "sandy_saguaro"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
 
 
 def test_resolve_rule_id_with_alias():

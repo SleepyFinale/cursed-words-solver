@@ -54,6 +54,28 @@ def test_cactus_uses_growth_metadata() -> None:
     assert tile_base_contribution(t) == 4
 
 
+def test_cactus_melmod_uses_packet_only() -> None:
+    t = _tile(TileColor.CACTUS, base=3)
+    t.metadata["source"] = "melmod"
+    t.metadata["cactus_growth"] = 2
+    assert tile_base_contribution(t) == 3
+
+
+def test_cactus_consumable_rack_uses_packet_only() -> None:
+    t = _tile(TileColor.CACTUS, base=1)
+    t.metadata["source"] = "consumable_rack"
+    t.metadata["cactus_growth"] = 0
+    assert tile_base_contribution(t) == 1
+
+
+def test_cactus_was_consumable_uses_packet_only() -> None:
+    t = _tile(TileColor.CACTUS, base=1)
+    t.metadata["source"] = "melmod"
+    t.metadata["was_consumable"] = True
+    t.metadata["cactus_growth"] = 2
+    assert tile_base_contribution(t) == 1
+
+
 def test_gold_uses_money() -> None:
     board = Board(tiles=[[_tile(TileColor.GOLD)]], money=7)
     assert tile_base_contribution(board.tiles[0][0], board.money) == 7

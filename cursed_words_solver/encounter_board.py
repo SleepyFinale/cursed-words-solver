@@ -10,9 +10,24 @@ from cursed_words_solver.rules.grid_effects import (
 )
 
 
+def _board_from_melmod(board: Board, loadout: Loadout | None) -> bool:
+    if loadout and str((loadout.extras or {}).get("board_from_melmod", "")).lower() == "true":
+        return True
+    return any(
+        board.is_active_index(t.index) and t.metadata.get("source") == "melmod"
+        for t in board.flat
+    )
+
+
+def _skip_cactus_grid_growth(tile) -> bool:
+    if tile.metadata.get("was_consumable") is True:
+        return True
+    return tile.metadata.get("source") == "consumable_rack"
+
+
 def apply_cactus_grid_growth(board: Board, loadout: Loadout | None) -> Board:
     """Increment CactusGrowth on each cactus tile at grid start (+1 per grid)."""
-    if not loadout:
+    if not loadout or _board_from_melmod(board, loadout):
         return board
     first = loadout.extras.get("is_first_grid_of_encounter")
     if first is False or str(first).lower() == "false":
@@ -21,6 +36,8 @@ def apply_cactus_grid_growth(board: Board, loadout: Loadout | None) -> Board:
         if not board.is_active_index(tile.index):
             continue
         if tile.color != TileColor.CACTUS:
+            continue
+        if _skip_cactus_grid_growth(tile):
             continue
         try:
             growth = int(tile.metadata.get("cactus_growth", 1))

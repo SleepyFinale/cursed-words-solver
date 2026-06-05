@@ -410,6 +410,7 @@ class PathValidator:
         self.dictionary = dictionary
         self.min_len = min_len
         self.relaxed_numbers = relaxed_numbers
+        self.required_consumable_indices: frozenset[int] = frozenset()
 
     def build_word(self, board: Board, path: list[int], letters: str) -> str:
         return letters.lower()
@@ -453,6 +454,9 @@ class PathValidator:
         word: str,
         stamp_flags: StampSearchFlags | None,
     ) -> bool:
+        required = self.required_consumable_indices
+        if required and not required.issubset(path):
+            return False
         relaxed_fractions = self.relaxed_numbers
         for i, idx in enumerate(path):
             tile = board.get_by_index(idx)
@@ -1385,6 +1389,7 @@ class WordSearcher:
                 setup_weight=self.setup_weight,
                 setup_discount=self.setup_discount,
                 use_fast_rank=self._use_fast_rank_for(loadout),
+                required_consumable_indices=self.validator.required_consumable_indices,
             )
             return
         n = len(starts)

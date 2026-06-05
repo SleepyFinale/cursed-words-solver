@@ -32,8 +32,8 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
-        /// Clear submit-hook previousWords cache when grid_number advances.
-        /// Does not wipe encounter historic in run_state — live reflection stays authoritative.
+        /// Grid advance: mark metadata and re-export scoring historic from cache/live/disk.
+        /// Does not wipe submit-hook previousWords or encounter historic JSON.
         /// </summary>
         public static void TryClearStaleHistoricCacheOnGridAdvance(Player player)
         {
@@ -45,18 +45,34 @@ namespace CursedWordsSolverCompanion
             );
             if (liveGrid < 1 || onDiskGrid < 1 || liveGrid <= onDiskGrid)
                 return;
-            RunStateExporter.ClearCachedPreviousWordsForExport();
-            RunStateExporter.TryMergeExtrasKeys(
-                new Dictionary<string, string>
-                {
-                    ["previous_word_first_letter"] = "",
-                    ["scoring_previous_words_count"] = "0",
-                    ["encounter_historic_source"] = "grid_advanced",
-                }
-            );
-            var liveHistoric = RunStateExporter.TryGetHistoricPreviousWordsPublic(player);
-            if (liveHistoric != null && liveHistoric.Count > 0)
-                RunStateExporter.TryMergeTelescopeEncounterExtras(liveHistoric);
+
+            var keys = new Dictionary<string, string>
+            {
+                ["grid_number"] = liveGrid.ToString(),
+                ["encounter_historic_source"] = "grid_advanced",
+            };
+
+            var redUsed = RunStateExporter.TryGetRedTilesUsedEncounterPublic(player);
+            if (redUsed >= 0)
+                keys["red_tiles_used_encounter"] = redUsed.ToString();
+
+            var fallback = new Dictionary<string, string>();
+            foreach (var kv in keys)
+                fallback[kv.Key] = kv.Value ?? "";
+
+            var diskHistoric = RunStateExporter.TryReadRunStateExtra("historic_words");
+            if (!string.IsNullOrEmpty(diskHistoric) && diskHistoric != "[]")
+                fallback["historic_words"] = diskHistoric;
+
+            var built = BuildBestHistoricExtras(player, fallback);
+            if (built != null)
+            {
+                foreach (var kv in built)
+                    keys[kv.Key] = kv.Value ?? "";
+            }
+
+            ApplyScoringCachedPreviousWordLetter(keys);
+            RunStateExporter.TryMergeExtrasKeys(keys);
         }
 
         private static readonly string[] BossExtraKeys =
@@ -130,16 +146,21 @@ namespace CursedWordsSolverCompanion
             sb.Append('|');
             sb.Append(gridNum);
 
-            var consumables = TryGetIntProperty(
-                player,
-                "ConsumableRackCount",
-                "ConsumableCount",
-                "ConsumablesOnRack"
-            );
-            if (consumables < 0)
-                consumables = TryGetConsumableRackCount(player);
+            var rackTiles = ConsumableRackExporter.Export(player);
             sb.Append('|');
-            sb.Append(consumables >= 0 ? consumables : -1);
+            sb.Append(rackTiles != null ? rackTiles.Count : 0);
+            if (rackTiles != null)
+            {
+                foreach (var tile in rackTiles)
+                {
+                    if (tile == null)
+                        continue;
+                    sb.Append(':');
+                    sb.Append(tile.letter ?? "");
+                    sb.Append('/');
+                    sb.Append(tile.color ?? "colorless");
+                }
+            }
 
             var firstGrid = TryGetIntProperty(player, "IsFirstGrid", "IsFirstGridOfEncounter");
             if (firstGrid < 0)
@@ -611,8 +632,7 @@ namespace CursedWordsSolverCompanion
             if (string.IsNullOrEmpty(source))
                 return false;
 
-            return string.Equals(source, "grid_start_cleared", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(source, "grid_advanced", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(source, "grid_start_cleared", StringComparison.OrdinalIgnoreCase);
         }
 
         private static void MergeOnDiskEncounterHistoricInto(Dictionary<string, string> fallback)
@@ -855,6 +875,28 @@ namespace CursedWordsSolverCompanion
             return projected;
         }
 
+        /// <summary>
+        /// Workflow extras from CalculateOverallScore previousWords (authoritative at score time).
+        /// </summary>
+        public static Dictionary<string, string> BuildScoringContextWorkflowExtras(
+            Player player,
+            Dictionary<string, string> liveExtras,
+            Dictionary<string, string> scoringExtras
+        )
+        {
+            var projected = liveExtras != null
+                ? new Dictionary<string, string>(liveExtras)
+                : new Dictionary<string, string>();
+
+            if (scoringExtras != null)
+            {
+                foreach (var kv in scoringExtras)
+                    projected[kv.Key] = kv.Value ?? "";
+            }
+
+            return projected;
+        }
+
         public static List<HistoricWord> PickBestHistoricWordList(Player player)
         {
             var fromPlayer = RunStateExporter.TryGetHistoricPreviousWordsPublic(player);
@@ -862,9 +904,15 @@ namespace CursedWordsSolverCompanion
             var playerCount = fromPlayer != null ? fromPlayer.Count : 0;
             var cachedCount = fromCached != null ? fromCached.Count : 0;
 
-            // Submit-hook cache can still list prior-grid words when live reflection reset.
+            // Submit-hook cache can list prior-grid words when live reflection reset (grid advance
+            // clears cache in TryClearStaleHistoricCacheOnGridAdvance). When playerCount > 0 but
+            // cache is longer, reflection is lagging the last scored word — prefer cache.
             if (cachedCount > playerCount)
-                return playerCount > 0 ? fromPlayer : null;
+            {
+                if (playerCount == 0)
+                    return null;
+                return fromCached;
+            }
 
             if (cachedCount >= playerCount && cachedCount > 0)
                 return fromCached;

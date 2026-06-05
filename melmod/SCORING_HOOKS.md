@@ -61,13 +61,16 @@ Harmony prefix parameter names must match the game (`tiles`, not `selections`).
 
 | Patch | When | Action |
 |-------|------|--------|
-| `EncounterController.SubmitWord` | Prefix | Start capture session; read word + path |
-| `EncounterController.SubmitWord` | Postfix | Match `last_suggestion.json`; export mismatch if needed |
+| `EncounterController.SubmitWord` | Prefix | Load suggestion; match path/board; set **capture candidate** (no score compare yet) |
+| `ScoreCalculation.CalculateOverallScore` | Prefix | `OnScoringContext(previousWords)` — authoritative historic; **activate capture** or block stale F8 |
+| `EncounterController.SubmitWord` | Postfix | Match `last_suggestion.json`; export mismatch if capture was active |
 | `PuzzleController.SubmitWord` | Prefix/Postfix | Same for puzzle grids |
 | `ScoreCalculation.CalculateOverallScore` | Postfix | Always cache `List<ScoreCalcVizInfo>` for round logs; build `actual_trace` only when capture is active |
 | `ScoringCaptureSession.EndSubmit` | (internal) | Always export `round_logs/<timestamp>.json`; mismatch export only when capture active |
 
-`PopulateValidityAndScore` also calls score calculation for the preview — session flag must be **submit-only** (set in `SubmitWord` prefix, cleared in postfix).
+Workflow stale detection (`historic_words`, `previous_word_first_letter`, etc.) runs in **`OnScoringContext`**, not in `SubmitWord` prefix. `BuildSubmitWorkflowExtras` at submit time can lag one word behind; `previousWords` from `CalculateOverallScore` is authoritative for whether the F8 embed matches score-time extras.
+
+`PopulateValidityAndScore` also calls score calculation for the preview — session flag must be **submit-only** (capture candidate set in `SubmitWord` prefix, `_active` set in `CalculateOverallScore` prefix, cleared in submit postfix).
 
 ### Round logs vs mismatch capture
 
@@ -80,7 +83,7 @@ Round logs include solver prediction (from `last_suggestion.json` when present),
 
 ### Suggestion matching (`SuggestionMatcher`)
 
-- **Activate capture** when submitted **path** and **board_fingerprint** match `last_suggestion.json` from F8.
+- **Activate capture** when submitted **path** and **board_fingerprint** match `last_suggestion.json` from F8 (board drift from suggested `consumable_placements` counts as a match), and workflow extras at score time match the F8 embed (checked in `OnScoringContext`).
 - **Do not** require the submitted dictionary word to equal `word` / `scoring_word` (e.g. game `settee` vs solver `12ttee`).
 - **Do not** gate on `loadout_fingerprint` (board fingerprint already includes money).
 - Skip when the path differs (alternate route for the same dictionary word) — `predicted_score` is only for the F8 path.

@@ -3,7 +3,7 @@
 ## `ItemFunction` (game enum)
 
 | Value | Role |
-|-------|------|
+| ----- | ---- |
 | `Build` | Grid / encounter setup |
 | `Scoring` | Word submit |
 | `Additive` | +tile / +word |
@@ -15,7 +15,7 @@
 ## Catalog `type` field (solver)
 
 | `type` | Game hook | Notes |
-|--------|-----------|-------|
+| ------ | ----------- | ----- |
 | `add_tile_score` | `ApplyTileBonus` | Per-path-index |
 | `add_word_score` | `ApplyWordBonus` | Many `word_mode`s |
 | `multiply_word_scaled` | `WordBonusToken` multiplicative | Queued or immediate |
@@ -32,7 +32,7 @@
 Boolean keys consumed by `stamp_behaviors.flags_from_catalog()`:
 
 | Flag | Game item (examples) |
-|------|----------------------|
+| ---- | -------------------- |
 | `horizontal_wrap` | Hungry Snake |
 | `double_letter_teleport` | Full Moon |
 | `q_as_qu` | Queenie |

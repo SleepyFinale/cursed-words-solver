@@ -13,7 +13,7 @@ Source: `BossModifier` subclasses in `Assembly-CSharp.dll` (`data/game/boss_subc
 ## Game class → wiki slug
 
 | `BossModifier` | Wiki `boss_id` | Solver |
-|----------------|----------------|--------|
+| ---------------- | ---------------- | -------- |
 | `ReducedLetterValue` | salamander | `boss_tile_penalty` (early) |
 | `NegativeMoney` | robo_monkey | `boss_subtract_word_score_money` (early) |
 | `StealsMoney` | fox | `boss_steal_money` (early submit) + grid-start steal |

@@ -472,6 +472,139 @@ def test_merge_encounter_historic_for_f8_snapshot_from_disk(tmp_path, monkeypatc
     assert merged["extras"]["previous_word_first_letter"] == "b"
 
 
+def test_describe_f8_historic_catchup_pissers_grid3(tmp_path, monkeypatch):
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        describe_f8_historic_catchup,
+        merge_encounter_historic_for_f8_snapshot,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_pissers_historic_catchup.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps({"extras": data["disk_extras"]}),
+        encoding="utf-8",
+    )
+    embed = {"extras": dict(data["embed_extras"])}
+    embed_hist = embed["extras"]["historic_words"]
+    merged = merge_encounter_historic_for_f8_snapshot(embed)
+    assert merged is not None
+    merged_hist = merged["extras"]["historic_words"]
+    note = describe_f8_historic_catchup(
+        embed_hist,
+        merged_hist,
+        grid_number=int(data["grid_number"]),
+    )
+    assert note is not None
+    for fragment in data["expected_catchup_contains"]:
+        assert fragment in note
+
+
+def test_f8_merge_before_score_loadout_and_telescope_score(tmp_path, monkeypatch):
+    """F8 must score with disk-caught-up historic, not the stale embed alone."""
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        merge_encounter_historic_for_f8_snapshot,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.models import Board, Loadout, LoadoutItem, Tile, TileColor
+    from cursed_words_solver.rules.pipeline import ScoringPipeline
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_pissers_historic_catchup.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps({"extras": data["disk_extras"]}),
+        encoding="utf-8",
+    )
+
+    embed_run_state = {"extras": dict(data["embed_extras"])}
+    unmerged = parse_run_state(
+        prepare_run_state_dict_for_scoring(embed_run_state)
+    )
+    assert _historic_words_count(unmerged.extras.get("historic_words", "")) == 1
+
+    merged_state = merge_encounter_historic_for_f8_snapshot(embed_run_state)
+    assert merged_state is not None
+    merged = parse_run_state(prepare_run_state_dict_for_scoring(merged_state))
+    assert _historic_words_count(merged.extras.get("historic_words", "")) == 2
+    assert merged.extras.get("red_tiles_used_encounter") == 6
+
+    board = Board(
+        tiles=[[None] * 5 for _ in range(5)],
+        active=[True] * 25,
+    )
+    board.tiles[0][0] = Tile(
+        row=0, col=0, char="A", letter="A", base_score=2, color=TileColor.RED
+    )
+    board.tiles[0][1] = Tile(
+        row=0, col=1, char="B", letter="B", base_score=2, color=TileColor.RED
+    )
+    pipeline = ScoringPipeline()
+    base = Loadout(
+        stickers=[LoadoutItem(id="telescope", name="Telescope", level=2)],
+    )
+    stale_loadout = Loadout(
+        stickers=list(base.stickers),
+        extras=dict(unmerged.extras or {}),
+    )
+    merged_loadout = Loadout(
+        stickers=list(base.stickers),
+        extras=dict(merged.extras or {}),
+    )
+    stale_score, _ = pipeline.score(board, [0, 1], "ab", stale_loadout)
+    merged_score, _ = pipeline.score(board, [0, 1], "ab", merged_loadout)
+    assert stale_score != merged_score
+
+
+def test_merge_encounter_historic_grid_advanced_stale_embed(tmp_path, monkeypatch):
+    """recrafts round: embed marked grid_advanced but still had prior-grid historic."""
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        describe_f8_historic_catchup,
+        merge_encounter_historic_for_f8_snapshot,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_recrafts_grid_advance.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps({"extras": data["disk_extras"]}),
+        encoding="utf-8",
+    )
+    embed = {"extras": dict(data["embed_extras"])}
+    embed_hist = embed["extras"]["historic_words"]
+    merged = merge_encounter_historic_for_f8_snapshot(embed)
+    assert merged is not None
+    merged_hist = merged["extras"]["historic_words"]
+    assert merged_hist == data["disk_extras"]["historic_words"]
+    note = describe_f8_historic_catchup(
+        embed_hist,
+        merged_hist,
+        grid_number=int(data["grid_number"]),
+    )
+    assert note is not None
+    for fragment in data["expected_catchup_contains"]:
+        assert fragment in note
+
+
 def test_merge_encounter_historic_prefers_shorter_fresh_on_grid_advance(
     tmp_path, monkeypatch
 ):
@@ -1582,3 +1715,62 @@ def test_abided_underexport_stale_f8_extras_diff_fixture():
     assert note is not None
     for fragment in data["expected_stale_note_contains"]:
         assert fragment in note
+
+
+def test_owsen_grid2_underexport_stale_f8_extras_diff_fixture():
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_owsen_grid2_underexport.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    note = _stale_f8_extras_note(data["extras_diff"], has_mutating_dna_stamp=False)
+    assert note is not None
+    for fragment in data["expected_stale_note_contains"]:
+        assert fragment in note
+
+
+def test_gyrene_missing_owsen_historic_catchup(tmp_path, monkeypatch):
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        describe_f8_historic_catchup,
+        merge_encounter_historic_for_f8_snapshot,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_gyrene_missing_owsen.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps({"extras": data["disk_extras"]}),
+        encoding="utf-8",
+    )
+    embed = {"extras": dict(data["embed_extras"])}
+    embed_hist = embed["extras"]["historic_words"]
+    merged = merge_encounter_historic_for_f8_snapshot(embed)
+    assert merged is not None
+    merged_hist = merged["extras"]["historic_words"]
+    assert merged_hist == data["disk_extras"]["historic_words"]
+    note = describe_f8_historic_catchup(
+        embed_hist,
+        merged_hist,
+        grid_number=int(data["grid_number_submit"]),
+    )
+    assert note is not None
+    for fragment in data["expected_catchup_contains"]:
+        assert fragment in note
+
+
+def test_grid_advanced_not_intentionally_cleared():
+    from cursed_words_solver.loadout import _encounter_historic_intentionally_cleared
+
+    assert not _encounter_historic_intentionally_cleared(
+        {"encounter_historic_source": "grid_advanced"}
+    )
+    assert _encounter_historic_intentionally_cleared(
+        {"encounter_historic_source": "grid_start_cleared"}
+    )

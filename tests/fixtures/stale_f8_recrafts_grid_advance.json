@@ -1,0 +1,21 @@
+{
+  "grid_number": 2,
+  "embed_extras": {
+    "historic_words": "[{\"word\":\"skiplanes\",\"score\":249},{\"word\":\"gleety\",\"score\":122},{\"word\":\"pissers\",\"score\":168}]",
+    "grid_number": "3",
+    "encounter_historic_source": "grid_advanced",
+    "red_tiles_used_encounter": "8"
+  },
+  "disk_extras": {
+    "historic_words": "[{\"word\":\"fegs\",\"score\":332,\"path\":[14,13,18,24],\"red_tile_count\":1}]",
+    "grid_number": "2",
+    "encounter_historic_source": "live",
+    "previous_word_first_letter": "f",
+    "red_tiles_used_encounter": "1"
+  },
+  "expected_catchup_contains": [
+    "replaced from disk",
+    "3→1 words",
+    "grid 2"
+  ]
+}

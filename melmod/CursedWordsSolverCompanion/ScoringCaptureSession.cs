@@ -7,6 +7,7 @@ namespace CursedWordsSolverCompanion
     public static class ScoringCaptureSession
     {
         private static bool _active;
+        private static bool _captureCandidate;
         private static LastSuggestion _suggestion;
         private static string _word;
         private static List<int> _path;
@@ -39,6 +40,7 @@ namespace CursedWordsSolverCompanion
         )
         {
             _active = false;
+            _captureCandidate = false;
             _actualTrace = null;
             _roundTrace = null;
             _submitBoardSnapshot = null;
@@ -69,10 +71,9 @@ namespace CursedWordsSolverCompanion
                 _scoringContextExtras["target_number"] = targetNumber.ToString();
 
             var boardMatchesSuggestion = _suggestion != null
-                && string.Equals(
-                    _suggestion.board_fingerprint ?? "",
-                    _boardFingerprint ?? "",
-                    StringComparison.Ordinal
+                && ConsumablePlacementHelper.BoardFingerprintMatchesSuggestion(
+                    _suggestion,
+                    _boardFingerprint
                 );
 
             if (boardMatchesSuggestion == false && _suggestion != null)
@@ -104,47 +105,7 @@ namespace CursedWordsSolverCompanion
                 )
             )
             {
-                var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
-                    _suggestion?.run_state_snapshot
-                );
-                var liveExtras = RunStateExporter.BuildExtrasSnapshot();
-                var projectedExtras = RunStateExportFill.BuildSubmitWorkflowExtras(
-                    player,
-                    liveExtras
-                );
-
-                SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
-                    _suggestion,
-                    projectedExtras
-                );
-                f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
-                    _suggestion?.run_state_snapshot
-                );
-
-                var staleCtx = RunStateExporter.BuildStaleF8Context(player);
-                var diff = ExtrasDiffHelper.DiffExtras(f8Extras, projectedExtras);
-                var workflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(
-                    diff,
-                    staleCtx
-                );
-                if (!string.IsNullOrEmpty(workflowStale))
-                {
-                    MelonLogger.Warning(workflowStale);
-                    SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
-                    return;
-                }
-
-                ExtrasDiffHelper.LogStaleF8DriftWarnings(f8Extras, projectedExtras, staleCtx);
-
-                _active = true;
-                MelonLogger.Msg(
-                    "Scoring capture: tracking suggested word '"
-                        + _word
-                        + "' (predicted "
-                        + (_suggestion != null ? _suggestion.predicted_score.ToString() : "?")
-                        + " pts)"
-                        + f8Seq
-                );
+                _captureCandidate = true;
             }
             else if (_suggestion != null)
             {
@@ -193,8 +154,75 @@ namespace CursedWordsSolverCompanion
             if (telescopeExtras != null && telescopeExtras.Count > 0)
                 TryPersistScoringContextExtras();
 
-            if (!_active)
+            if (_captureCandidate)
+            {
+                _captureCandidate = false;
+                TryActivateCaptureFromScoringContext(player, captured);
+            }
+        }
+
+        private static void TryActivateCaptureFromScoringContext(
+            Player player,
+            Dictionary<string, string> scoringExtras
+        )
+        {
+            if (_suggestion == null || player == null)
                 return;
+
+            var liveExtras = RunStateExporter.BuildExtrasSnapshot();
+            var authoritativeExtras = RunStateExportFill.BuildScoringContextWorkflowExtras(
+                player,
+                liveExtras,
+                scoringExtras
+            );
+
+            SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
+                _suggestion,
+                authoritativeExtras
+            );
+            var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                _suggestion?.run_state_snapshot
+            );
+            var staleCtx = RunStateExporter.BuildStaleF8Context(player);
+            var diff = ExtrasDiffHelper.DiffExtras(f8Extras, authoritativeExtras);
+            var workflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(
+                diff,
+                staleCtx
+            );
+            if (!string.IsNullOrEmpty(workflowStale))
+            {
+                MelonLogger.Warning(workflowStale);
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                _active = false;
+                return;
+            }
+
+            ExtrasDiffHelper.LogStaleF8DriftWarnings(
+                f8Extras,
+                authoritativeExtras,
+                staleCtx
+            );
+
+            _active = true;
+            var f8Seq = "";
+            try
+            {
+                if (_suggestion.f8_sequence > 0)
+                    f8Seq = " f8#" + _suggestion.f8_sequence;
+            }
+            catch
+            {
+                // optional
+            }
+
+            MelonLogger.Msg(
+                "Scoring capture: tracking suggested word '"
+                    + _word
+                    + "' (predicted "
+                    + _suggestion.predicted_score.ToString()
+                    + " pts)"
+                    + f8Seq
+            );
         }
 
         /// <summary>
@@ -847,6 +875,7 @@ namespace CursedWordsSolverCompanion
             finally
             {
                 _active = false;
+                _captureCandidate = false;
                 _submitBoardSnapshot = null;
                 CalculateOverallScorePatch.LastCalculatedSteps = null;
             }

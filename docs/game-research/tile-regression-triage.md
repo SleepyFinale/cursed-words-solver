@@ -3,7 +3,7 @@
 After enabling `tile_scoring.apply_tile_init` in the pipeline:
 
 | Phase | Trace `phase` | Typical mismatch cause |
-|-------|---------------|------------------------|
+| ----- | --------------- | ------------------------ |
 | glitch_settle | `tile_init` / `glitch_settle` | Deterministic RNG ≠ live Unity random |
 | currency | `tile_init` / `currency` | Fixtures captured before currency $ bump |
 | pink | `tile_init` / `pink` | Piggy bank meta only (no tile score delta) |

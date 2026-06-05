@@ -1,0 +1,16 @@
+{
+  "description": "Round log 20260605_132641: F8 embed had 1 historic word; submit had 2 on grid 3.",
+  "grid_number": "3",
+  "embed_extras": {
+    "historic_words": "[{\"word\":\"S₭I₱🃏︎🃏︎🃏︎€$\",\"score\":249,\"path\":[6,2,3,7,12,18,19,14,13],\"red_tile_count\":2}]",
+    "grid_number": "3",
+    "previous_word_first_letter": "s"
+  },
+  "disk_extras": {
+    "historic_words": "[{\"word\":\"S₭I₱🃏︎🃏︎🃏︎€$\",\"score\":249,\"path\":[6,2,3,7,12,18,19,14,13],\"red_tile_count\":2},{\"word\":\"₲🃏︎€🃏︎₮¥\",\"score\":122,\"path\":[4,3,9,13,8,14],\"red_tile_count\":4}]",
+    "grid_number": "3",
+    "previous_word_first_letter": "g",
+    "red_tiles_used_encounter": "6"
+  },
+  "expected_catchup_contains": "1→2 words on grid 3"
+}
