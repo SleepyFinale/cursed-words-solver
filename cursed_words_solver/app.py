@@ -80,10 +80,14 @@ from cursed_words_solver.rules.rule_lookup import boss_display_name, resolve_rul
 from cursed_words_solver.consumable_placement import (
     consumable_rack_tiles,
     format_placement_instructions,
+    last_placement_search_stats,
+    mahjong_rack_placement_active,
     mandatory_consumable_indices,
+    remaining_rack_tiles,
     sandy_placement_search_active,
     sandy_requires_rack_export,
-    wait_for_sandy_rack_export,
+    wait_for_rack_export,
+    search_consumable_score_boost,
     search_target_rescue,
     search_with_consumable_placements,
     target_rescue_worth_trying,
@@ -603,6 +607,17 @@ class SolverApp:
 
             search_budget = self.config.search_time_budget_sec
             search_started = time.monotonic()
+            solve_deadline = search_started + search_budget
+            placement_variant_sec = 0.0
+
+            def solve_remaining() -> float:
+                return max(0.0, solve_deadline - time.monotonic())
+
+            def phase_budget(share: float) -> float:
+                return min(share, solve_remaining())
+
+            def variant_gen_budget() -> float:
+                return min(2.0, solve_remaining() * 0.05)
             loadout = merge_loadout_with_board(
                 self._loadout_cache,
                 board.money,
@@ -699,7 +714,7 @@ class SolverApp:
                     mod_money=fresh_money if fresh_money > 0 else None,
                 )
 
-            loadout = wait_for_sandy_rack_export(
+            loadout = wait_for_rack_export(
                 loadout,
                 board,
                 self._scoring.rules,
@@ -746,13 +761,13 @@ class SolverApp:
                 effective_max = effective_min
             self._searcher.min_len = effective_min
             self._searcher.max_len = effective_max
-            self._searcher.time_budget = search_budget
+            self._searcher.time_budget = phase_budget(search_budget)
             self._searcher.validator.min_len = self._searcher.min_len
             self._searcher.validator.required_consumable_indices = mandatory
             self._searcher.blocked = constraints.blocked
             self._searcher.block_reason = constraints.block_reason
             search_msg = (
-                f"Searching for words (up to {search_budget:.0f}s, "
+                f"Searching for words (total F8 budget {search_budget:.0f}s, "
                 f"length {effective_min}–{effective_max})"
             )
             if loadout.boss_id or loadout.boss_name:
@@ -773,17 +788,21 @@ class SolverApp:
             search_board = board
             results: list = []
             rescue_budget = search_budget * 0.4
-            if sandy_auto_place and rack_tiles:
+            mahjong_boost_budget = search_budget * 0.3
+            rules = self._scoring.rules
+            if sandy_auto_place and rack_tiles and solve_remaining() >= 1.0:
                 search_board, placement_records, results = (
                     search_with_consumable_placements(
                         self._searcher,
                         board,
                         loadout,
                         rack_tiles,
-                        time_budget=search_budget,
+                        time_budget=phase_budget(search_budget),
                         top_n=self.config.top_n_results,
+                        rules=rules,
                     )
                 )
+                placement_variant_sec += last_placement_search_stats().variant_gen_sec
                 self._searcher.validator.required_consumable_indices = (
                     mandatory_consumable_indices(
                         loadout, search_board, self._scoring.rules
@@ -804,19 +823,71 @@ class SolverApp:
                         f"  Target: {grid_target} pts (best {int(results[0].score)})",
                         flush=True,
                     )
-            else:
+            elif solve_remaining() >= 0.5:
                 results = self._searcher.find_best_words(
                     board,
                     loadout=loadout,
                     top_n=self.config.top_n_results,
                 )
+            else:
+                results = []
 
             baseline_score = results[0].score if results else 0.0
+            if (
+                not sandy_auto_place
+                and mahjong_rack_placement_active(loadout, board, rules)
+                and results
+                and solve_remaining() >= 1.0
+            ):
+                boost_rack = remaining_rack_tiles(loadout, board)
+                if boost_rack:
+                    print(
+                        f"  Mahjong: {len(boost_rack)} consumable(s) on rack "
+                        "— simulating placements…",
+                        flush=True,
+                    )
+                    boost_board, boost_records, boost_results = (
+                        search_consumable_score_boost(
+                            self._searcher,
+                            board,
+                            loadout,
+                            boost_rack,
+                            baseline_score=baseline_score,
+                            time_budget=phase_budget(mahjong_boost_budget),
+                            top_n=self.config.top_n_results,
+                            rules=rules,
+                            variant_gen_budget=variant_gen_budget(),
+                        )
+                    )
+                    placement_variant_sec += (
+                        last_placement_search_stats().variant_gen_sec
+                    )
+                    if boost_results and boost_results[0].score > baseline_score:
+                        search_board = boost_board
+                        placement_records = boost_records
+                        results = boost_results
+                        baseline_score = boost_results[0].score
+                        self._searcher.validator.required_consumable_indices = (
+                            mandatory_consumable_indices(
+                                loadout, search_board, rules
+                            )
+                        )
+                        print(
+                            f"  Place consumables: "
+                            f"{format_placement_instructions(boost_records)}",
+                            flush=True,
+                        )
+                        print(
+                            f"  Score improved with {len(boost_records)} consumable(s) "
+                            f"({int(boost_results[0].score)} pts)",
+                            flush=True,
+                        )
             if (
                 has_target
                 and grid_target > 0
                 and baseline_score < grid_target
                 and not sandy_auto_place
+                and solve_remaining() >= 1.0
             ):
                 rescue_rack = consumable_rack_tiles(loadout, cactus_only=False)
                 if target_rescue_worth_trying(
@@ -834,9 +905,14 @@ class SolverApp:
                             loadout,
                             rescue_rack,
                             target=grid_target,
-                            time_budget=rescue_budget,
+                            time_budget=phase_budget(rescue_budget),
                             top_n=self.config.top_n_results,
+                            rules=rules,
+                            variant_gen_budget=variant_gen_budget(),
                         )
+                    )
+                    placement_variant_sec += (
+                        last_placement_search_stats().variant_gen_sec
                     )
                     if rescue_results and rescue_results[0].score >= grid_target:
                         search_board = rescue_board
@@ -868,6 +944,7 @@ class SolverApp:
                 and grid_target > 0
                 and sandy_auto_place
                 and baseline_score < grid_target
+                and solve_remaining() >= 1.0
             ):
                 rescue_rack = consumable_rack_tiles(loadout, cactus_only=False)
                 if target_rescue_worth_trying(
@@ -885,9 +962,14 @@ class SolverApp:
                             loadout,
                             rescue_rack,
                             target=grid_target,
-                            time_budget=rescue_budget,
+                            time_budget=phase_budget(rescue_budget),
                             top_n=self.config.top_n_results,
+                            rules=rules,
+                            variant_gen_budget=variant_gen_budget(),
                         )
+                    )
+                    placement_variant_sec += (
+                        last_placement_search_stats().variant_gen_sec
                     )
                     if rescue_results and rescue_results[0].score >= grid_target:
                         search_board = rescue_board
@@ -944,8 +1026,14 @@ class SolverApp:
                     if timing.parallel_serial_fallback
                     else ""
                 )
+                variant_note = (
+                    f"variants {placement_variant_sec:.1f}s, "
+                    if placement_variant_sec > 0.001
+                    else ""
+                )
                 print(
-                    f"  Timing: dfs {timing.dfs_sec:.1f}s{fallback_note}, "
+                    f"  Timing: {variant_note}"
+                    f"dfs {timing.dfs_sec:.1f}s{fallback_note}, "
                     f"extend {timing.extend_sec:.1f}s, "
                     f"chess {timing.chess_sec:.1f}s, score {total_score:.1f}s "
                     f"({score_pct} of {timing.wall_sec:.1f}s{worker_note}{pool_note})",

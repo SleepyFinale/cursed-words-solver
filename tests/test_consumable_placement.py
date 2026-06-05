@@ -1,19 +1,31 @@
 from pathlib import Path
 
+from cursed_words_solver import consumable_placement as cp
 from cursed_words_solver.consumable_placement import (
     ConsumablePlacement,
+    _placement_cell_score,
+    _rank_placement_indices,
+    _tier_heap_cap,
+    _top_variants_for_tier,
     apply_consumable_placements,
     consumable_rack_tiles,
     format_placement_instructions,
     format_placement_path_hints,
     has_exported_consumable_rack,
+    has_mahjong_pin,
+    iter_placement_variants_fewest_first,
+    mahjong_rack_placement_active,
     placement_variants_fewest_first,
     placements_to_records,
+    rack_requires_export,
+    remaining_rack_tiles,
     sandy_placement_search_active,
     sandy_requires_rack_export,
+    search_consumable_score_boost,
     search_target_rescue,
     search_with_consumable_placements,
     target_rescue_worth_trying,
+    wait_for_rack_export,
     wait_for_sandy_rack_export,
 )
 from cursed_words_solver.dictionary import WordDictionary
@@ -474,3 +486,309 @@ def test_run_state_file_sandy_rack_if_present():
     if has_exported_consumable_rack(loadout):
         assert sandy_placement_search_active(loadout, board, rules)
         assert consumable_rack_count(loadout) >= 1
+
+
+def _mahjong_loadout_with_red_rack() -> Loadout:
+    return parse_run_state(
+        {
+            "character": "Sandy Saguaro",
+            "extras": {
+                "pin_effect": "mahjong_red_dragon",
+                "consumable_rack": [
+                    {
+                        "rack_index": 0,
+                        "letter": "G",
+                        "char_display": "g",
+                        "color": "red",
+                        "curse": "letter",
+                        "base_score": 3,
+                    },
+                ],
+            },
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+
+
+def test_has_mahjong_pin():
+    rules = ScoringPipeline().rules
+    loadout = _mahjong_loadout_with_red_rack()
+    assert has_mahjong_pin(loadout, rules)
+    other = Loadout(extras={"pin_effect": "abacus"})
+    assert not has_mahjong_pin(other, rules)
+
+
+def test_mahjong_rack_placement_active_with_red_rack():
+    loadout = _mahjong_loadout_with_red_rack()
+    rules = ScoringPipeline().rules
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    assert mahjong_rack_placement_active(loadout, board, rules)
+
+
+def test_mahjong_rack_placement_inactive_during_sandy_boss():
+    loadout = _sandy_loadout_with_rack()
+    loadout.extras["pin_effect"] = "mahjong_red_dragon"
+    rules = ScoringPipeline().rules
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    assert sandy_placement_search_active(loadout, board, rules)
+    assert not mahjong_rack_placement_active(loadout, board, rules)
+
+
+def test_remaining_rack_tiles_excludes_placed_by_rack_index():
+    loadout = _mahjong_loadout_with_red_rack()
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    placed = _tile("g", 0, 0, was_consumable=True)
+    placed.metadata["rack_index"] = 0
+    board.tiles[0][0] = placed
+    assert remaining_rack_tiles(loadout, board) == []
+
+
+def test_placement_cell_score_prefers_high_base_score():
+    rules = ScoringPipeline().rules
+    loadout = _mahjong_loadout_with_red_rack()
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    low = Tile(-1, -1, "A", "A", 1, metadata={"rack_index": 0})
+    high = Tile(-1, -1, "Z", "Z", 10, metadata={"rack_index": 1})
+    idx = 12
+    low_score = _placement_cell_score(
+        board, idx, low, loadout=loadout, rules=rules
+    )
+    high_score = _placement_cell_score(
+        board, idx, high, loadout=loadout, rules=rules
+    )
+    assert high_score > low_score
+
+
+def test_search_consumable_score_boost_adopts_when_improved(tmp_path):
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    tiles = [[_tile("x", r, c) for c in range(5)] for r in range(5)]
+    tiles[0][0] = _tile("c", 0, 0)
+    tiles[0][1] = _tile("a", 0, 1)
+    board = Board(tiles=tiles)
+    rack = [
+        Tile(
+            -1,
+            -1,
+            "T",
+            "T",
+            5,
+            color=TileColor.RED,
+            curse=CurseType.LETTER,
+            metadata={"rack_index": 0},
+        ),
+    ]
+    loadout = _mahjong_loadout_with_red_rack()
+    loadout.extras["consumable_rack"] = [
+        {
+            "rack_index": 0,
+            "letter": "T",
+            "color": "red",
+            "curse": "letter",
+            "base_score": 5,
+        }
+    ]
+    rules = ScoringPipeline().rules
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
+    baseline_score = 10.0
+    sim_board, records, results = search_consumable_score_boost(
+        searcher,
+        board,
+        loadout,
+        rack,
+        baseline_score=baseline_score,
+        time_budget=4.0,
+        top_n=3,
+        rules=rules,
+    )
+    assert results
+    assert results[0].score > baseline_score
+    assert results[0].word == "cat"
+    assert len(records) == 1
+    assert placed_consumable_indices(sim_board) == frozenset({rec.index for rec in records})
+    assert results[0].breakdown.get("consumable_placements")
+
+
+def test_search_consumable_score_boost_returns_empty_when_not_improved(
+    tmp_path, monkeypatch
+):
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    rack = [Tile(-1, -1, "Z", "Z", 1, metadata={"rack_index": 0})]
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=2.0)
+
+    def fake_find(board_arg, loadout=None, top_n=1):
+        from cursed_words_solver.models import WordResult
+
+        return [WordResult(word="zzz", path=[0], score=500.0, breakdown={})]
+
+    monkeypatch.setattr(searcher, "find_best_words", fake_find)
+    _, records, results = search_consumable_score_boost(
+        searcher,
+        board,
+        Loadout(),
+        rack,
+        baseline_score=500.0,
+        time_budget=2.0,
+        top_n=1,
+    )
+    assert not results
+    assert not records
+
+
+def test_rack_requires_export_mahjong_first_grid():
+    loadout = parse_run_state(
+        {
+            "extras": {
+                "pin_effect": "mahjong_red_dragon",
+                "is_first_grid_of_encounter": "true",
+            },
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+    rules = ScoringPipeline().rules
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    assert rack_requires_export(loadout, board, rules)
+
+
+def _full_active_board() -> Board:
+    return Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+
+
+def _five_tile_rack() -> list[Tile]:
+    return [
+        Tile(-1, -1, letter, letter, 1, metadata={"rack_index": i})
+        for i, letter in enumerate("ABCDE")
+    ]
+
+
+def test_dynamic_max_cells_for_large_rack():
+    board = _full_active_board()
+    rack = _five_tile_rack()
+    cells = _rank_placement_indices(board, rack)
+    assert len(cells) <= 10
+
+
+def test_heap_cap_limits_k5_enumeration():
+    board = _full_active_board()
+    rack = _five_tile_rack()
+    cells = _rank_placement_indices(board, rack)
+    tier_cap = _tier_heap_cap(96)
+    variants = _top_variants_for_tier(
+        board,
+        rack,
+        cells,
+        5,
+        tier_cap=tier_cap,
+    )
+    assert len(variants) <= tier_cap
+    assert len(variants) > 0
+
+
+def test_iter_variants_stops_after_winning_k1_tier(tmp_path, monkeypatch):
+    from cursed_words_solver.models import WordResult
+
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    rack = [
+        Tile(-1, -1, "T", "T", 2, metadata={"rack_index": 0}),
+        Tile(-1, -1, "Z", "Z", 2, metadata={"rack_index": 1}),
+    ]
+    searcher = WordSearcher(dictionary=d, min_len=1, max_len=5, time_budget=4.0)
+
+    def qualify_single_placement(sim_board, loadout=None, top_n=1):
+        placed = sum(
+            1
+            for i in range(25)
+            if sim_board.get_by_index(i).metadata.get("was_consumable")
+        )
+        if placed == 1:
+            return [WordResult(word="ok", path=[0], score=100.0, breakdown={})]
+        return []
+
+    monkeypatch.setattr(searcher, "find_best_words", qualify_single_placement)
+
+    k_values_called: list[int] = []
+    real_top_variants = cp._top_variants_for_tier
+
+    def tracking_top_variants(board_arg, rack_arg, cells_arg, k, **kwargs):
+        k_values_called.append(k)
+        return real_top_variants(board_arg, rack_arg, cells_arg, k, **kwargs)
+
+    monkeypatch.setattr(cp, "_top_variants_for_tier", tracking_top_variants)
+
+    _, records, results = search_target_rescue(
+        searcher,
+        board,
+        Loadout(),
+        rack,
+        target=50,
+        time_budget=4.0,
+        top_n=1,
+    )
+    assert results
+    assert records
+    assert k_values_called == [1]
+
+
+def test_variant_gen_budget_limits_tier_generation(tmp_path, monkeypatch):
+    wl = tmp_path / "words.txt"
+    wl.write_text("a\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    board = _full_active_board()
+    rack = _five_tile_rack()
+    k_values_called: list[int] = []
+    real_top_variants = cp._top_variants_for_tier
+
+    def tracking_top_variants(board_arg, rack_arg, cells_arg, k, **kwargs):
+        k_values_called.append(k)
+        return real_top_variants(board_arg, rack_arg, cells_arg, k, **kwargs)
+
+    monkeypatch.setattr(cp, "_top_variants_for_tier", tracking_top_variants)
+
+    searcher = WordSearcher(dictionary=d, min_len=1, max_len=5, time_budget=2.0)
+
+    def never_qualify(board_arg, loadout=None, top_n=1):
+        return []
+
+    monkeypatch.setattr(searcher, "find_best_words", never_qualify)
+
+    cp._run_tiered_placement_search(
+        searcher,
+        board,
+        Loadout(),
+        rack,
+        time_budget=2.0,
+        top_n=1,
+        min_score=9999.0,
+        prefer_fewest_tiles=True,
+        variant_gen_budget=0.0,
+    )
+    assert k_values_called == [1]
+
+
+def test_lazy_n5_variant_count_bounded():
+    board = _full_active_board()
+    rack = _five_tile_rack()
+    count = sum(1 for _ in iter_placement_variants_fewest_first(board, rack))
+    assert count <= 96
+    assert count < 10_000
+
+
+def test_global_solve_deadline_skips_mahjong_when_expired():
+    search_budget = 45.0
+    search_started = 1000.0
+    solve_deadline = search_started + search_budget
+
+    def solve_remaining(now: float) -> float:
+        return max(0.0, solve_deadline - now)
+
+    assert solve_remaining(search_started + 44.0) >= 1.0
+    assert solve_remaining(search_started + 44.5) < 1.0
