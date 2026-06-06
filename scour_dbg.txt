@@ -1,5 +1,0 @@
-﻿+27 word (Bicycle: 25 acc + 2 suited ╫ 1)
-+168 word (pair, 14 unused card(s))
-╫1.5 word (word_starts_ends_different_suit)
-╫2.0 word (word_starts_face_card)
-final 626.0
