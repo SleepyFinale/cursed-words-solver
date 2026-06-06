@@ -1623,6 +1623,11 @@ def _double_letter_char_at_path_step(
     ch = path_letter_for_double_letter(tile)
     if ch:
         return ch, "letter"
+    if tile.curse in (CurseType.WILDCARD, CurseType.BLANK) or tile.letter == "?":
+        # Wildcard/blank tiles are blank glyphs. The game only treats them as a
+        # double with an adjacent wildcard, never with a resolved real letter
+        # ("akees" wild-e + real-E is not a double; "jazzy" wild+wild is).
+        return "?", "wildcard"
     return None
 
 
@@ -1632,9 +1637,10 @@ def has_consecutive_double_letter_on_path(
     """Yellow Glasses: consecutive path tiles with the same letter (game behavior).
 
     Currency tiles use the submitted word character at that path step; letter tiles
-    use their path letter. Scattered sticker (ITEM) path tiles are ignored.
-    A double counts only when both consecutive steps resolve to the same letter
-    **and** the same source (both currency or both letter).
+    use their path letter; wildcard/blank tiles are blank glyphs (source "wildcard").
+    Scattered sticker (ITEM) path tiles are ignored. A double counts only when both
+    consecutive steps resolve to the same letter **and** the same source, so two
+    adjacent wildcards count but a wildcard never doubles with a real/currency letter.
     """
     w = word.lower()
     steps = normalize_scoring_path(path) if w else path
@@ -1697,6 +1703,38 @@ def word_same_start_end_letter(word: str) -> bool:
     if len(w) < 2:
         return False
     return w[0] == w[-1] and w[0].isalpha()
+
+
+def _endpoint_char_for_same_start_end(board: Board, idx: int, word_char: str) -> str:
+    """Game GetStringRepresentation for a path endpoint: blank/wildcard reads '?'.
+
+    Mirrors HamSandwich.ApplyWordBonus, which compares tiles[0]/tiles[last]
+    GetStringRepresentation(); a blank glyph is "?", so it never matches a real
+    letter and only matches another blank ("?"=="?").
+    """
+    tile = board.get_by_index(idx)
+    if tile.curse in (CurseType.WILDCARD, CurseType.BLANK) or tile.letter == "?":
+        return "?"
+    return (word_char or "").lower()
+
+
+def word_same_start_end_on_path(board: Board, path: list[int], word: str) -> bool:
+    """Ham Sandwich: first and last path tiles share the same glyph (blank = '?').
+
+    The game compares tile GetStringRepresentation(), where a wildcard/blank is
+    "?". So a real-letter endpoint never pairs with a wildcard endpoint (a
+    resolved spelling like "kno??"->"knock" must NOT fire ham), while two blank
+    endpoints ("?"=="?") do, matching the game exactly.
+    """
+    w = word.lower()
+    steps = normalize_scoring_path(path)
+    if len(steps) < 2 or len(w) < 2:
+        return False
+    first = _endpoint_char_for_same_start_end(board, steps[0], w[0])
+    last = _endpoint_char_for_same_start_end(board, steps[-1], w[-1])
+    if first != last:
+        return False
+    return first.isalpha() or first == "?"
 
 
 def consumable_rack_count(loadout: Loadout) -> int:
@@ -3121,7 +3159,11 @@ def bicycle_suited_on_path_from_extras(loadout: Loadout) -> int:
 
 
 def bicycle_suited_credit_on_path(board: Board, path: list[int]) -> int:
-    """Bicycle suited credit: mono-suit → 1; multi-suit + non-end joker → per-tile; else unique ranks."""
+    """Bicycle suited credit: mono-suit → 1; multi-suit + non-end joker → per-tile; else unique ranks.
+
+    Board-only fallback heuristic used when melmod has not exported the exact
+    in-game ``bicycle_suited_on_path`` count (see effective_suited_cards_on_path).
+    """
     if not path:
         return 0
     path_end = path[-1]
@@ -3131,15 +3173,18 @@ def bicycle_suited_credit_on_path(board: Board, path: list[int]) -> int:
     non_joker_suited = 0
     for idx in path:
         tile = board.get_by_index(idx)
-        is_joker = _bicycle_joker_path_tile(tile)
-        if not is_joker and not _bicycle_suited_path_tile(tile):
+        real_suited = _bicycle_suited_path_tile(tile)
+        joker_suited = _bicycle_joker_path_tile(tile)
+        # Tiles with CardSuit == Suit.None (e.g. a joker played as a plain letter,
+        # whose suit was cleared) contribute nothing to Bicycle's per-tile credit.
+        if not real_suited and not joker_suited:
             continue
-        if is_joker and idx != path_end:
+        if joker_suited and idx != path_end:
             joker_not_at_end = True
-        if is_joker and idx == path_end:
+        if joker_suited and idx == path_end:
             continue
         suited_tile_count += 1
-        if not is_joker:
+        if real_suited:
             non_joker_suited += 1
             suit = card_suit(tile)
             if suit and suit not in ("none", "joker"):

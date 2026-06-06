@@ -2156,6 +2156,29 @@ class WordSearcher:
                 added = True
         return added
 
+    def _resolved_word_for_path(
+        self, board: Board, path: list[int], word: str, loadout: Loadout
+    ) -> str:
+        """Dictionary spelling for a wildcard path (cached); '' when unresolved."""
+        path_key = tuple(path)
+        cached = self._dict_path_cache.get(path_key)
+        if cached is not None:
+            return cached
+        from cursed_words_solver.suggestion import dictionary_word_for_path
+
+        alt = dictionary_word_for_path(
+            board,
+            path,
+            word,
+            loadout,
+            self.dictionary,
+            min_len=self.min_len,
+            pipeline=self.scoring,
+        )
+        resolved = alt or ""
+        self._dict_path_cache[path_key] = resolved
+        return resolved
+
     def _rank_score_for_candidate(
         self,
         board: Board,
@@ -2180,6 +2203,10 @@ class WordSearcher:
             if hanafuda_level > 0
             else word
         )
+        if hanafuda_level == 0 and "?" in score_word:
+            resolved = self._resolved_word_for_path(board, path, word, loadout)
+            if resolved:
+                score_word = resolved
         if heap is not None and not (
             hanafuda_level > 0
             and hanafuda_hand_satisfied(board, path, hanafuda_level)

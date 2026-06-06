@@ -186,6 +186,39 @@ def effective_consumable_rack_tiles(loadout: Loadout) -> list[Tile]:
     return consumable_rack_tiles(loadout, cactus_only=False)
 
 
+def loadout_after_consumable_placements(loadout: Loadout, num_placed: int) -> Loadout:
+    """Loadout whose consumable rack count reflects ``num_placed`` consumables placed.
+
+    Hi Vis Jacket multiplies by the consumables the player still owns and drops one
+    on submit (decompiled ``HiVisJacket.ApplyWordBonus``). Placing a consumable on
+    the board removes it from the rack, so the multiplier must use the
+    post-placement count. The solver otherwise scores placed boards with the
+    pre-placement count, over-multiplying (e.g. x4.0 with 5 instead of x3.4 with 4).
+    """
+    from dataclasses import replace
+
+    from cursed_words_solver.rules.scoring_conditions import consumable_rack_count
+
+    if num_placed <= 0:
+        return loadout
+    remaining = max(0, consumable_rack_count(loadout) - int(num_placed))
+    new_extras = dict(loadout.extras or {})
+    new_extras["consumable_rack_count"] = remaining
+    return replace(loadout, extras=new_extras)
+
+
+def consumable_placement_count_on_board(board: Board) -> int:
+    """Number of placed-consumable tiles on ``board`` (``was_consumable`` metadata)."""
+    count = 0
+    for idx in range(25):
+        if not board.is_active_index(idx):
+            continue
+        tile = board.get_by_index(idx)
+        if bool((tile.metadata or {}).get("was_consumable")):
+            count += 1
+    return count
+
+
 def has_exported_consumable_rack(loadout: Loadout) -> bool:
     return len(effective_consumable_rack_tiles(loadout)) > 0
 
@@ -716,7 +749,12 @@ def _finalize_placement_search(
                 require_placements_in_path=require_placements_in_path,
                 base_required=base_required,
             )
-            results = searcher.find_best_words(sim_board, loadout=loadout, top_n=top_n)
+            var_loadout = loadout_after_consumable_placements(
+                loadout, len(placements)
+            )
+            results = searcher.find_best_words(
+                sim_board, loadout=var_loadout, top_n=top_n
+            )
             if not results:
                 continue
             score = results[0].score
@@ -776,7 +814,12 @@ def _screen_placement_variants(
                 require_placements_in_path=require_placements_in_path,
                 base_required=base_required,
             )
-            results = searcher.find_best_words(sim_board, loadout=loadout, top_n=1)
+            var_loadout = loadout_after_consumable_placements(
+                loadout, len(placements)
+            )
+            results = searcher.find_best_words(
+                sim_board, loadout=var_loadout, top_n=1
+            )
             if not results:
                 continue
             score = results[0].score

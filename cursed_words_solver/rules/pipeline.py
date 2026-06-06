@@ -145,6 +145,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     void_tiles_letter_not_in_word,
     dusty_coffin_void_units,
     word_same_start_end_letter,
+    word_same_start_end_on_path,
     word_starts_ends_different_suit,
     apply_mutating_dna_bonus,
     mutating_dna_letter_counts_from_loadout,
@@ -2087,7 +2088,7 @@ class ScoringPipeline:
                 n = unused_red_tiles_on_board(board, path)
                 bonus = sticker_rule_int(level, rule) * n
             elif word_mode == "if_same_start_end":
-                if word_same_start_end_letter(state["word"]):
+                if word_same_start_end_on_path(board, path, state["word"]):
                     bonus = sticker_rule_int(level, rule)
             elif word_mode == "per_unique_vowel":
                 n = unique_vowels_on_path(board, path)

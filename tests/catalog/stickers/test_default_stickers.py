@@ -695,6 +695,147 @@ def test_yellow_glasses_double_letter_currency_path_uses_word():
     assert score == int(base * 2.5)
 
 
+def _wildcard_tile(row: int, col: int, score: int = 1) -> Tile:
+    return Tile(
+        row=row,
+        col=col,
+        char="?",
+        letter="?",
+        base_score=score,
+        color=TileColor.BLUE,
+        curse=CurseType.WILDCARD,
+        metadata={"source": "melmod"},
+    )
+
+
+def test_yellow_glasses_two_adjacent_wildcards_double():
+    """Two adjacent wildcard tiles are a double (blank glyph matches blank glyph).
+
+    'jazzy' on J-?-?-Z-Y earns Yellow Glasses from the two adjacent wildcards at
+    path positions 1-2, regardless of the letters they spell (a, z).
+    """
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "J", 8)
+    board.tiles[0][1] = _wildcard_tile(0, 1)
+    board.tiles[0][2] = _wildcard_tile(0, 2)
+    board.tiles[0][3] = _tile(0, 3, "Z", 10)
+    board.tiles[0][4] = _tile(0, 4, "Y", 4)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=1)]
+    )
+    score, bd = pipeline.score(board, [0, 1, 2, 3, 4], "jazzy", loadout)
+    assert bd["multiplier"] == 1.5
+    base, _ = pipeline.score(board, [0, 1, 2, 3, 4], "jazzy", Loadout())
+    assert score == int(base * 1.5)
+
+
+def test_yellow_glasses_wildcard_with_real_letter_not_double():
+    """A wildcard is a blank glyph: it never doubles with an adjacent real letter.
+
+    The game does not treat 'kee' (real K, wildcard-e, real E) as a double, even
+    though the wildcard spells 'e' next to the real E (see the 'akees' 153-vs-102
+    mismatch). Yellow Glasses must not apply here.
+    """
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "K", 5)
+    board.tiles[0][1] = _wildcard_tile(0, 1)
+    board.tiles[0][2] = _tile(0, 2, "E", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=1)]
+    )
+    score, bd = pipeline.score(board, [0, 1, 2], "kee", loadout)
+    assert bd["multiplier"] == 1.0
+    base, _ = pipeline.score(board, [0, 1, 2], "kee", Loadout())
+    assert score == base
+
+
+def test_ham_sandwich_no_bonus_when_endpoint_is_blank():
+    """A blank endpoint reads '?', so a resolved spelling must not earn Ham Sandwich.
+
+    The game compares tiles[0]/tiles[last] GetStringRepresentation(); for the
+    'kno??' path (real K + trailing wildcards) the last tile is '?', so even though
+    the score-maximizing spelling is 'knock' (k==k), Ham Sandwich does NOT fire
+    (the 'knosp' 378-vs-55 mismatch).
+    """
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "K", 5)
+    board.tiles[0][1] = _tile(0, 1, "N", 1)
+    board.tiles[0][2] = _tile(0, 2, "O", 1)
+    board.tiles[0][3] = _wildcard_tile(0, 3)
+    board.tiles[0][4] = _wildcard_tile(0, 4)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="ham_sandwich", name="Ham Sandwich", level=1)]
+    )
+    score, _ = pipeline.score(board, [0, 1, 2, 3, 4], "knock", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2, 3, 4], "knock", Loadout())
+    assert score == base
+
+
+def test_ham_sandwich_bonus_on_equal_real_endpoints():
+    """Two equal real-letter endpoints (e.g. 'whew') do earn Ham Sandwich."""
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "W", 4)
+    board.tiles[0][1] = _tile(0, 1, "H", 4)
+    board.tiles[0][2] = _tile(0, 2, "E", 1)
+    board.tiles[0][3] = _tile(0, 3, "W", 4)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="ham_sandwich", name="Ham Sandwich", level=1)]
+    )
+    score, _ = pipeline.score(board, [0, 1, 2, 3], "whew", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2, 3], "whew", Loadout())
+    assert score > base
+
+
+def test_ham_sandwich_two_blank_endpoints_match():
+    """Two blank endpoints compare '?'=='?', so Ham Sandwich fires (game behavior)."""
+    board = _empty_board()
+    board.tiles[0][0] = _wildcard_tile(0, 0)
+    board.tiles[0][1] = _tile(0, 1, "A", 1)
+    board.tiles[0][2] = _wildcard_tile(0, 2)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="ham_sandwich", name="Ham Sandwich", level=1)]
+    )
+    score, _ = pipeline.score(board, [0, 1, 2], "cat", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2], "cat", Loadout())
+    assert score > base
+
+
+def test_hi_vis_uses_post_placement_consumable_count():
+    """Placing a consumable removes it from the rack, lowering the Hi-Vis multiplier.
+
+    Decompiled HiVisJacket multiplies by consumables still owned and drops one on
+    submit, so a placed consumable must not be counted (knosp x4.0 with 5 vs the
+    game's x3.4 with 4).
+    """
+    from cursed_words_solver.consumable_placement import (
+        loadout_after_consumable_placements,
+    )
+    from cursed_words_solver.rules.scoring_conditions import consumable_rack_count
+
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "C", 2)
+    board.tiles[0][1] = _tile(0, 1, "A", 2)
+    board.tiles[0][2] = _tile(0, 2, "T", 2)
+    pipeline = ScoringPipeline()
+    pre = Loadout(
+        stickers=[LoadoutItem(id="hi_vis_jacket", name="Hi Vis Jacket", level=1)],
+        extras={"consumable_rack_count": 5},
+    )
+    assert consumable_rack_count(pre) == 5
+    post = loadout_after_consumable_placements(pre, 1)
+    assert consumable_rack_count(post) == 4
+
+    _score_pre, bd_pre = pipeline.score(board, [0, 1, 2], "cat", pre)
+    _score_post, bd_post = pipeline.score(board, [0, 1, 2], "cat", post)
+    assert bd_pre["multiplier"] > 1.0
+    assert bd_post["multiplier"] < bd_pre["multiplier"]
+
+
 def test_cherry_pie_grid_path_word_mult_before_additive_bonuses():
     """Scattered Cherry Pie ×WORD applies on tile sum before +WORD (e.g. Super 8)."""
     from cursed_words_solver.rules.scoring_conditions import grid_path_word_mult_is_immediate

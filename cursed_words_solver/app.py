@@ -38,6 +38,7 @@ from cursed_words_solver.suggestion import (
     clear_stale_last_suggestion_if_fingerprint_changed,
     clear_stale_last_suggestion_if_loadout_changed,
     dictionary_word_for_path,
+    effective_scoring_word,
     format_suggestion_word,
     f8_prior_suggestion_stale_note,
     poll_invalidate_last_suggestion,
@@ -78,9 +79,11 @@ from cursed_words_solver.rules.boss_effects import (
 )
 from cursed_words_solver.rules.rule_lookup import boss_display_name, resolve_rule_id
 from cursed_words_solver.consumable_placement import (
+    consumable_placement_count_on_board,
     consumable_rack_tiles,
     format_placement_instructions,
     last_placement_search_stats,
+    loadout_after_consumable_placements,
     mahjong_rack_placement_active,
     mandatory_consumable_indices,
     remaining_rack_tiles,
@@ -1113,11 +1116,40 @@ class SolverApp:
                     board.money,
                     mod_money=fresh_mod_money if fresh_mod_money > 0 else None,
                 )
+                # Consumables placed onto search_board this solve are no longer on
+                # the rack, so Hi Vis Jacket must score with the post-placement
+                # count (decompiled HiVisJacket: multiplies by consumables still
+                # owned and drops one on submit). Scoring with the pre-placement
+                # count over-multiplies (x4.0 vs x3.4, etc.).
+                num_placed = consumable_placement_count_on_board(
+                    search_board
+                ) - consumable_placement_count_on_board(board)
+                score_loadout = loadout_after_consumable_placements(
+                    save_loadout, num_placed
+                )
+                score_word = effective_scoring_word(
+                    search_board,
+                    top.path,
+                    top.word,
+                    score_loadout,
+                    self._dictionary,
+                    min_len=effective_min,
+                    pipeline=self._scoring,
+                )
                 pred_score, pred_bd, pred_trace = self._scoring.score_with_trace(
-                    search_board, top.path, top.word, save_loadout
+                    search_board, top.path, score_word, score_loadout
                 )
                 top.score = pred_score
                 top.breakdown = pred_bd
+                # The displayed/tracked word must match the assignment that earned
+                # pred_score. The per-result loop above picks the max physical-overlap
+                # reading, but the score uses the max-scoring wildcard resolution
+                # (e.g. "?k?e?" scores as "skies" 102, not "skyey" 27). Surface the
+                # scored word so the player plays exactly what was predicted.
+                if score_word and score_word.lower() != top.word.lower():
+                    top.dictionary_word = score_word
+                else:
+                    top.dictionary_word = None
                 export_diag = export_diagnostics_from_run_state(merged_run_state)
                 export_warnings = validate_run_state_for_scoring(
                     save_loadout,
@@ -1157,6 +1189,7 @@ class SolverApp:
                     run_state_snapshot=f8_snapshot,
                     dictionary=self._dictionary,
                     min_len=effective_min,
+                    scoring_word=score_word,
                     export_diagnostics=export_diag,
                     export_warnings=export_warnings,
                     solver_session_extras=session_extras,

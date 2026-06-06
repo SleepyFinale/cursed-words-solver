@@ -756,6 +756,33 @@ def dictionary_word_for_path(
     return max(pool, key=lambda c: (_physical_letter_overlap(board, path, c), c))
 
 
+def effective_scoring_word(
+    board: Board,
+    path: list[int],
+    word: str,
+    loadout: Loadout,
+    dictionary: WordDictionary | None,
+    *,
+    min_len: int = 3,
+    pipeline: ScoringPipeline | None = None,
+) -> str:
+    """Spelling used for scoring: resolve wildcard/item paths to a dictionary word."""
+    lowered = word.lower()
+    if "?" not in lowered and lowered.isalpha():
+        return lowered
+    if dictionary is None:
+        return lowered
+    resolved = dictionary_word_for_path(
+        board,
+        path,
+        word,
+        loadout,
+        dictionary,
+        min_len=min_len,
+        pipeline=pipeline,
+    )
+    return (resolved or lowered).lower()
+
 
 
 
@@ -775,6 +802,7 @@ def save_last_suggestion(
 
     dictionary: WordDictionary | None = None,
     min_len: int = 3,
+    scoring_word: str | None = None,
     export_diagnostics: dict[str, Any] | None = None,
     export_warnings: list[str] | None = None,
     solver_session_extras: dict[str, Any] | None = None,
@@ -796,12 +824,13 @@ def save_last_suggestion(
 
 
 
-    scoring_word = result.word
-    phys_word = physical_word_for_path(
-        board, result.path, flags=stamp_search_flags(loadout)
-    )
-    if phys_word != scoring_word.lower():
-        scoring_word = phys_word
+    if scoring_word is None:
+        scoring_word = result.word
+        phys_word = physical_word_for_path(
+            board, result.path, flags=stamp_search_flags(loadout)
+        )
+        if phys_word != scoring_word.lower():
+            scoring_word = phys_word
 
     dict_word: str | None = None
 
