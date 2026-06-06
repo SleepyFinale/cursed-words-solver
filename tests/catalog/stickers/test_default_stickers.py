@@ -879,14 +879,14 @@ def test_hi_vis_defers_word_bonus_before_stilton_blueberries_stack():
 
 
 def test_cherry_pie_grid_path_word_mult_before_additive_bonuses():
-    """Scattered Cherry Pie ×WORD applies on tile sum before +WORD (e.g. Super 8)."""
+    """Scattered Cherry Pie ×WORD queues for finalize; tile mult before +WORD (e.g. Super 8)."""
     from cursed_words_solver.rules.scoring_conditions import grid_path_word_mult_is_immediate
     from cursed_words_solver.rules.rule_lookup import get_rule
 
     pipeline = ScoringPipeline()
     _key, rule = get_rule(pipeline.rules, "stickers", "cherry_pie", "Cherry Pie")
     assert rule is not None
-    assert grid_path_word_mult_is_immediate(Loadout(), "cherry_pie", rule)
+    assert not grid_path_word_mult_is_immediate(Loadout(), "cherry_pie", rule)
 
     board = _empty_board()
     for col in range(3):

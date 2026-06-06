@@ -4015,8 +4015,9 @@ def grid_path_word_mult_is_immediate(
         ):
             return True
         return False
-    # Scattered path ×WORD (e.g. Cherry Pie): apply before pin / +WORD additives.
-    return rid != "ferris_wheel"
+    # Scattered path ×WORD: queue for finalize (hits post-Cocktail tile sum when
+    # equipped +WORD SCORE stickers run later in the pipeline).
+    return False
 
 
 def snapshot_copies_down_under_above_grid_scatter(

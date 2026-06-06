@@ -720,7 +720,7 @@ def dictionary_word_for_path(
     valid: list[str] = []
 
     for candidate in dictionary.words_of_length(word_len):
-        if "?" in word and not _fixed_letters_align(word, candidate):
+        if not _fixed_letters_align(word, candidate):
             continue
         if not validator.word_ok(board, path, candidate, flags):
             continue
@@ -730,9 +730,7 @@ def dictionary_word_for_path(
 
         return None
 
-    aligned = [c for c in valid if _fixed_letters_align(word, c)]
-
-    pool = aligned if aligned else valid
+    pool = valid
 
     if pipeline is not None and loadout is not None:
         if len(pool) > 64:

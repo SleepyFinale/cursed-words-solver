@@ -299,6 +299,30 @@ def resolve_letter_options(
     return [ch]
 
 
+def path_letter_tiles_match_word(
+    board: Board,
+    path: list[int],
+    word: str,
+    *,
+    flags: StampSearchFlags | None = None,
+) -> bool:
+    """True when each letter tile on the path allows word[i] (stamp transforms)."""
+    if len(path) != len(word):
+        return False
+    for i, idx in enumerate(path):
+        tile = board.get_by_index(idx)
+        if tile.curse != CurseType.LETTER:
+            continue
+        ch = word[i].lower()
+        if not ch.isalpha():
+            return False
+        options = resolve_letter_options(tile, i, flags=flags)
+        allowed = {o.lower() for o in options if o not in ("?", "qu")}
+        if ch not in allowed:
+            return False
+    return True
+
+
 def _tile_digit_face_matches(
     ch: str,
     tile: Tile,
@@ -483,6 +507,8 @@ class PathValidator:
             return self._number_word_valid(board, path, word, stamp_flags)
         if "?" in word:
             return self._wildcard_valid(word)
+        if any(is_number_like_tile(board.get_by_index(i)) for i in path):
+            return self._number_word_valid(board, path, word, stamp_flags)
         return self.dictionary.is_valid_word(word, self.min_len)
 
     def _stitched_word_ok(
@@ -638,6 +664,11 @@ class PathValidator:
                         pattern_chars.append("?")
                         continue
                     return False
+                if tile.curse == CurseType.LETTER:
+                    options = resolve_letter_options(tile, i, flags=stamp_flags)
+                    allowed = {o.lower() for o in options if o not in ("?", "qu")}
+                    if not ch.isalpha() or ch.lower() not in allowed:
+                        return False
                 pattern_chars.append(ch)
         pattern = "".join(pattern_chars)
         if pattern and all(ch == "?" for ch in pattern):

@@ -34,7 +34,14 @@ HYENA_FIXTURE = (
     / "boards"
     / "20260527_hyena_senora.json"
 )
+ABET5JP_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "boards"
+    / "20260606_abet5jp.json"
+)
 PEPONIDA_PATH = [0, 6, 2, 1, 5, 10, 16, 21]
+ABET5JP_PATH = [22, 23, 18, 13, 8, 4, 9]
 ABLATING_PATH = [1, 0, 5, 11, 6, 12, 18, 22]
 SENORA_PATH = [11, 15, 16, 22, 23, 24]
 
@@ -200,6 +207,31 @@ def test_seed_finds_single_number_tile():
     not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
     reason="game wordlist required",
 )
+def test_abet5jp_path_rejects_abettor_dictionary_resolve():
+    """Letter tiles J/P must match; number tile 5 is wildcard at position 5 only."""
+    board, loadout = _board_and_loadout(ABET5JP_FIXTURE)
+    d = WordDictionary(GAME_WORDLIST_PATH)
+    flags = stamp_search_flags(loadout)
+    v = PathValidator(d, min_len=1)
+    phys = physical_word_for_path(board, ABET5JP_PATH, flags=flags)
+    assert phys == "abet5jp"
+    assert not v.word_ok(board, ABET5JP_PATH, "abettor", flags)
+    aligned = dictionary_word_for_path(
+        board,
+        ABET5JP_PATH,
+        phys,
+        loadout,
+        d,
+        min_len=1,
+        pipeline=ScoringPipeline(),
+    )
+    assert aligned != "abettor"
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
 def test_ablating_path_rejected_on_hayley_board():
     board, loadout = _board_and_loadout(HAYLEY_FIXTURE)
     d = WordDictionary(GAME_WORDLIST_PATH)
@@ -274,12 +306,15 @@ def test_hayley_board_parallel_search_top_valid():
     not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
     reason="game wordlist required",
 )
-def test_senora_path_valid_hyena_board():
+def test_senora_path_rejects_misaligned_dictionary_word_hyena_board():
+    """Path is ieno46; senora swaps I→S and uses number slots for R/A — invalid."""
     board, loadout = _board_and_loadout(HYENA_FIXTURE)
     d = WordDictionary(GAME_WORDLIST_PATH)
     flags = stamp_search_flags(loadout)
     v = PathValidator(d, min_len=1)
-    assert v.word_ok(board, SENORA_PATH, "senora", flags)
+    phys = physical_word_for_path(board, SENORA_PATH, flags=flags)
+    assert phys == "ieno46"
+    assert not v.word_ok(board, SENORA_PATH, "senora", flags)
 
 
 @pytest.mark.skipif(

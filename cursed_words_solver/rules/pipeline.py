@@ -406,6 +406,8 @@ def _flush_word_multipliers_to_tiles(state: dict[str, Any]) -> None:
 def _add_word_score(state: dict[str, Any], bonus: float) -> None:
     if not bonus:
         return
+    if state.get("pending_word_finalize_steps"):
+        state["_additive_word_after_pending_percent"] = True
     _flush_word_multipliers_to_tiles(state)
     state["word_score"] += bonus
 
@@ -509,6 +511,7 @@ def _apply_pending_word_finalize_steps(
     *,
     trace: list[dict[str, Any]] | None = None,
     steps: list[tuple] | None = None,
+    multiply_tile_sum_only: bool = False,
 ) -> float:
     """GetScoreFromScoreCalcInfo: apply queued WordBonus steps in sticker order."""
     entries = steps if steps is not None else state.get("pending_word_finalize_steps", [])
@@ -544,7 +547,14 @@ def _apply_pending_word_finalize_steps(
                         fields["rule_id"] = rule_id
                     _trace_step(state, "multiply", **fields)
         return total
-    total = subtotal
+    if multiply_tile_sum_only:
+        # Queued ×WORD from RAM/grid runs before +WORD SCORE additives in game order;
+        # at final finalize, multipliers apply to tile sum only, then word_score is added.
+        tile_sum = float(sum(state["tile_scores"]))
+        word_part = float(state["word_score"])
+        total = tile_sum
+    else:
+        total = float(subtotal)
     for kind, value, rule_id in entries:
         if kind == "percent":
             percent = int(value)
@@ -572,6 +582,8 @@ def _apply_pending_word_finalize_steps(
                 if rule_id:
                     fields["rule_id"] = rule_id
                 _trace_step(state, "multiply", **fields)
+    if multiply_tile_sum_only:
+        return total + word_part
     return total
 
 
@@ -1079,7 +1091,15 @@ def _finalize(
     ):
         return float(sum(state["tile_scores"]) + state["word_score"])
     subtotal = sum(state["tile_scores"]) + state["word_score"]
-    return float(_apply_pending_word_finalize_steps(state, subtotal))
+    tile_only = bool(
+        state.get("_additive_word_after_pending_percent")
+        and state.get("pending_word_finalize_steps")
+    )
+    return float(
+        _apply_pending_word_finalize_steps(
+            state, subtotal, multiply_tile_sum_only=tile_only
+        )
+    )
 
 
 def _finalize_with_trace(
@@ -1127,7 +1147,13 @@ def _finalize_with_trace(
     subtotal = sum(state["tile_scores"]) + state["word_score"]
     if trace is not None:
         _trace_step(state, "pre_multiply", detail="tile sum + word score")
-    total = _apply_pending_word_finalize_steps(state, subtotal, trace=trace)
+    tile_only = bool(
+        state.get("_additive_word_after_pending_percent")
+        and state.get("pending_word_finalize_steps")
+    )
+    total = _apply_pending_word_finalize_steps(
+        state, subtotal, trace=trace, multiply_tile_sum_only=tile_only
+    )
     return float(total), []
 
 
