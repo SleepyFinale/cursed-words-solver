@@ -792,3 +792,37 @@ def test_global_solve_deadline_skips_mahjong_when_expired():
 
     assert solve_remaining(search_started + 44.0) >= 1.0
     assert solve_remaining(search_started + 44.5) < 1.0
+
+
+def test_swivets_placed_wildcard_no_color_bonus_scores_189():
+    """Placed blue wildcard scores base 1 (no synthetic +1), so swivets is 189 not 201.
+
+    Reconstructs the solver's placed board (apply_consumable_placements tags the
+    rack tile source=consumable_rack) and confirms the color-bonus fix removes the
+    12-point over-prediction captured in 20260605_202155.json.
+    """
+    import json
+
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260605_202155.json"
+    )
+    if not fixture.exists():
+        return
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    wildcard = next(
+        t for t in consumable_rack_tiles(loadout) if t.curse == CurseType.WILDCARD
+    )
+    placed = apply_consumable_placements(board, [(8, wildcard)])
+    score, _ = ScoringPipeline().score(placed, data["path"], data["word"], loadout)
+    assert int(score) == data["actual_score"] == 189

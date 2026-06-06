@@ -117,6 +117,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     is_number_like_tile,
     NON_COLOUR_FOR_NUMBER_BONUS,
     is_consumable_tile,
+    is_placed_consumable_tile,
     mahjong_consumable_factor,
     money_for_scoring,
     money_word_multiplier,
@@ -1973,7 +1974,14 @@ class ScoringPipeline:
                             mult = float(i + 1)
                         state["tile_scores"][i] *= mult
                         applied += 1
-                    elif target == "consumable" and is_consumable_tile(tile):
+                    elif target == "consumable" and (
+                        is_consumable_tile(tile) or is_placed_consumable_tile(tile)
+                    ):
+                        # Mahjong Red Dragon multiplies WasConsumable tiles (decompiled
+                        # MahjongRedDragon.ApplyTileBonus). A placed consumable reads
+                        # was_consumable on the board even when its live `consumable`
+                        # flag is cleared (submit board: consumable=false), so match
+                        # either to fire on placed tiles (swivets).
                         state["tile_scores"][i] *= factor
                         applied += 1
                     elif target == "colourless_adjacent_two_colours":
@@ -2446,7 +2454,12 @@ class ScoringPipeline:
         elif effect_type == "multiply_consumable_rack":
             factor = consumable_rack_multiplier(level, rule, loadout)
             if factor != 1.0:
-                _queue_word_multiplier(state, factor, rule_id)
+                percent = word_percent_bonus_from_multiplier(
+                    factor, rule, level=level
+                )
+                _queue_word_percent_bonus(
+                    state, percent, rule_id, wiki_factor=factor
+                )
                 state["effects"].append(f"×{factor} word (consumable rack)")
 
         elif effect_type == "multiply_word_other_sticker_levels":

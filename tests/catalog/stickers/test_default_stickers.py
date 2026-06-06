@@ -836,6 +836,48 @@ def test_hi_vis_uses_post_placement_consumable_count():
     assert bd_post["multiplier"] < bd_pre["multiplier"]
 
 
+def test_hi_vis_defers_word_bonus_before_stilton_blueberries_stack():
+    """Hi-Vis before Stilton queues ×WORD; finalize stacks with Blueberries (affidation).
+
+    Decompiled HiVisJacket.ApplyWordBonus queues a multiplicative WordBonusToken;
+    it must not multiply the subtotal before later +tile-score stickers. With
+    Hi-Vis ×4 and Blueberries ×4 on a 231 tile sum after Stilton, score is 3696.
+    """
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260605_205912.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    pipeline = ScoringPipeline()
+    path = data["path"]
+    score, _bd, trace = pipeline.score_with_trace(board, path, data["word"], loadout)
+    assert score == 3696
+    hi_vis_step = next(
+        s
+        for s in trace
+        if s.get("phase") == "rule" and s.get("rule_id") == "hi_vis_jacket"
+    )
+    assert hi_vis_step.get("word_score", 0) == 0
+    multiply_rules = [
+        s.get("rule_id")
+        for s in trace
+        if s.get("phase") == "multiply"
+    ]
+    assert "hi_vis_jacket" in multiply_rules
+    assert "blueberries" in multiply_rules
+
+
 def test_cherry_pie_grid_path_word_mult_before_additive_bonuses():
     """Scattered Cherry Pie ×WORD applies on tile sum before +WORD (e.g. Super 8)."""
     from cursed_words_solver.rules.scoring_conditions import grid_path_word_mult_is_immediate

@@ -190,12 +190,28 @@ def _void_face_value(tile: Tile, loadout: Loadout | None = None) -> int:
     return face
 
 
+def _packet_base_is_final(tile: Tile) -> bool:
+    """True when the tile's base_score already reflects the game packet score.
+
+    Melmod-exported tiles and rack/placed consumables carry the final score, so
+    color and cactus-growth bonuses must not be re-applied on top.
+    """
+    if _is_melmod_tile(tile):
+        return True
+    if tile.metadata.get("was_consumable") is True:
+        return True
+    return tile.metadata.get("source") == "consumable_rack"
+
+
 def _color_bonus(tile: Tile, letter_base: int) -> int:
     """Add color bonus only when base_score is still the raw letter value.
 
     Melmod/game packet.Score already includes red/blue/cactus/purple modifiers.
+    Placed/rack consumables carry the exported base_score too, so they must not
+    get a second synthetic color bonus (e.g. a placed blue wildcard scores 1, not
+    2; see swivets 201->189).
     """
-    if _is_melmod_tile(tile):
+    if _packet_base_is_final(tile):
         return 0
     if letter_base > _scrabble_value(tile.letter):
         return 0
@@ -220,11 +236,7 @@ def _cactus_growth_bonus(tile: Tile) -> int:
 
 def _cactus_packet_is_final(tile: Tile) -> bool:
     """Melmod/rack/placed consumable base_score already includes CactusGrowth."""
-    if _is_melmod_tile(tile):
-        return True
-    if tile.metadata.get("was_consumable") is True:
-        return True
-    return tile.metadata.get("source") == "consumable_rack"
+    return _packet_base_is_final(tile)
 
 
 def tile_base_contribution(

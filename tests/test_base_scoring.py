@@ -159,6 +159,36 @@ def test_blue_r_baked_in_base_score_foxtrot():
     assert tile_base_contribution(t) == 2
 
 
+def test_consumable_rack_blue_wildcard_no_color_bonus():
+    """Placed rack consumable base_score is final; no synthetic +1 blue (swivets)."""
+    t = Tile(
+        0,
+        0,
+        "?",
+        "?",
+        1,
+        TileColor.BLUE,
+        CurseType.WILDCARD,
+        metadata={"source": "consumable_rack"},
+    )
+    assert tile_base_contribution(t) == 1
+
+
+def test_was_consumable_blue_wildcard_no_color_bonus():
+    """Submit-board placed consumable (was_consumable) scores base 1, not 2."""
+    t = Tile(
+        0,
+        0,
+        "?",
+        "?",
+        1,
+        TileColor.BLUE,
+        CurseType.WILDCARD,
+        metadata={"was_consumable": True},
+    )
+    assert tile_base_contribution(t) == 1
+
+
 def test_red_m_manipulated_and_color_baked():
     t = Tile(0, 0, "M", "M", 4, TileColor.RED, CurseType.LETTER)
     assert tile_base_contribution(t) == 4
