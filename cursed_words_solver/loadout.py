@@ -696,6 +696,7 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
         "cobra_min_length",
         "michael_min_word_length",
         "michael_phase",
+        "encounter_min_word_length",
     ):
         if key in out:
             try:
@@ -1183,8 +1184,56 @@ def merge_encounter_historic_for_f8_snapshot(
     else:
         reconcile_previous_word_first_letter_from_historic(extras)
 
+    # Second-chance: disk caught up after merge (same grid, more words on disk).
+    merged_hist = str(extras.get("historic_words", "") or "").strip()
+    if (
+        not embed_cleared
+        and fresh_hist
+        and fresh_hist != "[]"
+        and embed_grid >= 1
+        and fresh_grid == embed_grid
+        and _historic_words_count(fresh_hist) > _historic_words_count(merged_hist)
+    ):
+        _apply_fresh_encounter_historic_to_extras(extras, fresh_extras, fresh_hist)
+        reconcile_previous_word_first_letter_from_historic(extras)
+
     snapshot["extras"] = extras
     return snapshot
+
+
+def f8_historic_still_behind_disk_warning(
+    embed_extras: dict[str, Any] | None,
+) -> str | None:
+    """Warn when merged F8 embed still has fewer encounter words than disk on the same grid."""
+    data = embed_extras if isinstance(embed_extras, dict) else {}
+    embed_hist = str(data.get("historic_words", "") or "").strip()
+    embed_grid = _grid_number_from_extras(data)
+    if embed_grid < 1:
+        return None
+
+    fresh = load_run_state_raw()
+    if not isinstance(fresh, dict):
+        return None
+    fresh_extras = fresh.get("extras")
+    if not isinstance(fresh_extras, dict):
+        return None
+
+    fresh_hist = str(fresh_extras.get("historic_words", "") or "").strip()
+    fresh_grid = _grid_number_from_extras(fresh_extras)
+    if not fresh_hist or fresh_hist == "[]" or fresh_grid != embed_grid:
+        return None
+
+    embed_count = _historic_words_count(embed_hist)
+    fresh_count = _historic_words_count(fresh_hist)
+    if fresh_count <= embed_count:
+        return None
+
+    grid_part = f" on grid {embed_grid}" if embed_grid >= 1 else ""
+    return (
+        f"Encounter historic on disk ({fresh_count} words{grid_part}) is ahead of "
+        f"this F8 embed ({embed_count}) — press F7 in-game, then F8 before trusting "
+        f"predicted scores."
+    )
 
 
 def sanitize_run_state_snapshot_for_f8(
@@ -1393,6 +1442,10 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
         or "birthday" in (s.name or "").lower()
         for s in loadout.stickers
     )
+    if not has_birthday:
+        from cursed_words_solver.rules.ram_memory import pin_memory_has_birthday_cake
+
+        has_birthday = pin_memory_has_birthday_cake(loadout)
     if has_birthday:
         bday = loadout.extras.get("birthday_cake_bonus")
         if bday is not None and int(bday) > 0:

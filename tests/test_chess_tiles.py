@@ -140,10 +140,35 @@ def test_knight_can_take_opposite_color():
 
 def test_pawn_forward_from_home_rank():
     board = _empty_board()
-    board.tiles[0][2] = _chess(0, 2, CurseType.CHESS_PAWN, "black")
-    nbrs = _nbrs(board, index_of(0, 2))
-    assert index_of(1, 2) in nbrs
-    assert index_of(2, 2) in nbrs
+    board.tiles[3][2] = _chess(3, 2, CurseType.CHESS_PAWN, "black")
+    nbrs = _nbrs(board, index_of(3, 2))
+    assert index_of(4, 2) in nbrs
+    assert index_of(2, 2) not in nbrs
+
+
+def test_pawn_at_top_row_no_double_move():
+    """Regression: black pawn on row 0 is not on home rank — no 2-square jump to X."""
+    board = _empty_board()
+    board.tiles[0][3] = _chess(0, 3, CurseType.CHESS_PAWN, "black")
+    board.tiles[1][3] = _tile(1, 3, curse=CurseType.NUMBER, letter="7")
+    board.tiles[2][3] = _tile(2, 3, letter="X")
+    nbrs = _nbrs(board, index_of(0, 3))
+    assert index_of(1, 3) in nbrs
+    assert index_of(2, 3) not in nbrs
+
+
+def test_oxo_path_invalid_after_home_rank_fix():
+    """Regression: oxo path [3,13,18] used illegal pawn double-move from melmod board."""
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+    from cursed_words_solver.search import path_movement_ok
+
+    fixture = Path(__file__).parent / "fixtures" / "boards" / "oxo_pawn_double_move.json"
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data)
+    loadout = parse_run_state(data)
+    assert board is not None
+    flags = stamp_search_flags_mask(loadout)
+    assert not path_movement_ok(board, [3, 13, 18], flags=flags)
 
 
 def test_pawn_no_diagonal_without_capture():

@@ -106,7 +106,7 @@ class RegionSelector(QWidget):
 
 
 def run_calibration_wizard(config: AppConfig) -> AppConfig:
-    """Interactive region selection for the 5×5 board overlay alignment."""
+    """Interactive region selection for board and consumable rack overlays."""
     app = QApplication.instance() or QApplication(sys.argv)
 
     def select_region(prompt: str, terminal_hint: str) -> Region | None:
@@ -128,9 +128,9 @@ def run_calibration_wizard(config: AppConfig) -> AppConfig:
         return done[0]
 
     board = select_region(
-        "Drag a rectangle over the 5×5 BOARD.\n"
+        "Step 1/2: Drag a rectangle over the 5×5 BOARD.\n"
         "Release to confirm. ESC to cancel.",
-        "Drag a rectangle over the 5×5 board (all monitors). ESC to cancel.",
+        "Step 1/2: Drag a rectangle over the 5×5 board (all monitors). ESC to cancel.",
     )
     if board:
         config.board_region = board
@@ -140,6 +140,23 @@ def run_calibration_wizard(config: AppConfig) -> AppConfig:
         )
     else:
         print("  Board selection cancelled (previous region kept).", flush=True)
+        config.save()
+        return config
+
+    rack = select_region(
+        "Step 2/2: Drag a rectangle over the CONSUMABLE RACK row.\n"
+        "Span leftmost slot to rightmost slot (all 5 slots).\n"
+        "Release to confirm. ESC to cancel.",
+        "Step 2/2: Drag a rectangle over the consumable rack row. ESC to cancel.",
+    )
+    if rack:
+        config.rack_region = rack
+        print(
+            f"  Rack set: {rack.width}×{rack.height} at ({rack.x},{rack.y})",
+            flush=True,
+        )
+    else:
+        print("  Rack selection cancelled (previous rack region kept).", flush=True)
 
     config.save()
     return config

@@ -751,6 +751,42 @@ def test_yellow_glasses_wildcard_with_real_letter_not_double():
     assert score == base
 
 
+def test_ham_sandwich_no_bonus_fraction_start_wildcard_end():
+    """Fraction start + wildcard end must not match as two blank glyphs (atmoses capture).
+
+    Fraction tiles export with internal letter \"?\" for word building, but
+    GetStringRepresentation is the fraction glyph — not \"?\". Ham must not fire
+    when only the wildcard endpoint is blank.
+    """
+    board = _empty_board()
+    board.tiles[1][0] = Tile(
+        row=1,
+        col=0,
+        char="⅐",
+        letter="?",
+        base_score=8.0,
+        color=TileColor.COLORLESS,
+        curse=CurseType.FRACTION,
+        fraction_value=1 / 7,
+        metadata={"source": "melmod"},
+    )
+    board.tiles[1][1] = _wildcard_tile(1, 1, score=0)
+    for col, ch, score in ((2, "T", 1), (3, "M", 2), (4, "O", 1)):
+        board.tiles[1][col] = _tile(1, col, ch, score)
+    board.tiles[2][0] = _tile(2, 0, "S", 1)
+    board.tiles[2][1] = _tile(2, 1, "E", 1)
+    board.tiles[2][2] = _tile(2, 2, "S", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="ham_sandwich", name="Ham Sandwich", level=1)]
+    )
+    path = [5, 6, 7, 8, 9, 10, 11]
+    word = "atmoses"
+    score, _ = pipeline.score(board, path, word, loadout)
+    base, _ = pipeline.score(board, path, word, Loadout())
+    assert score == base
+
+
 def test_ham_sandwich_no_bonus_when_endpoint_is_blank():
     """A blank endpoint reads '?', so a resolved spelling must not earn Ham Sandwich.
 
@@ -803,6 +839,32 @@ def test_ham_sandwich_two_blank_endpoints_match():
     score, _ = pipeline.score(board, [0, 1, 2], "cat", loadout)
     base, _ = pipeline.score(board, [0, 1, 2], "cat", Loadout())
     assert score > base
+
+
+def test_ham_sandwich_no_bonus_wildcard_item_endpoints():
+    """Mismatch 20260607_134035 (sliest): wildcard + item endpoints use display glyphs, not '?'."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import word_same_start_end_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260607_134035.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    word = data["word"]
+    assert not word_same_start_end_on_path(board, path, word)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, path, word, loadout)
+    assert int(score) == data["actual_score"]
 
 
 def test_hi_vis_uses_post_placement_consumable_count():

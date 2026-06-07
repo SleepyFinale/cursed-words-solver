@@ -619,3 +619,26 @@ def test_hungry_snake_finds_wrapped_word(tmp_path):
     searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=3.0)
     results = searcher.find_best_words(board, loadout, top_n=5)
     assert any(r.word == "arc" for r in results)
+
+
+def test_golden_record_word_only_when_full_rack_short_word():
+    from cursed_words_solver.rules.scoring_conditions import (
+        golden_record_multiplies_word_score_only,
+    )
+
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="golden_record", name="Golden Record", kind="stamp")],
+        extras={"consumable_rack_count": "5"},
+    )
+    board = Board(tiles=[[_tile(0, 0, "A", 1)]])
+    state = {"tile_scores": [0.0, 1.0, 4.0, 9.0], "word_score": 23.0}
+    assert golden_record_multiplies_word_score_only(
+        loadout, board, [0, 1, 2, 3], state
+    )
+    assert not golden_record_multiplies_word_score_only(
+        loadout, board, [0, 1, 2, 3, 4, 5], state
+    )
+    loadout.extras["consumable_rack_count"] = "3"
+    assert not golden_record_multiplies_word_score_only(
+        loadout, board, [0, 1, 2, 3], state
+    )

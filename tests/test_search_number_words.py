@@ -12,7 +12,13 @@ from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-from cursed_words_solver.search import PathValidator, WordSearcher, physical_word_for_path
+from cursed_words_solver.search import (
+    PathValidator,
+    WordSearcher,
+    format_microscope_position_hint,
+    microscope_position_uses,
+    physical_word_for_path,
+)
 from cursed_words_solver.search_parallel import shutdown_search_pool, warmup_search_pool
 from cursed_words_solver.suggestion import dictionary_word_for_path
 
@@ -95,6 +101,14 @@ def test_peponida_path_valid_with_microscope():
     assert flags.microscope_base_score
     v = PathValidator(d, min_len=1)
     assert v.word_ok(board, PEPONIDA_PATH, "peponida", flags)
+    uses = microscope_position_uses(
+        board, PEPONIDA_PATH, "peponida", flags=flags
+    )
+    assert uses
+    assert any(u["mode"] == "alternate_number_position" for u in uses)
+    hint = format_microscope_position_hint(uses)
+    assert hint.startswith("Microscope:")
+    assert "base_score 6" in hint
 
 
 def test_peponida_path_rejects_without_microscope():

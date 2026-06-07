@@ -115,6 +115,10 @@ def _parse_boss_modifier_ids(loadout: Loadout) -> list[str]:
     return out
 
 
+def _encounter_min_word_length_value(loadout: Loadout) -> int:
+    return _extra_int(loadout, "encounter_min_word_length", 0)
+
+
 def michael_finale_active(loadout: Loadout, *, default_max_len: int = 0) -> bool:
     """Michael phase 4 / wordsmith finale: no stacked draft bosses, 25-tile word."""
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
@@ -127,6 +131,9 @@ def michael_finale_active(loadout: Loadout, *, default_max_len: int = 0) -> bool
     if _michael_phase_value(loadout) >= 4:
         return True
     michael_min = _michael_min_word_length_value(loadout)
+    encounter_min = _encounter_min_word_length_value(loadout)
+    if encounter_min >= 25 and _michael_context(loadout):
+        return True
     if michael_min >= 25 and _michael_context(loadout):
         return True
     if (
@@ -144,6 +151,8 @@ def _michael_context(loadout: Loadout) -> bool:
     if michael_puzzle_grid_active(loadout):
         return True
     if str(extras.get("encounter_mode") or "").strip().lower() == "puzzle":
+        return True
+    if _extra_int(loadout, "boss_area_number", 0) >= 6:
         return True
     boss_id = str(loadout.boss_id or "").strip().lower()
     boss_name = str(loadout.boss_name or "").strip().lower()

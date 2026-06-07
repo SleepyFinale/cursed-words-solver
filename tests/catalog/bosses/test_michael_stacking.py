@@ -120,6 +120,50 @@ def test_michael_finale_skips_boss_penalties_with_stale_modifiers() -> None:
     assert not any("per tile (boss)" in e for e in effects)
 
 
+def test_michael_encounter_finale_corrected_export() -> None:
+    """Michael finale on encounter grid: cleared modifiers, 25-tile word only."""
+    board = _board()
+    loadout = Loadout(
+        boss_id="michael",
+        extras={
+            "boss_modifiers": [],
+            "michael_summoned_bosses_defeated": True,
+            "michael_min_word_length": 25,
+            "michael_phase": 4,
+            "boss_area_number": 6,
+            "encounter_mode": "encounter",
+        },
+    )
+    assert michael_finale_active(loadout, default_max_len=25)
+    assert active_boss_ids(loadout) == []
+    c = boss_word_constraints(loadout, RULES, default_max_len=25)
+    assert c.min_len == 25
+    assert c.max_len == 25
+    pipe = ScoringPipeline()
+    _, bd = pipe.score(board, list(range(5)), "abcde", loadout)
+    effects = bd.get("pipeline", {}).get("effects", [])
+    assert not any("per tile (boss)" in e for e in effects)
+
+
+def test_michael_encounter_finale_fallback_encounter_min_word_length() -> None:
+    """Stale salamander+robo_eel list with live encounter_min_word_length on area 6."""
+    loadout = Loadout(
+        boss_id="salamander",
+        extras={
+            "boss_modifiers": ["salamander", "robo_eel"],
+            "boss_modifier_floor_mods": '{"salamander": 7, "robo_eel": 3}',
+            "boss_area_number": 6,
+            "encounter_min_word_length": 25,
+            "encounter_mode": "encounter",
+        },
+    )
+    assert michael_finale_active(loadout, default_max_len=25)
+    assert active_boss_ids(loadout) == []
+    c = boss_word_constraints(loadout, RULES, default_max_len=25)
+    assert c.min_len == 25
+    assert c.max_len == 25
+
+
 def test_michael_puzzle_grid_stale_modifiers_25_tile_word() -> None:
     """Regression: puzzle finale export clears yeti+whale even when boss_modifiers stale."""
     board = _board()

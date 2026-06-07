@@ -1,0 +1,15 @@
+{
+  "description": "penill f8#637: F8 embed missing CYLIX after cylix on same grid (live reflection lag)",
+  "grid_number": "1",
+  "embed_hist": "[{\"word\":\"WHILK\",\"score\":30,\"path\":[4,8,12,18,24]}]",
+  "disk_hist": "[{\"word\":\"WHILK\",\"score\":30,\"path\":[4,8,12,18,24]},{\"word\":\"CYLIX\",\"score\":34,\"path\":[16,12,17,18,19]}]",
+  "extras_diff": {
+    "historic_words": {
+      "f8": "[{\"word\":\"WHILK\",\"score\":30,\"path\":[4,8,12,18,24]}]",
+      "submit": "[{\"word\":\"WHILK\",\"score\":30,\"path\":[4,8,12,18,24]},{\"word\":\"CYLIX\",\"score\":34,\"path\":[16,12,17,18,19]}]"
+    }
+  },
+  "expected_stale_note_contains": [
+    "historic_words changed"
+  ]
+}

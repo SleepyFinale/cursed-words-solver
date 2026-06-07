@@ -52,6 +52,7 @@ class Region:
 @dataclass
 class AppConfig:
     board_region: Region = field(default_factory=Region)
+    rack_region: Region = field(default_factory=Region)
     hotkey: str = "f8"
     search_time_budget_sec: float = 60.0
     top_n_results: int = 3
@@ -67,6 +68,7 @@ class AppConfig:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         payload = {
             "board_region": self.board_region.to_dict(),
+            "rack_region": self.rack_region.to_dict(),
             "hotkey": self.hotkey,
             "search_time_budget_sec": self.search_time_budget_sec,
             "top_n_results": self.top_n_results,
@@ -100,6 +102,7 @@ class AppConfig:
             migrated = True
         cfg = cls(
             board_region=Region.from_dict(data.get("board_region", {})),
+            rack_region=Region.from_dict(data.get("rack_region", {})),
             hotkey=data.get("hotkey", "f8"),
             search_time_budget_sec=search_time_budget_sec,
             top_n_results=int(data.get("top_n_results", 3)),

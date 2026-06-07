@@ -44,13 +44,18 @@ class BoardHighlightOverlay(QWidget):
         board: Board | None = None,
         *,
         placements: list[Any] | None = None,
+        cell_centers: dict[int, tuple[float, float]] | None = None,
     ) -> None:
         if not region.is_valid() or (not path and not placements):
             self.hide()
             return
-        self._steps = path_geometry(region, path, board) if path else []
+        self._steps = (
+            path_geometry(region, path, board, cell_centers=cell_centers) if path else []
+        )
         self._placements = (
-            placement_geometry(region, placements, board) if placements else []
+            placement_geometry(region, placements, board, cell_centers=cell_centers)
+            if placements
+            else []
         )
         self.setGeometry(region.x, region.y, region.width, region.height)
         self.setWindowFlag(Qt.WindowType.WindowTransparentForInput, True)

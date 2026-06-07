@@ -253,11 +253,11 @@ def rack_requires_export(
         return False
     if sandy_requires_rack_export(loadout, board, rules):
         return True
-    if not has_mahjong_pin(loadout, rules):
+    if has_exported_consumable_rack(loadout):
         return False
-    if not _is_first_grid_of_encounter(loadout):
-        return False
-    return not has_exported_consumable_rack(loadout)
+    from cursed_words_solver.rules.scoring_conditions import consumable_rack_count
+
+    return consumable_rack_count(loadout) > 0
 
 
 def wait_for_rack_export(
@@ -360,16 +360,24 @@ def remaining_rack_tiles(loadout: Loadout, board: Board) -> list[Tile]:
     return remaining
 
 
+def rack_placement_search_active(
+    loadout: Loadout,
+    board: Board,
+    rules: dict[str, Any],
+) -> bool:
+    """Score-boost placement search when unplaced rack tiles remain (any character)."""
+    if sandy_placement_search_active(loadout, board, rules):
+        return False
+    return len(remaining_rack_tiles(loadout, board)) > 0
+
+
 def mahjong_rack_placement_active(
     loadout: Loadout,
     board: Board,
     rules: dict[str, Any],
 ) -> bool:
-    if not has_mahjong_pin(loadout, rules):
-        return False
-    if sandy_placement_search_active(loadout, board, rules):
-        return False
-    return len(remaining_rack_tiles(loadout, board)) > 0
+    """Backward-compatible alias for rack_placement_search_active."""
+    return rack_placement_search_active(loadout, board, rules)
 
 
 def _active_indices(board: Board) -> list[int]:
@@ -656,14 +664,11 @@ def format_placement_path_hints(
     records: list[ConsumablePlacement | dict[str, Any]],
 ) -> str:
     """Overlay hint using green path step numbers (1-based, same as board highlight)."""
-    index_to_step = {idx: step for step, idx in enumerate(path, start=1)}
+    from cursed_words_solver.ui.board_geometry import placement_display_steps
+
     hints: list[tuple[int, str]] = []
-    for rec in records:
-        idx = _placement_record_index(rec)
-        step = index_to_step.get(idx)
-        if step is not None:
-            hints.append((step, _placement_record_letter(rec)))
-    hints.sort(key=lambda t: t[0])
+    for step, rec in placement_display_steps(path, records):
+        hints.append((step, _placement_record_letter(rec)))
     if not hints:
         return ""
     parts = [f"Place {letter} on {step}" for step, letter in hints]

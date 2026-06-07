@@ -216,9 +216,18 @@ This builds `CursedWordsSolverCompanion.dll` and copies it to `Cursed Words\Mods
         "active": true
       }
     ]
+  },
+  "ui_layout": {
+    "coordinate_space": "screen_top_left",
+    "screen_w": 2560,
+    "screen_h": 1440,
+    "board": { "x": 1026, "y": 132, "width": 703, "height": 700, "rows": 5, "cols": 5 },
+    "consumable_rack": { "x": 2392, "y": 571, "width": 293, "height": 45, "slot_count": 5 }
   }
 }
 ```
+
+`ui_layout` is exported on every board export (F7 / auto-export) from live Unity UI bounds (`GridLayoutController` tile renderers and consumable rack slot transforms). The Python solver uses it for green path and orange rack overlays — no manual F10 calibration when present. Coordinates are Qt virtual-desktop pixels (top-left origin).
 
 Top-level `money` and `board.money` are the same value (`player.Money`). The solver uses this for GOLD tile scoring.
 
@@ -269,7 +278,7 @@ Run context extras (default-unlocked stickers):
 | `movie_camera_word_score_bonus` | Movie Camera encounter running `WordScoreBonus` (exported on **F7** and merged after each score). If the solver shows `Movie Camera: 0 + …`, press **F7** in-game; until then set `"movie_camera_word_score_bonus": "20"` in `run_state.json` → `extras` to match the sticker UI. |
 | `historic_words` | Prior words: `word`, `path`, `score`, `red_tile_count`, `chess_take_value` |
 | `consumable_rack_count` | Hi Vis Jacket (tiles on consumable rack) |
-| `consumable_rack` | JSON array of rack tile snapshots (letters, colors, `cactus_growth`); Sandy Saguaro CACTUS tiles for solver placement simulation |
+| `consumable_rack` | JSON array of rack tile snapshots (letters, colors, `cactus_growth`) for solver placement simulation |
 | `grid_number` | Current grid index in the encounter (1-based; also updated from `CalculateOverallScore`) |
 | `run_seed` | Run RNG seed when readable from player/progress |
 | `rare_item_count` | Owned RARE stickers/stamps/pin |
@@ -288,7 +297,7 @@ Run context extras (default-unlocked stickers):
 | `game_version` | `Application.version` for mismatch triage |
 | `target_number` | Lucky Dice (grid target number tile value, e.g. `2`). Read from player/grid state and the Lucky Dice sticker when property names differ by build. |
 | `lucky_dice_target_missing` | `true` when Lucky Dice is equipped but `target_number` could not be read (rebuild melmod and press **F7**) |
-| `birthday_cake_bonus` | Birthday Cake (accumulated “Get +X WORD SCORE” before this submit). If the solver shows `Birthday Cake: 0 + …`, press **F7** in-game after rebuilding the companion; until then you can set `"birthday_cake_bonus": "15"` (match the sticker UI) in `run_state.json` → `extras`. |
+| `birthday_cake_bonus` | Birthday Cake (accumulated “Get +X WORD SCORE” before this submit). Read from the equipped sticker or, when Birthday Cake lives in **RAM pin memory only**, from the memory item on **F7**. If the solver shows `Birthday Cake: 0 + …`, press **F7** in-game after rebuilding the companion; until then you can set `"birthday_cake_bonus": "15"` (match the sticker UI) in `run_state.json` → `extras`. |
 | `michael_book_bonus` | Michael's Book (accumulated word bonus) |
 
 Board tiles may include:
@@ -315,7 +324,9 @@ Pure card glyphs export `curse: "card"`. Suited overlays only set `card_suit` / 
 
 4. Press **F8** in the solver — terminal should show `Word list: game (...)` and `Board from melmod` with the correct grid.
 
-5. **F10** in the solver recalibrates the on-screen board region (for numbered green path highlights).
+4. Press **F8** in the solver. Overlays align automatically from `ui_layout` when melmod is current.
+
+5. **F10** in the solver is manual overlay calibration — only needed if `ui_layout` is missing from `run_state.json`.
 
 6. **ESC** hides the solver overlay and board highlights.
 

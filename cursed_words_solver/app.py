@@ -20,7 +20,11 @@ import keyboard
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from cursed_words_solver.capture import capture_region, save_debug_image
+from cursed_words_solver.capture import (
+    capture_region,
+    save_calibration_debug_image,
+    save_debug_image,
+)
 from cursed_words_solver.fingerprints import (
     board_fingerprint,
     fingerprints_from_run_state,
@@ -41,6 +45,7 @@ from cursed_words_solver.suggestion import (
     effective_scoring_word,
     format_suggestion_word,
     f8_prior_suggestion_stale_note,
+    f8_prediction_workflow_stale_warning,
     poll_invalidate_last_suggestion,
     empty_historic_on_later_grid_warning,
     run_state_historic_stale_warnings,
@@ -58,6 +63,7 @@ from cursed_words_solver.loadout import (
     melmod_install_hint,
     describe_f8_historic_catchup,
     f8_historic_stale_after_merge_warning,
+    f8_historic_still_behind_disk_warning,
     merge_encounter_historic_for_f8_snapshot,
     merge_loadout_with_board,
     neapolitan_extras_stale_warning,
@@ -84,7 +90,7 @@ from cursed_words_solver.consumable_placement import (
     format_placement_instructions,
     last_placement_search_stats,
     loadout_after_consumable_placements,
-    mahjong_rack_placement_active,
+    rack_placement_search_active,
     mandatory_consumable_indices,
     remaining_rack_tiles,
     sandy_placement_search_active,
@@ -101,8 +107,21 @@ from cursed_words_solver.rules.scoring_conditions import (
     target_score_from_loadout,
 )
 from cursed_words_solver.rules.chess_tiles import missing_chess_color_warnings
-from cursed_words_solver.search import WordSearcher
+from cursed_words_solver.search import (
+    WordSearcher,
+    format_microscope_position_hint,
+    microscope_position_uses,
+)
+from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
 from cursed_words_solver.ui.board_highlight import BoardHighlightOverlay
+from cursed_words_solver.ui.rack_highlight import RackHighlightOverlay
+from cursed_words_solver.ui.layout import (
+    OverlayRegions,
+    describe_overlay_source,
+    overlay_regions_ready,
+    resolve_overlay_regions,
+    ui_layout_export_status,
+)
 from cursed_words_solver.ui.calibrate import run_calibration_wizard
 from cursed_words_solver.ui.loadout_dialog import LoadoutDialog
 from cursed_words_solver.ui.overlay import ResultOverlay
@@ -140,6 +159,7 @@ class SolverApp:
         self.app = QApplication(sys.argv)
         self.overlay = ResultOverlay()
         self.board_highlight = BoardHighlightOverlay()
+        self.rack_highlight = RackHighlightOverlay()
         self._highlight_board_fingerprint: str | None = None
         self._highlight_loadout_fingerprint: str | None = None
         self._highlight_watch_run_state = False
@@ -161,6 +181,7 @@ class SolverApp:
         self._bridge.quit_app.connect(self._shutdown)
         self._bridge.solve_finished.connect(self._apply_solve_ui)
         self.overlay.request_quit.connect(self._shutdown)
+        self._overlay_regions = resolve_overlay_regions(None, config)
         atexit.register(keyboard.unhook_all)
         atexit.register(self._shutdown_search_pool)
 
@@ -205,28 +226,53 @@ class SolverApp:
                 )
         return True
 
+    def _refresh_overlay_regions(self, run_state: dict | None = None) -> OverlayRegions:
+        if run_state is None:
+            run_state = load_run_state_raw()
+        self._overlay_regions = resolve_overlay_regions(run_state, self.config)
+        return self._overlay_regions
+
+    def _needs_manual_calibration(self) -> bool:
+        if self.calibrate:
+            return True
+        self._refresh_overlay_regions()
+        if overlay_regions_ready(self._overlay_regions):
+            return False
+        return (
+            not self.config.board_region.is_valid()
+            or not self.config.rack_region.is_valid()
+        )
+
     def run(self) -> int:
-        if self.calibrate or not self.config.board_region.is_valid():
+        if self._needs_manual_calibration():
             QMessageBox.information(
                 None,
                 "Calibration",
-                "Select the 5×5 board region on screen for green path highlights.",
+                "Melmod ui_layout not available yet.\n\n"
+                "Press F7 in-game first for automatic overlay alignment.\n\n"
+                "Otherwise drag the board and consumable rack regions manually.",
             )
             self.config = run_calibration_wizard(self.config)
             self._finish_calibration("Calibration complete")
 
+        self._refresh_overlay_regions()
         if not self.calibrate:
-            br = self.config.board_region
-            if br.is_valid():
-                print(
-                    f"Board region: {br.width}×{br.height} at ({br.x},{br.y}).",
-                    flush=True,
-                )
-            else:
-                print(
-                    "Board region not set — press F10 to calibrate for on-screen highlights.",
-                    flush=True,
-                )
+            print(
+                f"Overlay layout: {describe_overlay_source(self._overlay_regions)}",
+                flush=True,
+            )
+            if self._overlay_regions.source == "manual":
+                layout_status = ui_layout_export_status(load_run_state_raw())
+                if layout_status:
+                    print(
+                        f"  ui_layout export failed ({layout_status}) — using manual F10",
+                        flush=True,
+                    )
+                elif not overlay_regions_ready(self._overlay_regions):
+                    print(
+                        "  Tip: rebuild melmod and press F7 in-game for automatic alignment.",
+                        flush=True,
+                    )
 
         board_data = load_run_state_raw()
         if not melmod_board_available(board_data):
@@ -338,9 +384,10 @@ class SolverApp:
                 "press F7 during a round with tiles visible.",
                 flush=True,
             )
-        if not self.config.board_region.is_valid():
+        if not overlay_regions_ready(self._overlay_regions):
             print(
-                "Press F10 to calibrate the board region for green path highlights.",
+                "Press F7 in-game for automatic overlay alignment, "
+                "or F10 to calibrate manually.",
                 flush=True,
             )
         try:
@@ -394,6 +441,7 @@ class SolverApp:
 
     def _clear_highlight_state(self) -> None:
         self.board_highlight.clear()
+        self.rack_highlight.clear()
         self._highlight_board_fingerprint = None
         self._highlight_loadout_fingerprint = None
         self._highlight_watch_run_state = False
@@ -482,7 +530,7 @@ class SolverApp:
             on_game_highlight=update.on_game_highlight,
             consumable_placements=update.consumable_placements,
         )
-        if update.on_game_highlight and self.config.board_region.is_valid():
+        if update.on_game_highlight and self._overlay_regions.board.is_valid():
             if update.melmod_board_fingerprint is not None:
                 self._highlight_board_fingerprint = update.melmod_board_fingerprint
                 self._highlight_loadout_fingerprint = update.melmod_loadout_fingerprint
@@ -492,33 +540,69 @@ class SolverApp:
                 self._highlight_loadout_fingerprint = None
                 self._highlight_watch_run_state = False
             self.board_highlight.show_path(
-                self.config.board_region,
+                self._overlay_regions.board,
                 update.results[0].path,
                 update.board,
                 placements=update.consumable_placements,
+                cell_centers=self._overlay_regions.board_cell_centers,
             )
+            if (
+                update.consumable_placements
+                and self._overlay_regions.rack.is_valid()
+            ):
+                self.rack_highlight.show_placements(
+                    self._overlay_regions.rack,
+                    update.results[0].path,
+                    update.consumable_placements,
+                    rack_slot_centers=self._overlay_regions.rack_slot_centers,
+                    rack_slot_sizes=self._overlay_regions.rack_slot_sizes,
+                    rack_tile_height=self._overlay_regions.rack_tile_height,
+                )
+            else:
+                self.rack_highlight.clear()
+            self.rack_highlight.raise_()
         else:
             self._clear_highlight_state()
 
     def _finish_calibration(self, prefix: str) -> None:
-        br = self.config.board_region
-        if not br.is_valid():
-            return
-        print(
-            f"{prefix}. Board region: {br.width}×{br.height} at ({br.x},{br.y}).",
-            flush=True,
+        self._overlay_regions = OverlayRegions(
+            board=self.config.board_region,
+            rack=self.config.rack_region,
+            source="manual",
         )
-        self._save_calibration_preview()
+        br = self._overlay_regions.board
+        rr = self._overlay_regions.rack
+        if br.is_valid():
+            print(
+                f"{prefix}. Board region: {br.width}×{br.height} at ({br.x},{br.y}).",
+                flush=True,
+            )
+        if rr.is_valid():
+            print(
+                f"{prefix}. Rack region: {rr.width}×{rr.height} at ({rr.x},{rr.y}).",
+                flush=True,
+            )
+        if br.is_valid() or rr.is_valid():
+            self._save_calibration_preview()
 
     def _save_calibration_preview(self) -> None:
-        if not self.config.board_region.is_valid():
+        br = self._overlay_regions.board
+        rr = self._overlay_regions.rack
+        if not br.is_valid() and not rr.is_valid():
             return
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         try:
-            img = capture_region(self.config.board_region)
             path = DEBUG_DIR / "calibration_preview.png"
-            save_debug_image(img, path)
+            save_calibration_debug_image(
+                br if br.is_valid() else self.config.board_region,
+                rr if rr.is_valid() else self.config.rack_region,
+                path,
+            )
             print(f"Capture preview saved: {path}", flush=True)
+            if br.is_valid():
+                board_only = DEBUG_DIR / "calibration_board_crop.png"
+                img = capture_region(br)
+                save_debug_image(img, board_only)
         except Exception as e:
             print(f"Could not save capture preview: {e}", flush=True)
 
@@ -574,6 +658,19 @@ class SolverApp:
                 return
 
             print("Board from melmod (run_state.json).", flush=True)
+            self._refresh_overlay_regions(run_state_data)
+            if self._overlay_regions.source == "melmod":
+                print(
+                    f"  Overlay layout: {describe_overlay_source(self._overlay_regions)}",
+                    flush=True,
+                )
+            else:
+                layout_status = ui_layout_export_status(run_state_data)
+                if layout_status:
+                    print(
+                        f"  ui_layout export failed ({layout_status}) — using manual F10",
+                        flush=True,
+                    )
             run_extras = (
                 run_state_data.get("extras")
                 if isinstance(run_state_data, dict)
@@ -595,9 +692,9 @@ class SolverApp:
                 )
             for warn in missing_chess_color_warnings(board):
                 print(f"  Warning: {warn}", flush=True)
-            if self.config.board_region.is_valid():
+            if self._overlay_regions.board.is_valid():
                 try:
-                    board_img = capture_region(self.config.board_region)
+                    board_img = capture_region(self._overlay_regions.board)
                     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
                     save_debug_image(board_img, DEBUG_DIR / "last_board.png")
                 except Exception as e:
@@ -791,7 +888,7 @@ class SolverApp:
             search_board = board
             results: list = []
             rescue_budget = search_budget * 0.4
-            mahjong_boost_budget = search_budget * 0.3
+            rack_boost_budget = search_budget * 0.3
             rules = self._scoring.rules
             if sandy_auto_place and rack_tiles and solve_remaining() >= 1.0:
                 search_board, placement_records, results = (
@@ -838,14 +935,14 @@ class SolverApp:
             baseline_score = results[0].score if results else 0.0
             if (
                 not sandy_auto_place
-                and mahjong_rack_placement_active(loadout, board, rules)
+                and rack_placement_search_active(loadout, board, rules)
                 and results
                 and solve_remaining() >= 1.0
             ):
                 boost_rack = remaining_rack_tiles(loadout, board)
                 if boost_rack:
                     print(
-                        f"  Mahjong: {len(boost_rack)} consumable(s) on rack "
+                        f"  Consumables: {len(boost_rack)} on rack "
                         "— simulating placements…",
                         flush=True,
                     )
@@ -856,7 +953,7 @@ class SolverApp:
                             loadout,
                             boost_rack,
                             baseline_score=baseline_score,
-                            time_budget=phase_budget(mahjong_boost_budget),
+                            time_budget=phase_budget(rack_boost_budget),
                             top_n=self.config.top_n_results,
                             rules=rules,
                             variant_gen_budget=variant_gen_budget(),
@@ -1141,6 +1238,26 @@ class SolverApp:
                 )
                 top.score = pred_score
                 top.breakdown = pred_bd
+                ms_uses = microscope_position_uses(
+                    search_board,
+                    top.path,
+                    score_word,
+                    flags=stamp_search_flags_mask(score_loadout),
+                )
+                if ms_uses:
+                    ms_hint = format_microscope_position_hint(ms_uses)
+                    top.breakdown = dict(top.breakdown or {})
+                    top.breakdown["microscope_positions"] = ms_uses
+                    top.breakdown["microscope_hint"] = ms_hint
+                    pred_trace = list(pred_trace or [])
+                    pred_trace.append(
+                        {
+                            "phase": "hint",
+                            "rule_id": "microscope",
+                            "detail": ms_hint,
+                            "microscope_positions": ms_uses,
+                        }
+                    )
                 # The displayed/tracked word must match the assignment that earned
                 # pred_score. The per-result loop above picks the max physical-overlap
                 # reading, but the score uses the max-scoring wildcard resolution
@@ -1181,6 +1298,17 @@ class SolverApp:
                 )
                 if empty_hist_warn:
                     print(f"  Warning: {empty_hist_warn}", flush=True)
+                behind_disk_warn = f8_historic_still_behind_disk_warning(
+                    f8_extras if isinstance(f8_extras, dict) else None
+                )
+                if behind_disk_warn:
+                    print(f"  Warning: {behind_disk_warn}", flush=True)
+                workflow_stale_warn = f8_prediction_workflow_stale_warning(
+                    run_extras if isinstance(run_extras, dict) else None,
+                    f8_extras if isinstance(f8_extras, dict) else None,
+                )
+                if workflow_stale_warn:
+                    print(f"  Warning: {workflow_stale_warn}", flush=True)
                 save_last_suggestion(
                     board=search_board,
                     loadout=save_loadout,
@@ -1226,6 +1354,9 @@ class SolverApp:
                 effects = (top.breakdown or {}).get("pipeline", {}).get("effects")
                 if effects:
                     print(f"  Score effects: {'; '.join(str(e) for e in effects)}", flush=True)
+                ms_hint = (top.breakdown or {}).get("microscope_hint")
+                if ms_hint:
+                    print(f"  {ms_hint}", flush=True)
                 print(
                     "  Wrote last_suggestion.json for melmod scoring capture.",
                     flush=True,
@@ -1245,7 +1376,7 @@ class SolverApp:
             warnings = self._overlay_warnings(board, unmapped)
             highlight = (
                 self.config.show_board_highlight
-                and self.config.board_region.is_valid()
+                and self._overlay_regions.board.is_valid()
                 and bool(results)
             )
             self._bridge.solve_finished.emit(
@@ -1387,7 +1518,7 @@ class SolverApp:
             QMessageBox.information(
                 None,
                 "Recalibrated",
-                "Board region updated.\n"
+                "Board and rack regions updated.\n"
                 f"Check {DEBUG_DIR / 'calibration_preview.png'} to verify the capture.",
             )
         finally:

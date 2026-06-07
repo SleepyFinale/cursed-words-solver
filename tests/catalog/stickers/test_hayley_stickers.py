@@ -129,6 +129,31 @@ def test_birthday_cake_accumulated_plus_improve():
     assert "Birthday Cake: 22 + 7" in " ".join(bd["pipeline"]["effects"])
 
 
+def test_birthday_cake_accumulated_from_ram_pin_memory_export():
+    """RAM-only Birthday Cake reads accumulated bonus from pin_memory entry."""
+    from cursed_words_solver.rules.scoring_conditions import birthday_cake_accumulated
+
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "3", 3, curse=CurseType.NUMBER, number_value=3)
+    board.tiles[0][1] = _tile(0, 1, "A", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="hi_vis_jacket", name="Hi Vis Jacket", level=1),
+        ],
+        extras={
+            "pin_effect": "random_access_memory",
+            "pin_memory": '[{"id":"birthday_cake","name":"Birthday Cake","level":1,'
+            '"kind":"sticker","birthday_cake_bonus":1}]',
+            "consumable_rack": "[]",
+        },
+    )
+    assert birthday_cake_accumulated(loadout) == 1
+    score, bd = pipeline.score(board, [0, 1], "3a", loadout)
+    assert "Birthday Cake: 1 + 3" in " ".join(bd["pipeline"]["effects"])
+    assert score > 7
+
+
 def test_bordonua_fraction_improve_rounds_to_match_game():
     """Regression: 0.875×3 must round to 3, not stay 2.625 (1602 not 1601)."""
     fixture = (

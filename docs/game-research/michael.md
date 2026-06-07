@@ -9,7 +9,7 @@ Source: `Assembly-CSharp.dll` (`MichaelBoss`, `EncounterController`, `TileSelect
 3. Wordsmith grids with selected modifiers
 4. Draft 2
 5. Draft 3
-6. Final puzzle grid
+6. Finale grid — 25-tile word on `EncounterController` (not only `PuzzleController`)
 
 ## Draft pool
 
@@ -47,5 +47,7 @@ as `extras.boss_modifier_floor_mods` and must be used for stacked Michael scorin
 
 ## Finale
 
-After drafted bosses are defeated, `SummonedBossesDefeated` enables the final puzzle
-rule: submission must include all 25 tiles.
+After drafted bosses are defeated, `MichaelBoss.SummonedBossesDefeated` (on
+`Player.ActiveBossModifiers[0]`, not `EncounterController.GetBossModifiers()`) enables the
+finale rule: submission must include all 25 tiles. `TileSelectionManager` blocks words
+with fewer than 25 selected tiles while that flag is set.

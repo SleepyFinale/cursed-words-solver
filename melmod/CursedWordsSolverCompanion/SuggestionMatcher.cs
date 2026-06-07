@@ -335,7 +335,7 @@ namespace CursedWordsSolverCompanion
                 }
 
                 var changed = false;
-                foreach (var key in new[]
+        foreach (var key in new[]
                 {
                     "historic_words",
                     "previous_word_first_letter",
@@ -343,6 +343,10 @@ namespace CursedWordsSolverCompanion
                     "scoring_previous_words_count",
                     "mutating_dna_letter_counts",
                     "encounter_historic_source",
+                    "birthday_cake_bonus",
+                    "pin_memory",
+                    "pin_memory_count",
+                    "consumable_rack_count",
                 })
                 {
                     string val;

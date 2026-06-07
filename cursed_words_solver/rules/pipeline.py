@@ -66,6 +66,7 @@ _EARLY_BOSS_EFFECT_TYPES = EARLY_BOSS_TYPES
 from cursed_words_solver.rules.scoring_conditions import (
     abacus_colored_number_bonus,
     birthday_cake_accumulated,
+    birthday_cake_improve_for_path,
     bicycle_word_bonus,
     bicycle_word_per_card,
     bicycle_word_score_accumulator,
@@ -512,6 +513,7 @@ def _apply_pending_word_finalize_steps(
     trace: list[dict[str, Any]] | None = None,
     steps: list[tuple] | None = None,
     multiply_tile_sum_only: bool = False,
+    multiply_word_score_only: bool = False,
 ) -> float:
     """GetScoreFromScoreCalcInfo: apply queued WordBonus steps in sticker order."""
     entries = steps if steps is not None else state.get("pending_word_finalize_steps", [])
@@ -553,6 +555,8 @@ def _apply_pending_word_finalize_steps(
         tile_sum = float(sum(state["tile_scores"]))
         word_part = float(state["word_score"])
         total = tile_sum
+    elif multiply_word_score_only:
+        total = float(state["word_score"])
     else:
         total = float(subtotal)
     for kind, value, rule_id in entries:
@@ -1091,13 +1095,24 @@ def _finalize(
     ):
         return float(sum(state["tile_scores"]) + state["word_score"])
     subtotal = sum(state["tile_scores"]) + state["word_score"]
+    from cursed_words_solver.rules.scoring_conditions import (
+        golden_record_multiplies_word_score_only,
+    )
+
+    word_only = golden_record_multiplies_word_score_only(
+        loadout, board, path, state
+    )
     tile_only = bool(
         state.get("_additive_word_after_pending_percent")
         and state.get("pending_word_finalize_steps")
+        and not word_only
     )
     return float(
         _apply_pending_word_finalize_steps(
-            state, subtotal, multiply_tile_sum_only=tile_only
+            state,
+            subtotal,
+            multiply_tile_sum_only=tile_only,
+            multiply_word_score_only=word_only,
         )
     )
 
@@ -1147,12 +1162,24 @@ def _finalize_with_trace(
     subtotal = sum(state["tile_scores"]) + state["word_score"]
     if trace is not None:
         _trace_step(state, "pre_multiply", detail="tile sum + word score")
+    from cursed_words_solver.rules.scoring_conditions import (
+        golden_record_multiplies_word_score_only,
+    )
+
+    word_only = golden_record_multiplies_word_score_only(
+        loadout, board, path, state
+    )
     tile_only = bool(
         state.get("_additive_word_after_pending_percent")
         and state.get("pending_word_finalize_steps")
+        and not word_only
     )
     total = _apply_pending_word_finalize_steps(
-        state, subtotal, trace=trace, multiply_tile_sum_only=tile_only
+        state,
+        subtotal,
+        trace=trace,
+        multiply_tile_sum_only=tile_only,
+        multiply_word_score_only=word_only,
     )
     return float(total), []
 
@@ -2209,11 +2236,10 @@ class ScoringPipeline:
                 if high:
                     bonus = sticker_rule_int(level, rule) * high
             elif word_mode == "birthday_cake_bonus":
-                high = highest_number_on_path(board, path)
                 accumulated = birthday_cake_accumulated(loadout)
-                level_factor = sticker_rule_int(level, rule)
-                raw_improve = level_factor * high if high else 0.0
-                improve = int(math.floor(raw_improve + 0.5))
+                improve = birthday_cake_improve_for_path(
+                    board, path, level, rule, state["word"]
+                )
                 bonus = accumulated + improve
                 if bonus:
                     state["effects"].append(
@@ -2501,13 +2527,18 @@ class ScoringPipeline:
                 )
 
         elif effect_type == "multiply_word_by_unique_curse_type_count":
-            n = unique_curse_type_count_on_path(board, path)
-            if n >= 1:
-                factor = float(n)
-                _queue_word_multiplier(state, factor, rule_id)
-                state["effects"].append(
-                    f"×{factor} word ({n} unique curse type(s))"
-                )
+            from cursed_words_solver.rules.scoring_conditions import (
+                golden_record_skips_oden_mult,
+            )
+
+            if not golden_record_skips_oden_mult(loadout, board, path, state):
+                n = unique_curse_type_count_on_path(board, path)
+                if n >= 1:
+                    factor = float(n)
+                    _queue_word_multiplier(state, factor, rule_id)
+                    state["effects"].append(
+                        f"×{factor} word ({n} unique curse type(s))"
+                    )
 
         elif effect_type == "multiply_word_by_number_count":
             if word_all_numbers_on_path(board, path):

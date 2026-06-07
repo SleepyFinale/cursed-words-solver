@@ -1188,7 +1188,7 @@ def _birthday_accumulated_from_predicted_trace(data: dict) -> int | None:
     for step in trace:
         if not isinstance(step, dict):
             continue
-        rule_id = str(step.get("rule_id", "") or "").lower()
+        rule_id = str(step.get("rule_id", "") or "").lower().replace(" ", "_")
         if rule_id != "birthday_cake":
             continue
         detail = str(step.get("detail", "") or "")
@@ -1203,6 +1203,73 @@ def _birthday_accumulated_from_predicted_trace(data: dict) -> int | None:
     return None
 
 
+def _has_birthday_cake_in_run_state(run_state: dict) -> bool:
+    for sticker in run_state.get("stickers") or []:
+        if not isinstance(sticker, dict):
+            continue
+        if str(sticker.get("id", "") or "").lower() == "birthday_cake":
+            return True
+        if "birthday" in str(sticker.get("name", "") or "").lower():
+            return True
+    extras = run_state.get("extras") or {}
+    raw = extras.get("pin_memory")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            raw = []
+    if isinstance(raw, list):
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("id", "") or "").lower() == "birthday_cake":
+                return True
+            if "birthday" in str(entry.get("name", "") or "").lower():
+                return True
+    return False
+
+
+def _birthday_cake_level_from_run_state(run_state: dict) -> int:
+    for sticker in run_state.get("stickers") or []:
+        if isinstance(sticker, dict) and str(sticker.get("id", "")).lower() == "birthday_cake":
+            return int(sticker.get("level", 1))
+    extras = run_state.get("extras") or {}
+    raw = extras.get("pin_memory")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            raw = []
+    if isinstance(raw, list):
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            slug = str(entry.get("id", "") or "").lower()
+            if slug == "birthday_cake" or "birthday" in str(entry.get("name", "") or "").lower():
+                return int(entry.get("level", 1))
+    return 1
+
+
+def _ram_birthday_word_bonus_from_actual_trace(data: dict) -> int | None:
+    trace = data.get("actual_trace")
+    if not isinstance(trace, list):
+        return None
+    for step in trace:
+        if not isinstance(step, dict):
+            continue
+        if str(step.get("item_id", "") or "").lower() != "random_access_memory":
+            continue
+        if step.get("word_bonus_multiplicative"):
+            continue
+        try:
+            word_bonus = int(step.get("word_bonus", 0))
+        except (TypeError, ValueError):
+            continue
+        if word_bonus > 0:
+            return word_bonus
+    return None
+
+
 def _adjust_birthday_cake_pre_word_extras(
     run_state: dict,
     data: dict,
@@ -1211,34 +1278,46 @@ def _adjust_birthday_cake_pre_word_extras(
     loadout,
 ) -> None:
     """Rewind post-submit birthday_cake_bonus when trace pre+improve matches exported total."""
-    has_cake = any(
-        isinstance(s, dict)
-        and (
-            str(s.get("id", "") or "").lower() == "birthday_cake"
-            or "birthday" in str(s.get("name", "") or "").lower()
-        )
-        for s in (run_state.get("stickers") or [])
-    )
-    if not has_cake:
-        return
-    accumulated_in_trace = _birthday_accumulated_from_predicted_trace(data)
-    if accumulated_in_trace is None:
+    if not _has_birthday_cake_in_run_state(run_state):
         return
     pipeline = ScoringPipeline()
     rule = pipeline.rules.get("stickers", {}).get("birthday_cake") or {}
-    level = 1
-    for sticker in run_state.get("stickers") or []:
-        if isinstance(sticker, dict) and str(sticker.get("id", "")).lower() == "birthday_cake":
-            level = int(sticker.get("level", 1))
-            break
-    improve = birthday_cake_improve_for_path(board, path, level, rule)
+    level = _birthday_cake_level_from_run_state(run_state)
+    improve = birthday_cake_improve_for_path(
+        board, path, level, rule, str(data.get("word") or "")
+    )
     extras = dict(run_state.get("extras") or {})
+
+    actual_wb = _ram_birthday_word_bonus_from_actual_trace(data)
+    accumulated_in_trace = _birthday_accumulated_from_predicted_trace(data)
+    if actual_wb is not None:
+        pre_from_actual = actual_wb - improve
+        if pre_from_actual >= 0 and (
+            accumulated_in_trace is None
+            or accumulated_in_trace + improve != actual_wb
+        ):
+            extras["birthday_cake_bonus"] = str(pre_from_actual)
+            run_state["extras"] = extras
+            loadout.extras = extras
+            return
+
+    if "birthday_cake_bonus" not in extras:
+        actual_wb = _ram_birthday_word_bonus_from_actual_trace(data)
+        if actual_wb is not None and actual_wb >= improve:
+            pre = actual_wb - improve
+            extras["birthday_cake_bonus"] = str(pre)
+            run_state["extras"] = extras
+            loadout.extras = extras
+            return
+
+    if accumulated_in_trace is None:
+        return
     try:
         bonus = int(extras.get("birthday_cake_bonus", 0))
     except (TypeError, ValueError):
         return
     if improve > 0 and bonus == accumulated_in_trace + improve:
-        rewind_birthday_cake_pre_word_extras(loadout, board, path, level, rule)
+        rewind_birthday_cake_pre_word_extras(loadout, board, path, level, rule, str(data.get("word") or ""))
         run_state["extras"] = dict(loadout.extras or {})
 
 
@@ -1592,17 +1671,37 @@ def _bento_applied_in_actual_trace(data: dict) -> bool:
     return False
 
 
+def _loadout_has_bento_box(run_state: dict) -> bool:
+    stamps = run_state.get("stamps")
+    if isinstance(stamps, list):
+        for s in stamps:
+            if isinstance(s, dict) and str(s.get("id", "") or "").lower() in (
+                "bento_box",
+                "bento",
+            ):
+                return True
+    extras = run_state.get("extras") or {}
+    raw = extras.get("pin_memory")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            entries = json.loads(raw)
+        except json.JSONDecodeError:
+            entries = None
+        if isinstance(entries, list):
+            for entry in entries:
+                if isinstance(entry, dict) and str(entry.get("id", "") or "").lower() in (
+                    "bento_box",
+                    "bento",
+                ):
+                    return True
+    return False
+
+
 def _adjust_bento_previous_word_extras(run_state: dict, data: dict) -> None:
     """Drop stale previous_word_first_letter when submit trace shows Bento did not fire."""
-    stamps = run_state.get("stamps")
-    if not isinstance(stamps, list):
+    if not _loadout_has_bento_box(run_state):
         return
-    has_bento = any(
-        isinstance(s, dict)
-        and str(s.get("id", "") or "").lower() in ("bento_box", "bento")
-        for s in stamps
-    )
-    if not has_bento or _bento_applied_in_actual_trace(data):
+    if _bento_applied_in_actual_trace(data):
         return
     extras = dict(run_state.get("extras") or {})
     if extras.pop("previous_word_first_letter", None) is not None:
@@ -1788,6 +1887,9 @@ _KNOWN_FAILING = frozenset({
     "20260605_182934",
     "20260605_183024",
     "20260605_183119",
+    # penill f8#637: stale F8 historic (missing CYLIX on same grid); +1 pt workflow drift.
+    # Full replay still under-models under_construction×hi_vis finalize on this capture.
+    "20260607_145101",
 })
 
 

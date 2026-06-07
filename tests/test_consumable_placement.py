@@ -15,6 +15,7 @@ from cursed_words_solver.consumable_placement import (
     has_mahjong_pin,
     iter_placement_variants_fewest_first,
     mahjong_rack_placement_active,
+    rack_placement_search_active,
     placement_variants_fewest_first,
     placements_to_records,
     rack_requires_export,
@@ -535,6 +536,44 @@ def test_mahjong_rack_placement_inactive_during_sandy_boss():
     assert not mahjong_rack_placement_active(loadout, board, rules)
 
 
+def _generic_loadout_with_rack() -> Loadout:
+    return parse_run_state(
+        {
+            "character": "Cretaceous Meg",
+            "extras": {
+                "consumable_rack": [
+                    {
+                        "rack_index": 0,
+                        "letter": "G",
+                        "char_display": "g",
+                        "color": "red",
+                        "curse": "letter",
+                        "base_score": 3,
+                    },
+                ],
+            },
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+
+
+def test_rack_placement_search_active_generic_character():
+    loadout = _generic_loadout_with_rack()
+    rules = ScoringPipeline().rules
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    assert rack_placement_search_active(loadout, board, rules)
+    assert mahjong_rack_placement_active(loadout, board, rules)
+
+
+def test_rack_placement_search_active_false_when_sandy_boss():
+    loadout = _sandy_loadout_with_rack()
+    rules = ScoringPipeline().rules
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    assert sandy_placement_search_active(loadout, board, rules)
+    assert not rack_placement_search_active(loadout, board, rules)
+
+
 def test_remaining_rack_tiles_excludes_placed_by_rack_index():
     loadout = _mahjong_loadout_with_red_rack()
     board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
@@ -640,12 +679,11 @@ def test_search_consumable_score_boost_returns_empty_when_not_improved(
     assert not records
 
 
-def test_rack_requires_export_mahjong_first_grid():
+def test_rack_requires_export_when_count_without_rack_json():
     loadout = parse_run_state(
         {
             "extras": {
-                "pin_effect": "mahjong_red_dragon",
-                "is_first_grid_of_encounter": "true",
+                "consumable_rack_count": "2",
             },
             "stickers": [],
             "stamps": [],

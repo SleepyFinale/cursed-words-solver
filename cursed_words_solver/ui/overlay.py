@@ -148,6 +148,13 @@ class ResultOverlay(QWidget):
                     f"+{top.setup_bonus:,.0f} setup (rank {top.rank_score:,.0f})</span>"
                 )
             placement_line = ""
+            microscope_line = ""
+            ms_hint = (top.breakdown or {}).get("microscope_hint")
+            if ms_hint:
+                microscope_line = (
+                    "<br><span style='font-size:11px;color:#8cf'>"
+                    f"{ms_hint}</span>"
+                )
             if consumable_placements:
                 hint = ""
                 if top.path:
@@ -184,6 +191,7 @@ class ResultOverlay(QWidget):
                 f"{top.score:,.0f} pts</span>"
                 f"{setup_line}"
                 f"{placement_line}"
+                f"{microscope_line}"
             )
             self.hero_result.show()
         else:

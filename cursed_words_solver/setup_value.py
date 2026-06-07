@@ -109,7 +109,7 @@ def project_setup_delta(
             rule = sticker_rules.get("birthday_cake") or {}
             level = _sticker_level(loadout, "birthday_cake")
             delta.birthday_cake_bonus = birthday_cake_improve_for_path(
-                board, path, level, {**rule, "base": rule.get("base", 1), "upgrade": rule.get("upgrade", 1)}
+                board, path, level, {**rule, "base": rule.get("base", 1), "upgrade": rule.get("upgrade", 1)}, word
             )
 
         elif sid == "hi_vis_jacket":

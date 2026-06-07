@@ -87,6 +87,7 @@ namespace CursedWordsSolverCompanion
                 ["pin_memory_count"] = pinMemoryCount,
                 ["snapshot_copy_source"] = _snapshotCopySource,
                 ["last_export_ms"] = exportMs,
+                ["ui_layout_status"] = UiLayoutExporter.LastStatus ?? "",
             };
 
             if (snapshot?.extras != null

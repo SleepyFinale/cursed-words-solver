@@ -1774,3 +1774,76 @@ def test_grid_advanced_not_intentionally_cleared():
     assert _encounter_historic_intentionally_cleared(
         {"encounter_historic_source": "grid_start_cleared"}
     )
+
+
+def test_penill_historic_shrink_stale_f8_extras_diff_fixture():
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_penill_historic_shrink.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    note = _stale_f8_extras_note(data["extras_diff"], has_mutating_dna_stamp=False)
+    assert note is not None
+    for fragment in data["expected_stale_note_contains"]:
+        assert fragment in note
+
+
+def test_penill_historic_shrink_prefer_fresh_on_same_grid():
+    from cursed_words_solver.loadout import _historic_words_json_prefer_fresh
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_penill_historic_shrink.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    preferred = _historic_words_json_prefer_fresh(
+        data["embed_hist"],
+        data["disk_hist"],
+        embed_grid=int(data["grid_number"]),
+        fresh_grid=int(data["grid_number"]),
+    )
+    assert preferred == data["disk_hist"]
+
+
+def test_f8_prediction_workflow_stale_warning_penill():
+    from cursed_words_solver.suggestion import f8_prediction_workflow_stale_warning
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_penill_historic_shrink.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    note = f8_prediction_workflow_stale_warning(
+        {
+            "historic_words": data["disk_hist"],
+            "grid_number": data["grid_number"],
+        },
+        {
+            "historic_words": data["embed_hist"],
+            "grid_number": data["grid_number"],
+        },
+    )
+    assert note is not None
+    assert "historic words changed" in note or "historic_words changed" in note
+    assert "F7" in note
+
+
+def test_penill_mismatch_stale_workflow_one_point_delta():
+    """penill f8#637: stale embed missed CYLIX; game delta +1 vs stale F8 prediction."""
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260607_145101.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    assert data["stale_f8_extras"] is True
+    assert data["predicted_score"] == 82
+    assert data["actual_score"] == 83
+    assert data["actual_score"] - data["predicted_score"] == 1
+    diff = data["extras_diff"]["historic_words"]
+    assert _historic_words_count(diff["f8"]) == 1
+    assert _historic_words_count(diff["submit"]) == 2

@@ -234,7 +234,7 @@ Chess-cursed tiles move per [wiki Curses — Chess](https://cursedwords.wiki.gg/
 
 | Piece | Base score | Movement |
 |-------|------------|----------|
-| Pawn (♟/♙) | 1 | Forward 1 (2 from home rank); capture diagonally; en passant |
+| Pawn (♟/♙) | 1 | Forward 1 (2 from home rank: 2nd row from top for white, 2nd from bottom for black); capture diagonally; en passant |
 | Knight (♞/♘) | 3 | L-shape; jumps over blockers |
 | Bishop (♝/♗) | 3 | Diagonal rays; blocked by same colour |
 | Rook (♜/♖) | 5 | Horizontal/vertical rays |

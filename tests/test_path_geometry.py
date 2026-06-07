@@ -2,7 +2,14 @@
 
 from cursed_words_solver.config import Region
 from cursed_words_solver.loadout import parse_board_from_run_state
-from cursed_words_solver.ui.board_geometry import path_geometry
+from cursed_words_solver.ui.board_geometry import (
+    estimate_rack_slot_size,
+    path_geometry,
+    placement_display_steps,
+    rack_marker_radius,
+    rack_placement_geometry,
+    rack_slot_center,
+)
 from tests.integration.test_run_state_board import _bat_4x3_run_state
 
 
@@ -87,3 +94,139 @@ def test_parse_board_playable_bounds_from_run_state():
     assert board.playable_max_row == 4
     assert board.playable_min_col == 0
     assert board.playable_max_col == 3
+
+
+def test_rack_slot_center_five_slots():
+    region = Region(x=0, y=0, width=500, height=80)
+    left = rack_slot_center(region, 0)
+    right = rack_slot_center(region, 4)
+    assert left is not None and right is not None
+    assert abs(left[0] - 50.0) < 0.1
+    assert abs(left[1] - 40.0) < 0.1
+    assert abs(right[0] - 450.0) < 0.1
+    assert rack_slot_center(region, -1) is None
+    assert rack_slot_center(region, 5) is None
+
+
+def test_rack_placement_geometry_maps_path_steps():
+    region = Region(x=0, y=0, width=500, height=80)
+    path = [17, 18, 19, 16]
+    placements = [
+        {"index": 17, "rack_index": 0, "letter": "E"},
+        {"index": 19, "rack_index": 4, "letter": "O"},
+    ]
+    markers = rack_placement_geometry(region, path, placements)
+    assert len(markers) == 2
+    assert markers[0].step == 1
+    assert abs(markers[0].x - 50.0) < 0.1
+    assert markers[1].step == 3
+    assert abs(markers[1].x - 450.0) < 0.1
+
+
+def test_rack_placement_geometry_skips_invalid_rack_index():
+    region = Region(x=0, y=0, width=500, height=80)
+    path = [17, 18]
+    placements = [{"index": 17, "rack_index": -1, "letter": "E"}]
+    assert rack_placement_geometry(region, path, placements) == []
+
+
+def test_path_geometry_uses_melmod_cell_centers():
+    region = Region(x=100, y=200, width=700, height=700)
+    cell_centers = {
+        0: (170.0, 270.0),
+        2: (450.0, 270.0),
+    }
+    steps = path_geometry(region, [0, 2], cell_centers=cell_centers)
+    assert len(steps) == 2
+    assert abs(steps[0].x - 70.0) < 0.1
+    assert abs(steps[0].y - 70.0) < 0.1
+    assert abs(steps[1].x - 350.0) < 0.1
+    assert abs(steps[1].y - 70.0) < 0.1
+
+
+def test_rack_placement_geometry_uses_melmod_slot_centers():
+    region = Region(x=2400, y=570, width=290, height=44)
+    path = [17, 19]
+    placements = [
+        {"index": 17, "rack_index": 0, "letter": "E"},
+        {"index": 19, "rack_index": 4, "letter": "O"},
+    ]
+    rack_slot_centers = {0: (2429.0, 592.0), 4: (2661.0, 592.0)}
+    markers = rack_placement_geometry(
+        region,
+        path,
+        placements,
+        rack_slot_centers=rack_slot_centers,
+    )
+    assert len(markers) == 2
+    assert abs(markers[0].x - 29.0) < 0.1
+    assert abs(markers[0].y - 22.0) < 0.1
+    assert abs(markers[1].x - 261.0) < 0.1
+    assert abs(markers[1].y - 22.0) < 0.1
+
+
+def test_path_geometry_index_15_uses_solver_cell_center():
+    region = Region(x=1277, y=159, width=884, height=885)
+    cell_centers = {
+        15: (1378.0, 436.0),
+        10: (1374.0, 617.0),
+    }
+    steps = path_geometry(region, [15, 10], cell_centers=cell_centers)
+    assert abs(steps[0].x - 101.0) < 0.1
+    assert abs(steps[0].y - 277.0) < 0.1
+    assert abs(steps[1].x - 97.0) < 0.1
+    assert abs(steps[1].y - 458.0) < 0.1
+
+
+def test_rack_placement_geometry_fallback_when_not_on_path():
+    region = Region(x=0, y=0, width=500, height=80)
+    path = [15, 10, 6]
+    placements = [{"index": 99, "rack_index": 0, "letter": "3"}]
+    markers = rack_placement_geometry(region, path, placements)
+    assert len(markers) == 1
+    assert markers[0].step == 1
+    assert abs(markers[0].x - 50.0) < 0.1
+
+
+def test_placement_display_steps_prefers_path_step():
+    path = [15, 10, 6]
+    placements = [{"index": 6, "rack_index": 0, "letter": "3"}]
+    steps = placement_display_steps(path, placements)
+    assert steps == [(3, placements[0])]
+
+
+def test_rack_marker_radius_caps_for_typical_slot():
+    radius = rack_marker_radius(150.0, 40.0, 61.0, 52.0, 305.0, 97.0)
+    assert abs(radius - 18.0) < 0.1
+
+
+def test_rack_marker_radius_clamps_near_edge():
+    radius = rack_marker_radius(295.0, 90.0, 61.0, 52.0, 305.0, 97.0)
+    assert radius < 18.0
+    assert radius + 1.0 <= 305.0 - 295.0
+
+
+def test_estimate_rack_slot_size_uses_spacing_and_exported_height():
+    region = Region(0, 0, 305, 97)
+    centers = {
+        0: (29.0, 48.0),
+        1: (90.0, 48.0),
+        2: (151.0, 48.0),
+        3: (212.0, 48.0),
+        4: (273.0, 48.0),
+    }
+    slot_w, slot_h = estimate_rack_slot_size(
+        region,
+        centers,
+        exported_rack_height=52.0,
+    )
+    assert abs(slot_w - 61.0) < 1.0
+    assert abs(slot_h - 52.0) < 0.1
+
+
+def test_estimate_rack_slot_size_prefers_melmod_slot_sizes():
+    region = Region(0, 0, 305, 97)
+    sizes = {0: (61.0, 52.0), 4: (61.0, 52.0)}
+    slot_w, slot_h = estimate_rack_slot_size(region, None, rack_slot_sizes=sizes)
+    assert abs(slot_w - 61.0) < 0.1
+    assert abs(slot_h - 52.0) < 0.1

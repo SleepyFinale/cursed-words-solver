@@ -1378,7 +1378,15 @@ def michael_book_bonus(loadout: Loadout) -> int:
 
 def birthday_cake_accumulated(loadout: Loadout) -> int:
     """Runtime 'Get +X WORD SCORE' total exported from the Birthday Cake sticker."""
-    return max(0, _extra_int(loadout, "birthday_cake_bonus", 0))
+    extras = loadout.extras or {}
+    if "birthday_cake_bonus" in extras:
+        return max(0, _extra_int(loadout, "birthday_cake_bonus", 0))
+    from cursed_words_solver.rules.ram_memory import birthday_cake_bonus_from_pin_memory
+
+    from_ram = birthday_cake_bonus_from_pin_memory(loadout)
+    if from_ram is not None:
+        return from_ram
+    return 0
 
 
 def card_count_on_path(board: Board, path: list[int]) -> int:
@@ -1760,11 +1768,27 @@ def _endpoint_char_for_same_start_end(board: Board, idx: int, word_char: str) ->
 
     Mirrors HamSandwich.ApplyWordBonus, which compares tiles[0]/tiles[last]
     GetStringRepresentation(); a blank glyph is "?", so it never matches a real
-    letter and only matches another blank ("?"=="?").
+    letter and only matches another blank ("?"=="?"). Fraction/number tiles use
+    display glyphs, not the internal word-slot letter ("?" from loadout parsing).
     """
     tile = board.get_by_index(idx)
-    if tile.curse in (CurseType.WILDCARD, CurseType.BLANK) or tile.letter == "?":
+    if tile.curse in (CurseType.WILDCARD, CurseType.BLANK):
         return "?"
+    if tile.curse == CurseType.FRACTION:
+        disp = normalize_tile_glyph(tile.char or "")
+        if not disp:
+            raw = (tile.letter or "").strip()
+            if raw and raw != "?":
+                disp = normalize_tile_glyph(raw)
+        if not disp and tile.fraction_value is not None:
+            disp = str(tile.fraction_value)
+        return disp.lower() if disp else "?"
+    if tile.curse in (CurseType.NUMBER, CurseType.CURRENCY):
+        disp = normalize_tile_glyph(tile.char or tile.letter or "")
+        return disp.lower() if disp else "?"
+    if tile.curse == CurseType.ITEM:
+        disp = normalize_tile_glyph(tile.char or tile.letter or "")
+        return disp.lower() if disp else "?"
     return (word_char or "").lower()
 
 
@@ -1794,6 +1818,76 @@ def consumable_rack_count(loadout: Loadout) -> int:
     from cursed_words_solver.consumable_placement import consumable_rack_tiles
 
     return len(consumable_rack_tiles(loadout))
+
+
+def letter_tile_count_on_path(board: Board, path: list[int]) -> int:
+    return sum(
+        1 for idx in path if board.get_by_index(idx).curse == CurseType.LETTER
+    )
+
+
+def golden_record_multiplies_word_score_only(
+    loadout: Loadout | None,
+    board: Board | None,
+    path: list[int] | None,
+    state: dict,
+) -> bool:
+    """Golden Record ApplyWordBonus: short words with a full consumable rack multiply word track only.
+
+    Mismatch 20260607_123029 (miha): rack full (5), path len 4, word 23 > tile 14 → ×WORD on 23 not 37.
+    Mismatch 20260607_135939 (lyne): no letter tiles on path → use tile + word subtotal, not word-only.
+    Mismatch 20260607_142006 (upon): one letter on path → use tile + word subtotal, not word-only.
+    Mismatch 20260607_141553 (mows): number tile on path → use tile + word subtotal, not word-only.
+    Morias (path 6) and ejected (rack not full) still use tile + word subtotal.
+    """
+    from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
+
+    if loadout is None or board is None or path is None or not path:
+        return False
+    if not loadout_has_stamp(loadout, "golden_record"):
+        return False
+    if len(path) > 4:
+        return False
+    if consumable_rack_count(loadout) < 5:
+        return False
+    if letter_tile_count_on_path(board, path) < 2:
+        return False
+    if not any(
+        board.get_by_index(idx).curse != CurseType.LETTER for idx in path
+    ):
+        return False
+    if any(
+        board.get_by_index(idx).curse in (CurseType.NUMBER, CurseType.FRACTION)
+        for idx in path
+    ):
+        return False
+    tile_sum = float(sum(state.get("tile_scores") or []))
+    word = float(state.get("word_score") or 0)
+    return word > tile_sum > 0
+
+
+def golden_record_skips_oden_mult(
+    loadout: Loadout | None,
+    board: Board | None,
+    path: list[int] | None,
+    state: dict,
+) -> bool:
+    """Golden Record short rack-full words without letter tiles skip Oden (lyne 20260607_135939)."""
+    from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
+
+    if loadout is None or board is None or path is None or not path:
+        return False
+    if not loadout_has_stamp(loadout, "golden_record"):
+        return False
+    if len(path) > 4:
+        return False
+    if consumable_rack_count(loadout) < 5:
+        return False
+    if letter_tile_count_on_path(board, path) >= 1:
+        return False
+    tile_sum = float(sum(state.get("tile_scores") or []))
+    word = float(state.get("word_score") or 0)
+    return word > tile_sum > 0
 
 
 def rare_item_count(loadout: Loadout) -> int:
@@ -2309,7 +2403,7 @@ def unique_colour_count_on_path(board: Board, path: list[int]) -> int:
     return len(unique_colours_on_path(board, path))
 
 
-_ODEN_CURSE_CATEGORIES: dict[CurseType, str] = {
+_ODEN_NON_CHESS_CATEGORIES: dict[CurseType, str] = {
     CurseType.WILDCARD: "wildcard",
     CurseType.BLANK: "wildcard",
     CurseType.ITEM: "item",
@@ -2317,31 +2411,143 @@ _ODEN_CURSE_CATEGORIES: dict[CurseType, str] = {
     CurseType.CURRENCY: "currency",
     CurseType.NUMBER: "number",
     CurseType.FRACTION: "number",
-    CurseType.CHESS_PAWN: "chess",
-    CurseType.CHESS_BISHOP: "chess",
-    CurseType.CHESS_ROOK: "chess",
-    CurseType.CHESS_KNIGHT: "chess",
-    CurseType.CHESS_QUEEN: "chess",
-    CurseType.CHESS_KING: "chess",
+    CurseType.LETTER: "letter",
 }
 
+_ODEN_CHESS_CURSES = frozenset(
+    {
+        CurseType.CHESS_PAWN,
+        CurseType.CHESS_BISHOP,
+        CurseType.CHESS_ROOK,
+        CurseType.CHESS_KNIGHT,
+        CurseType.CHESS_QUEEN,
+        CurseType.CHESS_KING,
+    }
+)
 
-def _oden_category_for_tile(tile: Tile) -> str | None:
-    """Single Oden bucket for a tile (wiki: joker wilds are Cards, other ? are Wild Tiles)."""
+
+def _oden_categories_for_tile(tile: Tile) -> set[str]:
+    """Oden buckets for one tile (joker wilds → card; chess by piece type only)."""
+    categories: set[str] = set()
     if tile.curse in (CurseType.WILDCARD, CurseType.BLANK):
         if is_joker_tile(tile) or card_suit(tile) == "joker":
-            return "card"
-        return "wildcard"
-    return _ODEN_CURSE_CATEGORIES.get(tile.curse)
+            categories.add("card")
+        else:
+            categories.add("wildcard")
+    elif tile.curse in _ODEN_CHESS_CURSES:
+        categories.add(tile.curse.value)
+    else:
+        bucket = _ODEN_NON_CHESS_CATEGORIES.get(tile.curse)
+        if bucket:
+            categories.add(bucket)
+
+    suit = card_suit(tile)
+    if tile.curse == CurseType.ITEM and suit and suit != "joker":
+        categories.add("card")
+    elif (
+        suit
+        and suit != "joker"
+        and tile.curse not in (CurseType.WILDCARD, CurseType.BLANK)
+        and tile.curse not in _ODEN_CHESS_CURSES
+    ):
+        categories.add("card")
+
+    return categories
+
+
+def _oden_categories_on_path(
+    board: Board, path: list[int], *, include_number_card_suit: bool = True
+) -> tuple[set[str], int]:
+    """Collect Oden buckets on path; optionally omit card from NUMBER/FRACTION suits."""
+    categories: set[str] = set()
+    letter_tiles = 0
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.curse == CurseType.LETTER:
+            letter_tiles += 1
+        cats = _oden_categories_for_tile(tile)
+        if not include_number_card_suit and tile.curse in (
+            CurseType.NUMBER,
+            CurseType.FRACTION,
+        ):
+            cats.discard("card")
+        categories |= cats
+    return categories, letter_tiles
 
 
 def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
-    """Distinct Oden curse categories on the path (wiki buckets, not per-piece chess)."""
-    categories: set[str] = set()
-    for idx in path:
-        category = _oden_category_for_tile(board.get_by_index(idx))
-        if category:
-            categories.add(category)
+    """Distinct Oden curse categories on the path."""
+    categories, letter_tiles = _oden_categories_on_path(board, path)
+    if "letter" in categories:
+        other_cats = categories - {"letter"}
+        card_from_letter = any(
+            board.get_by_index(idx).curse == CurseType.LETTER
+            and card_suit(board.get_by_index(idx))
+            for idx in path
+        )
+        card_from_scattered_item = any(
+            board.get_by_index(idx).curse == CurseType.ITEM
+            and card_suit(board.get_by_index(idx))
+            for idx in path
+        )
+        non_letter_suited_tiles = sum(
+            1
+            for idx in path
+            if board.get_by_index(idx).curse != CurseType.LETTER
+            and (suit := card_suit(board.get_by_index(idx)))
+            and suit != "joker"
+        )
+        if not card_from_letter and (
+            card_from_scattered_item or non_letter_suited_tiles <= 1
+        ):
+            other_cats.discard("card")
+        card_from_non_letter = any(
+            "card" in _oden_categories_for_tile(board.get_by_index(idx))
+            and board.get_by_index(idx).curse
+            not in (CurseType.LETTER, CurseType.ITEM)
+            for idx in path
+        )
+        if card_from_letter and not card_from_non_letter:
+            categories.discard("card")
+            other_cats.discard("card")
+        other = len(other_cats)
+        # In-game: letter bucket only contributes when the path has 2+ letter
+        # tiles and at most 3 other curse categories (ens/zanjas yes; bottega/checkstop no).
+        # One letter counts when exactly three other categories are present (upon).
+        # Long dense paths with a suited letter keep the bucket when other >= 5 (upsprings).
+        if letter_tiles < 2:
+            if not (letter_tiles == 1 and other == 3):
+                categories.discard("letter")
+        elif other > 3:
+            if not (len(path) > 5 and card_from_letter and other >= 5):
+                categories.discard("letter")
+        elif letter_tiles >= 2 and other <= 3:
+            # ippon: suited NUMBER/FRACTION must not add a separate card bucket.
+            categories, _ = _oden_categories_on_path(
+                board, path, include_number_card_suit=False
+            )
+            if card_from_letter and not card_from_non_letter:
+                categories.discard("card")
+            if card_from_scattered_item and any(
+                board.get_by_index(idx).curse
+                in (CurseType.WILDCARD, CurseType.BLANK)
+                for idx in path
+            ):
+                categories.discard("card")
+    if letter_tiles < 2 and "card" in categories:
+        suited_non_wildcard = [
+            idx
+            for idx in path
+            if (suit := card_suit(board.get_by_index(idx)))
+            and suit != "joker"
+            and board.get_by_index(idx).curse
+            not in (CurseType.WILDCARD, CurseType.BLANK)
+        ]
+        if suited_non_wildcard and all(
+            board.get_by_index(idx).curse == CurseType.ITEM
+            for idx in suited_non_wildcard
+        ):
+            categories.discard("card")
     return len(categories)
 
 
@@ -3296,13 +3502,60 @@ def bicycle_word_bonus(
     return acc + per_card * suited
 
 
+def birthday_cake_improve_high_on_path(
+    board: Board, path: list[int], word: str | None = None
+) -> float:
+    """Highest value driving Birthday Cake improve (NUMBER face or ceil of fraction).
+
+    Wiki: improved by highest number in word. Unit fractions with denominator >= 8
+    (e.g. 1/8 on morat) do not contribute; num >= 2 or den <= 7 still use ceil(num/den).
+
+    NUMBER tiles used to spell letters (wildcard-style) do not contribute; neither do
+    playing-card NUMBER tiles (ippon/caparison mismatches 20260607_134340/134640).
+    """
+    import math
+
+    steps = normalize_scoring_path(path)
+    w = (word or "").lower()
+    high = 0.0
+    has_qualifying_fraction = False
+    for idx in steps:
+        tile = board.get_by_index(idx)
+        if is_fraction_tile(tile):
+            parts = fraction_parts(tile)
+            if parts is not None:
+                num, den = parts
+                if den > 0 and (num >= 2 or den <= 7):
+                    has_qualifying_fraction = True
+                    break
+    for pos, idx in enumerate(steps):
+        tile = board.get_by_index(idx)
+        if is_number_tile(tile):
+            if card_suit(tile):
+                continue
+            if (
+                w
+                and (pos >= len(w) or not w[pos].isdigit())
+                and has_qualifying_fraction
+            ):
+                continue
+            high = max(high, float(tile_number_value(tile)))
+        elif is_fraction_tile(tile):
+            parts = fraction_parts(tile)
+            if parts is not None:
+                num, den = parts
+                if den > 0 and (num >= 2 or den <= 7):
+                    high = max(high, float(math.ceil(num / den)))
+    return high
+
+
 def birthday_cake_improve_for_path(
-    board: Board, path: list[int], level: int, rule: dict
+    board: Board, path: list[int], level: int, rule: dict, word: str | None = None
 ) -> int:
     """Improve term added to birthday_cake_bonus after this submit."""
     import math
 
-    high = highest_number_on_path(board, path)
+    high = birthday_cake_improve_high_on_path(board, path, word)
     if not high:
         return 0
     level_factor = sticker_rule_int(level, rule)
@@ -3315,9 +3568,10 @@ def rewind_birthday_cake_pre_word_extras(
     path: list[int],
     level: int,
     rule: dict,
+    word: str | None = None,
 ) -> None:
     """Subtract this word's improve from extras when snapshot is post-submit."""
-    improve = birthday_cake_improve_for_path(board, path, level, rule)
+    improve = birthday_cake_improve_for_path(board, path, level, rule, word)
     if improve <= 0:
         return
     bonus = birthday_cake_accumulated(loadout)

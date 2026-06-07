@@ -18,6 +18,8 @@ from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 from cursed_words_solver.search import (
     PathValidator,
+    format_microscope_position_hint,
+    microscope_position_uses,
     number_position_valid,
     resolve_letter,
 )
@@ -121,6 +123,32 @@ def test_microscope_letter_tile_unrestricted_as_letter():
     tile = _tile(0, 0, "V", 4, curse=CurseType.LETTER)
     assert number_position_valid(tile, 3, flags=flags)
     assert number_position_valid(tile, 0, flags=flags)
+
+
+def test_microscope_letter_tile_as_digit_in_number_word(tmp_path):
+    """V with base_score 4 may spell digit 4 at position 4 in a number word."""
+    wl = tmp_path / "words.txt"
+    wl.write_text("abcd\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 1)
+    board.tiles[0][1] = _tile(0, 1, "B", 3)
+    board.tiles[0][2] = _tile(0, 2, "C", 3)
+    board.tiles[0][3] = _tile(0, 3, "V", 4, curse=CurseType.LETTER)
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="microscope", name="Microscope", kind="stamp")]
+    )
+    flags = stamp_search_flags(loadout)
+    v = PathValidator(d, min_len=4)
+    path = [0, 1, 2, 3]
+    word = "abc4"
+    assert v.word_ok(board, path, word, flags)
+    uses = microscope_position_uses(board, path, word, flags=flags)
+    assert len(uses) == 1
+    assert uses[0]["mode"] == "letter_as_digit"
+    assert "Microscope:" in format_microscope_position_hint(uses)
+    loadout_no = Loadout(stamps=[])
+    assert not v.word_ok(board, path, word, stamp_search_flags(loadout_no))
 
 
 def test_microscope_uses_packet_base_score():

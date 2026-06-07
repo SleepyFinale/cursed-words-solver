@@ -6,7 +6,7 @@ import heapq
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Any, Callable, Iterator
 
 from concurrent.futures import ProcessPoolExecutor
 
@@ -467,6 +467,90 @@ def _microscope_base_as_position(tile: Tile) -> int | None:
     return ival
 
 
+def _microscope_face_number_values(tile: Tile) -> list[int]:
+    """1-based positions from face number only (no Microscope base_score alternate)."""
+    if tile.curse != CurseType.NUMBER:
+        return []
+    nv = tile_number_value(tile)
+    if nv is None and tile.letter.isdigit():
+        nv = int(tile.letter)
+    if nv is not None and nv >= 1:
+        return [nv]
+    return []
+
+
+def microscope_position_uses(
+    board: Board,
+    path: list[int],
+    word: str,
+    *,
+    flags: SearchFlagsMask = 0,
+) -> list[dict[str, Any]]:
+    """Positions where Microscope base_score flex was required (not face-number slots)."""
+    flags = coerce_search_flags(flags)
+    if not flag_test(flags, FLAG_MICROSCOPE_BASE_SCORE):
+        return []
+    if len(path) != len(word):
+        return []
+    uses: list[dict[str, Any]] = []
+    for i, idx in enumerate(path):
+        tile = board.get_by_index(idx)
+        bp = _microscope_base_as_position(tile)
+        if bp is None:
+            continue
+        pos = i + 1
+        if pos != bp:
+            continue
+        face_values = _microscope_face_number_values(tile)
+        if tile.curse == CurseType.LETTER:
+            ch = word[i]
+            if ch.isdigit() and int(ch) == bp:
+                uses.append(
+                    {
+                        "index": idx,
+                        "position": pos,
+                        "tile": tile.letter,
+                        "base_score": bp,
+                        "mode": "letter_as_digit",
+                    }
+                )
+            continue
+        if tile.curse == CurseType.NUMBER and pos not in face_values:
+            uses.append(
+                {
+                    "index": idx,
+                    "position": pos,
+                    "tile": tile.letter,
+                    "face": face_values[0] if face_values else None,
+                    "base_score": bp,
+                    "mode": "alternate_number_position",
+                }
+            )
+    return uses
+
+
+def format_microscope_position_hint(uses: list[dict[str, Any]]) -> str:
+    """Single-line hint for overlay / trace when Microscope position flex applies."""
+    if not uses:
+        return ""
+    parts: list[str] = []
+    for use in uses:
+        tile = str(use.get("tile") or "?")
+        pos = int(use["position"])
+        base = int(use["base_score"])
+        if use.get("mode") == "letter_as_digit":
+            parts.append(f"{tile} as digit {base} at position {pos}")
+        else:
+            face = use.get("face")
+            if face is not None:
+                parts.append(
+                    f"{tile} at position {pos} via base_score {base} (face {face})"
+                )
+            else:
+                parts.append(f"{tile} at position {pos} via base_score {base}")
+    return "Microscope: " + "; ".join(parts)
+
+
 def tile_number_position_values(
     tile: Tile,
     flags: SearchFlagsMask,
@@ -770,6 +854,14 @@ class PathValidator:
                     pattern_chars.append("?")
                     continue
                 if tile.curse != CurseType.NUMBER:
+                    if (
+                        flag_test(stamp_flags, FLAG_MICROSCOPE_BASE_SCORE)
+                        and _tile_digit_face_matches(ch, tile, stamp_flags)
+                    ):
+                        bp = _microscope_base_as_position(tile)
+                        if bp is not None and i + 1 == bp:
+                            pattern_chars.append("?")
+                            continue
                     return False
                 digit = int(ch)
                 nv = tile_number_value(tile)
@@ -3886,6 +3978,16 @@ class WordSearcher:
                 **self._pipeline_cache_kwargs(),
             )
             timing.final_score_sec += time.perf_counter() - t_final
+            ms_uses = microscope_position_uses(
+                board,
+                path,
+                word,
+                flags=self._solve_ctx.search_flags,
+            )
+            if ms_uses:
+                bd = dict(bd)
+                bd["microscope_positions"] = ms_uses
+                bd["microscope_hint"] = format_microscope_position_hint(ms_uses)
             unique.append(
                 WordResult(
                     word=word,

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Newtonsoft.Json;
 
 namespace CursedWordsSolverCompanion
 {
@@ -17,6 +18,7 @@ namespace CursedWordsSolverCompanion
         public Dictionary<string, string> extras = new Dictionary<string, string>();
         public Dictionary<string, object> export_diagnostics;
         public BoardSnapshot board;
+        public UiLayoutSnapshot ui_layout;
     }
 
     public sealed class RunStateItem
@@ -25,5 +27,11 @@ namespace CursedWordsSolverCompanion
         public string name = "";
         public int level = 1;
         public string kind = "sticker";
+
+        /// <summary>
+        /// Birthday Cake accumulated word bonus when this item is stored in RAM pin memory.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public int? birthday_cake_bonus;
     }
 }

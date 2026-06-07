@@ -105,3 +105,35 @@ def ram_has_active_pin(loadout: Loadout | None) -> bool:
         return False
     pin = str((loadout.extras or {}).get("pin_effect", "") or "").strip().lower()
     return pin in ("random_access_memory", "ram", "nat_h4")
+
+
+def pin_memory_has_birthday_cake(loadout: Loadout | None) -> bool:
+    """True when Birthday Cake is stored in RAM pin memory."""
+    if not ram_has_active_pin(loadout):
+        return False
+    for entry in pin_memory_entries(loadout):
+        slug = ram_entry_slug(entry)
+        if slug == "birthday_cake":
+            return True
+        if "birthday" in str(entry.get("name", "") or "").lower():
+            return True
+    return False
+
+
+def birthday_cake_bonus_from_pin_memory(loadout: Loadout | None) -> int | None:
+    """Accumulated word bonus embedded on Birthday Cake in pin_memory export."""
+    if not ram_has_active_pin(loadout):
+        return None
+    for entry in pin_memory_entries(loadout):
+        slug = ram_entry_slug(entry)
+        name = str(entry.get("name", "") or "").lower()
+        if slug != "birthday_cake" and "birthday" not in name:
+            continue
+        raw = entry.get("birthday_cake_bonus")
+        if raw is None:
+            return None
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            return None
+    return None

@@ -47,8 +47,6 @@ KNIGHT_DIRS = [
 STRAIGHT_DIRS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 DIAG_DIRS = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
 
-BLACK_HOME_ROW = 0
-WHITE_HOME_ROW = 4
 EN_PASSANT_BLACK_RANK = 1
 EN_PASSANT_WHITE_RANK = 3
 
@@ -534,6 +532,13 @@ def knight_neighbors(
     return out
 
 
+def _pawn_home_row(board: Board, side: str) -> int:
+    """Wiki: white home = second from top; black home = second from bottom."""
+    if side == "black":
+        return board.playable_max_row - 1
+    return board.playable_min_row + 1
+
+
 def _pawn_forward_delta(side: str) -> int:
     return 1 if side == "black" else -1
 
@@ -656,8 +661,7 @@ def pawn_neighbors(
             allies_can_take=False,
         ) and _unvisited_chess_at(board, fwd_idx, visited) is None:
             out.append(fwd_idx)
-            home = BLACK_HOME_ROW if moving_side == "black" else WHITE_HOME_ROW
-            if row == home:
+            if row == _pawn_home_row(board, moving_side):
                 nr2 = row + 2 * dr
                 if 0 <= nr2 < 5:
                     idx2 = index_of(nr2, col)

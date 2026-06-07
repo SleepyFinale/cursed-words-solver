@@ -225,6 +225,18 @@ def test_parse_run_state_normalizes_boss_modifiers_json_string():
     assert lo.extras["boss_modifiers"] == ["badger", "mole", "salamander"]
 
 
+def test_parse_run_state_normalizes_encounter_min_word_length():
+    lo = parse_run_state(
+        {
+            "character": "Nat-H4",
+            "extras": {"encounter_min_word_length": "25"},
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+    assert lo.extras["encounter_min_word_length"] == 25
+
+
 def test_parse_run_state_normalizes_michael_min_word_length():
     lo = parse_run_state(
         {
@@ -271,3 +283,77 @@ def test_read_run_state_json_retries_during_atomic_replace(tmp_path, monkeypatch
 
     assert data is not None
     assert data["character"] == "Test"
+
+
+def test_merge_encounter_historic_catches_disk_ahead_on_same_grid(tmp_path, monkeypatch):
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        merge_encounter_historic_for_f8_snapshot,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_penill_historic_shrink.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps(
+            {
+                "extras": {
+                    "historic_words": data["disk_hist"],
+                    "grid_number": data["grid_number"],
+                    "red_tiles_used_encounter": "3",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    embed = {
+        "extras": {
+            "historic_words": data["embed_hist"],
+            "grid_number": data["grid_number"],
+            "red_tiles_used_encounter": "1",
+        }
+    }
+    merged = merge_encounter_historic_for_f8_snapshot(embed)
+    assert merged is not None
+    assert merged["extras"]["historic_words"] == data["disk_hist"]
+
+
+def test_f8_historic_still_behind_disk_warning(tmp_path, monkeypatch):
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        f8_historic_still_behind_disk_warning,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_penill_historic_shrink.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps(
+            {
+                "extras": {
+                    "historic_words": data["disk_hist"],
+                    "grid_number": data["grid_number"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    note = f8_historic_still_behind_disk_warning(
+        {
+            "historic_words": data["embed_hist"],
+            "grid_number": data["grid_number"],
+        }
+    )
+    assert note is not None
+    assert "ahead of" in note
+    assert "F7" in note

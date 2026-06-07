@@ -468,6 +468,19 @@ def workflow_stale_vs_f8_snapshot(
     return "; ".join(notes)
 
 
+def f8_prediction_workflow_stale_warning(
+    run_state_extras: dict[str, Any] | None,
+    f8_snapshot_extras: dict[str, Any] | None,
+) -> str | None:
+    """Blocking-style warning when live run_state workflow drifted from the F8 embed."""
+    reason = workflow_stale_vs_f8_snapshot(run_state_extras, f8_snapshot_extras)
+    if reason is None:
+        return None
+    return (
+        f"F8 prediction may be wrong ({reason}) — press F7 in-game, then F8."
+    )
+
+
 def f8_prior_suggestion_stale_note(
     run_state_extras: dict[str, Any] | None,
 ) -> str | None:
@@ -901,6 +914,13 @@ def save_last_suggestion(
             }
             for p in consumable_placements
         ]
+
+    ms_hint = (result.breakdown or {}).get("microscope_hint")
+    if ms_hint:
+        payload["microscope_hint"] = ms_hint
+    ms_positions = (result.breakdown or {}).get("microscope_positions")
+    if ms_positions:
+        payload["microscope_positions"] = ms_positions
 
     LAST_SUGGESTION_PATH.write_text(
 

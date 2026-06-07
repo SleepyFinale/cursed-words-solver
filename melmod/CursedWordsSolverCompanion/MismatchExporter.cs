@@ -27,7 +27,10 @@ namespace CursedWordsSolverCompanion
             Dictionary<string, string> extrasSnapshot,
             string submitMethod,
             Player submitPlayer = null,
-            BoardSnapshot scoringBoardSnapshot = null
+            BoardSnapshot scoringBoardSnapshot = null,
+            Dictionary<string, string> preWordScoringExtras = null,
+            string f8PredictionHistoricStaleNote = null,
+            Dictionary<string, string> originalF8Extras = null
         )
         {
             if (suggestion == null)
@@ -62,12 +65,23 @@ namespace CursedWordsSolverCompanion
                 BoardExporter.MergeSubmitCardMetadataIntoRunState(runStateSnapshot, submitBoard);
             }
 
-            var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(suggestion.run_state_snapshot);
-            var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, extrasSnapshot);
+            var f8Extras = originalF8Extras != null && originalF8Extras.Count > 0
+                ? originalF8Extras
+                : ExtrasDiffHelper.ExtrasFromRunStateObject(suggestion.run_state_snapshot);
+            var diffExtras = preWordScoringExtras ?? extrasSnapshot;
+            var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, diffExtras);
             var staleCtx = submitPlayer != null
                 ? RunStateExporter.BuildStaleF8Context(submitPlayer)
                 : StaleF8Context.Default();
             var staleNote = ExtrasDiffHelper.DescribeStaleF8Extras(extrasDiff, staleCtx);
+            if (
+                string.IsNullOrEmpty(staleNote)
+                && !string.IsNullOrEmpty(f8PredictionHistoricStaleNote)
+            )
+                staleNote =
+                    "F8 snapshot stale — re-run F8 after your last word before trusting predicted scores ("
+                    + f8PredictionHistoricStaleNote
+                    + ")";
             var pathBoardMatch = SuggestionMatcher.MatchesSuggestion(
                 suggestion,
                 word,

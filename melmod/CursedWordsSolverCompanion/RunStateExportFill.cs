@@ -32,6 +32,26 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
+        /// True when incoming historic has fewer words than existing on the same grid (export shrink).
+        /// </summary>
+        public static bool HistoricWouldShrinkOnSameGrid(
+            string existingHistoric,
+            string incomingHistoric,
+            int gridNumber,
+            RunStateSnapshot snapshot = null
+        )
+        {
+            if (snapshot != null && ShouldClearEncounterHistoricOnEmptyExport(snapshot))
+                return false;
+
+            var incomingCount = CountHistoricWordsInJson(incomingHistoric);
+            var existingCount = CountHistoricWordsInJson(existingHistoric);
+            if (incomingCount >= existingCount)
+                return false;
+            return gridNumber >= 1;
+        }
+
+        /// <summary>
         /// Grid advance: mark metadata and re-export scoring historic from cache/live/disk.
         /// Does not wipe submit-hook previousWords or encounter historic JSON.
         /// </summary>
@@ -92,6 +112,7 @@ namespace CursedWordsSolverCompanion
             "michael_phase",
             "michael_summoned_bosses_defeated",
             "michael_puzzle_grid",
+            "encounter_min_word_length",
             "boss_modifier_floor_mods",
         };
 
@@ -426,6 +447,33 @@ namespace CursedWordsSolverCompanion
                 if (ShouldClearEncounterHistoricOnEmptyExport(snapshot))
                     ClearStaleEncounterHistoricExtras(snapshot, player, "live_empty");
                 return;
+            }
+
+            string builtHistoric;
+            if (built.TryGetValue("historic_words", out builtHistoric)
+                && !string.IsNullOrEmpty(builtHistoric)
+                && builtHistoric != "[]")
+            {
+                string existingHistoric = null;
+                snapshot.extras.TryGetValue("historic_words", out existingHistoric);
+                string fallbackHistoric = null;
+                if (fallbackExtras != null)
+                    fallbackExtras.TryGetValue("historic_words", out fallbackHistoric);
+                var longestExisting = PreferHistoricJson(existingHistoric, fallbackHistoric);
+                var grid = ResolveGridNumber(player);
+                if (HistoricWouldShrinkOnSameGrid(longestExisting, builtHistoric, grid, snapshot))
+                {
+                    built.Remove("historic_words");
+                    if (longestExisting != null && longestExisting != "[]")
+                        built["historic_words"] = longestExisting;
+                    string fallbackRed;
+                    if (
+                        fallbackExtras != null
+                        && fallbackExtras.TryGetValue("red_tiles_used_encounter", out fallbackRed)
+                        && !string.IsNullOrEmpty(fallbackRed)
+                    )
+                        built["red_tiles_used_encounter"] = fallbackRed;
+                }
             }
 
             foreach (var kv in built)
@@ -810,8 +858,26 @@ namespace CursedWordsSolverCompanion
             {
                 var liveCount = historic != null ? historic.Count : CountHistoricWordsInJson(serialized);
                 var fallbackCount = CountHistoricWordsInJson(fallbackHistoric);
+                var liveGrid = ResolveGridNumber(player);
+                var fallbackGrid = -1;
+                if (fallbackExtras != null)
+                {
+                    string gridRaw;
+                    if (fallbackExtras.TryGetValue("grid_number", out gridRaw))
+                        fallbackGrid = TryParseGridNumber(gridRaw);
+                }
+                var sameGrid =
+                    liveGrid >= 1
+                    && fallbackGrid >= 1
+                    && liveGrid == fallbackGrid;
                 if (liveCount > 0 && liveCount < fallbackCount)
-                    bestHistoric = serialized;
+                {
+                    // Same grid: live reflection can lag after the last scored word — keep longer disk/cache JSON.
+                    // Grid advance: shorter live list is the new encounter historic.
+                    bestHistoric = sameGrid || liveGrid <= fallbackGrid
+                        ? fallbackHistoric
+                        : serialized;
+                }
                 else if (
                     liveCount > 0
                     && liveCount == fallbackCount
@@ -1058,10 +1124,14 @@ namespace CursedWordsSolverCompanion
             var michaelBoss = TryFindMichaelBossExtended(player, bosses);
             var boss = bosses[0];
             var michaelMin = ResolveMichaelMinWordLength(boss, michaelBoss, player);
+            var liveMin = ResolveLiveEncounterMinWordLength(player, michaelBoss, snapshot);
             if (michaelMin > 0)
                 snapshot.extras["michael_min_word_length"] = michaelMin.ToString();
+            if (liveMin > 0)
+                snapshot.extras["encounter_min_word_length"] = liveMin.ToString();
 
             var finale = ResolveMichaelFinaleState(snapshot, player, bosses);
+            RecordMichaelFinaleProbe(snapshot, player, bosses, finale);
             if (finale.IsFinale)
             {
                 ApplyMichaelFinaleExport(snapshot, finale.MinWordLength);
@@ -1074,7 +1144,7 @@ namespace CursedWordsSolverCompanion
                 if (drafted >= 1 && drafted <= 3)
                     snapshot.extras["michael_phase"] = drafted.ToString();
 
-                if (michaelMin <= 0 && !_loggedMichaelMissingExtrasWarning)
+                if (michaelMin <= 0 && drafted >= 3 && !_loggedMichaelMissingExtrasWarning)
                 {
                     MelonLogger.Warning(
                         "Michael boss detected but final-phase/min-length extras were unavailable; "
@@ -1118,12 +1188,74 @@ namespace CursedWordsSolverCompanion
             if (fromList != null)
                 return fromList;
 
+            var fromPlayer = TryFindMichaelBossFromPlayer(player);
+            if (fromPlayer != null)
+                return fromPlayer;
+
             var encounter = BossResolver.TryGetEncounter();
             var fromEncounter = TryFindMichaelBossOnObject(encounter);
             if (fromEncounter != null)
                 return fromEncounter;
 
+            var fromPlayerScan = FindMichaelBossByTypeScan(player);
+            if (fromPlayerScan != null)
+                return fromPlayerScan;
+
+            var fromEncounterScan = FindMichaelBossByTypeScan(encounter);
+            if (fromEncounterScan != null)
+                return fromEncounterScan;
+
             return TryFindMichaelBossOnObject(player);
+        }
+
+        /// <summary>
+        /// Michael lives on Player.ActiveBossModifiers[0], not in EncounterController.GetBossModifiers().
+        /// </summary>
+        public static BossModifier TryFindMichaelBossFromPlayer(Player player)
+        {
+            if (player?.ActiveBossModifiers == null || player.ActiveBossModifiers.Count == 0)
+                return null;
+            var first = player.ActiveBossModifiers[0];
+            return IsMichaelBossModifier(first) ? first : null;
+        }
+
+        public static BossModifier FindMichaelBossByTypeScan(object target)
+        {
+            if (target == null)
+                return null;
+
+            var type = target.GetType();
+            foreach (var field in type.GetFields(MemberFlags))
+            {
+                try
+                {
+                    var val = field.GetValue(target);
+                    if (val is BossModifier bm && IsMichaelBossModifier(bm))
+                        return bm;
+                }
+                catch
+                {
+                    // optional
+                }
+            }
+
+            foreach (var prop in type.GetProperties(MemberFlags))
+            {
+                if (!prop.CanRead || prop.GetIndexParameters().Length > 0)
+                    continue;
+                try
+                {
+                    var val = prop.GetValue(target, null);
+                    if (val is BossModifier bm && IsMichaelBossModifier(bm))
+                        return bm;
+                }
+                catch
+                {
+                    // optional
+                }
+            }
+
+            return null;
         }
 
         private static BossModifier TryFindMichaelBossOnObject(object target)
@@ -1146,7 +1278,7 @@ namespace CursedWordsSolverCompanion
                     return boss;
             }
 
-            return null;
+            return FindMichaelBossByTypeScan(target);
         }
 
         private static bool IsMichaelBossModifier(BossModifier boss)
@@ -1263,17 +1395,20 @@ namespace CursedWordsSolverCompanion
             var boss = bosses[0];
             var michaelMin = ResolveMichaelMinWordLength(boss, michaelBoss, player);
             var drafted = ResolveMichaelDraftedCount(michaelBoss);
+            var liveMin = ResolveLiveEncounterMinWordLength(player, michaelBoss, snapshot);
 
-            if (michaelBoss != null && TryResolveMichaelFinale(michaelBoss, player, drafted, michaelMin))
+            if (michaelBoss != null && TryResolveMichaelFinale(michaelBoss, player, drafted, michaelMin, liveMin))
                 result.IsFinale = true;
             else if (IsMichaelPuzzleGridActive())
                 result.IsFinale = true;
             else if (IsMichaelSummonedBossesDefeated(player, michaelBoss))
                 result.IsFinale = true;
+            else if (IsMichaelAreaFinale(snapshot, player, liveMin))
+                result.IsFinale = true;
 
             if (!result.IsFinale)
             {
-                result.MinWordLength = michaelMin;
+                result.MinWordLength = liveMin > 0 ? liveMin : michaelMin;
                 return result;
             }
 
@@ -1282,11 +1417,144 @@ namespace CursedWordsSolverCompanion
                 player,
                 michaelBoss,
                 boss,
-                michaelMin
+                liveMin > 0 ? liveMin : michaelMin
             );
             if (result.MinWordLength <= 0)
                 result.MinWordLength = 25;
             return result;
+        }
+
+        public static int ResolveLiveEncounterMinWordLength(
+            Player player,
+            BossModifier michaelBoss,
+            RunStateSnapshot snapshot
+        )
+        {
+            if (IsMichaelSummonedBossesDefeated(player, michaelBoss))
+                return 25;
+
+            try
+            {
+                var tsm = UnityEngine.Object.FindAnyObjectByType<TileSelectionManager>();
+                if (tsm != null)
+                {
+                    if (
+                        TryGetBoolMember(
+                            tsm,
+                            "_isFinalPuzzleGrid",
+                            "IsFinalPuzzleGrid",
+                            "FinalPuzzleGrid"
+                        )
+                    )
+                        return 25;
+
+                    var fromTsm = TryGetIntMember(
+                        tsm,
+                        "MinWordLength",
+                        "MinimumWordLength",
+                        "RequiredWordLength",
+                        "WordLengthRequirement",
+                        "CurrentMinWordLength",
+                        "TargetWordLength",
+                        "WordLengthGoal"
+                    );
+                    if (fromTsm > 0)
+                        return fromTsm;
+                }
+            }
+            catch
+            {
+                // optional
+            }
+
+            var encounter = BossResolver.TryGetEncounter();
+            if (encounter != null)
+            {
+                var fromEncounter = TryGetIntMember(
+                    encounter,
+                    "MinWordLength",
+                    "MinimumWordLength",
+                    "RequiredWordLength",
+                    "WordLengthRequirement",
+                    "CurrentMinWordLength",
+                    "TargetWordLength",
+                    "MichaelMinWordLength",
+                    "WordsmithMinWordLength"
+                );
+                if (fromEncounter > 0)
+                    return fromEncounter;
+            }
+
+            if (michaelBoss != null && IsMichaelBossModifier(michaelBoss))
+            {
+                var drafted = ResolveMichaelDraftedCount(michaelBoss);
+                var area = ResolveMichaelRunArea(player);
+                if (area >= 6 && drafted >= 2 && CountActiveBoardTiles(snapshot) >= 25)
+                    return 25;
+            }
+
+            return -1;
+        }
+
+        private static int ResolveMichaelRunArea(Player player)
+        {
+            var area = BossResolver.TryGetRunStage(player);
+            if (area >= 6)
+                return area;
+
+            if (player != null)
+            {
+                area = TryGetIntProperty(
+                    player,
+                    "AreaNumber",
+                    "CurrentArea",
+                    "StageNumber",
+                    "CurrentStage",
+                    "AreaIndex"
+                );
+                if (area >= 6)
+                    return area;
+            }
+
+            return area;
+        }
+
+        private static bool IsMichaelAreaFinale(
+            RunStateSnapshot snapshot,
+            Player player,
+            int liveMin
+        )
+        {
+            if (liveMin < 25)
+                return false;
+            if (ResolveMichaelRunArea(player) < 6)
+                return false;
+            var activeTiles = CountActiveBoardTiles(snapshot);
+            return activeTiles >= liveMin;
+        }
+
+        private static void RecordMichaelFinaleProbe(
+            RunStateSnapshot snapshot,
+            Player player,
+            List<BossModifier> bosses,
+            MichaelFinaleState finale
+        )
+        {
+            if (snapshot == null || ResolveMichaelRunArea(player) < 6)
+                return;
+
+            var michaelBoss = TryFindMichaelBossExtended(player, bosses);
+            var liveMin = ResolveLiveEncounterMinWordLength(player, michaelBoss, snapshot);
+            var parts = new List<string>
+            {
+                "finale=" + (finale.IsFinale ? "1" : "0"),
+                "michael_boss=" + (michaelBoss != null ? "1" : "0"),
+                "summoned_defeated="
+                    + (IsMichaelSummonedBossesDefeated(player, michaelBoss) ? "1" : "0"),
+                "live_min=" + (liveMin > 0 ? liveMin.ToString() : "-"),
+                "active_tiles=" + CountActiveBoardTiles(snapshot),
+            };
+            snapshot.extras["michael_finale_probe"] = string.Join(",", parts);
         }
 
         public static int ResolveFinaleMinWordLength(
@@ -1344,6 +1612,7 @@ namespace CursedWordsSolverCompanion
             snapshot.extras["boss_modifiers"] = "[]";
             snapshot.extras.Remove("boss_modifier_floor_mods");
             snapshot.extras["michael_min_word_length"] = finaleMin.ToString();
+            snapshot.extras["encounter_min_word_length"] = finaleMin.ToString();
             if (IsMichaelPuzzleGridActive())
             {
                 snapshot.extras["michael_puzzle_grid"] = "true";
@@ -1357,7 +1626,8 @@ namespace CursedWordsSolverCompanion
             BossModifier michaelBoss,
             Player player,
             int draftedCount,
-            int michaelMin
+            int michaelMin,
+            int liveMin = -1
         )
         {
             if (michaelBoss == null)
@@ -1424,6 +1694,9 @@ namespace CursedWordsSolverCompanion
             if (phase >= 4)
                 return true;
 
+            var effectiveMin = liveMin > 0 ? liveMin : michaelMin;
+            if (draftedCount >= 2 && effectiveMin >= 25)
+                return true;
             if (draftedCount >= 3 && michaelMin >= 25)
                 return true;
 
@@ -1450,42 +1723,60 @@ namespace CursedWordsSolverCompanion
             Player player
         )
         {
-            var probe = michaelBoss ?? primaryBoss;
-            var michaelMin = TryGetIntMember(
-                probe,
-                "MinWordLength",
-                "MinimumWordLength",
-                "CurrentMinWordLength",
-                "RequiredWordLength",
-                "WordLengthRequirement",
-                "TargetWordLength",
-                "WordLengthGoal"
+            var michaelMin = ResolveMichaelMinWordLengthFromProbe(
+                michaelBoss ?? primaryBoss,
+                player
             );
             if (michaelMin < 0 && michaelBoss != null && michaelBoss != primaryBoss)
+                michaelMin = ResolveMichaelMinWordLengthFromProbe(primaryBoss, player);
+            if (michaelMin < 0)
+                michaelMin = ResolveMichaelMinFromDraftedBosses(michaelBoss);
+            if (michaelMin < 0)
+                michaelMin = ResolveMichaelMinFromDraftedBosses(primaryBoss);
+            return michaelMin;
+        }
+
+        private static int ResolveMichaelMinWordLengthFromProbe(
+            BossModifier probe,
+            Player player
+        )
+        {
+            if (probe == null && player == null)
+                return -1;
+
+            var michaelMin = -1;
+            if (probe != null)
             {
                 michaelMin = TryGetIntMember(
-                    primaryBoss,
+                    probe,
                     "MinWordLength",
                     "MinimumWordLength",
                     "CurrentMinWordLength",
                     "RequiredWordLength",
                     "WordLengthRequirement",
                     "TargetWordLength",
-                    "WordLengthGoal"
+                    "WordLengthGoal",
+                    "WordsmithMinWordLength",
+                    "CurrentWordsmithMinWordLength",
+                    "MichaelMinWordLength"
                 );
             }
-            if (michaelMin < 0)
+            if (michaelMin < 0 && player != null)
+            {
                 michaelMin = TryGetIntMember(
                     player,
                     "MichaelMinWordLength",
                     "WordsmithMinWordLength",
                     "BossMinWordLength",
-                    "MinWordLengthRequirement"
+                    "MinWordLengthRequirement",
+                    "CurrentMinWordLength"
                 );
+            }
             if (michaelMin < 0)
             {
                 var encounter = BossResolver.TryGetEncounter();
                 if (encounter != null)
+                {
                     michaelMin = TryGetIntMember(
                         encounter,
                         "MichaelMinWordLength",
@@ -1495,10 +1786,88 @@ namespace CursedWordsSolverCompanion
                         "RequiredWordLength",
                         "WordLengthRequirement",
                         "CurrentMinWordLength",
-                        "TargetWordLength"
+                        "TargetWordLength",
+                        "CurrentWordsmithMinWordLength"
                     );
+                    if (michaelMin < 0)
+                        michaelMin = TryFindMichaelMinOnObject(encounter);
+                }
             }
+            if (michaelMin < 0 && probe != null)
+                michaelMin = TryFindMichaelMinOnObject(probe);
             return michaelMin;
+        }
+
+        private static int TryFindMichaelMinOnObject(object target)
+        {
+            if (target == null)
+                return -1;
+
+            foreach (var name in new[]
+            {
+                "MichaelBoss",
+                "_michaelBoss",
+                "ActiveMichaelBoss",
+                "WordsmithController",
+                "TileSelectionManager",
+            })
+            {
+                var nested = TryGetBossModifierMember(target, name);
+                if (nested == null)
+                    continue;
+                var min = TryGetIntMember(
+                    nested,
+                    "MinWordLength",
+                    "MinimumWordLength",
+                    "CurrentMinWordLength",
+                    "WordsmithMinWordLength",
+                    "CurrentWordsmithMinWordLength",
+                    "RequiredWordLength",
+                    "WordLengthRequirement",
+                    "TargetWordLength",
+                    "WordLengthGoal"
+                );
+                if (min > 0)
+                    return min;
+            }
+
+            return -1;
+        }
+
+        private static int ResolveMichaelMinFromDraftedBosses(BossModifier michaelBoss)
+        {
+            if (michaelBoss == null)
+                return -1;
+
+            var draftedList = TryGetBossListMember(michaelBoss, "DraftedModifiers", isField: false);
+            if (draftedList == null)
+                draftedList = TryGetBossListMember(michaelBoss, "DraftedModifiers", isField: true);
+            if (draftedList == null)
+                draftedList = TryGetBossListMember(michaelBoss, "SummonedBosses", isField: false);
+            if (draftedList == null)
+                draftedList = TryGetBossListMember(michaelBoss, "SummonedBosses", isField: true);
+            if (draftedList == null || draftedList.Count == 0)
+                return -1;
+
+            var best = -1;
+            foreach (var drafted in draftedList)
+            {
+                if (drafted == null)
+                    continue;
+                var minLen = TryGetIntProperty(
+                    drafted,
+                    "MinWordLength",
+                    "MinimumWordLength",
+                    "CurrentMinWordLength",
+                    "RequiredWordLength",
+                    "WordLengthRequirement",
+                    "TargetWordLength",
+                    "WordLengthGoal"
+                );
+                if (minLen > best)
+                    best = minLen;
+            }
+            return best;
         }
 
         private static int CountActiveBoardTiles(RunStateSnapshot snapshot)

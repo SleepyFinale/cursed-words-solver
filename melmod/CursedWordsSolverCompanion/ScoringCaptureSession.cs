@@ -22,6 +22,11 @@ namespace CursedWordsSolverCompanion
         private static BoardSnapshot _boardAtSubmit;
         private static List<ConsumableRackTileSnapshot> _rackBefore;
         private static List<ConsumablePlacementRecord> _consumablePlacements;
+        private static Dictionary<string, string> _originalF8ExtrasForDiff =
+            new Dictionary<string, string>();
+        private static Dictionary<string, string> _preWordScoringExtrasForDiff =
+            new Dictionary<string, string>();
+        private static string _f8PredictionHistoricStaleNote = "";
 
         public static bool IsActive
         {
@@ -45,6 +50,9 @@ namespace CursedWordsSolverCompanion
             _roundTrace = null;
             _submitBoardSnapshot = null;
             _scoringContextExtras = new Dictionary<string, string>();
+            _originalF8ExtrasForDiff = new Dictionary<string, string>();
+            _preWordScoringExtrasForDiff = new Dictionary<string, string>();
+            _f8PredictionHistoricStaleNote = "";
             _suggestion = SuggestionMatcher.Load();
             _word = SuggestionMatcher.WordFromSubmit(selections, words);
             _path = SuggestionMatcher.PathFromSelections(selections);
@@ -176,6 +184,20 @@ namespace CursedWordsSolverCompanion
                 scoringExtras
             );
 
+            _originalF8ExtrasForDiff = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                _suggestion?.run_state_snapshot
+            );
+            _preWordScoringExtrasForDiff = authoritativeExtras != null
+                ? new Dictionary<string, string>(authoritativeExtras)
+                : new Dictionary<string, string>();
+            _f8PredictionHistoricStaleNote =
+                ExtrasDiffHelper.DescribeF8PredictionHistoricStaleNote(
+                    _originalF8ExtrasForDiff,
+                    authoritativeExtras
+                );
+            if (!string.IsNullOrEmpty(_f8PredictionHistoricStaleNote))
+                MelonLogger.Warning(_f8PredictionHistoricStaleNote);
+
             SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
                 _suggestion,
                 authoritativeExtras
@@ -223,6 +245,26 @@ namespace CursedWordsSolverCompanion
                     + " pts)"
                     + f8Seq
             );
+        }
+
+        /// <summary>Pre-word workflow extras for mismatch diff (not post-submit live merge).</summary>
+        public static Dictionary<string, string> GetPreWordScoringExtrasForMismatchDiff()
+        {
+            if (_preWordScoringExtrasForDiff == null || _preWordScoringExtrasForDiff.Count == 0)
+                return null;
+            return new Dictionary<string, string>(_preWordScoringExtrasForDiff);
+        }
+
+        public static Dictionary<string, string> GetOriginalF8ExtrasForMismatchDiff()
+        {
+            if (_originalF8ExtrasForDiff == null || _originalF8ExtrasForDiff.Count == 0)
+                return null;
+            return new Dictionary<string, string>(_originalF8ExtrasForDiff);
+        }
+
+        public static string GetF8PredictionHistoricStaleNote()
+        {
+            return _f8PredictionHistoricStaleNote ?? "";
         }
 
         /// <summary>
@@ -529,6 +571,7 @@ namespace CursedWordsSolverCompanion
                 return;
 
             CaptureBicycleAccumulatorFromSteps(steps);
+            CaptureBirthdayCakeBonusFromSteps(steps);
             CaptureNeapolitanPercentFromSteps(steps);
             CaptureRareItemCountFromSteps(steps);
             CaptureSnapshotCopyFromSteps(steps);
@@ -536,6 +579,32 @@ namespace CursedWordsSolverCompanion
             _roundTrace = ScoringTraceCollector.SerializeSteps(steps, _path);
             if (_active)
                 _actualTrace = _roundTrace;
+        }
+
+        /// <summary>
+        /// Persist post-word accumulated Birthday Cake total (not the in-word RAM step bonus).
+        /// </summary>
+        private static void CaptureBirthdayCakeBonusFromSteps(List<ScoreCalcVizInfo> steps)
+        {
+            if (steps == null || _scoringContextExtras == null)
+                return;
+
+            try
+            {
+                var player = RunStateExporter.GetPlayerForUpdate();
+                if (player == null || !RunStateExporter.HasBirthdayCakeInRun(player))
+                    return;
+
+                var bonus = RunStateExporter.TryGetBirthdayCakeBonus(player);
+                if (bonus < 0)
+                    return;
+
+                _scoringContextExtras["birthday_cake_bonus"] = bonus.ToString();
+            }
+            catch
+            {
+                // best-effort only
+            }
         }
 
         /// <summary>
@@ -905,7 +974,10 @@ namespace CursedWordsSolverCompanion
                         extras,
                         _submitMethod,
                         submitPlayer,
-                        _submitBoardSnapshot
+                        _submitBoardSnapshot,
+                        GetPreWordScoringExtrasForMismatchDiff(),
+                        GetF8PredictionHistoricStaleNote(),
+                        GetOriginalF8ExtrasForMismatchDiff()
                     );
                 }
 
@@ -922,6 +994,9 @@ namespace CursedWordsSolverCompanion
                 _active = false;
                 _captureCandidate = false;
                 _submitBoardSnapshot = null;
+                _originalF8ExtrasForDiff = new Dictionary<string, string>();
+                _preWordScoringExtrasForDiff = new Dictionary<string, string>();
+                _f8PredictionHistoricStaleNote = "";
                 CalculateOverallScorePatch.LastCalculatedSteps = null;
             }
         }

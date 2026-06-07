@@ -102,7 +102,7 @@ Field-by-field JSON documentation: `[melmod/README.md](melmod/README.md)`. Do no
 Pressing **F8** starts `_solve_worker` in `[app.py](cursed_words_solver/app.py)` on a background thread (UI updates are posted back to the Qt main thread via `_HotkeyBridge` signals).
 
 1. **Reload state** — Read `run_state.json` via `[loadout.py](cursed_words_solver/loadout.py)` (`load_run_state`, `parse_board_from_run_state`).
-2. **Board** — Re-read `run_state.json` on every F8 via `[loadout.py](cursed_words_solver/loadout.py)`. F8 fails with a clear message if the board is missing (press **F7** in-game). Sandy Saguaro fights and Sandy’s Mahjong Red Dragon pin wait briefly for `consumable_rack` auto-export on the first grid of an encounter. When rack placement improves the best score, amber dashed circles on the board overlay mark where to place consumables before tracing the green word path.
+2. **Board** — Re-read `run_state.json` on every F8 via `[loadout.py](cursed_words_solver/loadout.py)`. F8 fails with a clear message if the board is missing (press **F7** in-game). When consumables are on the rack but `consumable_rack` has not been exported yet, the solver waits briefly for melmod auto-export (Sandy Saguaro fights and any character with rack tiles). After the baseline word search, it simulates rack placements for any character with unplaced consumables and adopts them only when they improve the best score (Sandy Saguaro boss fights use mandatory placement-first search instead). When rack placement improves the best score, amber dashed circles on the board overlay mark where to place consumables before tracing the green word path; orange numbered circles on the consumable rack mark which slot to use (same step numbers as the path).
 3. **Dictionary** — `[dictionary.py](cursed_words_solver/dictionary.py)` loads `game_words.txt` when present (from melmod), else ENABLE1 (`[config.py](cursed_words_solver/config.py)` `resolve_wordlist`).
 4. **Search** — `[search.py](cursed_words_solver/search.py)` `WordSearcher.find_best_words` runs DFS over active tiles with curse-specific neighbors (standard adjacency, double-letter teleports, chess piece rules, wildcards). Chess movement follows [wiki rules](https://cursedwords.wiki.gg/wiki/Curses#Chess_pieces): piece-specific rays, same-color blocking, pawn forward/double/capture, en passant, and king cannot move into check — see `[chess_tiles.py](cursed_words_solver/rules/chess_tiles.py)`. With **Hungry Snake** (`horizontal_wrap`), col 0 and col 4 connect on each row for letter steps and for chess checks/sliding rays. `PathValidator` prunes invalid prefixes and enforces stamp-specific rules. Search is time-budgeted (`search_time_budget_sec`) with fair per-start slices; extra passes cover void/number words on boards with NUMBER tiles. Boss limits (e.g. Wolf max length, Hyena block) come from `[boss_effects.py](cursed_words_solver/rules/boss_effects.py)`.
 5. **Score** — Each candidate is scored by `[ScoringPipeline](cursed_words_solver/rules/pipeline.py)` using rules from `[data/wiki/stickers.json](data/wiki/stickers.json)` (`[rule_lookup.py](cursed_words_solver/rules/rule_lookup.py)`): base tile sum → Salamander/Robo-Monkey (boss) → grid path bonuses → pin → stickers → stamps, matching [wiki order](https://cursedwords.wiki.gg/wiki/Scoring).
@@ -110,11 +110,13 @@ Pressing **F8** starts `_solve_worker` in `[app.py](cursed_words_solver/app.py)`
 
 ### Display layer (overlays)
 
-Melmod provides *what* is on each tile; calibration tells the solver *where* the board is on screen.
+Melmod provides *what* is on each tile and **automatic overlay alignment** via `ui_layout` in `run_state.json` (board + consumable rack screen bounds from Unity). Manual F10 calibration is a fallback when `ui_layout` is missing.
 
 - **Result panel** — `[overlay.py](cursed_words_solver/ui/overlay.py)`: frameless, always-on-top widget in the **second column from the left**. Shows the best word and score, warnings, and an optional thumbnail from the last board capture.
-- **On-board path** — `[board_highlight.py](cursed_words_solver/ui/board_highlight.py)`: transparent, click-through window aligned to `board_region`. Numbered green circles and a connecting line mark the click order (`path_geometry`).
-- **Calibration** — **F10** runs `[ui/calibrate.py](cursed_words_solver/ui/calibrate.py)` to align the on-screen highlight overlay with the 5×5 grid.
+- **On-board path** — `[board_highlight.py](cursed_words_solver/ui/board_highlight.py)`: transparent, click-through window aligned to the melmod board bounds. Numbered green circles and a connecting line mark the click order (`path_geometry`). Amber dashed circles mark consumable placement cells on the grid before tracing the path.
+- **Consumable rack** — `[rack_highlight.py](cursed_words_solver/ui/rack_highlight.py)`: transparent overlay aligned to melmod rack bounds. Orange numbered circles mark which rack slot to drag for each path step (same numbers as the green path — disambiguates duplicate letters).
+- **Automatic layout** — `[UiLayoutExporter.cs](melmod/CursedWordsSolverCompanion/UiLayoutExporter.cs)` exports `ui_layout` on each F7/auto-export. Python reads it via `[ui/layout.py](cursed_words_solver/ui/layout.py)` on every F8.
+- **Manual calibration (fallback)** — **F10** runs `[ui/calibrate.py](cursed_words_solver/ui/calibrate.py)` when melmod layout is unavailable.
 - **Auto-clear** — When melmod is active, highlights watch board/loadout [fingerprints](cursed_words_solver/fingerprints.py) and clear on shop entry or a new round. Press **ESC** to hide manually.
 
 ## Hotkeys
@@ -124,17 +126,17 @@ Melmod provides *what* is on each tile; calibration tells the solver *where* the
 | F7           | In-game               | Force melmod export (board, loadout, `game_words.txt`) |
 | F8           | Solver (configurable) | Solve                                                  |
 | F9           | Solver                | Edit loadout manually                                  |
-| F10          | Solver                | Recalibrate board region                               |
+| F10          | Solver                | Manual overlay calibration (fallback if ui_layout missing) |
 | ESC          | Solver                | Hide overlay and board highlights                      |
 | Ctrl+Shift+Q | Solver                | Quit                                                   |
 
 ## Usage
 
-1. **Melmod** — Install (see [Quick start](#melonloader--companion-mod-required)), start a run, press **F7** once so `run_state.json` and `game_words.txt` exist.
-2. **Calibrate** — On first run (or `--calibrate` / **F10**), drag a rectangle over the 5×5 board for green path highlights.
-3. **Solve** — **F8**. Terminal shows `Board from melmod`, then `Done in … Best: WORD`. Overlay and green circles appear when calibrated.
+1. **Melmod** — Install (see [Quick start](#melonloader--companion-mod-required)), start a run, press **F7** once so `run_state.json`, `ui_layout`, and `game_words.txt` exist.
+2. **Solve** — **F8**. Terminal shows `Board from melmod` and `Overlay layout: melmod (auto)`. Green path circles and orange rack circles align automatically.
+3. **Manual fallback** — If `ui_layout` is missing (old melmod), use **F10** to drag board + rack regions once.
 4. **Quit** — **Ctrl+Shift+Q** or close the overlay. Ctrl+C often fails while global hotkeys are active.
-5. **Recalibrate** — **F10**; preview at `%USERPROFILE%\.cursed_words_solver\debug\calibration_preview.png`.
+5. **Recalibrate** — **F10** only when auto layout is unavailable; preview at `%USERPROFILE%\.cursed_words_solver\debug\calibration_preview.png`.
 
 Press **F9** to edit loadout manually if needed. Without `game_words.txt`, the solver falls back to ENABLE1 until you press **F7** in-game.
 
@@ -178,8 +180,9 @@ Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 
 | Key                      | Default  | Purpose                                                                                    |
 | ------------------------ | -------- | ------------------------------------------------------------------------------------------ |
-| `board_region`           | —        | `{x, y, width, height}` for on-board path highlights                                       |
-| `show_board_highlight`   | `true`   | Numbered circles on the game board                                                         |
+| `board_region`           | —        | Manual fallback `{x, y, width, height}` when melmod `ui_layout` is absent                  |
+| `rack_region`            | —        | Manual fallback consumable rack row (five equal slots)                                     |
+| `show_board_highlight`   | `true`   | Numbered circles on the game board and consumable rack                                     |
 | `hotkey`                 | `f8`     | Solve hotkey                                                                               |
 | `search_time_budget_sec` | `45`     | Seconds per solve for word search. Legacy values `2` / `15` / `30` auto-upgrade on startup |
 | `top_n_results`          | `3`      | Alternate words shown in the overlay                                                       |

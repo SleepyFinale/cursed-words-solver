@@ -163,6 +163,22 @@ def test_michael_min_word_length_constraint_from_extras():
     assert c.min_len == 25
 
 
+def test_michael_finale_fallback_boss_area_six_and_encounter_min_length():
+    loadout = _loadout(
+        boss_id="salamander",
+        extras={
+            "boss_modifiers": ["salamander", "robo_eel"],
+            "boss_area_number": 6,
+            "encounter_min_word_length": 25,
+        },
+    )
+    assert michael_finale_active(loadout, default_max_len=25)
+    assert active_boss_ids(loadout) == []
+    c = boss_word_constraints(loadout, RULES, default_max_len=25)
+    assert c.min_len == 25
+    assert c.max_len == 25
+
+
 def test_michael_min_word_length_does_not_require_copied_boss_effects():
     loadout = _loadout(
         boss_id="salamander",

@@ -65,14 +65,23 @@ namespace CursedWordsSolverCompanion
                 if (logSuccess)
                 {
                     MelonLogger.Msg("Exported run state to " + OutputPath);
+                    if (snapshot.ui_layout == null)
+                    {
+                        var status = UiLayoutExporter.LastStatus;
+                        MelonLogger.Warning(
+                            "ui_layout export failed ("
+                                + (string.IsNullOrEmpty(status) ? "unknown" : status)
+                                + ") — overlay will use manual F10 regions"
+                        );
+                    }
                     if (
-                        HasBirthdayCakeSticker(player)
+                        HasBirthdayCakeInRun(player)
                         && !snapshot.extras.ContainsKey("birthday_cake_bonus")
                     )
                         MelonLogger.Warning(
-                            "Birthday Cake is equipped but accumulated word bonus was not read — "
-                                + "scores may show Birthday 0; rebuild melmod or set "
-                                + "run_state.extras.birthday_cake_bonus manually"
+                            "Birthday Cake is active (equipped or RAM pin memory) but accumulated "
+                                + "word bonus was not read — scores may show Birthday 0; rebuild "
+                                + "melmod or set run_state.extras.birthday_cake_bonus manually"
                         );
                 }
                 else
@@ -306,10 +315,18 @@ namespace CursedWordsSolverCompanion
                 return true;
             if (string.Equals(existing, incoming, StringComparison.Ordinal))
                 return false;
+
+            var existingCount = RunStateExportFill.CountHistoricWordsInJson(existing);
+            var incomingCount = RunStateExportFill.CountHistoricWordsInJson(incoming);
+            var grid = RunStateExportFill.TryParseGridNumber(
+                TryReadExtraValue("grid_number")
+            );
+            if (grid >= 1 && incomingCount < existingCount)
+                return false;
+
             return RunStateExportFill.HistoricJsonRedTileCountSum(incoming)
                 > RunStateExportFill.HistoricJsonRedTileCountSum(existing)
-                || RunStateExportFill.CountHistoricWordsInJson(incoming)
-                    > RunStateExportFill.CountHistoricWordsInJson(existing);
+                || incomingCount > existingCount;
         }
 
         public static string TryReadRunStateExtra(string key)
@@ -764,6 +781,8 @@ namespace CursedWordsSolverCompanion
             FillStickerStampOrchestration(snapshot, player);
             FillRunContextExtras(snapshot, player);
             snapshot.board = BoardExporter.TryBuild(player);
+            if (snapshot.board != null)
+                snapshot.ui_layout = UiLayoutExporter.TryExport(snapshot.board);
             RunStateExportFill.ApplyMetadata(snapshot, player);
             if (snapshot.board != null)
                 ConsumablePlacementTracker.OnBoardSnapshot(snapshot.board);
@@ -1352,6 +1371,7 @@ namespace CursedWordsSolverCompanion
             }
 
             FillPinMemory(snapshot, pin);
+            ReconcileBirthdayCakeExtrasFromPinMemory(snapshot);
             FillBicycleExtras(snapshot, pin);
             FillFavourites(snapshot, character);
         }
@@ -1381,19 +1401,68 @@ namespace CursedWordsSolverCompanion
                     continue;
                 var name = item.Name ?? "";
                 var isStamp = item.IsStamp();
-                mapped.Add(
-                    new RunStateItem
-                    {
-                        id = Slugify(item.ArtFileName, name),
-                        name = name,
-                        level = isStamp ? 1 : item.TimesUpgraded + 1,
-                        kind = isStamp ? "stamp" : "sticker",
-                    }
-                );
+                var mappedItem = new RunStateItem
+                {
+                    id = Slugify(item.ArtFileName, name),
+                    name = name,
+                    level = isStamp ? 1 : item.TimesUpgraded + 1,
+                    kind = isStamp ? "stamp" : "sticker",
+                };
+                if (IsBirthdayCakeItem(item))
+                {
+                    var bonus = TryGetBirthdayCakeBonusFromItem(item);
+                    if (bonus >= 0)
+                        mappedItem.birthday_cake_bonus = bonus;
+                }
+                mapped.Add(mappedItem);
             }
 
             snapshot.extras["pin_memory"] = JsonConvert.SerializeObject(mapped);
             snapshot.extras["pin_memory_count"] = mapped.Count.ToString();
+        }
+
+        /// <summary>
+        /// Keep birthday_cake_bonus aligned with live RAM pin_memory (F8 prediction baseline).
+        /// </summary>
+        private static void ReconcileBirthdayCakeExtrasFromPinMemory(RunStateSnapshot snapshot)
+        {
+            if (snapshot?.extras == null)
+                return;
+            if (!snapshot.extras.TryGetValue("pin_memory", out var raw)
+                || string.IsNullOrWhiteSpace(raw))
+                return;
+
+            try
+            {
+                var items = JsonConvert.DeserializeObject<List<RunStateItem>>(raw);
+                if (items == null)
+                    return;
+                var best = -1;
+                foreach (var item in items)
+                {
+                    if (item == null)
+                        continue;
+                    var slug = Slugify(item.id ?? "", item.name ?? "");
+                    var name = item.name ?? "";
+                    if (!string.Equals(slug, "birthday_cake", StringComparison.OrdinalIgnoreCase)
+                        && name.IndexOf("birthday", StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+                    if (item.birthday_cake_bonus.HasValue && item.birthday_cake_bonus.Value > best)
+                        best = item.birthday_cake_bonus.Value;
+                }
+                if (best >= 0)
+                    snapshot.extras["birthday_cake_bonus"] = best.ToString();
+            }
+            catch
+            {
+                // pin_memory parse failure — leave existing extras
+            }
+        }
+
+        /// <summary>Random Access Memory pin (Nat-H4).</summary>
+        public static bool IsRandomAccessMemoryPinItem(Item pin)
+        {
+            return IsRandomAccessMemoryPin(pin);
         }
 
         private static bool IsRandomAccessMemoryPin(Item pin)
@@ -1947,20 +2016,237 @@ namespace CursedWordsSolverCompanion
 
         public static int TryGetBirthdayCakeBonus(Player player)
         {
+            if (player == null)
+                return -1;
+
+            var fromItems = TryGetBirthdayCakeBonusFromItemList(
+                TryEnumerateBirthdayCakeItems(player)
+            );
             var fromPlayer = TryGetIntProperty(
                 player,
                 "BirthdayCakeBonus",
                 "BirthdayCakeWordBonus",
                 "BirthdayCakeAccumulatedBonus"
             );
+
+            // Live item WordScoreBonus (RAM pin / equipped) can lead player scalar by one word.
+            if (fromItems >= 0 && fromPlayer >= 0)
+                return Math.Max(fromItems, fromPlayer);
+            if (fromItems >= 0)
+                return fromItems;
             if (fromPlayer >= 0)
                 return fromPlayer;
+            return -1;
+        }
 
-            return TryGetStickerAccumulatedWordBonus(
-                player,
-                name => name.IndexOf("Birthday", StringComparison.OrdinalIgnoreCase) >= 0,
-                art => art.IndexOf("birthday", StringComparison.OrdinalIgnoreCase) >= 0
-            );
+        /// <summary>
+        /// Birthday Cake running total after CalculateOverallScore (for next-word F8).
+        /// Falls back to the RAM pin additive word_bonus step when reflection fails.
+        /// </summary>
+        public static bool TryMergeBirthdayCakeExtrasAfterScore(
+            List<ScoreCalcVizInfo> steps = null
+        )
+        {
+            try
+            {
+                var player = GetPlayer();
+                if (player == null)
+                    return false;
+                if (!HasBirthdayCakeInRun(player))
+                    return true;
+
+                var bonus = TryGetBirthdayCakeBonus(player);
+                if (bonus < 0)
+                    return true;
+
+                var keys = new Dictionary<string, string>
+                {
+                    ["birthday_cake_bonus"] = bonus.ToString(),
+                };
+                if (TryBuildPinMemoryMergeExtras(player, out var pinExtras))
+                {
+                    foreach (var kv in pinExtras)
+                        keys[kv.Key] = kv.Value;
+                }
+
+                TryMergeExtrasKeys(keys);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static int TryGetBirthdayCakeBonusFromRamScoreStep(List<ScoreCalcVizInfo> steps)
+        {
+            if (steps == null)
+                return -1;
+
+            for (var i = 0; i < steps.Count; i++)
+            {
+                var step = steps[i];
+                if (step?.WordBonus == null)
+                    continue;
+                if (step.WordBonus.IsMultiplicative || step.WordBonus.IsPoison)
+                    continue;
+                if (step.RelevantItem == null || !IsRandomAccessMemoryPinItem(step.RelevantItem))
+                    continue;
+
+                var score = step.WordBonus.Bonus != null ? step.WordBonus.Bonus.Score : 0L;
+                if (score > 0L)
+                    return (int)score;
+            }
+
+            return -1;
+        }
+
+        private static IEnumerable<Item> TryEnumerateBirthdayCakeItems(Player player)
+        {
+            var seen = new HashSet<Item>();
+            if (player.Stickers != null)
+            {
+                foreach (var sticker in player.Stickers)
+                {
+                    if (sticker == null || !seen.Add(sticker))
+                        continue;
+                    yield return sticker;
+                }
+            }
+
+            List<Item> comparisonStickers = null;
+            try
+            {
+                comparisonStickers = player.GetStickers(forItemComparison: true);
+            }
+            catch
+            {
+                comparisonStickers = null;
+            }
+
+            if (comparisonStickers != null)
+            {
+                foreach (var sticker in comparisonStickers)
+                {
+                    if (sticker == null || !seen.Add(sticker))
+                        continue;
+                    yield return sticker;
+                }
+            }
+
+            var pin = player.MyCharacter?.CharacterItem;
+            if (pin == null || !IsRandomAccessMemoryPin(pin))
+                yield break;
+
+            var memoryItems = TryGetPinMemoryItems(pin, out _);
+            if (memoryItems == null)
+                yield break;
+
+            foreach (var item in memoryItems)
+            {
+                if (item == null || !seen.Add(item))
+                    continue;
+                yield return item;
+            }
+        }
+
+        private static int TryGetBirthdayCakeBonusFromItemList(IEnumerable<Item> items)
+        {
+            if (items == null)
+                return -1;
+
+            var best = -1;
+            foreach (var item in items)
+            {
+                if (!IsBirthdayCakeItem(item))
+                    continue;
+                var bonus = TryGetBirthdayCakeBonusFromItem(item);
+                if (bonus > best)
+                    best = bonus;
+            }
+
+            return best;
+        }
+
+        /// <summary>
+        /// Re-serialize pin_memory from live RAM so birthday_cake_bonus stays aligned with extras.
+        /// </summary>
+        private static bool TryBuildPinMemoryMergeExtras(
+            Player player,
+            out Dictionary<string, string> extras
+        )
+        {
+            extras = null;
+            if (player == null)
+                return false;
+
+            var pin = player.MyCharacter?.CharacterItem;
+            if (pin == null || !IsRandomAccessMemoryPin(pin))
+                return false;
+
+            var snapshot = new RunStateSnapshot();
+            FillPinMemory(snapshot, pin);
+            if (snapshot.extras == null || snapshot.extras.Count == 0)
+                return false;
+
+            extras = new Dictionary<string, string>();
+            if (snapshot.extras.TryGetValue("pin_memory", out var pinMemory))
+                extras["pin_memory"] = pinMemory;
+            if (snapshot.extras.TryGetValue("pin_memory_count", out var pinCount))
+                extras["pin_memory_count"] = pinCount;
+            if (snapshot.extras.TryGetValue("pin_memory_export_note", out var pinNote))
+                extras["pin_memory_export_note"] = pinNote;
+            return extras.Count > 0;
+        }
+
+        private static int TryGetBirthdayCakeBonusFromRamPinMemory(Player player)
+        {
+            return TryGetBirthdayCakeBonusFromItemList(TryEnumerateBirthdayCakeItems(player));
+        }
+
+        private static int TryGetBirthdayCakeBonusFromItem(Item item)
+        {
+            if (item == null)
+                return -1;
+
+            try
+            {
+                var cake = item as BirthdayCake;
+                if (cake != null)
+                    return (int)cake.WordScoreBonus;
+            }
+            catch
+            {
+                // fall through to reflection
+            }
+
+            var direct = TryGetIntMember(item, "WordScoreBonus");
+            if (direct >= 0)
+                return direct;
+
+            var bonus = TryGetAccumulatedWordBonusFromObject(item);
+            if (bonus >= 0)
+                return bonus;
+
+            foreach (var nested in TryGetNestedStickerTargets(item))
+            {
+                bonus = TryGetAccumulatedWordBonusFromObject(nested);
+                if (bonus >= 0)
+                    return bonus;
+            }
+
+            return -1;
+        }
+
+        private static bool IsBirthdayCakeItem(Item item)
+        {
+            if (item == null)
+                return false;
+            var name = item.Name ?? "";
+            var art = item.ArtFileName ?? "";
+            if (name.IndexOf("Birthday", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            return art.IndexOf("birthday", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>
@@ -2493,6 +2779,12 @@ namespace CursedWordsSolverCompanion
                     var prop = sticker.GetType().GetProperty(propName, MemberFlags);
                     if (prop != null)
                         nested = prop.GetValue(sticker, null);
+                    if (nested == null)
+                    {
+                        var field = sticker.GetType().GetField(propName, MemberFlags);
+                        if (field != null)
+                            nested = field.GetValue(sticker);
+                    }
                 }
                 catch
                 {
@@ -2765,15 +3057,35 @@ namespace CursedWordsSolverCompanion
             {
                 if (sticker == null)
                     continue;
-                var name = sticker.Name ?? "";
-                var art = sticker.ArtFileName ?? "";
-                if (name.IndexOf("Birthday", StringComparison.OrdinalIgnoreCase) >= 0)
-                    return true;
-                if (art.IndexOf("birthday", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (IsBirthdayCakeItem(sticker))
                     return true;
             }
 
             return false;
+        }
+
+        private static bool HasBirthdayCakeInPinMemory(Player player)
+        {
+            var pin = player?.MyCharacter?.CharacterItem;
+            if (pin == null || !IsRandomAccessMemoryPin(pin))
+                return false;
+
+            var items = TryGetPinMemoryItems(pin, out _);
+            if (items == null)
+                return false;
+
+            foreach (var item in items)
+            {
+                if (IsBirthdayCakeItem(item))
+                    return true;
+            }
+
+            return false;
+        }
+
+        public static bool HasBirthdayCakeInRun(Player player)
+        {
+            return HasBirthdayCakeSticker(player) || HasBirthdayCakeInPinMemory(player);
         }
 
         private static bool HasLuckyDiceSticker(Player player)

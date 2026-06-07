@@ -140,6 +140,70 @@ namespace CursedWordsSolverCompanion
 
 
 
+            return FormatStaleF8ExtrasMessage(notes);
+
+        }
+
+
+
+        public static string DescribeF8PredictionHistoricStaleNote(
+
+            Dictionary<string, string> originalF8Extras,
+
+            Dictionary<string, string> authoritativeExtras
+
+        )
+
+        {
+
+            if (originalF8Extras == null || authoritativeExtras == null)
+
+                return null;
+
+            string f8Raw;
+
+            string authRaw;
+
+            originalF8Extras.TryGetValue("historic_words", out f8Raw);
+
+            authoritativeExtras.TryGetValue("historic_words", out authRaw);
+
+            f8Raw = (f8Raw ?? "").Trim();
+
+            authRaw = (authRaw ?? "").Trim();
+
+            var f8Count = CountHistoricWordsInJson(f8Raw);
+
+            var authCount = CountHistoricWordsInJson(authRaw);
+
+            if (authCount <= f8Count)
+
+                return null;
+
+            if (string.IsNullOrEmpty(f8Raw) && authCount > 0)
+
+                return "F8 prediction used empty historic, score used " + authCount + "-word historic";
+
+            return "F8 prediction used " + f8Count + "-word historic, score used " + authCount + "-word historic";
+
+        }
+
+
+
+        private static int CountHistoricWordsInJson(string json)
+
+        {
+
+            return RunStateExportFill.CountHistoricWordsInJson(json);
+
+        }
+
+
+
+        private static string FormatStaleF8ExtrasMessage(List<string> notes)
+
+        {
+
             var sb = new StringBuilder();
 
             sb.Append(
