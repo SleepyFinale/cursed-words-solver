@@ -1,4 +1,16 @@
-"""Static 5×5 topology bitboards and per-solve board graph context."""
+"""Static 5×5 topology bitboards and per-solve board graph context.
+
+Precomputed at module load (indices 0–24, row-major):
+
+- ``STANDARD_ADJACENCY`` / ``NEIGHBORS_8``: default 8-way letter movement
+- ``STANDARD_ADJACENCY_WRAP`` / ``NEIGHBORS_8_WRAP``: same + Hungry Snake wrap
+- ``KNIGHT_ADJACENCY`` / ``KNIGHT_TARGETS``: knight L-moves
+- ``KING_STEP_MASK``: king one-step base (= ``NEIGHBORS_8``); legal king moves
+  still require runtime capture/check filtering in ``chess_tiles``
+- ``RAY_LINES`` / ``RAY_LINES_WRAP``: sliding rook/bishop/queen rays
+
+Pawn, white-tile jumps, and Full Moon teleports are not static adjacency tables.
+"""
 
 from __future__ import annotations
 
@@ -139,6 +151,12 @@ def _build_static_tables() -> tuple[list[int], list[int], list[int], tuple, tupl
     RAY_LINES_WRAP,
 ) = _build_static_tables()
 
+# Proposal-aligned aliases (same objects as the NEIGHBORS_* / KNIGHT_* tables).
+STANDARD_ADJACENCY = NEIGHBORS_8
+STANDARD_ADJACENCY_WRAP = NEIGHBORS_8_WRAP
+KNIGHT_ADJACENCY = KNIGHT_TARGETS
+KING_STEP_MASK = NEIGHBORS_8
+
 
 def iter_mask(mask: int) -> Iterator[int]:
     while mask:
@@ -149,6 +167,17 @@ def iter_mask(mask: int) -> Iterator[int]:
 
 def lowest_bit_index(mask: int) -> int:
     return (mask & -mask).bit_length() - 1
+
+
+def collect_mask_indices(mask: int, out: list[int]) -> int:
+    """Fill ``out[0:n]`` with set-bit indices; return ``n``. Reuses ``out`` storage."""
+    n = 0
+    while mask:
+        bit = (mask & -mask).bit_length() - 1
+        out[n] = bit
+        n += 1
+        mask &= mask - 1
+    return n
 
 
 def mask_from_indices(indices: list[int] | tuple[int, ...]) -> int:

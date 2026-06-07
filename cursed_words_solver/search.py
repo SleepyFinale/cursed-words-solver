@@ -6,7 +6,7 @@ import heapq
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
 
 from concurrent.futures import ProcessPoolExecutor
 
@@ -68,9 +68,11 @@ from cursed_words_solver.rules.chess_tiles import (
 )
 from cursed_words_solver.graph_bitboard import (
     BoardGraphContext,
+    CELL_COUNT,
     NEIGHBORS_8,
     NEIGHBORS_8_WRAP,
     build_board_graph_context,
+    collect_mask_indices,
     get_valid_extensions,
     iter_mask,
     mask_from_indices,
@@ -118,6 +120,7 @@ DIRS_8 = [
 TIME_CHECK_INTERVAL = 256
 DEFAULT_CANDIDATE_HEAP_SIZE = 100
 _WILDCARD_LETTERS = tuple("abcdefghijklmnopqrstuvwxyz")
+_NEIGHBOR_SCRATCH: list[int] = [0] * CELL_COUNT
 
 
 @dataclass
@@ -998,7 +1001,94 @@ def neighbors_from_tile(
 ) -> list[int]:
     """Curse-aware neighbor expansion."""
     mask = neighbors_mask(board, path, visited, flags=flags, graph_ctx=graph_ctx)
-    return list(iter_mask(mask))
+    return list(
+        _iter_expansion_neighbors(
+            board,
+            path,
+            visited,
+            flags=flags,
+            graph_ctx=graph_ctx,
+            nbr_mask=mask,
+        )
+    )
+
+
+def _insertion_sort_indices(
+    scratch: list[int],
+    n: int,
+    sort_key: Callable[[int], tuple],
+) -> None:
+    for i in range(1, n):
+        j = i
+        while j > 0 and sort_key(scratch[j]) < sort_key(scratch[j - 1]):
+            scratch[j], scratch[j - 1] = scratch[j - 1], scratch[j]
+            j -= 1
+
+
+def _iter_expansion_neighbors(
+    board: Board,
+    path: list[int],
+    visited: int | set[int],
+    *,
+    flags: SearchFlagsMask = 0,
+    hints: MultNeighborHints | None = None,
+    graph_ctx: BoardGraphContext | None = None,
+    nbr_mask: int | None = None,
+) -> Iterator[int]:
+    """Yield neighbor indices for DFS expansion; reuses scratch buffer instead of list(iter_mask)."""
+    if nbr_mask is None:
+        nbr_mask = neighbors_mask(
+            board, path, visited, flags=flags, graph_ctx=graph_ctx
+        )
+    if not nbr_mask:
+        return
+
+    n = collect_mask_indices(nbr_mask, _NEIGHBOR_SCRATCH)
+    if n <= 1:
+        for i in range(n):
+            yield _NEIGHBOR_SCRATCH[i]
+        return
+
+    last = board.get_by_index(path[-1])
+    if hints is not None:
+        letter_pos = len(path)
+
+        def sort_key(idx: int) -> tuple[int, int, float, int]:
+            tile = board.get_by_index(idx)
+            base = float(tile.base_score)
+            mult_pri = neighbor_mult_priority(
+                board, path, idx, hints, letter_pos=letter_pos
+            )
+            if is_fraction_tile(last):
+                if tile.curse == CurseType.NUMBER:
+                    return (mult_pri, 0, -base, idx)
+                return (mult_pri, 2, -base, idx)
+            if last.curse == CurseType.NUMBER:
+                if is_fraction_tile(tile):
+                    return (mult_pri, 0, -base, idx)
+                if is_number_like_tile(tile):
+                    return (mult_pri, 1, -base, idx)
+            return (mult_pri, 3, -base, idx)
+    else:
+
+        def sort_key(idx: int) -> tuple[int, float, int]:
+            tile = board.get_by_index(idx)
+            base = float(tile.base_score)
+            if is_fraction_tile(last):
+                if tile.curse == CurseType.NUMBER:
+                    return (0, -base, idx)
+                return (2, -base, idx)
+            if last.curse == CurseType.NUMBER:
+                if is_fraction_tile(tile):
+                    return (0, -base, idx)
+                if is_number_like_tile(tile):
+                    return (1, -base, idx)
+            return (3, -base, idx)
+
+    # Local copy: recursive DFS reuses _NEIGHBOR_SCRATCH while this generator runs.
+    ordered = _NEIGHBOR_SCRATCH[:n]
+    _insertion_sort_indices(ordered, n, sort_key)
+    yield from ordered
 
 
 def _neighbors_sorted_by_base_score(
@@ -1010,29 +1100,16 @@ def _neighbors_sorted_by_base_score(
     graph_ctx: BoardGraphContext | None = None,
     nbr_mask: int | None = None,
 ) -> list[int]:
-    if nbr_mask is None:
-        nbr_mask = neighbors_mask(
-            board, path, visited, flags=flags, graph_ctx=graph_ctx
+    return list(
+        _iter_expansion_neighbors(
+            board,
+            path,
+            visited,
+            flags=flags,
+            graph_ctx=graph_ctx,
+            nbr_mask=nbr_mask,
         )
-    nbrs = list(iter_mask(nbr_mask))
-    last = board.get_by_index(path[-1])
-
-    def sort_key(idx: int) -> tuple[int, float, int]:
-        tile = board.get_by_index(idx)
-        base = float(tile.base_score)
-        if is_fraction_tile(last):
-            if tile.curse == CurseType.NUMBER:
-                return (0, -base, idx)
-            return (2, -base, idx)
-        if last.curse == CurseType.NUMBER:
-            if is_fraction_tile(tile):
-                return (0, -base, idx)
-            if is_number_like_tile(tile):
-                return (1, -base, idx)
-        return (3, -base, idx)
-
-    nbrs.sort(key=sort_key)
-    return nbrs
+    )
 
 
 def _neighbors_sorted_for_loadout(
@@ -1049,8 +1126,7 @@ def _neighbors_sorted_for_loadout(
         nbr_mask = neighbors_mask(
             board, path, visited, flags=flags, graph_ctx=graph_ctx
         )
-    nbrs = list(iter_mask(nbr_mask))
-    if not hints or not nbrs:
+    if not hints or not nbr_mask:
         return _neighbors_sorted_by_base_score(
             board,
             path,
@@ -1059,28 +1135,17 @@ def _neighbors_sorted_for_loadout(
             graph_ctx=graph_ctx,
             nbr_mask=nbr_mask,
         )
-    last = board.get_by_index(path[-1])
-    letter_pos = len(path)
-
-    def sort_key(idx: int) -> tuple[int, int, float, int]:
-        tile = board.get_by_index(idx)
-        base = float(tile.base_score)
-        mult_pri = neighbor_mult_priority(
-            board, path, idx, hints, letter_pos=letter_pos
+    return list(
+        _iter_expansion_neighbors(
+            board,
+            path,
+            visited,
+            flags=flags,
+            hints=hints,
+            graph_ctx=graph_ctx,
+            nbr_mask=nbr_mask,
         )
-        if is_fraction_tile(last):
-            if tile.curse == CurseType.NUMBER:
-                return (mult_pri, 0, -base, idx)
-            return (mult_pri, 2, -base, idx)
-        if last.curse == CurseType.NUMBER:
-            if is_fraction_tile(tile):
-                return (mult_pri, 0, -base, idx)
-            if is_number_like_tile(tile):
-                return (mult_pri, 1, -base, idx)
-        return (mult_pri, 3, -base, idx)
-
-    nbrs.sort(key=sort_key)
-    return nbrs
+    )
 
 
 def _color_end_indices(board: Board, color_name: str) -> list[int]:
@@ -1253,7 +1318,7 @@ def _paths_between_indices(
         if len(path) >= max_len:
             return
         nbr_mask = neighbors_mask(board, path, visited, flags=flags)
-        for nbr in _neighbors_sorted_by_base_score(
+        for nbr in _iter_expansion_neighbors(
             board, path, visited, flags=flags, nbr_mask=nbr_mask
         ):
             path.append(nbr)
@@ -2213,7 +2278,7 @@ class WordSearcher:
                 flags=stamp_flags,
                 graph_ctx=graph_ctx,
             )
-            for idx in _neighbors_sorted_for_loadout(
+            for idx in _iter_expansion_neighbors(
                 board,
                 path,
                 visited_mask,

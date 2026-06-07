@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 from cursed_words_solver.graph_bitboard import (
+    KNIGHT_ADJACENCY,
     KNIGHT_TARGETS,
+    KING_STEP_MASK,
     NEIGHBORS_8,
     NEIGHBORS_8_WRAP,
     RAY_LINES,
+    STANDARD_ADJACENCY,
+    STANDARD_ADJACENCY_WRAP,
     build_board_graph_context,
+    collect_mask_indices,
     iter_mask,
     mask_from_indices,
 )
@@ -161,3 +166,18 @@ def test_mask_from_indices_roundtrip():
     indices = [0, 5, 12, 24]
     m = mask_from_indices(indices)
     assert list(iter_mask(m)) == indices
+
+
+def test_static_adjacency_aliases():
+    assert STANDARD_ADJACENCY is NEIGHBORS_8
+    assert STANDARD_ADJACENCY_WRAP is NEIGHBORS_8_WRAP
+    assert KNIGHT_ADJACENCY is KNIGHT_TARGETS
+    assert KING_STEP_MASK is NEIGHBORS_8
+
+
+def test_collect_mask_indices_matches_iter_mask():
+    scratch = [0] * 25
+    for mask in (0, 1, 1 << 12, NEIGHBORS_8[12], (1 << 0) | (1 << 24)):
+        expected = list(iter_mask(mask))
+        n = collect_mask_indices(mask, scratch)
+        assert scratch[:n] == expected
