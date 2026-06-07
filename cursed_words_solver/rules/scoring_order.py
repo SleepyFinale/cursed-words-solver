@@ -52,6 +52,29 @@ def capybara_shuffles_loadout(loadout: Loadout | None, rules: dict) -> bool:
     return False
 
 
+def path_grid_item_refs(
+    board: Board,
+    path: list[int],
+    rules: dict,
+    loadout: Loadout | None = None,
+    *,
+    cache: dict[tuple[int, ...], tuple[ScoringItemRef, ...]] | None = None,
+    cache_timing: object | None = None,
+) -> tuple[ScoringItemRef, ...]:
+    """Path-dependent scattered grid items; cached per path during a solve pass."""
+    key = tuple(path)
+    if cache is not None and key in cache:
+        if cache_timing is not None:
+            cache_timing.grid_refs_cache_hits += 1
+        return cache[key]
+    refs = tuple(_path_grid_item_refs(board, path, rules, loadout))
+    if cache is not None:
+        if cache_timing is not None:
+            cache_timing.grid_refs_cache_misses += 1
+        cache[key] = refs
+    return refs
+
+
 def _path_grid_item_refs(
     board: Board,
     path: list[int],
@@ -162,6 +185,25 @@ def _inventory_item_refs(loadout: Loadout, rules: dict) -> list[ScoringItemRef]:
     return refs
 
 
+def capybara_shuffled_loadout(
+    loadout: Loadout,
+    rules: dict,
+    path: list[int],
+    *,
+    cache: dict[tuple[int, ...], Loadout] | None = None,
+) -> Loadout:
+    """Return path-shuffled loadout, optionally cached per path."""
+    if not capybara_shuffles_loadout(loadout, rules):
+        return loadout
+    key = tuple(path)
+    if cache is not None and key in cache:
+        return cache[key]
+    shuffled = _maybe_shuffled_loadout(loadout, rules, path)
+    if cache is not None:
+        cache[key] = shuffled
+    return shuffled
+
+
 def build_scoring_item_sequence(
     board: Board,
     path: list[int],
@@ -169,14 +211,37 @@ def build_scoring_item_sequence(
     rules: dict,
     *,
     hourglass_reversed: bool | None = None,
+    inventory_refs: tuple[ScoringItemRef, ...] | list[ScoringItemRef] | None = None,
+    capybara_shuffles: bool | None = None,
+    grid_refs_cache: dict[tuple[int, ...], tuple[ScoringItemRef, ...]] | None = None,
+    capybara_loadout_cache: dict[tuple[int, ...], Loadout] | None = None,
+    grid_refs_timing: object | None = None,
 ) -> list[ScoringItemRef]:
     """Mirror GetItemsForWordSubmission + Hourglass reverse."""
     if not loadout:
         return []
-    loadout = _maybe_shuffled_loadout(loadout, rules, path)
-    refs = _path_grid_item_refs(board, path, rules, loadout) + _inventory_item_refs(
-        loadout, rules
+    if capybara_shuffles is None:
+        loadout = capybara_shuffled_loadout(
+            loadout, rules, path, cache=capybara_loadout_cache
+        )
+    elif capybara_shuffles:
+        loadout = capybara_shuffled_loadout(
+            loadout, rules, path, cache=capybara_loadout_cache
+        )
+    inv = (
+        list(inventory_refs)
+        if inventory_refs is not None
+        else _inventory_item_refs(loadout, rules)
     )
+    grid_refs = path_grid_item_refs(
+        board,
+        path,
+        rules,
+        loadout,
+        cache=grid_refs_cache,
+        cache_timing=grid_refs_timing,
+    )
+    refs = list(grid_refs) + inv
     reversed_order = (
         hourglass_reversed
         if hourglass_reversed is not None

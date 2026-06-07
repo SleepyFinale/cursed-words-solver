@@ -33,6 +33,72 @@ _LEGACY_STAMP_FLAGS: dict[str, dict[str, bool]] = {
     "television": {"chess_king_queen_item_movement": True},
 }
 
+FLAG_HORIZONTAL_WRAP = 1 << 0
+FLAG_DOUBLE_LETTER_TELEPORT = 1 << 1
+FLAG_Q_AS_QU = 1 << 2
+FLAG_RED_AS_E = 1 << 3
+FLAG_Z_AS_S = 1 << 4
+FLAG_SHINY_AS_ONE = 1 << 5
+FLAG_NUMBER_PLUS_MINUS_ONE = 1 << 6
+FLAG_CARD_SUIT_FIRST_LETTER = 1 << 7
+FLAG_RED_AS_S = 1 << 8
+FLAG_NUMBER_ASCENDING_FREE_POSITION = 1 << 9
+FLAG_WORD_STITCH = 1 << 10
+FLAG_NUMBER_ROMAN_IVX = 1 << 11
+FLAG_J_AS_H_OR_Y = 1 << 12
+FLAG_RED_LETTER_PLUS_MINUS_ONE = 1 << 13
+FLAG_CHESS_ALLIES_CAN_TAKE = 1 << 14
+FLAG_CHESS_KING_QUEEN_ITEM_MOVEMENT = 1 << 15
+FLAG_MICROSCOPE_BASE_SCORE = 1 << 16
+
+SearchFlagsMask = int
+
+_FLAG_KEY_BITS: dict[str, int] = {
+    "horizontal_wrap": FLAG_HORIZONTAL_WRAP,
+    "double_letter_teleport": FLAG_DOUBLE_LETTER_TELEPORT,
+    "q_as_qu": FLAG_Q_AS_QU,
+    "red_as_e": FLAG_RED_AS_E,
+    "z_as_s": FLAG_Z_AS_S,
+    "shiny_as_one": FLAG_SHINY_AS_ONE,
+    "number_plus_minus_one": FLAG_NUMBER_PLUS_MINUS_ONE,
+    "card_suit_first_letter": FLAG_CARD_SUIT_FIRST_LETTER,
+    "red_as_s": FLAG_RED_AS_S,
+    "number_ascending_free_position": FLAG_NUMBER_ASCENDING_FREE_POSITION,
+    "word_stitch": FLAG_WORD_STITCH,
+    "number_roman_ivx": FLAG_NUMBER_ROMAN_IVX,
+    "j_as_h_or_y": FLAG_J_AS_H_OR_Y,
+    "red_letter_plus_minus_one": FLAG_RED_LETTER_PLUS_MINUS_ONE,
+    "chess_allies_can_take": FLAG_CHESS_ALLIES_CAN_TAKE,
+    "chess_king_queen_item_movement": FLAG_CHESS_KING_QUEEN_ITEM_MOVEMENT,
+    "microscope_base_score": FLAG_MICROSCOPE_BASE_SCORE,
+}
+
+
+def coerce_search_flags(
+    flags: SearchFlagsMask | StampSearchFlags | None,
+) -> SearchFlagsMask:
+    if flags is None:
+        return 0
+    if isinstance(flags, int):
+        return flags
+    return mask_from_flags(flags)
+
+
+def flag_test(mask: SearchFlagsMask, flag: int) -> bool:
+    return bool(mask & flag)
+
+
+def flag_set(mask: SearchFlagsMask, *flags: int) -> SearchFlagsMask:
+    for f in flags:
+        mask |= f
+    return mask
+
+
+def flag_clear(mask: SearchFlagsMask, *flags: int) -> SearchFlagsMask:
+    for f in flags:
+        mask &= ~f
+    return mask
+
 
 @dataclass(frozen=True)
 class StampSearchFlags:
@@ -53,6 +119,67 @@ class StampSearchFlags:
     chess_allies_can_take: bool = False
     chess_king_queen_item_movement: bool = False
     microscope_base_score: bool = False
+
+
+def mask_from_flags(flags: StampSearchFlags) -> SearchFlagsMask:
+    mask = 0
+    if flags.horizontal_wrap:
+        mask |= FLAG_HORIZONTAL_WRAP
+    if flags.double_letter_teleport:
+        mask |= FLAG_DOUBLE_LETTER_TELEPORT
+    if flags.q_as_qu:
+        mask |= FLAG_Q_AS_QU
+    if flags.red_as_e:
+        mask |= FLAG_RED_AS_E
+    if flags.z_as_s:
+        mask |= FLAG_Z_AS_S
+    if flags.shiny_as_one:
+        mask |= FLAG_SHINY_AS_ONE
+    if flags.number_plus_minus_one:
+        mask |= FLAG_NUMBER_PLUS_MINUS_ONE
+    if flags.card_suit_first_letter:
+        mask |= FLAG_CARD_SUIT_FIRST_LETTER
+    if flags.red_as_s:
+        mask |= FLAG_RED_AS_S
+    if flags.number_ascending_free_position:
+        mask |= FLAG_NUMBER_ASCENDING_FREE_POSITION
+    if flags.word_stitch:
+        mask |= FLAG_WORD_STITCH
+    if flags.number_roman_ivx:
+        mask |= FLAG_NUMBER_ROMAN_IVX
+    if flags.j_as_h_or_y:
+        mask |= FLAG_J_AS_H_OR_Y
+    if flags.red_letter_plus_minus_one:
+        mask |= FLAG_RED_LETTER_PLUS_MINUS_ONE
+    if flags.chess_allies_can_take:
+        mask |= FLAG_CHESS_ALLIES_CAN_TAKE
+    if flags.chess_king_queen_item_movement:
+        mask |= FLAG_CHESS_KING_QUEEN_ITEM_MOVEMENT
+    if flags.microscope_base_score:
+        mask |= FLAG_MICROSCOPE_BASE_SCORE
+    return mask
+
+
+def flags_from_mask(mask: SearchFlagsMask) -> StampSearchFlags:
+    return StampSearchFlags(
+        horizontal_wrap=flag_test(mask, FLAG_HORIZONTAL_WRAP),
+        double_letter_teleport=flag_test(mask, FLAG_DOUBLE_LETTER_TELEPORT),
+        q_as_qu=flag_test(mask, FLAG_Q_AS_QU),
+        red_as_e=flag_test(mask, FLAG_RED_AS_E),
+        z_as_s=flag_test(mask, FLAG_Z_AS_S),
+        shiny_as_one=flag_test(mask, FLAG_SHINY_AS_ONE),
+        number_plus_minus_one=flag_test(mask, FLAG_NUMBER_PLUS_MINUS_ONE),
+        card_suit_first_letter=flag_test(mask, FLAG_CARD_SUIT_FIRST_LETTER),
+        red_as_s=flag_test(mask, FLAG_RED_AS_S),
+        number_ascending_free_position=flag_test(mask, FLAG_NUMBER_ASCENDING_FREE_POSITION),
+        word_stitch=flag_test(mask, FLAG_WORD_STITCH),
+        number_roman_ivx=flag_test(mask, FLAG_NUMBER_ROMAN_IVX),
+        j_as_h_or_y=flag_test(mask, FLAG_J_AS_H_OR_Y),
+        red_letter_plus_minus_one=flag_test(mask, FLAG_RED_LETTER_PLUS_MINUS_ONE),
+        chess_allies_can_take=flag_test(mask, FLAG_CHESS_ALLIES_CAN_TAKE),
+        chess_king_queen_item_movement=flag_test(mask, FLAG_CHESS_KING_QUEEN_ITEM_MOVEMENT),
+        microscope_base_score=flag_test(mask, FLAG_MICROSCOPE_BASE_SCORE),
+    )
 
 
 @lru_cache(maxsize=1)
@@ -87,10 +214,10 @@ def _flags_from_rule(slug: str, rule: dict | None) -> dict[str, bool]:
     return _LEGACY_STAMP_FLAGS.get(slug, {})
 
 
-def stamp_search_flags(loadout: Loadout | None) -> StampSearchFlags:
+def _merged_flag_keys(loadout: Loadout | None) -> dict[str, bool]:
     merged: dict[str, bool] = {}
     if not loadout:
-        return StampSearchFlags()
+        return merged
     rules = _catalog()
     for stamp in loadout.stamps:
         slug = slugify_name(stamp.id or stamp.name)
@@ -113,22 +240,18 @@ def stamp_search_flags(loadout: Loadout | None) -> StampSearchFlags:
         for k, v in _flags_from_rule(slug, rule).items():
             if v:
                 merged[k] = True
-    return StampSearchFlags(
-        horizontal_wrap=merged.get("horizontal_wrap", False),
-        double_letter_teleport=merged.get("double_letter_teleport", False),
-        q_as_qu=merged.get("q_as_qu", False),
-        red_as_e=merged.get("red_as_e", False),
-        z_as_s=merged.get("z_as_s", False),
-        shiny_as_one=merged.get("shiny_as_one", False),
-        number_plus_minus_one=merged.get("number_plus_minus_one", False),
-        card_suit_first_letter=merged.get("card_suit_first_letter", False),
-        red_as_s=merged.get("red_as_s", False),
-        number_ascending_free_position=merged.get("number_ascending_free_position", False),
-        word_stitch=merged.get("word_stitch", False),
-        number_roman_ivx=merged.get("number_roman_ivx", False),
-        j_as_h_or_y=merged.get("j_as_h_or_y", False),
-        red_letter_plus_minus_one=merged.get("red_letter_plus_minus_one", False),
-        chess_allies_can_take=merged.get("chess_allies_can_take", False),
-        chess_king_queen_item_movement=merged.get("chess_king_queen_item_movement", False),
-        microscope_base_score=loadout_has_stamp(loadout, "microscope"),
-    )
+    if loadout_has_stamp(loadout, "microscope"):
+        merged["microscope_base_score"] = True
+    return merged
+
+
+def stamp_search_flags_mask(loadout: Loadout | None) -> SearchFlagsMask:
+    mask = 0
+    for key, bit in _FLAG_KEY_BITS.items():
+        if _merged_flag_keys(loadout).get(key):
+            mask |= bit
+    return mask
+
+
+def stamp_search_flags(loadout: Loadout | None) -> StampSearchFlags:
+    return flags_from_mask(stamp_search_flags_mask(loadout))

@@ -5,13 +5,33 @@ from __future__ import annotations
 from collections import OrderedDict
 
 from cursed_words_solver.fingerprints import board_fingerprint
+from cursed_words_solver.graph_bitboard import (
+    DIAG_DIR_INDICES,
+    KNIGHT_TARGETS,
+    NEIGHBORS_8,
+    NEIGHBORS_8_WRAP,
+    RAY_LINES,
+    RAY_LINES_WRAP,
+    STRAIGHT_DIR_INDICES,
+    get_valid_extensions,
+    iter_mask,
+    mask_from_indices,
+)
 from cursed_words_solver.models import (
     CHESS_CURSES,
     Board,
     CurseType,
     Tile,
 )
-from cursed_words_solver.rules.stamp_behaviors import StampSearchFlags
+from cursed_words_solver.rules.stamp_behaviors import (
+    FLAG_CHESS_ALLIES_CAN_TAKE,
+    FLAG_CHESS_KING_QUEEN_ITEM_MOVEMENT,
+    FLAG_HORIZONTAL_WRAP,
+    SearchFlagsMask,
+    coerce_search_flags,
+    flag_set,
+    flag_test,
+)
 
 DIRS_8 = [
     (-1, -1), (-1, 0), (-1, 1),
@@ -218,6 +238,211 @@ def _ray_step(
     if col == 0 and dc < 0:
         return nr, 4
     return None
+
+
+def _ray_neighbors_mask(
+    board: Board,
+    start_idx: int,
+    visited_mask: int,
+    *,
+    moving_side: str,
+    allies_can_take: bool,
+    straight: bool = False,
+    diagonal: bool = False,
+    horizontal_wrap: bool = False,
+) -> int:
+    lines = RAY_LINES_WRAP if horizontal_wrap else RAY_LINES
+    dir_indices: list[int] = []
+    if straight:
+        dir_indices.extend(STRAIGHT_DIR_INDICES)
+    if diagonal:
+        dir_indices.extend(DIAG_DIR_INDICES)
+    mask = 0
+    for d in dir_indices:
+        for idx in lines[start_idx][d]:
+            if not board.is_active_index(idx):
+                continue
+            if _chess_piece_at(board, idx) is not None:
+                if can_land_on_chess_square(
+                    board,
+                    idx,
+                    moving_side,
+                    visited_mask,
+                    allies_can_take=allies_can_take,
+                ):
+                    mask |= 1 << idx
+                break
+            if visited_mask & (1 << idx):
+                continue
+            mask |= 1 << idx
+    return mask
+
+
+def knight_neighbors_mask(
+    board: Board,
+    start_idx: int,
+    visited_mask: int,
+    *,
+    moving_side: str,
+    allies_can_take: bool = False,
+) -> int:
+    mask = 0
+    for idx in iter_mask(KNIGHT_TARGETS[start_idx]):
+        if can_land_on_chess_square(
+            board,
+            idx,
+            moving_side,
+            visited_mask,
+            allies_can_take=allies_can_take,
+        ):
+            mask |= 1 << idx
+    return mask
+
+
+def king_neighbors_mask(
+    board: Board,
+    start_idx: int,
+    visited_mask: int,
+    *,
+    moving_side: str,
+    allies_can_take: bool = False,
+    horizontal_wrap: bool = False,
+) -> int:
+    opp = opposite_side(moving_side)
+    base = NEIGHBORS_8_WRAP[start_idx] if horizontal_wrap else NEIGHBORS_8[start_idx]
+    mask = 0
+    for idx in iter_mask(base):
+        nr, nc = idx // 5, idx % 5
+        if not can_land_on_chess_square(
+            board,
+            idx,
+            moving_side,
+            visited_mask,
+            allies_can_take=allies_can_take,
+        ):
+            continue
+        if is_square_attacked(
+            board, nr, nc, opp, visited_mask, horizontal_wrap=horizontal_wrap
+        ):
+            continue
+        mask |= 1 << idx
+    return mask
+
+
+def pawn_neighbors_mask(
+    board: Board,
+    start_idx: int,
+    visited_mask: int,
+    *,
+    moving_side: str,
+    allies_can_take: bool = False,
+) -> int:
+    return mask_from_indices(
+        pawn_neighbors(
+            board,
+            start_idx,
+            visited_mask,
+            moving_side=moving_side,
+            allies_can_take=allies_can_take,
+        )
+    )
+
+
+def _television_item_neighbors_mask(
+    visited_mask: int,
+    *,
+    item_mask: int,
+    active_mask: int,
+) -> int:
+    return get_valid_extensions(item_mask & active_mask, visited_mask)
+
+
+def chess_neighbors_mask(
+    board: Board,
+    start_idx: int,
+    visited_mask: int,
+    flags: SearchFlagsMask,
+    *,
+    item_mask: int = 0,
+    active_mask: int = 0,
+) -> int:
+    """Curse-aware neighbor bitmask when stepping from a chess piece."""
+    flags = coerce_search_flags(flags)
+    last_tile = board.get_by_index(start_idx)
+    if not chess_side_known(last_tile):
+        return 0
+    side = chess_side(last_tile)
+    allies = flag_test(flags, FLAG_CHESS_ALLIES_CAN_TAKE)
+    wrap = flag_test(flags, FLAG_HORIZONTAL_WRAP)
+
+    curse = last_tile.curse
+    if curse == CurseType.CHESS_KNIGHT:
+        mask = knight_neighbors_mask(
+            board, start_idx, visited_mask, moving_side=side, allies_can_take=allies
+        )
+    elif curse == CurseType.CHESS_ROOK:
+        mask = _ray_neighbors_mask(
+            board,
+            start_idx,
+            visited_mask,
+            moving_side=side,
+            allies_can_take=allies,
+            straight=True,
+            horizontal_wrap=wrap,
+        )
+    elif curse == CurseType.CHESS_BISHOP:
+        mask = _ray_neighbors_mask(
+            board,
+            start_idx,
+            visited_mask,
+            moving_side=side,
+            allies_can_take=allies,
+            diagonal=True,
+            horizontal_wrap=wrap,
+        )
+    elif curse == CurseType.CHESS_QUEEN:
+        mask = _ray_neighbors_mask(
+            board,
+            start_idx,
+            visited_mask,
+            moving_side=side,
+            allies_can_take=allies,
+            straight=True,
+            diagonal=True,
+            horizontal_wrap=wrap,
+        )
+    elif curse == CurseType.CHESS_KING:
+        mask = king_neighbors_mask(
+            board,
+            start_idx,
+            visited_mask,
+            moving_side=side,
+            allies_can_take=allies,
+            horizontal_wrap=wrap,
+        )
+    elif curse == CurseType.CHESS_PAWN:
+        mask = pawn_neighbors_mask(
+            board, start_idx, visited_mask, moving_side=side, allies_can_take=allies
+        )
+    else:
+        mask = 0
+
+    if flag_test(flags, FLAG_CHESS_KING_QUEEN_ITEM_MOVEMENT) and curse in (
+        CurseType.CHESS_KING,
+        CurseType.CHESS_QUEEN,
+    ):
+        if not active_mask:
+            active_mask = sum(1 << i for i in _active_indices(board))
+        if not item_mask:
+            item_mask = sum(
+                1 << i
+                for i in _active_indices(board)
+                if board.get_by_index(i).curse == CurseType.ITEM
+            )
+        mask |= _television_item_neighbors_mask(
+            visited_mask, item_mask=item_mask, active_mask=active_mask
+        )
+    return mask
 
 
 def _ray_neighbors(
@@ -953,79 +1178,18 @@ def chess_neighbors(
     board: Board,
     path: list[int],
     visited: int | set[int],
-    flags: StampSearchFlags,
+    flags: SearchFlagsMask,
 ) -> list[int]:
     """Curse-aware neighbors when stepping from a chess piece."""
-    last_tile = board.get_by_index(path[-1])
-    if not chess_side_known(last_tile):
-        return []
-    start_idx = path[-1]
-    side = chess_side(last_tile)
-    allies = flags.chess_allies_can_take
-    wrap = flags.horizontal_wrap
-
-    curse = last_tile.curse
-    if curse == CurseType.CHESS_KNIGHT:
-        out = knight_neighbors(
-            board, start_idx, visited, moving_side=side, allies_can_take=allies
-        )
-    elif curse == CurseType.CHESS_ROOK:
-        out = _ray_neighbors(
-            board,
-            start_idx,
-            visited,
-            moving_side=side,
-            allies_can_take=allies,
-            straight=True,
-            horizontal_wrap=wrap,
-        )
-    elif curse == CurseType.CHESS_BISHOP:
-        out = _ray_neighbors(
-            board,
-            start_idx,
-            visited,
-            moving_side=side,
-            allies_can_take=allies,
-            diagonal=True,
-            horizontal_wrap=wrap,
-        )
-    elif curse == CurseType.CHESS_QUEEN:
-        out = _ray_neighbors(
-            board,
-            start_idx,
-            visited,
-            moving_side=side,
-            allies_can_take=allies,
-            straight=True,
-            diagonal=True,
-            horizontal_wrap=wrap,
-        )
-    elif curse == CurseType.CHESS_KING:
-        out = king_neighbors(
-            board,
-            start_idx,
-            visited,
-            moving_side=side,
-            allies_can_take=allies,
-            horizontal_wrap=wrap,
-        )
-    elif curse == CurseType.CHESS_PAWN:
-        out = pawn_neighbors(
-            board, start_idx, visited, moving_side=side, allies_can_take=allies
-        )
-    else:
-        out = []
-
-    if flags.chess_king_queen_item_movement and curse in (
-        CurseType.CHESS_KING,
-        CurseType.CHESS_QUEEN,
-    ):
-        seen = set(out)
-        for idx in _television_item_neighbors(board, visited):
-            if idx not in seen:
-                out.append(idx)
-                seen.add(idx)
-    return out
+    visited_mask = (
+        visited
+        if isinstance(visited, int)
+        else mask_from_indices(visited)
+    )
+    mask = chess_neighbors_mask(
+        board, path[-1], visited_mask, flags
+    )
+    return list(iter_mask(mask))
 
 
 def identical_chess_piece(a: Tile, b: Tile) -> bool:
@@ -1045,7 +1209,7 @@ def is_chess_capture_step(
     allies_can_take: bool = False,
     path_prefix: list[int] | None = None,
     visited: int | set[int] | None = None,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
 ) -> bool:
     """True when a chess step lands on an opponent (or ally take) or en passant."""
     from_tile = board.get_by_index(from_idx)
@@ -1057,16 +1221,11 @@ def is_chess_capture_step(
         visited if visited is not None else {from_idx}
     )
 
-    if flags is None:
-        search_flags = StampSearchFlags(chess_allies_can_take=allies_can_take)
-    elif allies_can_take and not flags.chess_allies_can_take:
-        search_flags = StampSearchFlags(
-            horizontal_wrap=flags.horizontal_wrap,
-            chess_allies_can_take=True,
-            chess_king_queen_item_movement=flags.chess_king_queen_item_movement,
-        )
-    else:
-        search_flags = flags
+    search_flags = coerce_search_flags(flags)
+    if allies_can_take and not flag_test(search_flags, FLAG_CHESS_ALLIES_CAN_TAKE):
+        search_flags = flag_set(search_flags, FLAG_CHESS_ALLIES_CAN_TAKE)
+    elif allies_can_take and not search_flags:
+        search_flags = FLAG_CHESS_ALLIES_CAN_TAKE
     if to_idx not in chess_neighbors(board, prefix, visited_set, search_flags):
         return False
 

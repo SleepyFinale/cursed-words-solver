@@ -58,18 +58,20 @@ Generated from `scripts/analyze_data_structures.py` (12s budget, game/ENABLE1 wo
 | `loadout_mult_rules`, `build_mult_neighbor_hints` | per solve | Already precomputed at `find_best_words` start |
 | `effective_board_for_loadout` | per solve | Skipped when melmod `source=melmod` |
 | `stickers.json` via `@lru_cache` | per process | Not per candidate |
-| `stamp_search_flags(loadout)` | **per candidate** | Walks stamps/stickers/RAM each call; called from DFS and `_rank_score_for_candidate` |
-| `ScoringPipeline._compute_state` | **per candidate** | Full wiki-order pipeline |
-| `build_scoring_item_sequence` | **per candidate** | Inside `_compute_state` |
-| `hourglass_reverses_order`, `shield_blue_base_from_loadout` | **per candidate** | Rule lookups inside pipeline |
+| `build_solve_context(loadout)` | **per solve** | Precomputes `stamp_search_flags_mask`, hourglass, shield blue, boss rules, inventory refs once |
+| `ScoringPipeline._compute_state` | **per candidate** | Full wiki-order pipeline (receives cached `SolveContext`) |
+| `path_grid_item_refs` | **per path (cached)** | Grid scatter refs cached on `WordSearcher._grid_refs_cache` per solve |
+| `build_scoring_item_sequence` | **per candidate** | Inventory portion from `SolveContext`; grid refs from per-path cache |
+| Tier-2 two-phase scoring | **per candidate** | Phase 1 bounds screen/defer; phase 2 `_compute_state` only for survivors |
+| `stamp_search_flags_mask`, `hourglass_reverses_order`, `shield_blue_base_from_loadout` | **per solve** | Via `build_solve_context` at `find_best_words` / parallel worker init |
 | `board_fingerprint(board)` | **per chess cache miss** | Builds string via `Board.flat` |
 | `rank_score_for_word`, `optimistic_mult_factor` | per cache miss | After `score_total_only` |
 
-**Highest-impact precompute targets (sticker-heavy):**
+**Remaining per-candidate cost (sticker-heavy):**
 
-1. Cache `stamp_search_flags(loadout)` once per solve on `WordSearcher`
-2. Precompute loadout-derived pipeline flags (hourglass, shield blue, active boss rules, compound percents)
-3. Consider Tier-2 two-phase scoring when `score_pct >= 55%` and `sticker_count > 0`
+1. Full `_compute_state` wiki-order pipeline (Tier-2 screen skips some calls when enabled)
+2. Path-dependent `build_scoring_item_sequence` grid-path refs
+3. Consider further two-phase scoring when `score_pct >= 55%` and `sticker_count > 0`
 
 ## 4. Board.flat access cost
 

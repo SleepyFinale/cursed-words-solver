@@ -139,6 +139,7 @@ def _mp_init(wordlist_path: str, trie_backend: str = "auto") -> None:
 
 
 def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[int, ...]]]:
+    from cursed_words_solver.graph_bitboard import build_board_graph_context
     from cursed_words_solver.mult_search import (
         build_mult_neighbor_hints,
         loadout_mult_rules,
@@ -197,6 +198,7 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
         else None
     )
     searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
+    searcher._graph_ctx = build_board_graph_context(board)
     mini = _CandidateHeap(heap_k)
     searcher._collect_words_fair_starts(
         board,

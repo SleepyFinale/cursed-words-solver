@@ -15,7 +15,9 @@ from cursed_words_solver.fast_rank import (
     fast_rank_lower_bound,
     loadout_allows_fast_rank,
     loadout_allows_tier2_screen,
+    loadout_allows_tier2_two_phase,
     tier2_immediate_upper_bound,
+    tier2_rank_lower_bound,
     tier2_rank_upper_bound,
 )
 from cursed_words_solver.mult_search import loadout_mult_rules
@@ -322,6 +324,38 @@ def test_tier2_upper_bound_ge_rank_score():
         mult_weight=searcher.mult_search_weight,
     )
     assert ub >= rank
+
+
+def test_tier2_rank_lower_bound_le_full_score():
+    board = _board_cat_horizontal()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="red_rider", name="Red Rider", level=1, kind="sticker")]
+    )
+    pipeline = ScoringPipeline()
+    rules = pipeline.rules
+    ctx = build_solve_context(loadout, rules)
+    mult_rules = loadout_mult_rules(loadout, rules, board=board, path=[0, 1, 2])
+    path = [0, 1, 2]
+    full = pipeline.score_total_only(board, path, "cat", loadout, solve_context=ctx)
+    rank_lb = tier2_rank_lower_bound(
+        board,
+        path,
+        "cat",
+        loadout,
+        ctx,
+        mult_rules,
+        mult_weight=0.4,
+    )
+    assert rank_lb <= full
+
+
+def test_loadout_allows_tier2_two_phase_when_screen_enabled():
+    rules = ScoringPipeline().rules
+    sticker_only = Loadout(
+        stickers=[LoadoutItem(id="brain", name="Brain", level=1, kind="sticker")]
+    )
+    ctx = build_solve_context(sticker_only, rules)
+    assert loadout_allows_tier2_two_phase(ctx, sticker_only)
 
 
 def test_loadout_allows_tier2_screen_gating():

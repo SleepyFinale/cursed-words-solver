@@ -40,7 +40,6 @@ from cursed_words_solver.rules.rule_lookup import (
 from cursed_words_solver.rules.scoring_order import (
     apply_green_tile_word_transfer,
     build_scoring_item_sequence,
-    hourglass_reverses_order,
     sort_grid_path_refs,
 )
 from cursed_words_solver.rules.tile_scoring import apply_tile_init
@@ -98,7 +97,6 @@ from cursed_words_solver.rules.scoring_conditions import (
     distinct_pair_count_on_path,
     king_take_on_path,
     path_has_wildcard_matching_target_curse,
-    shield_blue_base_from_loadout,
     shop_restock_count,
     word_all_colourless_on_path,
     grid_total_base_score,
@@ -1200,6 +1198,9 @@ class ScoringPipeline:
         *,
         trace: list[dict[str, Any]] | None = None,
         solve_context: SolveContext | None = None,
+        grid_refs_cache: dict[tuple[int, ...], tuple] | None = None,
+        capybara_loadout_cache: dict[tuple[int, ...], Loadout] | None = None,
+        grid_refs_timing: object | None = None,
     ) -> dict[str, Any]:
         path = normalize_scoring_path(path)
         from cursed_words_solver.rules.scoring_conditions import (
@@ -1235,6 +1236,10 @@ class ScoringPipeline:
                             word,
                             loadout,
                             trace=None,
+                            solve_context=solve_context,
+                            grid_refs_cache=grid_refs_cache,
+                            capybara_loadout_cache=capybara_loadout_cache,
+                            grid_refs_timing=grid_refs_timing,
                         )
                         return int(
                             _finalize(
@@ -1273,6 +1278,7 @@ class ScoringPipeline:
         )
         if trace is not None:
             state["_trace"] = trace
+        state["_search_flags"] = ctx.search_flags
         apply_tile_init(
             board,
             path,
@@ -1285,7 +1291,7 @@ class ScoringPipeline:
         )
         hourglass = ctx.hourglass_reversed
         if not hourglass:
-            state = self._apply_early_boss_rules(state, board, path, loadout)
+            state = self._apply_early_boss_rules(state, board, path, loadout, ctx)
         _apply_void_path_bonuses(board, path, loadout, state)
 
         from cursed_words_solver.rules.scoring_conditions import (
@@ -1301,7 +1307,16 @@ class ScoringPipeline:
         grid_refs = [
             ref
             for ref in build_scoring_item_sequence(
-                board, path, loadout, self.rules, hourglass_reversed=ctx.hourglass_reversed
+                board,
+                path,
+                loadout,
+                self.rules,
+                hourglass_reversed=ctx.hourglass_reversed,
+                inventory_refs=ctx.inventory_refs,
+                capybara_shuffles=ctx.capybara_shuffles,
+                grid_refs_cache=grid_refs_cache,
+                capybara_loadout_cache=capybara_loadout_cache,
+                grid_refs_timing=grid_refs_timing,
             )
             if ref.kind == "grid_path"
         ]
@@ -1582,8 +1597,8 @@ class ScoringPipeline:
         ) == "human_boy":
             state = self._apply_human_hands(loadout, state, board, path)
         if hourglass:
-            state = self._apply_early_boss_rules(state, board, path, loadout)
-        state = self._apply_late_boss_rules(state, board, path, loadout)
+            state = self._apply_early_boss_rules(state, board, path, loadout, ctx)
+        state = self._apply_late_boss_rules(state, board, path, loadout, ctx)
         return state
 
     def _apply_early_boss_rules(
@@ -1592,6 +1607,7 @@ class ScoringPipeline:
         board: Board,
         path: list[int],
         loadout: Loadout,
+        solve_ctx: SolveContext,
     ) -> dict[str, Any]:
         """Wiki step 1: ApplyBossModifier before stickers (unless Hourglass)."""
         trace_fn = _trace_step if state.get("_trace") is not None else None
@@ -1603,6 +1619,8 @@ class ScoringPipeline:
             self.rules,
             self._apply_rule,
             trace_step=trace_fn,
+            active_boss_rules=solve_ctx.active_boss_rules,
+            boss_ctx=solve_ctx.boss_ctx,
         )
 
     def _apply_late_boss_rules(
@@ -1611,12 +1629,10 @@ class ScoringPipeline:
         board: Board,
         path: list[int],
         loadout: Loadout,
+        solve_ctx: SolveContext,
     ) -> dict[str, Any]:
         """Boss effects not handled in wiki step 1 (constraints, vowel zero, custom)."""
-        active = get_active_boss_rules(self.rules, loadout)
-        if not active:
-            _key, boss = get_active_boss_rule(self.rules, loadout)
-            active = [(_key or "", boss)] if boss is not None else []
+        active = list(solve_ctx.active_boss_rules)
         for key, boss in active:
             if not boss or boss.get("type") in (
                 "unmodeled",
@@ -1624,7 +1640,7 @@ class ScoringPipeline:
                 *_EARLY_BOSS_EFFECT_TYPES,
             ):
                 continue
-            ctx = boss_context(loadout, self.rules)
+            ctx = solve_ctx.boss_ctx
             if not boss_rule_applies(boss, ctx):
                 continue
             state = self._apply_rule(boss, state, board, path, loadout, 1)
@@ -1649,11 +1665,21 @@ class ScoringPipeline:
         loadout: Loadout | None = None,
         *,
         solve_context: SolveContext | None = None,
+        grid_refs_cache: dict[tuple[int, ...], tuple] | None = None,
+        capybara_loadout_cache: dict[tuple[int, ...], Loadout] | None = None,
+        grid_refs_timing: object | None = None,
     ) -> float:
         """Final score without building the breakdown dict (search hot path)."""
         loadout = loadout or Loadout(money=board.money)
         state = self._compute_state(
-            board, path, word, loadout, solve_context=solve_context
+            board,
+            path,
+            word,
+            loadout,
+            solve_context=solve_context,
+            grid_refs_cache=grid_refs_cache,
+            capybara_loadout_cache=capybara_loadout_cache,
+            grid_refs_timing=grid_refs_timing,
         )
         return _finalize(state, board, path, loadout, rules=self.rules)
 
@@ -1665,10 +1691,20 @@ class ScoringPipeline:
         loadout: Loadout | None = None,
         *,
         solve_context: SolveContext | None = None,
+        grid_refs_cache: dict[tuple[int, ...], tuple] | None = None,
+        capybara_loadout_cache: dict[tuple[int, ...], Loadout] | None = None,
+        grid_refs_timing: object | None = None,
     ) -> tuple[float, dict[str, Any]]:
         loadout = loadout or Loadout(money=board.money)
         state = self._compute_state(
-            board, path, word, loadout, solve_context=solve_context
+            board,
+            path,
+            word,
+            loadout,
+            solve_context=solve_context,
+            grid_refs_cache=grid_refs_cache,
+            capybara_loadout_cache=capybara_loadout_cache,
+            grid_refs_timing=grid_refs_timing,
         )
         final = _finalize(state, board, path, loadout, rules=self.rules)
         breakdown: dict[str, Any] = {
@@ -2009,7 +2045,12 @@ class ScoringPipeline:
                 for i, idx in enumerate(path):
                     tile = board.get_by_index(idx)
                     if target == "chess_take" and is_take_at_path_position(
-                        board, path, i, strict=strict_takes, loadout=loadout
+                        board,
+                        path,
+                        i,
+                        strict=strict_takes,
+                        loadout=loadout,
+                        search_flags=state.get("_search_flags", 0),
                     ):
                         # Zebra: multiply the capturing piece (path[i-1]), not landing.
                         mult_idx = i - 1 if i > 0 else 0
@@ -2067,7 +2108,11 @@ class ScoringPipeline:
                 for i, idx in enumerate(path):
                     tile = board.get_by_index(idx)
                     n_void = adjacent_void_count(
-                        board, tile, loadout=loadout, path=path, path_index=i
+                        board,
+                        tile,
+                        path=path,
+                        path_index=i,
+                        search_flags=state.get("_search_flags", 0),
                     )
                     if n_void:
                         add = bonus_each * n_void
@@ -2640,7 +2685,10 @@ class ScoringPipeline:
                 )
                 accumulated = bonus - improve
                 if not bonus and level >= 3 and chess_takes_on_path(
-                    board, path, strict=strict_takes, loadout=loadout
+                    board,
+                    path,
+                    strict=strict_takes,
+                    search_flags=state.get("_search_flags", 0),
                 ) == 0:
                     bonus = n * n
                     accumulated = 0
@@ -2653,7 +2701,10 @@ class ScoringPipeline:
             else:
                 per_take = super_8_take_word_bonus(loadout, rule)
                 takes = chess_takes_on_path(
-                    board, path, strict=strict_takes, loadout=loadout
+                    board,
+                    path,
+                    strict=strict_takes,
+                    search_flags=state.get("_search_flags", 0),
                 )
                 if takes:
                     bonus = per_take * takes

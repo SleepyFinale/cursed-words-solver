@@ -25,7 +25,15 @@ from cursed_words_solver.rules.chess_tiles import (
     is_chess_capture_step,
     is_chess_piece,
 )
-from cursed_words_solver.rules.stamp_behaviors import StampSearchFlags, stamp_search_flags
+from cursed_words_solver.rules.stamp_behaviors import (
+    FLAG_CHESS_ALLIES_CAN_TAKE,
+    FLAG_CHESS_KING_QUEEN_ITEM_MOVEMENT,
+    FLAG_HORIZONTAL_WRAP,
+    SearchFlagsMask,
+    flag_set,
+    flag_test,
+    stamp_search_flags_mask,
+)
 from cursed_words_solver.rules.fraction_tiles import fraction_parts, is_fraction_tile
 
 NON_COLOUR_FOR_NUMBER_BONUS = frozenset(
@@ -710,15 +718,15 @@ def _chess_take_search_flags(
     loadout: Loadout | None,
     *,
     allies_can_take: bool = False,
-) -> StampSearchFlags:
-    if loadout is None:
-        return StampSearchFlags(chess_allies_can_take=allies_can_take)
-    flags = stamp_search_flags(loadout)
+    search_flags: SearchFlagsMask = 0,
+) -> SearchFlagsMask:
+    flags = search_flags
+    if not flags and loadout is not None:
+        flags = stamp_search_flags_mask(loadout)
     if allies_can_take:
-        return StampSearchFlags(
-            horizontal_wrap=flags.horizontal_wrap,
-            chess_allies_can_take=True,
-            chess_king_queen_item_movement=flags.chess_king_queen_item_movement,
+        return flag_set(
+            flags,
+            FLAG_CHESS_ALLIES_CAN_TAKE,
         )
     return flags
 
@@ -731,6 +739,7 @@ def is_take_at_path_position(
     strict: bool = False,
     allies_can_take: bool = False,
     loadout: Loadout | None = None,
+    search_flags: SearchFlagsMask = 0,
 ) -> bool:
     """Whether path[pos] counts as a chess capture landing square."""
     tile = board.get_by_index(path[pos])
@@ -740,7 +749,11 @@ def is_take_at_path_position(
     if strict or pos == 0:
         return False
     prefix = path[:pos]
-    flags = _chess_take_search_flags(loadout, allies_can_take=allies_can_take)
+    flags = _chess_take_search_flags(
+        loadout,
+        allies_can_take=allies_can_take,
+        search_flags=search_flags,
+    )
     return is_chess_capture_step(
         board,
         path[pos - 1],
@@ -758,13 +771,19 @@ def chess_take_path_positions(
     *,
     strict: bool = False,
     loadout: Loadout | None = None,
+    search_flags: SearchFlagsMask = 0,
 ) -> list[int]:
     """Indices into path for tiles that count as takes."""
     return [
         i
         for i in range(len(path))
         if is_take_at_path_position(
-            board, path, i, strict=strict, loadout=loadout
+            board,
+            path,
+            i,
+            strict=strict,
+            loadout=loadout,
+            search_flags=search_flags,
         )
     ]
 
@@ -2154,13 +2173,19 @@ def adjacent_void_count(
     loadout: Loadout | None = None,
     path: list[int] | None = None,
     path_index: int | None = None,
+    horizontal_wrap: bool | None = None,
+    search_flags: SearchFlagsMask = 0,
 ) -> int:
     """VOID tiles that grant Tombstone +TILE SCORE for this path tile."""
-    horizontal_wrap = False
-    if loadout is not None:
-        from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-
-        horizontal_wrap = stamp_search_flags(loadout).horizontal_wrap
+    if horizontal_wrap is None:
+        if search_flags:
+            horizontal_wrap = flag_test(search_flags, FLAG_HORIZONTAL_WRAP)
+        elif loadout is not None:
+            horizontal_wrap = flag_test(
+                stamp_search_flags_mask(loadout), FLAG_HORIZONTAL_WRAP
+            )
+        else:
+            horizontal_wrap = False
     count = 0
     scattered = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
     if path is not None and len(path) == 1:
@@ -2724,9 +2749,16 @@ def chess_takes_on_path(
     *,
     strict: bool = False,
     loadout: Loadout | None = None,
+    search_flags: SearchFlagsMask = 0,
 ) -> int:
     return len(
-        chess_take_path_positions(board, path, strict=strict, loadout=loadout)
+        chess_take_path_positions(
+            board,
+            path,
+            strict=strict,
+            loadout=loadout,
+            search_flags=search_flags,
+        )
     )
 
 

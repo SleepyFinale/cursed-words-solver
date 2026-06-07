@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from cursed_words_solver.models import Board, Loadout
 from cursed_words_solver.rules.boss_effects import (
+    BossContext,
     boss_context,
     boss_rule_applies,
     floor_mod_for_rule,
@@ -85,6 +86,8 @@ def apply_early_boss_scoring(
     apply_rule: Callable,
     *,
     trace_step: Callable[..., None] | None = None,
+    active_boss_rules: tuple[tuple[str, dict[str, Any] | None], ...] | None = None,
+    boss_ctx: BossContext | None = None,
 ) -> dict[str, Any]:
     """Early ApplyBossModifier pass (before items when no Hourglass)."""
     from cursed_words_solver.rules.boss_effects import boss_scoring_effect_type
@@ -92,14 +95,17 @@ def apply_early_boss_scoring(
     if michael_finale_active(loadout):
         return state
 
-    active = get_active_boss_rules(rules, loadout)
-    if not active:
-        key, boss = get_active_boss_rule(rules, loadout)
-        active = [(key or "", boss)] if boss is not None else []
+    if active_boss_rules is not None:
+        active = list(active_boss_rules)
+    else:
+        active = get_active_boss_rules(rules, loadout)
+        if not active:
+            key, boss = get_active_boss_rule(rules, loadout)
+            active = [(key or "", boss)] if boss is not None else []
+    ctx = boss_ctx if boss_ctx is not None else boss_context(loadout, rules)
     for key, boss in active:
         if not boss:
             continue
-        ctx = boss_context(loadout, rules)
         if not boss_rule_applies(boss, ctx):
             continue
         effect = boss_scoring_effect_type(boss)

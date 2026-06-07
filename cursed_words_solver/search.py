@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import heapq
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -43,8 +43,12 @@ from cursed_words_solver.fast_rank import (
     loadout_allows_fast_rank,
     loadout_allows_mult_prune,
     loadout_allows_tier2_screen,
+    loadout_allows_tier2_two_phase,
     mult_aware_lower_bound,
+    tier2_immediate_lower_bound,
     tier2_immediate_upper_bound,
+    tier2_rank_lower_bound,
+    tier2_rank_upper_bound,
 )
 from cursed_words_solver.mult_search import (
     MultNeighborHints,
@@ -55,12 +59,44 @@ from cursed_words_solver.mult_search import (
     search_rank_score,
 )
 from cursed_words_solver.rules.chess_tiles import (
-    chess_neighbors,
+    chess_neighbors_mask,
+    chess_side,
+    chess_side_known,
     clear_chess_attack_cache,
     identical_chess_piece,
     is_chess_piece,
 )
-from cursed_words_solver.rules.stamp_behaviors import StampSearchFlags, stamp_search_flags
+from cursed_words_solver.graph_bitboard import (
+    BoardGraphContext,
+    NEIGHBORS_8,
+    NEIGHBORS_8_WRAP,
+    build_board_graph_context,
+    get_valid_extensions,
+    iter_mask,
+    mask_from_indices,
+)
+from cursed_words_solver.rules.stamp_behaviors import (
+    FLAG_CARD_SUIT_FIRST_LETTER,
+    FLAG_CHESS_ALLIES_CAN_TAKE,
+    FLAG_DOUBLE_LETTER_TELEPORT,
+    FLAG_HORIZONTAL_WRAP,
+    FLAG_J_AS_H_OR_Y,
+    FLAG_MICROSCOPE_BASE_SCORE,
+    FLAG_NUMBER_ASCENDING_FREE_POSITION,
+    FLAG_NUMBER_PLUS_MINUS_ONE,
+    FLAG_NUMBER_ROMAN_IVX,
+    FLAG_Q_AS_QU,
+    FLAG_RED_AS_E,
+    FLAG_RED_AS_S,
+    FLAG_RED_LETTER_PLUS_MINUS_ONE,
+    FLAG_SHINY_AS_ONE,
+    FLAG_WORD_STITCH,
+    FLAG_Z_AS_S,
+    SearchFlagsMask,
+    coerce_search_flags,
+    flag_clear,
+    flag_test,
+)
 from cursed_words_solver.solve_context import (
     SolveContext,
     build_solve_context,
@@ -117,6 +153,12 @@ class SearchTiming:
     tier2_screen_sec: float = 0.0
     tier2_screen_skips: int = 0
     tier2_screen_calls: int = 0
+    tier2_rank_screen_skips: int = 0
+    tier2_phase1_calls: int = 0
+    tier2_phase2_calls: int = 0
+    tier2_phase2_deferred: int = 0
+    grid_refs_cache_hits: int = 0
+    grid_refs_cache_misses: int = 0
 
     @property
     def score_pct(self) -> float:
@@ -206,6 +248,22 @@ class _CandidateHeap:
             return None
         return min(known)
 
+    def replace_entry(
+        self,
+        word: str,
+        path: tuple[int, ...],
+        *,
+        score: float,
+        immediate: float,
+    ) -> bool:
+        """Update a heap entry after deferred phase-2 scoring."""
+        for i, entry in enumerate(self._heap):
+            if entry[3] == word and entry[4] == path:
+                self._heap[i] = (score, immediate, len(word), word, path)
+                heapq.heapify(self._heap)
+                return True
+        return False
+
     def best_sorted(self) -> list[tuple[float, str, tuple[int, ...]]]:
         out: list[tuple[float, str, tuple[int, ...]]] = []
         for score, _imm, _neg_len, word, path in sorted(self._heap, reverse=True):
@@ -223,9 +281,10 @@ def resolve_letter(
     tile: Tile,
     position: int,
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
 ) -> str:
     """Letter used in word at 0-based position."""
+    flags = coerce_search_flags(flags)
     if tile.curse == CurseType.CURRENCY:
         return tile.letter
     if tile.curse == CurseType.WILDCARD:
@@ -236,28 +295,26 @@ def resolve_letter(
         return tile.letter
     if tile.curse == CurseType.FRACTION:
         return "?"
-    if flags and flags.card_suit_first_letter and is_card_tile(tile):
+    if flag_test(flags, FLAG_CARD_SUIT_FIRST_LETTER) and is_card_tile(tile):
         suit = card_suit(tile)
         if suit and suit in CARD_SUIT_FIRST_LETTER:
             return CARD_SUIT_FIRST_LETTER[suit]
     if (
-        flags
-        and flags.shiny_as_one
+        flag_test(flags, FLAG_SHINY_AS_ONE)
         and position == 0
         and tile.color == TileColor.SHINY
         and tile.curse == CurseType.LETTER
     ):
         return "1"
     ch = (tile.letter or "?").lower()
-    if flags:
-        if flags.red_as_s and tile.color == TileColor.RED and tile.curse == CurseType.LETTER:
-            return "s"
-        if flags.red_as_e and tile.color == TileColor.RED and tile.curse == CurseType.LETTER:
-            return "e"
-        if flags.z_as_s and ch == "z":
-            return "s"
-        if flags.q_as_qu and ch == "q":
-            return "qu"
+    if flag_test(flags, FLAG_RED_AS_S) and tile.color == TileColor.RED and tile.curse == CurseType.LETTER:
+        return "s"
+    if flag_test(flags, FLAG_RED_AS_E) and tile.color == TileColor.RED and tile.curse == CurseType.LETTER:
+        return "e"
+    if flag_test(flags, FLAG_Z_AS_S) and ch == "z":
+        return "s"
+    if flag_test(flags, FLAG_Q_AS_QU) and ch == "q":
+        return "qu"
     return tile.letter.upper() if tile.letter else "?"
 
 
@@ -265,7 +322,7 @@ def search_word_from_path(
     board: Board,
     path: list[int],
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
 ) -> str:
     """Search trie / dictionary resolve string; scattered items count as wildcards."""
     parts: list[str] = []
@@ -282,12 +339,15 @@ def physical_word_for_path(
     board: Board,
     path: list[int],
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
 ) -> str:
     """Word from tile face letters; ignores Card Shark suit-first-letter remapping."""
-    phys_flags = flags
-    if flags and flags.card_suit_first_letter:
-        phys_flags = replace(flags, card_suit_first_letter=False)
+    flags = coerce_search_flags(flags)
+    phys_flags = (
+        flag_clear(flags, FLAG_CARD_SUIT_FIRST_LETTER)
+        if flag_test(flags, FLAG_CARD_SUIT_FIRST_LETTER)
+        else flags
+    )
     parts: list[str] = []
     for i, idx in enumerate(path):
         parts.append(resolve_letter(board.get_by_index(idx), i, flags=phys_flags))
@@ -301,18 +361,18 @@ def resolve_letter_options(
     tile: Tile,
     position: int,
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
 ) -> list[str]:
     """Lowercase letter alternatives for search validation."""
+    flags = coerce_search_flags(flags)
     base = resolve_letter(tile, position, flags=flags)
     if base in ("?", "qu") or len(base) != 1:
         return [base.lower() if base != "?" else "?"]
     ch = base.lower()
-    if flags and flags.j_as_h_or_y and ch == "j":
+    if flag_test(flags, FLAG_J_AS_H_OR_Y) and ch == "j":
         return ["h", "y"]
     if (
-        flags
-        and flags.red_letter_plus_minus_one
+        flag_test(flags, FLAG_RED_LETTER_PLUS_MINUS_ONE)
         and tile.color == TileColor.RED
         and tile.curse == CurseType.LETTER
         and ch.isalpha()
@@ -331,7 +391,7 @@ def _wildcard_branch_letters(
     tile: Tile,
     position: int,
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
 ) -> tuple[str, ...]:
     """Letters to try when a tile resolves to wildcard '?' during trie DFS."""
     token = resolve_letter(tile, position, flags=flags)
@@ -351,7 +411,7 @@ def path_letter_tiles_match_word(
     path: list[int],
     word: str,
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
 ) -> bool:
     """True when each letter tile on the path allows word[i] (stamp transforms)."""
     if len(path) != len(word):
@@ -373,11 +433,12 @@ def path_letter_tiles_match_word(
 def _tile_digit_face_matches(
     ch: str,
     tile: Tile,
-    stamp_flags: StampSearchFlags | None,
+    stamp_flags: SearchFlagsMask,
 ) -> bool:
+    stamp_flags = coerce_search_flags(stamp_flags)
     if tile.letter == ch:
         return True
-    if stamp_flags and stamp_flags.microscope_base_score:
+    if flag_test(stamp_flags, FLAG_MICROSCOPE_BASE_SCORE):
         bp = _microscope_base_as_position(tile)
         if bp is not None and str(bp) == ch:
             return True
@@ -397,9 +458,10 @@ def _microscope_base_as_position(tile: Tile) -> int | None:
 
 def tile_number_position_values(
     tile: Tile,
-    flags: StampSearchFlags | None,
+    flags: SearchFlagsMask,
 ) -> list[int]:
     """1-based position indices this tile may claim (face number + Microscope base_score)."""
+    flags = coerce_search_flags(flags)
     values: list[int] = []
     if tile.curse == CurseType.NUMBER:
         nv = tile.number_value
@@ -407,7 +469,7 @@ def tile_number_position_values(
             nv = int(tile.letter)
         if nv is not None and nv >= 1:
             values.append(nv)
-    if flags and flags.microscope_base_score:
+    if flag_test(flags, FLAG_MICROSCOPE_BASE_SCORE):
         bp = _microscope_base_as_position(tile)
         if bp is not None and bp not in values:
             values.append(bp)
@@ -417,12 +479,12 @@ def tile_number_position_values(
 def _position_matches_number_values(
     position: int,
     values: list[int],
-    flags: StampSearchFlags | None,
+    flags: SearchFlagsMask,
 ) -> bool:
     if not values:
         return True
     pos = position + 1
-    if flags and flags.number_plus_minus_one:
+    if flag_test(flags, FLAG_NUMBER_PLUS_MINUS_ONE):
         return any(pos in (v - 1, v, v + 1) and v >= 1 for v in values)
     return any(pos == v for v in values)
 
@@ -432,12 +494,12 @@ def number_position_valid(
     position: int,
     relaxed: bool = False,
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
     segment: str | None = None,
 ) -> bool:
+    flags = coerce_search_flags(flags)
     if (
-        flags
-        and flags.shiny_as_one
+        flag_test(flags, FLAG_SHINY_AS_ONE)
         and position == 0
         and tile.color == TileColor.SHINY
         and tile.curse == CurseType.LETTER
@@ -446,15 +508,13 @@ def number_position_valid(
     if relaxed or tile.curse != CurseType.NUMBER:
         return True
     if (
-        flags
-        and flags.number_ascending_free_position
+        flag_test(flags, FLAG_NUMBER_ASCENDING_FREE_POSITION)
         and segment
         and number_digits_ascending(segment)
     ):
         return True
     if (
-        flags
-        and flags.number_roman_ivx
+        flag_test(flags, FLAG_NUMBER_ROMAN_IVX)
         and segment
         and tile.curse == CurseType.NUMBER
         and position < len(segment)
@@ -492,8 +552,9 @@ class PathValidator:
         board: Board | None = None,
         path: list[int] | None = None,
         steps_remaining: int = 0,
-        stamp_flags: StampSearchFlags | None = None,
+        stamp_flags: SearchFlagsMask = 0,
     ) -> bool:
+        stamp_flags = coerce_search_flags(stamp_flags)
         if "?" in prefix:
             return self.dictionary.pattern_has_prefix(prefix.lower())
         if any(ch.isdigit() for ch in prefix):
@@ -506,7 +567,7 @@ class PathValidator:
                 return True
         if self.dictionary.has_prefix(prefix):
             return True
-        if stamp_flags and stamp_flags.word_stitch:
+        if flag_test(stamp_flags, FLAG_WORD_STITCH):
             if self.dictionary.is_valid_word(prefix, self.min_len):
                 return True
             for k in range(self.min_len, len(prefix)):
@@ -529,7 +590,7 @@ class PathValidator:
         board: Board,
         path: list[int],
         word: str,
-        stamp_flags: StampSearchFlags | None,
+        stamp_flags: SearchFlagsMask,
     ) -> bool:
         required = self.required_consumable_indices
         if required and not required.issubset(path):
@@ -554,7 +615,7 @@ class PathValidator:
         board: Board,
         path: list[int],
         word: str,
-        stamp_flags: StampSearchFlags | None,
+        stamp_flags: SearchFlagsMask,
     ) -> bool:
         if any(ch.isdigit() for ch in word):
             return self._number_word_valid(board, path, word, stamp_flags)
@@ -569,7 +630,7 @@ class PathValidator:
         board: Board,
         path: list[int],
         word: str,
-        stamp_flags: StampSearchFlags | None,
+        stamp_flags: SearchFlagsMask,
     ) -> bool:
         n = len(word)
         for k in range(self.min_len, n - self.min_len + 1):
@@ -626,15 +687,16 @@ class PathValidator:
         board: Board,
         path: list[int],
         word: str,
-        stamp_flags: StampSearchFlags | None = None,
+        stamp_flags: SearchFlagsMask = 0,
     ) -> bool:
+        stamp_flags = coerce_search_flags(stamp_flags)
         if len(word) < self.min_len:
             return False
         if self._path_constraints_ok(board, path, word, stamp_flags) and self._word_content_ok(
             board, path, word, stamp_flags
         ):
             return True
-        if stamp_flags and stamp_flags.word_stitch:
+        if flag_test(stamp_flags, FLAG_WORD_STITCH):
             return self._stitched_word_ok(board, path, word, stamp_flags)
         return False
 
@@ -643,9 +705,10 @@ class PathValidator:
         board: Board,
         path: list[int],
         word: str,
-        stamp_flags: StampSearchFlags | None = None,
+        stamp_flags: SearchFlagsMask = 0,
     ) -> bool:
         """Number tiles are position-locked wildcards; validate via dictionary pattern."""
+        stamp_flags = coerce_search_flags(stamp_flags)
         if len(path) != len(word):
             return False
         pattern_chars: list[str] = []
@@ -654,8 +717,7 @@ class PathValidator:
             ch = word[i]
             if ch.isdigit():
                 if (
-                    stamp_flags
-                    and stamp_flags.shiny_as_one
+                    flag_test(stamp_flags, FLAG_SHINY_AS_ONE)
                     and tile.color == TileColor.SHINY
                     and tile.curse == CurseType.LETTER
                     and int(ch) == 1
@@ -672,15 +734,14 @@ class PathValidator:
                 digit = int(ch)
                 nv = tile_number_value(tile)
                 if (
-                    stamp_flags
-                    and stamp_flags.number_roman_ivx
+                    flag_test(stamp_flags, FLAG_NUMBER_ROMAN_IVX)
                     and nv in ROMAN_BY_NUMBER
                     and ch.isalpha()
                     and ch.lower() == ROMAN_BY_NUMBER[nv]
                 ):
                     pattern_chars.append("?")
                     continue
-                if stamp_flags and stamp_flags.number_plus_minus_one:
+                if flag_test(stamp_flags, FLAG_NUMBER_PLUS_MINUS_ONE):
                     values = tile_number_position_values(tile, stamp_flags)
                     allowed = {
                         x
@@ -691,8 +752,7 @@ class PathValidator:
                     if digit not in allowed:
                         return False
                 elif (
-                    stamp_flags
-                    and stamp_flags.number_ascending_free_position
+                    flag_test(stamp_flags, FLAG_NUMBER_ASCENDING_FREE_POSITION)
                     and number_digits_ascending(word)
                 ):
                     pass
@@ -705,8 +765,7 @@ class PathValidator:
                     continue
                 if tile.curse == CurseType.NUMBER:
                     if (
-                        stamp_flags
-                        and stamp_flags.number_roman_ivx
+                        flag_test(stamp_flags, FLAG_NUMBER_ROMAN_IVX)
                         and ch.isalpha()
                     ):
                         nv = tile_number_value(tile)
@@ -771,32 +830,39 @@ def _legal_word_start_indices(board: Board) -> list[int]:
     return out
 
 
+def neighbors_standard_mask(
+    board: Board,
+    cell_id: int,
+    visited_mask: int,
+    *,
+    flags: SearchFlagsMask = 0,
+    active_mask: int | None = None,
+) -> int:
+    flags = coerce_search_flags(flags)
+    base = (
+        NEIGHBORS_8_WRAP[cell_id]
+        if flag_test(flags, FLAG_HORIZONTAL_WRAP)
+        else NEIGHBORS_8[cell_id]
+    )
+    if active_mask is None:
+        active_mask = sum(1 << i for i in _active_indices(board))
+    return get_valid_extensions(base & active_mask, visited_mask)
+
+
 def neighbors_standard(
     board: Board,
     path: list[int],
     visited: int | set[int],
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
 ) -> list[int]:
-    last = path[-1]
-    row, col = last // 5, last % 5
-    out = []
-    for dr, dc in DIRS_8:
-        nr, nc = row + dr, col + dc
-        if 0 <= nr < 5 and 0 <= nc < 5:
-            idx = index_of(nr, nc)
-            if board.is_active_index(idx) and not _visited_has(visited, idx):
-                out.append(idx)
-    if flags and flags.horizontal_wrap:
-        if col == 0:
-            wrap = index_of(row, 4)
-            if board.is_active_index(wrap) and not _visited_has(visited, wrap):
-                out.append(wrap)
-        elif col == 4:
-            wrap = index_of(row, 0)
-            if board.is_active_index(wrap) and not _visited_has(visited, wrap):
-                out.append(wrap)
-    return out
+    visited_mask = (
+        visited if isinstance(visited, int) else mask_from_indices(visited)
+    )
+    mask = neighbors_standard_mask(
+        board, path[-1], visited_mask, flags=flags
+    )
+    return list(iter_mask(mask))
 
 
 def _physical_letter(tile: Tile) -> str:
@@ -813,11 +879,44 @@ def _physical_letter(tile: Tile) -> str:
     return ""
 
 
+def _double_letter_teleport_mask(
+    board: Board,
+    cell_id: int,
+    visited_mask: int,
+    *,
+    graph_ctx: BoardGraphContext | None = None,
+) -> int:
+    """Full Moon: jump to another unused tile with the same letter or identical chess piece."""
+    last_tile = board.get_by_index(cell_id)
+    letter = _physical_letter(last_tile)
+    mask = 0
+    if graph_ctx is not None:
+        if letter:
+            mask |= get_valid_extensions(
+                graph_ctx.letter_masks.get(letter, 0),
+                visited_mask,
+            ) & ~(1 << cell_id)
+        if is_chess_piece(last_tile) and chess_side_known(last_tile):
+            key = (last_tile.curse.value, chess_side(last_tile))
+            group = graph_ctx.identical_chess_masks.get(key, 0)
+            mask |= get_valid_extensions(group, visited_mask) & ~(1 << cell_id)
+        return mask
+    for idx in _active_indices(board):
+        if idx == cell_id or visited_mask & (1 << idx):
+            continue
+        other = board.get_by_index(idx)
+        if letter and _physical_letter(other) == letter:
+            mask |= 1 << idx
+        elif identical_chess_piece(last_tile, other):
+            mask |= 1 << idx
+    return mask
+
+
 def _double_letter_teleport_neighbors(
     board: Board,
     path: list[int],
     visited: int | set[int],
-    flags: StampSearchFlags,
+    flags: SearchFlagsMask,
 ) -> list[int]:
     """Full Moon: jump to another unused tile with the same letter or identical chess piece."""
     last_tile = board.get_by_index(path[-1])
@@ -834,43 +933,72 @@ def _double_letter_teleport_neighbors(
     return out
 
 
+    return out
+
+
+def _coerce_visited_mask(visited: int | set[int]) -> int:
+    if isinstance(visited, int):
+        return visited
+    return mask_from_indices(visited)
+
+
+def neighbors_mask(
+    board: Board,
+    path: list[int],
+    visited: int | set[int],
+    *,
+    flags: SearchFlagsMask = 0,
+    graph_ctx: BoardGraphContext | None = None,
+) -> int:
+    """Curse-aware neighbor expansion as a bitmask."""
+    flags = coerce_search_flags(flags)
+    visited_mask = _coerce_visited_mask(visited)
+    cell_id = path[-1]
+    last_tile = board.get_by_index(cell_id)
+    active_mask = graph_ctx.active_mask if graph_ctx else None
+    item_mask = graph_ctx.item_mask if graph_ctx else 0
+
+    if last_tile.color == TileColor.WHITE:
+        if active_mask is None:
+            active_mask = sum(1 << i for i in _active_indices(board))
+        return get_valid_extensions(active_mask, visited_mask)
+
+    if is_chess_piece(last_tile):
+        mask = chess_neighbors_mask(
+            board,
+            cell_id,
+            visited_mask,
+            flags,
+            item_mask=item_mask,
+            active_mask=active_mask or 0,
+        )
+    else:
+        mask = neighbors_standard_mask(
+            board,
+            cell_id,
+            visited_mask,
+            flags=flags,
+            active_mask=active_mask,
+        )
+
+    if flag_test(flags, FLAG_DOUBLE_LETTER_TELEPORT):
+        mask |= _double_letter_teleport_mask(
+            board, cell_id, visited_mask, graph_ctx=graph_ctx
+        )
+    return mask
+
+
 def neighbors_from_tile(
     board: Board,
     path: list[int],
     visited: int | set[int],
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
+    graph_ctx: BoardGraphContext | None = None,
 ) -> list[int]:
     """Curse-aware neighbor expansion."""
-    last_tile = board.get_by_index(path[-1])
-    flags = flags or StampSearchFlags()
-
-    # WHITE tile: teleport to any unused cell (wiki / game movement)
-    if last_tile.color == TileColor.WHITE:
-        if isinstance(visited, set):
-            return [
-                i
-                for i in _active_indices(board)
-                if i not in visited
-            ]
-        return [
-            i
-            for i in _active_indices(board)
-            if not (visited & (1 << i))
-        ]
-
-    if is_chess_piece(last_tile):
-        nbrs = chess_neighbors(board, path, visited, flags)
-    else:
-        nbrs = neighbors_standard(board, path, visited, flags=flags)
-
-    if flags.double_letter_teleport:
-        seen = set(nbrs)
-        for idx in _double_letter_teleport_neighbors(board, path, visited, flags):
-            if idx not in seen:
-                nbrs.append(idx)
-                seen.add(idx)
-    return nbrs
+    mask = neighbors_mask(board, path, visited, flags=flags, graph_ctx=graph_ctx)
+    return list(iter_mask(mask))
 
 
 def _neighbors_sorted_by_base_score(
@@ -878,9 +1006,15 @@ def _neighbors_sorted_by_base_score(
     path: list[int],
     visited: int | set[int],
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
+    graph_ctx: BoardGraphContext | None = None,
+    nbr_mask: int | None = None,
 ) -> list[int]:
-    nbrs = neighbors_from_tile(board, path, visited, flags=flags)
+    if nbr_mask is None:
+        nbr_mask = neighbors_mask(
+            board, path, visited, flags=flags, graph_ctx=graph_ctx
+        )
+    nbrs = list(iter_mask(nbr_mask))
     last = board.get_by_index(path[-1])
 
     def sort_key(idx: int) -> tuple[int, float, int]:
@@ -906,12 +1040,25 @@ def _neighbors_sorted_for_loadout(
     path: list[int],
     visited: int | set[int],
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
     hints: MultNeighborHints | None = None,
+    graph_ctx: BoardGraphContext | None = None,
+    nbr_mask: int | None = None,
 ) -> list[int]:
-    nbrs = neighbors_from_tile(board, path, visited, flags=flags)
+    if nbr_mask is None:
+        nbr_mask = neighbors_mask(
+            board, path, visited, flags=flags, graph_ctx=graph_ctx
+        )
+    nbrs = list(iter_mask(nbr_mask))
     if not hints or not nbrs:
-        return _neighbors_sorted_by_base_score(board, path, visited, flags=flags)
+        return _neighbors_sorted_by_base_score(
+            board,
+            path,
+            visited,
+            flags=flags,
+            graph_ctx=graph_ctx,
+            nbr_mask=nbr_mask,
+        )
     last = board.get_by_index(path[-1])
     letter_pos = len(path)
 
@@ -1006,7 +1153,7 @@ def _shortest_path_between_indices(
     end: int,
     max_len: int,
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
 ) -> list[int] | None:
     """BFS shortest acyclic path from start to end (for joker-pair seeding)."""
     if start == end:
@@ -1037,7 +1184,7 @@ def _high_value_path_between_indices(
     end: int,
     max_len: int,
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
 ) -> list[int] | None:
     """A* path from start to end favoring high base_score tiles (joker-pair seeding)."""
     import heapq
@@ -1090,7 +1237,7 @@ def _paths_between_indices(
     end: int,
     max_len: int,
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
     path_cap: int = 48,
 ) -> list[list[int]]:
     """Acyclic paths from start to end (capped) for joker-cluster seeding."""
@@ -1105,10 +1252,13 @@ def _paths_between_indices(
             return
         if len(path) >= max_len:
             return
+        nbr_mask = neighbors_mask(board, path, visited, flags=flags)
         for nbr in _neighbors_sorted_by_base_score(
-            board, path, visited, flags=flags
+            board, path, visited, flags=flags, nbr_mask=nbr_mask
         ):
-            dfs(path + [nbr], visited | (1 << nbr))
+            path.append(nbr)
+            dfs(path, visited | (1 << nbr))
+            path.pop()
 
     dfs([start], 1 << start)
     return found
@@ -1120,7 +1270,7 @@ def _all_shortest_paths_between_indices(
     end: int,
     max_len: int,
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
 ) -> list[list[int]]:
     """Every minimum-length path from start to end (BFS layer collect)."""
     from collections import deque
@@ -1152,7 +1302,7 @@ def _joker_hub_bridge_paths(
     end: int,
     max_len: int,
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
     hub_count: int = 8,
 ) -> list[list[int]]:
     """Stitch shortest paths start→hub→end for high base_score hubs (joker-pair seeding)."""
@@ -1182,7 +1332,7 @@ def _joker_pair_paths(
     board: Board,
     max_len: int,
     *,
-    flags: StampSearchFlags | None = None,
+    flags: SearchFlagsMask = 0,
 ) -> list[list[int]]:
     """Paths connecting two jokers (both directions) for Hanafuda multi-joker hands."""
     jokers = _wildcard_start_indices(board)
@@ -1347,6 +1497,7 @@ class WordSearcher:
         wordlist_path: Path | None = None,
         use_fast_rank: bool | None = None,
         use_tier2_screen: bool | None = None,
+        use_tier2_two_phase: bool | None = None,
     ) -> None:
         self.dictionary = dictionary or WordDictionary()
         self.validator = PathValidator(self.dictionary, min_len)
@@ -1370,7 +1521,11 @@ class WordSearcher:
         )
         self._use_fast_rank_override = use_fast_rank
         self._use_tier2_screen_override = use_tier2_screen
+        self._use_tier2_two_phase_override = use_tier2_two_phase
         self._score_cache: dict[tuple[tuple[int, ...], str], tuple[float, float, float]] = {}
+        self._grid_refs_cache: dict[tuple[int, ...], tuple] = {}
+        self._capybara_loadout_cache: dict[tuple[int, ...], Loadout] = {}
+        self._provisional_candidates: set[tuple[tuple[int, ...], str]] = set()
         self._dict_path_cache: dict[tuple[int, ...], str] = {}
         self._number_extend_cache: dict[tuple[frozenset[int], int], bool] = {}
         self._prune_heap: _CandidateHeap | None = None
@@ -1379,6 +1534,12 @@ class WordSearcher:
         self.last_search_timing: SearchTiming | None = None
         self._active_timing: SearchTiming | None = None
         self._solve_ctx: SolveContext | None = None
+        self._graph_ctx: BoardGraphContext | None = None
+
+    def _board_graph(self, board: Board) -> BoardGraphContext:
+        if self._graph_ctx is not None and self._graph_ctx.board is board:
+            return self._graph_ctx
+        return build_board_graph_context(board)
 
     def _search_ctx(self, loadout: Loadout) -> SolveContext:
         if self._solve_ctx is not None:
@@ -1443,6 +1604,93 @@ class WordSearcher:
             setup_weight=self.setup_weight,
             score_fn=self.score_fn,
         )
+
+    def _use_tier2_two_phase_for(self, loadout: Loadout) -> bool:
+        if self._use_tier2_two_phase_override is not None:
+            return self._use_tier2_two_phase_override
+        if not self._use_tier2_screen_for(loadout):
+            return False
+        ctx = self._search_ctx(loadout)
+        return loadout_allows_tier2_two_phase(
+            ctx,
+            loadout,
+            setup_weight=self.setup_weight,
+            score_fn=self.score_fn,
+        )
+
+    def _pipeline_cache_kwargs(self) -> dict:
+        return {
+            "grid_refs_cache": self._grid_refs_cache,
+            "capybara_loadout_cache": self._capybara_loadout_cache,
+            "grid_refs_timing": self._active_timing,
+        }
+
+    def _refine_provisional_heap(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+    ) -> None:
+        """Phase 2: run full pipeline for heap entries admitted on tier-1 bounds only."""
+        if not self._provisional_candidates:
+            return
+        ctx = self._search_ctx(loadout)
+        timing = self._active_timing
+        pending = list(self._provisional_candidates)
+        self._provisional_candidates.clear()
+        for path_tuple, word in pending:
+            path = list(path_tuple)
+            key = (path_tuple, word)
+            self._score_cache.pop(key, None)
+            t0 = time.perf_counter()
+            immediate = self.scoring.score_total_only(
+                board,
+                path,
+                word,
+                loadout,
+                solve_context=ctx,
+                **self._pipeline_cache_kwargs(),
+            )
+            if timing is not None:
+                timing.score_sec += time.perf_counter() - t0
+                timing.tier2_phase2_calls += 1
+                timing.score_calls += 1
+            setup_bonus = 0.0
+            if self.setup_weight > 0:
+                _setup_rank, setup_bonus = rank_score_for_word(
+                    board,
+                    path,
+                    word,
+                    loadout,
+                    immediate,
+                    setup_weight=self.setup_weight,
+                    setup_discount=self.setup_discount,
+                    rules=self.scoring.rules,
+                )
+            mult_factor = 1.0
+            if self.mult_search_weight > 0 and self._mult_rules:
+                mult_factor = optimistic_mult_factor(
+                    loadout,
+                    board,
+                    path,
+                    word,
+                    self.scoring.rules,
+                    self._mult_rules,
+                )
+            rank = search_rank_score(
+                immediate,
+                mult_factor,
+                mult_weight=self.mult_search_weight,
+                setup_bonus=setup_bonus,
+            )
+            if ctx.hanafuda_level > 0 and hanafuda_hand_satisfied(
+                board, path, ctx.hanafuda_level
+            ):
+                rank += 800.0
+            self._score_cache[key] = (immediate, setup_bonus, rank)
+            candidates.replace_entry(
+                word, path_tuple, score=rank, immediate=immediate
+            )
 
     def _time_expired(self) -> bool:
         dl = self._active_deadline
@@ -1600,7 +1848,7 @@ class WordSearcher:
         path: list[int],
         search_word: str,
         loadout: Loadout,
-        stamp_flags: StampSearchFlags,
+        stamp_flags: SearchFlagsMask,
         *,
         trie_compatible: bool = False,
         prefix_cursor: TrieCursor | None = None,
@@ -1703,6 +1951,7 @@ class WordSearcher:
         check_interval = self._time_check_interval(loadout)
         ctx = self._search_ctx(loadout)
         stamp_flags = ctx.search_flags
+        graph_ctx = self._board_graph(board)
         hanafuda_level = ctx.hanafuda_level
         use_hanafuda_physical = hanafuda_level > 0
 
@@ -1748,7 +1997,7 @@ class WordSearcher:
         expansions = 0
         timed_out = False
         timing = self._active_timing
-        stitch_active = bool(stamp_flags and stamp_flags.word_stitch)
+        stitch_active = flag_test(stamp_flags, FLAG_WORD_STITCH)
         _num_extend_cache = (
             self._number_extend_cache
             if getattr(self, "_board_has_number_tiles", False)
@@ -1957,12 +2206,21 @@ class WordSearcher:
                         _record_trie_prune()
                         return
 
+            nbr_mask = neighbors_mask(
+                board,
+                path,
+                visited_mask,
+                flags=stamp_flags,
+                graph_ctx=graph_ctx,
+            )
             for idx in _neighbors_sorted_for_loadout(
                 board,
                 path,
                 visited_mask,
                 flags=stamp_flags,
                 hints=mult_hints,
+                graph_ctx=graph_ctx,
+                nbr_mask=nbr_mask,
             ):
                 if timed_out or self._time_expired():
                     timed_out = True
@@ -2079,8 +2337,9 @@ class WordSearcher:
                             )
                         )
                     chars.append(ext_token)
+                    path.append(idx)
                     dfs(
-                        path + [idx],
+                        path,
                         chars,
                         visited_mask | (1 << idx),
                         prefix_cursor=next_prefix_cursor,
@@ -2092,6 +2351,7 @@ class WordSearcher:
                         suffix_cursors=next_suffix,
                         is_word_end_at_depth=next_is_word_end,
                     )
+                    path.pop()
                     chars.pop()
 
         if start_indices is not None:
@@ -2196,7 +2456,7 @@ class WordSearcher:
             if nv is None:
                 continue
             words_to_try = {str(nv)}
-            if flags.microscope_base_score:
+            if flag_test(flags, FLAG_MICROSCOPE_BASE_SCORE):
                 bp = _microscope_base_as_position(tile)
                 if bp is not None:
                     words_to_try.add(str(bp))
@@ -2444,6 +2704,7 @@ class WordSearcher:
         if max_rounds is None:
             max_rounds = min(self.max_len - self.min_len, 12)
         stamp_flags = self._search_ctx(loadout).search_flags
+        graph_ctx = self._board_graph(board)
 
         use_prune = self._use_mult_prune_for(loadout)
         use_tier2 = self._use_tier2_screen_for(loadout)
@@ -2501,12 +2762,24 @@ class WordSearcher:
                     )
                     visited_mask = sum(1 << idx for idx in path)
                     prefix_len = len(path)
-                    for idx in neighbors_from_tile(
-                        board, path, visited_mask, flags=stamp_flags
+                    nbr_mask = neighbors_mask(
+                        board,
+                        path,
+                        visited_mask,
+                        flags=stamp_flags,
+                        graph_ctx=graph_ctx,
+                    )
+                    for idx in _neighbors_sorted_for_loadout(
+                        board,
+                        path,
+                        visited_mask,
+                        flags=stamp_flags,
+                        graph_ctx=graph_ctx,
+                        nbr_mask=nbr_mask,
                     ):
                         if deadline is not None and time.monotonic() >= deadline:
                             break
-                        new_path = path + [idx]
+                        path.append(idx)
                         tile = board.get_by_index(idx)
                         token = resolve_letter(tile, prefix_len, flags=stamp_flags)
                         next_has_digit = seed_has_digit or any(
@@ -2552,7 +2825,7 @@ class WordSearcher:
                                     timing.trie_prunes += 1
                                 continue
                             word = search_word_from_path(
-                                board, new_path, flags=stamp_flags
+                                board, path, flags=stamp_flags
                             )
                             if len(word) < self.min_len:
                                 continue
@@ -2564,7 +2837,7 @@ class WordSearcher:
                             )
                             accepted, scoring_word = self._accept_path_for_search(
                                 board,
-                                new_path,
+                                path,
                                 word,
                                 loadout,
                                 stamp_flags,
@@ -2582,13 +2855,14 @@ class WordSearcher:
                                 board,
                                 loadout,
                                 candidates,
-                                new_path,
+                                path,
                                 scoring_word,
                                 stamp_flags,
                                 score_path,
                                 resolved_word=resolved_word,
                             ):
                                 extended = True
+                        path.pop()
                 if not extended:
                     break
         finally:
@@ -2631,7 +2905,7 @@ class WordSearcher:
         candidates: _CandidateHeap,
         path: list[int],
         score_word: str,
-        stamp_flags: StampSearchFlags,
+        stamp_flags: SearchFlagsMask,
         score_path: Callable[..., float | None],
         *,
         resolved_word: str | None = None,
@@ -2752,7 +3026,8 @@ class WordSearcher:
                     return None
         if heap is not None and self._use_tier2_screen_for(loadout):
             min_imm = heap.min_immediate_score()
-            if min_imm is not None:
+            min_rank = heap.min_rank_score()
+            if min_imm is not None or min_rank is not None:
                 if timing is not None:
                     timing.tier2_screen_calls += 1
                 t_tier2 = time.perf_counter()
@@ -2764,12 +3039,51 @@ class WordSearcher:
                     ctx,
                     self._mult_rules,
                 )
+                rank_ub = (
+                    tier2_rank_upper_bound(
+                        board,
+                        path,
+                        score_word,
+                        loadout,
+                        ctx,
+                        self._mult_rules,
+                        mult_weight=self.mult_search_weight,
+                        hanafuda_level=hanafuda_level,
+                    )
+                    if min_rank is not None
+                    else None
+                )
                 if timing is not None:
                     timing.tier2_screen_sec += time.perf_counter() - t_tier2
-                if imm_ub < min_imm:
+                if min_imm is not None and imm_ub < min_imm:
                     if timing is not None:
                         timing.tier2_screen_skips += 1
                     return None
+                if rank_ub is not None and rank_ub < min_rank:
+                    if timing is not None:
+                        timing.tier2_rank_screen_skips += 1
+                    return None
+                if (
+                    self._use_tier2_two_phase_for(loadout)
+                    and min_rank is not None
+                    and rank_ub is not None
+                ):
+                    rank_lb = tier2_rank_lower_bound(
+                        board,
+                        path,
+                        score_word,
+                        loadout,
+                        ctx,
+                        self._mult_rules,
+                        mult_weight=self.mult_search_weight,
+                        hanafuda_level=hanafuda_level,
+                    )
+                    if rank_lb < min_rank:
+                        if timing is not None:
+                            timing.tier2_phase1_calls += 1
+                            timing.tier2_phase2_deferred += 1
+                        self._provisional_candidates.add(key)
+                        return rank_ub
         setup_bonus = 0.0
         timing = self._active_timing
         if self.score_fn:
@@ -2778,8 +3092,15 @@ class WordSearcher:
         else:
             t0 = time.perf_counter()
             immediate = self.scoring.score_total_only(
-                board, path, score_word, loadout, solve_context=ctx
+                board,
+                path,
+                score_word,
+                loadout,
+                solve_context=ctx,
+                **self._pipeline_cache_kwargs(),
             )
+            if timing is not None and self._use_tier2_two_phase_for(loadout):
+                timing.tier2_phase2_calls += 1
             if timing is not None:
                 timing.score_sec += time.perf_counter() - t0
                 timing.score_calls += 1
@@ -2839,7 +3160,14 @@ class WordSearcher:
         cached = self._score_cache.get(key)
         if cached is not None:
             return cached[0], cached[1]
-        immediate = self.scoring.score_total_only(board, path, word, loadout)
+        immediate = self.scoring.score_total_only(
+            board,
+            path,
+            word,
+            loadout,
+            solve_context=self._search_ctx(loadout),
+            **self._pipeline_cache_kwargs(),
+        )
         return immediate, 0.0
 
     def find_best_words(
@@ -2855,6 +3183,9 @@ class WordSearcher:
         self._score_cache.clear()
         self._dict_path_cache.clear()
         self._number_extend_cache.clear()
+        self._grid_refs_cache.clear()
+        self._capybara_loadout_cache.clear()
+        self._provisional_candidates.clear()
         reset_board_flat_call_count()
         clear_chess_attack_cache()
         loadout = loadout or Loadout(money=board.money)
@@ -2872,6 +3203,7 @@ class WordSearcher:
             else None
         )
         self._solve_ctx = build_solve_context(loadout, self.scoring.rules)
+        self._graph_ctx = build_board_graph_context(board)
         mult_count = len(self._mult_rules)
         heap_k = self.candidate_heap_size or _candidate_heap_size(
             top_n, mult_count
@@ -3214,6 +3546,7 @@ class WordSearcher:
             timing.extend_sec = time.monotonic() - extend_start
 
         timing.wall_sec = time.monotonic() - solve_start
+        self._refine_provisional_heap(board, loadout, candidates)
         self.last_search_timing = timing
 
         best_by_word: dict[
@@ -3231,7 +3564,14 @@ class WordSearcher:
         for immediate, setup, rank_sc, word, path_tuple in best_by_word.values():
             path = list(path_tuple)
             t_final = time.perf_counter()
-            _, bd = self.scoring.score(board, path, word, loadout)
+            _, bd = self.scoring.score(
+                board,
+                path,
+                word,
+                loadout,
+                solve_context=self._solve_ctx,
+                **self._pipeline_cache_kwargs(),
+            )
             timing.final_score_sec += time.perf_counter() - t_final
             unique.append(
                 WordResult(

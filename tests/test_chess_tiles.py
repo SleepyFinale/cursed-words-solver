@@ -757,3 +757,31 @@ def test_markkaa_extension_found_in_search():
     assert match[0].score >= 180.0
     effects = match[0].breakdown.get("pipeline", {}).get("effects", [])
     assert any("Movie Camera:" in e for e in effects)
+
+
+def test_neighbors_mask_matches_neighbors_from_tile_on_chess_boards():
+    """Bitboard neighbor API must match list API on representative fixtures."""
+    from cursed_words_solver.graph_bitboard import build_board_graph_context, iter_mask
+    from cursed_words_solver.search import neighbors_from_tile, neighbors_mask
+
+    boards = []
+    board, _ = _markkaa_board_and_loadout()
+    boards.append(board)
+    if RUFIYAA_FIXTURE.exists():
+        data = json.loads(RUFIYAA_FIXTURE.read_text(encoding="utf-8"))
+        rb = parse_board_from_run_state(data)
+        if rb is not None:
+            boards.append(rb)
+
+    for board in boards:
+        ctx = build_board_graph_context(board)
+        for start in range(25):
+            if not board.is_active_index(start):
+                continue
+            for visited_bits in (1 << start, (1 << start) | (1 << ((start + 1) % 25))):
+                path = [start]
+                expected = neighbors_from_tile(board, path, visited_bits)
+                mask = neighbors_mask(
+                    board, path, visited_bits, graph_ctx=ctx
+                )
+                assert sorted(expected) == sorted(iter_mask(mask))
