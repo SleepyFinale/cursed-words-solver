@@ -782,6 +782,6 @@ def test_neighbors_mask_matches_neighbors_from_tile_on_chess_boards():
                 path = [start]
                 expected = neighbors_from_tile(board, path, visited_bits)
                 mask = neighbors_mask(
-                    board, path, visited_bits, graph_ctx=ctx
+                    board, visited_bits, cell_id=start, graph_ctx=ctx
                 )
                 assert sorted(expected) == sorted(iter_mask(mask))

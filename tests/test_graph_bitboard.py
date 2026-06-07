@@ -98,7 +98,9 @@ def test_neighbors_mask_matches_neighbors_from_tile_standard():
         path = [cell]
         visited = 1 << cell
         expected = neighbors_from_tile(board, path, visited, flags=flags)
-        mask = neighbors_mask(board, path, visited, flags=flags, graph_ctx=ctx)
+        mask = neighbors_mask(
+            board, visited, cell_id=cell, flags=flags, graph_ctx=ctx
+        )
         assert sorted(expected) == sorted(iter_mask(mask))
 
 
@@ -118,7 +120,9 @@ def test_neighbors_mask_parity_with_hungry_snake():
         path = [cell]
         visited = 1 << cell
         expected = neighbors_from_tile(board, path, visited, flags=flags)
-        mask = neighbors_mask(board, path, visited, flags=flags, graph_ctx=ctx)
+        mask = neighbors_mask(
+            board, visited, cell_id=cell, flags=flags, graph_ctx=ctx
+        )
         assert sorted(expected) == sorted(iter_mask(mask))
 
 
@@ -158,7 +162,9 @@ def test_chess_neighbors_mask_parity_rook():
     path = [12]
     visited = 1 << 12
     expected = chess_neighbors(board, path, visited, flags)
-    mask = neighbors_mask(board, path, visited, flags=flags, graph_ctx=ctx)
+    mask = neighbors_mask(
+        board, visited, cell_id=12, flags=flags, graph_ctx=ctx
+    )
     assert sorted(expected) == sorted(iter_mask(mask))
 
 

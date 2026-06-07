@@ -45,6 +45,7 @@ from cursed_words_solver.rules.scoring_order import (
 from cursed_words_solver.rules.tile_scoring import apply_tile_init
 from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
 from cursed_words_solver.solve_context import SolveContext, build_solve_context
+from cursed_words_solver.graph_bitboard import BoardGraphContext
 
 from cursed_words_solver.rules.boss_effects import (
     boss_context,
@@ -1198,6 +1199,7 @@ class ScoringPipeline:
         *,
         trace: list[dict[str, Any]] | None = None,
         solve_context: SolveContext | None = None,
+        graph_ctx: BoardGraphContext | None = None,
         grid_refs_cache: dict[tuple[int, ...], tuple] | None = None,
         capybara_loadout_cache: dict[tuple[int, ...], Loadout] | None = None,
         grid_refs_timing: object | None = None,
@@ -1237,6 +1239,7 @@ class ScoringPipeline:
                             loadout,
                             trace=None,
                             solve_context=solve_context,
+                            graph_ctx=graph_ctx,
                             grid_refs_cache=grid_refs_cache,
                             capybara_loadout_cache=capybara_loadout_cache,
                             grid_refs_timing=grid_refs_timing,
@@ -1279,6 +1282,7 @@ class ScoringPipeline:
         if trace is not None:
             state["_trace"] = trace
         state["_search_flags"] = ctx.search_flags
+        state["_graph_ctx"] = graph_ctx
         apply_tile_init(
             board,
             path,
@@ -1665,6 +1669,7 @@ class ScoringPipeline:
         loadout: Loadout | None = None,
         *,
         solve_context: SolveContext | None = None,
+        graph_ctx: BoardGraphContext | None = None,
         grid_refs_cache: dict[tuple[int, ...], tuple] | None = None,
         capybara_loadout_cache: dict[tuple[int, ...], Loadout] | None = None,
         grid_refs_timing: object | None = None,
@@ -1677,6 +1682,7 @@ class ScoringPipeline:
             word,
             loadout,
             solve_context=solve_context,
+            graph_ctx=graph_ctx,
             grid_refs_cache=grid_refs_cache,
             capybara_loadout_cache=capybara_loadout_cache,
             grid_refs_timing=grid_refs_timing,
@@ -1691,6 +1697,7 @@ class ScoringPipeline:
         loadout: Loadout | None = None,
         *,
         solve_context: SolveContext | None = None,
+        graph_ctx: BoardGraphContext | None = None,
         grid_refs_cache: dict[tuple[int, ...], tuple] | None = None,
         capybara_loadout_cache: dict[tuple[int, ...], Loadout] | None = None,
         grid_refs_timing: object | None = None,
@@ -1702,6 +1709,7 @@ class ScoringPipeline:
             word,
             loadout,
             solve_context=solve_context,
+            graph_ctx=graph_ctx,
             grid_refs_cache=grid_refs_cache,
             capybara_loadout_cache=capybara_loadout_cache,
             grid_refs_timing=grid_refs_timing,
@@ -2228,7 +2236,11 @@ class ScoringPipeline:
             elif word_mode == "michael_book_bonus":
                 bonus = michael_book_bonus(loadout)
             elif word_mode == "grid_total_base_times_level":
-                total = grid_total_base_score(board)
+                _graph_ctx = state.get("_graph_ctx")
+                total = grid_total_base_score(
+                    board,
+                    cached=_graph_ctx.grid_base_score if _graph_ctx else None,
+                )
                 bonus = sticker_rule_int(level, rule) * total
             elif word_mode == "if_sticker_slot_last":
                 if evaluate_sticker_condition(
@@ -2253,8 +2265,10 @@ class ScoringPipeline:
                     bonus = sticker_rule_int(level, rule)
             elif word_mode == "colourless_word_per_coloured_on_grid":
                 if word_all_colourless_on_path(board, path):
+                    _graph_ctx = state.get("_graph_ctx")
                     bonus = sticker_rule_int(level, rule) * coloured_tile_count_on_grid(
-                        board
+                        board,
+                        cached=_graph_ctx.coloured_tile_count if _graph_ctx else None,
                     )
             else:
                 bonus = sticker_rule_int(level, rule) if "base" in rule else value
@@ -2717,7 +2731,14 @@ class ScoringPipeline:
                 if not hanafuda_hand_satisfied(board, path, level):
                     pass
                 else:
-                    n_unused = unused_cards_on_board(board, path)
+                    _graph_ctx = state.get("_graph_ctx")
+                    n_unused = unused_cards_on_board(
+                        board,
+                        path,
+                        hanafuda_suit_mask=(
+                            _graph_ctx.hanafuda_suit_mask if _graph_ctx else 0
+                        ),
+                    )
                     per = sticker_rule_int(level, rule)
                     x = hanafuda_x_required(level)
                     hand_label = {

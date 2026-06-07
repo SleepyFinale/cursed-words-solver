@@ -24,6 +24,7 @@ from cursed_words_solver.rules.chess_tiles import (
     identical_chess_piece,
     is_chess_capture_step,
     is_chess_piece,
+    solve_has_chess_pieces,
 )
 from cursed_words_solver.rules.stamp_behaviors import (
     FLAG_CHESS_ALLIES_CAN_TAKE,
@@ -35,6 +36,7 @@ from cursed_words_solver.rules.stamp_behaviors import (
     stamp_search_flags_mask,
 )
 from cursed_words_solver.rules.fraction_tiles import fraction_parts, is_fraction_tile
+from cursed_words_solver.graph_bitboard import mask_from_indices
 
 NON_COLOUR_FOR_NUMBER_BONUS = frozenset(
     {
@@ -480,9 +482,34 @@ def _hanafuda_counts_as_unused(tile: Tile, path: list[int]) -> bool:
     return False
 
 
-def unused_cards_on_board(board: Board, path: list[int]) -> int:
+def unused_cards_on_board(
+    board: Board,
+    path: list[int],
+    *,
+    hanafuda_suit_mask: int = 0,
+) -> int:
     """Tiles that grant Hanafuda +WORD per unused card (Hanafuda.ApplyWordBonus)."""
-    return sum(1 for tile in board.flat if _hanafuda_counts_as_unused(tile, path))
+    if not path:
+        return 0
+    if hanafuda_suit_mask:
+        path_mask = mask_from_indices(path)
+        count = (hanafuda_suit_mask & ~path_mask).bit_count()
+        for idx in path:
+            tile = board.get_by_index(idx)
+            if is_chess_piece(tile) and _hanafuda_tile_has_suit(tile):
+                count += 1
+            elif idx == path[-1] and len(path) <= 3:
+                if is_joker_tile(tile) or (
+                    _is_joker_glyph_char(tile) and not card_suit(tile)
+                ):
+                    count += 1
+        return count
+    count = 0
+    for idx in range(25):
+        tile = board.get_by_index(idx)
+        if _hanafuda_counts_as_unused(tile, path):
+            count += 1
+    return count
 
 
 def word_starts_with_face_card(board: Board, path: list[int]) -> bool:
@@ -774,6 +801,8 @@ def chess_take_path_positions(
     search_flags: SearchFlagsMask = 0,
 ) -> list[int]:
     """Indices into path for tiles that count as takes."""
+    if not solve_has_chess_pieces():
+        return []
     return [
         i
         for i in range(len(path))
@@ -1371,7 +1400,9 @@ def colourless_adjacent_two_unique_colours(board: Board, tile: Tile) -> bool:
     return len(neighbor_colors) >= 2
 
 
-def grid_total_base_score(board: Board) -> int:
+def grid_total_base_score(board: Board, *, cached: int | None = None) -> int:
+    if cached is not None:
+        return cached
     return sum(
         tile_base_contribution(tile, board.money) for tile in board.flat
     )
@@ -2311,7 +2342,9 @@ def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
     return len(categories)
 
 
-def coloured_tile_count_on_grid(board: Board) -> int:
+def coloured_tile_count_on_grid(board: Board, *, cached: int | None = None) -> int:
+    if cached is not None:
+        return cached
     return sum(
         1
         for tile in board.flat

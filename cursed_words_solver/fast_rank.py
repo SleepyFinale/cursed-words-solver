@@ -6,6 +6,11 @@ from __future__ import annotations
 
 
 
+from cursed_words_solver.graph_bitboard import (
+    RED_COLOR_CODE,
+    BoardGraphContext,
+    CELL_COUNT,
+)
 from cursed_words_solver.models import Board, CurseType, Loadout, TileColor
 
 from cursed_words_solver.mult_search import (
@@ -205,6 +210,7 @@ def _tier2_additive_bonuses(
     path: list[int],
     word: str,
     ctx: SolveContext,
+    graph_ctx: BoardGraphContext | None = None,
 ) -> tuple[float, float, float, float, float]:
     """Tile-base sum and loadout-invariant bonuses from SolveContext."""
     base = tier2_tile_base_sum(board, path, ctx)
@@ -226,7 +232,11 @@ def _tier2_additive_bonuses(
     if ctx.hanafuda_level > 0 and ctx.hanafuda_per_unused > 0:
         if hanafuda_hand_satisfied(board, path, ctx.hanafuda_level):
             hanafuda_bonus = ctx.hanafuda_per_unused * unused_cards_on_board(
-                board, path
+                board,
+                path,
+                hanafuda_suit_mask=(
+                    graph_ctx.hanafuda_suit_mask if graph_ctx else 0
+                ),
             )
     return base, word_bonus, path_bonus, red_bonus, hanafuda_bonus
 
@@ -238,10 +248,11 @@ def tier2_immediate_lower_bound(
     loadout: Loadout,
     ctx: SolveContext,
     mult_rules: list[MultRule],
+    graph_ctx: BoardGraphContext | None = None,
 ) -> float:
     """Conservative immediate score; never exceeds full pipeline score_total_only."""
     base, word_bonus, path_bonus, red_bonus, hanafuda_bonus = _tier2_additive_bonuses(
-        board, path, word, ctx
+        board, path, word, ctx, graph_ctx=graph_ctx
     )
     subtotal = base + word_bonus + path_bonus + red_bonus + hanafuda_bonus
     return subtotal * guaranteed_mult_factor(mult_rules, loadout, path)
@@ -254,10 +265,11 @@ def tier2_immediate_upper_bound(
     loadout: Loadout,
     ctx: SolveContext,
     mult_rules: list[MultRule],
+    graph_ctx: BoardGraphContext | None = None,
 ) -> float:
     """Optimistic upper bound on score_total_only before search-rank heuristics."""
     base, word_bonus, path_bonus, red_bonus, hanafuda_bonus = _tier2_additive_bonuses(
-        board, path, word, ctx
+        board, path, word, ctx, graph_ctx=graph_ctx
     )
     subtotal = base + word_bonus + path_bonus + red_bonus + hanafuda_bonus
     mult = optimistic_mult_upper_bound(mult_rules, loadout, path)
@@ -277,10 +289,11 @@ def tier2_rank_lower_bound(
     *,
     mult_weight: float,
     hanafuda_level: int = 0,
+    graph_ctx: BoardGraphContext | None = None,
 ) -> float:
     """Conservative lower bound on heap rank_score for tier-2 two-phase scoring."""
     immediate_lb = tier2_immediate_lower_bound(
-        board, path, word, loadout, ctx, mult_rules
+        board, path, word, loadout, ctx, mult_rules, graph_ctx=graph_ctx
     )
     mult_lb = guaranteed_mult_factor(mult_rules, loadout, path)
     rank_lb = search_rank_score(
@@ -304,10 +317,11 @@ def tier2_rank_upper_bound(
     *,
     mult_weight: float,
     hanafuda_level: int = 0,
+    graph_ctx: BoardGraphContext | None = None,
 ) -> float:
     """Optimistic upper bound on heap rank_score for tier-2 screening."""
     immediate_ub = tier2_immediate_upper_bound(
-        board, path, word, loadout, ctx, mult_rules
+        board, path, word, loadout, ctx, mult_rules, graph_ctx=graph_ctx
     )
     mult_ub = optimistic_mult_upper_bound(mult_rules, loadout, path)
     rank_ub = search_rank_score(
@@ -368,6 +382,164 @@ def loadout_allows_tier2_screen(
 
         return False
 
+    return True
+
+
+def build_search_tile_base(
+    board: Board,
+    ctx: SolveContext,
+    graph_ctx: BoardGraphContext,
+) -> tuple[float, ...]:
+    """Per-cell base scores for DFS prefix tracking (SolveContext overrides)."""
+    out = [0.0] * CELL_COUNT
+    for idx in range(CELL_COUNT):
+        if not (graph_ctx.active_mask & (1 << idx)):
+            continue
+        if graph_ctx.item_mask & (1 << idx):
+            continue
+        tile = board.get_by_index(idx)
+        if ctx.microscope_base:
+            out[idx] = float(microscope_init_contribution(tile, board.money))
+        elif tile.color == TileColor.BLUE and ctx.shield_blue_base is not None:
+            out[idx] = float(ctx.shield_blue_base)
+        else:
+            out[idx] = graph_ctx.tile_base[idx]
+    return tuple(out)
+
+
+def _max_unvisited_base_sum(
+    graph_ctx: BoardGraphContext,
+    search_tile_base: tuple[float, ...],
+    visited_mask: int,
+    steps_left: int,
+) -> float:
+    if steps_left <= 0:
+        return 0.0
+    avail = graph_ctx.active_mask & ~visited_mask
+    if not avail:
+        return 0.0
+    candidates: list[float] = []
+    while avail:
+        bit = (avail & -avail).bit_length() - 1
+        candidates.append(search_tile_base[bit])
+        avail &= avail - 1
+    candidates.sort(reverse=True)
+    return sum(candidates[:steps_left])
+
+
+def _prefix_additive_bonuses(
+    board: Board,
+    path: list[int],
+    chars: list[str],
+    visited_mask: int,
+    steps_left: int,
+    ctx: SolveContext,
+    graph_ctx: BoardGraphContext,
+    *,
+    max_len: int,
+    prefix_red_count: int,
+) -> tuple[float, float, float, float]:
+    """Optimistic loadout bonuses assuming the path extends to max_len."""
+    prefix_word = "".join(chars)
+    hypothetical_len = len(prefix_word) + steps_left
+    word_bonus = (
+        ctx.max_word_length_bonus if hypothetical_len >= ctx.word_length_min else 0
+    )
+    path_bonus = (
+        ctx.bicycle_word_accumulator
+        + ctx.pin_word_bonus_per_tile * max_len
+        + ctx.always_add_word_bonus
+    )
+    red_bonus = 0
+    if ctx.red_tile_bonus_per_red > 0:
+        reds = prefix_red_count
+        unvisited = graph_ctx.active_mask & ~visited_mask
+        while unvisited:
+            bit = (unvisited & -unvisited).bit_length() - 1
+            if graph_ctx.tile_color_code[bit] == RED_COLOR_CODE:
+                reds += 1
+            unvisited &= unvisited - 1
+        red_bonus = ctx.red_tile_bonus_per_red * reds
+    hanafuda_bonus = 0
+    if ctx.hanafuda_level > 0 and ctx.hanafuda_per_unused > 0:
+        if hanafuda_hand_satisfied(board, path, ctx.hanafuda_level):
+            hanafuda_bonus = ctx.hanafuda_per_unused * unused_cards_on_board(
+                board,
+                path,
+                hanafuda_suit_mask=graph_ctx.hanafuda_suit_mask,
+            )
+    return word_bonus, path_bonus, red_bonus, hanafuda_bonus
+
+
+def prefix_rank_upper_bound(
+    prefix_base: float,
+    board: Board,
+    path: list[int],
+    chars: list[str],
+    visited_mask: int,
+    steps_left: int,
+    loadout: Loadout,
+    ctx: SolveContext,
+    mult_rules: list[MultRule],
+    graph_ctx: BoardGraphContext,
+    search_tile_base: tuple[float, ...],
+    *,
+    mult_weight: float,
+    max_len: int,
+    prefix_red_count: int,
+    hanafuda_level: int = 0,
+) -> float:
+    """Optimistic upper bound on heap rank_score for a DFS prefix."""
+    max_fill = _max_unvisited_base_sum(
+        graph_ctx, search_tile_base, visited_mask, steps_left
+    )
+    base = prefix_base + max_fill
+    word_bonus, path_bonus, red_bonus, hanafuda_bonus = _prefix_additive_bonuses(
+        board,
+        path,
+        chars,
+        visited_mask,
+        steps_left,
+        ctx,
+        graph_ctx,
+        max_len=max_len,
+        prefix_red_count=prefix_red_count,
+    )
+    subtotal = base + word_bonus + path_bonus + red_bonus + hanafuda_bonus
+    mult = optimistic_mult_upper_bound(mult_rules, loadout, path)
+    immediate_ub = subtotal * mult
+    rank_ub = search_rank_score(
+        immediate_ub,
+        mult,
+        mult_weight=mult_weight,
+        setup_bonus=0.0,
+    )
+    if hanafuda_level > 0 and hanafuda_hand_satisfied(board, path, hanafuda_level):
+        rank_ub += 800.0
+    return rank_ub
+
+
+def loadout_allows_dfs_bb(
+    ctx: SolveContext,
+    loadout: Loadout,
+    *,
+    has_number_tiles: bool,
+    has_chess_pieces: bool,
+    setup_weight: float = 0.0,
+    score_fn=None,
+) -> bool:
+    """True when in-tree DFS branch-and-bound is safe."""
+    if not loadout_allows_tier2_screen(
+        ctx,
+        loadout,
+        setup_weight=setup_weight,
+        score_fn=score_fn,
+    ):
+        return False
+    if has_number_tiles:
+        return False
+    if has_chess_pieces:
+        return False
     return True
 
 

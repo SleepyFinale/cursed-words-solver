@@ -56,6 +56,8 @@ _ATTACK_CACHE_MAX = 8192
 _attack_cache: OrderedDict[tuple, bool] = OrderedDict()
 _attack_cache_hits = 0
 _attack_cache_misses = 0
+_board_has_chess_pieces: bool = True
+_solve_board_fingerprint: str | None = None
 
 
 def chess_attack_cache_stats() -> tuple[int, int]:
@@ -74,10 +76,22 @@ def _visited_cache_key(visited: int | set[int]) -> int | frozenset[int]:
     return visited
 
 
-def clear_chess_attack_cache() -> None:
+def solve_has_chess_pieces() -> bool:
+    """Whether the current solve board has chess tiles (set via clear_chess_attack_cache)."""
+    return _board_has_chess_pieces
+
+
+def clear_chess_attack_cache(
+    *,
+    has_chess_pieces: bool = True,
+    board_fingerprint: str | None = None,
+) -> None:
     """Clear attack lookup cache (call at start of each solve)."""
+    global _board_has_chess_pieces, _solve_board_fingerprint
     _attack_cache.clear()
     reset_chess_attack_cache_stats()
+    _board_has_chess_pieces = has_chess_pieces
+    _solve_board_fingerprint = board_fingerprint
 
 
 def index_of(row: int, col: int) -> int:
@@ -1069,8 +1083,15 @@ def is_square_attacked(
     *,
     horizontal_wrap: bool = False,
 ) -> bool:
+    if not _board_has_chess_pieces:
+        return False
+    fp = (
+        _solve_board_fingerprint
+        if _solve_board_fingerprint is not None
+        else board_fingerprint(board)
+    )
     key = (
-        board_fingerprint(board),
+        fp,
         _visited_cache_key(visited),
         row,
         col,

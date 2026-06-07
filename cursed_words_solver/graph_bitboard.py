@@ -24,6 +24,7 @@ from cursed_words_solver.models import (
     Board,
     CurseType,
     Tile,
+    TileColor,
     normalize_tile_glyph,
 )
 
@@ -47,6 +48,19 @@ STRAIGHT_DIR_INDICES = (1, 3, 4, 6)
 DIAG_DIR_INDICES = (0, 2, 5, 7)
 
 _CURSE_TO_INT = {c: i + 1 for i, c in enumerate(CurseType)}
+CURSE_CODE_FRACTION = _CURSE_TO_INT.get(CurseType.FRACTION, 0)
+CURSE_CODE_NUMBER = _CURSE_TO_INT.get(CurseType.NUMBER, 0)
+
+_COLOR_TO_CODE = {
+    TileColor.COLORLESS: 0,
+    TileColor.RED: 1,
+    TileColor.BLUE: 2,
+    TileColor.GREEN: 3,
+    TileColor.GOLD: 4,
+    TileColor.PURPLE: 5,
+    TileColor.WHITE: 6,
+}
+RED_COLOR_CODE = 1
 
 
 def index_of(row: int, col: int) -> int:
@@ -235,8 +249,18 @@ class BoardGraphContext:
     active_mask: int
     chess_piece_mask: int
     item_mask: int
+    wildcard_mask: int
     chess_curse: tuple[int, ...]
     chess_side_code: tuple[int, ...]
+    has_chess_pieces: bool = False
+    hanafuda_suit_mask: int = 0
+    grid_base_score: int = 0
+    coloured_tile_count: int = 0
+    tile_base: tuple[float, ...] = field(default_factory=lambda: (0.0,) * CELL_COUNT)
+    curse_code: tuple[int, ...] = field(default_factory=lambda: (0,) * CELL_COUNT)
+    tile_color_code: tuple[int, ...] = field(default_factory=lambda: (0,) * CELL_COUNT)
+    is_fraction: tuple[bool, ...] = field(default_factory=lambda: (False,) * CELL_COUNT)
+    number_like: tuple[bool, ...] = field(default_factory=lambda: (False,) * CELL_COUNT)
     letter_masks: dict[str, int] = field(default_factory=dict)
     identical_chess_masks: dict[tuple[str, str], int] = field(default_factory=dict)
 
@@ -256,23 +280,46 @@ class BoardGraphContext:
 
 
 def build_board_graph_context(board: Board) -> BoardGraphContext:
+    from cursed_words_solver.rules.base_scoring import tile_base_contribution
+    from cursed_words_solver.rules.scoring_conditions import (
+        NON_COLOUR_FOR_NUMBER_BONUS,
+        _hanafuda_tile_has_suit,
+    )
+
     active_mask = mask_from_active(board)
     chess_piece_mask = 0
     item_mask = 0
+    wildcard_mask = 0
     chess_curse: list[int] = [0] * CELL_COUNT
     chess_side_code: list[int] = [0] * CELL_COUNT
     letter_masks: dict[str, int] = defaultdict(int)
     identical_chess: dict[tuple[str, str], int] = defaultdict(int)
+    hanafuda_suit_mask = 0
+    grid_base_score = 0
+    coloured_tile_count = 0
+    tile_base: list[float] = [0.0] * CELL_COUNT
+    curse_code: list[int] = [0] * CELL_COUNT
+    tile_color_code: list[int] = [0] * CELL_COUNT
+    is_fraction: list[bool] = [False] * CELL_COUNT
+    number_like: list[bool] = [False] * CELL_COUNT
 
     for idx in range(CELL_COUNT):
         if not board.is_active_index(idx):
             continue
         tile = board.get_by_index(idx)
+        curse_code[idx] = _CURSE_TO_INT.get(tile.curse, 0)
+        tile_color_code[idx] = _COLOR_TO_CODE.get(tile.color, 0)
+        is_fraction[idx] = tile.curse == CurseType.FRACTION
+        number_like[idx] = tile.curse in (CurseType.NUMBER, CurseType.FRACTION)
         if tile.curse == CurseType.ITEM:
             item_mask |= 1 << idx
+        elif tile.curse == CurseType.WILDCARD:
+            wildcard_mask |= 1 << idx
+        else:
+            tile_base[idx] = float(tile_base_contribution(tile, board.money))
         if _is_chess_piece(tile):
             chess_piece_mask |= 1 << idx
-            chess_curse[idx] = _CURSE_TO_INT.get(tile.curse, 0)
+            chess_curse[idx] = curse_code[idx]
         if _chess_side_known(tile):
             chess_side_code[idx] = 1 if _chess_side(tile) == "black" else 2
         letter = _physical_letter(tile)
@@ -281,14 +328,39 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
         if _is_chess_piece(tile) and _chess_side_known(tile):
             key = (tile.curse.value, _chess_side(tile))
             identical_chess[key] |= 1 << idx
+        if _hanafuda_tile_has_suit(tile):
+            hanafuda_suit_mask |= 1 << idx
+        grid_base_score += tile_base_contribution(tile, board.money)
+        if tile.color not in NON_COLOUR_FOR_NUMBER_BONUS:
+            coloured_tile_count += 1
+
+    for idx in range(CELL_COUNT):
+        if board.is_active_index(idx):
+            continue
+        row, col = divmod(idx, 5)
+        tile = board.get(row, col)
+        if tile is None:
+            continue
+        if _hanafuda_tile_has_suit(tile):
+            hanafuda_suit_mask |= 1 << idx
 
     return BoardGraphContext(
         board=board,
         active_mask=active_mask,
         chess_piece_mask=chess_piece_mask,
         item_mask=item_mask,
+        wildcard_mask=wildcard_mask,
         chess_curse=tuple(chess_curse),
         chess_side_code=tuple(chess_side_code),
+        has_chess_pieces=bool(chess_piece_mask),
+        hanafuda_suit_mask=hanafuda_suit_mask,
+        grid_base_score=grid_base_score,
+        coloured_tile_count=coloured_tile_count,
+        tile_base=tuple(tile_base),
+        curse_code=tuple(curse_code),
+        tile_color_code=tuple(tile_color_code),
+        is_fraction=tuple(is_fraction),
+        number_like=tuple(number_like),
         letter_masks=dict(letter_masks),
         identical_chess_masks=dict(identical_chess),
     )

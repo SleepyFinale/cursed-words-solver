@@ -23,6 +23,7 @@ from cursed_words_solver.models import (
     normalize_tile_glyph,
 )
 from cursed_words_solver.encounter_board import effective_board_for_loadout
+from cursed_words_solver.fingerprints import board_fingerprint
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.scoring_conditions import (
     CARD_SUIT_FIRST_LETTER,
@@ -40,11 +41,14 @@ from cursed_words_solver.rules.scoring_conditions import (
 )
 from cursed_words_solver.rules.fraction_tiles import fraction_position_valid
 from cursed_words_solver.fast_rank import (
+    build_search_tile_base,
+    loadout_allows_dfs_bb,
     loadout_allows_fast_rank,
     loadout_allows_mult_prune,
     loadout_allows_tier2_screen,
     loadout_allows_tier2_two_phase,
     mult_aware_lower_bound,
+    prefix_rank_upper_bound,
     tier2_immediate_lower_bound,
     tier2_immediate_upper_bound,
     tier2_rank_lower_bound,
@@ -69,8 +73,10 @@ from cursed_words_solver.rules.chess_tiles import (
 from cursed_words_solver.graph_bitboard import (
     BoardGraphContext,
     CELL_COUNT,
+    CURSE_CODE_NUMBER,
     NEIGHBORS_8,
     NEIGHBORS_8_WRAP,
+    RED_COLOR_CODE,
     build_board_graph_context,
     collect_mask_indices,
     get_valid_extensions,
@@ -160,6 +166,8 @@ class SearchTiming:
     tier2_phase1_calls: int = 0
     tier2_phase2_calls: int = 0
     tier2_phase2_deferred: int = 0
+    dfs_bb_prunes: int = 0
+    dfs_bb_calls: int = 0
     grid_refs_cache_hits: int = 0
     grid_refs_cache_misses: int = 0
 
@@ -936,9 +944,6 @@ def _double_letter_teleport_neighbors(
     return out
 
 
-    return out
-
-
 def _coerce_visited_mask(visited: int | set[int]) -> int:
     if isinstance(visited, int):
         return visited
@@ -947,16 +952,20 @@ def _coerce_visited_mask(visited: int | set[int]) -> int:
 
 def neighbors_mask(
     board: Board,
-    path: list[int],
     visited: int | set[int],
     *,
+    cell_id: int | None = None,
+    path: list[int] | None = None,
     flags: SearchFlagsMask = 0,
     graph_ctx: BoardGraphContext | None = None,
 ) -> int:
     """Curse-aware neighbor expansion as a bitmask."""
     flags = coerce_search_flags(flags)
     visited_mask = _coerce_visited_mask(visited)
-    cell_id = path[-1]
+    if cell_id is None:
+        if path is None:
+            raise ValueError("neighbors_mask requires cell_id or path")
+        cell_id = path[-1]
     last_tile = board.get_by_index(cell_id)
     active_mask = graph_ctx.active_mask if graph_ctx else None
     item_mask = graph_ctx.item_mask if graph_ctx else 0
@@ -1000,12 +1009,21 @@ def neighbors_from_tile(
     graph_ctx: BoardGraphContext | None = None,
 ) -> list[int]:
     """Curse-aware neighbor expansion."""
-    mask = neighbors_mask(board, path, visited, flags=flags, graph_ctx=graph_ctx)
+    cell_id = path[-1]
+    mask = neighbors_mask(
+        board,
+        visited,
+        cell_id=cell_id,
+        flags=flags,
+        graph_ctx=graph_ctx,
+    )
     return list(
         _iter_expansion_neighbors(
             board,
-            path,
             visited,
+            cell_id=cell_id,
+            path=path,
+            path_length=len(path),
             flags=flags,
             graph_ctx=graph_ctx,
             nbr_mask=mask,
@@ -1027,18 +1045,29 @@ def _insertion_sort_indices(
 
 def _iter_expansion_neighbors(
     board: Board,
-    path: list[int],
     visited: int | set[int],
     *,
+    cell_id: int | None = None,
+    path: list[int] | None = None,
+    path_length: int | None = None,
     flags: SearchFlagsMask = 0,
     hints: MultNeighborHints | None = None,
     graph_ctx: BoardGraphContext | None = None,
     nbr_mask: int | None = None,
 ) -> Iterator[int]:
     """Yield neighbor indices for DFS expansion; reuses scratch buffer instead of list(iter_mask)."""
+    if cell_id is None:
+        if path is None:
+            raise ValueError("_iter_expansion_neighbors requires cell_id or path")
+        cell_id = path[-1]
+    plen = path_length if path_length is not None else (len(path) if path else 0)
     if nbr_mask is None:
         nbr_mask = neighbors_mask(
-            board, path, visited, flags=flags, graph_ctx=graph_ctx
+            board,
+            visited,
+            cell_id=cell_id,
+            flags=flags,
+            graph_ctx=graph_ctx,
         )
     if not nbr_mask:
         return
@@ -1049,46 +1078,102 @@ def _iter_expansion_neighbors(
             yield _NEIGHBOR_SCRATCH[i]
         return
 
-    last = board.get_by_index(path[-1])
-    if hints is not None:
-        letter_pos = len(path)
+    if graph_ctx is not None:
+        last_frac = graph_ctx.is_fraction[cell_id]
+        last_number = graph_ctx.curse_code[cell_id] == CURSE_CODE_NUMBER
+        tile_bases = graph_ctx.tile_base
+        nbr_fraction = graph_ctx.is_fraction
+        nbr_number_like = graph_ctx.number_like
+    else:
+        last_tile = board.get_by_index(cell_id)
+        last_frac = is_fraction_tile(last_tile)
+        last_number = last_tile.curse == CurseType.NUMBER
+
+        def _nbr_base(idx: int) -> float:
+            return float(board.get_by_index(idx).base_score)
+
+        def _nbr_frac(idx: int) -> bool:
+            return is_fraction_tile(board.get_by_index(idx))
+
+        def _nbr_numlike(idx: int) -> bool:
+            return is_number_like_tile(board.get_by_index(idx))
+
+        nbr_fraction = _nbr_frac
+        nbr_number_like = _nbr_numlike
+        tile_bases = _nbr_base
+
+    if hints is not None and path is not None:
+        letter_pos = plen
 
         def sort_key(idx: int) -> tuple[int, int, float, int]:
-            tile = board.get_by_index(idx)
-            base = float(tile.base_score)
+            base = (
+                tile_bases[idx]
+                if graph_ctx is not None
+                else tile_bases(idx)
+            )
             mult_pri = neighbor_mult_priority(
                 board, path, idx, hints, letter_pos=letter_pos
             )
-            if is_fraction_tile(last):
-                if tile.curse == CurseType.NUMBER:
+            if last_frac:
+                if (
+                    graph_ctx is not None
+                    and graph_ctx.curse_code[idx] == CURSE_CODE_NUMBER
+                ) or (
+                    graph_ctx is None
+                    and board.get_by_index(idx).curse == CurseType.NUMBER
+                ):
                     return (mult_pri, 0, -base, idx)
                 return (mult_pri, 2, -base, idx)
-            if last.curse == CurseType.NUMBER:
-                if is_fraction_tile(tile):
+            if last_number:
+                n_frac = (
+                    nbr_fraction[idx] if graph_ctx is not None else nbr_fraction(idx)
+                )
+                n_num = (
+                    nbr_number_like[idx]
+                    if graph_ctx is not None
+                    else nbr_number_like(idx)
+                )
+                if n_frac:
                     return (mult_pri, 0, -base, idx)
-                if is_number_like_tile(tile):
+                if n_num:
                     return (mult_pri, 1, -base, idx)
             return (mult_pri, 3, -base, idx)
     else:
 
         def sort_key(idx: int) -> tuple[int, float, int]:
-            tile = board.get_by_index(idx)
-            base = float(tile.base_score)
-            if is_fraction_tile(last):
-                if tile.curse == CurseType.NUMBER:
+            base = (
+                tile_bases[idx]
+                if graph_ctx is not None
+                else tile_bases(idx)
+            )
+            if last_frac:
+                if (
+                    graph_ctx is not None
+                    and graph_ctx.curse_code[idx] == CURSE_CODE_NUMBER
+                ) or (
+                    graph_ctx is None
+                    and board.get_by_index(idx).curse == CurseType.NUMBER
+                ):
                     return (0, -base, idx)
                 return (2, -base, idx)
-            if last.curse == CurseType.NUMBER:
-                if is_fraction_tile(tile):
+            if last_number:
+                n_frac = (
+                    nbr_fraction[idx] if graph_ctx is not None else nbr_fraction(idx)
+                )
+                n_num = (
+                    nbr_number_like[idx]
+                    if graph_ctx is not None
+                    else nbr_number_like(idx)
+                )
+                if n_frac:
                     return (0, -base, idx)
-                if is_number_like_tile(tile):
+                if n_num:
                     return (1, -base, idx)
             return (3, -base, idx)
 
-    # Local copy: recursive DFS reuses _NEIGHBOR_SCRATCH while this generator runs.
-    ordered = _NEIGHBOR_SCRATCH[:n]
-    _insertion_sort_indices(ordered, n, sort_key)
-    yield from ordered
+    _insertion_sort_indices(_NEIGHBOR_SCRATCH, n, sort_key)
+    for i in range(n):
+        yield _NEIGHBOR_SCRATCH[i]
 
 
 def _neighbors_sorted_by_base_score(
@@ -1103,8 +1188,10 @@ def _neighbors_sorted_by_base_score(
     return list(
         _iter_expansion_neighbors(
             board,
-            path,
             visited,
+            cell_id=path[-1],
+            path=path,
+            path_length=len(path),
             flags=flags,
             graph_ctx=graph_ctx,
             nbr_mask=nbr_mask,
@@ -1122,9 +1209,14 @@ def _neighbors_sorted_for_loadout(
     graph_ctx: BoardGraphContext | None = None,
     nbr_mask: int | None = None,
 ) -> list[int]:
+    cell_id = path[-1]
     if nbr_mask is None:
         nbr_mask = neighbors_mask(
-            board, path, visited, flags=flags, graph_ctx=graph_ctx
+            board,
+            visited,
+            cell_id=cell_id,
+            flags=flags,
+            graph_ctx=graph_ctx,
         )
     if not hints or not nbr_mask:
         return _neighbors_sorted_by_base_score(
@@ -1138,8 +1230,10 @@ def _neighbors_sorted_for_loadout(
     return list(
         _iter_expansion_neighbors(
             board,
-            path,
             visited,
+            cell_id=cell_id,
+            path=path,
+            path_length=len(path),
             flags=flags,
             hints=hints,
             graph_ctx=graph_ctx,
@@ -1317,9 +1411,18 @@ def _paths_between_indices(
             return
         if len(path) >= max_len:
             return
-        nbr_mask = neighbors_mask(board, path, visited, flags=flags)
+        cell_id = path[-1]
+        nbr_mask = neighbors_mask(
+            board, visited, cell_id=cell_id, flags=flags
+        )
         for nbr in _iter_expansion_neighbors(
-            board, path, visited, flags=flags, nbr_mask=nbr_mask
+            board,
+            visited,
+            cell_id=cell_id,
+            path=path,
+            path_length=len(path),
+            flags=flags,
+            nbr_mask=nbr_mask,
         ):
             path.append(nbr)
             dfs(path, visited | (1 << nbr))
@@ -1563,6 +1666,7 @@ class WordSearcher:
         use_fast_rank: bool | None = None,
         use_tier2_screen: bool | None = None,
         use_tier2_two_phase: bool | None = None,
+        use_dfs_bb: bool | None = None,
     ) -> None:
         self.dictionary = dictionary or WordDictionary()
         self.validator = PathValidator(self.dictionary, min_len)
@@ -1587,6 +1691,7 @@ class WordSearcher:
         self._use_fast_rank_override = use_fast_rank
         self._use_tier2_screen_override = use_tier2_screen
         self._use_tier2_two_phase_override = use_tier2_two_phase
+        self._use_dfs_bb_override = use_dfs_bb
         self._score_cache: dict[tuple[tuple[int, ...], str], tuple[float, float, float]] = {}
         self._grid_refs_cache: dict[tuple[int, ...], tuple] = {}
         self._capybara_loadout_cache: dict[tuple[int, ...], Loadout] = {}
@@ -1683,8 +1788,28 @@ class WordSearcher:
             score_fn=self.score_fn,
         )
 
+    def _use_dfs_bb_for(
+        self,
+        loadout: Loadout,
+        *,
+        has_number_tiles: bool,
+        has_chess_pieces: bool,
+    ) -> bool:
+        if self._use_dfs_bb_override is not None:
+            return self._use_dfs_bb_override
+        ctx = self._search_ctx(loadout)
+        return loadout_allows_dfs_bb(
+            ctx,
+            loadout,
+            has_number_tiles=has_number_tiles,
+            has_chess_pieces=has_chess_pieces,
+            setup_weight=self.setup_weight,
+            score_fn=self.score_fn,
+        )
+
     def _pipeline_cache_kwargs(self) -> dict:
         return {
+            "graph_ctx": self._graph_ctx,
             "grid_refs_cache": self._grid_refs_cache,
             "capybara_loadout_cache": self._capybara_loadout_cache,
             "grid_refs_timing": self._active_timing,
@@ -1806,6 +1931,15 @@ class WordSearcher:
                 setup_discount=self.setup_discount,
                 use_fast_rank=self._use_fast_rank_for(loadout),
                 use_tier2_screen=self._use_tier2_screen_for(loadout),
+                use_dfs_bb=self._use_dfs_bb_for(
+                    loadout,
+                    has_number_tiles=getattr(self, "_board_has_number_tiles", False),
+                    has_chess_pieces=(
+                        self._graph_ctx.has_chess_pieces
+                        if self._graph_ctx is not None
+                        else False
+                    ),
+                ),
                 required_consumable_indices=self.validator.required_consumable_indices,
             )
             return
@@ -2004,7 +2138,10 @@ class WordSearcher:
         start_indices: list[int] | None = None,
     ) -> None:
         use_prune = self._use_mult_prune_for(loadout)
-        if any(is_number_like_tile(board.get_by_index(i)) for i in _active_indices(board)):
+        has_number_tiles = any(
+            is_number_like_tile(board.get_by_index(i)) for i in _active_indices(board)
+        )
+        if has_number_tiles:
             use_prune = False
         use_tier2 = self._use_tier2_screen_for(loadout)
         use_heap = use_prune or use_tier2
@@ -2019,6 +2156,14 @@ class WordSearcher:
         graph_ctx = self._board_graph(board)
         hanafuda_level = ctx.hanafuda_level
         use_hanafuda_physical = hanafuda_level > 0
+        use_dfs_bb = self._use_dfs_bb_for(
+            loadout,
+            has_number_tiles=has_number_tiles,
+            has_chess_pieces=graph_ctx.has_chess_pieces,
+        )
+        search_tile_base = (
+            build_search_tile_base(board, ctx, graph_ctx) if use_dfs_bb else ()
+        )
 
         def path_accepted(
             path: list[int],
@@ -2174,6 +2319,8 @@ class WordSearcher:
             has_wildcard: bool,
             has_digit: bool,
             prefix_len: int,
+            prefix_base: float = 0.0,
+            prefix_red_count: int = 0,
             pattern_prefix: str | None = None,
             pattern_cursor: TrieCursor | None = None,
             suffix_cursors: list[TrieCursor | None] | None = None,
@@ -2271,17 +2418,57 @@ class WordSearcher:
                         _record_trie_prune()
                         return
 
+            reachable_wild = (
+                graph_ctx.wildcard_mask & graph_ctx.active_mask & ~visited_mask
+            )
+            if (
+                use_dfs_bb
+                and use_heap
+                and not stitch_active
+                and not has_wildcard
+                and not has_digit
+                and not reachable_wild
+            ):
+                min_rank = candidates.min_rank_score()
+                if min_rank is not None:
+                    if timing is not None:
+                        timing.dfs_bb_calls += 1
+                    rank_ub = prefix_rank_upper_bound(
+                        prefix_base,
+                        board,
+                        path,
+                        chars,
+                        visited_mask,
+                        steps_left,
+                        loadout,
+                        ctx,
+                        self._mult_rules,
+                        graph_ctx,
+                        search_tile_base,
+                        mult_weight=self.mult_search_weight,
+                        max_len=max_len,
+                        prefix_red_count=prefix_red_count,
+                        hanafuda_level=hanafuda_level,
+                    )
+                    if rank_ub < min_rank:
+                        if timing is not None:
+                            timing.dfs_bb_prunes += 1
+                        return
+
+            cell_id = path[-1]
             nbr_mask = neighbors_mask(
                 board,
-                path,
                 visited_mask,
+                cell_id=cell_id,
                 flags=stamp_flags,
                 graph_ctx=graph_ctx,
             )
             for idx in _iter_expansion_neighbors(
                 board,
-                path,
                 visited_mask,
+                cell_id=cell_id,
+                path=path,
+                path_length=len(path),
                 flags=stamp_flags,
                 hints=mult_hints,
                 graph_ctx=graph_ctx,
@@ -2403,6 +2590,12 @@ class WordSearcher:
                         )
                     chars.append(ext_token)
                     path.append(idx)
+                    next_prefix_base = prefix_base
+                    next_prefix_red = prefix_red_count
+                    if use_dfs_bb:
+                        next_prefix_base += search_tile_base[idx]
+                        if graph_ctx.tile_color_code[idx] == RED_COLOR_CODE:
+                            next_prefix_red += 1
                     dfs(
                         path,
                         chars,
@@ -2411,6 +2604,8 @@ class WordSearcher:
                         has_wildcard=ext_wildcard,
                         has_digit=next_has_digit,
                         prefix_len=next_prefix_len,
+                        prefix_base=next_prefix_base,
+                        prefix_red_count=next_prefix_red,
                         pattern_prefix=next_pattern,
                         pattern_cursor=ext_pat_cursor,
                         suffix_cursors=next_suffix,
@@ -2452,6 +2647,13 @@ class WordSearcher:
                         has_wildcard=True,
                         has_digit=False,
                         prefix_len=1,
+                        prefix_base=search_tile_base[start] if use_dfs_bb else 0.0,
+                        prefix_red_count=(
+                            1
+                            if use_dfs_bb
+                            and graph_ctx.tile_color_code[start] == RED_COLOR_CODE
+                            else 0
+                        ),
                         pattern_prefix=ch,
                         pattern_cursor=pat_cursor,
                     )
@@ -2496,6 +2698,13 @@ class WordSearcher:
                     has_wildcard=has_wildcard,
                     has_digit=has_digit,
                     prefix_len=prefix_len,
+                    prefix_base=search_tile_base[start] if use_dfs_bb else 0.0,
+                    prefix_red_count=(
+                        1
+                        if use_dfs_bb
+                        and graph_ctx.tile_color_code[start] == RED_COLOR_CODE
+                        else 0
+                    ),
                     pattern_prefix=pattern_start,
                     pattern_cursor=pattern_start_cursor,
                     suffix_cursors=suffix_cursors,
@@ -2829,8 +3038,8 @@ class WordSearcher:
                     prefix_len = len(path)
                     nbr_mask = neighbors_mask(
                         board,
-                        path,
                         visited_mask,
+                        cell_id=path[-1],
                         flags=stamp_flags,
                         graph_ctx=graph_ctx,
                     )
@@ -3103,6 +3312,7 @@ class WordSearcher:
                     loadout,
                     ctx,
                     self._mult_rules,
+                    graph_ctx=self._graph_ctx,
                 )
                 rank_ub = (
                     tier2_rank_upper_bound(
@@ -3114,6 +3324,7 @@ class WordSearcher:
                         self._mult_rules,
                         mult_weight=self.mult_search_weight,
                         hanafuda_level=hanafuda_level,
+                        graph_ctx=self._graph_ctx,
                     )
                     if min_rank is not None
                     else None
@@ -3142,6 +3353,7 @@ class WordSearcher:
                         self._mult_rules,
                         mult_weight=self.mult_search_weight,
                         hanafuda_level=hanafuda_level,
+                        graph_ctx=self._graph_ctx,
                     )
                     if rank_lb < min_rank:
                         if timing is not None:
@@ -3252,7 +3464,6 @@ class WordSearcher:
         self._capybara_loadout_cache.clear()
         self._provisional_candidates.clear()
         reset_board_flat_call_count()
-        clear_chess_attack_cache()
         loadout = loadout or Loadout(money=board.money)
         board = effective_board_for_loadout(board, loadout, self.scoring.rules)
         _active = _active_indices(board)
@@ -3269,6 +3480,12 @@ class WordSearcher:
         )
         self._solve_ctx = build_solve_context(loadout, self.scoring.rules)
         self._graph_ctx = build_board_graph_context(board)
+        clear_chess_attack_cache(
+            has_chess_pieces=self._graph_ctx.has_chess_pieces,
+            board_fingerprint=(
+                board_fingerprint(board) if self._graph_ctx.has_chess_pieces else None
+            ),
+        )
         mult_count = len(self._mult_rules)
         heap_k = self.candidate_heap_size or _candidate_heap_size(
             top_n, mult_count

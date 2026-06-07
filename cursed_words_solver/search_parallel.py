@@ -162,6 +162,7 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
     setup_discount: float = payload["setup_discount"]
     use_fast_rank: bool = payload["use_fast_rank"]
     use_tier2_screen: bool = payload["use_tier2_screen"]
+    use_dfs_bb: bool = payload.get("use_dfs_bb", False)
     required_raw = payload.get("required_consumable_indices") or []
 
     now = time.monotonic()
@@ -178,6 +179,7 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
         setup_discount=setup_discount,
         use_fast_rank=use_fast_rank,
         use_tier2_screen=use_tier2_screen,
+        use_dfs_bb=use_dfs_bb,
         search_workers=1,
     )
     if _mp_pipeline is not None:
@@ -199,6 +201,15 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
     )
     searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
     searcher._graph_ctx = build_board_graph_context(board)
+    from cursed_words_solver.fingerprints import board_fingerprint
+    from cursed_words_solver.rules.chess_tiles import clear_chess_attack_cache
+
+    clear_chess_attack_cache(
+        has_chess_pieces=searcher._graph_ctx.has_chess_pieces,
+        board_fingerprint=(
+            board_fingerprint(board) if searcher._graph_ctx.has_chess_pieces else None
+        ),
+    )
     mini = _CandidateHeap(heap_k)
     searcher._collect_words_fair_starts(
         board,
@@ -228,6 +239,7 @@ def parallel_collect_fair_starts(
     setup_discount: float,
     use_fast_rank: bool,
     use_tier2_screen: bool,
+    use_dfs_bb: bool = False,
     required_consumable_indices: frozenset[int] | None = None,
 ) -> None:
     """Run start slices on a reused process pool and merge into candidates."""
@@ -256,6 +268,7 @@ def parallel_collect_fair_starts(
         "setup_discount": setup_discount,
         "use_fast_rank": use_fast_rank,
         "use_tier2_screen": use_tier2_screen,
+        "use_dfs_bb": use_dfs_bb,
         "required_consumable_indices": sorted(required_consumable_indices or ()),
     }
     payloads = [{**base_payload, "starts": chunk} for chunk in chunks]

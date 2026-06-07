@@ -65,7 +65,7 @@ PRECOMPUTE_AUDIT = [
         "item": "board_fingerprint(board)",
         "when": "per_chess_attack_lookup",
         "where": "rules/chess_tiles.py is_square_attacked cache key",
-        "note": "Calls Board.flat and builds string on every cache miss",
+        "note": "Once per solve on chess boards; skipped when no chess pieces",
     },
     {
         "item": "loadout_mult_rules + build_mult_neighbor_hints",
@@ -111,6 +111,8 @@ class AnalysisRow:
     trie_steps: int
     trie_prunes: int
     trie_fast_accepts: int
+    dfs_bb_prunes: int
+    dfs_bb_calls: int
     best_word: str
     best_score: float
     dominant_phase: str
@@ -226,6 +228,8 @@ def _run_one(
         trie_steps=timing.trie_steps,
         trie_prunes=timing.trie_prunes,
         trie_fast_accepts=timing.trie_fast_accepts,
+        dfs_bb_prunes=timing.dfs_bb_prunes,
+        dfs_bb_calls=timing.dfs_bb_calls,
         best_word=results[0].word if results else "",
         best_score=results[0].score if results else 0.0,
         dominant_phase=dominant,
@@ -269,13 +273,14 @@ def _print_report(rows: list[AnalysisRow]) -> None:
     print("=" * 72)
     print(
         f"{'fixture':<32} {'steps':>10} {'prunes':>10} {'fast_acc':>10} "
-        f"{'expand':>10}"
+        f"{'bb_prune':>10} {'expand':>10}"
     )
     print("-" * 72)
     for r in rows:
         print(
             f"{r.label:<32} {r.trie_steps:10d} {r.trie_prunes:10d} "
-            f"{r.trie_fast_accepts:10d} {r.dfs_expansions:10d}"
+            f"{r.trie_fast_accepts:10d} {r.dfs_bb_prunes:10d} "
+            f"{r.dfs_expansions:10d}"
         )
 
     print()

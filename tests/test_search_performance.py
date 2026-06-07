@@ -12,14 +12,17 @@ import pytest
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.fast_rank import (
+    build_search_tile_base,
     fast_rank_lower_bound,
     loadout_allows_fast_rank,
     loadout_allows_tier2_screen,
     loadout_allows_tier2_two_phase,
+    prefix_rank_upper_bound,
     tier2_immediate_upper_bound,
     tier2_rank_lower_bound,
     tier2_rank_upper_bound,
 )
+from cursed_words_solver.graph_bitboard import RED_COLOR_CODE, build_board_graph_context
 from cursed_words_solver.mult_search import loadout_mult_rules
 from cursed_words_solver.solve_context import build_solve_context
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
@@ -107,11 +110,89 @@ def test_fast_rank_finds_cat(tmp_path):
 
 def test_chess_attack_cache_consistent():
     board, _ = _chess_board_and_loadout()
-    clear_chess_attack_cache()
+    clear_chess_attack_cache(has_chess_pieces=True)
     row, col, side, visited = 2, 2, "white", 1 << 12
     a = is_square_attacked(board, row, col, side, visited)
     b = is_square_attacked(board, row, col, side, visited)
     assert a == b
+
+
+def test_is_square_attacked_skips_flat_without_chess_pieces():
+    from cursed_words_solver.models import board_flat_call_count, reset_board_flat_call_count
+    from cursed_words_solver.rules.chess_tiles import (
+        chess_attack_cache_stats,
+        reset_chess_attack_cache_stats,
+    )
+
+    board = _board_cat_horizontal()
+    clear_chess_attack_cache(has_chess_pieces=False)
+    reset_chess_attack_cache_stats()
+    reset_board_flat_call_count()
+    for _ in range(50):
+        assert not is_square_attacked(board, 2, 2, "white", set())
+    assert board_flat_call_count() == 0
+    hits, misses = chess_attack_cache_stats()
+    assert hits == 0 and misses == 0
+
+
+def test_unused_cards_on_board_bitmask_matches_flat_scan():
+    from cursed_words_solver.encounter_board import effective_board_for_loadout
+    from cursed_words_solver.graph_bitboard import build_board_graph_context
+    from cursed_words_solver.rules.scoring_conditions import unused_cards_on_board
+
+    if not STICKER_FIXTURE.exists():
+        pytest.skip("sticker mismatch fixture required")
+    data = json.loads(STICKER_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    pipeline = ScoringPipeline()
+    board = effective_board_for_loadout(board, loadout, pipeline.rules)
+    graph_ctx = build_board_graph_context(board)
+    path = [14, 8, 3, 4, 9]
+    legacy = unused_cards_on_board(board, path, hanafuda_suit_mask=0)
+    fast = unused_cards_on_board(
+        board, path, hanafuda_suit_mask=graph_ctx.hanafuda_suit_mask
+    )
+    assert fast == legacy
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not STICKER_FIXTURE.exists(),
+    reason="sticker mismatch fixture required",
+)
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_sticker_fixture_board_flat_calls_bounded():
+    from cursed_words_solver.encounter_board import effective_board_for_loadout
+    from cursed_words_solver.models import board_flat_call_count, reset_board_flat_call_count
+
+    data = json.loads(STICKER_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    pipeline = ScoringPipeline()
+    board = effective_board_for_loadout(board, loadout, pipeline.rules)
+    reset_board_flat_call_count()
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=1,
+        max_len=25,
+        time_budget=8.0,
+        wordlist_path=GAME_WORDLIST_PATH,
+        search_workers=1,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=1)
+    assert results
+    timing = searcher.last_search_timing
+    assert timing is not None
+    assert timing.board_flat_calls == board_flat_call_count()
+    assert timing.board_flat_calls < 5000
 
 
 def test_chess_prefix_budget_adaptive():
@@ -467,6 +548,120 @@ def test_linguistic_cache_key_shared_for_equivalent_routes(tmp_path):
     key_b = searcher._linguistic_cache_key(board, path_b, chars=["c", "a", "t"])
     assert key_a == key_b
     assert key_a != tuple(path_a)
+
+
+def test_prefix_rank_upper_bound_sound():
+    board = _board_cat_horizontal()
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="red_rider", name="Red Rider", level=1, kind="sticker")
+        ]
+    )
+    rules = ScoringPipeline().rules
+    ctx = build_solve_context(loadout, rules)
+    graph_ctx = build_board_graph_context(board)
+    mult_rules = loadout_mult_rules(loadout, rules, board=board, path=[0, 1, 2])
+    search_tile_base = build_search_tile_base(board, ctx, graph_ctx)
+    path = [0, 1, 2]
+    word = "cat"
+    full_rank_ub = tier2_rank_upper_bound(
+        board,
+        path,
+        word,
+        loadout,
+        ctx,
+        mult_rules,
+        mult_weight=0.4,
+        graph_ctx=graph_ctx,
+    )
+    visited = 0
+    prefix_base = 0.0
+    prefix_red = 0
+    chars: list[str] = []
+    for i, idx in enumerate(path):
+        visited |= 1 << idx
+        prefix_base += search_tile_base[idx]
+        if graph_ctx.tile_color_code[idx] == RED_COLOR_CODE:
+            prefix_red += 1
+        chars.append(word[i])
+        bound = prefix_rank_upper_bound(
+            prefix_base,
+            board,
+            path[: i + 1],
+            chars,
+            visited,
+            max(0, 3 - len(chars)),
+            loadout,
+            ctx,
+            mult_rules,
+            graph_ctx,
+            search_tile_base,
+            mult_weight=0.4,
+            max_len=3,
+            prefix_red_count=prefix_red,
+        )
+        assert bound >= full_rank_ub
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not STICKER_FIXTURE.exists()
+    or not GAME_WORDLIST_PATH.exists()
+    or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="sticker fixture and game wordlist required",
+)
+def test_dfs_bb_preserves_top_results():
+    board, loadout = _sticker_board_and_loadout()
+    common = dict(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=12,
+        time_budget=12.0,
+        wordlist_path=GAME_WORDLIST_PATH,
+        search_workers=1,
+        use_tier2_screen=True,
+    )
+    off = WordSearcher(**common, use_dfs_bb=False)
+    on = WordSearcher(**common, use_dfs_bb=True)
+    off_results = off.find_best_words(board, loadout, top_n=1)
+    on_results = on.find_best_words(board, loadout, top_n=1)
+    assert off_results and on_results
+    assert off_results[0].word == on_results[0].word
+    assert off_results[0].score == on_results[0].score
+
+
+def test_dfs_bb_reduces_expansions(tmp_path):
+    """Letter-only board: B&B prunes once no wildcards remain reachable."""
+    wl = _make_wordlist(tmp_path)
+    board = _board_cat_horizontal()
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="red_rider", name="Red Rider", level=1, kind="sticker")
+        ]
+    )
+    common = dict(
+        dictionary=WordDictionary(wl),
+        min_len=3,
+        max_len=8,
+        time_budget=2.0,
+        wordlist_path=wl,
+        search_workers=1,
+        use_tier2_screen=True,
+        candidate_heap_size=1,
+    )
+    off = WordSearcher(**common, use_dfs_bb=False)
+    on = WordSearcher(**common, use_dfs_bb=True)
+    off.find_best_words(board, loadout, top_n=1)
+    on.find_best_words(board, loadout, top_n=1)
+    assert off.last_search_timing is not None
+    assert on.last_search_timing is not None
+    assert on.last_search_timing.dfs_bb_calls > 0
+    assert on.last_search_timing.dfs_expansions <= off.last_search_timing.dfs_expansions
+    if on.last_search_timing.dfs_bb_prunes > 0:
+        assert (
+            on.last_search_timing.dfs_expansions
+            < off.last_search_timing.dfs_expansions
+        )
 
 
 def test_linguistic_cache_key_spatial_on_chess_board(tmp_path):
