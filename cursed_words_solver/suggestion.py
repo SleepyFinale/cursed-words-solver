@@ -661,10 +661,15 @@ def format_suggestion_word(result: WordResult) -> str:
     return result.word
 
 
+def format_result_score_display(result: WordResult) -> str:
+    """Score line for terminal/overlay; includes Capybara min–max when present."""
+    cap = (result.breakdown or {}).get("capybara")
+    score = int(result.score)
+    if cap and float(cap.get("max", score)) > float(cap.get("min", score)):
+        return f"{score:,} pts ({int(cap['min']):,}–{int(cap['max']):,})"
+    return f"{score:,} pts"
 
 
-
-def _fixed_letters_align(scoring_word: str, candidate: str) -> bool:
 
     """True when every alphabetic char in scoring_word matches the candidate."""
 
@@ -818,6 +823,11 @@ def save_last_suggestion(
     export_warnings: list[str] | None = None,
     solver_session_extras: dict[str, Any] | None = None,
     consumable_placements: list[Any] | None = None,
+    score_nondeterministic: bool = False,
+    predicted_score_min: int | None = None,
+    predicted_score_max: int | None = None,
+    capybara_perm_count: int | None = None,
+    capybara_exhaustive: bool | None = None,
 
 ) -> None:
 
@@ -921,6 +931,17 @@ def save_last_suggestion(
     ms_positions = (result.breakdown or {}).get("microscope_positions")
     if ms_positions:
         payload["microscope_positions"] = ms_positions
+
+    if score_nondeterministic:
+        payload["score_nondeterministic"] = True
+        if predicted_score_min is not None:
+            payload["predicted_score_min"] = int(predicted_score_min)
+        if predicted_score_max is not None:
+            payload["predicted_score_max"] = int(predicted_score_max)
+        if capybara_perm_count is not None:
+            payload["capybara_perm_count"] = int(capybara_perm_count)
+        if capybara_exhaustive is not None:
+            payload["capybara_exhaustive"] = bool(capybara_exhaustive)
 
     LAST_SUGGESTION_PATH.write_text(
 

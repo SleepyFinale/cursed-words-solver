@@ -7,9 +7,12 @@ from cursed_words_solver.rules.boss_scoring import apply_boss_steal_money
 from cursed_words_solver.rules.boss_effects import boss_context, load_rules_catalog
 from cursed_words_solver.rules.pipeline import ScoringPipeline, _finalize, _init_state
 from cursed_words_solver.rules.scoring_order import (
-    _maybe_shuffled_loadout,
     build_scoring_item_sequence,
     capybara_shuffles_loadout,
+)
+from cursed_words_solver.rules.capybara_scoring import (
+    CapybaraScope,
+    iter_capybara_loadout_permutations,
 )
 
 
@@ -104,17 +107,20 @@ def test_capybara_shuffles_sticker_order() -> None:
     from cursed_words_solver.models import LoadoutItem
 
     rules = load_rules_catalog()
-    orders: set[tuple[str, ...]] = set()
-    for seed in range(30):
-        loadout = Loadout(
-            boss_id="capybara",
-            stickers=[
-                LoadoutItem("brain", "Brain", 1),
-                LoadoutItem("chips", "Chips", 1),
-            ],
-            extras={"boss_area_number": 1, "run_seed": str(seed)},
+    loadout = Loadout(
+        boss_id="capybara",
+        stickers=[
+            LoadoutItem("brain", "Brain", 1),
+            LoadoutItem("chips", "Chips", 1),
+        ],
+        extras={"boss_area_number": 1},
+    )
+    assert capybara_shuffles_loadout(loadout, rules)
+    scope = CapybaraScope(True, False)
+    orders = {
+        tuple(s.id for s in perm.stickers)
+        for perm in iter_capybara_loadout_permutations(
+            loadout, scope, path=[0, 1, 2], exhaustive=True
         )
-        assert capybara_shuffles_loadout(loadout, rules)
-        shuffled = _maybe_shuffled_loadout(loadout, rules, [0, 1, 2])
-        orders.add(tuple(s.id for s in shuffled.stickers))
-    assert len(orders) > 1
+    }
+    assert len(orders) == 2

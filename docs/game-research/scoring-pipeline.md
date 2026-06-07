@@ -16,7 +16,7 @@ Source: decompiled `ScoreCalculation.CalculateOverallScore` and `EncounterContro
 
 Special cases in the item loop:
 
-- **RandomAccessMemory** — replays each item in memory as separate steps (trace shows RAM as `RelevantItem`).
+- **RandomAccessMemory** — replays each item in memory as separate steps (trace shows RAM as `RelevantItem`). Under Hourglass, memory replay order is **reversed** (newest → oldest).
 - **Frankenstein** — applies each stitched sticker in order.
 - **Human Hands** favourite — extra applications of favourite stamp (level − 1 times).
 - **Overhand** — extra applications of target sticker (Overhand level times).
@@ -32,7 +32,7 @@ Special cases in the item loop:
 | Currency tiles | Path has currency glyph | `GetMoneyFromCurrencyTiles` |
 | Pink piggy bank | Path has pink tiles | `StoreMoneyInPinkTiles` |
 | Apply items | Hourglass may reverse order | `Item.ApplyItemToScore` each |
-| Late bosses | Hourglass active | Reversed boss list |
+| Late bosses | Hourglass active | Single reversed `ApplyBossModifier` pass (all stacked bosses, e.g. Michael) |
 | Lexographer | Challenge | `ApplyLexographer` |
 | Poison | Previous words with green tiles | `ApplyPoisonEffect` |
 
@@ -65,7 +65,7 @@ Fox: grid-start money loss (`fox_grid_steal`) is separate from submit-time `Stea
 
 The [wiki Scoring](https://cursedwords.wiki.gg/wiki/Scoring) page separates pin, stickers, and stamps. In code they share one list (pin first, then stickers, then stamps) unless Hourglass reverses it. **Capybara** shuffles sticker/stamp arrays on submit via `Player.RandomiseItemOrder` (boss `RandomiseItemOrder` is separate).
 
-**GREEN tiles:** tile scores from green tiles are folded into word score at finalize (solver: `scoring_order.apply_green_tile_word_transfer`).
+**GREEN tiles (wiki step 6):** after the full item loop (stickers, stamps, bosses), GREEN path tile scores move into `word_score` via `scoring_order.apply_green_tile_word_transfer` at the end of `ScoringPipeline._compute_state`. Step-7 word multipliers in `_finalize` then apply to `tile_sum + word_score` (green is in the word bucket). Compound Cocktail sessions multiply **non-green** tile sum only during the mid-loop Cocktail pass; GREEN is excluded via `tile_sum_excluding_green`.
 
 ## Melmod validation
 

@@ -37,6 +37,28 @@ namespace CursedWordsSolverCompanion
                 return;
 
             var predicted = suggestion.predicted_score;
+            if (
+                suggestion.score_nondeterministic
+                && suggestion.predicted_score_max > suggestion.predicted_score_min
+                && actualScore >= suggestion.predicted_score_min
+                && actualScore <= suggestion.predicted_score_max
+            )
+            {
+                MelonLogger.Msg(
+                    "Scoring match (Capybara range) for suggested word '"
+                        + word
+                        + "': "
+                        + actualScore
+                        + " pts (predicted "
+                        + predicted
+                        + ", range "
+                        + suggestion.predicted_score_min
+                        + "–"
+                        + suggestion.predicted_score_max
+                        + ")"
+                );
+                return;
+            }
             if (predicted == actualScore)
             {
                 MelonLogger.Msg(

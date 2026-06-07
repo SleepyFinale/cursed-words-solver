@@ -164,6 +164,13 @@ namespace CursedWordsSolverCompanion
             }
 
             var predicted = ctx.Suggestion.predicted_score;
+            if (
+                ctx.Suggestion.score_nondeterministic
+                && ctx.Suggestion.predicted_score_max > ctx.Suggestion.predicted_score_min
+                && ctx.ActualScore >= ctx.Suggestion.predicted_score_min
+                && ctx.ActualScore <= ctx.Suggestion.predicted_score_max
+            )
+                return "score_match";
             if (predicted != ctx.ActualScore)
             {
                 var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
@@ -192,6 +199,12 @@ namespace CursedWordsSolverCompanion
             block["scoring_word"] = ctx.Suggestion.word ?? "";
             block["path"] = ctx.Suggestion.path ?? new List<int>();
             block["predicted_score"] = ctx.Suggestion.predicted_score;
+            if (ctx.Suggestion.score_nondeterministic)
+            {
+                block["score_nondeterministic"] = true;
+                block["predicted_score_min"] = ctx.Suggestion.predicted_score_min;
+                block["predicted_score_max"] = ctx.Suggestion.predicted_score_max;
+            }
             block["board_fingerprint"] = ctx.Suggestion.board_fingerprint ?? "";
             block["loadout_fingerprint"] = ctx.Suggestion.loadout_fingerprint ?? "";
             var submittedPath = ctx.SubmittedPath ?? new List<int>();

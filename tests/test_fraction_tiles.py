@@ -244,7 +244,7 @@ def test_mixed_digit_fraction_word_valid(tmp_path):
     v = PathValidator(d, min_len=3)
 
     assert not v._wildcard_valid(word)
-    assert v._number_word_valid(board, path, word, flags)
+    assert not v._number_word_valid(board, path, word, flags)
     assert not v.word_ok(board, path, word, flags)
 
 

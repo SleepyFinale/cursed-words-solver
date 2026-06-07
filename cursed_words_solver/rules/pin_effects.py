@@ -48,8 +48,12 @@ def apply_pin_memory(
     board: Board,
     path: list[int],
     apply_rule: Callable[..., dict[str, Any]],
+    hourglass_reversed: bool = False,
 ) -> dict[str, Any]:
-    for entry in pin_memory_entries(loadout):
+    entries = pin_memory_entries(loadout)
+    if hourglass_reversed:
+        entries = list(reversed(entries))
+    for entry in entries:
         if should_skip_ram_scoring(rules, entry):
             continue
         bucket = ram_entry_bucket(entry)
@@ -73,6 +77,7 @@ def apply_pin_word_scoring(
     board: Board,
     path: list[int],
     apply_rule: Callable[..., dict[str, Any]],
+    hourglass_reversed: bool = False,
 ) -> dict[str, Any]:
     """Apply pin right-track (or RAM); Human Hands orchestration runs post-stamps in pipeline."""
     canonical, _pin, _left, right = get_pin_tracks(rules, pin_effect)
@@ -86,6 +91,7 @@ def apply_pin_word_scoring(
             board=board,
             path=path,
             apply_rule=apply_rule,
+            hourglass_reversed=hourglass_reversed,
         )
     if not right or right.get("type") in ("human_hands_pin",):
         return state

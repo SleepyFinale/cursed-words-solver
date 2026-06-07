@@ -12,6 +12,11 @@ namespace CursedWordsSolverCompanion
         public string word;
         public List<int> path;
         public int predicted_score;
+        public int predicted_score_min;
+        public int predicted_score_max;
+        public bool score_nondeterministic;
+        public int capybara_perm_count;
+        public bool capybara_exhaustive;
         public string board_fingerprint;
         public string loadout_fingerprint;
         public JArray predicted_trace;

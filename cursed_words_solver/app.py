@@ -44,6 +44,7 @@ from cursed_words_solver.suggestion import (
     dictionary_word_for_path,
     effective_scoring_word,
     format_suggestion_word,
+    format_result_score_display,
     f8_prior_suggestion_stale_note,
     f8_prediction_workflow_stale_warning,
     poll_invalidate_last_suggestion,
@@ -787,6 +788,22 @@ class SolverApp:
             steak_warn = steak_extras_stale_warning(loadout)
             if steak_warn:
                 print(f"  Warning: {steak_warn}", flush=True)
+            from cursed_words_solver.rules.capybara_scoring import (
+                MAX_EXHAUSTIVE_PERMS,
+                capybara_active_warning,
+                capybara_perm_count,
+                capybara_sampling_warning,
+                capybara_shuffle_scope,
+            )
+
+            capybara_warn = capybara_active_warning(loadout, self._scoring.rules)
+            if capybara_warn:
+                print(f"  Warning: {capybara_warn}", flush=True)
+                scope = capybara_shuffle_scope(loadout, self._scoring.rules)
+                if capybara_perm_count(loadout, scope) > MAX_EXHAUSTIVE_PERMS:
+                    sample_warn = capybara_sampling_warning(False, 256)
+                    if sample_warn:
+                        print(f"  Warning: {sample_warn}", flush=True)
             if total:
                 msg = f"  Rules: {scoring}/{total} affect score"
                 if grid_only:
@@ -1148,6 +1165,7 @@ class SolverApp:
 
             pred_trace: list | None = None
             export_warnings: list[str] = []
+            capybara_stats = None
             if results:
                 top = results[0]
                 # Re-read run_state after search; merge encounter historic before score + embed.
@@ -1233,8 +1251,13 @@ class SolverApp:
                     min_len=effective_min,
                     pipeline=self._scoring,
                 )
-                pred_score, pred_bd, pred_trace = self._scoring.score_with_trace(
-                    search_board, top.path, score_word, score_loadout
+                pred_score, pred_bd, pred_trace, capybara_stats = (
+                    self._score_top_with_capybara(
+                        search_board,
+                        top,
+                        score_word,
+                        score_loadout,
+                    )
                 )
                 top.score = pred_score
                 top.breakdown = pred_bd
@@ -1273,6 +1296,16 @@ class SolverApp:
                     board=board,
                     raw=merged_run_state,
                 )
+                capybara_warn = capybara_active_warning(
+                    save_loadout, self._scoring.rules
+                )
+                if capybara_warn:
+                    export_warnings = list(export_warnings) + [capybara_warn]
+                    scope = capybara_shuffle_scope(save_loadout, self._scoring.rules)
+                    if capybara_perm_count(save_loadout, scope) > MAX_EXHAUSTIVE_PERMS:
+                        sample_warn = capybara_sampling_warning(False, 256)
+                        if sample_warn:
+                            export_warnings.append(sample_warn)
                 session_extras = solver_session_extras_from_loadout(save_loadout)
                 f8_snapshot = sanitize_run_state_snapshot_for_f8(
                     merged_run_state,
@@ -1322,6 +1355,19 @@ class SolverApp:
                     export_warnings=export_warnings,
                     solver_session_extras=session_extras,
                     consumable_placements=placement_records or None,
+                    score_nondeterministic=capybara_stats is not None,
+                    predicted_score_min=(
+                        int(capybara_stats.min_score) if capybara_stats else None
+                    ),
+                    predicted_score_max=(
+                        int(capybara_stats.max_score) if capybara_stats else None
+                    ),
+                    capybara_perm_count=(
+                        capybara_stats.perm_count if capybara_stats else None
+                    ),
+                    capybara_exhaustive=(
+                        capybara_stats.exhaustive if capybara_stats else None
+                    ),
                 )
                 self._last_invalidation_reason = None
                 for warn in export_warnings:
@@ -1344,7 +1390,7 @@ class SolverApp:
                 top = results[0]
                 done_msg = (
                     f"Done in {search_elapsed:.1f}s. Best: {format_suggestion_word(top)} "
-                    f"({int(top.score)} pts)"
+                    f"({format_result_score_display(top)})"
                 )
                 if placement_records:
                     done_msg += (
@@ -1373,7 +1419,7 @@ class SolverApp:
                     flush=True,
                 )
 
-            warnings = self._overlay_warnings(board, unmapped)
+            warnings = self._overlay_warnings(board, unmapped, loadout=loadout)
             highlight = (
                 self.config.show_board_highlight
                 and self._overlay_regions.board.is_valid()
@@ -1429,9 +1475,50 @@ class SolverApp:
             return "mod"
         return "file"
 
-    def _overlay_warnings(self, board, unmapped: list[str]) -> str:
+    def _score_top_with_capybara(
+        self,
+        board: Board,
+        top: WordResult,
+        score_word: str,
+        loadout: Loadout,
+    ) -> tuple[float, dict, list, object | None]:
+        from cursed_words_solver.rules.capybara_scoring import (
+            score_capybara_with_trace,
+        )
+        from cursed_words_solver.rules.scoring_order import capybara_shuffles_loadout
+
+        if capybara_shuffles_loadout(loadout, self._scoring.rules):
+            pred_score, pred_bd, pred_trace, stats = score_capybara_with_trace(
+                self._scoring,
+                board,
+                top.path,
+                score_word,
+                loadout,
+                self._scoring.rules,
+            )
+            return pred_score, pred_bd, pred_trace, stats
+        pred_score, pred_bd, pred_trace = self._scoring.score_with_trace(
+            board, top.path, score_word, loadout
+        )
+        return pred_score, pred_bd, pred_trace, None
+
+    def _overlay_warnings(
+        self,
+        board,
+        unmapped: list[str],
+        *,
+        loadout: Loadout | None = None,
+    ) -> str:
         del board
         lines: list[str] = []
+        if loadout is not None:
+            from cursed_words_solver.rules.capybara_scoring import (
+                capybara_active_warning,
+            )
+
+            capybara_warn = capybara_active_warning(loadout, self._scoring.rules)
+            if capybara_warn:
+                lines.append(capybara_warn)
         if unmapped:
             lines.append(
                 f"Unmapped rules: {', '.join(unmapped[:4])}"

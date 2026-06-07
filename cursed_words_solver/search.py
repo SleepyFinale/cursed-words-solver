@@ -31,7 +31,6 @@ from cursed_words_solver.rules.scoring_conditions import (
     hanafuda_hand_satisfied,
     is_card_tile,
     is_joker_tile,
-    fraction_parts,
     is_fraction_tile,
     is_number_like_tile,
     number_digits_ascending,
@@ -39,7 +38,10 @@ from cursed_words_solver.rules.scoring_conditions import (
     tile_number_value,
     word_starts_ends_different_suit,
 )
-from cursed_words_solver.rules.fraction_tiles import fraction_position_valid
+from cursed_words_solver.rules.fraction_tiles import (
+    fraction_position_valid,
+    tile_fraction_position_values,
+)
 from cursed_words_solver.fast_rank import (
     build_search_tile_base,
     loadout_allows_dfs_bb,
@@ -329,6 +331,27 @@ def resolve_letter(
     return tile.letter.upper() if tile.letter else "?"
 
 
+def path_word_char_len(
+    board: Board,
+    path: list[int],
+    *,
+    flags: SearchFlagsMask = 0,
+    through_path_index: int | None = None,
+) -> int:
+    """Character length of the word string built from path tiles (0-based char offset after last tile)."""
+    flags = coerce_search_flags(flags)
+    char_pos = 0
+    for path_i, idx in enumerate(path):
+        if through_path_index is not None and path_i > through_path_index:
+            break
+        tile = board.get_by_index(idx)
+        if tile.curse == CurseType.ITEM:
+            char_pos += 1
+        else:
+            char_pos += len(resolve_letter(tile, char_pos, flags=flags))
+    return char_pos
+
+
 def search_word_from_path(
     board: Board,
     path: list[int],
@@ -336,13 +359,18 @@ def search_word_from_path(
     flags: SearchFlagsMask = 0,
 ) -> str:
     """Search trie / dictionary resolve string; scattered items count as wildcards."""
+    flags = coerce_search_flags(flags)
     parts: list[str] = []
-    for i, idx in enumerate(path):
+    char_pos = 0
+    for idx in path:
         tile = board.get_by_index(idx)
         if tile.curse == CurseType.ITEM:
             parts.append("?")
+            char_pos += 1
         else:
-            parts.append(resolve_letter(tile, i, flags=flags))
+            token = resolve_letter(tile, char_pos, flags=flags)
+            parts.append(token)
+            char_pos += len(token)
     return "".join(parts).lower()
 
 
@@ -360,8 +388,11 @@ def physical_word_for_path(
         else flags
     )
     parts: list[str] = []
-    for i, idx in enumerate(path):
-        parts.append(resolve_letter(board.get_by_index(idx), i, flags=phys_flags))
+    char_pos = 0
+    for idx in path:
+        token = resolve_letter(board.get_by_index(idx), char_pos, flags=phys_flags)
+        parts.append(token)
+        char_pos += len(token)
     return "".join(parts).lower()
 
 
@@ -417,6 +448,11 @@ def _wildcard_branch_letters(
     return letters if letters else _WILDCARD_LETTERS
 
 
+def _tile_word_token(tile: Tile, char_pos: int, *, flags: SearchFlagsMask = 0) -> str:
+    """Lowercase token this tile contributes to a path word string at char_pos."""
+    return resolve_letter(tile, char_pos, flags=flags).lower()
+
+
 def path_letter_tiles_match_word(
     board: Board,
     path: list[int],
@@ -424,34 +460,50 @@ def path_letter_tiles_match_word(
     *,
     flags: SearchFlagsMask = 0,
 ) -> bool:
-    """True when each letter tile on the path allows word[i] (stamp transforms)."""
-    if len(path) != len(word):
-        return False
+    """True when each letter tile on the path allows its word segment (stamp transforms)."""
+    char_pos = 0
     for i, idx in enumerate(path):
         tile = board.get_by_index(idx)
+        token = _tile_word_token(tile, char_pos, flags=flags)
         if tile.curse != CurseType.LETTER:
+            char_pos += len(token)
             continue
-        ch = word[i].lower()
+        if char_pos >= len(word):
+            return False
+        if len(token) == 2 and token == "qu":
+            if word[char_pos : char_pos + 2].lower() != "qu":
+                return False
+            char_pos += 2
+            continue
+        ch = word[char_pos].lower()
         if not ch.isalpha():
             return False
-        options = resolve_letter_options(tile, i, flags=flags)
+        options = resolve_letter_options(tile, char_pos, flags=flags)
         allowed = {o.lower() for o in options if o not in ("?", "qu")}
         if ch not in allowed:
             return False
-    return True
+        char_pos += 1
+    return char_pos == len(word)
 
 
 def _tile_digit_face_matches(
-    ch: str,
+    segment: str,
     tile: Tile,
     stamp_flags: SearchFlagsMask,
 ) -> bool:
+    """True when segment equals the tile's number face (supports multi-digit Bison tiles)."""
+    if not segment.isdigit():
+        return False
     stamp_flags = coerce_search_flags(stamp_flags)
-    if tile.letter == ch:
+    if tile.letter == segment or tile.letter.lower() == segment.lower():
         return True
+    if tile.curse == CurseType.NUMBER:
+        nv = tile_number_value(tile)
+        if nv and str(nv) == segment:
+            return True
     if flag_test(stamp_flags, FLAG_MICROSCOPE_BASE_SCORE):
         bp = _microscope_base_as_position(tile)
-        if bp is not None and str(bp) == ch:
+        if bp is not None and str(bp) == segment:
             return True
     return False
 
@@ -490,11 +542,15 @@ def microscope_position_uses(
     flags = coerce_search_flags(flags)
     if not flag_test(flags, FLAG_MICROSCOPE_BASE_SCORE):
         return []
-    if len(path) != len(word):
-        return []
     uses: list[dict[str, Any]] = []
+    char_pos = 0
     for i, idx in enumerate(path):
         tile = board.get_by_index(idx)
+        token = _tile_word_token(tile, char_pos, flags=flags)
+        if char_pos + len(token) > len(word):
+            return uses
+        segment = word[char_pos : char_pos + len(token)]
+        char_pos += len(token)
         bp = _microscope_base_as_position(tile)
         if bp is None:
             continue
@@ -503,8 +559,7 @@ def microscope_position_uses(
             continue
         face_values = _microscope_face_number_values(tile)
         if tile.curse == CurseType.LETTER:
-            ch = word[i]
-            if ch.isdigit() and int(ch) == bp:
+            if segment.isdigit() and int(segment) == bp:
                 uses.append(
                     {
                         "index": idx,
@@ -833,12 +888,34 @@ class PathValidator:
     ) -> bool:
         """Number tiles are position-locked wildcards; validate via dictionary pattern."""
         stamp_flags = coerce_search_flags(stamp_flags)
-        if len(path) != len(word):
-            return False
+        char_pos = 0
         pattern_chars: list[str] = []
         for i, idx in enumerate(path):
             tile = board.get_by_index(idx)
-            ch = word[i]
+            if char_pos >= len(word):
+                return False
+            if (
+                tile.curse == CurseType.NUMBER
+                and word[char_pos].isdigit()
+            ):
+                face = str(tile_number_value(tile))
+                if (
+                    face.isdigit()
+                    and len(face) > 1
+                    and char_pos + len(face) <= len(word)
+                ):
+                    segment = word[char_pos : char_pos + len(face)]
+                    if segment.isdigit() and _tile_digit_face_matches(
+                        segment, tile, stamp_flags
+                    ):
+                        if not self._number_digit_segment_ok(
+                            segment, tile, i, word, stamp_flags
+                        ):
+                            return False
+                        pattern_chars.append("?")
+                        char_pos += len(face)
+                        continue
+            ch = word[char_pos]
             if ch.isdigit():
                 if (
                     flag_test(stamp_flags, FLAG_SHINY_AS_ONE)
@@ -849,9 +926,15 @@ class PathValidator:
                     if i + 1 != 1:
                         return False
                     pattern_chars.append("?")
+                    char_pos += 1
                     continue
                 if is_fraction_tile(tile):
+                    if not fraction_position_valid(
+                        tile, i, relaxed=self.relaxed_numbers
+                    ):
+                        return False
                     pattern_chars.append("?")
+                    char_pos += 1
                     continue
                 if tile.curse != CurseType.NUMBER:
                     if (
@@ -861,39 +944,23 @@ class PathValidator:
                         bp = _microscope_base_as_position(tile)
                         if bp is not None and i + 1 == bp:
                             pattern_chars.append("?")
+                            char_pos += 1
                             continue
                     return False
-                digit = int(ch)
-                nv = tile_number_value(tile)
-                if (
-                    flag_test(stamp_flags, FLAG_NUMBER_ROMAN_IVX)
-                    and nv in ROMAN_BY_NUMBER
-                    and ch.isalpha()
-                    and ch.lower() == ROMAN_BY_NUMBER[nv]
+                if not self._number_digit_segment_ok(
+                    ch, tile, i, word, stamp_flags
                 ):
-                    pattern_chars.append("?")
-                    continue
-                if flag_test(stamp_flags, FLAG_NUMBER_PLUS_MINUS_ONE):
-                    values = tile_number_position_values(tile, stamp_flags)
-                    allowed = {
-                        x
-                        for v in values
-                        if v >= 1
-                        for x in (v - 1, v, v + 1)
-                    }
-                    if digit not in allowed:
-                        return False
-                elif (
-                    flag_test(stamp_flags, FLAG_NUMBER_ASCENDING_FREE_POSITION)
-                    and number_digits_ascending(word)
-                ):
-                    pass
-                elif not _tile_digit_face_matches(ch, tile, stamp_flags):
                     return False
                 pattern_chars.append("?")
+                char_pos += 1
             else:
                 if is_fraction_tile(tile):
+                    if not fraction_position_valid(
+                        tile, i, relaxed=self.relaxed_numbers
+                    ):
+                        return False
                     pattern_chars.append("?")
+                    char_pos += 1
                     continue
                 if tile.curse == CurseType.NUMBER:
                     if (
@@ -903,17 +970,29 @@ class PathValidator:
                         nv = tile_number_value(tile)
                         if nv in ROMAN_BY_NUMBER and ch.lower() == ROMAN_BY_NUMBER[nv]:
                             pattern_chars.append("?")
+                            char_pos += 1
                             continue
                     if ch.isalpha():
                         pattern_chars.append("?")
+                        char_pos += 1
                         continue
                     return False
                 if tile.curse == CurseType.LETTER:
-                    options = resolve_letter_options(tile, i, flags=stamp_flags)
+                    token = _tile_word_token(tile, char_pos, flags=stamp_flags)
+                    if len(token) == 2 and token == "qu":
+                        if word[char_pos : char_pos + 2].lower() != "qu":
+                            return False
+                        pattern_chars.append("?")
+                        char_pos += 2
+                        continue
+                    options = resolve_letter_options(tile, char_pos, flags=stamp_flags)
                     allowed = {o.lower() for o in options if o not in ("?", "qu")}
                     if not ch.isalpha() or ch.lower() not in allowed:
                         return False
                 pattern_chars.append(ch)
+                char_pos += 1
+        if char_pos != len(word):
+            return False
         pattern = "".join(pattern_chars)
         if pattern and all(ch == "?" for ch in pattern):
             if word.isdigit():
@@ -928,6 +1007,36 @@ class PathValidator:
                     return True
             return self.dictionary.contains(word.lower())
         return self._wildcard_valid(pattern)
+
+    def _number_digit_segment_ok(
+        self,
+        segment: str,
+        tile: Tile,
+        tile_index: int,
+        word: str,
+        stamp_flags: SearchFlagsMask,
+    ) -> bool:
+        """Digit segment at a NUMBER tile matches face / stamp flex rules."""
+        stamp_flags = coerce_search_flags(stamp_flags)
+        try:
+            digit_val = int(segment)
+        except ValueError:
+            return False
+        if flag_test(stamp_flags, FLAG_NUMBER_PLUS_MINUS_ONE):
+            values = tile_number_position_values(tile, stamp_flags)
+            allowed = {
+                x
+                for v in values
+                if v >= 1
+                for x in (v - 1, v, v + 1)
+            }
+            return digit_val in allowed
+        if (
+            flag_test(stamp_flags, FLAG_NUMBER_ASCENDING_FREE_POSITION)
+            and number_digits_ascending(word)
+        ):
+            return True
+        return _tile_digit_face_matches(segment, tile, stamp_flags)
 
     def _wildcard_valid(self, pattern: str) -> bool:
         return self._wildcard_dfs(pattern, 0)
@@ -1397,6 +1506,19 @@ def _suit_endpoint_indices(board: Board) -> list[int]:
     return out
 
 
+def _max_number_face_on_board(board: Board) -> int:
+    """Highest number_value among active NUMBER tiles (Bison scatters up to 17)."""
+    best = 0
+    for i in _active_indices(board):
+        tile = board.get_by_index(i)
+        if tile.curse != CurseType.NUMBER:
+            continue
+        nv = tile_number_value(tile)
+        if nv > best:
+            best = nv
+    return best
+
+
 def _number_tile_start_indices(board: Board) -> list[int]:
     """All number tiles, sorted by face value then index (fair share of digit-pass time)."""
     starts = [
@@ -1409,9 +1531,9 @@ def _number_tile_start_indices(board: Board) -> list[int]:
         if tile.number_value is not None:
             return tile.number_value
         if is_fraction_tile(tile):
-            parts = fraction_parts(tile)
-            if parts is not None:
-                return parts[0]
+            values = tile_fraction_position_values(tile)
+            if values:
+                return min(values)
         return 99
 
     return sorted(starts, key=lambda i: (_face_key(i), i))
@@ -1728,19 +1850,28 @@ def _interleaved_number_starts(board: Board) -> list[int]:
     for i in _number_tile_start_indices(board):
         tile = board.get_by_index(i)
         if tile.number_value is not None:
-            face = tile.number_value
+            faces = [tile.number_value]
         elif is_fraction_tile(tile):
-            parts = fraction_parts(tile)
-            face = parts[0] if parts is not None else 99
+            faces = tile_fraction_position_values(tile) or [99]
         else:
-            face = 99
-        buckets.setdefault(face, []).append(i)
-    faces = sorted(buckets)
-    out: list[int] = []
-    while any(buckets[f] for f in faces):
+            faces = [99]
         for face in faces:
-            if buckets[face]:
-                out.append(buckets[face].pop(0))
+            buckets.setdefault(face, []).append(i)
+    face_keys = sorted(buckets)
+    out: list[int] = []
+    emitted: set[int] = set()
+    while any(buckets[f] for f in face_keys):
+        round_seen: set[int] = set()
+        for face in face_keys:
+            while buckets[face]:
+                idx = buckets[face].pop(0)
+                if idx in round_seen:
+                    continue
+                round_seen.add(idx)
+                if idx not in emitted:
+                    emitted.add(idx)
+                    out.append(idx)
+                break
     return out
 
 
@@ -1817,7 +1948,6 @@ class WordSearcher:
         self._use_dfs_bb_override = use_dfs_bb
         self._score_cache: dict[tuple[tuple[int, ...], str], tuple[float, float, float]] = {}
         self._grid_refs_cache: dict[tuple[int, ...], tuple] = {}
-        self._capybara_loadout_cache: dict[tuple[int, ...], Loadout] = {}
         self._provisional_candidates: set[tuple[tuple[int, ...], str]] = set()
         self._dict_path_cache: dict[tuple[int, ...], str] = {}
         self._number_extend_cache: dict[tuple[frozenset[int], int], bool] = {}
@@ -1934,9 +2064,40 @@ class WordSearcher:
         return {
             "graph_ctx": self._graph_ctx,
             "grid_refs_cache": self._grid_refs_cache,
-            "capybara_loadout_cache": self._capybara_loadout_cache,
             "grid_refs_timing": self._active_timing,
         }
+
+    def _score_total_for_path(
+        self,
+        board: Board,
+        path: list[int],
+        word: str,
+        loadout: Loadout,
+        ctx: SolveContext,
+    ) -> float:
+        cache_kw = self._pipeline_cache_kwargs()
+        if ctx.capybara_shuffles:
+            from cursed_words_solver.rules.capybara_scoring import score_capybara_ev
+
+            return score_capybara_ev(
+                self.scoring,
+                board,
+                path,
+                word,
+                loadout,
+                self.scoring.rules,
+                solve_context=ctx,
+                grid_refs_cache=cache_kw.get("grid_refs_cache"),
+                grid_refs_timing=cache_kw.get("grid_refs_timing"),
+            )
+        return self.scoring.score_total_only(
+            board,
+            path,
+            word,
+            loadout,
+            solve_context=ctx,
+            **cache_kw,
+        )
 
     def _refine_provisional_heap(
         self,
@@ -1956,13 +2117,12 @@ class WordSearcher:
             key = (path_tuple, word)
             self._score_cache.pop(key, None)
             t0 = time.perf_counter()
-            immediate = self.scoring.score_total_only(
+            immediate = self._score_total_for_path(
                 board,
                 path,
                 word,
                 loadout,
-                solve_context=ctx,
-                **self._pipeline_cache_kwargs(),
+                ctx,
             )
             if timing is not None:
                 timing.score_sec += time.perf_counter() - t0
@@ -2601,6 +2761,10 @@ class WordSearcher:
                     timed_out = True
                     break
                 tile = board.get_by_index(idx)
+                if is_fraction_tile(tile) and not fraction_position_valid(
+                    tile, len(path), relaxed=False
+                ):
+                    continue
                 token = resolve_letter(tile, prefix_len, flags=stamp_flags)
                 next_has_digit = has_digit or any(c.isdigit() for c in token)
                 branch_letters = (
@@ -2745,6 +2909,10 @@ class WordSearcher:
             if timed_out or time.monotonic() > deadline:
                 break
             tile = board.get_by_index(start)
+            if is_fraction_tile(tile) and not fraction_position_valid(
+                tile, 0, relaxed=False
+            ):
+                continue
             token = resolve_letter(tile, 0, flags=stamp_flags)
             has_wildcard = "?" in token
             has_digit = any(c.isdigit() for c in token)
@@ -3158,7 +3326,9 @@ class WordSearcher:
                         )
                     )
                     visited_mask = sum(1 << idx for idx in path)
-                    prefix_len = len(path)
+                    prefix_len = path_word_char_len(
+                        board, path, flags=stamp_flags
+                    )
                     nbr_mask = neighbors_mask(
                         board,
                         visited_mask,
@@ -3176,8 +3346,12 @@ class WordSearcher:
                     ):
                         if deadline is not None and time.monotonic() >= deadline:
                             break
-                        path.append(idx)
                         tile = board.get_by_index(idx)
+                        if is_fraction_tile(tile) and not fraction_position_valid(
+                            tile, len(path), relaxed=False
+                        ):
+                            continue
+                        path.append(idx)
                         token = resolve_letter(tile, prefix_len, flags=stamp_flags)
                         next_has_digit = seed_has_digit or any(
                             c.isdigit() for c in token
@@ -3491,13 +3665,8 @@ class WordSearcher:
             rank = immediate
         else:
             t0 = time.perf_counter()
-            immediate = self.scoring.score_total_only(
-                board,
-                path,
-                score_word,
-                loadout,
-                solve_context=ctx,
-                **self._pipeline_cache_kwargs(),
+            immediate = self._score_total_for_path(
+                board, path, score_word, loadout, ctx
             )
             if timing is not None and self._use_tier2_two_phase_for(loadout):
                 timing.tier2_phase2_calls += 1
@@ -3560,14 +3729,8 @@ class WordSearcher:
         cached = self._score_cache.get(key)
         if cached is not None:
             return cached[0], cached[1]
-        immediate = self.scoring.score_total_only(
-            board,
-            path,
-            word,
-            loadout,
-            solve_context=self._search_ctx(loadout),
-            **self._pipeline_cache_kwargs(),
-        )
+        ctx = self._search_ctx(loadout)
+        immediate = self._score_total_for_path(board, path, word, loadout, ctx)
         return immediate, 0.0
 
     def find_best_words(
@@ -3584,7 +3747,6 @@ class WordSearcher:
         self._dict_path_cache.clear()
         self._number_extend_cache.clear()
         self._grid_refs_cache.clear()
-        self._capybara_loadout_cache.clear()
         self._provisional_candidates.clear()
         reset_board_flat_call_count()
         loadout = loadout or Loadout(money=board.money)
@@ -3824,7 +3986,10 @@ class WordSearcher:
                         ]
                         if not priority_starts:
                             priority_starts = cluster_starts[:1]
-                        cluster_cap = min(9, self.max_len)
+                        max_number_face = _max_number_face_on_board(board)
+                        cluster_cap = min(
+                            max(9, max_number_face), self.max_len
+                        )
                         for cap in range(7, cluster_cap + 1):
                             if time.monotonic() >= cluster_deadline:
                                 break
@@ -3860,6 +4025,8 @@ class WordSearcher:
                 if self.time_budget <= 2.0 and number_starts:
                     number_starts = number_starts[:1]
                 digit_start = max(self.min_len, 1)
+                max_number_face = _max_number_face_on_board(board)
+                min_cap_for_numbers = max(8, max_number_face)
                 for cap in range(digit_start, self.max_len + 1):
                     if time.monotonic() >= pre_extend_deadline or not number_starts:
                         break
@@ -3873,11 +4040,8 @@ class WordSearcher:
                         number_starts,
                         digits_only=True,
                     )
-                    # For tight budgets, the `cap=8` attempt may not add
-                    # candidates in time-slice granularity even though
-                    # higher caps can still discover the length-8 word.
                     if (
-                        cap >= 8
+                        cap >= min_cap_for_numbers
                         and len(candidates) == before
                         and self.time_budget >= 6.0
                     ):

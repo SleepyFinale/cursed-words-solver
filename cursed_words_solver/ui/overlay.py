@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from cursed_words_solver.config import Region
 from cursed_words_solver.consumable_placement import format_placement_path_hints
-from cursed_words_solver.suggestion import format_suggestion_word
+from cursed_words_solver.suggestion import format_suggestion_word, format_result_score_display
 from cursed_words_solver.ui.board_geometry import path_geometry
 
 if TYPE_CHECKING:
@@ -183,12 +183,13 @@ class ResultOverlay(QWidget):
                         "<br><span style='font-size:11px;color:#fa0'>"
                         f"{hint}</span>"
                     )
+            score_html = format_result_score_display(top)
             self.hero_result.setText(
                 f"<span style='font-size:22px;font-weight:bold;color:#fff'>"
                 f"{word_html}</span>"
                 f"&nbsp;&nbsp;"
                 f"<span style='font-size:18px;font-weight:bold;color:#0f8'>"
-                f"{top.score:,.0f} pts</span>"
+                f"{score_html}</span>"
                 f"{setup_line}"
                 f"{placement_line}"
                 f"{microscope_line}"

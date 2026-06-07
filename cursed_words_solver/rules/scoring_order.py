@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 import random
 from dataclasses import dataclass
 
@@ -217,17 +218,14 @@ def build_scoring_item_sequence(
     capybara_loadout_cache: dict[tuple[int, ...], Loadout] | None = None,
     grid_refs_timing: object | None = None,
 ) -> list[ScoringItemRef]:
-    """Mirror GetItemsForWordSubmission + Hourglass reverse."""
+    """Mirror GetItemsForWordSubmission + Hourglass reverse.
+
+    Capybara order randomization is handled by capybara_scoring (permutation EV),
+    not by a synthetic shuffle here — loadout slot order is used as-is.
+    """
+    del capybara_shuffles, capybara_loadout_cache
     if not loadout:
         return []
-    if capybara_shuffles is None:
-        loadout = capybara_shuffled_loadout(
-            loadout, rules, path, cache=capybara_loadout_cache
-        )
-    elif capybara_shuffles:
-        loadout = capybara_shuffled_loadout(
-            loadout, rules, path, cache=capybara_loadout_cache
-        )
     inv = (
         list(inventory_refs)
         if inventory_refs is not None
@@ -271,12 +269,32 @@ def sort_grid_path_refs(
     return sorted(refs, key=_priority)
 
 
+def path_has_green_tiles(board: Board, path: list[int]) -> bool:
+    """True when any path tile is GREEN (wiki step 6 applies)."""
+    return any(board.get_by_index(idx).color == TileColor.GREEN for idx in path)
+
+
+def tile_sum_excluding_green(board: Board, path: list[int], state: dict) -> float:
+    """Sum path tile scores omitting GREEN indices (word-track at finalize)."""
+    return float(
+        sum(
+            state["tile_scores"][i]
+            for i, idx in enumerate(path)
+            if board.get_by_index(idx).color != TileColor.GREEN
+        )
+    )
+
+
 def apply_green_tile_word_transfer(
     board: Board,
     path: list[int],
     state: dict,
+    *,
+    trace_step: Any = None,
 ) -> None:
-    """Wiki step: GREEN tile scores join word score before finalize."""
+    """Wiki step 6: GREEN tile scores join word score before step-7 word multipliers."""
+    if state.get("_green_transferred"):
+        return
     transfer = 0.0
     for i, idx in enumerate(path):
         if board.get_by_index(idx).color == TileColor.GREEN:
@@ -285,3 +303,11 @@ def apply_green_tile_word_transfer(
     if transfer:
         state["word_score"] += transfer
         state["effects"].append(f"+{transfer:g} GREEN tile score → word")
+    if transfer or path_has_green_tiles(board, path):
+        state["_green_transferred"] = True
+    if transfer and trace_step is not None:
+        trace_step(
+            state,
+            "green_transfer",
+            detail=f"+{transfer:g} GREEN → word",
+        )

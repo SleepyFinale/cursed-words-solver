@@ -190,6 +190,26 @@ def is_fraction_tile(tile: Tile) -> bool:
 
 
 
+def tile_fraction_position_values(tile: Tile) -> list[int]:
+    """1-based position indices this fraction may claim (numerator and denominator)."""
+    if not is_fraction_tile(tile):
+        return []
+    parts = fraction_parts(tile)
+    if parts is None:
+        return []
+    num, den = parts
+    if num == den:
+        return [num]
+    return sorted({num, den})
+
+
+def _position_matches_fraction_values(position: int, values: list[int]) -> bool:
+    if not values:
+        return False
+    pos = position + 1
+    return pos in values
+
+
 def fraction_position_valid(tile: Tile, position: int, relaxed: bool = False) -> bool:
 
     """Fraction wildcards are valid at numerator or denominator position only (1-based)."""
@@ -198,15 +218,11 @@ def fraction_position_valid(tile: Tile, position: int, relaxed: bool = False) ->
 
         return True
 
-    parts = fraction_parts(tile)
+    values = tile_fraction_position_values(tile)
 
-    if parts is None:
+    if not values:
 
         return False
 
-    num, den = parts
-
-    pos = position + 1
-
-    return pos in {num, den}
+    return _position_matches_fraction_values(position, values)
 

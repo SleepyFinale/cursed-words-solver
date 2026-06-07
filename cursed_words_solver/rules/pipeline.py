@@ -41,6 +41,7 @@ from cursed_words_solver.rules.scoring_order import (
     apply_green_tile_word_transfer,
     build_scoring_item_sequence,
     sort_grid_path_refs,
+    tile_sum_excluding_green,
 )
 from cursed_words_solver.rules.tile_scoring import apply_tile_init
 from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
@@ -59,6 +60,7 @@ from cursed_words_solver.rules.boss_effects import (
 from cursed_words_solver.rules.boss_scoring import (
     EARLY_BOSS_TYPES,
     apply_early_boss_scoring,
+    apply_hourglass_boss_scoring,
 )
 
 # Wiki Scoring step 1: Salamander / Robo-Monkey before pin, stickers, stamps.
@@ -549,12 +551,18 @@ def _apply_pending_word_finalize_steps(
                         fields["rule_id"] = rule_id
                     _trace_step(state, "multiply", **fields)
         return total
+    green_word_track = bool(state.get("_green_transferred"))
     if multiply_tile_sum_only:
         # Queued ×WORD from RAM/grid runs before +WORD SCORE additives in game order;
         # at final finalize, multipliers apply to tile sum only, then word_score is added.
-        tile_sum = float(sum(state["tile_scores"]))
-        word_part = float(state["word_score"])
-        total = tile_sum
+        # After wiki step 6, GREEN lives in word_score and must receive step-7 ×WORD too.
+        if green_word_track:
+            total = float(subtotal)
+            word_part = None
+        else:
+            tile_sum = float(sum(state["tile_scores"]))
+            word_part = float(state["word_score"])
+            total = tile_sum
     elif multiply_word_score_only:
         total = float(state["word_score"])
     else:
@@ -587,7 +595,9 @@ def _apply_pending_word_finalize_steps(
                     fields["rule_id"] = rule_id
                 _trace_step(state, "multiply", **fields)
     if multiply_tile_sum_only:
-        return total + word_part
+        if word_part is not None:
+            return total + word_part
+        return total
     return total
 
 
@@ -634,9 +644,14 @@ def _apply_compound_word_percents_on_tile_sum(
     percents: list[int],
     *,
     trace: list[dict[str, Any]] | None = None,
+    board: Board | None = None,
+    path: list[int] | None = None,
 ) -> None:
     """Apply stacked WordBonus percents on tile sum only (down_under snapshot session)."""
-    tile_sum = int(sum(state["tile_scores"]))
+    if board is not None and path is not None:
+        tile_sum = int(tile_sum_excluding_green(board, path, state))
+    else:
+        tile_sum = int(sum(state["tile_scores"]))
     total = float(tile_sum)
     for percent in percents:
         total = int(total * int(percent) / 100.0)
@@ -995,6 +1010,8 @@ def _apply_compound_word_finalize_after_stickers(
         state,
         compound,
         trace=state.get("_trace"),
+        board=board,
+        path=path,
     )
 
 
@@ -1073,7 +1090,12 @@ def _finalize(
     if state.get("_compound_word_percents_applied") and not has_compound_post:
         return float(sum(state["tile_scores"]) + state["word_score"])
     if board is not None and path is not None:
-        apply_green_tile_word_transfer(board, path, state)
+        apply_green_tile_word_transfer(
+            board,
+            path,
+            state,
+            trace_step=_trace_step if state.get("_trace") is not None else None,
+        )
     _apply_post_cocktail_word_percent_if_needed(
         state, loadout, board=board, path=path, rules=rules
     )
@@ -1138,6 +1160,13 @@ def _finalize_with_trace(
     )
     if state.get("_compound_word_percents_applied") and not has_compound_post:
         return float(sum(state["tile_scores"]) + state["word_score"]), []
+    if board is not None and path is not None:
+        apply_green_tile_word_transfer(
+            board,
+            path,
+            state,
+            trace_step=_trace_step if state.get("_trace") is not None else None,
+        )
     trace = state.get("_trace")
     _apply_post_cocktail_word_percent_if_needed(
         state, loadout, board=board, path=path, rules=rules
@@ -1410,7 +1439,9 @@ class ScoringPipeline:
 
         pin_effect = str(loadout.extras.get("pin_effect", "") or "").strip()
         if pin_effect and not hourglass:
-            state = self._apply_pin(loadout, pin_effect, state, board, path)
+            state = self._apply_pin(
+                loadout, pin_effect, state, board, path, hourglass_reversed=False
+            )
             _trace_step(state, "pin", rule_id=pin_effect, detail="pin applied")
         from cursed_words_solver.rules.scoring_conditions import snapshot_phased_word_scoring
 
@@ -1508,6 +1539,8 @@ class ScoringPipeline:
                         state,
                         pre_compound,
                         trace=state.get("_trace"),
+                        board=board,
+                        path=path,
                     )
                 state = apply_sticker_with_orchestration(
                     rules=self.rules,
@@ -1542,6 +1575,8 @@ class ScoringPipeline:
                                 state,
                                 compound,
                                 trace=state.get("_trace"),
+                                board=board,
+                                path=path,
                             )
                     elif post_compound and not pre_compound:
                         state["word_score"] = 0.0
@@ -1549,6 +1584,8 @@ class ScoringPipeline:
                             state,
                             post_compound,
                             trace=state.get("_trace"),
+                            board=board,
+                            path=path,
                         )
 
         state["_immediate_word_mult"] = True
@@ -1590,7 +1627,14 @@ class ScoringPipeline:
             if defer_multiply_stickers:
                 _apply_sticker_pass(multiply_only=True)
             if pin_effect:
-                state = self._apply_pin(loadout, pin_effect, state, board, path)
+                state = self._apply_pin(
+                    loadout,
+                    pin_effect,
+                    state,
+                    board,
+                    path,
+                    hourglass_reversed=True,
+                )
                 _trace_step(state, "pin", rule_id=pin_effect, detail="pin applied")
         elif defer_multiply_stickers:
             _apply_sticker_pass(multiply_only=False)
@@ -1628,8 +1672,15 @@ class ScoringPipeline:
         ) == "human_boy":
             state = self._apply_human_hands(loadout, state, board, path)
         if hourglass:
-            state = self._apply_early_boss_rules(state, board, path, loadout, ctx)
-        state = self._apply_late_boss_rules(state, board, path, loadout, ctx)
+            state = self._apply_hourglass_boss_rules(state, board, path, loadout, ctx)
+        else:
+            state = self._apply_late_boss_rules(state, board, path, loadout, ctx)
+        apply_green_tile_word_transfer(
+            board,
+            path,
+            state,
+            trace_step=_trace_step if trace is not None else None,
+        )
         return state
 
     def _apply_early_boss_rules(
@@ -1643,6 +1694,28 @@ class ScoringPipeline:
         """Wiki step 1: ApplyBossModifier before stickers (unless Hourglass)."""
         trace_fn = _trace_step if state.get("_trace") is not None else None
         return apply_early_boss_scoring(
+            state,
+            board,
+            path,
+            loadout,
+            self.rules,
+            self._apply_rule,
+            trace_step=trace_fn,
+            active_boss_rules=solve_ctx.active_boss_rules,
+            boss_ctx=solve_ctx.boss_ctx,
+        )
+
+    def _apply_hourglass_boss_rules(
+        self,
+        state: dict[str, Any],
+        board: Board,
+        path: list[int],
+        loadout: Loadout,
+        solve_ctx: SolveContext,
+    ) -> dict[str, Any]:
+        """Hourglass: reversed ApplyBossModifier pass after items."""
+        trace_fn = _trace_step if state.get("_trace") is not None else None
+        return apply_hourglass_boss_scoring(
             state,
             board,
             path,
@@ -1802,6 +1875,8 @@ class ScoringPipeline:
         state: dict,
         board: Board,
         path: list[int],
+        *,
+        hourglass_reversed: bool = False,
     ) -> dict:
         return apply_pin_word_scoring(
             rules=self.rules,
@@ -1811,6 +1886,7 @@ class ScoringPipeline:
             board=board,
             path=path,
             apply_rule=self._apply_rule,
+            hourglass_reversed=hourglass_reversed,
         )
 
 

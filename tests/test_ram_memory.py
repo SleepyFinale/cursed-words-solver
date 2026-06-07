@@ -146,6 +146,39 @@ def test_ram_acquisition_order_in_effects():
     assert "Tombstone" in ram_effects[1]
 
 
+def test_ram_hourglass_reverses_memory_replay_order():
+    pipeline = ScoringPipeline()
+    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
+    path = list(range(5))
+    board = Board(tiles=grid)
+    lo = Loadout(
+        stamps=[LoadoutItem(id="hourglass", name="Hourglass", kind="stamp")],
+        extras={
+            "pin_effect": "random_access_memory",
+            "pin_memory": [
+                {
+                    "id": "graduation_cap",
+                    "name": "Graduation Cap",
+                    "kind": "sticker",
+                    "level": 1,
+                },
+                {
+                    "id": "tombstone",
+                    "name": "Tombstone",
+                    "kind": "sticker",
+                    "level": 1,
+                },
+            ],
+            "hourglass_count": "1",
+        },
+    )
+    _, bd = pipeline.score(board, path, "aaaaa", lo)
+    ram_effects = [e for e in bd["pipeline"]["effects"] if e.startswith("RAM:")]
+    assert len(ram_effects) == 2
+    assert "Tombstone" in ram_effects[0]
+    assert "Graduation Cap" in ram_effects[1]
+
+
 def test_ram_scoring_trace_order_grid_before_pin_before_sticker(tmp_path):
     pipeline = ScoringPipeline()
     grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]

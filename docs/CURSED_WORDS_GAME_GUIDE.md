@@ -334,7 +334,7 @@ flowchart TD
 
 **Capybara:** shuffles sticker/stamp order on each submit.
 
-**Wiki simplification note:** The wiki lists GREEN transfer before final sum; decompile places **Lexographer** and **poison** before green finalize. This guide follows decompile + solver regression tests.
+**Wiki simplification note:** The wiki lists GREEN transfer before final sum; decompile places **Lexographer** and **poison** before green finalize. The solver runs GREEN transfer at the end of `_compute_state` (after all stickers/stamps/bosses), then applies queued word multipliers in `_finalize` (wiki step 7).
 
 ### 4.3 Sticker scaling
 
