@@ -612,7 +612,7 @@ namespace CursedWordsSolverCompanion
             return false;
         }
 
-        private static int CountHistoricWordsInJson(string json)
+        public static int CountHistoricWordsInJson(string json)
         {
             if (string.IsNullOrEmpty(json) || json == "[]")
                 return 0;
@@ -620,6 +620,31 @@ namespace CursedWordsSolverCompanion
             {
                 var arr = JsonConvert.DeserializeObject<List<object>>(json);
                 return arr != null ? arr.Count : 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        public static int HistoricJsonRedTileCountSum(string json)
+        {
+            if (string.IsNullOrEmpty(json) || json == "[]")
+                return 0;
+            try
+            {
+                var rows = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(json);
+                if (rows == null)
+                    return 0;
+                var total = 0;
+                foreach (var row in rows)
+                {
+                    if (row == null || !row.TryGetValue("red_tile_count", out var raw) || raw == null)
+                        continue;
+                    if (int.TryParse(raw.ToString(), out var n) && n > 0)
+                        total += n;
+                }
+                return total;
             }
             catch
             {

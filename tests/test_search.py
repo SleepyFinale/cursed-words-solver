@@ -668,3 +668,107 @@ def test_searcher_skips_words_missing_required_consumables(tmp_path):
     assert "cat" not in words
     assert "cats" in words
 
+
+NAT_H4_RUN_STATE = Path.home() / ".cursed_words_solver" / "run_state.json"
+INVALID_EPIDERMIC_PATH = [9, 4, 3, 8, 20, 2, 1, 15, 16]
+
+
+def _nat_h4_board_and_loadout():
+    if not NAT_H4_RUN_STATE.is_file():
+        pytest.skip("Nat-H4 run_state.json required (~/.cursed_words_solver/run_state.json)")
+    from cursed_words_solver.loadout import (
+        load_run_state_raw,
+        parse_board_from_run_state,
+        parse_run_state,
+    )
+
+    data = load_run_state_raw(NAT_H4_RUN_STATE)
+    if data.get("character") != "Nat-H4" or data.get("boss_id") != "salamander":
+        pytest.skip("run_state is not Nat-H4 salamander board")
+    loadout = parse_run_state(data)
+    board = parse_board_from_run_state(data)
+    assert board is not None
+    return board, loadout
+
+
+def test_path_movement_ok_rejects_epidermic_invalid_step():
+    """Regression: step 4→5 (index 8→20) is not a legal neighbor move."""
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+    from cursed_words_solver.search import path_movement_ok
+
+    board, loadout = _nat_h4_board_and_loadout()
+    flags = stamp_search_flags_mask(loadout)
+    assert not path_movement_ok(board, INVALID_EPIDERMIC_PATH, flags=flags)
+    assert path_movement_ok(board, [9, 4, 3, 8], flags=flags)
+
+
+def test_iter_expansion_neighbors_not_corrupted_by_recursion():
+    """Regression: lazy yield from _NEIGHBOR_SCRATCH must snapshot before nested DFS."""
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+    from cursed_words_solver.search import _iter_expansion_neighbors, neighbors_mask
+
+    board, loadout = _nat_h4_board_and_loadout()
+    flags = stamp_search_flags_mask(loadout)
+    path = [9, 4, 3, 8]
+    visited = sum(1 << i for i in path)
+    cell_id = 8
+    nbr_mask = neighbors_mask(board, visited, cell_id=cell_id, flags=flags)
+    collected: list[int] = []
+    for idx in _iter_expansion_neighbors(
+        board,
+        visited,
+        cell_id=cell_id,
+        path=path,
+        flags=flags,
+        nbr_mask=nbr_mask,
+    ):
+        collected.append(idx)
+        nested_path = path + [idx]
+        nested_visited = visited | (1 << idx)
+        list(
+            _iter_expansion_neighbors(
+                board,
+                nested_visited,
+                cell_id=idx,
+                path=nested_path,
+                flags=flags,
+            )
+        )
+    for idx in collected:
+        assert nbr_mask & (1 << idx), f"neighbor {idx} not in mask for cell {cell_id}"
+
+
+@pytest.fixture
+def _parallel_pool_cleanup():
+    yield
+    from cursed_words_solver.search_parallel import shutdown_search_pool
+
+    shutdown_search_pool(wait=True)
+
+
+def test_nat_h4_find_best_words_all_paths_movement_valid(_parallel_pool_cleanup):
+    """Regression: parallel search must not suggest paths with illegal step 4→5."""
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+    from cursed_words_solver.search import path_movement_ok
+
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+
+    board, loadout = _nat_h4_board_and_loadout()
+    flags = stamp_search_flags_mask(loadout)
+    d = WordDictionary(GAME_WORDLIST_PATH)
+    searcher = WordSearcher(
+        dictionary=d,
+        min_len=3,
+        max_len=25,
+        time_budget=15.0,
+        search_workers=8,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=10)
+    assert results
+    for result in results:
+        assert path_movement_ok(
+            board, list(result.path), flags=flags
+        ), f"{result.word} path={result.path}"
+    assert not any(list(r.path) == INVALID_EPIDERMIC_PATH for r in results)
+

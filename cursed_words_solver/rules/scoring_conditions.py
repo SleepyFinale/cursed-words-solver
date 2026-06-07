@@ -1969,13 +1969,14 @@ def parse_historic_words(loadout: Loadout | None) -> list[dict]:
 
 def encounter_red_tiles_before_current_word(loadout: Loadout | None) -> int:
     """RED tiles from prior submitted words this encounter (Telescope historic list)."""
-    total = 0
-    for row in parse_historic_words(loadout):
-        try:
-            total += max(0, int(row.get("red_tile_count", 0)))
-        except (TypeError, ValueError):
-            continue
-    if total:
+    historic = parse_historic_words(loadout)
+    if historic:
+        total = 0
+        for row in historic:
+            try:
+                total += max(0, int(row.get("red_tile_count") or 0))
+            except (TypeError, ValueError):
+                continue
         return total
     return max(0, red_tiles_used_encounter(loadout))
 
@@ -1988,8 +1989,8 @@ def telescope_running_red_count(
 ) -> int:
     """Running RED count for Telescope at path index (game: historic reds + path prefix).
 
-    When a red tile on the path is not immediately preceded by another red tile,
-    the game adds +1 to the running count (gap-separated reds on the word path).
+    First word (no historic_words): gap-separated reds on the path add +1.
+    Later words: prior + prefix reds only (no gap bonus).
     """
     prior = encounter_red_tiles_before_current_word(loadout)
     prefix_reds = sum(
@@ -1997,6 +1998,8 @@ def telescope_running_red_count(
         for j in range(path_index + 1)
         if board.get_by_index(path[j]).color == TileColor.RED
     )
+    if parse_historic_words(loadout):
+        return prior + prefix_reds
     reds_before = sum(
         1
         for j in range(path_index)

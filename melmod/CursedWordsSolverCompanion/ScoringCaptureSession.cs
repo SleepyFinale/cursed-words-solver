@@ -270,6 +270,16 @@ namespace CursedWordsSolverCompanion
             "cards_submitted",
         };
 
+        /// <summary>
+        /// After submit, BuildExtrasSnapshot reflects live encounter state; do not let
+        /// pre-word scoring-context extras overwrite these keys.
+        /// </summary>
+        private static readonly string[] PostSubmitLiveExtrasKeys =
+        {
+            "historic_words",
+            "red_tiles_used_encounter",
+        };
+
         private static readonly string[] WorkflowExtrasPreserveKeys =
         {
             "previous_word_first_letter",
@@ -299,8 +309,43 @@ namespace CursedWordsSolverCompanion
             {
                 if (IsBicyclePinExtraKey(kv.Key))
                     continue;
+                if (IsPostSubmitLiveExtraKey(kv.Key) && ShouldKeepPostSubmitLiveExtra(target, kv.Key))
+                    continue;
                 target[kv.Key] = kv.Value ?? "";
             }
+        }
+
+        private static bool IsPostSubmitLiveExtraKey(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+                return false;
+            foreach (var liveKey in PostSubmitLiveExtrasKeys)
+            {
+                if (string.Equals(key, liveKey, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool ShouldKeepPostSubmitLiveExtra(
+            Dictionary<string, string> target,
+            string key
+        )
+        {
+            if (target == null || string.IsNullOrEmpty(key))
+                return false;
+            string liveVal;
+            if (!target.TryGetValue(key, out liveVal) || string.IsNullOrEmpty(liveVal))
+                return false;
+            if (string.Equals(key, "historic_words", StringComparison.OrdinalIgnoreCase))
+                return RunStateExportFill.HistoricJsonRedTileCountSum(liveVal)
+                    >= RunStateExportFill.HistoricJsonRedTileCountSum(
+                        _scoringContextExtras != null
+                            && _scoringContextExtras.TryGetValue(key, out var ctxVal)
+                            ? ctxVal
+                            : null
+                    );
+            return true;
         }
 
         private static bool IsBicyclePinExtraKey(string key)

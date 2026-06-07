@@ -542,6 +542,33 @@ def number_position_valid(
     return _position_matches_number_values(position, values, flags)
 
 
+def path_movement_ok(
+    board: Board,
+    path: list[int],
+    *,
+    flags: SearchFlagsMask = 0,
+    graph_ctx: BoardGraphContext | None = None,
+) -> bool:
+    """True when every consecutive pair follows search neighbor rules (8-dir, wrap, chess, etc.)."""
+    if len(path) < 2:
+        return True
+    visited = 0
+    for i in range(len(path) - 1):
+        a, b = path[i], path[i + 1]
+        visited |= 1 << a
+        mask = neighbors_mask(
+            board,
+            visited,
+            cell_id=a,
+            flags=flags,
+            graph_ctx=graph_ctx,
+        )
+        if not (mask & (1 << b)):
+            return False
+        visited |= 1 << b
+    return True
+
+
 class PathValidator:
     def __init__(
         self,
@@ -605,6 +632,8 @@ class PathValidator:
     ) -> bool:
         required = self.required_consumable_indices
         if required and not required.issubset(path):
+            return False
+        if not path_movement_ok(board, path, flags=stamp_flags):
             return False
         relaxed_fractions = self.relaxed_numbers
         for i, idx in enumerate(path):
@@ -1074,8 +1103,9 @@ def _iter_expansion_neighbors(
 
     n = collect_mask_indices(nbr_mask, _NEIGHBOR_SCRATCH)
     if n <= 1:
-        for i in range(n):
-            yield _NEIGHBOR_SCRATCH[i]
+        ordered = _NEIGHBOR_SCRATCH[:n]
+        for idx in ordered:
+            yield idx
         return
 
     if graph_ctx is not None:
@@ -1172,8 +1202,9 @@ def _iter_expansion_neighbors(
             return (3, -base, idx)
 
     _insertion_sort_indices(_NEIGHBOR_SCRATCH, n, sort_key)
-    for i in range(n):
-        yield _NEIGHBOR_SCRATCH[i]
+    ordered = _NEIGHBOR_SCRATCH[:n]
+    for idx in ordered:
+        yield idx
 
 
 def _neighbors_sorted_by_base_score(

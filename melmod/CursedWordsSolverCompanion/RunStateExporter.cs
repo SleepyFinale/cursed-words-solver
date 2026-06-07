@@ -291,7 +291,11 @@ namespace CursedWordsSolverCompanion
 
         public static bool TryMergeTelescopeEncounterExtrasAfterScore()
         {
-            return TryMergeTelescopeEncounterExtras(_cachedPreviousWords);
+            var player = GetPlayer();
+            var words = RunStateExportFill.PickBestHistoricWordList(player);
+            if (words == null || words.Count == 0)
+                words = _cachedPreviousWords;
+            return TryMergeTelescopeEncounterExtras(words);
         }
 
         private static bool ShouldMergeHistoricWords(string existing, string incoming)
@@ -300,7 +304,12 @@ namespace CursedWordsSolverCompanion
                 return false;
             if (string.IsNullOrEmpty(existing) || existing == "[]")
                 return true;
-            return !string.Equals(existing, incoming, StringComparison.Ordinal);
+            if (string.Equals(existing, incoming, StringComparison.Ordinal))
+                return false;
+            return RunStateExportFill.HistoricJsonRedTileCountSum(incoming)
+                > RunStateExportFill.HistoricJsonRedTileCountSum(existing)
+                || RunStateExportFill.CountHistoricWordsInJson(incoming)
+                    > RunStateExportFill.CountHistoricWordsInJson(existing);
         }
 
         public static string TryReadRunStateExtra(string key)
