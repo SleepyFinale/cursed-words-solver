@@ -670,19 +670,13 @@ def format_result_score_display(result: WordResult) -> str:
     return f"{score:,} pts"
 
 
-
+def _fixed_letters_align(scoring_word: str, candidate: str) -> bool:
     """True when every alphabetic char in scoring_word matches the candidate."""
-
     if len(scoring_word) != len(candidate):
-
         return False
-
     for a, b in zip(scoring_word, candidate, strict=True):
-
         if a.isalpha() and a.lower() != b.lower():
-
             return False
-
     return True
 
 
