@@ -11,7 +11,8 @@ from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.search import WordSearcher, resolve_letter, stamp_search_flags
+from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+from cursed_words_solver.search import WordSearcher, resolve_letter
 
 FIXTURE = (
     Path(__file__).resolve().parent

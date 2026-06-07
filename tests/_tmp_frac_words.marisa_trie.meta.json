@@ -1,9 +1,0 @@
-{
-  "backend": "marisa",
-  "source": {
-    "path": "C:\\Users\\TheMi\\Documents\\cursed-words-solver\\tests\\_tmp_frac_words.txt",
-    "size": 5,
-    "mtime_ns": 1780804711325940500,
-    "sha256": "b2cc68d1c35c7345ec1d5977cb2b67e3b02362bec752d8a8d8c73f4b760f8d99"
-  }
-}

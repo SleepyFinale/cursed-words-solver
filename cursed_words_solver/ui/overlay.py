@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from cursed_words_solver.config import Region
 from cursed_words_solver.consumable_placement import format_placement_path_hints
 from cursed_words_solver.suggestion import format_suggestion_word
-from cursed_words_solver.ui.board_highlight import path_geometry
+from cursed_words_solver.ui.board_geometry import path_geometry
 
 if TYPE_CHECKING:
     from cursed_words_solver.models import Board, WordResult

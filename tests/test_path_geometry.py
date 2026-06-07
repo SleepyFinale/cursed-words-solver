@@ -2,7 +2,7 @@
 
 from cursed_words_solver.config import Region
 from cursed_words_solver.loadout import parse_board_from_run_state
-from cursed_words_solver.ui.board_highlight import path_geometry
+from cursed_words_solver.ui.board_geometry import path_geometry
 from tests.integration.test_run_state_board import _bat_4x3_run_state
 
 

@@ -1,7 +1,7 @@
 from cursed_words_solver.config import Region
 from cursed_words_solver.consumable_placement import ConsumablePlacement
 from cursed_words_solver.models import Board
-from cursed_words_solver.ui.board_highlight import placement_geometry, path_geometry
+from cursed_words_solver.ui.board_geometry import placement_geometry, path_geometry
 from tests.test_search import _tile
 
 
