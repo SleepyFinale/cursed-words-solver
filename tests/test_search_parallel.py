@@ -42,6 +42,7 @@ def test_parallel_payload_includes_required_consumable_indices():
         setup_weight=0.0,
         setup_discount=0.0,
         use_fast_rank=False,
+        use_tier2_screen=False,
         required_consumable_indices=required,
     )
 

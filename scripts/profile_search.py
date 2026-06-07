@@ -64,6 +64,14 @@ class ProfileRow:
     best_word: str
     best_score: float
     tier2: str
+    score_cache_hit_pct: float = 0.0
+    chess_cache_hit_pct: float = 0.0
+    board_flat_calls: int = 0
+    trie_steps: int = 0
+    trie_prunes: int = 0
+    trie_fast_accepts: int = 0
+    tier2_screen_skips: int = 0
+    tier2_screen_calls: int = 0
 
 
 def _load_from_mismatch(path: Path) -> tuple:
@@ -139,6 +147,11 @@ def _timing_to_row(
         score_calls=timing.score_calls,
     )
     tier2 = rec_timing.tier2_recommendation(sticker_count=sticker_count)
+
+    def _hit_pct(hits: int, misses: int) -> float:
+        total = hits + misses
+        return 100.0 * hits / total if total else 0.0
+
     return ProfileRow(
         label=label,
         wall_sec=elapsed,
@@ -153,6 +166,18 @@ def _timing_to_row(
         best_word=best_word,
         best_score=best_score,
         tier2=tier2,
+        score_cache_hit_pct=_hit_pct(
+            timing.score_cache_hits, timing.score_cache_misses
+        ),
+        chess_cache_hit_pct=_hit_pct(
+            timing.chess_attack_cache_hits, timing.chess_attack_cache_misses
+        ),
+        board_flat_calls=timing.board_flat_calls,
+        trie_steps=timing.trie_steps,
+        trie_prunes=timing.trie_prunes,
+        trie_fast_accepts=timing.trie_fast_accepts,
+        tier2_screen_skips=timing.tier2_screen_skips,
+        tier2_screen_calls=timing.tier2_screen_calls,
     )
 
 
@@ -192,14 +217,19 @@ def _print_table(rows: list[ProfileRow]) -> None:
         return
     print(
         f"{'fixture':<28} {'wall':>6} {'score%':>7} {'calls':>7} {'expand':>8} "
-        f"{'dfs':>6} {'extend':>6} {'stk':>4} {'best':>10}  tier-2"
+        f"{'prune':>7} {'fast':>6} {'dfs':>6} {'extend':>6} {'stk':>4} "
+        f"{'sc%':>5} {'ch%':>5} {'flat':>7} {'t2skip':>7} "
+        f"{'best':>10}  tier-2"
     )
-    print("-" * 105)
+    print("-" * 120)
     for r in rows:
         print(
             f"{r.label:<28} {r.wall_sec:6.2f}s {r.score_pct:6.1f}% "
-            f"{r.score_calls:7d} {r.expansions:8d} {r.dfs_sec:5.2f}s "
-            f"{r.extend_sec:5.2f}s {r.sticker_count:4d} "
+            f"{r.score_calls:7d} {r.expansions:8d} "
+            f"{r.trie_prunes:7d} {r.trie_fast_accepts:6d} "
+            f"{r.dfs_sec:5.2f}s {r.extend_sec:5.2f}s {r.sticker_count:4d} "
+            f"{r.score_cache_hit_pct:4.0f}% {r.chess_cache_hit_pct:4.0f}% "
+            f"{r.board_flat_calls:7d} {r.tier2_screen_skips:7d} "
             f"{r.best_word!r:>10} {r.best_score:,.0f}  {r.tier2}"
         )
     avg_score = sum(r.score_pct for r in rows) / len(rows)
@@ -218,6 +248,9 @@ def _print_table(rows: list[ProfileRow]) -> None:
     print("Interpretation:")
     print("  score%  = time in score_total_only (+ final breakdown for top-N)")
     print("  expand  = DFS node visits (higher => more exploration work)")
+    print("  prune   = trie prefix dead-end cuts; fast = cursor_is_word fast accepts")
+    print("  sc%     = score cache hit rate; ch% = chess attack cache hit rate")
+    print("  flat    = direct Board.flat property accesses (get_by_index uses tiles[row][col])")
     print("  Tier-2  = two-phase: cheap base+mult rank on all words, full pipeline on finalists only")
 
 

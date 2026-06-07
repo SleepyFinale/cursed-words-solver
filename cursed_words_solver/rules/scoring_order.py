@@ -167,6 +167,8 @@ def build_scoring_item_sequence(
     path: list[int],
     loadout: Loadout | None,
     rules: dict,
+    *,
+    hourglass_reversed: bool | None = None,
 ) -> list[ScoringItemRef]:
     """Mirror GetItemsForWordSubmission + Hourglass reverse."""
     if not loadout:
@@ -175,7 +177,12 @@ def build_scoring_item_sequence(
     refs = _path_grid_item_refs(board, path, rules, loadout) + _inventory_item_refs(
         loadout, rules
     )
-    if hourglass_reverses_order(loadout, rules):
+    reversed_order = (
+        hourglass_reversed
+        if hourglass_reversed is not None
+        else hourglass_reverses_order(loadout, rules)
+    )
+    if reversed_order:
         refs = list(reversed(refs))
     return refs
 

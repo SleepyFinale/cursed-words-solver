@@ -42,6 +42,13 @@ def test_dictionary_trie_cursor_helpers(tmp_path: Path):
     assert d.cursor_is_word(cur)
 
 
+def test_dictionary_trie_node_count_sane(tmp_path: Path):
+    wl = _write_words(tmp_path, ["cat", "dog", "cater", "car", "card"])
+    d = WordDictionary(wl)
+    assert d.trie_node_count <= len(d.words) * 3
+    assert d.trie_node_count >= len(d.words)
+
+
 def test_search_word_stitch_uses_prefix_extension(tmp_path: Path):
     # "catdog" is not a dictionary word; it should still be accepted as cat + dog
     # when Honeypot (word_stitch) is active.
@@ -62,3 +69,35 @@ def test_search_word_stitch_uses_prefix_extension(tmp_path: Path):
     results = searcher.find_best_words(board, loadout, top_n=20)
     words = {r.word for r in results}
     assert "catdog" in words
+
+
+def _board_c_wildcard_t() -> Board:
+    """Horizontal c ? t — wildcard resolves to 'a' for 'cat'."""
+    grid = [
+        [Tile(r, c, "q", "Q", 1.0, TileColor.COLORLESS, CurseType.LETTER) for c in range(5)]
+        for r in range(5)
+    ]
+    grid[0][0] = Tile(0, 0, "c", "C", 1.0, TileColor.COLORLESS, CurseType.LETTER)
+    grid[0][1] = Tile(0, 1, "?", "?", 1.0, TileColor.COLORLESS, CurseType.WILDCARD)
+    grid[0][2] = Tile(0, 2, "t", "T", 1.0, TileColor.COLORLESS, CurseType.LETTER)
+    return Board(tiles=grid)
+
+
+def test_wildcard_trie_branch_finds_cat(tmp_path: Path):
+    wl = _write_words(tmp_path, ["cat", "cot", "cut"])
+    d = WordDictionary(wl)
+    board = _board_c_wildcard_t()
+    searcher = WordSearcher(
+        dictionary=d,
+        min_len=3,
+        max_len=3,
+        time_budget=2.0,
+        search_workers=1,
+    )
+    results = searcher.find_best_words(board, Loadout(), top_n=5)
+    words = {r.word for r in results}
+    assert "cat" in words
+    timing = searcher.last_search_timing
+    assert timing is not None
+    assert timing.trie_steps > 0
+    assert timing.trie_fast_accepts >= 1

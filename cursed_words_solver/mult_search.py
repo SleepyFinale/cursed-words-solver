@@ -272,3 +272,19 @@ def guaranteed_mult_factor(mult_rules: list[MultRule], loadout: Loadout, path: l
         if factor > 1.0:
             product *= factor
     return product
+
+
+def optimistic_mult_upper_bound(
+    mult_rules: list[MultRule],
+    loadout: Loadout,
+    path: list[int],
+) -> float:
+    """Product of all mult factors assuming every rule fires (tier-2 screen upper bound)."""
+    product = 1.0
+    for mr in mult_rules:
+        factor = scaled_word_multiplier(mr.level, mr.rule, loadout, path)
+        if factor <= 1.0:
+            continue
+        if mr.effect_type in MULT_EFFECT_TYPES:
+            product *= factor
+    return product

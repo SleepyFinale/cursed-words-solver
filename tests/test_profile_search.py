@@ -43,3 +43,5 @@ def test_find_best_words_records_score_timing(tmp_path: Path):
     assert timing.score_sec > 0
     assert timing.dfs_expansions > 0
     assert timing.wall_sec > 0
+    assert timing.score_cache_hits + timing.score_cache_misses >= 0
+    assert timing.board_flat_calls > 0

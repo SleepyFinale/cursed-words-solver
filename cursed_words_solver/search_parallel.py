@@ -19,9 +19,24 @@ _mp_dictionary = None
 _mp_pipeline = None
 
 _pool: ProcessPoolExecutor | None = None
-_pool_key: tuple[str, int] | None = None
+_pool_key: tuple[str, int, str] | None = None
 _pool_warm = False
 _worker_errors: list[str] = []
+
+
+def _trie_backend_from_env() -> str:
+    return os.environ.get("CWS_TRIE_BACKEND", "auto")
+
+
+def prebuild_shared_trie_cache(wordlist_path: Path, *, backend: str | None = None) -> None:
+    """Build on-disk trie cache once so worker processes mmap-load instead of rebuilding."""
+    from cursed_words_solver.dictionary import WordDictionary
+
+    WordDictionary(
+        wordlist_path,
+        trie_backend=backend or _trie_backend_from_env(),
+        use_trie_cache=True,
+    )
 
 
 def drain_parallel_worker_errors() -> list[str]:
@@ -53,13 +68,15 @@ def get_search_pool(
     global _pool, _pool_key
     if workers <= 1 or wordlist_path is None:
         return None
-    key = (str(wordlist_path), workers)
+    backend = _trie_backend_from_env()
+    key = (str(wordlist_path), workers, backend)
     if _pool is None or _pool_key != key:
         shutdown_search_pool(wait=True)
+        prebuild_shared_trie_cache(wordlist_path, backend=backend)
         _pool = ProcessPoolExecutor(
             max_workers=workers,
             initializer=_mp_init,
-            initargs=(str(wordlist_path),),
+            initargs=(str(wordlist_path), backend),
         )
         _pool_key = key
         global _pool_warm
@@ -101,7 +118,7 @@ def _mp_warmup(_: int) -> int:
     return len(_mp_dictionary.words)
 
 
-def _mp_init(wordlist_path: str) -> None:
+def _mp_init(wordlist_path: str, trie_backend: str = "auto") -> None:
     import signal
 
     # Parent handles Ctrl+C; ignore in workers to avoid shutdown traceback spam.
@@ -113,7 +130,11 @@ def _mp_init(wordlist_path: str) -> None:
     from cursed_words_solver.dictionary import WordDictionary
     from cursed_words_solver.rules.pipeline import ScoringPipeline
 
-    _mp_dictionary = WordDictionary(Path(wordlist_path))
+    _mp_dictionary = WordDictionary(
+        Path(wordlist_path),
+        trie_backend=trie_backend,
+        use_trie_cache=True,
+    )
     _mp_pipeline = ScoringPipeline()
 
 
@@ -123,6 +144,7 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
         loadout_mult_rules,
     )
     from cursed_words_solver.search import WordSearcher, _CandidateHeap, _active_indices
+    from cursed_words_solver.solve_context import build_solve_context
 
     if _mp_dictionary is None:
         raise RuntimeError("parallel search worker: dictionary not initialized")
@@ -138,6 +160,7 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
     setup_weight: float = payload["setup_weight"]
     setup_discount: float = payload["setup_discount"]
     use_fast_rank: bool = payload["use_fast_rank"]
+    use_tier2_screen: bool = payload["use_tier2_screen"]
     required_raw = payload.get("required_consumable_indices") or []
 
     now = time.monotonic()
@@ -153,6 +176,7 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
         setup_weight=setup_weight,
         setup_discount=setup_discount,
         use_fast_rank=use_fast_rank,
+        use_tier2_screen=use_tier2_screen,
         search_workers=1,
     )
     if _mp_pipeline is not None:
@@ -172,6 +196,7 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
         if searcher._mult_rules
         else None
     )
+    searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
     mini = _CandidateHeap(heap_k)
     searcher._collect_words_fair_starts(
         board,
@@ -200,6 +225,7 @@ def parallel_collect_fair_starts(
     setup_weight: float,
     setup_discount: float,
     use_fast_rank: bool,
+    use_tier2_screen: bool,
     required_consumable_indices: frozenset[int] | None = None,
 ) -> None:
     """Run start slices on a reused process pool and merge into candidates."""
@@ -227,6 +253,7 @@ def parallel_collect_fair_starts(
         "setup_weight": setup_weight,
         "setup_discount": setup_discount,
         "use_fast_rank": use_fast_rank,
+        "use_tier2_screen": use_tier2_screen,
         "required_consumable_indices": sorted(required_consumable_indices or ()),
     }
     payloads = [{**base_payload, "starts": chunk} for chunk in chunks]

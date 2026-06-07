@@ -609,6 +609,7 @@ def apply_consumable_placements(
             fraction_value=rack_tile.fraction_value,
             metadata=meta,
         )
+    out._rebuild_flat_cache()
     return out
 
 

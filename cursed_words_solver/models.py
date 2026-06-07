@@ -166,14 +166,33 @@ class Board:
     playable_max_row: int = 4
     playable_min_col: int = 0
     playable_max_col: int = 4
+    _flat_cache: list[Tile] | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if len(self.active) != 25:
             self.active = [True] * 25
+        self._rebuild_flat_cache()
+
+    def _rebuild_flat_cache(self) -> None:
+        self._flat_cache = [t for row in self.tiles for t in row]
+
+    def _flat_cache_valid(self) -> bool:
+        cache = self._flat_cache
+        if cache is None:
+            return False
+        for i in range(25):
+            r, c = divmod(i, 5)
+            if cache[i] is not self.tiles[r][c]:
+                return False
+        return True
 
     @property
     def flat(self) -> list[Tile]:
-        return [t for row in self.tiles for t in row]
+        global _board_flat_call_count
+        _board_flat_call_count += 1
+        if not self._flat_cache_valid():
+            self._rebuild_flat_cache()
+        return self._flat_cache
 
     def is_active_index(self, idx: int) -> bool:
         if not (0 <= idx < 25):
@@ -193,7 +212,21 @@ class Board:
     def get_by_index(self, idx: int) -> Tile:
         if not self.is_active_index(idx):
             raise IndexError(f"inactive board index {idx}")
-        return self.flat[idx]
+        row, col = divmod(idx, 5)
+        return self.tiles[row][col]
+
+
+_board_flat_call_count = 0
+
+
+def reset_board_flat_call_count() -> None:
+    """Reset Board.flat access counter (used by structure analysis)."""
+    global _board_flat_call_count
+    _board_flat_call_count = 0
+
+
+def board_flat_call_count() -> int:
+    return _board_flat_call_count
 
 
 @dataclass

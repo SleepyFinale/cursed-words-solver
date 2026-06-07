@@ -34,6 +34,18 @@ EN_PASSANT_WHITE_RANK = 3
 
 _ATTACK_CACHE_MAX = 8192
 _attack_cache: OrderedDict[tuple, bool] = OrderedDict()
+_attack_cache_hits = 0
+_attack_cache_misses = 0
+
+
+def chess_attack_cache_stats() -> tuple[int, int]:
+    return _attack_cache_hits, _attack_cache_misses
+
+
+def reset_chess_attack_cache_stats() -> None:
+    global _attack_cache_hits, _attack_cache_misses
+    _attack_cache_hits = 0
+    _attack_cache_misses = 0
 
 
 def _visited_cache_key(visited: int | set[int]) -> int | frozenset[int]:
@@ -45,6 +57,7 @@ def _visited_cache_key(visited: int | set[int]) -> int | frozenset[int]:
 def clear_chess_attack_cache() -> None:
     """Clear attack lookup cache (call at start of each solve)."""
     _attack_cache.clear()
+    reset_chess_attack_cache_stats()
 
 
 def index_of(row: int, col: int) -> int:
@@ -839,10 +852,13 @@ def is_square_attacked(
         by_side,
         horizontal_wrap,
     )
+    global _attack_cache_hits, _attack_cache_misses
     hit = _attack_cache.get(key)
     if hit is not None:
+        _attack_cache_hits += 1
         _attack_cache.move_to_end(key)
         return hit
+    _attack_cache_misses += 1
     result = _is_square_attacked_uncached(
         board, row, col, by_side, visited, horizontal_wrap=horizontal_wrap
     )

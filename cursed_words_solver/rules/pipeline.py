@@ -45,6 +45,7 @@ from cursed_words_solver.rules.scoring_order import (
 )
 from cursed_words_solver.rules.tile_scoring import apply_tile_init
 from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
+from cursed_words_solver.solve_context import SolveContext, build_solve_context
 
 from cursed_words_solver.rules.boss_effects import (
     boss_context,
@@ -1198,6 +1199,7 @@ class ScoringPipeline:
         loadout: Loadout,
         *,
         trace: list[dict[str, Any]] | None = None,
+        solve_context: SolveContext | None = None,
     ) -> dict[str, Any]:
         path = normalize_scoring_path(path)
         from cursed_words_solver.rules.scoring_conditions import (
@@ -1256,13 +1258,18 @@ class ScoringPipeline:
                     expected_score=expected,
                 )
 
+        ctx = (
+            solve_context
+            if solve_context is not None
+            else build_solve_context(loadout, self.rules)
+        )
         state = _init_state(
             board,
             path,
             word,
             loadout=loadout,
-            blue_base_override=shield_blue_base_from_loadout(loadout, self.rules),
-            microscope_base=loadout_has_stamp(loadout, "microscope"),
+            blue_base_override=ctx.shield_blue_base,
+            microscope_base=ctx.microscope_base,
         )
         if trace is not None:
             state["_trace"] = trace
@@ -1272,11 +1279,11 @@ class ScoringPipeline:
             word,
             loadout,
             state,
-            microscope_base=loadout_has_stamp(loadout, "microscope"),
-            blue_base_override=shield_blue_base_from_loadout(loadout, self.rules),
+            microscope_base=ctx.microscope_base,
+            blue_base_override=ctx.shield_blue_base,
             trace_step=_trace_step if trace is not None else None,
         )
-        hourglass = hourglass_reverses_order(loadout, self.rules)
+        hourglass = ctx.hourglass_reversed
         if not hourglass:
             state = self._apply_early_boss_rules(state, board, path, loadout)
         _apply_void_path_bonuses(board, path, loadout, state)
@@ -1287,15 +1294,15 @@ class ScoringPipeline:
             snapshot_phased_word_scoring,
         )
 
-        compound_percents = _compound_word_percents_from_loadout(loadout)
-        if compound_percents or str(
-            (loadout.extras or {}).get("compound_word_finalize_at_cocktail", "")
-        ).lower() in ("1", "true", "yes"):
+        compound_percents = ctx.compound_percents
+        if compound_percents or ctx.compound_finalize_at_cocktail:
             state["_defer_word_mults_for_compound"] = True
 
         grid_refs = [
             ref
-            for ref in build_scoring_item_sequence(board, path, loadout, self.rules)
+            for ref in build_scoring_item_sequence(
+                board, path, loadout, self.rules, hourglass_reversed=ctx.hourglass_reversed
+            )
             if ref.kind == "grid_path"
         ]
         if str((loadout.extras or {}).get("grid_tile_multiply_first", "")).lower() in (
@@ -1480,7 +1487,9 @@ class ScoringPipeline:
                         and pre_compound is None
                         and post_compound is None
                     ):
-                        compound = _compound_word_percents_from_loadout(loadout)
+                        compound = (
+                            list(ctx.compound_percents) if ctx.compound_percents else None
+                        )
                         if compound:
                             state["word_score"] = 0.0
                             _apply_compound_word_percents_on_tile_sum(
@@ -1638,10 +1647,14 @@ class ScoringPipeline:
         path: list[int],
         word: str,
         loadout: Loadout | None = None,
+        *,
+        solve_context: SolveContext | None = None,
     ) -> float:
         """Final score without building the breakdown dict (search hot path)."""
         loadout = loadout or Loadout(money=board.money)
-        state = self._compute_state(board, path, word, loadout)
+        state = self._compute_state(
+            board, path, word, loadout, solve_context=solve_context
+        )
         return _finalize(state, board, path, loadout, rules=self.rules)
 
     def score(
@@ -1650,9 +1663,13 @@ class ScoringPipeline:
         path: list[int],
         word: str,
         loadout: Loadout | None = None,
+        *,
+        solve_context: SolveContext | None = None,
     ) -> tuple[float, dict[str, Any]]:
         loadout = loadout or Loadout(money=board.money)
-        state = self._compute_state(board, path, word, loadout)
+        state = self._compute_state(
+            board, path, word, loadout, solve_context=solve_context
+        )
         final = _finalize(state, board, path, loadout, rules=self.rules)
         breakdown: dict[str, Any] = {
             "base_total": state["base_score"],
@@ -1677,11 +1694,15 @@ class ScoringPipeline:
         path: list[int],
         word: str,
         loadout: Loadout | None = None,
+        *,
+        solve_context: SolveContext | None = None,
     ) -> tuple[float, dict[str, Any], list[dict[str, Any]]]:
         """Full score with ordered trace steps for mismatch debugging."""
         loadout = loadout or Loadout(money=board.money)
         trace: list[dict[str, Any]] = []
-        state = self._compute_state(board, path, word, loadout, trace=trace)
+        state = self._compute_state(
+            board, path, word, loadout, trace=trace, solve_context=solve_context
+        )
         final, _ = _finalize_with_trace(
             state, loadout, board=board, path=path, rules=self.rules
         )
