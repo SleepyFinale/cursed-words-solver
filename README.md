@@ -10,7 +10,7 @@ Requires the [MelonLoader companion mod](melmod/README.md), which reads the live
 - Scoring that follows the official [wiki order](https://cursedwords.wiki.gg/wiki/Scoring) (tiles → boss tile/word penalties → grid → pin → stickers → stamps), driven by `[data/wiki/stickers.json](data/wiki/stickers.json)`
 - Always-on-top result overlay plus numbered, click-through path highlights on the game board
 - Scoring mismatch capture (melmod v1.1.6+) and regression fixtures from real in-game submits
-- Shop advisor (melmod shop export + F8 in Ej?A56): ranked buy/sell/restock advice and encounter grid reroll hints
+- Shop advice (melmod shop export + F8 in Ej?A56): build-synergy recommendations ported from the in-game Advice button, plus encounter grid reroll hints
 
 ## Quick start
 
@@ -124,14 +124,14 @@ Melmod provides *what* is on each tile and **automatic overlay alignment** via `
 
 ## Hotkeys
 
-| Key          | Where                 | Action                                                 |
-| ------------ | --------------------- | ------------------------------------------------------ |
-| F7           | In-game               | Force melmod export (board, loadout, `game_words.txt`) |
-| F8           | Solver (configurable) | Solve                                                  |
-| F9           | Solver                | Edit loadout manually                                  |
+| Key          | Where                 | Action                                                     |
+| ------------ | --------------------- | ---------------------------------------------------------- |
+| F7           | In-game               | Force melmod export (board, loadout, `game_words.txt`)     |
+| F8           | Solver (configurable) | Solve                                                      |
+| F9           | Solver                | Edit loadout manually                                      |
 | F10          | Solver                | Manual overlay calibration (fallback if ui_layout missing) |
-| ESC          | Solver                | Hide overlay and board highlights                      |
-| Ctrl+Shift+Q | Solver                | Quit                                                   |
+| ESC          | Solver                | Hide overlay and board highlights                          |
+| Ctrl+Shift+Q | Solver                | Quit                                                       |
 
 ## Usage
 
@@ -200,14 +200,7 @@ Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 | `wordlist`               | `game`   | `game` → `game_words.txt`; `enable1` → offline fallback                                    |
 | `setup_weight`           | `0.4`    | Weight for future-round setup value in search ranking                                      |
 | `search_workers`         | `"auto"` | Parallel DFS processes: `"auto"` (up to 8 cores), `1` to disable, or integer `2`–`16`      |
-| `shop_sim_budget_sec`    | `1`      | Search budget per hypothetical board when advising shop purchases                            |
-| `shop_sim_boards`        | `2`      | Max representative fixture boards for shop simulation                                        |
-| `shop_monte_carlo_samples` | `8`    | Samples for restock EV estimates                                                             |
-| `shop_total_budget_sec`  | `20`     | Wall-clock cap for the entire shop advisor run (F8 in shop)                                  |
-| `word_per_dollar`        | `50`     | Money ↔ score equivalence when comparing shop restock costs                                  |
-| `shop_reserve_per_future_shop` | `0` | Dollars to keep per remaining shop (`0` = `8 + boss area`)                             |
-| `shop_marginal_net_per_remaining_shop` | `15` | Minimum WORD net per remaining shop before recommending a buy                |
-| `grid_reroll_gap_ratio`  | `0.6`    | Show "Reroll Grid" when best score is below this fraction of estimated grid target           |
+| `grid_reroll_gap_ratio`  | `0.6`    | Show "Reroll Grid" when best score is below this fraction of estimated grid target         |
 
 On startup the terminal prints the loaded word list, e.g. `Word list: game (120000 words)`. After each solve it prints the grid and `Board source: melmod`.
 
@@ -277,12 +270,12 @@ pytest tests/regression/         # scoring mismatch fixtures
 
 GitHub Actions runs `pytest tests/` on push and pull request to `main` / `master` (`[.github/workflows/test.yml](.github/workflows/test.yml)`).
 
-| Test area   | Location             | Purpose                                                   |
-| ----------- | -------------------- | --------------------------------------------------------- |
-| Catalog     | `tests/catalog/`     | Per-character sticker/stamp scoring rules                 |
-| Integration | `tests/integration/` | Melmod fingerprints, score traces, loadout scoring        |
-| Regression  | `tests/regression/`  | Real mismatch captures under `tests/fixtures/mismatches/` |
-| Unit        | `tests/test_*.py`    | Search, bosses, dictionary, path geometry, etc.           |
+| Test area   | Location                                                                                                     | Purpose                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| Catalog     | `tests/catalog/`                                                                                             | Per-character sticker/stamp scoring rules                   |
+| Integration | `tests/integration/`                                                                                         | Melmod fingerprints, score traces, loadout scoring          |
+| Regression  | `tests/regression/`                                                                                          | Real mismatch captures under `tests/fixtures/mismatches/`   |
+| Unit        | `tests/test_*.py`                                                                                            | Search, bosses, dictionary, path geometry, etc.             |
 | Performance | `tests/test_static_dynamic_pipeline.py`, `tests/test_tier2_two_phase.py`, `tests/test_search_performance.py` | Static/dynamic scoring parity, tier-2 bounds, search gating |
 
 **Contributing a scoring fix:** F7 → F8 → play the highlighted word → collect mismatch JSON → `python scripts/mismatch_to_test.py …` → fix pipeline → `pytest tests/regression/ -k <fixture_id>` until green → remove that id from `_KNOWN_FAILING` in `[tests/regression/test_scoring_mismatches.py](tests/regression/test_scoring_mismatches.py)`.

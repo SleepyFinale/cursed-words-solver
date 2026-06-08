@@ -1,462 +1,243 @@
-"""Orchestrate shop advice: buys, sells, restock, freeze, and leave shop."""
+"""Shop advice using the in-game ShopRecommendation engine (Python port)."""
 
 from __future__ import annotations
 
-import json
-import time
-from collections.abc import Callable
-from pathlib import Path
-
-from cursed_words_solver.dictionary import WordDictionary
+from cursed_words_solver.game_shop.advice_resolve import advice_summary
+from cursed_words_solver.game_shop.recommendation import compute_shop_advice
+from cursed_words_solver.game_shop.types import BUILD_TAG_LABELS, AdviceData
 from cursed_words_solver.models import (
+    ActionRecommendation,
     Loadout,
     RankedAction,
     ShopAdvice,
-    ShopOffer,
     ShopState,
 )
-from cursed_words_solver.representative_boards import select_representative_boards
-from cursed_words_solver.shop_boards import (
-    prepare_boards_for_shop_sim,
-    prepare_loadout_for_shop_sim,
-)
-from cursed_words_solver.shop_economy import (
-    can_add_offer,
-    effective_purchase_price,
-    free_item_applies,
-    money_to_word_equiv,
-    net_sell_proceeds,
-)
-from cursed_words_solver.shop_reserve import (
-    build_leave_shop_recommendation,
-    build_shop_run_context,
-    evaluate_freeze_candidates,
-    filter_ranked_buys,
-    filter_sell_swaps,
-    format_reserve_note,
-    purchase_action_label,
-    shop_node_warning,
-    should_leave_shop,
-)
-from cursed_words_solver.shop_simulation import (
-    SimulationConfig,
-    SimulationContext,
-    evaluate_loadout_value,
-    evaluate_purchase,
-    evaluate_restock_ev,
-    evaluate_sell,
-    evaluate_sell_swaps,
-    evaluate_special_actions,
-)
-
-_CATALOG_PATH = Path(__file__).resolve().parents[1] / "data" / "wiki" / "stickers.json"
-_SWAP_MARGIN_WORD = 50.0
 
 
-def _catalog_stamp_ids() -> list[str]:
-    if not _CATALOG_PATH.is_file():
-        return []
-    try:
-        data = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
-        stamps = data.get("stamps") or {}
-        return list(stamps.keys())
-    except (OSError, json.JSONDecodeError):
-        return []
+def _primary_action(advice: AdviceData) -> str:
+    if advice.should_buy and advice.recommended_tiles:
+        return "buy_tile"
+    if advice.should_upgrade:
+        return "upgrade"
+    if advice.should_buy:
+        return "buy"
+    if advice.should_freeze:
+        return "freeze"
+    if advice.should_sell:
+        return "sell"
+    if advice.should_restock:
+        return "restock"
+    if advice.should_leave:
+        return "leave"
+    return "browse"
 
 
-def _owned_item_level(loadout: Loadout, offer: ShopOffer) -> int:
-    oid = (offer.id or "").lower()
-    if offer.slot == "sticker":
-        for item in loadout.stickers:
-            if (item.id or "").lower() == oid:
-                return max(1, item.level)
-    elif offer.slot == "stamp":
-        for item in loadout.stamps:
-            if (item.id or "").lower() == oid:
-                return max(1, item.level)
-    return 0
+def _action_label(item_name: str, action: str) -> str:
+    if action == "upgrade":
+        return f"Upgrade {item_name}"
+    if action == "freeze":
+        return f"Freeze {item_name}"
+    if action == "sell":
+        return f"Sell → buy {item_name}"
+    return f"Buy {item_name}"
 
 
-def _is_duplicate_buy(offer: ShopOffer, loadout: Loadout) -> bool:
-    """Skip buying another copy unless the shop offer is a higher-level upgrade."""
-    if offer.slot not in {"sticker", "stamp"}:
-        return False
-    owned_level = _owned_item_level(loadout, offer)
-    if owned_level <= 0:
-        return False
-    return max(1, offer.level or 1) <= owned_level
+def _tile_label(tile: object) -> str:
+    color = getattr(tile, "color", "") or "tile"
+    letter = getattr(tile, "letter", "") or ""
+    curse = getattr(tile, "curse", "") or ""
+    if curse not in {"", "letter", "colorless"}:
+        return f"{color} {curse} tile"
+    if letter and letter != "?":
+        return f"{color} {letter.upper()} tile"
+    return f"{color} tile"
+
+
+def advice_data_to_shop_advice(advice: AdviceData, shop: ShopState) -> ShopAdvice:
+    action = _primary_action(advice)
+    build = BUILD_TAG_LABELS.get(advice.build, advice.build.value)
+    function = advice.function_fulfilled.value if advice.function_fulfilled else ""
+    reason = advice_summary(advice, free_item_active=advice.is_free_item)
+    result = ShopAdvice(
+        primary_action=action,
+        build=build,
+        function=function,
+        reason=reason,
+    )
+
+    if advice.should_buy and advice.recommended_tiles:
+        for tile in advice.recommended_tiles[:3]:
+            result.buys.append(
+                RankedAction(
+                    action="buy_tile",
+                    label=_tile_label(tile),
+                    net_value=0.0,
+                    money_delta=-tile.price,
+                    reason=reason,
+                    offer_index=tile.index,
+                    kind="tile",
+                )
+            )
+    elif advice.recommended_items:
+        for item in advice.recommended_items[:3]:
+            act = "upgrade" if advice.should_upgrade else (
+                "freeze" if advice.should_freeze else "buy"
+            )
+            result.buys.append(
+                RankedAction(
+                    action=act,
+                    label=_action_label(item.name, act),
+                    net_value=0.0,
+                    money_delta=-item.price if advice.should_buy else 0,
+                    reason=reason,
+                    offer_index=item.index,
+                    kind=item.slot,
+                )
+            )
+        if advice.should_sell:
+            result.sells.append(
+                RankedAction(
+                    action="sell",
+                    label="Sell a slot to make room",
+                    net_value=0.0,
+                    reason=reason,
+                )
+            )
+    elif advice.should_freeze and advice.recommended_items:
+        for item in advice.recommended_items[:3]:
+            result.freezes.append(
+                RankedAction(
+                    action="freeze",
+                    label=f"Freeze {item.name}",
+                    net_value=0.0,
+                    reason=reason,
+                    offer_index=item.index,
+                    kind=item.slot,
+                )
+            )
+
+    if advice.should_restock:
+        cost = max(0, shop.restock_cost)
+        result.restock = ActionRecommendation(
+            action="yes",
+            label=f"Restock (${cost})",
+            reason=reason,
+        )
+    elif advice.should_leave:
+        result.leave_shop = ActionRecommendation(
+            action="leave",
+            label="Leave shop",
+            reason=reason,
+        )
+
+    if not advice.recommended_items and not advice.recommended_tiles:
+        if advice.should_restock:
+            pass
+        elif advice.should_leave:
+            pass
+        elif advice.build.value != "NoBuild":
+            result.warnings.append(f"Build focus: {build}")
+
+    return result
 
 
 def run_shop_advisor(
     loadout: Loadout,
     shop: ShopState,
-    sell_candidates: list,
-    dictionary: WordDictionary,
+    sell_candidates: list | None = None,
+    dictionary=None,
     *,
-    config: SimulationConfig | None = None,
-    on_progress: Callable[[str], None] | None = None,
+    config=None,
+    on_progress=None,
 ) -> ShopAdvice:
-    config = config or SimulationConfig()
-    advice = ShopAdvice()
-    started = time.monotonic()
-
-    def progress(msg: str) -> None:
-        if on_progress is not None:
-            on_progress(msg)
-
-    loadout = prepare_loadout_for_shop_sim(loadout)
-    raw_boards = select_representative_boards(loadout, max_boards=config.max_boards)
-    boards = prepare_boards_for_shop_sim(raw_boards) if raw_boards else []
-    if not boards:
-        advice.warnings.append("No representative boards found for simulation")
-
-    ctx = SimulationContext.create(boards, dictionary, config)
-    baseline = evaluate_loadout_value(ctx, loadout) if boards else 0.0
-    ctx.baseline_value = baseline
-
-    run_ctx = build_shop_run_context(
-        loadout,
-        reserve_per_future_shop=config.shop_reserve_per_future_shop,
-        marginal_net_per_remaining_shop=config.shop_marginal_net_per_remaining_shop,
-        word_per_dollar=config.word_per_dollar,
-    )
-    node_warn = shop_node_warning(run_ctx)
-    if node_warn:
-        advice.warnings.append(node_warn)
-
-    use_free = free_item_applies(shop, loadout)
-    buy_nets: dict[int, float] = {}
-    buy_lifts: dict[int, float] = {}
-    buys: list[RankedAction] = []
-    offers_by_index = {o.index: o for o in shop.offers}
-
-    eval_offers = [
-        o
-        for o in shop.offers
-        if not o.sold
-        and not _is_duplicate_buy(o, loadout)
-        and can_add_offer(o, loadout)
-    ]
-    total_purchases = len(eval_offers)
-
-    for idx, offer in enumerate(eval_offers, start=1):
-        if ctx.is_expired():
-            advice.warnings.append(
-                "Shop simulation budget exhausted — rankings may be incomplete"
-            )
-            break
-        progress(f"Evaluating purchases ({idx}/{total_purchases})...")
-        price = effective_purchase_price(offer, loadout, shop, use_free_item=use_free)
-        lift, net, reason = evaluate_purchase(
-            offer,
-            loadout,
-            shop,
-            boards,
-            dictionary,
-            config=config,
-            use_free=use_free,
-            ctx=ctx,
-            baseline=baseline,
-        )
-        buy_nets[offer.index] = net
-        buy_lifts[offer.index] = lift
-        buys.append(
-            RankedAction(
-                action="buy",
-                label=purchase_action_label(offer, loadout),
-                net_value=net,
-                score_lift=lift,
-                money_delta=-price,
-                reason=reason,
-                offer_index=offer.index,
-                kind=offer.slot,
-            )
-        )
-
-    buys.sort(key=lambda a: (-a.net_value, -a.money_delta))
-
-    hyena = str((loadout.extras or {}).get("hyena_blocked", "")).lower() in {
-        "1",
-        "true",
-        "yes",
-    }
-
-    sells: list[RankedAction] = []
-    if hyena:
-        total_sells = len(sell_candidates)
-        for idx, candidate in enumerate(sell_candidates, start=1):
-            if ctx.is_expired():
-                if "Shop simulation budget exhausted" not in advice.warnings:
-                    advice.warnings.append(
-                        "Shop simulation budget exhausted — rankings may be incomplete"
-                    )
-                break
-            progress(f"Evaluating sells ({idx}/{total_sells})...")
-            loss, net, reason = evaluate_sell(
-                candidate,
-                loadout,
-                boards,
-                dictionary,
-                config=config,
-                ctx=ctx,
-                baseline=baseline,
-            )
-            cash = net_sell_proceeds(candidate, loadout)
-            sells.append(
-                RankedAction(
-                    action="sell",
-                    label=f"Sell {candidate.name}",
-                    net_value=net,
-                    score_lift=-loss,
-                    money_delta=cash,
-                    reason=reason,
-                    sell_slot=candidate.slot,
-                    kind=candidate.kind,
-                )
-            )
-        sells.sort(key=lambda a: a.net_value, reverse=True)
-        advice.warnings.append("Hyena: sell required before next submit")
-    else:
-        swap_offers = [
-            o
-            for o in shop.offers
-            if not o.sold and not _is_duplicate_buy(o, loadout)
-        ]
-        if sell_candidates:
-            progress("Evaluating sell→buy swaps...")
-        sells = evaluate_sell_swaps(
-            loadout,
-            shop,
-            sell_candidates,
-            swap_offers,
-            boards,
-            dictionary,
-            config=config,
-            ctx=ctx,
-            baseline=baseline,
-            use_free=use_free,
-            margin_word=_SWAP_MARGIN_WORD,
-        )
-        sells = filter_sell_swaps(
-            sells,
-            loadout,
-            shop,
-            offers_by_index,
-            run_ctx,
-            use_free=use_free,
-        )
-        if sell_candidates and not sells:
-            advice.warnings.append(
-                "Keeping inventory — no sell→buy swap beats current items"
-            )
-
-    advice.sells = sells[:5]
-
-    positive_buys = [b for b in buys if b.net_value > 0]
-    if not positive_buys and buys:
-        advice.warnings.append(
-            "Low-confidence buy rankings — grid effects estimated from fixtures"
-        )
-        raw_positive: list[RankedAction] = []
-    else:
-        raw_positive = positive_buys
-
-    approved_buys, blocked_buys = filter_ranked_buys(
-        raw_positive,
-        loadout,
-        shop,
-        offers_by_index,
-        run_ctx,
-        use_free=use_free,
-    )
-    advice.buys = approved_buys[:5]
-    for action in advice.buys:
-        idx = action.offer_index if action.offer_index is not None else -1
-        offer = offers_by_index.get(idx)
-        if offer is None:
-            continue
-        paid_price = effective_purchase_price(
-            offer, loadout, shop, use_free_item=False
-        )
-        action.money_delta = -paid_price
-        action.net_value = action.score_lift - money_to_word_equiv(
-            paid_price, word_per_dollar=config.word_per_dollar
-        )
-    for action in blocked_buys:
-        idx = action.offer_index if action.offer_index is not None else -1
-        offer = offers_by_index.get(idx)
-        if offer is None:
-            continue
-        paid_price = effective_purchase_price(
-            offer, loadout, shop, use_free_item=False
-        )
-        action.net_value = action.score_lift - money_to_word_equiv(
-            paid_price, word_per_dollar=config.word_per_dollar
-        )
-    if blocked_buys and approved_buys:
-        advice.warnings.append(format_reserve_note(run_ctx))
-
-    if not ctx.is_expired():
-        progress("Estimating restock EV...")
-    advice.restock = evaluate_restock_ev(
-        loadout,
-        shop,
-        boards,
-        dictionary,
-        config=config,
-        catalog_stamps=_catalog_stamp_ids(),
-        ctx=ctx,
-        buy_nets=buy_nets,
-        baseline=baseline,
-        run_ctx=run_ctx,
-    )
-
-    approved_indices = {b.offer_index for b in advice.buys if b.offer_index is not None}
-    advice.freezes = evaluate_freeze_candidates(
-        loadout,
-        shop,
-        eval_offers,
-        ctx=run_ctx,
-        buy_lifts=buy_lifts,
-        buy_nets=buy_nets,
-        approved_buy_indices=approved_indices,
-        use_free=use_free,
-        is_duplicate_buy=_is_duplicate_buy,
-    )
-
-    leave, leave_reason = should_leave_shop(
-        advice.buys,
-        advice.sells,
-        advice.restock,
-        ctx=run_ctx,
-        blocked_buys=blocked_buys,
-        freezes=advice.freezes,
-    )
-    if leave:
-        advice.leave_shop = build_leave_shop_recommendation(leave_reason)
-
-    if not ctx.is_expired():
-        progress("Checking special actions...")
-    advice.special_actions = evaluate_special_actions(
-        loadout,
-        shop,
-        boards,
-        dictionary,
-        config=config,
-        ctx=ctx,
-        baseline=baseline,
-        buy_nets=buy_nets,
-    )
-
-    if ctx.budget_exhausted and "Shop simulation budget exhausted" not in advice.warnings:
-        advice.warnings.append(
-            "Shop simulation budget exhausted — rankings may be incomplete"
-        )
-
-    elapsed = time.monotonic() - started
-    progress(f"Shop advice ready in {elapsed:.1f}s")
-    return advice
+    del sell_candidates, dictionary, config
+    if on_progress:
+        on_progress("Computing game shop advice...")
+    advice = compute_shop_advice(loadout, shop)
+    return advice_data_to_shop_advice(advice, shop)
 
 
 def format_shop_advice_text(advice: ShopAdvice) -> str:
-    lines: list[str] = ["Shop advice:"]
+    lines: list[str] = ["Shop advice (game build logic):"]
+    if advice.reason:
+        lines.append(f"  {advice.reason}")
 
-    if advice.leave_shop and not advice.buys:
-        lines.append(f"  Leave shop: {advice.leave_shop.reason}")
+    if advice.leave_shop:
+        lines.append(f"  → {advice.leave_shop.label}: {advice.leave_shop.reason}")
 
     if advice.buys:
-        lines.append("  Buys:")
+        lines.append("  Actions:")
         for item in advice.buys[:3]:
             price = f" (${-item.money_delta})" if item.money_delta else ""
-            lines.append(
-                f"    {item.label}{price}: {item.net_value:+,.0f} WORD net ({item.reason})"
-            )
-    elif not advice.leave_shop:
-        lines.append("  Buys: none clearly better than keeping money")
+            lines.append(f"    {item.label}{price}")
+    elif advice.restock:
+        lines.append(f"  → {advice.restock.label}")
+    elif advice.leave_shop:
+        pass
+    else:
+        lines.append("  No specific buy — browse or leave")
 
     if advice.freezes:
-        lines.append("  Freeze:")
-        for item in advice.freezes[:3]:
-            lines.append(f"    {item.label}: {item.reason}")
+        for item in advice.freezes[:2]:
+            lines.append(f"    Freeze: {item.label}")
 
-    if advice.sells:
-        lines.append("  Sells:")
-        for item in advice.sells[:3]:
-            lines.append(
-                f"    {item.label}: {item.net_value:+,.0f} WORD net ({item.reason})"
-            )
-    if advice.restock:
-        lines.append(
-            f"  Restock: {advice.restock.label} ({advice.restock.reason})"
-        )
-    if advice.special_actions:
-        lines.append("  Special:")
-        for item in advice.special_actions[:3]:
-            lines.append(f"    {item.label}: {item.net_value:+,.0f} WORD")
+    if advice.restock and advice.buys:
+        lines.append(f"  Restock: {advice.restock.label}")
+
     for warn in advice.warnings:
-        lines.append(f"  Warning: {warn}")
+        lines.append(f"  Note: {warn}")
     return "\n".join(lines)
 
 
 def format_shop_advice_html(advice: ShopAdvice) -> str:
     parts: list[str] = [
-        "<span style='font-size:14px;font-weight:bold;color:#0cf'>Shop advice</span>"
+        "<span style='font-size:14px;font-weight:bold;color:#0cf'>"
+        "Shop advice</span>"
     ]
-
-    if advice.leave_shop and not advice.buys:
+    if advice.build:
         parts.append(
-            f"<br><span style='font-size:13px;color:#fa0;font-weight:bold'>"
-            f"Leave shop</span>"
-            f"<br><span style='font-size:11px;color:#ccc'>"
-            f"{advice.leave_shop.reason}</span>"
+            f"<br><span style='font-size:11px;color:#888'>"
+            f"Build: {advice.build}</span>"
         )
-    elif advice.buys:
+
+    if advice.buys:
         top = advice.buys[0]
         price = f" (${-top.money_delta})" if top.money_delta else ""
-        detail = top.reason if top.reason else f"{top.net_value:+,.0f} WORD net"
         parts.append(
-            f"<br><span style='font-size:13px;color:#fff'>"
+            f"<br><span style='font-size:13px;color:#fff;font-weight:bold'>"
             f"{top.label}{price}</span>"
-            f"<br><span style='font-size:12px;color:#0f8'>"
-            f"{top.net_value:+,.0f} WORD net</span>"
-            f"<br><span style='font-size:11px;color:#8cf'>"
-            f"{detail}</span>"
         )
-    elif advice.warnings:
+    elif advice.restock:
         parts.append(
-            "<br><span style='font-size:12px;color:#aaa'>"
-            "No clear buy — keep money</span>"
+            f"<br><span style='font-size:13px;color:#fa0;font-weight:bold'>"
+            f"{advice.restock.label}</span>"
+        )
+    elif advice.leave_shop:
+        parts.append(
+            f"<br><span style='font-size:13px;color:#fa0;font-weight:bold'>"
+            f"{advice.leave_shop.label}</span>"
         )
 
-    if advice.freezes:
-        top_freeze = advice.freezes[0]
+    if advice.reason:
         parts.append(
-            f"<br><span style='font-size:12px;color:#0cf'>"
-            f"{top_freeze.label}</span>"
             f"<br><span style='font-size:11px;color:#8cf'>"
-            f"{top_freeze.reason}</span>"
+            f"{advice.reason}</span>"
         )
-        if advice.leave_shop and not advice.buys:
-            parts.append(
-                "<br><span style='font-size:11px;color:#aaa'>"
-                "then leave shop</span>"
-            )
 
-    if advice.sells:
-        top = advice.sells[0]
+    if len(advice.buys) > 1:
+        alt = ", ".join(b.label for b in advice.buys[1:3])
         parts.append(
-            f"<br><span style='font-size:12px;color:#fa0'>"
-            f"{top.label} ({top.net_value:+,.0f})</span>"
+            f"<br><span style='font-size:11px;color:#aaa'>Also: {alt}</span>"
         )
-    if advice.restock:
+
+    if advice.restock and advice.buys:
         parts.append(
             f"<br><span style='font-size:11px;color:#8cf'>"
-            f"Restock: {advice.restock.label}</span>"
+            f"Or {advice.restock.label.lower()}</span>"
         )
-    if advice.special_actions:
-        sp = advice.special_actions[0]
+
+    for warn in advice.warnings[:2]:
         parts.append(
-            f"<br><span style='font-size:11px;color:#ccf'>"
-            f"{sp.label}: {sp.net_value:+,.0f}</span>"
+            f"<br><span style='font-size:11px;color:#fa0'>{warn}</span>"
         )
     return "".join(parts)

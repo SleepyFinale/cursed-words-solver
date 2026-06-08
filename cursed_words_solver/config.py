@@ -63,13 +63,6 @@ class AppConfig:
     mult_search_weight: float = 0.4
     mult_search_passes: bool = True
     search_workers: int | str = "auto"
-    shop_sim_budget_sec: float = 1.0
-    shop_sim_boards: int = 2
-    shop_monte_carlo_samples: int = 8
-    shop_total_budget_sec: float = 20.0
-    word_per_dollar: float = 50.0
-    shop_reserve_per_future_shop: int = 0
-    shop_marginal_net_per_remaining_shop: float = 15.0
     grid_reroll_gap_ratio: float = 0.6
 
     def save(self) -> None:
@@ -87,13 +80,6 @@ class AppConfig:
             "mult_search_weight": self.mult_search_weight,
             "mult_search_passes": self.mult_search_passes,
             "search_workers": self.search_workers,
-            "shop_sim_budget_sec": self.shop_sim_budget_sec,
-            "shop_sim_boards": self.shop_sim_boards,
-            "shop_monte_carlo_samples": self.shop_monte_carlo_samples,
-            "shop_total_budget_sec": self.shop_total_budget_sec,
-            "word_per_dollar": self.word_per_dollar,
-            "shop_reserve_per_future_shop": self.shop_reserve_per_future_shop,
-            "shop_marginal_net_per_remaining_shop": self.shop_marginal_net_per_remaining_shop,
             "grid_reroll_gap_ratio": self.grid_reroll_gap_ratio,
         }
         CONFIG_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -129,15 +115,6 @@ class AppConfig:
             mult_search_weight=float(data.get("mult_search_weight", 0.4)),
             mult_search_passes=bool(data.get("mult_search_passes", True)),
             search_workers=data.get("search_workers", "auto"),
-            shop_sim_budget_sec=float(data.get("shop_sim_budget_sec", 1.0)),
-            shop_sim_boards=int(data.get("shop_sim_boards", 2)),
-            shop_monte_carlo_samples=int(data.get("shop_monte_carlo_samples", 8)),
-            shop_total_budget_sec=float(data.get("shop_total_budget_sec", 20.0)),
-            word_per_dollar=float(data.get("word_per_dollar", 50.0)),
-            shop_reserve_per_future_shop=int(data.get("shop_reserve_per_future_shop", 0)),
-            shop_marginal_net_per_remaining_shop=float(
-                data.get("shop_marginal_net_per_remaining_shop", 15.0)
-            ),
             grid_reroll_gap_ratio=float(data.get("grid_reroll_gap_ratio", 0.6)),
         )
         if migrated:

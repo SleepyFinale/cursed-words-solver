@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD013 -->
+
 # Cursed Words: Comprehensive Game Guide
 
 > **Last updated:** June 2026  
@@ -29,11 +31,11 @@
 
 Each run is shaped by four pillars:
 
-| Pillar | Role |
-|--------|------|
-| **Character (Pin)** | Unique dual-track upgrade; left = grid, right = scoring |
-| **Stickers** | Up to 5 primary modifiers; reorderable; upgradeable (level 3, foil 5) |
-| **Stamps** | Up to 5 secondary modifiers; fixed level; movement and shop effects |
+| Pillar                  | Role                                                                    |
+| ----------------------- | ----------------------------------------------------------------------- |
+| **Character (Pin)**     | Unique dual-track upgrade; left = grid, right = scoring                 |
+| **Stickers**            | Up to 5 primary modifiers; reorderable; upgradeable (level 3, foil 5)   |
+| **Stamps**              | Up to 5 secondary modifiers; fixed level; movement and shop effects     |
 | **Tiles / Consumables** | Coloured and cursed grid tiles; placeable consumables in special fights |
 
 Structurally similar to *Balatro*: shops between encounters, synergistic builds, escalating difficulty, boss modifiers. Score is a **combinatorial puzzle**—tile scores, word bonuses, multipliers, boss penalties, and item order all interact.
@@ -42,19 +44,19 @@ Structurally similar to *Balatro*: shops between encounters, synergistic builds,
 
 ### 1.1 Playable characters
 
-| Character | Pin | Theme | Wiki |
-|-----------|-----|-------|------|
-| Hayley Bayles | Abacus | Numbers and coloured number scoring | [Hayley Bayles](https://cursedwords.wiki.gg/wiki/Hayley_Bayles) |
-| Nina Nix | Milky Way | VOID tiles and shiny conversion | [Nina Nix](https://cursedwords.wiki.gg/wiki/Nina_Nix) |
-| Beans | Rainbow | Unusual colours and colour diversity | [Beans](https://cursedwords.wiki.gg/wiki/Beans) |
-| Sam Gambit | Super 8 | Chess pieces and takes | [Sam Gambit](https://cursedwords.wiki.gg/wiki/Sam_Gambit) |
-| Bones The Dog | Bicycle | Playing cards and poker hands | [Bones The Dog](https://cursedwords.wiki.gg/wiki/Bones_The_Dog) |
-| Octacles | Bucket | Bucket tile collection | [Octacles](https://cursedwords.wiki.gg/wiki/Octacles) |
-| Nat-H4 | Random Access Memory | Item memory and replay | [Nat-H4](https://cursedwords.wiki.gg/wiki/Nat-H4) |
-| Sandy Saguaro | Mahjong Red Dragon | Consumable tiles | [Sandy Saguaro](https://cursedwords.wiki.gg/wiki/Sandy_Saguaro) |
-| Cretaceous Meg | Wad of Cash | Currency tiles | [Cretaceous Meg](https://cursedwords.wiki.gg/wiki/Cretaceous_Meg) |
-| Human Boy | Human Hands | Favourite sticker/stamp amplification | [Human Boy](https://cursedwords.wiki.gg/wiki/Human_Boy) |
-| Rodman | Carp Streamers | RED + BLUE colour setup | [Rodman](https://cursedwords.wiki.gg/wiki/Rodman) |
+| Character      | Pin                  | Theme                                 | Wiki                                                              |
+| -------------- | -------------------- | ------------------------------------- | ----------------------------------------------------------------- |
+| Hayley Bayles  | Abacus               | Numbers and coloured number scoring   | [Hayley Bayles](https://cursedwords.wiki.gg/wiki/Hayley_Bayles)   |
+| Nina Nix       | Milky Way            | VOID tiles and shiny conversion       | [Nina Nix](https://cursedwords.wiki.gg/wiki/Nina_Nix)             |
+| Beans          | Rainbow              | Unusual colours and colour diversity  | [Beans](https://cursedwords.wiki.gg/wiki/Beans)                   |
+| Sam Gambit     | Super 8              | Chess pieces and takes                | [Sam Gambit](https://cursedwords.wiki.gg/wiki/Sam_Gambit)         |
+| Bones The Dog  | Bicycle              | Playing cards and poker hands         | [Bones The Dog](https://cursedwords.wiki.gg/wiki/Bones_The_Dog)   |
+| Octacles       | Bucket               | Bucket tile collection                | [Octacles](https://cursedwords.wiki.gg/wiki/Octacles)             |
+| Nat-H4         | Random Access Memory | Item memory and replay                | [Nat-H4](https://cursedwords.wiki.gg/wiki/Nat-H4)                 |
+| Sandy Saguaro  | Mahjong Red Dragon   | Consumable tiles                      | [Sandy Saguaro](https://cursedwords.wiki.gg/wiki/Sandy_Saguaro)   |
+| Cretaceous Meg | Wad of Cash          | Currency tiles                        | [Cretaceous Meg](https://cursedwords.wiki.gg/wiki/Cretaceous_Meg) |
+| Human Boy      | Human Hands          | Favourite sticker/stamp amplification | [Human Boy](https://cursedwords.wiki.gg/wiki/Human_Boy)           |
+| Rodman         | Carp Streamers       | RED + BLUE colour setup               | [Rodman](https://cursedwords.wiki.gg/wiki/Rodman)                 |
 
 Characters unlock via achievements, bosses, and meta progression. Sandy unlocks from the Sandy Saguaro boss.
 
@@ -66,7 +68,7 @@ Characters unlock via achievements, bosses, and meta progression. Sandy unlocks 
 
 A **run** has multiple **stages**. Each stage follows this sequence ([Run wiki](https://cursedwords.wiki.gg/wiki/Run)):
 
-```
+```text
 Stage 1:  Wordsmith X-1 → Shop X-1 → Wordsmith X-2 → Shop X-2 → Boss X-3
 Stage 2+: Shop X-0 → Wordsmith X-1 → Shop X-1 → Wordsmith X-2 → Shop X-2 → Boss X-3
 ```
@@ -93,12 +95,12 @@ flowchart TD
 Default targets (no crown) from [Score wiki](https://cursedwords.wiki.gg/wiki/Score):
 
 | Stage | 1st encounter | 2nd encounter | Boss encounter |
-|-------|---------------|---------------|----------------|
-| 1 | 12 | 17 | 24 |
-| 2 | 48 | 67 | 96 |
-| 3 | 168 | 235 | 336 |
-| 4 | 660 | 924 | 1320 |
-| 5 | 2508 | 3511 | 5016 |
+| ----- | ------------- | ------------- | -------------- |
+| 1     | 12            | 17            | 24             |
+| 2     | 48            | 67            | 96             |
+| 3     | 168           | 235           | 336            |
+| 4     | 660           | 924           | 1320           |
+| 5     | 2508          | 3511          | 5016           |
 
 Crowns raise targets (Section 9). **Toothed Whale** multiplies them. Negative word scores **increase** the remaining target.
 
@@ -106,81 +108,80 @@ Crowns raise targets (Section 9). **Toothed Whale** multiplies them. Negative wo
 
 **Purple crown** — columns: 1st / 2nd / Boss encounter
 
-| Stage | 1st | 2nd | Boss |
-|-------|-----|-----|------|
-| 1 | 12 | 17 | 25 |
-| 2 | 51 | 73 | 107 |
-| 3 | 192 | 276 | 405 |
-| 4 | 815 | 1171 | 1715 |
-| 5 | 3342 | 4796 | 7022 |
-| 6 | 13634 | 19553 | 28606 |
+| Stage | 1st   | 2nd   | Boss  |
+| ----- | ----- | ----- | ----- |
+| 1     | 12    | 17    | 25    |
+| 2     | 51    | 73    | 107   |
+| 3     | 192   | 276   | 405   |
+| 4     | 815   | 1171  | 1715  |
+| 5     | 3342  | 4796  | 7022  |
+| 6     | 13634 | 19553 | 28606 |
 
 **Yellow crown** — columns: 1st / 2nd / Boss encounter
 
-| Stage | 1st | 2nd | Boss |
-|-------|-----|-----|------|
-| 1 | 12 | 17 | 26 |
-| 2 | 54 | 79 | 118 |
-| 3 | 217 | 317 | 473 |
-| 4 | 971 | 1418 | 2111 |
-| 5 | 4176 | 6081 | 9029 |
-| 6 | 17763 | 25800 | 38204 |
+| Stage | 1st   | 2nd   | Boss  |
+| ----- | ----- | ----- | ----- |
+| 1     | 12    | 17    | 26    |
+| 2     | 54    | 79    | 118   |
+| 3     | 217   | 317   | 473   |
+| 4     | 971   | 1418  | 2111  |
+| 5     | 4176  | 6081  | 9029  |
+| 6     | 17763 | 25800 | 38204 |
 
 **Orange crown** — columns: 1st / 2nd / Boss encounter
 
-| Stage | 1st | 2nd | Boss |
-|-------|-----|-----|------|
-| 1 | 12 | 18 | 27 |
-| 2 | 57 | 85 | 129 |
-| 3 | 241 | 358 | 542 |
-| 4 | 1126 | 1664 | 2506 |
-| 5 | 5009 | 7366 | 11035 |
-| 6 | 21893 | 32047 | 47802 |
+| Stage | 1st   | 2nd   | Boss  |
+| ----- | ----- | ----- | ----- |
+| 1     | 12    | 18    | 27    |
+| 2     | 57    | 85    | 129   |
+| 3     | 241   | 358   | 542   |
+| 4     | 1126  | 1664  | 2506  |
+| 5     | 5009  | 7366  | 11035 |
+| 6     | 21893 | 32047 | 47802 |
 
 **Pink crown** — columns: 1st / 2nd / Boss encounter
 
-| Stage | 1st | 2nd | Boss |
-|-------|-----|-----|------|
-| 1 | 12 | 18 | 28 |
-| 2 | 60 | 91 | 141 |
-| 3 | 265 | 399 | 611 |
-| 4 | 1281 | 1911 | 2901 |
-| 5 | 5843 | 8651 | 13042 |
-| 6 | 26023 | 38294 | 57400 |
+| Stage | 1st   | 2nd   | Boss  |
+| ----- | ----- | ----- | ----- |
+| 1     | 12    | 18    | 28    |
+| 2     | 60    | 91    | 141   |
+| 3     | 265   | 399   | 611   |
+| 4     | 1281  | 1911  | 2901  |
+| 5     | 5843  | 8651  | 13042 |
+| 6     | 26023 | 38294 | 57400 |
 
 **Green crown** — columns: 1st / 2nd / Boss encounter
 
-| Stage | 1st | 2nd | Boss |
-|-------|-----|-----|------|
-| 1 | 12 | 18 | 29 |
-| 2 | 63 | 97 | 152 |
-| 3 | 290 | 440 | 679 |
-| 4 | 1437 | 2158 | 3297 |
-| 5 | 6677 | 9936 | 15048 |
-| 6 | 30153 | 44542 | 66998 |
+| Stage | 1st   | 2nd   | Boss  |
+| ----- | ----- | ----- | ----- |
+| 1     | 12    | 18    | 29    |
+| 2     | 63    | 97    | 152   |
+| 3     | 290   | 440   | 679   |
+| 4     | 1437  | 2158  | 3297  |
+| 5     | 6677  | 9936  | 15048 |
+| 6     | 30153 | 44542 | 66998 |
 
 **Blue crown** — columns: 1st / 2nd / Boss encounter
 
-| Stage | 1st | 2nd | Boss |
-|-------|-----|-----|------|
-| 1 | 12 | 18 | 30 |
-| 2 | 66 | 103 | 163 |
-| 3 | 314 | 481 | 748 |
-| 4 | 1592 | 2405 | 3692 |
-| 5 | 7511 | 11221 | 17054 |
-| 6 | 34282 | 50789 | 76596 |
+| Stage | 1st   | 2nd   | Boss  |
+| ----- | ----- | ----- | ----- |
+| 1     | 12    | 18    | 30    |
+| 2     | 66    | 103   | 163   |
+| 3     | 314   | 481   | 748   |
+| 4     | 1592  | 2405  | 3692  |
+| 5     | 7511  | 11221 | 17054 |
+| 6     | 34282 | 50789 | 76596 |
 
 **Red crown** — columns: 1st / 2nd / Boss encounter
 
-| Stage | 1st | 2nd | Boss |
-|-------|-----|-----|------|
-| 1 | 12 | 19 | 31 |
-| 2 | 69 | 109 | 174 |
-| 3 | 338 | 522 | 817 |
-| 4 | 1748 | 2652 | 4087 |
-| 5 | 8344 | 12506 | 19061 |
-| 6 | 38412 | 57036 | 86194 |
-
+| Stage | 1st   | 2nd   | Boss  |
+| ----- | ----- | ----- | ----- |
+| 1     | 12    | 19    | 31    |
+| 2     | 69    | 109   | 174   |
+| 3     | 338   | 522   | 817   |
+| 4     | 1748  | 2652  | 4087  |
+| 5     | 8344  | 12506 | 19061 |
+| 6     | 38412 | 57036 | 86194 |
 
 ### 2.3 Map, bosses, and Michael unlock
 
@@ -206,13 +207,13 @@ Crowns raise targets (Section 9). **Toothed Whale** multiplies them. Negative wo
 
 ### 3.1 Valid words
 
-| Rule | Default | Boss overrides |
-|------|---------|----------------|
-| Dictionary | Must exist in game word list | — |
-| Min length | 3 letters | **Cobra** raises minimum |
-| Max length | Board size (25 on 5×5) | **Wolf** lowers maximum |
-| Tile reuse | Each tile at most once per word | — |
-| Adjacency | 8 directions (orthogonal + diagonal) | Chess/stamps modify |
+| Rule       | Default                              | Boss overrides           |
+| ---------- | ------------------------------------ | ------------------------ |
+| Dictionary | Must exist in game word list         | —                        |
+| Min length | 3 letters                            | **Cobra** raises minimum |
+| Max length | Board size (25 on 5×5)               | **Wolf** lowers maximum  |
+| Tile reuse | Each tile at most once per word      | —                        |
+| Adjacency  | 8 directions (orthogonal + diagonal) | Chess/stamps modify      |
 
 **Michael finale:** all 25 tiles required in one word.
 
@@ -222,24 +223,24 @@ From any selected tile, the next tile must be an **active** neighbor in one of e
 
 ### 3.3 Colour-based movement
 
-| Colour / item | Effect |
-|---------------|--------|
-| **WHITE** | Teleport to any unused active cell |
-| **Full Moon** (stamp) | Teleport between matching letters or identical chess pieces |
-| **Hungry Snake** (stamp) | Column 0 ↔ column 4 wrap on each row |
+| Colour / item            | Effect                                                      |
+| ------------------------ | ----------------------------------------------------------- |
+| **WHITE**                | Teleport to any unused active cell                          |
+| **Full Moon** (stamp)    | Teleport between matching letters or identical chess pieces |
+| **Hungry Snake** (stamp) | Column 0 ↔ column 4 wrap on each row                        |
 
 ### 3.4 Chess pieces
 
 Chess-cursed tiles move per [wiki Curses — Chess](https://cursedwords.wiki.gg/wiki/Curses). Summary:
 
-| Piece | Base score | Movement |
-|-------|------------|----------|
-| Pawn (♟/♙) | 1 | Forward 1 (2 from home rank: 2nd row from top for white, 2nd from bottom for black); capture diagonally; en passant |
-| Knight (♞/♘) | 3 | L-shape; jumps over blockers |
-| Bishop (♝/♗) | 3 | Diagonal rays; blocked by same colour |
-| Rook (♜/♖) | 5 | Horizontal/vertical rays |
-| Queen (♛/♕) | 9 | Any straight line |
-| King (♚/♔) | 15 | One step any direction; cannot move into check |
+| Piece        | Base score | Movement                                                                                                            |
+| ------------ | ---------- | ------------------------------------------------------------------------------------------------------------------- |
+| Pawn (♟/♙)   | 1          | Forward 1 (2 from home rank: 2nd row from top for white, 2nd from bottom for black); capture diagonally; en passant |
+| Knight (♞/♘) | 3          | L-shape; jumps over blockers                                                                                        |
+| Bishop (♝/♗) | 3          | Diagonal rays; blocked by same colour                                                                               |
+| Rook (♜/♖)   | 5          | Horizontal/vertical rays                                                                                            |
+| Queen (♛/♕)  | 9          | Any straight line                                                                                                   |
+| King (♚/♔)   | 15         | One step any direction; cannot move into check                                                                      |
 
 **Take:** moving onto opposite-colour piece (scores for Movie Camera, Super 8 pin). **King of the Bridge:** allies can take. **Full Moon** teleport is not a take.
 
@@ -255,19 +256,19 @@ Chess-cursed tiles move per [wiki Curses — Chess](https://cursedwords.wiki.gg/
 
 Tiles become **wobbly** when an item grants *additional* letter/number behaviour ([Curses wiki](https://cursedwords.wiki.gg/wiki/Curses)):
 
-| Item | Wobbly effect |
-|------|---------------|
-| Bunch Of Grapes | 1→I, 5→V, 10→X |
-| Card Shark | ♣→C, ♦→D, ♥→H, ♠→S |
-| Flamingo | SHINY→1 |
-| Jellyfish | J→H or Y |
-| Microscope | positive base score as number position |
-| Queenie | Q→QU |
-| Red Envelope | RED→E |
-| Sluggish Zombie | Z→S |
-| Spicy Pepper | RED→S |
-| Suspension Bridge | RED letters → adjacent letter |
-| Test Tube | numbers ±1 |
+| Item              | Wobbly effect                          |
+| ----------------- | -------------------------------------- |
+| Bunch Of Grapes   | 1→I, 5→V, 10→X                         |
+| Card Shark        | ♣→C, ♦→D, ♥→H, ♠→S                     |
+| Flamingo          | SHINY→1                                |
+| Jellyfish         | J→H or Y                               |
+| Microscope        | positive base score as number position |
+| Queenie           | Q→QU                                   |
+| Red Envelope      | RED→E                                  |
+| Sluggish Zombie   | Z→S                                    |
+| Spicy Pepper      | RED→S                                  |
+| Suspension Bridge | RED letters → adjacent letter          |
+| Test Tube         | numbers ±1                             |
 
 Wobbly effects are **continuous**—they apply retroactively to tiles already on the grid.
 
@@ -289,12 +290,12 @@ Every submitted word produces a **score** subtracted from the encounter target. 
 
 ### 4.1 Score components
 
-| Component | Description |
-|-----------|-------------|
-| **Base score** | Letter value + colour modifier + crown penalties (before items) |
-| **Tile score** | Base score after all tile-level item effects on that step |
-| **Word score** | Additive bonuses queued from items |
-| **Word multiplier** | Multiplicative bonuses (applied as `score × bonus ÷ 100`) |
+| Component           | Description                                                     |
+| ------------------- | --------------------------------------------------------------- |
+| **Base score**      | Letter value + colour modifier + crown penalties (before items) |
+| **Tile score**      | Base score after all tile-level item effects on that step       |
+| **Word score**      | Additive bonuses queued from items                              |
+| **Word multiplier** | Multiplicative bonuses (applied as `score × bonus ÷ 100`)       |
 
 Negative scores are possible (Salamander, void, Down Under).
 
@@ -319,12 +320,14 @@ flowchart TD
 ```
 
 **Item loop order:**
+
 1. Scattered **item tiles** on path (path order)
 2. Character **pin**
 3. **Stickers** left → right
 4. **Stamps** left → right
 
 **Orchestration (inside loop):**
+
 - **Random Access Memory:** replays each stored item
 - **Frankenstein:** replays stitched stickers
 - **Overhand:** replays target sticker N times
@@ -338,7 +341,7 @@ flowchart TD
 
 ### 4.3 Sticker scaling
 
-```
+```text
 effect_value = base + upgrade_per_level × (sticker_level − 1)
 ```
 
@@ -346,37 +349,37 @@ Normal max level 3; **foil** stickers to level 5. **Left Hand** (Human Boy) can 
 
 ### 4.4 Effect types
 
-| Type | Applies to | Examples |
-|------|------------|----------|
-| `add_tile_score` | Path tiles matching condition | Artist's Palette, Telescope, Wad of Cash pin |
-| `tile_multiply` | Matching path tiles | Cocktail, Mahjong pin, Lab Coat |
-| `add_word_score` | Word (additive) | Birthday Cake, Movie Camera, Bicycle pin |
-| `multiply_word_scaled` | Word (×, ÷100) | Blueberries, Dango, Bento Box |
-| `scatter_start_grid` | Grid mutation | April Shower, Ghost, Amphora |
-| `reverse_scoring_order` | Meta | Hourglass |
-| `shuffle_loadout_order` | Meta | Capybara boss |
+| Type                    | Applies to                    | Examples                                     |
+| ----------------------- | ----------------------------- | -------------------------------------------- |
+| `add_tile_score`        | Path tiles matching condition | Artist's Palette, Telescope, Wad of Cash pin |
+| `tile_multiply`         | Matching path tiles           | Cocktail, Mahjong pin, Lab Coat              |
+| `add_word_score`        | Word (additive)               | Birthday Cake, Movie Camera, Bicycle pin     |
+| `multiply_word_scaled`  | Word (×, ÷100)                | Blueberries, Dango, Bento Box                |
+| `scatter_start_grid`    | Grid mutation                 | April Shower, Ghost, Amphora                 |
+| `reverse_scoring_order` | Meta                          | Hourglass                                    |
+| `shuffle_loadout_order` | Meta                          | Capybara boss                                |
 
 ### 4.5 Card and poker scoring
 
-| Item | Behaviour |
-|------|-----------|
-| **Hanafuda** | Poker hand on path (pair/trips/quads by level); +sticker value × unused suited cards on grid |
-| **Bicycle** (Bones pin) | +rate per suited tile on path; persistent accumulator across words |
-| **Wrestlers** | ×word if path endpoints differ in suit (joker asymmetry at start vs end) |
-| **Poker Face** | Joker at word start counts as any face card |
-| **Kadomatsu** | Card-hand word bonus variant |
+| Item                    | Behaviour                                                                                    |
+| ----------------------- | -------------------------------------------------------------------------------------------- |
+| **Hanafuda**            | Poker hand on path (pair/trips/quads by level); +sticker value × unused suited cards on grid |
+| **Bicycle** (Bones pin) | +rate per suited tile on path; persistent accumulator across words                           |
+| **Wrestlers**           | ×word if path endpoints differ in suit (joker asymmetry at start vs end)                     |
+| **Poker Face**          | Joker at word start counts as any face card                                                  |
+| **Kadomatsu**           | Card-hand word bonus variant                                                                 |
 
 **Jokers:** wildcards for card logic; `?` for letters. Joker at **start** + suited end can proc Wrestlers; joker at **end** with suited start does not (unless inner bookend logic).
 
 ### 4.6 Accumulators (persist across grids/encounters)
 
-| Item | Field | Notes |
-|------|-------|-------|
-| Birthday Cake | Per-grid bonus | Grows when conditions met |
-| Movie Camera | Chess take total | P=1 N/B=3 R=5 Q=9 K=15 per take |
-| Bicycle pin | `WordScoreBonus` | +per card on path each word |
-| Hi-Vis Jacket | Consumable rack mult | Setup value for future grids |
-| Telescope | Historic red count | Encounter-wide red tile history |
+| Item          | Field                | Notes                           |
+| ------------- | -------------------- | ------------------------------- |
+| Birthday Cake | Per-grid bonus       | Grows when conditions met       |
+| Movie Camera  | Chess take total     | P=1 N/B=3 R=5 Q=9 K=15 per take |
+| Bicycle pin   | `WordScoreBonus`     | +per card on path each word     |
+| Hi-Vis Jacket | Consumable rack mult | Setup value for future grids    |
+| Telescope     | Historic red count   | Encounter-wide red tile history |
 
 ### 4.7 Green poison
 
@@ -394,12 +397,12 @@ With **Blueberries** (×150 word) instead: tile sum 7, then ×150÷100 = ×1.5 �
 
 ### 4.9 Boss scoring timing
 
-| Boss | When applied (no Hourglass) | Effect |
-|------|----------------------------|--------|
-| Salamander | Early (before items) | Reduce each tile score by N |
-| Robo-Monkey | Early | Subtract word score by money × mult |
-| Fox | Early + each grid start | Steal money |
-| All above | Late (Hourglass odd) | Reversed order after items |
+| Boss        | When applied (no Hourglass) | Effect                              |
+| ----------- | --------------------------- | ----------------------------------- |
+| Salamander  | Early (before items)        | Reduce each tile score by N         |
+| Robo-Monkey | Early                       | Subtract word score by money × mult |
+| Fox         | Early + each grid start     | Steal money                         |
+| All above   | Late (Hourglass odd)        | Reversed order after items          |
 
 ---
 
@@ -409,34 +412,34 @@ With **Blueberries** (×150 word) instead: tile sum 7, then ×150÷100 = ×1.5 �
 
 Default generatable pool: **RED, BLUE, VOID, SHINY**. Other colours enter the pool when first encountered. **GLITCH** is last-resort only—never added to the generatable pool.
 
-| Colour | Base score | Special |
-|--------|------------|---------|
-| Colorless | Scrabble letter value | Not a "colour" for Dango; counts for Newspaper/Moai |
-| RED | +1 | — |
-| BLUE | +1 | Shield pin overrides blue base |
-| PURPLE | +2; counts as RED and BLUE | Dual-colour for items |
-| SHINY | Flat 50 | Ignores letter manipulators |
-| VOID | Negative (packet × −1) | Sticky Plaster subtracts from base |
-| WHITE | Letter base | Teleport movement |
-| GOLD | Current $ | — |
-| PINK | Letter base | Piggy bank (−$1/tile while money > 0) |
-| GREEN | Letter base | 10% word score → poison; transfer at finalize |
-| CACTUS | +growth per grid start | Immutable colour; no consumable replacement |
-| GLITCH | Random until settled | Settles before scoring |
+| Colour    | Base score                 | Special                                             |
+| --------- | -------------------------- | --------------------------------------------------- |
+| Colorless | Scrabble letter value      | Not a "colour" for Dango; counts for Newspaper/Moai |
+| RED       | +1                         | —                                                   |
+| BLUE      | +1                         | Shield pin overrides blue base                      |
+| PURPLE    | +2; counts as RED and BLUE | Dual-colour for items                               |
+| SHINY     | Flat 50                    | Ignores letter manipulators                         |
+| VOID      | Negative (packet × −1)     | Sticky Plaster subtracts from base                  |
+| WHITE     | Letter base                | Teleport movement                                   |
+| GOLD      | Current $                  | —                                                   |
+| PINK      | Letter base                | Piggy bank (−$1/tile while money > 0)               |
+| GREEN     | Letter base                | 10% word score → poison; transfer at finalize       |
+| CACTUS    | +growth per grid start     | Immutable colour; no consumable replacement         |
+| GLITCH    | Random until settled       | Settles before scoring                              |
 
 ### 5.2 Curses (glyphs)
 
-| Curse | Word role | Base score |
-|-------|-----------|--------------|
-| Letter | Face letter | Scrabble value |
-| ? (blank) | Any letter | 0 |
-| Number | Position = value | Face number |
-| Fraction | Position = num or denom | num + denom |
-| Currency (13 symbols) | Maps to letter | 0; +$1 submit |
-| Chess | Any letter + piece move | 1/3/3/5/9/15 |
-| Card suit | Metadata on letter | 0 + suit |
-| Joker card | Any suited card | 0 |
-| Item tile | Mimics scattered item | 0; scored in item loop |
+| Curse                 | Word role               | Base score             |
+| --------------------- | ----------------------- | ---------------------- |
+| Letter                | Face letter             | Scrabble value         |
+| ? (blank)             | Any letter              | 0                      |
+| Number                | Position = value        | Face number            |
+| Fraction              | Position = num or denom | num + denom            |
+| Currency (13 symbols) | Maps to letter          | 0; +$1 submit          |
+| Chess                 | Any letter + piece move | 1/3/3/5/9/15           |
+| Card suit             | Metadata on letter      | 0 + suit               |
+| Joker card            | Any suited card         | 0                      |
+| Item tile             | Mimics scattered item   | 0; scored in item loop |
 
 **Currency → letter map:** ฿→B, ¥→Y, $→S, ₡→C, €→E, ₭→K, ₮→T, ₦→N, ₩→W, ₱→P, ₣→F, ₲→G
 
@@ -449,33 +452,33 @@ Before scoring, GLITCH tiles settle: random colour (11 types), 25% chance card s
 Scrabble-like distribution. [Letters wiki](https://cursedwords.wiki.gg/wiki/Letters):
 
 | Letter | Score | Orange crown | Green crown freq change |
-|--------|-------|--------------|-------------------------|
-| A | 1 | 1 | 9→7 |
-| B | 3 | 3 | — |
-| C | 3 | 2 | — |
-| D | 2 | 1 | — |
-| E | 1 | 0 | 12→8 |
-| F | 4 | 3 | — |
-| G | 2 | 1 | — |
-| H | 4 | 3 | — |
-| I | 1 | 1 | 9→6 |
-| J | 8 | 6 | 1→3 |
-| K | 5 | 4 | 1→3 |
-| L | 1 | 1 | — |
-| M | 3 | 3 | — |
-| N | 1 | 1 | — |
-| O | 1 | 1 | 8→6 |
-| P | 3 | 2 | — |
-| Q | 10 | 8 | 1→2 |
-| R | 1 | 1 | — |
-| S | 1 | 0 | — |
-| T | 1 | 1 | — |
-| U | 1 | 1 | 4→4 |
-| V | 4 | 3 | 2→3 |
-| W | 4 | 4 | 2→3 |
-| X | 8 | 6 | 1→3 |
-| Y | 4 | 3 | 2→3 |
-| Z | 10 | 8 | 1→2 |
+| ------ | ----- | ------------ | ----------------------- |
+| A      | 1     | 1            | 9→7                     |
+| B      | 3     | 3            | —                       |
+| C      | 3     | 2            | —                       |
+| D      | 2     | 1            | —                       |
+| E      | 1     | 0            | 12→8                    |
+| F      | 4     | 3            | —                       |
+| G      | 2     | 1            | —                       |
+| H      | 4     | 3            | —                       |
+| I      | 1     | 1            | 9→6                     |
+| J      | 8     | 6            | 1→3                     |
+| K      | 5     | 4            | 1→3                     |
+| L      | 1     | 1            | —                       |
+| M      | 3     | 3            | —                       |
+| N      | 1     | 1            | —                       |
+| O      | 1     | 1            | 8→6                     |
+| P      | 3     | 2            | —                       |
+| Q      | 10    | 8            | 1→2                     |
+| R      | 1     | 1            | —                       |
+| S      | 1     | 0            | —                       |
+| T      | 1     | 1            | —                       |
+| U      | 1     | 1            | 4→4                     |
+| V      | 4     | 3            | 2→3                     |
+| W      | 4     | 4            | 2→3                     |
+| X      | 8     | 6            | 1→3                     |
+| Y      | 4     | 3            | 2→3                     |
+| Z      | 10    | 8            | 1→2                     |
 
 French, German, and Spanish tables: [Letters wiki](https://cursedwords.wiki.gg/wiki/Letters).
 
@@ -499,29 +502,29 @@ Item tiles mimic a sticker/stamp on the grid. When included in a word, that item
 
 ### 6.1 Overview
 
-| Kind | Slots | Upgradeable | Scoring order |
-|------|-------|-------------|---------------|
-| Pin | 1 (character) | Left + right tracks | After grid items, before stickers |
-| Sticker | 5 | Yes (foil to 5) | Left → right |
-| Stamp | 5 | No | After stickers |
+| Kind    | Slots         | Upgradeable         | Scoring order                     |
+| ------- | ------------- | ------------------- | --------------------------------- |
+| Pin     | 1 (character) | Left + right tracks | After grid items, before stickers |
+| Sticker | 5             | Yes (foil to 5)     | Left → right                      |
+| Stamp   | 5             | No                  | After stickers                    |
 
 Reorder stickers/stamps freely before submit. Pins cannot be scattered as item tiles.
 
 ### 6.2 Characters and pins (full table)
 
-| Character | Pin | Left (grid) | Right (scoring) | Wiki |
-|-----------|-----|-------------|-----------------|------|
-| Hayley Bayles | Abacus | Scatter unique numbers 1–5 | +10 TILE per coloured number on path (scales with right) | [Abacus](https://cursedwords.wiki.gg/wiki/Abacus) |
-| Nina Nix | Milky Way | Scatter VOID; 10% VOID→SHINY | (none) | [Milky Way](https://cursedwords.wiki.gg/wiki/Milky_Way) |
-| Beans | Rainbow | Scatter unusual colour | +5 WORD per unique colour on path | [Rainbow](https://cursedwords.wiki.gg/wiki/Rainbow) |
-| Sam Gambit | Super 8 | Scatter chess pieces | +8 WORD per chess take (scales) | [Super 8](https://cursedwords.wiki.gg/wiki/Super_8) |
-| Bones The Dog | Bicycle | Scatter cards | +WORD accumulator per card on path | [Bicycle](https://cursedwords.wiki.gg/wiki/Bicycle) |
-| Octacles | Bucket | Scatter bucket tiles | (none) | [Bucket](https://cursedwords.wiki.gg/wiki/Bucket) |
-| Nat-H4 | Random Access Memory | Memory draft between stages | Replay all items in pin memory | [Random Access Memory](https://cursedwords.wiki.gg/wiki/Random_Access_Memory) |
-| Sandy Saguaro | Mahjong Red Dragon | Red consumable each encounter | ×TILE on consumables (2 + right) | [Mahjong Red Dragon](https://cursedwords.wiki.gg/wiki/Mahjong_Red_Dragon) |
-| Cretaceous Meg | Wad of Cash | Scatter currency | +10 TILE on currency tiles | [Wad of Cash](https://cursedwords.wiki.gg/wiki/Wad_of_Cash) |
-| Human Boy | Human Hands | Boost favourite sticker level | Extra favourite stamp applications | [Human Hands](https://cursedwords.wiki.gg/wiki/Human_Hands) |
-| Rodman | Carp Streamers | Scatter 1 RED + 1 BLUE | (none) | [Carp Streamers](https://cursedwords.wiki.gg/wiki/Carp_Streamers) |
+| Character      | Pin                  | Left (grid)                   | Right (scoring)                                          | Wiki                                                                          |
+| -------------- | -------------------- | ----------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Hayley Bayles  | Abacus               | Scatter unique numbers 1–5    | +10 TILE per coloured number on path (scales with right) | [Abacus](https://cursedwords.wiki.gg/wiki/Abacus)                             |
+| Nina Nix       | Milky Way            | Scatter VOID; 10% VOID→SHINY  | (none)                                                   | [Milky Way](https://cursedwords.wiki.gg/wiki/Milky_Way)                       |
+| Beans          | Rainbow              | Scatter unusual colour        | +5 WORD per unique colour on path                        | [Rainbow](https://cursedwords.wiki.gg/wiki/Rainbow)                           |
+| Sam Gambit     | Super 8              | Scatter chess pieces          | +8 WORD per chess take (scales)                          | [Super 8](https://cursedwords.wiki.gg/wiki/Super_8)                           |
+| Bones The Dog  | Bicycle              | Scatter cards                 | +WORD accumulator per card on path                       | [Bicycle](https://cursedwords.wiki.gg/wiki/Bicycle)                           |
+| Octacles       | Bucket               | Scatter bucket tiles          | (none)                                                   | [Bucket](https://cursedwords.wiki.gg/wiki/Bucket)                             |
+| Nat-H4         | Random Access Memory | Memory draft between stages   | Replay all items in pin memory                           | [Random Access Memory](https://cursedwords.wiki.gg/wiki/Random_Access_Memory) |
+| Sandy Saguaro  | Mahjong Red Dragon   | Red consumable each encounter | ×TILE on consumables (2 + right)                         | [Mahjong Red Dragon](https://cursedwords.wiki.gg/wiki/Mahjong_Red_Dragon)     |
+| Cretaceous Meg | Wad of Cash          | Scatter currency              | +10 TILE on currency tiles                               | [Wad of Cash](https://cursedwords.wiki.gg/wiki/Wad_of_Cash)                   |
+| Human Boy      | Human Hands          | Boost favourite sticker level | Extra favourite stamp applications                       | [Human Hands](https://cursedwords.wiki.gg/wiki/Human_Hands)                   |
+| Rodman         | Carp Streamers       | Scatter 1 RED + 1 BLUE        | (none)                                                   | [Carp Streamers](https://cursedwords.wiki.gg/wiki/Carp_Streamers)             |
 
 **Random Access Memory blacklist** (cannot enter memory after boss): Beam Me Up, Crystal Ball, Dartboard, Magic 8-Ball, Hungry Hippo, Lucky Dice, Mystery Gift, Nest Egg, Overhand, Sewing Needle, Signal Receiver, Snapshot, Underhand, Unicorn.
 
@@ -536,6 +539,7 @@ Reorder stickers/stamps freely before submit. Pins cannot be scattered as item t
 Grid scatter at start of grid — mutate board before you play.
 
 Examples:
+
 - [Amphora](https://cursedwords.wiki.gg/wiki/Amphora)
 - [April Shower](https://cursedwords.wiki.gg/wiki/April_Shower)
 - [Backpack](https://cursedwords.wiki.gg/wiki/Backpack)
@@ -585,6 +589,7 @@ Examples:
 Word multipliers (×N, integer ÷100 math).
 
 Examples:
+
 - [Ambulance](https://cursedwords.wiki.gg/wiki/Ambulance)
 - [Arrivals](https://cursedwords.wiki.gg/wiki/Arrivals)
 - [Axe](https://cursedwords.wiki.gg/wiki/Axe)
@@ -625,6 +630,7 @@ Examples:
 Additive word score bonuses.
 
 Examples:
+
 - [Base Camp](https://cursedwords.wiki.gg/wiki/Base_Camp)
 - [Birthday Cake](https://cursedwords.wiki.gg/wiki/Birthday_Cake)
 - [Credit Card](https://cursedwords.wiki.gg/wiki/Credit_Card)
@@ -651,6 +657,7 @@ Examples:
 Additive tile score on matching path tiles.
 
 Examples:
+
 - [Artist's Palette](https://cursedwords.wiki.gg/wiki/Artist's_Palette)
 - [Celestial Body](https://cursedwords.wiki.gg/wiki/Celestial_Body)
 - [Deep Sea Horror](https://cursedwords.wiki.gg/wiki/Deep_Sea_Horror)
@@ -669,6 +676,7 @@ Examples:
 Special behaviour (Padlock, Sticky Plaster, Left Hand, etc.).
 
 Examples:
+
 - [Brick](https://cursedwords.wiki.gg/wiki/Brick)
 - [Diving Mask](https://cursedwords.wiki.gg/wiki/Diving_Mask)
 - [Left Hand](https://cursedwords.wiki.gg/wiki/Left_Hand)
@@ -683,6 +691,7 @@ Examples:
 Multiply matching tile scores.
 
 Examples:
+
 - [Cocktail](https://cursedwords.wiki.gg/wiki/Cocktail)
 - [Down Under](https://cursedwords.wiki.gg/wiki/Down_Under)
 - [Fish Cake](https://cursedwords.wiki.gg/wiki/Fish_Cake)
@@ -697,6 +706,7 @@ Examples:
 Poker/card hand detection.
 
 Examples:
+
 - [Hanafuda](https://cursedwords.wiki.gg/wiki/Hanafuda)
 - [Kadomatsu](https://cursedwords.wiki.gg/wiki/Kadomatsu)
 - [Slide](https://cursedwords.wiki.gg/wiki/Slide)
@@ -706,6 +716,7 @@ Examples:
 consecutive number tile bonus.
 
 Examples:
+
 - [Alembic Flask](https://cursedwords.wiki.gg/wiki/Alembic_Flask)
 
 #### Multiply If Number Sum (1)
@@ -713,6 +724,7 @@ Examples:
 multiply if number sum.
 
 Examples:
+
 - [Brain](https://cursedwords.wiki.gg/wiki/Brain)
 
 #### Multiply Word Other Sticker Levels (1)
@@ -720,6 +732,7 @@ Examples:
 multiply word other sticker levels.
 
 Examples:
+
 - [Burrito](https://cursedwords.wiki.gg/wiki/Burrito)
 
 #### Frankenstein Stitch (1)
@@ -727,6 +740,7 @@ Examples:
 frankenstein stitch.
 
 Examples:
+
 - [Frankenstein](https://cursedwords.wiki.gg/wiki/Frankenstein)
 
 #### Multiply Consumable Rack (1)
@@ -734,6 +748,7 @@ Examples:
 multiply consumable rack.
 
 Examples:
+
 - [Hi Vis Jacket](https://cursedwords.wiki.gg/wiki/Hi_Vis_Jacket)
 
 #### Add Money On Condition (1)
@@ -741,6 +756,7 @@ Examples:
 add money on condition.
 
 Examples:
+
 - [Jack-o'-Lantern](https://cursedwords.wiki.gg/wiki/Jack-o%27-Lantern)
 
 #### Chess Take Word Bonus (1)
@@ -748,6 +764,7 @@ Examples:
 chess take word bonus.
 
 Examples:
+
 - [Movie Camera](https://cursedwords.wiki.gg/wiki/Movie_Camera)
 
 #### Overhand Replay (1)
@@ -755,6 +772,7 @@ Examples:
 overhand replay.
 
 Examples:
+
 - [Overhand](https://cursedwords.wiki.gg/wiki/Overhand)
 
 #### Add Money On Hand (1)
@@ -762,6 +780,7 @@ Examples:
 add money on hand.
 
 Examples:
+
 - [Pear](https://cursedwords.wiki.gg/wiki/Pear)
 
 #### Multiply Word Per Distinct Pair (1)
@@ -769,6 +788,7 @@ Examples:
 multiply word per distinct pair.
 
 Examples:
+
 - [Scissors](https://cursedwords.wiki.gg/wiki/Scissors)
 
 #### Blue Tile Base Override (1)
@@ -776,6 +796,7 @@ Examples:
 blue tile base override.
 
 Examples:
+
 - [Shield](https://cursedwords.wiki.gg/wiki/Shield)
 
 #### Multiply Money Bonus (1)
@@ -783,6 +804,7 @@ Examples:
 multiply money bonus.
 
 Examples:
+
 - [Sunflower](https://cursedwords.wiki.gg/wiki/Sunflower)
 
 #### Red Encounter Tile Bonus (1)
@@ -790,6 +812,7 @@ Examples:
 red encounter tile bonus.
 
 Examples:
+
 - [Telescope](https://cursedwords.wiki.gg/wiki/Telescope)
 
 #### Red Tile Bonus (1)
@@ -797,6 +820,7 @@ Examples:
 red tile bonus.
 
 Examples:
+
 - [Red Rider](https://cursedwords.wiki.gg/wiki/red_rider)
 
 #### Void Flip (1)
@@ -804,6 +828,7 @@ Examples:
 void flip.
 
 Examples:
+
 - [Void Flip](https://cursedwords.wiki.gg/wiki/void_flip)
 
 #### Word Length Bonus (1)
@@ -811,6 +836,7 @@ Examples:
 word length bonus.
 
 Examples:
+
 - [Long Word](https://cursedwords.wiki.gg/wiki/long_word)
 
 #### Shiny Chain (1)
@@ -818,6 +844,7 @@ Examples:
 shiny chain.
 
 Examples:
+
 - [Shiny Chain](https://cursedwords.wiki.gg/wiki/shiny_chain)
 
 #### Multiply (1)
@@ -825,6 +852,7 @@ Examples:
 multiply.
 
 Examples:
+
 - [Double Score](https://cursedwords.wiki.gg/wiki/double_score)
 
 **Worked example — Blueberries (×word):** Level 1 ×150 word score; scales with upgrades.
@@ -1102,7 +1130,7 @@ add word score.
 
 - [Newspaper](https://cursedwords.wiki.gg/wiki/newspaper)
 
-#### Word Length Bonus (1)
+#### Word Length Bonus (1) — Moai
 
 word length bonus.
 
@@ -1110,15 +1138,15 @@ word length bonus.
 
 **Movement stamps quick reference:**
 
-| Stamp | Effect |
-|-------|--------|
-| Hungry Snake | horizontal column wrap |
-| Full Moon | double-letter / identical piece teleport |
-| Queenie | Q as QU |
-| Red Envelope | RED as E |
-| Honeypot | word stitch |
-| King Of The Bridge | chess allies can take |
-| Television | king/queen item movement |
+| Stamp              | Effect                                   |
+| ------------------ | ---------------------------------------- |
+| Hungry Snake       | horizontal column wrap                   |
+| Full Moon          | double-letter / identical piece teleport |
+| Queenie            | Q as QU                                  |
+| Red Envelope       | RED as E                                 |
+| Honeypot           | word stitch                              |
+| King Of The Bridge | chess allies can take                    |
+| Television         | king/queen item movement                 |
 
 ---
 
@@ -1128,147 +1156,147 @@ word length bonus.
 
 ### 7.1 Main bosses
 
-| Boss | Effect | Scoring / search | Michael draft? | Wiki |
-|------|--------|------------------|----------------|------|
-| Axolotl | Scatter Q tiles | grid | Yes | [Axolotl](https://cursedwords.wiki.gg/wiki/Axolotl) |
-| Badger | Fewer grids per encounter | encounter | Yes | [Badger](https://cursedwords.wiki.gg/wiki/Badger) |
-| Bat | Shrink grid dimensions | grid | Yes | [Bat](https://cursedwords.wiki.gg/wiki/Bat) |
-| Bison | Scatter high numbers | grid | Yes | [Bison](https://cursedwords.wiki.gg/wiki/Bison) |
-| Capybara | Shuffle sticker/stamp order each submit | encounter | Yes | [Capybara](https://cursedwords.wiki.gg/wiki/Capybara) |
-| Cobra | Min word length floor | Search | Yes | [Cobra](https://cursedwords.wiki.gg/wiki/Cobra) |
-| Cretaceous Meg | Special shop rebuild encounter | encounter | — | [Cretaceous Meg](https://cursedwords.wiki.gg/wiki/Cretaceous_Meg_(boss)) |
-| Fox | Steals $ each grid + on submit (early) | encounter | No | [Fox](https://cursedwords.wiki.gg/wiki/Fox) |
-| Hyena | Block submit until sell item | encounter | No | [Hyena](https://cursedwords.wiki.gg/wiki/Hyena) |
-| Mole | Scatter VOID tiles | grid | Yes | [Mole](https://cursedwords.wiki.gg/wiki/Mole) |
-| Robo-Eel | Destroy tiles each grid | grid | Yes | [Robo-Eel](https://cursedwords.wiki.gg/wiki/Robo-Eel) |
-| Robo-Monkey | Subtract word score by money × multiplier (early) | Scoring early | No | [Robo-Monkey](https://cursedwords.wiki.gg/wiki/Robo-Monkey) |
-| Salamander | −letter value from tiles (early scoring) | Scoring early | Yes | [Salamander](https://cursedwords.wiki.gg/wiki/Salamander) |
-| Sandy Saguaro | 2 CACTUS consumables required in words | encounter | — | [Sandy Saguaro](https://cursedwords.wiki.gg/wiki/Sandy_Saguaro_(boss)) |
-| Toothed Whale | Higher target score multiplier | encounter | Yes | [Toothed Whale](https://cursedwords.wiki.gg/wiki/Toothed_Whale) |
-| Wolf | Max word length cap | Search | Yes | [Wolf](https://cursedwords.wiki.gg/wiki/Wolf) |
-| Yeti Crab | Strip tile colours | grid | Yes | [Yeti Crab](https://cursedwords.wiki.gg/wiki/Yeti_Crab) |
+| Boss           | Effect                                            | Scoring / search | Michael draft? | Wiki                                                                     |
+| -------------- | ------------------------------------------------- | ---------------- | -------------- | ------------------------------------------------------------------------ |
+| Axolotl        | Scatter Q tiles                                   | grid             | Yes            | [Axolotl](https://cursedwords.wiki.gg/wiki/Axolotl)                      |
+| Badger         | Fewer grids per encounter                         | encounter        | Yes            | [Badger](https://cursedwords.wiki.gg/wiki/Badger)                        |
+| Bat            | Shrink grid dimensions                            | grid             | Yes            | [Bat](https://cursedwords.wiki.gg/wiki/Bat)                              |
+| Bison          | Scatter high numbers                              | grid             | Yes            | [Bison](https://cursedwords.wiki.gg/wiki/Bison)                          |
+| Capybara       | Shuffle sticker/stamp order each submit           | encounter        | Yes            | [Capybara](https://cursedwords.wiki.gg/wiki/Capybara)                    |
+| Cobra          | Min word length floor                             | Search           | Yes            | [Cobra](https://cursedwords.wiki.gg/wiki/Cobra)                          |
+| Cretaceous Meg | Special shop rebuild encounter                    | encounter        | —              | [Cretaceous Meg](https://cursedwords.wiki.gg/wiki/Cretaceous_Meg_(boss)) |
+| Fox            | Steals $ each grid + on submit (early)            | encounter        | No             | [Fox](https://cursedwords.wiki.gg/wiki/Fox)                              |
+| Hyena          | Block submit until sell item                      | encounter        | No             | [Hyena](https://cursedwords.wiki.gg/wiki/Hyena)                          |
+| Mole           | Scatter VOID tiles                                | grid             | Yes            | [Mole](https://cursedwords.wiki.gg/wiki/Mole)                            |
+| Robo-Eel       | Destroy tiles each grid                           | grid             | Yes            | [Robo-Eel](https://cursedwords.wiki.gg/wiki/Robo-Eel)                    |
+| Robo-Monkey    | Subtract word score by money × multiplier (early) | Scoring early    | No             | [Robo-Monkey](https://cursedwords.wiki.gg/wiki/Robo-Monkey)              |
+| Salamander     | −letter value from tiles (early scoring)          | Scoring early    | Yes            | [Salamander](https://cursedwords.wiki.gg/wiki/Salamander)                |
+| Sandy Saguaro  | 2 CACTUS consumables required in words            | encounter        | —              | [Sandy Saguaro](https://cursedwords.wiki.gg/wiki/Sandy_Saguaro_(boss))   |
+| Toothed Whale  | Higher target score multiplier                    | encounter        | Yes            | [Toothed Whale](https://cursedwords.wiki.gg/wiki/Toothed_Whale)          |
+| Wolf           | Max word length cap                               | Search           | Yes            | [Wolf](https://cursedwords.wiki.gg/wiki/Wolf)                            |
+| Yeti Crab      | Strip tile colours                                | grid             | Yes            | [Yeti Crab](https://cursedwords.wiki.gg/wiki/Yeti_Crab)                  |
 
 ### 7.2 Area scaling tables
 
 #### Salamander
 
 | area | cursed | value |
-| --- | --- | --- |
-| 1 | 2 | 1 |
-| 2 | 4 | 3 |
-| 3 | 7 | 5 |
-| 4 | 9 | 7 |
-| 5 | 12 | 9 |
+| ---- | ------ | ----- |
+| 1    | 2      | 1     |
+| 2    | 4      | 3     |
+| 3    | 7      | 5     |
+| 4    | 9      | 7     |
+| 5    | 12     | 9     |
 
 #### Wolf
 
 | area | cursed_max_length | max_length |
-| --- | --- | --- |
-| 1 | 4 | 5 |
-| 2 | 4 | 5 |
-| 3 | 3 | 4 |
-| 4 | 3 | 4 |
-| 5 | 3 | 4 |
+| ---- | ----------------- | ---------- |
+| 1    | 4                 | 5          |
+| 2    | 4                 | 5          |
+| 3    | 3                 | 4          |
+| 4    | 3                 | 4          |
+| 5    | 3                 | 4          |
 
 #### Cobra
 
 | area | cursed_min_length | min_length |
-| --- | --- | --- |
-| 1 | 5 | 4 |
-| 2 | 6 | 5 |
-| 3 | 7 | 6 |
-| 4 | 7 | 6 |
-| 5 | 8 | 7 |
+| ---- | ----------------- | ---------- |
+| 1    | 5                 | 4          |
+| 2    | 6                 | 5          |
+| 3    | 7                 | 6          |
+| 4    | 7                 | 6          |
+| 5    | 8                 | 7          |
 
 #### Fox
 
 | area | cursed | value |
-| --- | --- | --- |
-| 1 | 3 | 2 |
-| 2 | 5 | 3 |
-| 3 | 6 | 4 |
-| 4 | 8 | 5 |
-| 5 | N/A |
+| ---- | ------ | ----- |
+| 1    | 3      | 2     |
+| 2    | 5      | 3     |
+| 3    | 6      | 4     |
+| 4    | 8      | 5     |
+| 5    | N/A    |       |
 
 #### Robo-Monkey
 
 | area | cursed_multiplier | multiplier |
-| --- | --- | --- |
-| 1 | 2 | 1 |
-| 2 | 7 | 5 |
-| 3 | 12 | 9 |
-| 4 | 20 | 15 |
-| 5 | N/A |
+| ---- | ----------------- | ---------- |
+| 1    | 2                 | 1          |
+| 2    | 7                 | 5          |
+| 3    | 12                | 9          |
+| 4    | 20                | 15         |
+| 5    | N/A               |            |
 
 #### Toothed Whale
 
 | area | cursed_multiplier | multiplier |
-| --- | --- | --- |
-| 1 | 1.35 | 1.25 |
-| 2 | 1.5 | 1.35 |
-| 3 | 1.75 | 1.5 |
-| 4 | 2.0 | 1.6 |
-| 5 | 2.25 | 1.75 |
+| ---- | ----------------- | ---------- |
+| 1    | 1.35              | 1.25       |
+| 2    | 1.5               | 1.35       |
+| 3    | 1.75              | 1.5        |
+| 4    | 2.0               | 1.6        |
+| 5    | 2.25              | 1.75       |
 
 #### Bat
 
 | area | cols | cursed_cols | cursed_rows | rows |
-| --- | --- | --- | --- | --- |
-| 1 | 4 | 3 | 4 | 4 |
-| 2 | 4 | 3 | 4 | 4 |
-| 3 | 3 | 3 | 3 | 4 |
-| 4 | 3 | 3 | 3 | 4 |
-| 5 | 3 | 2 | 3 | 3 |
+| ---- | ---- | ----------- | ----------- | ---- |
+| 1    | 4    | 3           | 4           | 4    |
+| 2    | 4    | 3           | 4           | 4    |
+| 3    | 3    | 3           | 3           | 4    |
+| 4    | 3    | 3           | 3           | 4    |
+| 5    | 3    | 2           | 3           | 3    |
 
 #### Mole
 
 | area | cursed | value |
-| --- | --- | --- |
-| 1 | 5 | 3 |
-| 2 | 6 | 4 |
-| 3 | 8 | 5 |
-| 4 | 8 | 5 |
-| 5 | 10 | 6 |
+| ---- | ------ | ----- |
+| 1    | 5      | 3     |
+| 2    | 6      | 4     |
+| 3    | 8      | 5     |
+| 4    | 8      | 5     |
+| 5    | 10     | 6     |
 
 #### Axolotl
 
 | area | cursed | value |
-| --- | --- | --- |
-| 1 | 5 | 3 |
-| 2 | 6 | 4 |
-| 3 | 8 | 5 |
-| 4 | 8 | 5 |
-| 5 | 10 | 6 |
+| ---- | ------ | ----- |
+| 1    | 5      | 3     |
+| 2    | 6      | 4     |
+| 3    | 8      | 5     |
+| 4    | 8      | 5     |
+| 5    | 10     | 6     |
 
 #### Bison
 
 | area | cursed | value |
-| --- | --- | --- |
-| 1 | 11 | 9 |
-| 2 | 12 | 10 |
-| 3 | 14 | 11 |
-| 4 | 15 | 12 |
-| 5 | 17 | 13 |
+| ---- | ------ | ----- |
+| 1    | 11     | 9     |
+| 2    | 12     | 10    |
+| 3    | 14     | 11    |
+| 4    | 15     | 12    |
+| 5    | 17     | 13    |
 
 #### Yeti Crab
 
 | area | cursed | value |
-| --- | --- | --- |
-| 1 | 3 | 2 |
-| 2 | 4 | 3 |
-| 3 | 6 | 4 |
-| 4 | 7 | 4 |
-| 5 | 8 | 5 |
+| ---- | ------ | ----- |
+| 1    | 3      | 2     |
+| 2    | 4      | 3     |
+| 3    | 6      | 4     |
+| 4    | 7      | 4     |
+| 5    | 8      | 5     |
 
 #### Robo-Eel
 
 | area | cursed | value |
-| --- | --- | --- |
-| 1 | 3 | 2 |
-| 2 | 3 | 2 |
-| 3 | 3 | 2 |
-| 4 | 4 | 3 |
-| 5 | 5 | 3 |
+| ---- | ------ | ----- |
+| 1    | 3      | 2     |
+| 2    | 3      | 2     |
+| 3    | 3      | 2     |
+| 4    | 4      | 3     |
+| 5    | 5      | 3     |
 
 ### 7.3 Hidden and character bosses
 
@@ -1313,7 +1341,6 @@ word length bonus.
 
 **Cretaceous Meg:** Character boss: strips loadout to special high-price shop, then challenge grids.
 
-
 ---
 
 ## 8. Shop and Economy
@@ -1322,26 +1349,28 @@ From [Shop wiki](https://cursedwords.wiki.gg/wiki/Shop). Ej?A56 sells stickers, 
 
 ### 8.1 Layout
 
-| Slot type | Count | Notes |
-|-----------|-------|-------|
-| Stickers | 4 | Freezable |
-| Stamps | 2 | Freezable |
-| Tiles | 2 | Coloured consumables |
+| Slot type | Count | Notes                |
+| --------- | ----- | -------------------- |
+| Stickers  | 4     | Freezable            |
+| Stamps    | 2     | Freezable            |
+| Tiles     | 2     | Coloured consumables |
 
 ### 8.1b Grid reroll vs shop restock
 
 These are **different** mechanics (the game uses "reroll" internally for both):
 
-| | Grid reroll | Shop restock |
-|---|-------------|--------------|
-| When | During an encounter grid, before submitting a word | In the Ej?A56 shop between encounters |
-| Cost | Free by default; **$1 each** with [Wheel](https://cursedwords.wiki.gg/wiki/Wheel) stamp | **$1** initially, +$1 per restock ($2 base on Yellow crown+) |
-| Budget | Typically **1 per encounter** (+3 with Wheel, +1 with Slot Machine sticker) | Unlimited while you have money |
-| Effect | Regenerates the current 5×5 grid (`GenerateGrid(isReroll: true)`); Fan keeps SHINY tiles | Refreshes shop sticker/stamp/tile offers |
+|        | Grid reroll                                                                              | Shop restock                                                 |
+| ------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| When   | During an encounter grid, before submitting a word                                       | In the Ej?A56 shop between encounters                        |
+| Cost   | Free by default; **$1 each** with [Wheel](https://cursedwords.wiki.gg/wiki/Wheel) stamp  | **$1** initially, +$1 per restock ($2 base on Yellow crown+) |
+| Budget | Typically **1 per encounter** (+3 with Wheel, +1 with Slot Machine sticker)              | Unlimited while you have money                               |
+| Effect | Regenerates the current 5×5 grid (`GenerateGrid(isReroll: true)`); Fan keeps SHINY tiles | Refreshes shop sticker/stamp/tile offers                     |
 
 The solver exports grid reroll as `encounter_grid_reroll` and shop refresh cost as `shop.restock_cost`.
 
 ### 8.2 Pricing and restock
+
+The solver's F8 shop advice ports the in-game **Advice** button logic (`ShopRecommendation` in Assembly-CSharp): it detects your dominant build tags from inventory, recommends matching scatter/scoring/multiplier items, and uses the same restock/leave heuristics. Works on Crown/Quest runs where the Advice button is hidden.
 
 - **Free item:** Before Yellow crown, one free purchase per shop (lost on restock)
 - **Restock:** $1 initially, +$1 each restock; Yellow crown+ starts at $2
@@ -1349,12 +1378,12 @@ The solver exports grid reroll as `encounter_grid_reroll` and shop refresh cost 
 
 ### 8.3 Rarity and foil
 
-| Type | Odds | Modifiers |
-|------|------|-----------|
-| Rare sticker | 10% | Snail, Genie multiply |
-| Rare stamp | 13% | Snail, Genie |
-| Legendary stamp | 1% | Snail, Genie |
-| Foil sticker slot | 1% (5% with Fortune Cookie) | Upgrades can be foil |
+| Type              | Odds                        | Modifiers             |
+| ----------------- | --------------------------- | --------------------- |
+| Rare sticker      | 10%                         | Snail, Genie multiply |
+| Rare stamp        | 13%                         | Snail, Genie          |
+| Legendary stamp   | 1%                          | Snail, Genie          |
+| Foil sticker slot | 1% (5% with Fortune Cookie) | Upgrades can be foil  |
 
 ### 8.4 Synergy theming
 
@@ -1390,15 +1419,15 @@ Shop contents bias toward items matching your build theme (e.g. blue scatter →
 
 Seven optional crown levels per character ([Crowns wiki](https://cursedwords.wiki.gg/wiki/Crowns)). Effects **stack**.
 
-| Crown | New modifiers (cumulative) |
-|-------|---------------------------|
-| Purple | Cursed boss option; slightly higher targets |
-| Yellow | No free shop item; restock +$1; higher targets |
-| Orange | D,E,F,H,K,P,S,V,Y −1 base; J,Q,X,Z −2; higher targets |
-| Pink | 2 Padlock stamps at run start; 2 stamp slots locked; higher targets |
-| Green | Fewer vowels, more hard consonants; higher targets |
-| Blue | 2 Padlock stickers at run start; 2 sticker slots locked; higher targets |
-| Red | −1 grid per encounter; higher targets |
+| Crown  | New modifiers (cumulative)                                              |
+| ------ | ----------------------------------------------------------------------- |
+| Purple | Cursed boss option; slightly higher targets                             |
+| Yellow | No free shop item; restock +$1; higher targets                          |
+| Orange | D,E,F,H,K,P,S,V,Y −1 base; J,Q,X,Z −2; higher targets                   |
+| Pink   | 2 Padlock stamps at run start; 2 stamp slots locked; higher targets     |
+| Green  | Fewer vowels, more hard consonants; higher targets                      |
+| Blue   | 2 Padlock stickers at run start; 2 sticker slots locked; higher targets |
+| Red    | −1 grid per encounter; higher targets                                   |
 
 Stage 6 (Michael) target tables exist for each crown — see [Score wiki](https://cursedwords.wiki.gg/wiki/Score).
 
@@ -1410,10 +1439,10 @@ Purple crown clears unlock character-specific achievements and stickers.
 
 ### 10.1 Quest shop modifiers
 
-| Quest | Shop effect |
-|-------|-------------|
-| Antiphilatelist | No stamps sold |
-| Masochist | No stickers sold |
+| Quest            | Shop effect                |
+| ---------------- | -------------------------- |
+| Antiphilatelist  | No stamps sold             |
+| Masochist        | No stickers sold           |
 | In The Beginning | No stickers or stamps sold |
 
 ### 10.2 Challenge scoring hooks
@@ -1423,17 +1452,18 @@ Purple crown clears unlock character-specific achievements and stickers.
 
 ### 10.3 Item rarity tiers
 
-| Tier | Stickers | Stamps |
-|------|----------|--------|
-| Common | Default | Default |
-| Rare | 10% shop | 13% shop |
-| Legendary | — | 1% shop |
-| Foil | 1% slot (5% Fortune Cookie) | — |
-| Unique | Never in shop | Never in shop |
+| Tier      | Stickers                    | Stamps        |
+| --------- | --------------------------- | ------------- |
+| Common    | Default                     | Default       |
+| Rare      | 10% shop                    | 13% shop      |
+| Legendary | —                           | 1% shop       |
+| Foil      | 1% slot (5% Fortune Cookie) | —             |
+| Unique    | Never in shop               | Never in shop |
 
 ### 10.4 Content gating
 
 Stickers and stamps unlock via characters, achievements, quests, and crown clears. Wiki categories:
+
 - [Category:Stickers](https://cursedwords.wiki.gg/wiki/Category:Stickers)
 - [Category:Stamps](https://cursedwords.wiki.gg/wiki/Category:Stamps)
 - [Category:Characters](https://cursedwords.wiki.gg/wiki/Category:Characters)
@@ -1449,8 +1479,8 @@ Unlocked after **5 cursed bosses** in one run → **Stage 6**.
 1. Michael intro
 2. **Draft 1** — pick 1 of 2 boss modifiers
 3. Wordsmith grids with stacked modifiers
-4. **Draft 2**
-5. **Draft 3**
+4. **Draft 2** — pick another boss modifier
+5. **Draft 3** — pick a third boss modifier
 6. **Finale** — single grid requiring a **25-tile word** (all cells)
 
 ### 11.2 Draft pool
@@ -1475,22 +1505,22 @@ Each chosen modifier **stacks** for subsequent grids. Per-modifier scaling uses 
 
 ### 12.1 Glossary
 
-| Term | Definition |
-|------|------------|
-| Base score | Letter + colour packet before item effects |
-| Tile score | Per-tile value after item tile bonuses on latest step |
-| Word score | Additive bonuses applied after tile sum |
-| Word multiplier | Multiplicative bonus (÷100 integer math) |
-| Wobbly | Tile with extra letter/number behaviour from stamps |
-| Take | Chess capture onto opposite-colour piece |
-| Consumable | Placeable tile from rack; may be mandatory in word |
-| Crown | Optional difficulty tier stacking modifiers |
-| Scattered item | Item tile on grid; scored in path order before inventory |
-| Historic word | Prior submission in encounter; used by Telescope, Bento Box, etc. |
+| Term            | Definition                                                        |
+| --------------- | ----------------------------------------------------------------- |
+| Base score      | Letter + colour packet before item effects                        |
+| Tile score      | Per-tile value after item tile bonuses on latest step             |
+| Word score      | Additive bonuses applied after tile sum                           |
+| Word multiplier | Multiplicative bonus (÷100 integer math)                          |
+| Wobbly          | Tile with extra letter/number behaviour from stamps               |
+| Take            | Chess capture onto opposite-colour piece                          |
+| Consumable      | Placeable tile from rack; may be mandatory in word                |
+| Crown           | Optional difficulty tier stacking modifiers                       |
+| Scattered item  | Item tile on grid; scored in path order before inventory          |
+| Historic word   | Prior submission in encounter; used by Telescope, Bento Box, etc. |
 
 ### 12.2 Scoring order cheat sheet
 
-```
+```text
 Glitch → Init tiles → [Early bosses] → Money/Pink → Grid items → Pin → Stickers → Stamps
 → [Late bosses if Hourglass] → Lexographer → Poison → Green transfer → Sum tiles → Word bonuses
 ```
@@ -1521,6 +1551,7 @@ P=1, N/B=3, R=5, Q=9, K=15
 ### 12.6 Solver cross-reference
 
 This repository includes a desktop solver companion. Implementation parity notes:
+
 - [`docs/game-research/README.md`](game-research/README.md) — decompiled research index
 - [`docs/game-research/game-scoring-spec.md`](game-research/game-scoring-spec.md) — submit pipeline
 - [`data/wiki/stickers.json`](../data/wiki/stickers.json) — machine-readable item catalog

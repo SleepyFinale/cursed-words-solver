@@ -3,7 +3,7 @@
 ## Game research
 
 ```bash
-python scripts/extract_game_types.py
+python scripts/extract_game_types.py   # also writes shop advice tags per Item subclass
 python scripts/generate_sticker_audit.py
 ```
 
@@ -18,7 +18,7 @@ python scripts/compare_trace.py tests/fixtures/mismatches/<id>.json
 Run all commands from the **repository root** (the folder containing `pyproject.toml`).
 
 | Script | Purpose |
-|--------|---------|
+| ------ | ------- |
 | `python scripts/build_stickers_json.py` | Regenerate `data/wiki/stickers.json` from wiki API scratch files |
 | `python scripts/mismatch_to_test.py <mismatch.json>` | Copy a scoring mismatch into `tests/fixtures/mismatches/` |
 | `python scripts/profile_solve.py [fixture.json] --budget 8` | cProfile chess-heavy solve; DFS vs scoring breakdown |

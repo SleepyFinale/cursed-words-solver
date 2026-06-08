@@ -20,7 +20,7 @@ ilspycmd $dll -t Joker -o $out
 ilspycmd $dll -t ScoreCalcVizInfo -o $out
 ilspycmd $dll -t WordBonusToken -o $out
 # Or: dotnet run --project scripts/decompile_type -- $dll ScoreCalculation Hanafuda ...
-python scripts/extract_game_types.py
+python scripts/extract_game_types.py  # Item subclasses + shop advice tags
 python scripts/extract_stamp_types.py
 python scripts/extract_tile_enums.py
 python scripts/generate_sticker_audit.py

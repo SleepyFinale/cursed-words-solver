@@ -335,6 +335,10 @@ class ShopAdvice:
     freezes: list[RankedAction] = field(default_factory=list)
     leave_shop: ActionRecommendation | None = None
     warnings: list[str] = field(default_factory=list)
+    primary_action: str = ""
+    build: str = ""
+    function: str = ""
+    reason: str = ""
 
 
 @dataclass

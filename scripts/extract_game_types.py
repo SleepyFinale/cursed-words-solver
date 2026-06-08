@@ -21,6 +21,16 @@ $item = $asm.GetType('Item')
 $subs = $asm.GetTypes() | Where-Object {
     $_.IsClass -and -not $_.IsAbstract -and $item.IsAssignableFrom($_) -and $_ -ne $item
 } | Sort-Object Name
+
+function EnumNames($list) {
+    if ($null -eq $list) { return @() }
+    $names = @()
+    foreach ($v in $list) {
+        if ($null -ne $v) { $names += $v.ToString() }
+    }
+    return $names
+}
+
 $result = @()
 foreach ($t in $subs) {
     $methods = $t.GetMethods([System.Reflection.BindingFlags]::Instance -bor `
@@ -34,9 +44,34 @@ foreach ($t in $subs) {
             if ($decl -eq $t.Name) { $overrides += $m.Name }
         }
     }
-    $result += [ordered]@{ name = $t.Name; overrides = $overrides }
+    $tags = @()
+    $dependencyTags = @()
+    $shopAdviceAdditionalTags = @()
+    $functionTags = @()
+    $blacklisted = $false
+    try {
+        $instance = [Activator]::CreateInstance($t)
+        $tags = EnumNames $instance.Tags
+        $dependencyTags = EnumNames $instance.DependencyTags
+        $shopAdviceAdditionalTags = EnumNames $instance.ShopAdviceAdditionalTags
+        $functionTags = EnumNames $instance.ItemFunctionTags
+        $blacklisted = [bool]$instance.IsBlacklistedFromShopRecommendations
+    } catch {
+        # keep empty tag lists when instantiation fails
+    }
+    $shopAdviceTags = @($tags + $shopAdviceAdditionalTags | Select-Object -Unique)
+    $result += [ordered]@{
+        name = $t.Name
+        overrides = $overrides
+        tags = $tags
+        dependency_tags = $dependencyTags
+        shop_advice_additional_tags = $shopAdviceAdditionalTags
+        shop_advice_tags = $shopAdviceTags
+        function_tags = $functionTags
+        blacklisted_from_shop_recommendations = $blacklisted
+    }
 }
-$result | ConvertTo-Json -Depth 4
+$result | ConvertTo-Json -Depth 6
 """
 
 
@@ -56,6 +91,30 @@ def main() -> int:
         print(proc.stderr or proc.stdout, file=sys.stderr)
         return proc.returncode
     rows = json.loads(proc.stdout)
+
+    def _as_str_list(value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(v) for v in value if v]
+        if isinstance(value, str) and value:
+            return [value]
+        return []
+
+    tag_fields = (
+        "tags",
+        "dependency_tags",
+        "shop_advice_additional_tags",
+        "shop_advice_tags",
+        "function_tags",
+    )
+    for row in rows:
+        for key in tag_fields:
+            row[key] = _as_str_list(row.get(key))
+        row["blacklisted_from_shop_recommendations"] = bool(
+            row.get("blacklisted_from_shop_recommendations", False)
+        )
+
     payload = {
         "_meta": {"source": str(dll), "count": len(rows)},
         "subclasses": rows,

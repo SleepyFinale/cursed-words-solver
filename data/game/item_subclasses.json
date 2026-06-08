@@ -9,1393 +9,4791 @@
       "overrides": [
         "ApplyStartOfGridEffect",
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild"
+      ],
+      "function_tags": [],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "AkoyaPearl",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "AlembicFlask",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Ambulance",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "VoidBuild"
+      ],
+      "dependency_tags": [
+        "VoidGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Amphora",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CurseBuild",
+        "CurseGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CurseBuild",
+        "CurseGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "AprilShower",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "BlueGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "BlueGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Arrivals",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "ArtistsPalette",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild",
+        "BlueBuild",
+        "RedBuild",
+        "ShinyBuild",
+        "VoidBuild"
+      ],
+      "dependency_tags": [
+        "BlueGenerator",
+        "RedGenerator",
+        "ShinyGenerator",
+        "VoidGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild",
+        "BlueBuild",
+        "RedBuild",
+        "ShinyBuild",
+        "VoidBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Automobile",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Avocado",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Axe",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BabyBottle",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "BlankBuild"
+      ],
+      "dependency_tags": [
+        "BlankGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlankBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Backpack",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "ChessGenerator",
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "ChessGenerator",
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Bank",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CashBuild",
+        "CurrencyGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild",
+        "CurrencyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BarChart",
       "overrides": [
         "ApplyStartOfGridEffect",
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BarOfSoap",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ConsumableBuild",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BaseCamp",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BeamMeUp",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Beefeater",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BentoBox",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "BlankBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlankBuild"
+      ],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Bicycle",
       "overrides": [
         "ApplyStartOfGridEffect",
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "CardsGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "CardsGenerator"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BigBang",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BirthdayCake",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild"
+      ],
+      "dependency_tags": [
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BlackHole",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "VoidBuild",
+        "VoidGenerator"
+      ],
+      "dependency_tags": [
+        "VoidGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild",
+        "VoidGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BlessingOfTheFairies",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BlessingOfTheShopkeeper",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Blueberries",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "BlueBuild"
+      ],
+      "dependency_tags": [
+        "BlueGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Bomb",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "VoidBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Bone",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Boomerang",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild"
+      ],
+      "dependency_tags": [
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Brain",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild"
+      ],
+      "dependency_tags": [
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Brick",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Briefcase",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Broom",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CurseBuild"
+      ],
+      "dependency_tags": [
+        "CurseGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CurseBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Bucket",
       "overrides": [
         "ApplyStartOfGridEffect",
         "StartOfEncounterSetUp"
-      ]
+      ],
+      "tags": [
+        "CurseBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CurseBuild"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Builder",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BunchOfGrapes",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "BlankBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlankBuild"
+      ],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Burrito",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ScatteredItemsBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ScatteredItemsBuild"
+      ],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BusinessGoose",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ChessBuild"
+      ],
+      "dependency_tags": [
+        "ChessGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "BusySchedule",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild",
+        "BigNumbersBuild"
+      ],
+      "dependency_tags": [
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild",
+        "BigNumbersBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CableCar",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "ScatteredItemsBuild"
+      ],
+      "dependency_tags": [
+        "ItemScatterer"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ScatteredItemsBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Candle",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CashBuild",
+        "VoidBuild",
+        "CashGenerator"
+      ],
+      "dependency_tags": [
+        "VoidGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild",
+        "VoidBuild",
+        "CashGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CanOfBeans",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "RainbowBuild",
+        "ShinyBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild",
+        "ShinyBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CardShark",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CarouselHorse",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "ChessGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "ChessGenerator"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CarpStreamers",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "BlueBuild",
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "BlueBuild",
+        "RainbowBuild"
+      ],
+      "function_tags": [],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Cartwheeler",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "BlankBuild",
+        "VoidBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlankBuild",
+        "VoidBuild"
+      ],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Castle",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ChessBuild"
+      ],
+      "dependency_tags": [
+        "ChessGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CelestialBody",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Champagne",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "ChequeredFlag",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Cherries",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CherryPie",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "ChessBoard",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "VoidBuild",
+        "VoidGenerator",
+        "RainbowBuild",
+        "RedGenerator",
+        "BlueGenerator",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild",
+        "VoidGenerator",
+        "RainbowBuild",
+        "RedGenerator",
+        "BlueGenerator",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "ChessStrategyGuide",
       "overrides": [
         "ApplyStartOfGridEffect",
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "ChessGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "ChessGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Chick",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Chips",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "ChocolateCandy",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild",
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild",
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "ChristmasTree",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CircusTent",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild",
+        "RedBuild",
+        "BlueBuild"
+      ],
+      "dependency_tags": [
+        "BlueGenerator",
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild",
+        "RedBuild",
+        "BlueBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "ClapperBoard",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ChessBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Cocktail",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CoinPurse",
       "overrides": [
         "ApplyStartOfGridEffect",
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild",
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild",
+        "CashBuild"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "ConfettiItem",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild"
+      ],
+      "dependency_tags": [
+        "BlueGenerator",
+        "RedGenerator",
+        "ShinyGenerator",
+        "VoidGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CreakyChair",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CurseBuild"
+      ],
+      "dependency_tags": [
+        "CurseGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CurseBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CreditCard",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CrystalBall",
       "overrides": [
         "ApplyStartOfGridEffect",
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CurseBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CurseBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "CursedVHS",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CurseBuild",
+        "CurseGenerator",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CurseBuild",
+        "CurseGenerator",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Dagger",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ChessBuild"
+      ],
+      "dependency_tags": [
+        "ChessGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Dancer",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "ChessGenerator",
+        "CardsBuild",
+        "CardsGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "ChessGenerator",
+        "CardsBuild",
+        "CardsGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "DangerousSummit",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "VoidBuild",
+        "VoidGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild",
+        "VoidGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Dango",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "RedBuild",
+        "ShinyBuild",
+        "VoidBuild",
+        "RainbowBuild"
+      ],
+      "dependency_tags": [
+        "BlueGenerator",
+        "RedGenerator",
+        "ShinyGenerator",
+        "VoidGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "RedBuild",
+        "ShinyBuild",
+        "VoidBuild",
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Dartboard",
       "overrides": [
         "ApplyTileBonus",
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "DeepSeaHorror",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "VoidBuild",
+        "VoidGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild",
+        "VoidGenerator"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": true
     },
     {
       "name": "DeliveryTruck",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "ConsumableBuild",
+        "ScatteredItemsBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild",
+        "ScatteredItemsBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Departures",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "DivingMask",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Diya",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Doughnut",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Dove",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "CashGenerator"
+      ],
+      "dependency_tags": [
+        "ChessGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "CashGenerator"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "DownwardTrendingChart",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Dragon",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "DustyCoffin",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "VoidBuild"
+      ],
+      "dependency_tags": [
+        "VoidGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Eclipse",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "VoidBuild",
+        "VoidGenerator",
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild",
+        "VoidGenerator",
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "EfficientRecycler",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Egg",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "EightBall",
       "overrides": [
         "ApplyTileBonus",
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ChessBuild"
+      ],
+      "dependency_tags": [
+        "ChessGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "ElectricGuitar",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "EmptyJar",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Eraser",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "ErrorItem",
       "overrides": [
         "ApplyTileBonus",
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "EruptingVolcano",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FallingLeaf",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FamilyTicket",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Fan",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [
+        "ShinyGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FerrisWheel",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator",
+        "ShinyGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FilingCabinet",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "dependency_tags": [
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator",
+        "ShinyGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FireExtinguisher",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ColourlessBuild",
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ColourlessBuild",
+        "RedBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Fireworks",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FishCake",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "ShinyBuild"
+      ],
+      "dependency_tags": [
+        "ShinyGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ShinyBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Flamingo",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "ShinyBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ShinyBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FlashyFountainPen",
       "overrides": [
         "ApplyStartOfGridEffect",
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FleurDeLis",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "BlueBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator",
+        "BlueGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "BlueBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FoodPoisoning",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CurseBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CurseBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Footprints",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ChessBuild"
+      ],
+      "dependency_tags": [
+        "ChessGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FortuneCookie",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Fountain",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "BlueGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "BlueGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FourLeafClover",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FractionFrog",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ConsumableBuild",
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild",
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Frankenstein",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": true
     },
     {
       "name": "FriedShrimp",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FullBattery",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild"
+      ],
+      "dependency_tags": [
+        "NumbersBuild"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FullMoon",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "WordEntryManipulation",
+        "BlankBuild",
+        "ChessBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "WordEntryManipulation",
+        "BlankBuild",
+        "ChessBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "FutureFunds",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "CashBuild",
+        "CashGenerator"
+      ],
+      "dependency_tags": [
+        "CashGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild",
+        "CashGenerator"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "GamePad",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueGenerator",
+        "RedGenerator",
+        "VoidBuild",
+        "VoidGenerator",
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueGenerator",
+        "RedGenerator",
+        "VoidBuild",
+        "VoidGenerator",
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Genie",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Ghost",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CurseBuild",
+        "CurseGenerator"
+      ],
+      "dependency_tags": [
+        "ArrowGenerator",
+        "BlankGenerator",
+        "CurseGenerator",
+        "ChessGenerator",
+        "NumbersGenerator",
+        "BlankGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CurseBuild",
+        "CurseGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Giraffe",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "GlassOfMilk",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "BlankBuild"
+      ],
+      "dependency_tags": [
+        "BlankGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlankBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "GlobeTrotter",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CashBuild",
+        "CashGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild",
+        "CashGenerator"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "GoFish",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "BlueBuild",
+        "BlueGenerator",
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "BlueBuild",
+        "BlueGenerator",
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "GoldenRecord",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "GoldenScales",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CashBuild",
+        "CashGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild",
+        "CashGenerator"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "GoldFish",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CashBuild",
+        "ConsumableBuild",
+        "CashGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild",
+        "ConsumableBuild",
+        "CashGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Gorilla",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "ChessGenerator",
+        "VoidBuild",
+        "VoidGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "ChessGenerator",
+        "VoidBuild",
+        "VoidGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "GraduationCap",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "HamSandwich",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "BlankBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlankBuild"
+      ],
+      "function_tags": [
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Hanafuda",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "HauntedHouse",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "CurseBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "CurseBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "HauntedMirror",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild",
+        "CurseBuild"
+      ],
+      "dependency_tags": [
+        "ArrowGenerator",
+        "BlankGenerator",
+        "CurseGenerator",
+        "ChessGenerator",
+        "NumbersGenerator",
+        "BlankGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild",
+        "CurseBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "HeadInTheClouds",
       "overrides": [
         "ApplyStartOfGridEffect",
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild",
+        "ChessBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild",
+        "ChessBuild"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "HeadTrauma",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "VoidBuild",
+        "VoidGenerator",
+        "BlueBuild",
+        "BlueGenerator",
+        "BlankBuild",
+        "BlankGenerator",
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild",
+        "VoidGenerator",
+        "BlueBuild",
+        "BlueGenerator",
+        "BlankBuild",
+        "BlankGenerator",
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "HeartOnFire",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "HiVisJacket",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [
+        "ConsumableGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Honeypot",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Hourglass",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "HumanHands",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "HungryHippo",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "HungrySnake",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "WordEntryManipulation"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [
+        "ChessBuild"
+      ],
+      "shop_advice_tags": [
+        "WordEntryManipulationChessBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "IDCard",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "JackOLantern",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CashBuild",
+        "CurseBuild",
+        "CashGenerator"
+      ],
+      "dependency_tags": [
+        "ArrowGenerator",
+        "BlankGenerator",
+        "CurseGenerator",
+        "ChessGenerator",
+        "NumbersGenerator",
+        "BlankGenerator"
+      ],
+      "shop_advice_additional_tags": [
+        "ArrowBuild",
+        "BlankBuild",
+        "CardsBuild",
+        "ChessBuild",
+        "NumbersBuild"
+      ],
+      "shop_advice_tags": [
+        "CashBuild",
+        "CurseBuild",
+        "CashGenerator",
+        "ArrowBuild",
+        "BlankBuild",
+        "CardsBuild",
+        "ChessBuild",
+        "NumbersBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Jellyfish",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ShinyGenerator",
+        "ShinyBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ShinyGenerator",
+        "ShinyBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "JigsawPiece",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "BlankBuild",
+        "VoidBuild"
+      ],
+      "dependency_tags": [
+        "BlankGenerator",
+        "VoidGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlankBuild",
+        "VoidBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Joker",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "CardsGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "CardsGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "JollyRoger",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "ChessGenerator",
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [
+        "ChessGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "ChessGenerator",
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "JuiceBox",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Kadomatsu",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Kangaroo",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "ChessBuild"
+      ],
+      "dependency_tags": [
+        "ChessGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Kimono",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "BlankGenerator",
+        "BlankBuild"
+      ],
+      "dependency_tags": [
+        "BlueGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "BlankGenerator",
+        "BlankBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "KingOfTheBridge",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "ChessBuild"
+      ],
+      "dependency_tags": [
+        "ChessGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild"
+      ],
+      "function_tags": [],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "KokeshiDolls",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [
+        "CurrencyGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "LabCoat",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Ladybird",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild",
+        "NumbersGenerator",
+        "RedGenerator",
+        "VoidGenerator",
+        "RedBuild",
+        "VoidBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild",
+        "NumbersGenerator",
+        "RedGenerator",
+        "VoidGenerator",
+        "RedBuild",
+        "VoidBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "LasVegas",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "LeftHumanHand",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Limnophila",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Lipstick",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Lollipop",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "LuckyDice",
       "overrides": [
         "ApplyWordBonus",
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "LuckyScarf",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "LuffingJibCrane",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MagiciansHat",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "VoidBuild"
+      ],
+      "dependency_tags": [
+        "VoidGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "VoidBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MagicWand",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ShinyBuild",
+        "RainbowBuild",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [
+        "BlueGenerator",
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ShinyBuild",
+        "RainbowBuild",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Magnet",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "NumbersBuild"
+      ],
+      "dependency_tags": [
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MahjongRedDragon",
       "overrides": [
         "ApplyTileBonus",
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "RedGenerator",
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "RedGenerator",
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MapleLeaf",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Maracas",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild",
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator",
+        "ShinyGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild",
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Martini",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MichaelsBook",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CurseBuild",
+        "BlankBuild"
+      ],
+      "dependency_tags": [
+        "CurseGenerator",
+        "BlankGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CurseBuild",
+        "BlankBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Microphone",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Microscope",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MilkyWay",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "VoidBuild",
+        "RainbowBuild",
+        "ShinyBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild",
+        "RainbowBuild",
+        "ShinyBuild"
+      ],
+      "function_tags": [],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MirrorBall",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "BlankBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlankBuild"
+      ],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MischievousImp",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CurseBuild"
+      ],
+      "dependency_tags": [
+        "ArrowGenerator",
+        "BlankGenerator",
+        "CardsGenerator",
+        "ChessGenerator",
+        "CurseGenerator",
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [
+        "ArrowBuild",
+        "BlankBuild",
+        "CardsBuild",
+        "ChessBuild",
+        "NumbersBuild"
+      ],
+      "shop_advice_tags": [
+        "CurseBuildArrowBuild BlankBuild CardsBuild ChessBuild NumbersBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Moai",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "CurseBuild",
+        "ColourlessBuild"
+      ],
+      "dependency_tags": [
+        "ArrowGenerator",
+        "BlankGenerator",
+        "CardsGenerator",
+        "ChessGenerator",
+        "CurseGenerator",
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [
+        "ArrowBuild",
+        "BlankBuild",
+        "CardsBuild",
+        "ChessBuild",
+        "NumbersBuild"
+      ],
+      "shop_advice_tags": [
+        "CurseBuild",
+        "ColourlessBuild",
+        "ArrowBuild",
+        "BlankBuild",
+        "CardsBuild",
+        "ChessBuild",
+        "NumbersBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MovieCamera",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ChessBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MushroomUpgrade",
       "overrides": [
         "ApplyStartOfGridEffect",
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MusicalNotes",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "CardsGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "CardsGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MutatingDNA",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MysteriousAmulet",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "CurseBuild"
+      ],
+      "dependency_tags": [
+        "ArrowGenerator",
+        "BlankGenerator",
+        "CardsGenerator",
+        "ChessGenerator",
+        "CurseGenerator",
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [
+        "ArrowBuild",
+        "BlankBuild",
+        "CardsBuild",
+        "ChessBuild",
+        "NumbersBuild"
+      ],
+      "shop_advice_tags": [
+        "CurseBuildArrowBuild BlankBuild CardsBuild ChessBuild NumbersBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "MysteryGift",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": true
     },
     {
       "name": "Neapolitan",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "NestEgg",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "CashBuild",
+        "CashGenerator"
+      ],
+      "dependency_tags": [
+        "BlueGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "CashBuild",
+        "CashGenerator"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "NewEruptingVolcano",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Newspaper",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ColourlessBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ColourlessBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "NorthernCardinal",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "RedBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "NumberFactory",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "NumbersGenerator",
+        "NumbersBuild",
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersGenerator",
+        "NumbersBuild",
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "NumberGoUp",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "NumbersBuild",
+        "BigNumbersBuild"
+      ],
+      "dependency_tags": [
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild",
+        "BigNumbersBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "NumbersBunchOfGrapes",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "NumbersGiraffe",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild"
+      ],
+      "dependency_tags": [
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Oden",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CurseBuild"
+      ],
+      "dependency_tags": [
+        "CurseGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CurseBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Ogre",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Onigiri",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ColourlessBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ColourlessBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "OrnateKey",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "BlueBuild",
+        "VoidBuild",
+        "ShinyBuild",
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "BlueBuild",
+        "VoidBuild",
+        "ShinyBuild",
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Overhand",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "PairOfSocks",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "RainbowBuild"
+      ],
+      "dependency_tags": [
+        "BlueGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "PaperLantern",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Parachute",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": true
     },
     {
       "name": "Parrot",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ColourlessBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator",
+        "ShinyGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ColourlessBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Peacock",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Pear",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CashBuild",
+        "CardsBuild",
+        "CashGenerator"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [
+        "CardsBuild"
+      ],
+      "shop_advice_tags": [
+        "CashBuild",
+        "CardsBuild",
+        "CashGenerator"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "PeasOfAPod",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "PetriDish",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "PieceOfCake",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "PiggyBank",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ShinyGenerator",
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ShinyGenerator",
+        "CashBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Pinata",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ShinyBuild",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "PizzaSlice",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Pneumonia",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "PocketMoney",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild"
+      ],
+      "dependency_tags": [
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "PokerFace",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "PostalHorn",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "CardsGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "CardsGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Postbox",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Printer",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Queen",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "QueenBee",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "ChessGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "ChessGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "QueenOfSpades",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "VoidBuild"
+      ],
+      "dependency_tags": [
+        "VoidGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Raccoon",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "ChessGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "ChessGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Radio",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ColourlessBuild",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ColourlessBuild",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Rainbow",
       "overrides": [
         "ApplyStartOfGridEffect",
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "RainbowSprinkles",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild",
+        "ShinyGenerator",
+        "ShinyBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator",
+        "ShinyGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild",
+        "ShinyGenerator",
+        "ShinyBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "RandomAccessMemory",
       "overrides": [
         "StartOfEncounterSetUp"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Receipt",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "RedBalloon",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "RedGenerator",
+        "NumbersBuild",
+        "BigNumbersBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "RedGenerator",
+        "NumbersBuild",
+        "BigNumbersBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "RedEnvelope",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "RetroRaider",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "VoidBuild",
+        "VoidGenerator",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild",
+        "VoidGenerator",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Rex",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "function_tags": [
+        "Tech",
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "RightHumanHand",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Rollercoaster",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "RollerSkate",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CashBuild",
+        "CurrencyGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild",
+        "CurrencyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Rolodex",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Rosebud",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Ruler",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ChessBuild"
+      ],
+      "dependency_tags": [
+        "ChessGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SaguaroSeedling",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Saxophone",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "BlueBuild"
+      ],
+      "dependency_tags": [
+        "BlueGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Scissors",
       "overrides": [
         "ApplyItemToScore"
-      ]
+      ],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SequoiaSapling",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SewingNeedle",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": true
     },
     {
       "name": "ShavedIce",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Shield",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "BlueBuild"
+      ],
+      "dependency_tags": [
+        "BlueGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SignalReceiver",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "ScatteredItemsBuild"
+      ],
+      "dependency_tags": [
+        "ItemScatterer"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ScatteredItemsBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": true
     },
     {
       "name": "SillyPuppy",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SlotMachine",
       "overrides": [
         "ApplyStartOfGridEffect",
         "StartOfEncounterSetUp"
-      ]
+      ],
+      "tags": [
+        "VoidBuild",
+        "VoidGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild",
+        "VoidGenerator"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SluggishZombie",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SlySpy",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SmartShirt",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "RainbowBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator",
+        "ShinyGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Snail",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Snapshot",
@@ -1403,310 +4801,1047 @@
         "ApplyStartOfGridEffect",
         "ApplyTileBonus",
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ScatteredItemsBuild"
+      ],
+      "dependency_tags": [
+        "ItemScatterer"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ScatteredItemsBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Snowman",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CashBuild",
+        "CurrencyGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild",
+        "CurrencyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SoaringKite",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "BlueGenerator",
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "BlueGenerator",
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SpicyPepper",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SpoutingWhale",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "BlankBuild",
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "BlankBuild",
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "StackOfPancakes",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Stadium",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "StampAlbum",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ScatteredItemsBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ScatteredItemsBuild"
+      ],
+      "function_tags": [
+        "GenericAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "StampPadlock",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "StatueOfLiberty",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "BlueGenerator",
+        "BlankGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "BlueGenerator",
+        "BlankGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Steak",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ScatteredItemsBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ScatteredItemsBuild"
+      ],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Stethoscope",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "dependency_tags": [
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "StickerPadlock",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "StickingPlaster",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "dependency_tags": [
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild",
+        "NumbersGenerator"
+      ],
+      "function_tags": [
+        "SpecificAdditive",
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Stiletto",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Stilton",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "BlueBuild"
+      ],
+      "dependency_tags": [
+        "BlueGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "StormCloud",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CurseBuild",
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CurseBuild",
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Suitcase",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "ChessGenerator",
+        "BlueBuild",
+        "BlueGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "ChessGenerator",
+        "BlueBuild",
+        "BlueGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Sunflower",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SuperEight",
       "overrides": [
         "ApplyStartOfGridEffect",
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "ChessGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "ChessGenerator"
+      ],
+      "function_tags": [],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Supervillain",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CurseBuild",
+        "CurseGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CurseBuild",
+        "CurseGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "SurpriseDelivery",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Sushi",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "ColourlessBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ColourlessBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "TakeoutBox",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Teapot",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "BlueGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "BlueGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Telescope",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Television",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "dependency_tags": [
+        "ChessGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "TenPinBowling",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild",
+        "NumbersGenerator",
+        "VoidBuild",
+        "VoidGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild",
+        "NumbersGenerator",
+        "VoidBuild",
+        "VoidGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "TestTube",
-      "overrides": []
+      "overrides": [],
+      "tags": [
+        "NumbersBuild"
+      ],
+      "dependency_tags": [
+        "NumbersGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "TileNinja",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Tombstone",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "VoidBuild"
+      ],
+      "dependency_tags": [
+        "VoidGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "VoidBuild"
+      ],
+      "function_tags": [
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Toolbox",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "RedGenerator",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "RedGenerator",
+        "ScatteredItemsBuild",
+        "ItemScatterer"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "ToriiGate",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RedBuild",
+        "RedGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "TrafficLights",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "NumbersBuild",
+        "NumbersGenerator",
+        "RainbowBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "NumbersBuild",
+        "NumbersGenerator",
+        "RainbowBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "TrophyOfWealth",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "RainbowBuild",
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "RainbowBuild",
+        "CashBuild"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "SpecificAdditive"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "TwinkleToes",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "UnderConstruction",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Underhand",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Unicorn",
-      "overrides": []
+      "overrides": [],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "ValentinesDayCard",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "RedBuild"
+      ],
+      "dependency_tags": [
+        "RedGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "CardsGenerator",
+        "RedBuild"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "WadOfCash",
       "overrides": [
         "ApplyStartOfGridEffect",
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "CashBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CashBuild"
+      ],
+      "function_tags": [
+        "Scatterer",
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "WaxyVizor",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "BlueGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "BlueGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "WeeklyShop",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "ColourlessBuild",
+        "ConsumableBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ColourlessBuild",
+        "ConsumableBuild"
+      ],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Wheel",
       "overrides": [
         "ApplyStartOfGridEffect",
         "StartOfEncounterSetUp"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "Tech"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "WheezyVixen",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "WindChime",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Window",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "BlueGenerator"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "BlueGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "WorkOfArt",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "CardsBuild",
+        "RainbowBuild",
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator",
+        "ShinyGenerator"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild",
+        "RainbowBuild",
+        "RedGenerator",
+        "BlueGenerator",
+        "VoidGenerator",
+        "ShinyGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "WornOutJeans",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "BlankBuild",
+        "BlankGenerator"
+      ],
+      "dependency_tags": [
+        "BlueGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "BlankBuild",
+        "BlankGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Wrestlers",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "CardsBuild"
+      ],
+      "dependency_tags": [
+        "CardsGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "CardsBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "WrigglyWorm",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "ChessBuild",
+        "BlankBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild",
+        "BlankBuild"
+      ],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Xray",
       "overrides": [
         "ApplyStartOfGridEffect"
-      ]
+      ],
+      "tags": [
+        "BlueBuild",
+        "BlankBuild",
+        "BlankGenerator"
+      ],
+      "dependency_tags": [
+        "BlueGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlueBuild",
+        "BlankBuild",
+        "BlankGenerator"
+      ],
+      "function_tags": [
+        "Scatterer"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "YellowGlasses",
       "overrides": [
         "ApplyWordBonus"
-      ]
+      ],
+      "tags": [
+        "BlankBuild"
+      ],
+      "dependency_tags": [],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "BlankBuild"
+      ],
+      "function_tags": [
+        "GenericMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     },
     {
       "name": "Zebra",
       "overrides": [
         "ApplyTileBonus"
-      ]
+      ],
+      "tags": [
+        "ChessBuild"
+      ],
+      "dependency_tags": [
+        "ChessGenerator"
+      ],
+      "shop_advice_additional_tags": [],
+      "shop_advice_tags": [
+        "ChessBuild"
+      ],
+      "function_tags": [
+        "SpecificMultiplier"
+      ],
+      "blacklisted_from_shop_recommendations": false
     }
   ]
 }

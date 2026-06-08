@@ -1,9 +1,0 @@
-{
-  "backend": "array",
-  "source": {
-    "path": "tests\\tmp_words.txt",
-    "size": 9,
-    "mtime_ns": 1780855373158225300,
-    "sha256": "17e2c7e8de03e78294a6388383b951c61246bd1800a2116c5a34aaf02ec56c1e"
-  }
-}

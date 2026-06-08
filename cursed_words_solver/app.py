@@ -631,12 +631,6 @@ class SolverApp:
             format_shop_advice_text,
             run_shop_advisor,
         )
-        from cursed_words_solver.search_parallel import resolve_search_workers
-        from cursed_words_solver.shop_simulation import SimulationConfig
-
-        if not self._ensure_solver():
-            print("Solver not ready (dictionary failed to load).", flush=True)
-            return
 
         shop = parse_shop_from_run_state(run_state_data)
         if shop is None or not shop.offers:
@@ -654,29 +648,11 @@ class SolverApp:
             loadout.money,
             mod_money=mod_money if mod_money > 0 else None,
         )
-        print(f"Shop advisor (${loadout.money} available)...", flush=True)
+        print(f"Shop advice (${loadout.money} available)...", flush=True)
 
-        sim_config = SimulationConfig(
-            budget_sec=self.config.shop_sim_budget_sec,
-            max_boards=self.config.shop_sim_boards,
-            setup_weight=self.config.setup_weight,
-            setup_discount=self.config.setup_discount,
-            word_per_dollar=self.config.word_per_dollar,
-            monte_carlo_samples=self.config.shop_monte_carlo_samples,
-            total_budget_sec=self.config.shop_total_budget_sec,
-            search_workers=resolve_search_workers(self.config.search_workers),
-            shop_reserve_per_future_shop=self.config.shop_reserve_per_future_shop,
-            shop_marginal_net_per_remaining_shop=(
-                self.config.shop_marginal_net_per_remaining_shop
-            ),
-        )
-        sell_candidates = parse_inventory_sell(run_state_data)
         advice = run_shop_advisor(
             loadout,
             shop,
-            sell_candidates,
-            self._dictionary,
-            config=sim_config,
             on_progress=lambda msg: print(f"  {msg}", flush=True),
         )
         print(format_shop_advice_text(advice), flush=True)
