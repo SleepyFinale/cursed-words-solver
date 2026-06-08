@@ -19,6 +19,7 @@ from cursed_words_solver.consumable_placement import (
     placement_variants_fewest_first,
     placements_to_records,
     rack_requires_export,
+    rack_tile_from_entry,
     remaining_rack_tiles,
     sandy_placement_search_active,
     sandy_requires_rack_export,
@@ -243,6 +244,31 @@ def test_format_placement_path_hints_empty_when_no_match():
         )
         == ""
     )
+
+
+def test_fraction_rack_placement_uses_glyph_not_decimal():
+    entry = {
+        "rack_index": 2,
+        "letter": "0.4",
+        "char_display": "⅖",
+        "color": "colorless",
+        "curse": "fraction",
+        "base_score": 7.0,
+        "fraction_value": 0.4,
+    }
+    tile = rack_tile_from_entry(entry)
+    assert tile is not None
+    assert tile.char == "⅖"
+    records = placements_to_records([(6, tile)])
+    assert records[0].letter == "⅖"
+    assert format_placement_instructions(records) == "⅖ at row 2, col 2"
+    assert format_placement_path_hints([0, 6], records) == "First: Place ⅖ on 2"
+
+
+def test_format_placement_path_hints_decimal_fraction_dict():
+    path = [0, 6]
+    records = [{"row": 1, "col": 1, "index": 6, "letter": "0.4"}]
+    assert format_placement_path_hints(path, records) == "First: Place ⅖ on 2"
 
 
 def test_target_rescue_worth_trying_false_when_at_target():

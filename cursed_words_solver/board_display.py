@@ -9,17 +9,12 @@ from cursed_words_solver.models import (
     Tile,
     normalize_tile_glyph,
 )
-from cursed_words_solver.rules.fraction_tiles import parse_fraction_parts_from_text
+from cursed_words_solver.rules.fraction_tiles import format_fraction_tile
 
 
 def _format_tile_char(tile: Tile) -> str:
     if tile.curse == CurseType.FRACTION:
-        ch = normalize_tile_glyph(tile.char or "")
-        if ch and ch != "?":
-            return ch
-        parts = parse_fraction_parts_from_text(tile.char or tile.letter or "")
-        if parts is not None:
-            return f"{parts[0]}/{parts[1]}"
+        return format_fraction_tile(tile)
     if tile.curse == CurseType.CURRENCY:
         sym = normalize_tile_glyph(tile.char or tile.letter or "")
         if sym in CURRENCY_MAP:

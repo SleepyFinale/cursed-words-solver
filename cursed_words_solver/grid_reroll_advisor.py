@@ -24,7 +24,7 @@ def should_reroll_grid(
     loadout: Loadout,
     reroll: EncounterGridRerollState | None,
     *,
-    gap_ratio: float = 0.6,
+    gap_ratio: float = 0.3,
 ) -> bool:
     """Recommend grid reroll when score is far below estimated grid target."""
     if reroll is None:
@@ -50,7 +50,7 @@ def format_grid_reroll_reason(
     best_score: float,
     loadout: Loadout,
     *,
-    gap_ratio: float = 0.6,
+    gap_ratio: float = 0.3,
 ) -> str:
     grid_target = estimated_grid_target(loadout)
     if grid_target is None:

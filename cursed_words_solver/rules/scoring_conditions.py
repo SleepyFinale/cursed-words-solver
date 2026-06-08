@@ -1781,7 +1781,9 @@ def _endpoint_char_for_same_start_end(board: Board, idx: int, word_char: str) ->
             if raw and raw != "?":
                 disp = normalize_tile_glyph(raw)
         if not disp and tile.fraction_value is not None:
-            disp = str(tile.fraction_value)
+            from cursed_words_solver.rules.fraction_tiles import format_fraction_value
+
+            disp = format_fraction_value(tile.fraction_value)
         return disp.lower() if disp else "?"
     if tile.curse in (CurseType.NUMBER, CurseType.CURRENCY):
         disp = normalize_tile_glyph(tile.char or tile.letter or "")
@@ -2061,8 +2063,25 @@ def parse_historic_words(loadout: Loadout | None) -> list[dict]:
     return []
 
 
+def _scoring_previous_words_count(loadout: Loadout | None) -> int | None:
+    """Words already scored on this grid (melmod scoring cache, not encounter historic)."""
+    if not loadout:
+        return None
+    raw = (loadout.extras or {}).get("scoring_previous_words_count")
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+
+
 def encounter_red_tiles_before_current_word(loadout: Loadout | None) -> int:
     """RED tiles from prior submitted words this encounter (Telescope historic list)."""
+    if loadout is not None:
+        prev_on_grid = _scoring_previous_words_count(loadout)
+        if grid_number(loadout) == 1 and prev_on_grid == 0:
+            return 0
     historic = parse_historic_words(loadout)
     if historic:
         total = 0
@@ -2083,7 +2102,8 @@ def telescope_running_red_count(
 ) -> int:
     """Running RED count for Telescope at path index (game: historic reds + path prefix).
 
-    First word (no historic_words): gap-separated reds on the path add +1.
+    First word (no historic_words): +1 when at least two non-red path steps
+    separate the current red from the previous red on the path.
     Later words: prior + prefix reds only (no gap bonus).
     """
     prior = encounter_red_tiles_before_current_word(loadout)
@@ -2094,15 +2114,16 @@ def telescope_running_red_count(
     )
     if parse_historic_words(loadout):
         return prior + prefix_reds
-    reds_before = sum(
-        1
-        for j in range(path_index)
-        if board.get_by_index(path[j]).color == TileColor.RED
+    last_red_idx = max(
+        (
+            j
+            for j in range(path_index)
+            if board.get_by_index(path[j]).color == TileColor.RED
+        ),
+        default=-1,
     )
-    has_gap = (
-        reds_before > 0
-        and board.get_by_index(path[path_index - 1]).color != TileColor.RED
-    )
+    non_red_gap = path_index - last_red_idx - 1
+    has_gap = last_red_idx >= 0 and non_red_gap >= 2
     return prior + prefix_reds + (1 if has_gap else 0)
 
 
@@ -2765,7 +2786,7 @@ def _evaluate_sticker_condition(
     if condition == "red_count_gte:3":
         return count_color_on_path(board, path, "red") >= 3
     if condition == "word_starts_vowel":
-        first = word_first_letter(word)
+        first = first_letter_on_path(board, path) or word_first_letter(word)
         return bool(first) and is_vowel_letter(first)
     if condition == "word_starts_ends_red":
         if not path:
@@ -4191,6 +4212,68 @@ _BURRITO_LEVEL_EXCLUDE = frozenset(
     {"burrito", "left_hand", "padlock_sticker", "snapshot"}
 )
 
+# Bosses whose FloorAdjustedModification counts voids/Qs/etc., not scatter sticker tier.
+_SCATTER_TIER_IGNORE_FLOOR_BOSSES = frozenset({"mole"})
+
+
+def _active_boss_modifier_slugs(loadout: Loadout | None) -> list[str]:
+    if loadout is None:
+        return []
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    raw = extras.get("boss_modifiers")
+    mods: list[str] = []
+    if isinstance(raw, list):
+        mods = [str(entry or "").strip().lower() for entry in raw if str(entry or "").strip()]
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                mods = [
+                    str(entry or "").strip().lower()
+                    for entry in parsed
+                    if str(entry or "").strip()
+                ]
+        except json.JSONDecodeError:
+            mods = [s.strip().lower() for s in raw.split(",") if s.strip()]
+    if not mods and loadout.boss_id:
+        mods = [str(loadout.boss_id).strip().lower()]
+    return mods
+
+
+def _scatter_tier_floor_mod(loadout: Loadout | None, grid: int) -> int:
+    """Floor reduction for scattered sticker tier (not void count / currency)."""
+    if loadout is None:
+        return max(0, grid - 1)
+    from cursed_words_solver.rules.boss_effects import _parse_boss_modifier_floor_mods
+
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    floor_mods = _parse_boss_modifier_floor_mods(loadout)
+    mods = _active_boss_modifier_slugs(loadout)
+    if floor_mods or mods:
+        reducing = 0
+        for slug in mods:
+            if slug in _SCATTER_TIER_IGNORE_FLOOR_BOSSES:
+                continue
+            reducing = max(reducing, floor_mods.get(slug, 0))
+        if reducing > 0:
+            return reducing
+        if mods and all(slug in _SCATTER_TIER_IGNORE_FLOOR_BOSSES for slug in mods):
+            return 0
+
+    raw_floor = extras.get("boss_floor_modification")
+    if raw_floor is None or raw_floor == "":
+        return max(0, grid - 1)
+    try:
+        total = max(0, int(raw_floor))
+    except (TypeError, ValueError):
+        return max(0, grid - 1)
+    boss_id = str(loadout.boss_id or "").strip().lower()
+    if boss_id in _SCATTER_TIER_IGNORE_FLOOR_BOSSES and (
+        not mods or all(slug in _SCATTER_TIER_IGNORE_FLOOR_BOSSES for slug in mods)
+    ):
+        return 0
+    return total
+
 
 def scattered_grid_item_level(loadout: Loadout | None) -> int:
     """Encounter-effective level for scattered grid stickers (grid − boss floor mod)."""
@@ -4199,16 +4282,7 @@ def scattered_grid_item_level(loadout: Loadout | None) -> int:
     grid = grid_number(loadout)
     if grid <= 0:
         grid = 1
-    extras = loadout.extras or {}
-    raw_floor = extras.get("boss_floor_modification")
-    if raw_floor is None or raw_floor == "":
-        # Matches encounters where floor mod is not exported (effective level 1).
-        floor_mod = max(0, grid - 1)
-    else:
-        try:
-            floor_mod = max(0, int(raw_floor))
-        except (TypeError, ValueError):
-            floor_mod = max(0, grid - 1)
+    floor_mod = _scatter_tier_floor_mod(loadout, grid)
     return max(1, grid - floor_mod)
 
 
@@ -4664,6 +4738,36 @@ def ensure_snapshot_copy_slug(
             return
 
 
+def _equipped_toolbox_level(loadout: Loadout | None) -> int:
+    if loadout is None or not loadout.stickers:
+        return 0
+    for sticker in loadout.stickers:
+        if str(sticker.id or "").strip().lower() != "toolbox":
+            continue
+        try:
+            return max(1, int(sticker.level))
+        except (TypeError, ValueError):
+            return 1
+    return 0
+
+
+def _toolbox_boost_applies_to_scattered(loadout: Loadout, scattered_slug: str) -> bool:
+    """Toolbox START OF GRID scatter tier on grid 1 word 1; not Snapshot copies."""
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    if _equipped_toolbox_level(loadout) <= 1:
+        return False
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    if grid_number(loadout) != 1:
+        return False
+    if _scoring_previous_words_count(loadout) != 0:
+        return False
+    copy_slug = slugify_name(str(extras.get("snapshot_copy_slug") or ""))
+    if copy_slug and copy_slug == slugify_name(scattered_slug):
+        return False
+    return True
+
+
 def grid_path_sticker_level(
     loadout: Loadout | None,
     slug: str,
@@ -4685,7 +4789,8 @@ def grid_path_sticker_level(
     from cursed_words_solver.rules.rule_lookup import slugify_name
 
     slug_norm = slugify_name(slug)
-    level = scattered_grid_item_level(loadout)
+    encounter_level = scattered_grid_item_level(loadout)
+    level = encounter_level
     tile_level_known = False
 
     if board is not None and path is not None and path_tile_index is not None:
@@ -4694,8 +4799,10 @@ def grid_path_sticker_level(
             raw = (tile.metadata or {}).get("scattered_item_level")
             if raw is not None:
                 try:
-                    level = max(1, int(raw))
+                    tile_lv = max(1, int(raw))
                     tile_level_known = True
+                    # Melmod exports component upgrade level; encounter grid tier can be higher.
+                    level = max(tile_lv, encounter_level)
                 except (TypeError, ValueError):
                     pass
 
@@ -4740,6 +4847,31 @@ def grid_path_sticker_level(
         return max(2, grid_path_encounter_level(loadout))
     if loadout is not None and str(loadout.boss_id or "").strip().lower() == "badger":
         level = max(level, grid_number(loadout))
+    if (
+        board is not None
+        and path is not None
+        and path_tile_index is not None
+        and 0 <= path_tile_index < len(path)
+        and loadout is not None
+    ):
+        tile = board.get_by_index(path[path_tile_index])
+        scattered_id = str((tile.metadata or {}).get("scattered_item_id") or "").strip()
+        if (
+            scattered_id
+            and tile_level_known
+            and level == 1
+            and _toolbox_boost_applies_to_scattered(loadout, scattered_id)
+        ):
+            level = max(level, _equipped_toolbox_level(loadout))
+    if loadout is not None and loadout.stickers:
+        for sticker in loadout.stickers:
+            if slugify_name(str(sticker.id or "")) != slug_norm:
+                continue
+            try:
+                level = max(level, max(1, int(sticker.level)))
+            except (TypeError, ValueError):
+                pass
+            break
     return level
 
 

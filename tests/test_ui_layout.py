@@ -1,5 +1,9 @@
 """Tests for melmod ui_layout overlay region resolution."""
 
+import json
+
+import pytest
+
 from cursed_words_solver.config import AppConfig, Region
 from cursed_words_solver.ui.layout import (
     describe_overlay_source,
@@ -64,7 +68,8 @@ def test_resolve_prefers_melmod_over_config():
     regions = resolve_overlay_regions(run_state, config)
     assert regions.source == "melmod"
     assert regions.board.width == 700
-    assert regions.rack.x == 2400
+    assert regions.rack.width == 304
+    assert len(regions.rack_slot_centers or {}) == 5
 
 
 def test_resolve_falls_back_to_config():
@@ -115,7 +120,7 @@ def test_describe_overlay_source_melmod():
     assert "700×700" in text
     assert "1 cells" in text
     assert "rack" in text
-    assert "1 rack slots" in text
+    assert "5 rack slots" in text
 
 
 def test_ui_layout_export_status_from_diagnostics():
@@ -229,3 +234,226 @@ def test_rack_region_fits_rightmost_marker():
     assert markers[0].x + radius <= regions.rack.width
     assert markers[0].y - radius >= 0
     assert markers[0].y + radius <= regions.rack.height
+
+
+def _degenerate_board_cells():
+    """25 cell centers spanning a normal 5×5 grid (modeled on a corrupt 6×5 export)."""
+    cells = []
+    for row in range(5):
+        for col in range(5):
+            cells.append(
+                {
+                    "row": row,
+                    "col": col,
+                    "index": row * 5 + col,
+                    "x": 687 + col * 135,
+                    "y": 183 + row * 135,
+                }
+            )
+    return cells
+
+
+def test_parse_ui_layout_repairs_degenerate_board_rect():
+    run_state = {
+        "ui_layout": {
+            "board": {
+                "x": 691,
+                "y": 717,
+                "width": 6,
+                "height": 5,
+                "cells": _degenerate_board_cells(),
+            }
+        }
+    }
+    parsed = parse_ui_layout(run_state)
+    assert parsed is not None
+    assert parsed.board_region_repaired is True
+    assert parsed.board.width >= 200
+    assert parsed.board.height >= 200
+    assert parsed.board.width > 540 + 40
+    assert parsed.board.height > 540 + 40
+    assert len(parsed.board_cell_centers or {}) == 25
+    assert parsed.board_cell_centers[0] == (687.0, 183.0)
+    assert parsed.board_cell_centers[24] == (687.0 + 4 * 135, 183.0 + 4 * 135)
+
+
+def test_parse_ui_layout_keeps_valid_board_rect():
+    run_state = {
+        "ui_layout": {
+            "board": {
+                "x": 620,
+                "y": 119,
+                "width": 673,
+                "height": 668,
+                "cells": _degenerate_board_cells(),
+            }
+        }
+    }
+    parsed = parse_ui_layout(run_state)
+    assert parsed is not None
+    assert parsed.board_region_repaired is False
+    assert parsed.board == Region(620, 119, 673, 668)
+
+
+def test_board_region_includes_marker_margin():
+    """Tight cell-center bbox must grow enough that corner markers are not clipped."""
+    cells = _degenerate_board_cells()
+    run_state = {
+        "ui_layout": {
+            "board": {
+                "x": 693,
+                "y": 186,
+                "width": 534,
+                "height": 535,
+                "cells": cells,
+            }
+        }
+    }
+    parsed = parse_ui_layout(run_state)
+    assert parsed is not None
+    br = parsed.board
+    centers = parsed.board_cell_centers or {}
+    min_inset = 36
+    for idx in (0, 4, 20, 24):
+        cx, cy = centers[idx]
+        assert cx - br.x >= min_inset, f"cell {idx} too close to left edge"
+        assert cy - br.y >= min_inset, f"cell {idx} too close to top edge"
+        assert (br.x + br.width) - cx >= min_inset, f"cell {idx} too close to right edge"
+        assert (br.y + br.height) - cy >= min_inset, f"cell {idx} too close to bottom edge"
+
+
+def test_rack_slots_shifted_down_are_corrected():
+    run_state = {
+        "ui_layout": {
+            "board": {"x": 0, "y": 0, "width": 100, "height": 100},
+            "consumable_rack": {
+                "x": 1579,
+                "y": 532,
+                "width": 281,
+                "height": 48,
+                "rack_slots": [
+                    {
+                        "rack_index": i,
+                        "x": 1604 + i * 58,
+                        "y": 726,
+                        "width": 48,
+                        "height": 48,
+                    }
+                    for i in range(5)
+                ],
+            },
+        }
+    }
+    parsed = parse_ui_layout(run_state)
+    assert parsed is not None
+    assert parsed.rack_slot_corrected is True
+    assert parsed.rack_slot_centers is not None
+    for _idx, (_x, y) in parsed.rack_slot_centers.items():
+        assert abs(y - 556.0) < 1.0
+    rack_mid = parsed.rack.y + parsed.rack.height / 2.0
+    assert abs(rack_mid - 556.0) < 80.0
+
+
+def _good_rack_block():
+    return {
+        "x": 1579,
+        "y": 532,
+        "width": 281,
+        "height": 48,
+        "slot_count": 5,
+        "rack_slots": [
+            {
+                "rack_index": i,
+                "x": 1604 + i * 58,
+                "y": 556,
+                "width": 48,
+                "height": 48,
+            }
+            for i in range(5)
+        ],
+    }
+
+
+def _collapsed_rack_block():
+    return {
+        "x": 1565,
+        "y": 697,
+        "width": 58,
+        "height": 58,
+        "slot_count": 5,
+        "rack_slots": [
+            {
+                "rack_index": i,
+                "x": 1594,
+                "y": 726,
+                "width": 57,
+                "height": 57,
+            }
+            for i in range(5)
+        ],
+    }
+
+
+def test_degenerate_rack_detected():
+    run_state = {
+        "ui_layout": {
+            "board": {"x": 0, "y": 0, "width": 100, "height": 100},
+            "consumable_rack": _collapsed_rack_block(),
+        }
+    }
+    parsed = parse_ui_layout(run_state)
+    assert parsed is None or parsed.rack_slot_centers is None or parsed.rack_slot_corrected
+
+
+def test_synthesize_slots_from_wide_rack_block():
+    block = {
+        "x": 1579,
+        "y": 532,
+        "width": 281,
+        "height": 48,
+        "slot_count": 5,
+        "rack_slots": [
+            {"rack_index": i, "x": 1594, "y": 726, "width": 48, "height": 48}
+            for i in range(5)
+        ],
+    }
+    run_state = {
+        "ui_layout": {
+            "board": {"x": 0, "y": 0, "width": 100, "height": 100},
+            "consumable_rack": block,
+        }
+    }
+    parsed = parse_ui_layout(run_state)
+    assert parsed is not None
+    assert parsed.rack_slot_corrected is True
+    assert parsed.rack_slot_centers is not None
+    xs = sorted(x for x, _ in parsed.rack_slot_centers.values())
+    assert xs[-1] - xs[0] >= 200
+    for _idx, (_x, y) in parsed.rack_slot_centers.items():
+        assert abs(y - 556.0) < 2.0
+
+
+def test_degenerate_collapsed_rack_uses_cache(tmp_path, monkeypatch):
+    cache_path = tmp_path / "last_good_rack_layout.json"
+    cache_path.write_text(
+        json.dumps({"consumable_rack": _good_rack_block()}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cursed_words_solver.ui.layout.LAST_GOOD_RACK_LAYOUT_PATH",
+        cache_path,
+    )
+    run_state = {
+        "ui_layout": {
+            "board": {"x": 0, "y": 0, "width": 100, "height": 100},
+            "consumable_rack": _collapsed_rack_block(),
+        }
+    }
+    parsed = parse_ui_layout(run_state)
+    assert parsed is not None
+    assert parsed.rack_layout_collapsed is True
+    assert parsed.rack_slot_corrected is True
+    assert parsed.rack_slot_centers is not None
+    assert parsed.rack.width >= 200
+    for _idx, (_x, y) in parsed.rack_slot_centers.items():
+        assert abs(y - 556.0) < 2.0

@@ -36,14 +36,14 @@ def test_should_reroll_when_below_target_gap():
         money=10,
         extras={"encounter_remaining_target": "100", "grids_remaining": "2"},
     )
-    assert should_reroll_grid(20.0, loadout, _reroll(), gap_ratio=0.6) is True
+    assert should_reroll_grid(10.0, loadout, _reroll(), gap_ratio=0.3) is True
 
 
 def test_should_not_reroll_when_score_meets_target():
     loadout = Loadout(
         extras={"encounter_remaining_target": "100", "grids_remaining": "2"},
     )
-    assert should_reroll_grid(60.0, loadout, _reroll(), gap_ratio=0.6) is False
+    assert should_reroll_grid(20.0, loadout, _reroll(), gap_ratio=0.3) is False
 
 
 def test_should_not_reroll_without_budget():
@@ -52,7 +52,7 @@ def test_should_not_reroll_without_budget():
         extras={"encounter_remaining_target": "100", "grids_remaining": "2"},
     )
     assert should_reroll_grid(
-        10.0, loadout, _reroll(cost_per_use=1, wheel_equipped=True), gap_ratio=0.6
+        10.0, loadout, _reroll(cost_per_use=1, wheel_equipped=True), gap_ratio=0.3
     ) is False
 
 
@@ -61,10 +61,10 @@ def test_should_not_reroll_when_cannot_reroll():
         extras={"encounter_remaining_target": "100", "grids_remaining": "2"},
     )
     assert should_reroll_grid(
-        10.0, loadout, _reroll(can_reroll=False), gap_ratio=0.6
+        10.0, loadout, _reroll(can_reroll=False), gap_ratio=0.3
     ) is False
 
 
 def test_should_not_reroll_without_encounter_target():
     loadout = Loadout(extras={"grids_remaining": "2"})
-    assert should_reroll_grid(10.0, loadout, _reroll(), gap_ratio=0.6) is False
+    assert should_reroll_grid(10.0, loadout, _reroll(), gap_ratio=0.3) is False

@@ -70,6 +70,7 @@ namespace CursedWordsSolverCompanion
             {
                 ["grid_number"] = liveGrid.ToString(),
                 ["encounter_historic_source"] = "grid_advanced",
+                ["previous_word_first_letter"] = "",
             };
 
             var redUsed = RunStateExporter.TryGetRedTilesUsedEncounterPublic(player);
@@ -80,16 +81,22 @@ namespace CursedWordsSolverCompanion
             foreach (var kv in keys)
                 fallback[kv.Key] = kv.Value ?? "";
 
-            var diskHistoric = RunStateExporter.TryReadRunStateExtra("historic_words");
-            if (!string.IsNullOrEmpty(diskHistoric) && diskHistoric != "[]")
-                fallback["historic_words"] = diskHistoric;
-
             var built = BuildBestHistoricExtras(player, fallback);
             if (built != null)
             {
                 foreach (var kv in built)
                     keys[kv.Key] = kv.Value ?? "";
             }
+
+            TryMergeCachedEncounterHistoricIntoKeys(keys, player, liveGrid);
+
+            string mergedHistoric;
+            if (
+                !keys.TryGetValue("historic_words", out mergedHistoric)
+                || string.IsNullOrEmpty(mergedHistoric)
+                || mergedHistoric == "[]"
+            )
+                keys["historic_words"] = "";
 
             ApplyScoringCachedPreviousWordLetter(keys);
             RunStateExporter.TryMergeExtrasKeys(keys);
@@ -156,6 +163,11 @@ namespace CursedWordsSolverCompanion
             FillFutureProofTierA(snapshot, player);
             FillBossParams(snapshot, player);
             RunStateExporter.FillSnapshotCopyExtras(snapshot, player);
+            if (player != null)
+            {
+                snapshot.extras["loadout_fingerprint"] =
+                    FingerprintUtil.ComputeLoadoutFingerprint(player);
+            }
         }
 
         public static void AppendEncounterFingerprint(StringBuilder sb, Player player)
@@ -480,6 +492,12 @@ namespace CursedWordsSolverCompanion
             var built = BuildBestHistoricExtras(player, fallbackExtras);
             if (built == null || built.Count == 0)
             {
+                if (TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
+                {
+                    ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
+                    return;
+                }
+
                 if (ShouldClearEncounterHistoricOnEmptyExport(snapshot))
                     ClearStaleEncounterHistoricExtras(snapshot, player, "live_empty");
                 return;
@@ -514,8 +532,80 @@ namespace CursedWordsSolverCompanion
 
             foreach (var kv in built)
                 snapshot.extras[kv.Key] = kv.Value ?? "";
+
+            string liveHistoric;
+            if (
+                !snapshot.extras.TryGetValue("historic_words", out liveHistoric)
+                || string.IsNullOrEmpty(liveHistoric)
+                || liveHistoric == "[]"
+            )
+            {
+                if (TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
+                {
+                    ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
+                    return;
+                }
+            }
+
             ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
             snapshot.extras["encounter_historic_source"] = "live";
+        }
+
+        private static bool TryApplyCachedEncounterHistoricToSnapshot(
+            RunStateSnapshot snapshot,
+            Player player,
+            string source = "live_cache"
+        )
+        {
+            if (snapshot?.extras == null || player == null)
+                return false;
+
+            var grid = ResolveGridNumber(player);
+            if (grid < 2)
+                return false;
+
+            var cached = RunStateExporter.GetCachedPreviousWords();
+            if (cached == null || cached.Count == 0)
+                return false;
+
+            var telescope = BuildTelescopeEncounterExtras(cached, player);
+            if (telescope == null || telescope.Count == 0)
+                return false;
+
+            foreach (var kv in telescope)
+                snapshot.extras[kv.Key] = kv.Value ?? "";
+            snapshot.extras["encounter_historic_source"] = source;
+            return true;
+        }
+
+        private static void TryMergeCachedEncounterHistoricIntoKeys(
+            Dictionary<string, string> keys,
+            Player player,
+            int liveGrid
+        )
+        {
+            if (keys == null || player == null || liveGrid < 2)
+                return;
+
+            string existingHistoric;
+            if (
+                keys.TryGetValue("historic_words", out existingHistoric)
+                && !string.IsNullOrEmpty(existingHistoric)
+                && existingHistoric != "[]"
+            )
+                return;
+
+            var cached = RunStateExporter.GetCachedPreviousWords();
+            if (cached == null || cached.Count == 0)
+                return;
+
+            var telescope = BuildTelescopeEncounterExtras(cached, player);
+            if (telescope == null || telescope.Count == 0)
+                return;
+
+            foreach (var kv in telescope)
+                keys[kv.Key] = kv.Value ?? "";
+            keys["encounter_historic_source"] = "live_cache";
         }
 
         /// <summary>
@@ -574,11 +664,34 @@ namespace CursedWordsSolverCompanion
             var cacheCount = scoringPrevious != null ? scoringPrevious.Count : 0;
             extras["scoring_previous_words_count"] = cacheCount.ToString();
             if (scoringPrevious == null || scoringPrevious.Count == 0)
+            {
+                ClearGridOneStaleEncounterHistoric(extras);
                 return;
+            }
 
             var prev = ScoringContextCapture.FirstLetterFromHistoricWords(scoringPrevious);
             if (!string.IsNullOrEmpty(prev))
                 extras["previous_word_first_letter"] = prev;
+        }
+
+        /// <summary>
+        /// Grid 1 with no scoring-cache prior: encounter historic in export is stale for Telescope.
+        /// </summary>
+        internal static void ClearGridOneStaleEncounterHistoric(Dictionary<string, string> extras)
+        {
+            if (extras == null)
+                return;
+
+            int gridNum;
+            if (!extras.TryGetValue("grid_number", out var gridRaw)
+                || string.IsNullOrWhiteSpace(gridRaw)
+                || !int.TryParse(gridRaw.Trim(), out gridNum)
+                || gridNum != 1)
+                return;
+
+            extras.Remove("historic_words");
+            extras.Remove("red_tiles_used_encounter");
+            extras["encounter_historic_source"] = "grid1_no_scoring_cache";
         }
 
         private static readonly Regex HistoricFontTagRegex = new Regex(
@@ -688,7 +801,7 @@ namespace CursedWordsSolverCompanion
             var diskCount = CountHistoricWordsInJson(diskHistoric);
 
             if (liveCount == 0 && diskCount > 0)
-                return true;
+                return false;
 
             if (diskCount > liveCount)
                 return true;
@@ -763,18 +876,25 @@ namespace CursedWordsSolverCompanion
             }
             else
             {
-                var diskPrev = RunStateExporter.TryReadRunStateExtra(
-                    "previous_word_first_letter"
-                );
-                if (!string.IsNullOrEmpty(diskPrev))
+                var diskGridRaw = RunStateExporter.TryReadRunStateExtra("grid_number");
+                var diskGrid = TryParseGridNumber(diskGridRaw);
+                if (diskGrid < 2)
                 {
-                    string curPrev;
-                    if (
-                        !fallback.TryGetValue("previous_word_first_letter", out curPrev)
-                        || string.IsNullOrEmpty(curPrev)
-                    )
-                        fallback["previous_word_first_letter"] = diskPrev;
+                    var diskPrev = RunStateExporter.TryReadRunStateExtra(
+                        "previous_word_first_letter"
+                    );
+                    if (!string.IsNullOrEmpty(diskPrev))
+                    {
+                        string curPrev;
+                        if (
+                            !fallback.TryGetValue("previous_word_first_letter", out curPrev)
+                            || string.IsNullOrEmpty(curPrev)
+                        )
+                            fallback["previous_word_first_letter"] = diskPrev;
+                    }
                 }
+                else
+                    fallback.Remove("previous_word_first_letter");
             }
 
             var diskRed = RunStateExporter.TryReadRunStateExtra("red_tiles_used_encounter");
@@ -824,6 +944,10 @@ namespace CursedWordsSolverCompanion
 
             snapshot.extras.Remove("historic_words");
             snapshot.extras.Remove("red_tiles_used_encounter");
+
+            var grid = ResolveGridNumber(player);
+            if (grid >= 2)
+                snapshot.extras.Remove("previous_word_first_letter");
 
             var redUsed = RunStateExporter.TryGetRedTilesUsedEncounterPublic(player);
             if (redUsed >= 0)
@@ -1030,13 +1154,17 @@ namespace CursedWordsSolverCompanion
             var fromCached = RunStateExporter.GetCachedPreviousWords();
             var playerCount = fromPlayer != null ? fromPlayer.Count : 0;
             var cachedCount = fromCached != null ? fromCached.Count : 0;
+            var grid = ResolveGridNumber(player);
+
+            if (grid >= 2 && cachedCount > 0 && playerCount == 0)
+                return fromCached;
 
             // Submit-hook cache can list prior-grid words when live reflection reset (grid advance
             // clears cache in TryClearStaleHistoricCacheOnGridAdvance). When playerCount > 0 but
             // cache is longer, reflection is lagging the last scored word — prefer cache.
             if (cachedCount > playerCount)
             {
-                if (playerCount == 0)
+                if (playerCount == 0 && grid < 2)
                     return null;
                 return fromCached;
             }

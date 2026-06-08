@@ -20,7 +20,12 @@ from cursed_words_solver.game_shop.types import (
 )
 from cursed_words_solver.game_shop.utility_advice import high_priority_utility_advice
 from cursed_words_solver.models import Loadout, LoadoutItem, ShopOffer, ShopState
-from cursed_words_solver.shop_advisor import run_shop_advisor
+from cursed_words_solver.shop_advisor import (
+    advice_data_to_shop_advice,
+    format_shop_advice_html,
+    format_shop_advice_text,
+    run_shop_advisor,
+)
 
 
 def _item(
@@ -90,39 +95,126 @@ def test_recommends_blue_scatter_when_missing():
 
 
 def test_freeze_when_unaffordable():
-    inventory = [_item("blueberries")]
-    shop_items = [_item("april_shower", index=0, price=20)]
-    ctx = ShopAdviceContext(
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="blueberries", name="Blueberries")],
+        stamps=[],
         money=5,
-        sticker_count=1,
-        stamp_count=1,
-        tile_count=0,
-        inventory=inventory,
-        shop_items=shop_items,
-        shop_tiles=[],
+    )
+    shop = ShopState(
         restock_cost=2,
-        free_item_available=False,
+        offers=[
+            ShopOffer(
+                slot="sticker",
+                index=0,
+                id="april_shower",
+                name="April Shower",
+                price=20,
+            )
+        ],
     )
-    advice = compute_shop_advice(
-        Loadout(
-            stickers=[LoadoutItem(id="blueberries", name="Blueberries")],
-            stamps=[],
-            money=5,
-        ),
-        ShopState(
-            restock_cost=2,
-            offers=[
-                ShopOffer(
-                    slot="sticker",
-                    index=0,
-                    id="april_shower",
-                    name="April Shower",
-                    price=20,
-                )
-            ],
-        ),
+    advice = compute_shop_advice(loadout, shop)
+    assert advice.should_freeze
+
+    mapped = advice_data_to_shop_advice(advice, shop, money=loadout.money)
+    assert mapped.primary_action == "freeze"
+    assert mapped.freezes
+    assert not mapped.buys
+    assert mapped.freezes[0].offer_index == 0
+    assert mapped.freezes[0].action == "freeze"
+    assert mapped.freezes[0].money_delta == -20
+    assert "you have $5" in mapped.freezes[0].reason
+    assert "need $15 more" in mapped.freezes[0].reason
+    assert "you have $5" in mapped.reason
+
+    html = format_shop_advice_html(mapped)
+    assert "Freeze" in html
+    assert "you have $5" in html
+    assert "need $15 more" in html
+
+    text = format_shop_advice_text(mapped)
+    assert "→ Freeze:" in text
+    assert "you have $5" in text
+
+
+def test_freeze_when_already_frozen():
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="blueberries", name="Blueberries")],
+        stamps=[],
+        money=5,
     )
-    assert advice.should_freeze or advice.should_restock or advice.should_leave
+    shop = ShopState(
+        restock_cost=2,
+        offers=[
+            ShopOffer(
+                slot="sticker",
+                index=0,
+                id="april_shower",
+                name="April Shower",
+                price=20,
+                frozen=True,
+            )
+        ],
+    )
+    advice = compute_shop_advice(loadout, shop)
+    mapped = advice_data_to_shop_advice(advice, shop, money=loadout.money)
+    assert mapped.freezes
+    assert "Already frozen" in mapped.freezes[0].reason
+
+
+def test_freeze_unaffordable_upgrade():
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="april_shower", name="April Shower"),
+            LoadoutItem(id="soaring_kite", name="Soaring Kite"),
+        ],
+        stamps=[],
+        money=3,
+    )
+    shop = ShopState(
+        restock_cost=2,
+        offers=[
+            ShopOffer(
+                slot="sticker",
+                index=0,
+                id="april_shower",
+                name="April Shower",
+                price=12,
+            )
+        ],
+    )
+    advice = compute_shop_advice(loadout, shop)
+    assert advice.should_freeze
+    assert advice.should_upgrade
+
+    mapped = advice_data_to_shop_advice(advice, shop, money=loadout.money)
+    assert mapped.primary_action == "freeze"
+    assert mapped.freezes
+    assert mapped.freezes[0].action == "freeze"
+    assert "upgrade" in mapped.freezes[0].label.lower()
+
+
+def test_golden_scales_freeze_when_unaffordable():
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="blueberries", name="Blueberries")],
+        stamps=[],
+        money=3,
+    )
+    shop = ShopState(
+        restock_cost=2,
+        offers=[
+            ShopOffer(
+                slot="stamp",
+                index=0,
+                id="golden_scales",
+                name="Golden Scales",
+                price=10,
+            )
+        ],
+    )
+    mapped = run_shop_advisor(loadout, shop)
+    assert mapped.primary_action == "freeze"
+    assert mapped.freezes
+    assert "freez" in mapped.reason.lower()
 
 
 def test_golden_scales_utility_advice():

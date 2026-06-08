@@ -147,6 +147,7 @@ class SearchTiming:
     setup_rank_sec: float = 0.0
     mult_rank_sec: float = 0.0
     final_score_sec: float = 0.0
+    refine_sec: float = 0.0
     score_calls: int = 0
     worker_score_calls: int = 0
     parallel_serial_fallback: bool = False
@@ -4123,9 +4124,9 @@ class WordSearcher:
             )
             timing.extend_sec = time.monotonic() - extend_start
 
-        timing.wall_sec = time.monotonic() - solve_start
+        refine_start = time.monotonic()
         self._refine_provisional_heap(board, loadout, candidates)
-        self.last_search_timing = timing
+        timing.refine_sec = time.monotonic() - refine_start
 
         best_by_word: dict[
             str, tuple[float, float, float, str, tuple[int, ...]]
@@ -4178,5 +4179,7 @@ class WordSearcher:
         timing.chess_attack_cache_hits = ch
         timing.chess_attack_cache_misses = cm
         timing.board_flat_calls = board_flat_call_count()
+        timing.wall_sec = time.monotonic() - solve_start
+        self.last_search_timing = timing
         self._active_timing = None
         return unique[:top_n]

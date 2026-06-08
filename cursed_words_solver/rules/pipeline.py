@@ -511,6 +511,52 @@ def _salamander_defer_multiply_for_mutating(loadout: Loadout) -> bool:
     return 0 < prior < 8
 
 
+def _sticker_order_index(loadout: Loadout | None, rule_id: str) -> int:
+    """Index in melmod sticker_order for finalize sort (unknown rules sort last)."""
+    if loadout is None:
+        return 999
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    raw = extras.get("sticker_order")
+    order: list[str] = []
+    if isinstance(raw, list):
+        order = [slugify_name(str(x)) for x in raw]
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                order = [slugify_name(str(x)) for x in parsed]
+        except json.JSONDecodeError:
+            pass
+    if not order and loadout.stickers:
+        order = [slugify_name(s.id or s.name) for s in loadout.stickers]
+    slug = slugify_name(rule_id)
+    try:
+        return order.index(slug)
+    except ValueError:
+        return 999
+
+
+def _sort_finalize_steps_by_sticker_order(
+    steps: list[tuple], loadout: Loadout | None
+) -> list[tuple]:
+    if len(steps) < 2 or loadout is None:
+        return steps
+    equipped = {
+        slugify_name(str(s.id or s.name))
+        for s in (loadout.stickers or [])
+    }
+    for step in steps:
+        rid = slugify_name(str(step[2]) if len(step) > 2 else "")
+        if rid not in equipped:
+            return steps
+    return sorted(
+        steps,
+        key=lambda step: _sticker_order_index(
+            loadout, str(step[2]) if len(step) > 2 else ""
+        ),
+    )
+
+
 def _apply_pending_word_finalize_steps(
     state: dict[str, Any],
     subtotal: float,
@@ -519,9 +565,11 @@ def _apply_pending_word_finalize_steps(
     steps: list[tuple] | None = None,
     multiply_tile_sum_only: bool = False,
     multiply_word_score_only: bool = False,
+    loadout: Loadout | None = None,
 ) -> float:
     """GetScoreFromScoreCalcInfo: apply queued WordBonus steps in sticker order."""
     entries = steps if steps is not None else state.get("pending_word_finalize_steps", [])
+    entries = _sort_finalize_steps_by_sticker_order(list(entries), loadout)
     if not entries:
         return subtotal
     if state.get("_wad_deferred_grid_word_mult"):
@@ -1138,6 +1186,7 @@ def _finalize(
             subtotal,
             multiply_tile_sum_only=tile_only,
             multiply_word_score_only=word_only,
+            loadout=loadout,
         )
     )
 
@@ -1212,6 +1261,7 @@ def _finalize_with_trace(
         trace=trace,
         multiply_tile_sum_only=tile_only,
         multiply_word_score_only=word_only,
+        loadout=loadout,
     )
     return float(total), []
 

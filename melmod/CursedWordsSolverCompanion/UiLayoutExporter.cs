@@ -289,7 +289,8 @@ namespace CursedWordsSolverCompanion
                     anyBounds = true;
             }
 
-            if (!anyBounds && cells.Count > 0)
+            // Always union tile centers so renderer-bounds glitches cannot collapse the rect.
+            if (cells.Count > 0)
             {
                 foreach (var cell in cells)
                 {
@@ -304,12 +305,33 @@ namespace CursedWordsSolverCompanion
             if (!anyBounds)
                 return null;
 
+            if (cells.Count >= 2)
+            {
+                var pitchX = (maxX - minX) / 4f;
+                var pitchY = (maxY - minY) / 4f;
+                if (pitchX > 1f)
+                {
+                    minX -= pitchX * 0.5f;
+                    maxX += pitchX * 0.5f;
+                }
+                if (pitchY > 1f)
+                {
+                    minY -= pitchY * 0.5f;
+                    maxY += pitchY * 0.5f;
+                }
+            }
+
+            var width = Mathf.Max(1, Mathf.CeilToInt(maxX) - Mathf.FloorToInt(minX));
+            var height = Mathf.Max(1, Mathf.CeilToInt(maxY) - Mathf.FloorToInt(minY));
+            if ((width < 100 || height < 100) && cells.Count >= 20)
+                LastStatus = "board_bounds_degenerate";
+
             return new UiBoardRectSnapshot
             {
                 x = Mathf.FloorToInt(minX),
                 y = Mathf.FloorToInt(minY),
-                width = Mathf.Max(1, Mathf.CeilToInt(maxX) - Mathf.FloorToInt(minX)),
-                height = Mathf.Max(1, Mathf.CeilToInt(maxY) - Mathf.FloorToInt(minY)),
+                width = width,
+                height = height,
                 rows = board.rows > 0 ? board.rows : 5,
                 cols = board.cols > 0 ? board.cols : 5,
                 cells = cells,
@@ -390,6 +412,61 @@ namespace CursedWordsSolverCompanion
             if (!any)
                 return null;
 
+            if (rackSlots.Count > 0)
+            {
+                var medianY = MedianSlotCenterY(rackSlots);
+                var outlierCount = 0;
+                for (var i = 0; i < rackSlots.Count; i++)
+                {
+                    var slot = rackSlots[i];
+                    if (Mathf.Abs(slot.y - medianY) > 60f)
+                    {
+                        slot.y = Mathf.RoundToInt(medianY);
+                        rackSlots[i] = slot;
+                        outlierCount++;
+                    }
+                    minX = Mathf.Min(minX, slot.x);
+                    minY = Mathf.Min(minY, slot.y);
+                    maxX = Mathf.Max(maxX, slot.x);
+                    maxY = Mathf.Max(maxY, slot.y);
+                }
+                if (outlierCount > 0)
+                    LastStatus = "rack_slot_y_outlier";
+            }
+
+            if (RackSlotHorizontalSpan(rackSlots) < 100f)
+            {
+                if (RebuildRackSlotsFromSlotTransforms(
+                    slots,
+                    slotEnd,
+                    cam,
+                    originX,
+                    originY,
+                    clientH,
+                    scaleX,
+                    scaleY,
+                    rackSlots
+                ))
+                {
+                    LastStatus = "rack_slots_collapsed";
+                    minX = float.MaxValue;
+                    minY = float.MaxValue;
+                    maxX = float.MinValue;
+                    maxY = float.MinValue;
+                    foreach (var slot in rackSlots)
+                    {
+                        minX = Mathf.Min(minX, slot.x);
+                        minY = Mathf.Min(minY, slot.y);
+                        maxX = Mathf.Max(maxX, slot.x);
+                        maxY = Mathf.Max(maxY, slot.y);
+                    }
+                }
+            }
+
+            var rackWidth = Mathf.Max(1, Mathf.CeilToInt(maxX) - Mathf.FloorToInt(minX));
+            if (rackWidth < 150 && rackSlots.Count >= 3)
+                LastStatus = string.IsNullOrEmpty(LastStatus) ? "rack_bounds_narrow" : LastStatus;
+
             return new UiRackRectSnapshot
             {
                 x = Mathf.FloorToInt(minX),
@@ -399,6 +476,153 @@ namespace CursedWordsSolverCompanion
                 slot_count = rackSlots.Count > 0 ? rackSlots.Count : slotEnd,
                 rack_slots = rackSlots,
             };
+        }
+
+        private static float MedianSlotCenterY(List<UiRackSlotSnapshot> slots)
+        {
+            if (slots == null || slots.Count == 0)
+                return 0f;
+            var ys = new float[slots.Count];
+            for (var i = 0; i < slots.Count; i++)
+                ys[i] = slots[i].y;
+            Array.Sort(ys);
+            return ys[ys.Length / 2];
+        }
+
+        private static float RackSlotHorizontalSpan(List<UiRackSlotSnapshot> slots)
+        {
+            if (slots == null || slots.Count == 0)
+                return 0f;
+            var minX = float.MaxValue;
+            var maxX = float.MinValue;
+            foreach (var slot in slots)
+            {
+                minX = Mathf.Min(minX, slot.x);
+                maxX = Mathf.Max(maxX, slot.x);
+            }
+            return maxX - minX;
+        }
+
+        private static bool RebuildRackSlotsFromSlotTransforms(
+            Transform[] slots,
+            int slotEnd,
+            Camera cam,
+            int originX,
+            int originY,
+            int clientH,
+            float scaleX,
+            float scaleY,
+            List<UiRackSlotSnapshot> rackSlots
+        )
+        {
+            if (slots == null || slots.Length == 0 || rackSlots == null)
+                return false;
+
+            rackSlots.Clear();
+            var any = false;
+            for (var i = 0; i < slotEnd && i < slots.Length; i++)
+            {
+                var slotTransform = slots[i];
+                if (slotTransform == null)
+                    continue;
+
+                if (!TryProjectTransformCenter(
+                    slotTransform,
+                    cam,
+                    originX,
+                    originY,
+                    clientH,
+                    scaleX,
+                    scaleY,
+                    out var centerX,
+                    out var centerY
+                ))
+                    continue;
+
+                any = true;
+                rackSlots.Add(
+                    new UiRackSlotSnapshot
+                    {
+                        rack_index = i,
+                        x = Mathf.RoundToInt(centerX),
+                        y = Mathf.RoundToInt(centerY),
+                        width = 48,
+                        height = 48,
+                    }
+                );
+            }
+
+            return any && RackSlotHorizontalSpan(rackSlots) >= 100f;
+        }
+
+        private static bool TryProjectTransformCenter(
+            Transform transform,
+            Camera cam,
+            int originX,
+            int originY,
+            int clientH,
+            float scaleX,
+            float scaleY,
+            out float centerX,
+            out float centerY
+        )
+        {
+            centerX = 0f;
+            centerY = 0f;
+            if (transform == null)
+                return false;
+
+            var rectTransform = transform as RectTransform;
+            if (rectTransform != null)
+            {
+                var corners = new Vector3[4];
+                rectTransform.GetWorldCorners(corners);
+                var any = false;
+                float minX = float.MaxValue;
+                float minY = float.MaxValue;
+                float maxX = float.MinValue;
+                float maxY = float.MinValue;
+
+                for (var i = 0; i < corners.Length; i++)
+                {
+                    if (!TryProjectWorldPoint(
+                        corners[i],
+                        cam,
+                        originX,
+                        originY,
+                        clientH,
+                        scaleX,
+                        scaleY,
+                        out var dx,
+                        out var dy
+                    ))
+                        continue;
+                    any = true;
+                    minX = Mathf.Min(minX, dx);
+                    minY = Mathf.Min(minY, dy);
+                    maxX = Mathf.Max(maxX, dx);
+                    maxY = Mathf.Max(maxY, dy);
+                }
+
+                if (!any)
+                    return false;
+
+                centerX = (minX + maxX) * 0.5f;
+                centerY = (minY + maxY) * 0.5f;
+                return true;
+            }
+
+            return TryProjectWorldPoint(
+                transform.position,
+                cam,
+                originX,
+                originY,
+                clientH,
+                scaleX,
+                scaleY,
+                out centerX,
+                out centerY
+            );
         }
 
         private static int ResolveConsumableSlotCount(InventoryVisualController ivc, int totalSlots)

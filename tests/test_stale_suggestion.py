@@ -1263,6 +1263,18 @@ def test_loadout_reconcile_normalizes_previous_word_not_from_historic():
     assert extras["previous_word_first_letter"] == "e"
 
 
+def test_reconcile_clears_stale_prev_letter_grid2_empty_historic():
+    from cursed_words_solver.loadout import reconcile_previous_word_first_letter_from_historic
+
+    extras = {
+        "grid_number": "2",
+        "previous_word_first_letter": "s",
+        "historic_words": "",
+    }
+    reconcile_previous_word_first_letter_from_historic(extras)
+    assert "previous_word_first_letter" not in extras
+
+
 def test_f8_snapshot_merge_refreshes_historic_same_grid(tmp_path, monkeypatch):
     from cursed_words_solver.loadout import (
         RUN_STATE_PATH,
@@ -1771,9 +1783,60 @@ def test_grid_advanced_not_intentionally_cleared():
     assert not _encounter_historic_intentionally_cleared(
         {"encounter_historic_source": "grid_advanced"}
     )
+    assert not _encounter_historic_intentionally_cleared(
+        {"encounter_historic_source": "grid1_no_scoring_cache"}
+    )
     assert _encounter_historic_intentionally_cleared(
         {"encounter_historic_source": "grid_start_cleared"}
     )
+
+
+def test_grid1_no_scoring_cache_does_not_block_grid2_disk_catchup(tmp_path, monkeypatch):
+    from cursed_words_solver.loadout import merge_encounter_historic_for_f8_snapshot
+
+    hist = '[{"word":"stigmatal","score":2752,"red_tile_count":7}]'
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps(
+            {
+                "extras": {
+                    "grid_number": "2",
+                    "historic_words": hist,
+                    "encounter_historic_source": "live",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    embed = {
+        "extras": {
+            "grid_number": "2",
+            "historic_words": "",
+            "encounter_historic_source": "grid1_no_scoring_cache",
+        }
+    }
+    merged = merge_encounter_historic_for_f8_snapshot(embed)
+    assert merged is not None
+    assert merged["extras"]["historic_words"] == hist
+
+
+def test_loadout_fingerprint_stale_warning_detects_mismatch():
+    from cursed_words_solver.loadout import loadout_fingerprint_stale_warning
+    from cursed_words_solver.models import Loadout, LoadoutItem
+
+    loadout = Loadout(
+        character="Sandy Saguaro",
+        money=11,
+        stickers=[LoadoutItem(id="lucky_scarf", name="Lucky Scarf", level=3)],
+        extras={
+            "loadout_fingerprint": "Sandy Saguaro|11|lucky_scarf:2|-|mahjong_red_dragon:right"
+        },
+    )
+    note = loadout_fingerprint_stale_warning(loadout)
+    assert note is not None
+    assert "lucky_scarf:2" in note
+    assert "lucky_scarf:3" in note
 
 
 def test_penill_historic_shrink_stale_f8_extras_diff_fixture():
@@ -1847,3 +1910,61 @@ def test_penill_mismatch_stale_workflow_one_point_delta():
     diff = data["extras_diff"]["historic_words"]
     assert _historic_words_count(diff["f8"]) == 1
     assert _historic_words_count(diff["submit"]) == 2
+
+
+def test_grid2_with_historic_no_empty_warning():
+    """Grid 2 with encounter historic populated should not block F8 save."""
+    assert (
+        empty_historic_on_later_grid_warning(
+            {
+                "grid_number": "2",
+                "historic_words": '[{"word":"eyestripe","red_tile_count":7}]',
+            }
+        )
+        is None
+    )
+
+
+def test_seemelesse_grid2_underexport_stale_f8_fixture():
+    """Golden repro: 20260608_153433 empty F8 historic vs 1-word submit on grid 2."""
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_seemelesse_grid2_underexport.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    note = _stale_f8_extras_note(data["extras_diff"], has_mutating_dna_stamp=False)
+    assert note is not None
+    for fragment in data["expected_stale_note_contains"]:
+        assert fragment in note
+    warn = empty_historic_on_later_grid_warning({"grid_number": "2", "historic_words": ""})
+    assert warn is not None
+
+
+def test_schematised_cross_grid_stale_f8_fixture():
+    """Golden repro: 20260608_154114 grid-3 F8 historic on grid-2 submit."""
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_schematised_cross_grid_bleed.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    note = _stale_f8_extras_note(data["extras_diff"], has_mutating_dna_stamp=False)
+    assert note is not None
+    for fragment in data["expected_stale_note_contains"]:
+        assert fragment in note
+
+
+def test_schematised_mismatch_stale_f8_embed_flag():
+    """schematised: path/board match but stale F8 embed (2pt rounding only)."""
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260608_154114.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    assert data["stale_f8_extras"] is True
+    assert data["predicted_score"] == 3248
+    assert data["actual_score"] == 3250
+    assert "historic_words changed" in data["stale_f8_reason"]

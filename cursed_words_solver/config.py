@@ -13,8 +13,10 @@ LEGACY_SEARCH_TIME_BUDGET_SEC = 2.0
 PREVIOUS_SEARCH_TIME_BUDGET_SEC = 15.0
 PREVIOUS_DEFAULT_SEARCH_TIME_BUDGET_SEC = 30.0
 LEGACY_MAX_WORD_LENGTH = 12
+PREVIOUS_GRID_REROLL_GAP_RATIO = 0.6
 RUN_STATE_PATH = CONFIG_DIR / "run_state.json"
 LAST_SUGGESTION_PATH = CONFIG_DIR / "last_suggestion.json"
+LAST_GOOD_RACK_LAYOUT_PATH = CONFIG_DIR / "last_good_rack_layout.json"
 SCORING_MISMATCHES_DIR = CONFIG_DIR / "scoring_mismatches"
 DEBUG_DIR = CONFIG_DIR / "debug"
 WORDLIST_PATH = CONFIG_DIR / "enable1.txt"
@@ -63,7 +65,7 @@ class AppConfig:
     mult_search_weight: float = 0.4
     mult_search_passes: bool = True
     search_workers: int | str = "auto"
-    grid_reroll_gap_ratio: float = 0.6
+    grid_reroll_gap_ratio: float = 0.3
 
     def save(self) -> None:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -102,6 +104,10 @@ class AppConfig:
             migrated = True
         if int(data.get("max_word_length", 15)) == LEGACY_MAX_WORD_LENGTH:
             migrated = True
+        grid_reroll_gap_ratio = float(data.get("grid_reroll_gap_ratio", 0.3))
+        if grid_reroll_gap_ratio == PREVIOUS_GRID_REROLL_GAP_RATIO:
+            grid_reroll_gap_ratio = 0.3
+            migrated = True
         cfg = cls(
             board_region=Region.from_dict(data.get("board_region", {})),
             rack_region=Region.from_dict(data.get("rack_region", {})),
@@ -115,7 +121,7 @@ class AppConfig:
             mult_search_weight=float(data.get("mult_search_weight", 0.4)),
             mult_search_passes=bool(data.get("mult_search_passes", True)),
             search_workers=data.get("search_workers", "auto"),
-            grid_reroll_gap_ratio=float(data.get("grid_reroll_gap_ratio", 0.6)),
+            grid_reroll_gap_ratio=grid_reroll_gap_ratio,
         )
         if migrated:
             cfg.save()

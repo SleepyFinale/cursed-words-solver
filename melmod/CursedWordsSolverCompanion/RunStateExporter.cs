@@ -889,6 +889,17 @@ namespace CursedWordsSolverCompanion
                 var hasBicyclePin = player?.MyCharacter?.CharacterItem != null
                     && IsBicyclePin(player.MyCharacter.CharacterItem);
 
+                var liveGrid = RunStateExportFill.ResolveGridNumber(player);
+                string diskGridRaw;
+                onDisk.TryGetValue("grid_number", out diskGridRaw);
+                var diskGrid = RunStateExportFill.TryParseGridNumber(diskGridRaw);
+                var gridAdvanced =
+                    liveGrid >= 2 && diskGrid >= 1 && liveGrid > diskGrid;
+                string diskHistoric;
+                onDisk.TryGetValue("historic_words", out diskHistoric);
+                var diskHistoricEmpty =
+                    string.IsNullOrEmpty(diskHistoric) || diskHistoric == "[]";
+
                 foreach (var key in ExtrasPreserveFromDisk)
                 {
                     if (
@@ -896,6 +907,35 @@ namespace CursedWordsSolverCompanion
                         && (
                             string.Equals(key, "bicycle_word_score_bonus", StringComparison.OrdinalIgnoreCase)
                             || string.Equals(key, "cards_submitted", StringComparison.OrdinalIgnoreCase)
+                        )
+                    )
+                        continue;
+
+                    if (
+                        gridAdvanced
+                        && (
+                            string.Equals(key, "historic_words", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(
+                                key,
+                                "previous_word_first_letter",
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                            || string.Equals(
+                                key,
+                                "red_tiles_used_encounter",
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        )
+                    )
+                        continue;
+
+                    if (
+                        liveGrid >= 2
+                        && diskHistoricEmpty
+                        && string.Equals(
+                            key,
+                            "previous_word_first_letter",
+                            StringComparison.OrdinalIgnoreCase
                         )
                     )
                         continue;
@@ -1092,6 +1132,24 @@ namespace CursedWordsSolverCompanion
             }
 
             return false;
+        }
+
+        public static int TryGetEquippedStickerLevel(Player player, string slug)
+        {
+            if (player?.Stickers == null || string.IsNullOrEmpty(slug))
+                return 0;
+
+            foreach (var sticker in player.Stickers)
+            {
+                if (sticker == null)
+                    continue;
+                var id = Slugify(sticker.ArtFileName, sticker.Name);
+                if (!string.Equals(id, slug, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                return Math.Max(1, sticker.TimesUpgraded + 1);
+            }
+
+            return 0;
         }
 
         public static StaleF8Context BuildStaleF8Context(Player player)
@@ -3601,7 +3659,7 @@ namespace CursedWordsSolverCompanion
                 first = false;
                 sb.Append(Slugify(item.ArtFileName, item.Name));
                 sb.Append(':');
-                sb.Append(item.TimesUpgraded);
+                sb.Append(Math.Max(1, item.TimesUpgraded + 1));
             }
         }
 

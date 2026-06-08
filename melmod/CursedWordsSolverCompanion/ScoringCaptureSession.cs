@@ -196,7 +196,15 @@ namespace CursedWordsSolverCompanion
                     authoritativeExtras
                 );
             if (!string.IsNullOrEmpty(_f8PredictionHistoricStaleNote))
+            {
                 MelonLogger.Warning(_f8PredictionHistoricStaleNote);
+                MelonLogger.Warning(
+                    "Blocking score capture — historic lag; press F8 again before submitting overlay."
+                );
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                _active = false;
+                return;
+            }
 
             SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
                 _suggestion,
@@ -982,6 +990,7 @@ namespace CursedWordsSolverCompanion
                 }
 
                 PersistLastSubmittedWordFirstLetter();
+                RunStateExporter.TryMergeTelescopeEncounterExtrasAfterScore();
 
                 ConsumablePlacementTracker.ResetAfterSubmit(_boardAtSubmit);
             }

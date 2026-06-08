@@ -328,6 +328,34 @@ def test_egg_vowel_start_multiplier():
     assert bd["multiplier"] == 1.5
 
 
+def test_egg_vowel_uses_path_first_letter():
+    """Dictionary 'ex' starts with a vowel; path wildcard then X does not (mismatch 20260608_123837)."""
+    board = _empty_board()
+    board.tiles[0][3] = _tile(0, 3, "?", 1, curse=CurseType.WILDCARD)
+    board.tiles[0][3].letter = "?"
+    board.tiles[0][4] = _tile(0, 4, "X", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="egg", name="Egg", level=2)])
+    with_egg, _ = pipeline.score(board, [3, 4], "ex", loadout)
+    base, _ = pipeline.score(board, [3, 4], "ex", Loadout())
+    assert with_egg == base
+
+
+def test_egg_skips_when_path_starts_consonant_ova_style():
+    """Dictionary 'ova' starts with a vowel; first letter tile on path is V (mismatch 20260608_124049)."""
+    board = _empty_board()
+    board.tiles[4][0] = _tile(4, 0, "?", 1, curse=CurseType.CHESS_QUEEN)
+    board.tiles[4][0].letter = "?"
+    board.tiles[0][1] = _tile(0, 1, "V", 2)
+    board.tiles[1][1] = _tile(1, 1, "?", 1, curse=CurseType.CHESS_QUEEN)
+    board.tiles[1][1].letter = "?"
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="egg", name="Egg", level=2)])
+    with_egg, _ = pipeline.score(board, [20, 1, 6], "ova", loadout)
+    base, _ = pipeline.score(board, [20, 1, 6], "ova", Loadout())
+    assert with_egg == base
+
+
 def test_maple_leaf_first_two_red_tiles():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 2, color=TileColor.RED)

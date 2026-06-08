@@ -1,0 +1,22 @@
+{
+  "description": "Repro from round_logs/20260608_153433_082.json: empty F8 historic on grid 2, stale prev letter s vs submit f.",
+  "grid_number_submit": "2",
+  "extras_diff": {
+    "historic_words": {
+      "f8": "",
+      "submit": "[{\"word\":\"sealettuces\",\"score\":2640,\"path\":[20,16,17,12,7,8,14,19,18,13,9],\"red_tile_count\":3}]"
+    },
+    "previous_word_first_letter": {
+      "f8": "s",
+      "submit": "f"
+    },
+    "scoring_previous_words_count": {
+      "f8": "0",
+      "submit": "2"
+    }
+  },
+  "expected_stale_note_contains": [
+    "historic_words changed",
+    "previous_word_first_letter"
+  ]
+}

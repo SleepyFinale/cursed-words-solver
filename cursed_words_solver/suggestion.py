@@ -277,10 +277,19 @@ def empty_historic_on_later_grid_warning(
     hist = str(extras.get("historic_words", "") or "").strip()
     if hist and hist != "[]":
         return None
-    return (
+    msg = (
         f"run_state has no encounter historic on grid {grid} — "
         "press F7 in-game before trusting F8 scores."
     )
+    try:
+        red_enc = int(str(extras.get("red_tiles_used_encounter") or "0"))
+    except (TypeError, ValueError):
+        red_enc = 0
+    if red_enc > 0:
+        msg += (
+            f" (red_tiles_used_encounter={red_enc} — Telescope may use count fallback only)"
+        )
+    return msg
 
 
 def grid_advanced_since_last_f8_warning(

@@ -9,6 +9,10 @@ import pytest
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.fraction_tiles import (
+    format_fraction_parts,
+    format_fraction_text,
+    format_fraction_tile,
+    format_fraction_value,
     fraction_parts,
     fraction_position_valid,
     parse_fraction_parts_from_float,
@@ -59,6 +63,44 @@ def test_parse_fraction_parts_text():
     assert parse_fraction_parts_from_text("⅒") == (1, 10)
     assert parse_fraction_parts_from_text("0.1") == (1, 10)
     assert parse_fraction_parts_from_float(0.1666667) == (1, 6)
+
+
+def test_format_fraction_display_vulgar_first():
+    assert format_fraction_value(0.8) == "⅘"
+    assert format_fraction_parts(1, 7) == "⅐"
+    assert format_fraction_text("0.6666667") == "⅔"
+    assert format_fraction_text("4/5") == "⅘"
+
+
+def test_format_fraction_display_slash_fallback():
+    assert format_fraction_parts(2, 9) == "2/9"
+
+
+def test_format_fraction_tile_prefers_char_glyph():
+    tile = _tile(
+        0,
+        0,
+        "0.8",
+        9,
+        curse=CurseType.FRACTION,
+        char="⅘",
+        fraction_value=0.8,
+        metadata={"fraction_num": 4, "fraction_den": 5},
+    )
+    assert format_fraction_tile(tile) == "⅘"
+
+
+def test_format_fraction_tile_from_decimal_letter():
+    tile = _tile(
+        0,
+        0,
+        "0.4",
+        7,
+        curse=CurseType.FRACTION,
+        char="⅖",
+        fraction_value=0.4,
+    )
+    assert format_fraction_tile(tile) == "⅖"
 
 
 def test_fraction_position_valid_3_5():

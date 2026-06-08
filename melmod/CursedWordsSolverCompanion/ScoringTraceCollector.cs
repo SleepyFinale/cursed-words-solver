@@ -95,8 +95,7 @@ namespace CursedWordsSolverCompanion
                 );
                 entry["item_name"] = step.RelevantItem.Name ?? "";
                 var level = RunStateExporter.GetUpgradeableLevel(step.RelevantItem);
-                if (level >= 1)
-                    entry["item_level"] = level;
+                entry["item_level"] = level >= 1 ? level : 1;
             }
 
             return entry;

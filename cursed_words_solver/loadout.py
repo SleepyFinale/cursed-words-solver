@@ -1003,6 +1003,11 @@ def reconcile_previous_word_first_letter_from_historic(
     extras: dict[str, Any],
 ) -> None:
     """Normalize exported previous_word_first_letter (Limnophila uses scoring cache, not encounter historic)."""
+    grid = _grid_number_from_extras(extras)
+    hist = str(extras.get("historic_words", "") or "").strip()
+    if grid >= 2 and (not hist or hist == "[]"):
+        extras.pop("previous_word_first_letter", None)
+        return
     prev = str(extras.get("previous_word_first_letter") or "").strip().lower()[:1]
     if prev:
         extras["previous_word_first_letter"] = prev
@@ -1172,6 +1177,27 @@ def merge_encounter_historic_for_f8_snapshot(
                 val = fresh_extras.get(key)
                 if val is not None:
                     extras[key] = val
+        elif (
+            embed_grid >= 2
+            and fresh_grid == embed_grid
+            and (not hist or hist == "[]")
+        ):
+            fresh_retry = load_run_state_raw()
+            if isinstance(fresh_retry, dict):
+                retry_extras = fresh_retry.get("extras")
+                if isinstance(retry_extras, dict):
+                    retry_hist = str(
+                        retry_extras.get("historic_words", "") or ""
+                    ).strip()
+                    retry_grid = _grid_number_from_extras(retry_extras)
+                    if (
+                        retry_hist
+                        and retry_hist != "[]"
+                        and retry_grid == embed_grid
+                    ):
+                        _apply_fresh_encounter_historic_to_extras(
+                            extras, retry_extras, retry_hist
+                        )
         reconcile_previous_word_first_letter_from_historic(extras)
         snapshot["extras"] = extras
         return snapshot
@@ -1203,6 +1229,49 @@ def merge_encounter_historic_for_f8_snapshot(
 
     snapshot["extras"] = extras
     return snapshot
+
+
+F8_HISTORIC_CATCHUP_RETRIES = 4
+F8_HISTORIC_CATCHUP_DELAY_SEC = 0.1
+
+
+def merge_encounter_historic_for_f8_with_retry(
+    run_state: dict | None,
+    *,
+    max_retries: int = F8_HISTORIC_CATCHUP_RETRIES,
+    delay_sec: float = F8_HISTORIC_CATCHUP_DELAY_SEC,
+) -> tuple[dict | None, str | None]:
+    """Merge encounter historic into F8 state, retrying while disk export lags."""
+    merged = run_state
+    if merged is not None:
+        catchup = merge_encounter_historic_for_f8_snapshot(merged)
+        if catchup is not None:
+            merged = catchup
+
+    stale_note: str | None = None
+    for attempt in range(max(1, max_retries)):
+        extras = (
+            merged.get("extras")
+            if isinstance(merged, dict) and isinstance(merged.get("extras"), dict)
+            else None
+        )
+        stale_note = f8_historic_still_behind_disk_warning(extras)
+        if stale_note is None:
+            return merged, None
+        if attempt + 1 >= max_retries:
+            return merged, stale_note
+        time.sleep(delay_sec)
+        fresh = load_run_state_raw()
+        if isinstance(fresh, dict):
+            catchup = merge_encounter_historic_for_f8_snapshot(fresh)
+            if catchup is not None:
+                merged = catchup
+        if merged is not None:
+            remerged = merge_encounter_historic_for_f8_snapshot(merged)
+            if remerged is not None:
+                merged = remerged
+
+    return merged, stale_note
 
 
 def f8_historic_still_behind_disk_warning(
@@ -1282,8 +1351,31 @@ def sanitize_run_state_snapshot_for_f8(
             extras.pop(key, None)
 
     reconcile_previous_word_first_letter_from_historic(extras)
+    from cursed_words_solver.fingerprints import loadout_fingerprint as _loadout_fp
+
+    extras["loadout_fingerprint"] = _loadout_fp(loadout)
     snapshot["extras"] = extras
     return snapshot
+
+
+def loadout_fingerprint_stale_warning(
+    loadout: Loadout | None,
+    run_state_extras: dict[str, Any] | None = None,
+) -> str | None:
+    """Warn when melmod extras.loadout_fingerprint disagrees with parsed sticker levels."""
+    if loadout is None:
+        return None
+    from cursed_words_solver.fingerprints import loadout_fingerprint
+
+    computed = loadout_fingerprint(loadout)
+    extras = run_state_extras if isinstance(run_state_extras, dict) else (loadout.extras or {})
+    exported = str(extras.get("loadout_fingerprint", "") or "").strip()
+    if not exported or exported == computed:
+        return None
+    return (
+        "run_state loadout_fingerprint disagrees with sticker levels "
+        f"({exported} vs {computed}) — press F7 in-game, then F8 again."
+    )
 
 
 def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:

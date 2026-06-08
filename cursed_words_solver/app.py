@@ -49,6 +49,7 @@ from cursed_words_solver.suggestion import (
     f8_prediction_workflow_stale_warning,
     poll_invalidate_last_suggestion,
     empty_historic_on_later_grid_warning,
+    grid_advanced_since_last_f8_warning,
     run_state_historic_stale_warnings,
     save_last_suggestion,
 )
@@ -67,6 +68,7 @@ from cursed_words_solver.loadout import (
     f8_historic_stale_after_merge_warning,
     f8_historic_still_behind_disk_warning,
     merge_encounter_historic_for_f8_snapshot,
+    merge_encounter_historic_for_f8_with_retry,
     merge_loadout_with_board,
     neapolitan_extras_stale_warning,
     mod_money_from_run_state,
@@ -80,6 +82,7 @@ from cursed_words_solver.loadout import (
     solver_session_extras_from_loadout,
     validate_run_state_for_scoring,
     sanitize_run_state_snapshot_for_f8,
+    loadout_fingerprint_stale_warning,
     save_loadout,
     save_run_state_template,
 )
@@ -236,6 +239,26 @@ class SolverApp:
         if run_state is None:
             run_state = load_run_state_raw()
         self._overlay_regions = resolve_overlay_regions(run_state, self.config)
+        if self._overlay_regions.board_region_repaired:
+            br = self._overlay_regions.board
+            print(
+                "  Warning: board overlay region looked corrupt; "
+                f"repaired from cell centers to {br.width}×{br.height} "
+                f"at ({br.x},{br.y}) — press F7 if highlights still misaligned",
+                flush=True,
+            )
+        if self._overlay_regions.rack_layout_collapsed:
+            print(
+                "  Warning: consumable rack layout export collapsed — "
+                "using last good F7 alignment (press F7 if markers still wrong)",
+                flush=True,
+            )
+        elif self._overlay_regions.rack_slot_corrected:
+            print(
+                "  Warning: consumable rack slot alignment corrected — "
+                "press F7 if rack markers still misaligned",
+                flush=True,
+            )
         return self._overlay_regions
 
     def _needs_manual_calibration(self) -> bool:
@@ -763,6 +786,13 @@ class SolverApp:
                 run_extras if isinstance(run_extras, dict) else None
             ):
                 print(f"  Warning: {warn}", flush=True)
+            if run_state_data and self._loadout_cache is not None:
+                fp_warn = loadout_fingerprint_stale_warning(
+                    self._loadout_cache,
+                    run_extras if isinstance(run_extras, dict) else None,
+                )
+                if fp_warn:
+                    print(f"  Warning: {fp_warn}", flush=True)
             if mod_money:
                 print(f"Money: ${mod_money} (mod)", flush=True)
             print("Parsed board:", flush=True)
@@ -1248,6 +1278,8 @@ class SolverApp:
             pred_trace: list | None = None
             export_warnings: list[str] = []
             capybara_stats = None
+            historic_catchup_stale_note: str | None = None
+            saved_suggestion = False
             if results:
                 top = results[0]
                 # Re-read run_state after search; merge encounter historic before score + embed.
@@ -1264,16 +1296,19 @@ class SolverApp:
                     fresh_run_state if isinstance(fresh_run_state, dict) else None
                 )
                 if merged_run_state is not None:
-                    catchup = merge_encounter_historic_for_f8_snapshot(merged_run_state)
-                    if catchup is not None:
-                        merged_run_state = catchup
-                    fresh_again = load_run_state_raw()
-                    if isinstance(fresh_again, dict):
-                        remerged = merge_encounter_historic_for_f8_snapshot(
-                            merged_run_state
-                        )
-                        if remerged is not None:
-                            merged_run_state = remerged
+                    merged_run_state, historic_catchup_stale_note = (
+                        merge_encounter_historic_for_f8_with_retry(merged_run_state)
+                    )
+                if historic_catchup_stale_note:
+                    print(
+                        f"  Warning: {historic_catchup_stale_note}",
+                        flush=True,
+                    )
+                    print(
+                        "  Warning: Predicted score may be stale (historic export lag) — "
+                        "press F7 in-game, then F8 again before submitting.",
+                        flush=True,
+                    )
                 merged_extras = (
                     merged_run_state.get("extras")
                     if isinstance(merged_run_state, dict)
@@ -1308,11 +1343,17 @@ class SolverApp:
                     if merged_run_state is not None
                     else self._loadout_cache
                 )
-                save_loadout = merge_loadout_with_board(
+                f8_loadout = merge_loadout_with_board(
                     merged_loadout,
                     board.money,
                     mod_money=fresh_mod_money if fresh_mod_money > 0 else None,
                 )
+                fp_stale_note = loadout_fingerprint_stale_warning(
+                    f8_loadout,
+                    merged_extras if isinstance(merged_extras, dict) else None,
+                )
+                if fp_stale_note:
+                    print(f"  Warning: {fp_stale_note}", flush=True)
                 # Consumables placed onto search_board this solve are no longer on
                 # the rack, so Hi Vis Jacket must score with the post-placement
                 # count (decompiled HiVisJacket: multiplies by consumables still
@@ -1322,7 +1363,7 @@ class SolverApp:
                     search_board
                 ) - consumable_placement_count_on_board(board)
                 score_loadout = loadout_after_consumable_placements(
-                    save_loadout, num_placed
+                    f8_loadout, num_placed
                 )
                 score_word = effective_scoring_word(
                     search_board,
@@ -1374,24 +1415,24 @@ class SolverApp:
                     top.dictionary_word = None
                 export_diag = export_diagnostics_from_run_state(merged_run_state)
                 export_warnings = validate_run_state_for_scoring(
-                    save_loadout,
+                    f8_loadout,
                     board=board,
                     raw=merged_run_state,
                 )
                 capybara_warn = capybara_active_warning(
-                    save_loadout, self._scoring.rules
+                    f8_loadout, self._scoring.rules
                 )
                 if capybara_warn:
                     export_warnings = list(export_warnings) + [capybara_warn]
-                    scope = capybara_shuffle_scope(save_loadout, self._scoring.rules)
-                    if capybara_perm_count(save_loadout, scope) > MAX_EXHAUSTIVE_PERMS:
+                    scope = capybara_shuffle_scope(f8_loadout, self._scoring.rules)
+                    if capybara_perm_count(f8_loadout, scope) > MAX_EXHAUSTIVE_PERMS:
                         sample_warn = capybara_sampling_warning(False, 256)
                         if sample_warn:
                             export_warnings.append(sample_warn)
-                session_extras = solver_session_extras_from_loadout(save_loadout)
+                session_extras = solver_session_extras_from_loadout(f8_loadout)
                 f8_snapshot = sanitize_run_state_snapshot_for_f8(
                     merged_run_state,
-                    save_loadout,
+                    f8_loadout,
                 )
                 f8_extras = (
                     f8_snapshot.get("extras")
@@ -1424,34 +1465,63 @@ class SolverApp:
                 )
                 if workflow_stale_warn:
                     print(f"  Warning: {workflow_stale_warn}", flush=True)
-                save_last_suggestion(
-                    board=search_board,
-                    loadout=save_loadout,
-                    result=top,
-                    predicted_trace=pred_trace,
-                    run_state_snapshot=f8_snapshot,
-                    dictionary=self._dictionary,
-                    min_len=effective_min,
-                    scoring_word=score_word,
-                    export_diagnostics=export_diag,
-                    export_warnings=export_warnings,
-                    solver_session_extras=session_extras,
-                    consumable_placements=placement_records or None,
-                    score_nondeterministic=capybara_stats is not None,
-                    predicted_score_min=(
-                        int(capybara_stats.min_score) if capybara_stats else None
-                    ),
-                    predicted_score_max=(
-                        int(capybara_stats.max_score) if capybara_stats else None
-                    ),
-                    capybara_perm_count=(
-                        capybara_stats.perm_count if capybara_stats else None
-                    ),
-                    capybara_exhaustive=(
-                        capybara_stats.exhaustive if capybara_stats else None
-                    ),
+                grid_adv_warn = grid_advanced_since_last_f8_warning(
+                    run_extras if isinstance(run_extras, dict) else None
                 )
-                self._last_invalidation_reason = None
+                if grid_adv_warn:
+                    print(f"  Warning: {grid_adv_warn}", flush=True)
+                block_f8_save = any(
+                    note
+                    for note in (
+                        historic_catchup_stale_note,
+                        empty_hist_warn,
+                        hist_stale_note,
+                        behind_disk_warn,
+                        workflow_stale_warn,
+                        grid_adv_warn,
+                    )
+                    if note
+                )
+                if block_f8_save:
+                    clear_last_suggestion()
+                    print(
+                        "  Warning: Skipping overlay save — press F7 in-game, "
+                        "then F8 again before submitting.",
+                        flush=True,
+                    )
+                    self._last_invalidation_reason = (
+                        "historic_or_workflow_stale"
+                    )
+                else:
+                    save_last_suggestion(
+                        board=search_board,
+                        loadout=f8_loadout,
+                        result=top,
+                        predicted_trace=pred_trace,
+                        run_state_snapshot=f8_snapshot,
+                        dictionary=self._dictionary,
+                        min_len=effective_min,
+                        scoring_word=score_word,
+                        export_diagnostics=export_diag,
+                        export_warnings=export_warnings,
+                        solver_session_extras=session_extras,
+                        consumable_placements=placement_records or None,
+                        score_nondeterministic=capybara_stats is not None,
+                        predicted_score_min=(
+                            int(capybara_stats.min_score) if capybara_stats else None
+                        ),
+                        predicted_score_max=(
+                            int(capybara_stats.max_score) if capybara_stats else None
+                        ),
+                        capybara_perm_count=(
+                            capybara_stats.perm_count if capybara_stats else None
+                        ),
+                        capybara_exhaustive=(
+                            capybara_stats.exhaustive if capybara_stats else None
+                        ),
+                    )
+                    saved_suggestion = True
+                    self._last_invalidation_reason = None
                 for warn in export_warnings:
                     print(f"  Export warning: {warn}", flush=True)
 
@@ -1470,9 +1540,23 @@ class SolverApp:
 
             if results:
                 top = results[0]
+                stale_score_prefix = (
+                    "STALE? "
+                    if historic_catchup_stale_note
+                    else ""
+                )
+                timing_note = ""
+                if timing is not None and search_elapsed > search_budget + 0.5:
+                    core_sec = timing.wall_sec
+                    post_sec = max(0.0, search_elapsed - core_sec)
+                    timing_note = (
+                        f" (budget {search_budget:.0f}s; "
+                        f"search core {core_sec:.1f}s + post {post_sec:.1f}s)"
+                    )
                 done_msg = (
-                    f"Done in {search_elapsed:.1f}s. Best: {format_suggestion_word(top)} "
-                    f"({format_result_score_display(top)})"
+                    f"Done in {search_elapsed:.1f}s{timing_note}. "
+                    f"Best: {format_suggestion_word(top)} "
+                    f"({stale_score_prefix}{format_result_score_display(top)})"
                 )
                 if placement_records:
                     done_msg += (
@@ -1485,10 +1569,17 @@ class SolverApp:
                 ms_hint = (top.breakdown or {}).get("microscope_hint")
                 if ms_hint:
                     print(f"  {ms_hint}", flush=True)
-                print(
-                    "  Wrote last_suggestion.json for melmod scoring capture.",
-                    flush=True,
-                )
+                if saved_suggestion:
+                    print(
+                        "  Wrote last_suggestion.json for melmod scoring capture.",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        "  Did not write last_suggestion.json "
+                        "(historic/workflow stale — press F7, then F8).",
+                        flush=True,
+                    )
             else:
                 clear_last_suggestion()
                 print(

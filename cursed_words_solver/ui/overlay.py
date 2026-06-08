@@ -12,7 +12,10 @@ from PySide6.QtGui import QCloseEvent, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from cursed_words_solver.config import Region
-from cursed_words_solver.consumable_placement import format_placement_path_hints
+from cursed_words_solver.consumable_placement import (
+    format_placement_path_hints,
+    placement_record_display_letter,
+)
 from cursed_words_solver.suggestion import format_suggestion_word, format_result_score_display
 from cursed_words_solver.ui.board_geometry import path_geometry
 
@@ -180,9 +183,7 @@ class ResultOverlay(QWidget):
                 if not hint:
                     parts: list[str] = []
                     for rec in consumable_placements:
-                        letter = getattr(rec, "letter", None) or (
-                            rec.get("letter") if isinstance(rec, dict) else "?"
-                        )
+                        letter = placement_record_display_letter(rec)
                         row = int(
                             getattr(rec, "row", 0)
                             if not isinstance(rec, dict)

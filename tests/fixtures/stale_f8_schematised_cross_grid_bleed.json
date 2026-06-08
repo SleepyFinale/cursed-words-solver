@@ -1,0 +1,22 @@
+{
+  "description": "Repro from scoring_mismatches/20260608_154114.json: grid-3 F8 historic reused on grid-2 submit.",
+  "grid_number_submit": "2",
+  "extras_diff": {
+    "historic_words": {
+      "f8": "[{\"word\":\"sealettuces\",\"score\":2640},{\"word\":\"bannerettes\",\"score\":2570},{\"word\":\"other\",\"score\":3393}]",
+      "submit": "[{\"word\":\"grid2word\",\"score\":11008}]"
+    },
+    "previous_word_first_letter": {
+      "f8": "a",
+      "submit": "f"
+    },
+    "scoring_previous_words_count": {
+      "f8": "3",
+      "submit": "1"
+    }
+  },
+  "expected_stale_note_contains": [
+    "historic_words changed",
+    "previous_word_first_letter f8='a' submit='f'"
+  ]
+}

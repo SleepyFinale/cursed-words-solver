@@ -87,15 +87,6 @@ class BoardHighlightOverlay(QWidget):
             painter.setBrush(QColor(255, 180, 40, 90))
             painter.setPen(QPen(QColor(255, 200, 60, 255), 3, Qt.PenStyle.DashLine))
             painter.drawEllipse(pt, radius * 1.08, radius * 1.08)
-            painter.setPen(QPen(QColor(60, 30, 0), 1))
-            painter.drawText(
-                int(pt.x() - radius),
-                int(pt.y() - radius),
-                int(radius * 2),
-                int(radius * 2),
-                int(Qt.AlignmentFlag.AlignCenter),
-                marker.letter,
-            )
 
         fill = QColor(0, 255, 120, 140)
         border = QColor(0, 255, 140, 255)

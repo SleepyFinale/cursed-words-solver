@@ -16,6 +16,30 @@ namespace CursedWordsSolverCompanion
         private static readonly BindingFlags MemberFlags =
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
+        // Game fraction set (wiki: Tiles — Fractions); mirrors Python _VULGAR_FRACTIONS.
+        private static readonly Dictionary<(int num, int den), string> VulgarByParts =
+            new Dictionary<(int, int), string>
+            {
+                { (1, 2), "½" },
+                { (1, 3), "⅓" },
+                { (2, 3), "⅔" },
+                { (1, 4), "¼" },
+                { (3, 4), "¾" },
+                { (1, 5), "⅕" },
+                { (2, 5), "⅖" },
+                { (3, 5), "⅗" },
+                { (4, 5), "⅘" },
+                { (1, 6), "⅙" },
+                { (5, 6), "⅚" },
+                { (1, 8), "⅛" },
+                { (3, 8), "⅜" },
+                { (5, 8), "⅝" },
+                { (7, 8), "⅞" },
+                { (1, 7), "⅐" },
+                { (1, 9), "⅑" },
+                { (1, 10), "⅒" },
+            };
+
         public static BoardSnapshot TryBuild(Player player)
         {
             if (player == null)
@@ -51,6 +75,9 @@ namespace CursedWordsSolverCompanion
             if (tiles == null || tiles.Count != DefaultGridSize * DefaultGridSize)
                 return null;
 
+            ApplyToolboxScatterLevels(player, tiles);
+            ApplyEquippedScatterLevels(player, tiles);
+
             var snapshot = new BoardSnapshot
             {
                 source = "melmod",
@@ -62,6 +89,91 @@ namespace CursedWordsSolverCompanion
             };
             FillPlayableBounds(snapshot);
             return snapshot;
+        }
+
+        private static void ApplyToolboxScatterLevels(Player player, List<BoardTileSnapshot> tiles)
+        {
+            if (player == null || tiles == null)
+                return;
+
+            var toolboxLevel = RunStateExporter.TryGetEquippedStickerLevel(player, "toolbox");
+            if (toolboxLevel <= 1)
+                return;
+
+            if (!IsGridOneFirstWordOnGrid())
+                return;
+
+            var copySlug = RunStateExporter.TryReadRunStateExtra("snapshot_copy_slug");
+            var copySlugNorm = string.IsNullOrWhiteSpace(copySlug)
+                ? ""
+                : RunStateExporter.Slugify(copySlug.Trim(), copySlug.Trim());
+
+            foreach (var tile in tiles)
+            {
+                if (tile == null || string.IsNullOrEmpty(tile.scattered_item_id))
+                    continue;
+                if (!string.Equals(tile.curse, "item", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var exported = tile.scattered_item_level ?? 1;
+                if (exported != 1)
+                    continue;
+                if (!string.IsNullOrEmpty(copySlugNorm))
+                {
+                    var scatterSlug = RunStateExporter.Slugify(
+                        tile.scattered_item_id,
+                        tile.scattered_item_id
+                    );
+                    if (string.Equals(
+                            copySlugNorm,
+                            scatterSlug,
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+                }
+                tile.scattered_item_level = Math.Max(exported, toolboxLevel);
+            }
+        }
+
+        /// <summary>
+        /// Grid scatter tier matches equipped sticker when the same slug is in loadout.
+        /// </summary>
+        private static void ApplyEquippedScatterLevels(Player player, List<BoardTileSnapshot> tiles)
+        {
+            if (player == null || tiles == null || player.Stickers == null)
+                return;
+
+            foreach (var tile in tiles)
+            {
+                if (tile == null || string.IsNullOrEmpty(tile.scattered_item_id))
+                    continue;
+                if (!string.Equals(tile.curse, "item", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var scatterSlug = RunStateExporter.Slugify(
+                    tile.scattered_item_id,
+                    tile.scattered_item_id
+                );
+                var equipped = RunStateExporter.TryGetEquippedStickerLevel(player, scatterSlug);
+                if (equipped < 1)
+                    continue;
+                var exported = tile.scattered_item_level ?? 1;
+                tile.scattered_item_level = Math.Max(exported, equipped);
+            }
+        }
+
+        /// <summary>
+        /// Toolbox scatter tier applies on grid 1 word 1 only (scoring cache empty).
+        /// </summary>
+        private static bool IsGridOneFirstWordOnGrid()
+        {
+            var gridRaw = RunStateExporter.TryReadRunStateExtra("grid_number");
+            var gridNum = -1;
+            if (!string.IsNullOrWhiteSpace(gridRaw))
+                int.TryParse(gridRaw.Trim(), out gridNum);
+            if (gridNum != 1 && RunStateExportFill.CachedGridNumber != 1)
+                return false;
+
+            var scoringPrevious = RunStateExporter.GetCachedPreviousWords();
+            var cacheCount = scoringPrevious != null ? scoringPrevious.Count : 0;
+            return cacheCount == 0;
         }
 
         /// <summary>
@@ -1022,6 +1134,54 @@ namespace CursedWordsSolverCompanion
             return trimmed;
         }
 
+        private static string FormatFractionLetter(Tile tile)
+        {
+            try
+            {
+                var display = MapDisplay(tile, "?");
+                if (!string.IsNullOrWhiteSpace(display) && display != "?")
+                    return display;
+            }
+            catch
+            {
+                // fall through
+            }
+
+            try
+            {
+                var value = tile.GetFractionFloat();
+                var parts = FractionPartsFromFloat(value);
+                if (parts.HasValue)
+                {
+                    var key = parts.Value;
+                    if (VulgarByParts.TryGetValue(key, out var glyph))
+                        return glyph;
+                    return key.num + "/" + key.den;
+                }
+            }
+            catch
+            {
+                // fall through
+            }
+
+            return "?";
+        }
+
+        private static (int num, int den)? FractionPartsFromFloat(double value)
+        {
+            const int maxDen = 20;
+            const double tolerance = 1e-4;
+            for (int den = 1; den <= maxDen; den++)
+            {
+                var num = (int)Math.Round(value * den);
+                if (num < 0)
+                    continue;
+                if (Math.Abs(value - (double)num / den) <= tolerance)
+                    return (num, den);
+            }
+            return null;
+        }
+
         private static string MapLetter(Tile tile, GlyphType glyph, string curse)
         {
             if (IsJokerGlyph(glyph) || MapIsJoker(tile, glyph))
@@ -1048,14 +1208,7 @@ namespace CursedWordsSolverCompanion
 
             if (glyph == GlyphType.Fraction)
             {
-                try
-                {
-                    return tile.GetFractionFloat().ToString();
-                }
-                catch
-                {
-                    return "?";
-                }
+                return FormatFractionLetter(tile);
             }
 
             if (glyph == GlyphType.Currency)

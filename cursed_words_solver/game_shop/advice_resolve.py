@@ -81,7 +81,12 @@ def resolve_advice_actions(
     return advice
 
 
-def advice_summary(advice: AdviceData, *, free_item_active: bool) -> str:
+def advice_summary(
+    advice: AdviceData,
+    *,
+    free_item_active: bool,
+    money: int | None = None,
+) -> str:
     if advice.specific_reason:
         return advice.specific_reason
 
@@ -97,12 +102,14 @@ def advice_summary(advice: AdviceData, *, free_item_active: bool) -> str:
 
     if advice.recommended_items:
         names = ", ".join(i.name for i in advice.recommended_items[:2])
-        if advice.should_upgrade:
+        if advice.should_freeze and advice.should_upgrade:
+            action = "Freeze to upgrade"
+        elif advice.should_freeze:
+            action = "Freeze"
+        elif advice.should_upgrade:
             action = "Upgrade"
         elif advice.should_buy:
             action = "Buy"
-        elif advice.should_freeze:
-            action = "Freeze"
         elif advice.should_sell:
             action = "Sell then buy"
         else:
@@ -110,7 +117,11 @@ def advice_summary(advice: AdviceData, *, free_item_active: bool) -> str:
         suffix = f" ({build_label} {func_label})"
         if advice.is_generic:
             suffix = " (works in any build)"
-        return f"{action}: {names}{suffix}"
+        summary = f"{action}: {names}{suffix}"
+        if advice.should_freeze and money is not None:
+            top = advice.recommended_items[0]
+            summary += f" (${top.price}, you have ${money})"
+        return summary
 
     if advice.should_restock:
         return "Restock the shop — nothing useful right now"

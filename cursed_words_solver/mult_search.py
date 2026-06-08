@@ -11,10 +11,13 @@ from cursed_words_solver.rules.scoring_conditions import (
     VOWELS,
     card_suit,
     evaluate_sticker_condition,
+    first_letter_on_path,
     is_card_tile,
     is_joker_tile,
+    is_vowel_letter,
     scaled_word_multiplier,
     tile_counts_as_color,
+    word_first_letter,
     word_starts_ends_different_suit,
 )
 from cursed_words_solver.rules.scoring_order import build_scoring_item_sequence
@@ -118,7 +121,8 @@ def _partial_mult_credit(
     if condition == "ends_with_color:blue":
         return tile_counts_as_color(board.get_by_index(path[-1]), TileColor.BLUE)
     if condition == "word_starts_vowel":
-        return bool(w) and w[0] in VOWELS
+        first = first_letter_on_path(board, path) or word_first_letter(word)
+        return bool(first) and is_vowel_letter(first)
     if condition == "word_starts_consonant":
         return bool(w) and w[0] not in VOWELS and w[0].isalpha()
     if condition == "word_starts_ends_different_suit" and len(path) >= 2:

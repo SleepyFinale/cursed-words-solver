@@ -60,8 +60,52 @@ _VULGAR_FRACTIONS: dict[str, tuple[int, int]] = {
 
 _MAX_FRACTION_DENOMINATOR = 20
 
+_VULGAR_BY_PARTS: dict[tuple[int, int], str] = {
+    parts: glyph for glyph, parts in _VULGAR_FRACTIONS.items()
+}
 
 
+def format_fraction_parts(num: int, den: int) -> str:
+    """Vulgar glyph when known (game set of 18), else slash notation."""
+    if den <= 0:
+        return "?"
+    glyph = _VULGAR_BY_PARTS.get((num, den))
+    if glyph:
+        return glyph
+    return f"{num}/{den}"
+
+
+def format_fraction_value(value: float) -> str:
+    """Display a melmod fraction_value (e.g. 0.8 → ⅘)."""
+    parts = parse_fraction_parts_from_float(value)
+    if parts is None:
+        return str(value)
+    return format_fraction_parts(*parts)
+
+
+def format_fraction_text(text: str) -> str | None:
+    """Normalize decimal/slash/vulgar fraction text to display form."""
+    parts = parse_fraction_parts_from_text(text)
+    if parts is None:
+        return None
+    return format_fraction_parts(*parts)
+
+
+def format_fraction_tile(tile: Tile) -> str:
+    """User-facing label for a fraction curse tile."""
+    ch = normalize_tile_glyph(tile.char or "")
+    if ch and ch != "?" and ch in _VULGAR_FRACTIONS:
+        return ch
+    if ch and ch != "?":
+        formatted = format_fraction_text(ch)
+        if formatted:
+            return formatted
+    parts = fraction_parts(tile)
+    if parts is not None:
+        return format_fraction_parts(*parts)
+    if tile.fraction_value is not None:
+        return format_fraction_value(tile.fraction_value)
+    return "?"
 
 
 def parse_fraction_parts_from_float(value: float) -> tuple[int, int] | None:

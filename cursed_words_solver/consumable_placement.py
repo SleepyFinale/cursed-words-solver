@@ -26,6 +26,11 @@ from cursed_words_solver.rules.scoring_conditions import (
     mahjong_consumable_factor,
     placed_consumable_indices,
 )
+from cursed_words_solver.rules.fraction_tiles import (
+    attach_fraction_metadata,
+    format_fraction_text,
+    format_fraction_tile,
+)
 from cursed_words_solver.search import WordSearcher, neighbors_from_tile
 
 _COLOR_MAP: dict[str, TileColor] = {
@@ -127,12 +132,47 @@ def _parse_consumable_rack_raw(loadout: Loadout) -> list[dict[str, Any]]:
     return [entry for entry in rows if isinstance(entry, dict)]
 
 
+def _placement_letter_for_tile(tile: Tile) -> str:
+    if tile.curse == CurseType.FRACTION:
+        return format_fraction_tile(tile)
+    raw = (tile.letter or tile.char or "?").strip()
+    if len(raw) == 1 and raw.isalpha():
+        return raw.upper()
+    return raw
+
+
+def placement_record_display_letter(
+    rec: ConsumablePlacement | dict[str, Any],
+) -> str:
+    """Overlay/terminal label; keeps fraction glyphs, uppercases single letters."""
+    if isinstance(rec, dict):
+        raw = str(rec.get("letter", "?")).strip()
+    else:
+        raw = str(rec.letter).strip()
+    formatted = format_fraction_text(raw)
+    if formatted:
+        return formatted
+    if len(raw) == 1 and raw.isalpha():
+        return raw.upper()
+    return raw
+
+
 def rack_tile_from_entry(entry: dict[str, Any]) -> Tile | None:
-    letter_raw = str(entry.get("letter") or entry.get("char_display") or "").strip()
-    if not letter_raw:
+    curse_key = str(entry.get("curse", "letter") or "letter").lower()
+    if curse_key == "fraction":
+        display_raw = str(
+            entry.get("char_display")
+            or entry.get("char")
+            or entry.get("letter")
+            or ""
+        ).strip()
+    else:
+        display_raw = str(
+            entry.get("letter") or entry.get("char_display") or ""
+        ).strip()
+    if not display_raw:
         return None
     color_key = str(entry.get("color", "colorless") or "colorless").lower()
-    curse_key = str(entry.get("curse", "letter") or "letter").lower()
     color = _COLOR_MAP.get(color_key, TileColor.UNKNOWN)
     curse = curse_type_from_key(curse_key)
     try:
@@ -152,8 +192,18 @@ def rack_tile_from_entry(entry: dict[str, Any]) -> Tile | None:
             meta["cactus_growth"] = int(cactus_growth)
         except (TypeError, ValueError):
             pass
-    ch = letter_raw.upper()[:1] if len(letter_raw) == 1 else letter_raw
-    return Tile(
+    fraction_value = entry.get("fraction_value")
+    try:
+        frac_val = float(fraction_value) if fraction_value is not None else None
+    except (TypeError, ValueError):
+        frac_val = None
+    if curse == CurseType.FRACTION:
+        ch = display_raw
+    elif len(display_raw) == 1:
+        ch = display_raw.upper()
+    else:
+        ch = display_raw
+    tile = Tile(
         row=-1,
         col=-1,
         char=ch,
@@ -161,8 +211,12 @@ def rack_tile_from_entry(entry: dict[str, Any]) -> Tile | None:
         base_score=base_score,
         color=color,
         curse=curse,
+        fraction_value=frac_val,
         metadata=meta,
     )
+    if curse == CurseType.FRACTION:
+        attach_fraction_metadata(tile)
+    return tile
 
 
 def consumable_rack_tiles(
@@ -633,7 +687,7 @@ def placements_to_records(
                 row=row,
                 col=col,
                 index=idx,
-                letter=(tile.letter or tile.char or "?").upper(),
+                letter=_placement_letter_for_tile(tile),
                 rack_index=rack_index,
             )
         )
@@ -654,9 +708,7 @@ def _placement_record_index(rec: ConsumablePlacement | dict[str, Any]) -> int:
 
 
 def _placement_record_letter(rec: ConsumablePlacement | dict[str, Any]) -> str:
-    if isinstance(rec, dict):
-        return str(rec.get("letter", "?")).upper()
-    return str(rec.letter).upper()
+    return placement_record_display_letter(rec)
 
 
 def format_placement_path_hints(

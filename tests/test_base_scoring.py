@@ -480,6 +480,11 @@ def test_gyrene_mismatch_void_currency_path_start():
     _score_mismatch_fixture("20260605_143044.json", 1196)
 
 
+def test_bannerettes_mismatch_mole_grid3_electric_guitar_tier():
+    """Mismatch 20260608_153556: mole floor mod must not cap scatter tier; game 3393."""
+    _score_mismatch_fixture("20260608_153556.json", 3393)
+
+
 def test_melmod_void_non_dollar_currency_top_row_path_start_penalty():
     """Void ₲ on row 0 at word start gets -10 init; void $ at word start stays 0."""
     from cursed_words_solver.models import Board, CurseType, Tile, TileColor

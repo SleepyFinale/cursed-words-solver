@@ -200,7 +200,7 @@ Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 | `wordlist`               | `game`   | `game` → `game_words.txt`; `enable1` → offline fallback                                    |
 | `setup_weight`           | `0.4`    | Weight for future-round setup value in search ranking                                      |
 | `search_workers`         | `"auto"` | Parallel DFS processes: `"auto"` (up to 8 cores), `1` to disable, or integer `2`–`16`      |
-| `grid_reroll_gap_ratio`  | `0.6`    | Show "Reroll Grid" when best score is below this fraction of estimated grid target         |
+| `grid_reroll_gap_ratio`  | `0.3`    | Show "Reroll Grid" when best score is below this fraction of estimated grid target         |
 
 On startup the terminal prints the loaded word list, e.g. `Word list: game (120000 words)`. After each solve it prints the grid and `Board source: melmod`.
 

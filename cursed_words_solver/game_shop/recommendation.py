@@ -709,4 +709,8 @@ def compute_shop_advice(loadout: Loadout, shop: ShopState) -> AdviceData:
 def compute_shop_advice_summary(loadout: Loadout, shop: ShopState) -> str:
     advice = compute_shop_advice(loadout, shop)
     ctx = build_shop_context(loadout, shop)
-    return advice_summary(advice, free_item_active=ctx.free_item_available)
+    return advice_summary(
+        advice,
+        free_item_active=ctx.free_item_available,
+        money=loadout.money,
+    )

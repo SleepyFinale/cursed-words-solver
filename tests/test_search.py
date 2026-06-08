@@ -772,3 +772,30 @@ def test_nat_h4_find_best_words_all_paths_movement_valid(_parallel_pool_cleanup)
         ), f"{result.word} path={result.path}"
     assert not any(list(r.path) == INVALID_EPIDERMIC_PATH for r in results)
 
+
+def test_find_best_words_wall_sec_includes_refine_and_finalize(tmp_path):
+    import time
+
+    board = _board_cat_horizontal()
+    d = WordDictionary(_make_wordlist(tmp_path))
+    searcher = WordSearcher(
+        dictionary=d,
+        min_len=3,
+        max_len=5,
+        time_budget=5.0,
+        search_workers=1,
+    )
+    loadout = Loadout()
+    original_refine = searcher._refine_provisional_heap
+
+    def slow_refine(board, loadout, candidates):
+        time.sleep(0.05)
+        original_refine(board, loadout, candidates)
+
+    searcher._refine_provisional_heap = slow_refine
+    searcher.find_best_words(board, loadout=loadout, top_n=1)
+    timing = searcher.last_search_timing
+    assert timing is not None
+    assert timing.wall_sec >= timing.refine_sec
+    assert timing.refine_sec >= 0.04
+
