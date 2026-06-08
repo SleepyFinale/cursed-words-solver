@@ -19,6 +19,12 @@ namespace CursedWordsSolverCompanion
         public Dictionary<string, object> export_diagnostics;
         public BoardSnapshot board;
         public UiLayoutSnapshot ui_layout;
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public ShopStateSnapshot shop;
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public List<InventorySellSnapshot> inventory_sell;
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public EncounterGridRerollSnapshot encounter_grid_reroll;
     }
 
     public sealed class RunStateItem

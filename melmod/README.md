@@ -291,6 +291,27 @@ Run context extras (default-unlocked stickers):
 | `frozen_in_shop` | `true` when Avocado is mushy / shop freeze active (`avocado_mushy` still exported) |
 | `character_slug` | Wiki-style slug for the active character |
 | `encounter_mode` | `encounter`, `shop`, or `none` |
+| `shop_node` | When in shop: `ShopZero`, `ShopOne`, `ShopTwo`, or `MegShop` (from `CurrentRunProgress.CurrentNodeType`) |
+
+### Shop advisor export (v1.2+)
+
+When you are in the Ej?A56 shop, the companion exports live shop state for the Python shop advisor (press **F7** in the shop, then **F8** in the solver).
+
+Top-level `run_state.json` fields:
+
+| Field | Purpose |
+| ----- | ------- |
+| `shop.restock_cost` | Next restock price ($) |
+| `shop.free_item_available` | Pre-Yellow crown free purchase still available |
+| `shop.angel_investment_available` | Angel Investment first-free eligible |
+| `shop.hungry_hippo_equipped` | Hungry Hippo can eat shop stickers |
+| `shop.offers[]` | Live offers: `slot` (`sticker`/`stamp`/`tile`), `index`, `id`, `name`, `level`, `foil`, `price`, `frozen`, `free`, `sold`, tile `color`/`curse`/`letter` |
+| `inventory_sell[]` | Owned stickers/stamps with `sell_value`, `sell_cost`, `costs_money_to_sell` |
+| `encounter_grid_reroll` | Encounter **grid** reroll (not shop restock): `remaining`, `cost_per_use` (0 default, $1 with Wheel), `can_reroll`, `wheel_equipped`, `fan_equipped` |
+| `extras.encounter_remaining_target` | Score still needed this encounter (from `_remainingTarget`) |
+| `extras.encounter_total_target` | Encounter total target score (from `_totalTarget`) |
+
+Capture a shop fixture for regression tests: press **F7** in the shop and copy `%USERPROFILE%\.cursed_words_solver\run_state.json` to `tests/fixtures/shops/`.
 | `grids_total` | Total grids in encounter (Badger) when readable |
 | `sticker_order` / `stamp_order` | JSON slug arrays (live slot order) |
 | `historic_words` | Compact JSON of prior submitted words (word, path, score) |

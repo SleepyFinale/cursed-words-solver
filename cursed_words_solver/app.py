@@ -53,10 +53,11 @@ from cursed_words_solver.suggestion import (
     save_last_suggestion,
 )
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.models import Board, WordResult
+from cursed_words_solver.models import Board, CurseType, Tile, TileColor, WordResult
 from cursed_words_solver.board_display import format_board_grid
 from cursed_words_solver.loadout import (
     bicycle_extras_stale_warning,
+    encounter_mode_from_run_state,
     format_loadout_summary,
     load_run_state,
     load_run_state_raw,
@@ -71,7 +72,10 @@ from cursed_words_solver.loadout import (
     mod_money_from_run_state,
     export_diagnostics_from_run_state,
     parse_board_from_run_state,
+    parse_encounter_grid_reroll,
+    parse_inventory_sell,
     parse_run_state,
+    parse_shop_from_run_state,
     prepare_run_state_dict_for_scoring,
     solver_session_extras_from_loadout,
     validate_run_state_for_scoring,
@@ -141,6 +145,7 @@ class _SolveUIUpdate:
     # Fingerprints from run_state.json at solve time (melmod); used to detect shop/round end.
     melmod_board_fingerprint: str | None = None
     melmod_loadout_fingerprint: str | None = None
+    shop_advice_html: str | None = None
 
 
 class _HotkeyBridge(QObject):
@@ -523,6 +528,13 @@ class SolverApp:
 
     def _apply_solve_ui(self, update: _SolveUIUpdate) -> None:
         """Show overlay and board highlights on the Qt GUI thread."""
+        if update.shop_advice_html:
+            self._clear_highlight_state()
+            self.overlay.show_shop_advice(
+                update.shop_advice_html,
+                warnings_html=update.warnings_html,
+            )
+            return
         self.overlay.show_results(
             update.board,
             update.results,
@@ -612,6 +624,84 @@ class SolverApp:
             return
         threading.Thread(target=self._solve_worker, daemon=True).start()
 
+    def _shop_advisor_worker(self, run_state_data: dict | None) -> None:
+        """Shop advice path when encounter_mode is shop."""
+        from cursed_words_solver.shop_advisor import (
+            format_shop_advice_html,
+            format_shop_advice_text,
+            run_shop_advisor,
+        )
+        from cursed_words_solver.search_parallel import resolve_search_workers
+        from cursed_words_solver.shop_simulation import SimulationConfig
+
+        if not self._ensure_solver():
+            print("Solver not ready (dictionary failed to load).", flush=True)
+            return
+
+        shop = parse_shop_from_run_state(run_state_data)
+        if shop is None or not shop.offers:
+            print(
+                "Shop mode detected but no shop offers in run_state.json — "
+                "rebuild melmod, press F7 in the Ej?A56 shop, then F8 again.",
+                flush=True,
+            )
+            return
+
+        loadout = parse_run_state(run_state_data or {})
+        mod_money = mod_money_from_run_state(run_state_data)
+        loadout = merge_loadout_with_board(
+            loadout,
+            loadout.money,
+            mod_money=mod_money if mod_money > 0 else None,
+        )
+        print(f"Shop advisor (${loadout.money} available)...", flush=True)
+
+        sim_config = SimulationConfig(
+            budget_sec=self.config.shop_sim_budget_sec,
+            max_boards=self.config.shop_sim_boards,
+            setup_weight=self.config.setup_weight,
+            setup_discount=self.config.setup_discount,
+            word_per_dollar=self.config.word_per_dollar,
+            monte_carlo_samples=self.config.shop_monte_carlo_samples,
+            total_budget_sec=self.config.shop_total_budget_sec,
+            search_workers=resolve_search_workers(self.config.search_workers),
+            shop_reserve_per_future_shop=self.config.shop_reserve_per_future_shop,
+            shop_marginal_net_per_remaining_shop=(
+                self.config.shop_marginal_net_per_remaining_shop
+            ),
+        )
+        sell_candidates = parse_inventory_sell(run_state_data)
+        advice = run_shop_advisor(
+            loadout,
+            shop,
+            sell_candidates,
+            self._dictionary,
+            config=sim_config,
+            on_progress=lambda msg: print(f"  {msg}", flush=True),
+        )
+        print(format_shop_advice_text(advice), flush=True)
+
+        placeholder = Tile(
+            row=0,
+            col=0,
+            char=".",
+            letter=".",
+            base_score=0,
+            color=TileColor.COLORLESS,
+            curse=CurseType.LETTER,
+        )
+        empty_board = Board(tiles=[[placeholder for _ in range(5)] for _ in range(5)])
+        self._bridge.solve_finished.emit(
+            _SolveUIUpdate(
+                board=empty_board,
+                results=[],
+                board_bgr=None,
+                warnings_html="<br>".join(advice.warnings) if advice.warnings else "",
+                on_game_highlight=False,
+                shop_advice_html=format_shop_advice_html(advice),
+            )
+        )
+
     def _solve_worker(self) -> None:
         self._busy = True
         self._solve_active = True
@@ -624,6 +714,11 @@ class SolverApp:
             self._reload_run_state()
             run_state_data = load_run_state_raw()
 
+            mode = encounter_mode_from_run_state(run_state_data)
+            if mode == "shop":
+                self._shop_advisor_worker(run_state_data)
+                return
+
             mod_money = mod_money_from_run_state(run_state_data)
             prepared_state = (
                 prepare_run_state_dict_for_scoring(run_state_data)
@@ -634,11 +729,22 @@ class SolverApp:
             board_img = None
 
             if board is None:
+                shop = parse_shop_from_run_state(run_state_data)
+                if shop is not None and shop.offers:
+                    self._shop_advisor_worker(run_state_data)
+                    return
+
                 print(melmod_install_hint(), flush=True)
                 if run_state_data is None:
                     print(
                         "Could not read run_state.json (file locked or invalid JSON). "
                         "Press F7 in-game, wait a moment, then press F8 again.",
+                        flush=True,
+                    )
+                elif isinstance(run_state_data.get("shop"), dict):
+                    print(
+                        "Shop export has no offers — press F7 in the Ej?A56 shop, "
+                        "then F8 again. Rebuild melmod if offers stay empty.",
                         flush=True,
                     )
                 elif not isinstance(run_state_data.get("board"), dict):
@@ -1420,6 +1526,32 @@ class SolverApp:
                 )
 
             warnings = self._overlay_warnings(board, unmapped, loadout=loadout)
+            if results and encounter_mode_from_run_state(run_state_data) == "encounter":
+                from cursed_words_solver.grid_reroll_advisor import (
+                    format_grid_reroll_reason,
+                    should_reroll_grid,
+                )
+
+                grid_reroll = parse_encounter_grid_reroll(run_state_data)
+                best_score = results[0].score
+                if should_reroll_grid(
+                    best_score,
+                    loadout,
+                    grid_reroll,
+                    gap_ratio=self.config.grid_reroll_gap_ratio,
+                ):
+                    reason = format_grid_reroll_reason(
+                        best_score,
+                        loadout,
+                        gap_ratio=self.config.grid_reroll_gap_ratio,
+                    )
+                    print(f"  Grid reroll recommended ({reason})", flush=True)
+                    reroll_warn = (
+                        "<span style='color:#fa0;font-weight:bold'>Reroll Grid</span>"
+                    )
+                    warnings = (
+                        f"{warnings}<br>{reroll_warn}" if warnings else reroll_warn
+                    )
             highlight = (
                 self.config.show_board_highlight
                 and self._overlay_regions.board.is_valid()

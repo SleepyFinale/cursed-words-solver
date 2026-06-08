@@ -16,8 +16,12 @@ from cursed_words_solver.models import (
     CURRENCY_MAP,
     Board,
     CurseType,
+    EncounterGridRerollState,
     Loadout,
     LoadoutItem,
+    SellCandidate,
+    ShopOffer,
+    ShopState,
     Tile,
     TileColor,
     curse_type_from_key,
@@ -1485,3 +1489,131 @@ def merge_loadout_with_board(
     elif board_money > 0 and not lo.money:
         lo.money = board_money
     return lo
+
+
+def _parse_shop_offer(raw: dict[str, Any]) -> ShopOffer:
+    return ShopOffer(
+        slot=str(raw.get("slot", "")),
+        index=int(raw.get("index", 0)),
+        id=str(raw.get("id", "")),
+        name=str(raw.get("name", "")),
+        level=max(1, int(raw.get("level", 1))),
+        foil=bool(raw.get("foil", False)),
+        price=int(raw.get("price", 0)),
+        base_price=int(raw.get("base_price", raw.get("price", 0))),
+        frozen=bool(raw.get("frozen", False)),
+        free=bool(raw.get("free", False)),
+        sold=bool(raw.get("sold", False)),
+        hippo_eligible=bool(raw.get("hippo_eligible", False)),
+        color=str(raw.get("color", "")),
+        curse=str(raw.get("curse", "")),
+        letter=str(raw.get("letter", "")),
+        base_score=float(raw.get("base_score", 0) or 0),
+    )
+
+
+def parse_shop_from_run_state(data: dict[str, Any] | None) -> ShopState | None:
+    if not isinstance(data, dict):
+        return None
+    shop_raw = data.get("shop")
+    if not isinstance(shop_raw, dict):
+        return None
+    offers = [
+        _parse_shop_offer(o)
+        for o in shop_raw.get("offers", [])
+        if isinstance(o, dict)
+    ]
+    return ShopState(
+        restock_cost=int(shop_raw.get("restock_cost", 0)),
+        free_item_available=bool(shop_raw.get("free_item_available", False)),
+        angel_investment_available=bool(shop_raw.get("angel_investment_available", False)),
+        hungry_hippo_equipped=bool(shop_raw.get("hungry_hippo_equipped", False)),
+        offers=offers,
+    )
+
+
+def parse_inventory_sell(data: dict[str, Any] | None) -> list[SellCandidate]:
+    if not isinstance(data, dict):
+        return []
+    rows = data.get("inventory_sell")
+    if not isinstance(rows, list):
+        return []
+    result: list[SellCandidate] = []
+    for raw in rows:
+        if not isinstance(raw, dict):
+            continue
+        result.append(
+            SellCandidate(
+                kind=str(raw.get("kind", "")),
+                slot=int(raw.get("slot", 0)),
+                id=str(raw.get("id", "")),
+                name=str(raw.get("name", "")),
+                level=max(1, int(raw.get("level", 1))),
+                foil=bool(raw.get("foil", False)),
+                sell_value=int(raw.get("sell_value", 0)),
+                sell_cost=int(raw.get("sell_cost", 0)),
+                costs_money_to_sell=bool(raw.get("costs_money_to_sell", False)),
+            )
+        )
+    return result
+
+
+def _parse_encounter_grid_reroll_raw(raw: dict[str, Any]) -> EncounterGridRerollState:
+    cost_per_use = raw.get("cost_per_use", raw.get("cost", 0))
+    can_reroll = raw.get("can_reroll", raw.get("available", False))
+    return EncounterGridRerollState(
+        remaining=int(raw.get("remaining", 0)),
+        cost_per_use=int(cost_per_use),
+        can_reroll=bool(can_reroll),
+        wheel_equipped=bool(raw.get("wheel_equipped", False)),
+        fan_equipped=bool(raw.get("fan_equipped", False)),
+    )
+
+
+def parse_encounter_grid_reroll(
+    data: dict[str, Any] | None,
+) -> EncounterGridRerollState | None:
+    if not isinstance(data, dict):
+        return None
+    raw = data.get("encounter_grid_reroll")
+    if not isinstance(raw, dict):
+        raw = data.get("encounter_reroll")
+    if not isinstance(raw, dict):
+        return None
+    return _parse_encounter_grid_reroll_raw(raw)
+
+
+def parse_encounter_reroll(data: dict[str, Any] | None) -> EncounterGridRerollState | None:
+    """Deprecated alias for parse_encounter_grid_reroll."""
+    return parse_encounter_grid_reroll(data)
+
+
+def _has_valid_board_export(data: dict[str, Any]) -> bool:
+    board_data = data.get("board")
+    if not isinstance(board_data, dict):
+        return False
+    tiles_raw = board_data.get("tiles")
+    return isinstance(tiles_raw, list) and len(tiles_raw) == 25
+
+
+def _has_shop_offers(data: dict[str, Any]) -> bool:
+    shop_raw = data.get("shop")
+    if not isinstance(shop_raw, dict):
+        return False
+    offers = shop_raw.get("offers")
+    return isinstance(offers, list) and len(offers) > 0
+
+
+def encounter_mode_from_run_state(data: dict[str, Any] | None) -> str:
+    if not isinstance(data, dict):
+        return "none"
+    if _has_valid_board_export(data):
+        return "encounter"
+    if _has_shop_offers(data):
+        return "shop"
+    extras = data.get("extras")
+    if isinstance(extras, dict):
+        mode = str(extras.get("encounter_mode", "") or "").strip().lower()
+        if mode and mode != "none":
+            return mode
+    return "none"

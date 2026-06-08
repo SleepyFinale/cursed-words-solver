@@ -116,6 +116,24 @@ class ResultOverlay(QWidget):
         self._stale_notice_active = False
         self.warnings_label.hide()
 
+    def show_shop_advice(self, advice_html: str, *, warnings_html: str = "") -> None:
+        """Show shop purchase/sell/restock recommendations."""
+        self._has_solved = True
+        self.idle_label.hide()
+        self.clear_stale_notice()
+        if warnings_html:
+            self.warnings_label.setText(warnings_html)
+            self.warnings_label.show()
+        else:
+            self.warnings_label.hide()
+        self.hero_result.setText(advice_html)
+        self.hero_result.show()
+        self.preview.hide()
+        self._resize_for_content(compact=True)
+        self._position_panel()
+        self.show()
+        self.raise_()
+
     def show_results(
         self,
         board: Board,

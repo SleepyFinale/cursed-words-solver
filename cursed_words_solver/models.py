@@ -251,6 +251,93 @@ class Loadout:
 
 
 @dataclass
+class ShopOffer:
+    slot: str  # sticker | stamp | tile
+    index: int
+    id: str
+    name: str
+    level: int = 1
+    foil: bool = False
+    price: int = 0
+    base_price: int = 0
+    frozen: bool = False
+    free: bool = False
+    sold: bool = False
+    hippo_eligible: bool = False
+    color: str = ""
+    curse: str = ""
+    letter: str = ""
+    base_score: float = 0.0
+
+
+@dataclass
+class SellCandidate:
+    kind: str  # sticker | stamp
+    slot: int
+    id: str
+    name: str
+    level: int = 1
+    foil: bool = False
+    sell_value: int = 0
+    sell_cost: int = 0
+    costs_money_to_sell: bool = False
+
+
+@dataclass
+class ShopState:
+    restock_cost: int = 0
+    free_item_available: bool = False
+    angel_investment_available: bool = False
+    hungry_hippo_equipped: bool = False
+    offers: list[ShopOffer] = field(default_factory=list)
+
+
+@dataclass
+class EncounterGridRerollState:
+    remaining: int = 0
+    cost_per_use: int = 0
+    can_reroll: bool = False
+    wheel_equipped: bool = False
+    fan_equipped: bool = False
+
+
+# Backward compatibility alias
+EncounterRerollState = EncounterGridRerollState
+
+
+@dataclass
+class RankedAction:
+    action: str
+    label: str
+    net_value: float
+    score_lift: float = 0.0
+    money_delta: int = 0
+    reason: str = ""
+    offer_index: int | None = None
+    sell_slot: int | None = None
+    kind: str = ""
+
+
+@dataclass
+class ActionRecommendation:
+    action: str  # buy | skip | yes | no
+    label: str
+    net_value: float = 0.0
+    reason: str = ""
+
+
+@dataclass
+class ShopAdvice:
+    buys: list[RankedAction] = field(default_factory=list)
+    sells: list[RankedAction] = field(default_factory=list)
+    restock: ActionRecommendation | None = None
+    special_actions: list[RankedAction] = field(default_factory=list)
+    freezes: list[RankedAction] = field(default_factory=list)
+    leave_shop: ActionRecommendation | None = None
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
 class WordResult:
     word: str
     path: list[int]  # tile indices 0-24

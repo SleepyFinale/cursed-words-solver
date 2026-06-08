@@ -10,6 +10,7 @@ Requires the [MelonLoader companion mod](melmod/README.md), which reads the live
 - Scoring that follows the official [wiki order](https://cursedwords.wiki.gg/wiki/Scoring) (tiles → boss tile/word penalties → grid → pin → stickers → stamps), driven by `[data/wiki/stickers.json](data/wiki/stickers.json)`
 - Always-on-top result overlay plus numbered, click-through path highlights on the game board
 - Scoring mismatch capture (melmod v1.1.6+) and regression fixtures from real in-game submits
+- Shop advisor (melmod shop export + F8 in Ej?A56): ranked buy/sell/restock advice and encounter grid reroll hints
 
 ## Quick start
 
@@ -199,6 +200,14 @@ Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 | `wordlist`               | `game`   | `game` → `game_words.txt`; `enable1` → offline fallback                                    |
 | `setup_weight`           | `0.4`    | Weight for future-round setup value in search ranking                                      |
 | `search_workers`         | `"auto"` | Parallel DFS processes: `"auto"` (up to 8 cores), `1` to disable, or integer `2`–`16`      |
+| `shop_sim_budget_sec`    | `1`      | Search budget per hypothetical board when advising shop purchases                            |
+| `shop_sim_boards`        | `2`      | Max representative fixture boards for shop simulation                                        |
+| `shop_monte_carlo_samples` | `8`    | Samples for restock EV estimates                                                             |
+| `shop_total_budget_sec`  | `20`     | Wall-clock cap for the entire shop advisor run (F8 in shop)                                  |
+| `word_per_dollar`        | `50`     | Money ↔ score equivalence when comparing shop restock costs                                  |
+| `shop_reserve_per_future_shop` | `0` | Dollars to keep per remaining shop (`0` = `8 + boss area`)                             |
+| `shop_marginal_net_per_remaining_shop` | `15` | Minimum WORD net per remaining shop before recommending a buy                |
+| `grid_reroll_gap_ratio`  | `0.6`    | Show "Reroll Grid" when best score is below this fraction of estimated grid target           |
 
 On startup the terminal prints the loaded word list, e.g. `Word list: game (120000 words)`. After each solve it prints the grid and `Board source: melmod`.
 

@@ -784,6 +784,7 @@ namespace CursedWordsSolverCompanion
             if (snapshot.board != null)
                 snapshot.ui_layout = UiLayoutExporter.TryExport(snapshot.board);
             RunStateExportFill.ApplyMetadata(snapshot, player);
+            ShopExporter.FillShopState(snapshot, player);
             if (snapshot.board != null)
                 ConsumablePlacementTracker.OnBoardSnapshot(snapshot.board);
             return snapshot;

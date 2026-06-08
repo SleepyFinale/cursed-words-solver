@@ -1328,6 +1328,19 @@ From [Shop wiki](https://cursedwords.wiki.gg/wiki/Shop). Ej?A56 sells stickers, 
 | Stamps | 2 | Freezable |
 | Tiles | 2 | Coloured consumables |
 
+### 8.1b Grid reroll vs shop restock
+
+These are **different** mechanics (the game uses "reroll" internally for both):
+
+| | Grid reroll | Shop restock |
+|---|-------------|--------------|
+| When | During an encounter grid, before submitting a word | In the Ej?A56 shop between encounters |
+| Cost | Free by default; **$1 each** with [Wheel](https://cursedwords.wiki.gg/wiki/Wheel) stamp | **$1** initially, +$1 per restock ($2 base on Yellow crown+) |
+| Budget | Typically **1 per encounter** (+3 with Wheel, +1 with Slot Machine sticker) | Unlimited while you have money |
+| Effect | Regenerates the current 5×5 grid (`GenerateGrid(isReroll: true)`); Fan keeps SHINY tiles | Refreshes shop sticker/stamp/tile offers |
+
+The solver exports grid reroll as `encounter_grid_reroll` and shop refresh cost as `shop.restock_cost`.
+
 ### 8.2 Pricing and restock
 
 - **Free item:** Before Yellow crown, one free purchase per shop (lost on restock)

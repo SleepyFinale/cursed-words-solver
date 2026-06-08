@@ -207,6 +207,13 @@ namespace CursedWordsSolverCompanion
             if (IsMichaelPuzzleGridActive())
                 return "puzzle";
 
+            var shopController = UnityEngine.Object.FindAnyObjectByType<ShopController>();
+            if (shopController != null && shopController.isActiveAndEnabled)
+                return "shop";
+
+            if (IsRunProgressShopNode(player))
+                return "shop";
+
             if (BoardExporter.TryBuild(player) != null)
                 return "encounter";
 
@@ -218,6 +225,35 @@ namespace CursedWordsSolverCompanion
                 return "shop";
 
             return "none";
+        }
+
+        private static bool IsRunProgressShopNode(Player player)
+        {
+            var progress = TryGetRunProgress(player);
+            if (progress == null)
+                return false;
+            try
+            {
+                var type = progress.GetType();
+                var field = type.GetField("CurrentNodeType", MemberFlags);
+                object value = field?.GetValue(progress);
+                if (value == null)
+                {
+                    var prop = type.GetProperty("CurrentNodeType", MemberFlags);
+                    value = prop?.GetValue(progress, null);
+                }
+                if (value == null)
+                    return false;
+                var name = value.ToString();
+                return name == "ShopZero"
+                    || name == "ShopOne"
+                    || name == "ShopTwo"
+                    || name == "MegShop";
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static void FillGridNumber(RunStateSnapshot snapshot, Player player)
