@@ -25,7 +25,10 @@ Run all commands from the **repository root** (the folder containing `pyproject.
 | `python scripts/profile_search.py [--run-state] [--latest N] --budget 12` | SearchTiming: scoring % vs DFS expansions; Tier-2 recommendation |
 | `python scripts/profile_search.py --round-logs --use-config-budget` | Profile every board from your `round_logs/` play sessions |
 | `python scripts/profile_search.py --round-logs --mismatches-only --budget 12` | Profile only rounds where in-game score differed from solver |
-| `python scripts/analyze_data_structures.py --budget 12` | Full structure analysis: hot-path, cache hit rates, precompute audit; see [`docs/DATA_STRUCTURE_ANALYSIS.md`](../docs/DATA_STRUCTURE_ANALYSIS.md) |
+| `python scripts/analyze_data_structures.py --budget 12` | Full structure analysis: phase timings, caches, tier-2, context precompute, optimization gating; see [`docs/DATA_STRUCTURE_ANALYSIS.md`](../docs/DATA_STRUCTURE_ANALYSIS.md) |
+| `python scripts/analyze_data_structures.py --write-doc` | Regenerate `docs/DATA_STRUCTURE_ANALYSIS.md` from default fixtures |
+| `python scripts/analyze_data_structures.py --latest 4 --category chess` | Analyze newest mismatches or filter by category (chess, sticker, hanafuda, number, boss) |
+| `python scripts/analyze_data_structures.py --profile-flat` | Optional extra cProfile pass for Board.flat cumulative seconds (slow) |
 | `scripts/catalog/achievement_stamps_catalog.py` | Data module (not run directly); imported by `build_stickers_json.py` |
 
 ## Regenerate `stickers.json`
