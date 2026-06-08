@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.scoring_order import path_grid_item_refs
+from cursed_words_solver.rules.scoring_order import (
+    build_scoring_item_sequence,
+    hourglass_reverses_order,
+    path_grid_item_refs,
+)
 from cursed_words_solver.fast_rank import (
     tier2_immediate_lower_bound,
     tier2_immediate_upper_bound,
@@ -31,6 +35,35 @@ def _board_with_scattered_item() -> Board:
     return board
 
 
+def test_grid_refs_hourglass_matches_build_scoring_item_sequence():
+    board = _board_with_scattered_item()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="hourglass", name="Hourglass", level=1, kind="stamp")],
+        extras={"hourglass_count": "1"},
+    )
+    rules = ScoringPipeline().rules
+    ctx = build_solve_context(loadout, rules)
+    path = [0, 1, 12]
+    hourglass = hourglass_reverses_order(loadout, rules)
+    assert hourglass is True
+    grid = list(path_grid_item_refs(board, path, rules, loadout))
+    if hourglass:
+        grid.reverse()
+    filtered = [
+        ref
+        for ref in build_scoring_item_sequence(
+            board,
+            path,
+            loadout,
+            rules,
+            hourglass_reversed=ctx.hourglass_reversed,
+            inventory_refs=ctx.inventory_refs,
+        )
+        if ref.kind == "grid_path"
+    ]
+    assert grid == filtered
+
+
 def test_path_grid_item_refs_cache_reuses_entry():
     board = _board_with_scattered_item()
     loadout = Loadout()
@@ -54,7 +87,9 @@ def test_tier2_bounds_bracket_full_score():
     ctx = build_solve_context(loadout, rules)
     path = [0, 1, 2]
     word = "cat"
-    mult_rules = loadout_mult_rules(loadout, rules, board=board, path=path)
+    mult_rules = loadout_mult_rules(
+        loadout, rules, board=board, path=path, solve_context=ctx
+    )
     full = pipeline.score_total_only(board, path, word, loadout, solve_context=ctx)
     lb = tier2_immediate_lower_bound(board, path, word, loadout, ctx, mult_rules)
     ub = tier2_immediate_upper_bound(board, path, word, loadout, ctx, mult_rules)

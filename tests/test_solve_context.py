@@ -59,6 +59,33 @@ def test_build_solve_context_matches_individual_lookups():
     assert ctx.boss_ctx == boss_context(loadout, rules)
     assert ctx.inventory_refs == tuple(_inventory_item_refs(loadout, rules))
     assert ctx.capybara_shuffles == capybara_shuffles_loadout(loadout, rules)
+    assert ctx.sticker_slot_order == (1, 0)
+    assert ctx.stamp_slot_order == (0,)
+    assert ctx.grid_tile_multiply_first is False
+
+
+def test_build_solve_context_slot_order_without_hourglass():
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="a", name="A", level=1, kind="sticker"),
+            LoadoutItem(id="b", name="B", level=1, kind="sticker"),
+        ],
+        stamps=[
+            LoadoutItem(id="c", name="C", level=1, kind="stamp"),
+            LoadoutItem(id="d", name="D", level=1, kind="stamp"),
+        ],
+    )
+    rules = ScoringPipeline().rules
+    ctx = build_solve_context(loadout, rules)
+    assert ctx.sticker_slot_order == (0, 1)
+    assert ctx.stamp_slot_order == (0, 1)
+
+
+def test_build_solve_context_grid_tile_multiply_first_flag():
+    loadout = Loadout(extras={"grid_tile_multiply_first": "true"})
+    rules = ScoringPipeline().rules
+    ctx = build_solve_context(loadout, rules)
+    assert ctx.grid_tile_multiply_first is True
 
 
 def test_solve_context_precompute_called_once_per_find_best_words(tmp_path):

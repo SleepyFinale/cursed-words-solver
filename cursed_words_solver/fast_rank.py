@@ -14,17 +14,12 @@ from cursed_words_solver.graph_bitboard import (
 from cursed_words_solver.models import Board, CurseType, Loadout, TileColor
 
 from cursed_words_solver.mult_search import (
-
     MultRule,
-
     guaranteed_mult_factor,
-
     loadout_mult_rules,
-
+    optimistic_mult_factor,
     optimistic_mult_upper_bound,
-
     search_rank_score,
-
 )
 
 from cursed_words_solver.rules.base_scoring import (
@@ -211,9 +206,13 @@ def _tier2_additive_bonuses(
     word: str,
     ctx: SolveContext,
     graph_ctx: BoardGraphContext | None = None,
-) -> tuple[float, float, float, float, float]:
+    board_scoring_ctx=None,
+) -> tuple[float, float, float, float, float, float]:
     """Tile-base sum and loadout-invariant bonuses from SolveContext."""
+    from cursed_words_solver.board_scoring_context import path_static_tile_add_bonus
+
     base = tier2_tile_base_sum(board, path, ctx)
+    static_tile_add = path_static_tile_add_bonus(board_scoring_ctx, path)
     word_bonus = (
         ctx.max_word_length_bonus if len(word) >= ctx.word_length_min else 0
     )
@@ -238,7 +237,7 @@ def _tier2_additive_bonuses(
                     graph_ctx.hanafuda_suit_mask if graph_ctx else 0
                 ),
             )
-    return base, word_bonus, path_bonus, red_bonus, hanafuda_bonus
+    return base, word_bonus, path_bonus, red_bonus, hanafuda_bonus, static_tile_add
 
 
 def tier2_immediate_lower_bound(
@@ -249,12 +248,27 @@ def tier2_immediate_lower_bound(
     ctx: SolveContext,
     mult_rules: list[MultRule],
     graph_ctx: BoardGraphContext | None = None,
+    board_scoring_ctx=None,
 ) -> float:
     """Conservative immediate score; never exceeds full pipeline score_total_only."""
-    base, word_bonus, path_bonus, red_bonus, hanafuda_bonus = _tier2_additive_bonuses(
-        board, path, word, ctx, graph_ctx=graph_ctx
+    (
+        base,
+        word_bonus,
+        path_bonus,
+        red_bonus,
+        hanafuda_bonus,
+        static_tile_add,
+    ) = _tier2_additive_bonuses(
+        board,
+        path,
+        word,
+        ctx,
+        graph_ctx=graph_ctx,
+        board_scoring_ctx=board_scoring_ctx,
     )
-    subtotal = base + word_bonus + path_bonus + red_bonus + hanafuda_bonus
+    subtotal = (
+        base + word_bonus + path_bonus + red_bonus + hanafuda_bonus + static_tile_add
+    )
     return subtotal * guaranteed_mult_factor(mult_rules, loadout, path)
 
 
@@ -266,12 +280,27 @@ def tier2_immediate_upper_bound(
     ctx: SolveContext,
     mult_rules: list[MultRule],
     graph_ctx: BoardGraphContext | None = None,
+    board_scoring_ctx=None,
 ) -> float:
     """Optimistic upper bound on score_total_only before search-rank heuristics."""
-    base, word_bonus, path_bonus, red_bonus, hanafuda_bonus = _tier2_additive_bonuses(
-        board, path, word, ctx, graph_ctx=graph_ctx
+    (
+        base,
+        word_bonus,
+        path_bonus,
+        red_bonus,
+        hanafuda_bonus,
+        static_tile_add,
+    ) = _tier2_additive_bonuses(
+        board,
+        path,
+        word,
+        ctx,
+        graph_ctx=graph_ctx,
+        board_scoring_ctx=board_scoring_ctx,
     )
-    subtotal = base + word_bonus + path_bonus + red_bonus + hanafuda_bonus
+    subtotal = (
+        base + word_bonus + path_bonus + red_bonus + hanafuda_bonus + static_tile_add
+    )
     mult = optimistic_mult_upper_bound(mult_rules, loadout, path)
     return subtotal * mult
 
@@ -290,10 +319,18 @@ def tier2_rank_lower_bound(
     mult_weight: float,
     hanafuda_level: int = 0,
     graph_ctx: BoardGraphContext | None = None,
+    board_scoring_ctx=None,
 ) -> float:
     """Conservative lower bound on heap rank_score for tier-2 two-phase scoring."""
     immediate_lb = tier2_immediate_lower_bound(
-        board, path, word, loadout, ctx, mult_rules, graph_ctx=graph_ctx
+        board,
+        path,
+        word,
+        loadout,
+        ctx,
+        mult_rules,
+        graph_ctx=graph_ctx,
+        board_scoring_ctx=board_scoring_ctx,
     )
     mult_lb = guaranteed_mult_factor(mult_rules, loadout, path)
     rank_lb = search_rank_score(
@@ -318,10 +355,18 @@ def tier2_rank_upper_bound(
     mult_weight: float,
     hanafuda_level: int = 0,
     graph_ctx: BoardGraphContext | None = None,
+    board_scoring_ctx=None,
 ) -> float:
     """Optimistic upper bound on heap rank_score for tier-2 screening."""
     immediate_ub = tier2_immediate_upper_bound(
-        board, path, word, loadout, ctx, mult_rules, graph_ctx=graph_ctx
+        board,
+        path,
+        word,
+        loadout,
+        ctx,
+        mult_rules,
+        graph_ctx=graph_ctx,
+        board_scoring_ctx=board_scoring_ctx,
     )
     mult_ub = optimistic_mult_upper_bound(mult_rules, loadout, path)
     rank_ub = search_rank_score(
@@ -462,13 +507,135 @@ def _prefix_additive_bonuses(
         red_bonus = ctx.red_tile_bonus_per_red * reds
     hanafuda_bonus = 0
     if ctx.hanafuda_level > 0 and ctx.hanafuda_per_unused > 0:
-        if hanafuda_hand_satisfied(board, path, ctx.hanafuda_level):
+        if hanafuda_hand_satisfied(board, path, ctx.hanafuda_level) or steps_left > 0:
             hanafuda_bonus = ctx.hanafuda_per_unused * unused_cards_on_board(
                 board,
                 path,
                 hanafuda_suit_mask=graph_ctx.hanafuda_suit_mask,
             )
     return word_bonus, path_bonus, red_bonus, hanafuda_bonus
+
+
+def _prefix_subtotal_upper_bound(
+    prefix_base: float,
+    board: Board,
+    path: list[int],
+    chars: list[str],
+    visited_mask: int,
+    steps_left: int,
+    ctx: SolveContext,
+    graph_ctx: BoardGraphContext,
+    search_tile_base: tuple[float, ...],
+    *,
+    max_len: int,
+    prefix_red_count: int,
+) -> float:
+    max_fill = _max_unvisited_base_sum(
+        graph_ctx, search_tile_base, visited_mask, steps_left
+    )
+    base = prefix_base + max_fill
+    word_bonus, path_bonus, red_bonus, hanafuda_bonus = _prefix_additive_bonuses(
+        board,
+        path,
+        chars,
+        visited_mask,
+        steps_left,
+        ctx,
+        graph_ctx,
+        max_len=max_len,
+        prefix_red_count=prefix_red_count,
+    )
+    return base + word_bonus + path_bonus + red_bonus + hanafuda_bonus
+
+
+def prefix_immediate_upper_bound(
+    prefix_base: float,
+    board: Board,
+    path: list[int],
+    chars: list[str],
+    visited_mask: int,
+    steps_left: int,
+    loadout: Loadout,
+    ctx: SolveContext,
+    mult_rules: list[MultRule],
+    graph_ctx: BoardGraphContext,
+    search_tile_base: tuple[float, ...],
+    *,
+    max_len: int,
+    prefix_red_count: int,
+) -> float:
+    """Optimistic upper bound on score_total_only for any word extending a DFS prefix."""
+    subtotal = _prefix_subtotal_upper_bound(
+        prefix_base,
+        board,
+        path,
+        chars,
+        visited_mask,
+        steps_left,
+        ctx,
+        graph_ctx,
+        search_tile_base,
+        max_len=max_len,
+        prefix_red_count=prefix_red_count,
+    )
+    mult = optimistic_mult_upper_bound(mult_rules, loadout, path)
+    return subtotal * mult
+
+
+def prefix_dfs_rank_bound(
+    prefix_base: float,
+    board: Board,
+    path: list[int],
+    chars: list[str],
+    visited_mask: int,
+    steps_left: int,
+    loadout: Loadout,
+    ctx: SolveContext,
+    mult_rules: list[MultRule],
+    graph_ctx: BoardGraphContext,
+    search_tile_base: tuple[float, ...],
+    rules: dict,
+    *,
+    mult_weight: float,
+    max_len: int,
+    prefix_red_count: int,
+    hanafuda_level: int = 0,
+    mult_factor: float | None = None,
+) -> float:
+    """Heap rank_score upper estimate for DFS pruning (uses optimistic_mult_factor)."""
+    immediate_ub = prefix_immediate_upper_bound(
+        prefix_base,
+        board,
+        path,
+        chars,
+        visited_mask,
+        steps_left,
+        loadout,
+        ctx,
+        mult_rules,
+        graph_ctx,
+        search_tile_base,
+        max_len=max_len,
+        prefix_red_count=prefix_red_count,
+    )
+    if mult_factor is None:
+        mult_factor = optimistic_mult_factor(
+            loadout,
+            board,
+            path,
+            "".join(chars),
+            rules,
+            mult_rules,
+        )
+    rank_ub = search_rank_score(
+        immediate_ub,
+        mult_factor,
+        mult_weight=mult_weight,
+        setup_bonus=0.0,
+    )
+    if hanafuda_level > 0 and hanafuda_hand_satisfied(board, path, hanafuda_level):
+        rank_ub += 800.0
+    return rank_ub
 
 
 def prefix_rank_upper_bound(
@@ -490,24 +657,22 @@ def prefix_rank_upper_bound(
     hanafuda_level: int = 0,
 ) -> float:
     """Optimistic upper bound on heap rank_score for a DFS prefix."""
-    max_fill = _max_unvisited_base_sum(
-        graph_ctx, search_tile_base, visited_mask, steps_left
-    )
-    base = prefix_base + max_fill
-    word_bonus, path_bonus, red_bonus, hanafuda_bonus = _prefix_additive_bonuses(
+    immediate_ub = prefix_immediate_upper_bound(
+        prefix_base,
         board,
         path,
         chars,
         visited_mask,
         steps_left,
+        loadout,
         ctx,
+        mult_rules,
         graph_ctx,
+        search_tile_base,
         max_len=max_len,
         prefix_red_count=prefix_red_count,
     )
-    subtotal = base + word_bonus + path_bonus + red_bonus + hanafuda_bonus
     mult = optimistic_mult_upper_bound(mult_rules, loadout, path)
-    immediate_ub = subtotal * mult
     rank_ub = search_rank_score(
         immediate_ub,
         mult,
@@ -529,17 +694,12 @@ def loadout_allows_dfs_bb(
     score_fn=None,
 ) -> bool:
     """True when in-tree DFS branch-and-bound is safe."""
-    if not loadout_allows_tier2_screen(
+    del has_number_tiles, has_chess_pieces
+    return loadout_allows_tier2_screen(
         ctx,
         loadout,
         setup_weight=setup_weight,
         score_fn=score_fn,
-    ):
-        return False
-    if has_number_tiles:
-        return False
-    if has_chess_pieces:
-        return False
-    return True
+    )
 
 

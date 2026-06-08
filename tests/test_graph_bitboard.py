@@ -17,7 +17,14 @@ from cursed_words_solver.graph_bitboard import (
     mask_from_indices,
 )
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile
-from cursed_words_solver.rules.chess_tiles import DIRS_8, chess_neighbors, index_of
+from cursed_words_solver.rules.chess_tiles import (
+    DIRS_8,
+    _ray_neighbors_mask,
+    chess_neighbors,
+    index_of,
+    king_neighbors_mask,
+    knight_neighbors_mask,
+)
 from cursed_words_solver.rules.stamp_behaviors import (
     FLAG_HORIZONTAL_WRAP,
     stamp_search_flags_mask,
@@ -126,22 +133,41 @@ def test_neighbors_mask_parity_with_hungry_snake():
         assert sorted(expected) == sorted(iter_mask(mask))
 
 
-def test_chess_neighbors_mask_parity_rook():
+def _chess_piece_board(
+    center_curse: CurseType,
+    *,
+    center_side: str = "white",
+    blockers: dict[int, tuple[CurseType, str]] | None = None,
+) -> Board:
+    blockers = blockers or {}
     rows = []
     for r in range(5):
         row = []
         for c in range(5):
             idx = r * 5 + c
-            if idx == 12:
+            if idx in blockers:
+                curse, side = blockers[idx]
                 row.append(
                     Tile(
                         row=r,
                         col=c,
-                        char="R",
-                        letter="R",
+                        char="B",
+                        letter="B",
                         base_score=1.0,
-                        curse=CurseType.CHESS_ROOK,
-                        metadata={"chess_color": "white"},
+                        curse=curse,
+                        metadata={"chess_color": side},
+                    )
+                )
+            elif idx == 12:
+                row.append(
+                    Tile(
+                        row=r,
+                        col=c,
+                        char="P",
+                        letter="P",
+                        base_score=1.0,
+                        curse=center_curse,
+                        metadata={"chess_color": center_side},
                     )
                 )
             else:
@@ -156,16 +182,129 @@ def test_chess_neighbors_mask_parity_rook():
                     )
                 )
         rows.append(row)
-    board = Board(tiles=rows)
+    return Board(tiles=rows)
+
+
+def _assert_chess_mask_parity(board: Board, *, cell: int = 12) -> None:
     flags = stamp_search_flags_mask(Loadout())
     ctx = build_board_graph_context(board)
-    path = [12]
-    visited = 1 << 12
-    expected = chess_neighbors(board, path, visited, flags)
-    mask = neighbors_mask(
-        board, visited, cell_id=12, flags=flags, graph_ctx=ctx
+    path = [cell]
+    visited_masks = (1 << cell, (1 << cell) | (1 << (cell - 1)))
+    for visited in visited_masks:
+        expected = chess_neighbors(board, path, visited, flags)
+        mask = neighbors_mask(
+            board, visited, cell_id=cell, flags=flags, graph_ctx=ctx
+        )
+        assert sorted(expected) == sorted(iter_mask(mask))
+
+
+def test_chess_neighbors_mask_parity_rook():
+    board = _chess_piece_board(CurseType.CHESS_ROOK)
+    _assert_chess_mask_parity(board)
+
+
+def test_chess_neighbors_mask_parity_knight():
+    board = _chess_piece_board(
+        CurseType.CHESS_KNIGHT,
+        blockers={6: (CurseType.CHESS_PAWN, "black")},
     )
-    assert sorted(expected) == sorted(iter_mask(mask))
+    _assert_chess_mask_parity(board)
+
+
+def test_chess_neighbors_mask_parity_bishop():
+    board = _chess_piece_board(
+        CurseType.CHESS_BISHOP,
+        blockers={21: (CurseType.CHESS_PAWN, "white")},
+    )
+    _assert_chess_mask_parity(board)
+
+
+def test_chess_neighbors_mask_parity_queen():
+    board = _chess_piece_board(
+        CurseType.CHESS_QUEEN,
+        blockers={8: (CurseType.CHESS_ROOK, "black")},
+    )
+    _assert_chess_mask_parity(board)
+
+
+def test_chess_neighbors_mask_parity_king():
+    board = _chess_piece_board(CurseType.CHESS_KING)
+    _assert_chess_mask_parity(board)
+
+
+def test_chess_fast_path_matches_legacy_masks():
+    """Optimized graph_ctx paths must match board-lookup fallbacks."""
+    cases = [
+        (
+            CurseType.CHESS_KNIGHT,
+            "white",
+            {},
+            lambda b, vm, side, ctx: knight_neighbors_mask(
+                b, 12, vm, moving_side=side, graph_ctx=None
+            ),
+            lambda b, vm, side, ctx: knight_neighbors_mask(
+                b, 12, vm, moving_side=side, graph_ctx=ctx
+            ),
+        ),
+        (
+            CurseType.CHESS_KING,
+            "white",
+            {},
+            lambda b, vm, side, ctx: king_neighbors_mask(
+                b, 12, vm, moving_side=side, graph_ctx=None
+            ),
+            lambda b, vm, side, ctx: king_neighbors_mask(
+                b, 12, vm, moving_side=side, graph_ctx=ctx
+            ),
+        ),
+        (
+            CurseType.CHESS_ROOK,
+            "white",
+            {14: (CurseType.CHESS_PAWN, "black")},
+            lambda b, vm, side, ctx: _ray_neighbors_mask(
+                b, 12, vm, moving_side=side, allies_can_take=False,
+                straight=True, graph_ctx=None,
+            ),
+            lambda b, vm, side, ctx: _ray_neighbors_mask(
+                b, 12, vm, moving_side=side, allies_can_take=False,
+                straight=True, graph_ctx=ctx,
+            ),
+        ),
+        (
+            CurseType.CHESS_BISHOP,
+            "white",
+            {21: (CurseType.CHESS_PAWN, "white")},
+            lambda b, vm, side, ctx: _ray_neighbors_mask(
+                b, 12, vm, moving_side=side, allies_can_take=False,
+                diagonal=True, graph_ctx=None,
+            ),
+            lambda b, vm, side, ctx: _ray_neighbors_mask(
+                b, 12, vm, moving_side=side, allies_can_take=False,
+                diagonal=True, graph_ctx=ctx,
+            ),
+        ),
+        (
+            CurseType.CHESS_QUEEN,
+            "white",
+            {8: (CurseType.CHESS_ROOK, "black")},
+            lambda b, vm, side, ctx: _ray_neighbors_mask(
+                b, 12, vm, moving_side=side, allies_can_take=False,
+                straight=True, diagonal=True, graph_ctx=None,
+            ),
+            lambda b, vm, side, ctx: _ray_neighbors_mask(
+                b, 12, vm, moving_side=side, allies_can_take=False,
+                straight=True, diagonal=True, graph_ctx=ctx,
+            ),
+        ),
+    ]
+    visited_masks = (1 << 12, (1 << 12) | (1 << 11))
+    for curse, side, blockers, legacy_fn, fast_fn in cases:
+        board = _chess_piece_board(curse, center_side=side, blockers=blockers)
+        ctx = build_board_graph_context(board)
+        for vm in visited_masks:
+            legacy = legacy_fn(board, vm, side, ctx)
+            fast = fast_fn(board, vm, side, ctx)
+            assert sorted(iter_mask(legacy)) == sorted(iter_mask(fast))
 
 
 def test_mask_from_indices_roundtrip():

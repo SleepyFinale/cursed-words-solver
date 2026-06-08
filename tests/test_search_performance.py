@@ -17,6 +17,7 @@ from cursed_words_solver.fast_rank import (
     loadout_allows_fast_rank,
     loadout_allows_tier2_screen,
     loadout_allows_tier2_two_phase,
+    prefix_immediate_upper_bound,
     prefix_rank_upper_bound,
     tier2_immediate_upper_bound,
     tier2_rank_lower_bound,
@@ -374,7 +375,9 @@ def test_tier2_upper_bound_ge_full_score():
     pipeline = ScoringPipeline()
     rules = pipeline.rules
     ctx = build_solve_context(loadout, rules)
-    mult_rules = loadout_mult_rules(loadout, rules, board=board, path=[0, 1, 2])
+    mult_rules = loadout_mult_rules(
+        loadout, rules, board=board, path=[0, 1, 2], solve_context=ctx
+    )
     path = [0, 1, 2]
     full = pipeline.score_total_only(board, path, "cat", loadout)
     ub = tier2_immediate_upper_bound(board, path, "cat", loadout, ctx, mult_rules)
@@ -391,7 +394,9 @@ def test_tier2_upper_bound_ge_rank_score():
     searcher = WordSearcher(min_len=3, max_len=8, time_budget=1.0)
     rules = searcher.scoring.rules
     ctx = build_solve_context(loadout, rules)
-    mult_rules = loadout_mult_rules(loadout, rules, board=board, path=[0, 1, 2])
+    mult_rules = loadout_mult_rules(
+        loadout, rules, board=board, path=[0, 1, 2], solve_context=ctx
+    )
     path = [0, 1, 2]
     rank = searcher._rank_score_for_candidate(board, path, "cat", loadout)
     assert rank is not None
@@ -415,7 +420,9 @@ def test_tier2_rank_lower_bound_le_full_score():
     pipeline = ScoringPipeline()
     rules = pipeline.rules
     ctx = build_solve_context(loadout, rules)
-    mult_rules = loadout_mult_rules(loadout, rules, board=board, path=[0, 1, 2])
+    mult_rules = loadout_mult_rules(
+        loadout, rules, board=board, path=[0, 1, 2], solve_context=ctx
+    )
     path = [0, 1, 2]
     full = pipeline.score_total_only(board, path, "cat", loadout, solve_context=ctx)
     rank_lb = tier2_rank_lower_bound(
@@ -536,18 +543,19 @@ def _board_duplicate_vowel_routes():
     return Board(tiles=grid)
 
 
-def test_linguistic_cache_key_shared_for_equivalent_routes(tmp_path):
-    """Non-chess boards key resolves by letter/tile sequence, not coordinates."""
+def test_linguistic_cache_key_uses_path_tuple(tmp_path):
+    """Scoring-only dict cache keys use path coordinates (unique per traversal)."""
     wl = _make_wordlist(tmp_path)
     d = WordDictionary(wl)
     board = _board_duplicate_vowel_routes()
     searcher = WordSearcher(dictionary=d, min_len=3, max_len=3, time_budget=2.0)
     path_a = [0, 1, 2]
     path_b = [5, 6, 7]
-    key_a = searcher._linguistic_cache_key(board, path_a, chars=["c", "a", "t"])
-    key_b = searcher._linguistic_cache_key(board, path_b, chars=["c", "a", "t"])
-    assert key_a == key_b
-    assert key_a != tuple(path_a)
+    key_a = searcher._linguistic_cache_key(board, path_a)
+    key_b = searcher._linguistic_cache_key(board, path_b)
+    assert key_a == tuple(path_a)
+    assert key_b == tuple(path_b)
+    assert key_a != key_b
 
 
 def test_prefix_rank_upper_bound_sound():
@@ -560,7 +568,9 @@ def test_prefix_rank_upper_bound_sound():
     rules = ScoringPipeline().rules
     ctx = build_solve_context(loadout, rules)
     graph_ctx = build_board_graph_context(board)
-    mult_rules = loadout_mult_rules(loadout, rules, board=board, path=[0, 1, 2])
+    mult_rules = loadout_mult_rules(
+        loadout, rules, board=board, path=[0, 1, 2], solve_context=ctx
+    )
     search_tile_base = build_search_tile_base(board, ctx, graph_ctx)
     path = [0, 1, 2]
     word = "cat"
@@ -574,6 +584,15 @@ def test_prefix_rank_upper_bound_sound():
         mult_weight=0.4,
         graph_ctx=graph_ctx,
     )
+    full_imm_ub = tier2_immediate_upper_bound(
+        board,
+        path,
+        word,
+        loadout,
+        ctx,
+        mult_rules,
+        graph_ctx=graph_ctx,
+    )
     visited = 0
     prefix_base = 0.0
     prefix_red = 0
@@ -584,6 +603,21 @@ def test_prefix_rank_upper_bound_sound():
         if graph_ctx.tile_color_code[idx] == RED_COLOR_CODE:
             prefix_red += 1
         chars.append(word[i])
+        imm_ub = prefix_immediate_upper_bound(
+            prefix_base,
+            board,
+            path[: i + 1],
+            chars,
+            visited,
+            max(0, 3 - len(chars)),
+            loadout,
+            ctx,
+            mult_rules,
+            graph_ctx,
+            search_tile_base,
+            max_len=3,
+            prefix_red_count=prefix_red,
+        )
         bound = prefix_rank_upper_bound(
             prefix_base,
             board,
@@ -600,6 +634,7 @@ def test_prefix_rank_upper_bound_sound():
             max_len=3,
             prefix_red_count=prefix_red,
         )
+        assert imm_ub >= full_imm_ub
         assert bound >= full_rank_ub
 
 
@@ -631,18 +666,14 @@ def test_dfs_bb_preserves_top_results():
 
 
 def test_dfs_bb_reduces_expansions(tmp_path):
-    """Letter-only board: B&B prunes once no wildcards remain reachable."""
+    """Letter-only board: B&B prunes once best score is known."""
     wl = _make_wordlist(tmp_path)
     board = _board_cat_horizontal()
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id="red_rider", name="Red Rider", level=1, kind="sticker")
-        ]
-    )
+    loadout = Loadout()
     common = dict(
         dictionary=WordDictionary(wl),
         min_len=3,
-        max_len=8,
+        max_len=3,
         time_budget=2.0,
         wordlist_path=wl,
         search_workers=1,
@@ -656,16 +687,75 @@ def test_dfs_bb_reduces_expansions(tmp_path):
     assert off.last_search_timing is not None
     assert on.last_search_timing is not None
     assert on.last_search_timing.dfs_bb_calls > 0
+    assert on.last_search_timing.dfs_bb_prunes > 0
+    assert on.last_search_timing.dfs_expansions < off.last_search_timing.dfs_expansions
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not STICKER_FIXTURE.exists()
+    or not GAME_WORDLIST_PATH.exists()
+    or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="sticker fixture and game wordlist required",
+)
+def test_dfs_bb_prunes_sticker_fixture():
+    """Sticker-heavy board: B&B should prune branches once best score is known."""
+    board, loadout = _sticker_board_and_loadout()
+    common = dict(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=12,
+        time_budget=12.0,
+        wordlist_path=GAME_WORDLIST_PATH,
+        search_workers=1,
+        use_tier2_screen=True,
+    )
+    off = WordSearcher(**common, use_dfs_bb=False)
+    on = WordSearcher(**common, use_dfs_bb=True)
+    off.find_best_words(board, loadout, top_n=1)
+    on.find_best_words(board, loadout, top_n=1)
+    assert off.last_search_timing is not None
+    assert on.last_search_timing is not None
+    assert on.last_search_timing.dfs_bb_prunes > 0
+    assert on.last_search_timing.dfs_bb_calls > 0
     assert on.last_search_timing.dfs_expansions <= off.last_search_timing.dfs_expansions
-    if on.last_search_timing.dfs_bb_prunes > 0:
-        assert (
-            on.last_search_timing.dfs_expansions
-            < off.last_search_timing.dfs_expansions
-        )
+
+
+def test_dfs_bb_prunes_chess_board(tmp_path):
+    """Chess piece on board: B&B runs on letter-only DFS branches."""
+    from cursed_words_solver.models import Board, CurseType, Tile, TileColor
+
+    wl = _make_wordlist(tmp_path)
+    grid = [
+        [Tile(r, c, "q", "Q", 1.0, TileColor.COLORLESS, CurseType.LETTER) for c in range(5)]
+        for r in range(5)
+    ]
+    grid[0][0] = Tile(
+        0, 0, "r", "R", 1.0, TileColor.COLORLESS, CurseType.CHESS_ROOK
+    )
+    grid[0][1] = Tile(0, 1, "c", "C", 1.0, TileColor.COLORLESS, CurseType.LETTER)
+    grid[0][2] = Tile(0, 2, "a", "A", 1.0, TileColor.COLORLESS, CurseType.LETTER)
+    grid[0][3] = Tile(0, 3, "t", "T", 1.0, TileColor.COLORLESS, CurseType.LETTER)
+    board = Board(tiles=grid)
+    loadout = Loadout()
+    searcher = WordSearcher(
+        dictionary=WordDictionary(wl),
+        min_len=3,
+        max_len=3,
+        time_budget=2.0,
+        wordlist_path=wl,
+        search_workers=1,
+        use_tier2_screen=True,
+        use_dfs_bb=True,
+        candidate_heap_size=1,
+    )
+    searcher.find_best_words(board, loadout, top_n=1)
+    assert searcher.last_search_timing is not None
+    assert searcher.last_search_timing.dfs_bb_calls > 0
 
 
 def test_linguistic_cache_key_spatial_on_chess_board(tmp_path):
-    """Chess boards keep spatial path keys so capture geometry stays correct."""
+    """Dict resolve cache keys use path tuple on all boards."""
     from cursed_words_solver.models import Board, CurseType, Tile, TileColor
 
     wl = _make_wordlist(tmp_path)
@@ -680,5 +770,5 @@ def test_linguistic_cache_key_spatial_on_chess_board(tmp_path):
     board = Board(tiles=grid)
     searcher = WordSearcher(dictionary=d, min_len=3, max_len=3, time_budget=1.0)
     path = [0, 1, 2]
-    key = searcher._linguistic_cache_key(board, path, chars=["r", "a", "t"])
+    key = searcher._linguistic_cache_key(board, path)
     assert key == tuple(path)

@@ -57,7 +57,7 @@ Cactus ([wiki Tiles — CACTUS](https://cursedwords.wiki.gg/wiki/Tiles)): grid t
 | Early (no Hourglass) | `ApplyBossModifier` each boss | `boss_scoring.apply_early_boss_scoring` — Salamander, Robo-Monkey, Fox steal |
 | Late (Hourglass) | Reversed boss list after items | `_apply_late_boss_rules` + trace `boss_late` |
 | Grid start | Fox per-grid steal, Axolotl/Mole/etc. | `boss_grid_effects.apply_boss_grid_mutations` |
-| Capybara | `RandomiseItemOrder` on submit | `scoring_order._maybe_shuffled_loadout` |
+| Capybara | `RandomiseItemOrder` on submit | `capybara_scoring.py` (permutation EV; not `build_scoring_item_sequence`) |
 
 Fox: grid-start money loss (`fox_grid_steal`) is separate from submit-time `StealsMoney` (`boss_steal_money`).
 
@@ -70,3 +70,30 @@ The [wiki Scoring](https://cursedwords.wiki.gg/wiki/Scoring) page separates pin,
 ## Melmod validation
 
 Harmony postfix on `CalculateOverallScore` captures `List<ScoreCalcVizInfo>` as `actual_trace` for mismatch regression (`tests/fixtures/mismatches/`).
+
+## Solver implementation (Python)
+
+How the Python solver maps the game pipeline above. Full search-side detail: [`../SEARCH_ARCHITECTURE.md`](../SEARCH_ARCHITECTURE.md).
+
+### Item sequence
+
+- `scoring_order.build_scoring_item_sequence` composes path scattered items + inventory refs from `SolveContext.inventory_refs`.
+- **Capybara shuffle** is **not** applied in the sequence builder — `capybara_scoring.py` evaluates permutation EV/min/max, rebuilding a per-perm `SolveContext` for each order.
+- Hourglass reversal is applied in `ScoringPipeline._compute_state` via `SolveContext.hourglass_reversed` and `sticker_slot_order` / `stamp_slot_order`.
+
+### `_compute_state` flow
+
+`ScoringPipeline._compute_state` receives cached `solve_context`, `graph_ctx`, and `board_scoring_ctx` from the search hot path.
+
+1. Tile init (glitch, bases, currency, pink, poison) — unchanged from game order
+2. Early/late bosses per Hourglass state
+3. Inventory loop in slot order:
+   - When `board_scoring_ctx.use_split_pipeline` is true, board-static rules run first via `apply_static_rule` (O(path)); debug traces may show `detail: "static tile_add"`
+   - Dynamic/orchestration rules follow via `apply_*_with_orchestration` (Frankenstein, RAM, Overhand, scaled factors, etc.)
+4. GREEN tile transfer and `_finalize` word multipliers
+
+`blocks_split_pipeline()` disables the static fast path when Capybara, Compound Cocktail, Snapshot, Frankenstein, or RAM pin prevent safe interleaving.
+
+### Grid scatter refs
+
+Path scattered items are resolved via `path_grid_item_refs`, cached per path on `WordSearcher._grid_refs_cache` for the duration of a solve. Hourglass reversal of path items is applied inside `_compute_state`, not in the cache key.

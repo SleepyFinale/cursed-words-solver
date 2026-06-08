@@ -35,6 +35,8 @@ python scripts/generate_boss_audit.py
 
 | File | Purpose |
 | ---- | ---- |
+| [../SEARCH_ARCHITECTURE.md](../SEARCH_ARCHITECTURE.md) | Solver search/scoring performance architecture |
+| [../DATA_STRUCTURE_ANALYSIS.md](../DATA_STRUCTURE_ANALYSIS.md) | Profiling results and hot-path analysis |
 | [scoring-pipeline.md](scoring-pipeline.md) | In-game `CalculateOverallScore` order vs wiki |
 | [effect-taxonomy.md](effect-taxonomy.md) | JSON schema + `Item` subclass mapping |
 | [sticker-audit.md](sticker-audit.md) | Catalog vs game-type coverage (generated) |
@@ -53,4 +55,9 @@ python scripts/generate_boss_audit.py
 | `EncounterController.GetItemsForWordSubmission` | `cursed_words_solver/rules/scoring_order.py` |
 | `Item.ApplyStartOfGridEffect` | `cursed_words_solver/rules/grid_effects.py` |
 | `ScoreCalculation.CalculateOverallScore` | `cursed_words_solver/rules/pipeline.py` |
+| Per-solve loadout snapshot | `cursed_words_solver/solve_context.py` |
+| Board topology / chess masks | `cursed_words_solver/graph_bitboard.py`, `rules/chess_tiles.py` |
+| Board-static scoring precompute | `cursed_words_solver/board_scoring_context.py` |
+| Static vs dynamic rule classification | `cursed_words_solver/rules/rule_phase.py` |
+| Tier-2 bounds / fast rank | `cursed_words_solver/fast_rank.py` |
 | Stamp movement / letter substitution | `stickers.json` → `search_flags`, `stamp_behaviors.py` |

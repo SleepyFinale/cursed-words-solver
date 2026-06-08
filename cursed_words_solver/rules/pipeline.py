@@ -11,7 +11,7 @@ import math
 
 from pathlib import Path
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 
 
@@ -39,13 +39,16 @@ from cursed_words_solver.rules.rule_lookup import (
 )
 from cursed_words_solver.rules.scoring_order import (
     apply_green_tile_word_transfer,
-    build_scoring_item_sequence,
+    path_grid_item_refs,
     sort_grid_path_refs,
     tile_sum_excluding_green,
 )
 from cursed_words_solver.rules.tile_scoring import apply_tile_init
 from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
 from cursed_words_solver.solve_context import SolveContext, build_solve_context
+
+if TYPE_CHECKING:
+    from cursed_words_solver.board_scoring_context import BoardScoringContext
 from cursed_words_solver.graph_bitboard import BoardGraphContext
 
 from cursed_words_solver.rules.boss_effects import (
@@ -1256,10 +1259,13 @@ class ScoringPipeline:
         trace: list[dict[str, Any]] | None = None,
         solve_context: SolveContext | None = None,
         graph_ctx: BoardGraphContext | None = None,
+        board_scoring_ctx: "BoardScoringContext | None" = None,
         grid_refs_cache: dict[tuple[int, ...], tuple] | None = None,
         capybara_loadout_cache: dict[tuple[int, ...], Loadout] | None = None,
         grid_refs_timing: object | None = None,
     ) -> dict[str, Any]:
+        from cursed_words_solver.board_scoring_context import apply_static_rule
+
         path = normalize_scoring_path(path)
         from cursed_words_solver.rules.scoring_conditions import (
             apply_snapshot_phased_session_extras,
@@ -1296,6 +1302,7 @@ class ScoringPipeline:
                             trace=None,
                             solve_context=solve_context,
                             graph_ctx=graph_ctx,
+                            board_scoring_ctx=board_scoring_ctx,
                             grid_refs_cache=grid_refs_cache,
                             capybara_loadout_cache=capybara_loadout_cache,
                             grid_refs_timing=grid_refs_timing,
@@ -1364,27 +1371,19 @@ class ScoringPipeline:
         if compound_percents or ctx.compound_finalize_at_cocktail:
             state["_defer_word_mults_for_compound"] = True
 
-        grid_refs = [
-            ref
-            for ref in build_scoring_item_sequence(
+        grid_refs = list(
+            path_grid_item_refs(
                 board,
                 path,
-                loadout,
                 self.rules,
-                hourglass_reversed=ctx.hourglass_reversed,
-                inventory_refs=ctx.inventory_refs,
-                capybara_shuffles=ctx.capybara_shuffles,
-                grid_refs_cache=grid_refs_cache,
-                capybara_loadout_cache=capybara_loadout_cache,
-                grid_refs_timing=grid_refs_timing,
+                loadout,
+                cache=grid_refs_cache,
+                cache_timing=grid_refs_timing,
             )
-            if ref.kind == "grid_path"
-        ]
-        if str((loadout.extras or {}).get("grid_tile_multiply_first", "")).lower() in (
-            "1",
-            "true",
-            "yes",
-        ):
+        )
+        if hourglass:
+            grid_refs.reverse()
+        if ctx.grid_tile_multiply_first:
             grid_refs = sort_grid_path_refs(grid_refs, self.rules)
         for ref in grid_refs:
             _key, rule = get_rule(self.rules, "stickers", ref.rule_id, ref.rule_id)
@@ -1479,17 +1478,81 @@ class ScoringPipeline:
 
         _skip_types = _STAMP_SKIP_TYPES
 
-        def _sticker_slots() -> list[int]:
-            slots = list(range(len(loadout.stickers)))
-            return list(reversed(slots)) if hourglass else slots
+        def _apply_static_sticker_slot(
+            slot: int,
+            sticker: LoadoutItem,
+            slug: str,
+            rule: dict | None,
+            *,
+            multiply_only: bool,
+        ) -> bool:
+            if (
+                board_scoring_ctx is None
+                or not board_scoring_ctx.use_split_pipeline
+                or slug == "snapshot"
+                or not rule
+                or rule.get("type") in _skip_types
+            ):
+                return False
+            spec = board_scoring_ctx.static_sticker_specs.get((slot, multiply_only))
+            if spec is None:
+                return False
+            apply_static_rule(
+                spec,
+                state,
+                path,
+                word,
+                board,
+                loadout,
+                self.rules,
+                add_word_score=_add_word_score,
+            )
+            _trace_step(
+                state,
+                "sticker",
+                rule_id=spec.rule_id,
+                effect_type=spec.effect_type,
+                detail=f"static {spec.kind.value}",
+            )
+            return True
 
-        def _stamp_slots() -> list[int]:
-            slots = list(range(len(loadout.stamps)))
-            return list(reversed(slots)) if hourglass else slots
+        def _apply_static_stamp_slot(
+            slot: int,
+            stamp: LoadoutItem,
+            rule: dict | None,
+        ) -> bool:
+            if (
+                board_scoring_ctx is None
+                or not board_scoring_ctx.use_split_pipeline
+                or not rule
+                or rule.get("type") in _skip_types
+            ):
+                return False
+            spec = board_scoring_ctx.static_stamp_specs.get(slot)
+            if spec is None:
+                return False
+            apply_static_rule(
+                spec,
+                state,
+                path,
+                word,
+                board,
+                loadout,
+                self.rules,
+                add_word_score=_add_word_score,
+            )
+            _trace_step(
+                state,
+                "stamp",
+                rule_id=spec.rule_id,
+                effect_type=spec.effect_type,
+                detail=f"static {spec.kind.value}",
+            )
+            return True
 
         def _apply_sticker_pass(*, multiply_only: bool) -> None:
             nonlocal state
-            for slot in _sticker_slots():
+            for slot in ctx.sticker_slot_order:
                 sticker = loadout.stickers[slot]
                 _key, rule = get_rule(
                     self.rules, "stickers", sticker.id, sticker.name
@@ -1542,17 +1605,24 @@ class ScoringPipeline:
                         board=board,
                         path=path,
                     )
-                state = apply_sticker_with_orchestration(
-                    rules=self.rules,
-                    loadout=loadout,
-                    state=state,
-                    board=board,
-                    path=path,
-                    sticker=sticker,
-                    slot=slot,
-                    apply_rule=self._apply_rule,
+                if not _apply_static_sticker_slot(
+                    slot,
+                    sticker,
+                    slug,
+                    rule,
                     multiply_only=multiply_only,
-                )
+                ):
+                    state = apply_sticker_with_orchestration(
+                        rules=self.rules,
+                        loadout=loadout,
+                        state=state,
+                        board=board,
+                        path=path,
+                        sticker=sticker,
+                        slot=slot,
+                        apply_rule=self._apply_rule,
+                        multiply_only=multiply_only,
+                    )
                 if not multiply_only and slug == "cocktail":
                     from cursed_words_solver.rules.scoring_conditions import (
                         compound_word_finalize_at_cocktail,
@@ -1590,40 +1660,49 @@ class ScoringPipeline:
 
         state["_immediate_word_mult"] = True
         if hourglass:
-            for slot in _stamp_slots():
+            for slot in ctx.stamp_slot_order:
                 stamp = loadout.stamps[slot]
                 _key, rule = get_rule(self.rules, "stamps", stamp.id, stamp.name)
                 if rule and rule.get("type") not in _skip_types:
-                    state = apply_stamp_with_orchestration(
-                        rules=self.rules,
-                        loadout=loadout,
-                        state=state,
-                        board=board,
-                        path=path,
-                        stamp=stamp,
-                        slot=slot,
-                        apply_rule=self._apply_rule,
-                    )
+                    if not _apply_static_stamp_slot(slot, stamp, rule):
+                        state = apply_stamp_with_orchestration(
+                            rules=self.rules,
+                            loadout=loadout,
+                            state=state,
+                            board=board,
+                            path=path,
+                            stamp=stamp,
+                            slot=slot,
+                            apply_rule=self._apply_rule,
+                        )
             if defer_multiply_stickers:
                 _apply_sticker_pass(multiply_only=False)
             else:
-                for slot in _sticker_slots():
+                for slot in ctx.sticker_slot_order:
                     sticker = loadout.stickers[slot]
                     _key, rule = get_rule(
                         self.rules, "stickers", sticker.id, sticker.name
                     )
+                    slug = slugify_name(sticker.id or sticker.name)
                     if not rule or rule.get("type") in _skip_types:
                         continue
-                    state = apply_sticker_with_orchestration(
-                        rules=self.rules,
-                        loadout=loadout,
-                        state=state,
-                        board=board,
-                        path=path,
-                        sticker=sticker,
-                        slot=slot,
-                        apply_rule=self._apply_rule,
-                    )
+                    if not _apply_static_sticker_slot(
+                        slot,
+                        sticker,
+                        slug,
+                        rule,
+                        multiply_only=False,
+                    ):
+                        state = apply_sticker_with_orchestration(
+                            rules=self.rules,
+                            loadout=loadout,
+                            state=state,
+                            board=board,
+                            path=path,
+                            sticker=sticker,
+                            slot=slot,
+                            apply_rule=self._apply_rule,
+                        )
             if defer_multiply_stickers:
                 _apply_sticker_pass(multiply_only=True)
             if pin_effect:
@@ -1646,20 +1725,21 @@ class ScoringPipeline:
         )
         state["_immediate_word_mult"] = False
         if not hourglass:
-            for slot in _stamp_slots():
+            for slot in ctx.stamp_slot_order:
                 stamp = loadout.stamps[slot]
                 _key, rule = get_rule(self.rules, "stamps", stamp.id, stamp.name)
                 if rule and rule.get("type") not in _skip_types:
-                    state = apply_stamp_with_orchestration(
-                        rules=self.rules,
-                        loadout=loadout,
-                        state=state,
-                        board=board,
-                        path=path,
-                        stamp=stamp,
-                        slot=slot,
-                        apply_rule=self._apply_rule,
-                    )
+                    if not _apply_static_stamp_slot(slot, stamp, rule):
+                        state = apply_stamp_with_orchestration(
+                            rules=self.rules,
+                            loadout=loadout,
+                            state=state,
+                            board=board,
+                            path=path,
+                            stamp=stamp,
+                            slot=slot,
+                            apply_rule=self._apply_rule,
+                        )
         for factor, mult_rule_id in state.get("salamander_post_mutating_mults", []):
             _apply_immediate_word_multiplier(state, factor, mult_rule_id)
         state["salamander_post_mutating_mults"] = []
@@ -1770,6 +1850,7 @@ class ScoringPipeline:
         *,
         solve_context: SolveContext | None = None,
         graph_ctx: BoardGraphContext | None = None,
+        board_scoring_ctx: "BoardScoringContext | None" = None,
         grid_refs_cache: dict[tuple[int, ...], tuple] | None = None,
         capybara_loadout_cache: dict[tuple[int, ...], Loadout] | None = None,
         grid_refs_timing: object | None = None,
@@ -1783,6 +1864,7 @@ class ScoringPipeline:
             loadout,
             solve_context=solve_context,
             graph_ctx=graph_ctx,
+            board_scoring_ctx=board_scoring_ctx,
             grid_refs_cache=grid_refs_cache,
             capybara_loadout_cache=capybara_loadout_cache,
             grid_refs_timing=grid_refs_timing,
@@ -1798,6 +1880,7 @@ class ScoringPipeline:
         *,
         solve_context: SolveContext | None = None,
         graph_ctx: BoardGraphContext | None = None,
+        board_scoring_ctx: "BoardScoringContext | None" = None,
         grid_refs_cache: dict[tuple[int, ...], tuple] | None = None,
         capybara_loadout_cache: dict[tuple[int, ...], Loadout] | None = None,
         grid_refs_timing: object | None = None,
@@ -1810,6 +1893,7 @@ class ScoringPipeline:
             loadout,
             solve_context=solve_context,
             graph_ctx=graph_ctx,
+            board_scoring_ctx=board_scoring_ctx,
             grid_refs_cache=grid_refs_cache,
             capybara_loadout_cache=capybara_loadout_cache,
             grid_refs_timing=grid_refs_timing,

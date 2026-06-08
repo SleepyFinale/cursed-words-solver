@@ -170,10 +170,18 @@ def _perm_scoring_context(
     perm_loadout: Loadout,
     rules: dict,
 ) -> SolveContext:
+    from cursed_words_solver.solve_context import _slot_order
+
     return replace(
         ctx,
         capybara_shuffles=False,
         inventory_refs=tuple(_inventory_item_refs(perm_loadout, rules)),
+        sticker_slot_order=_slot_order(
+            len(perm_loadout.stickers), hourglass=ctx.hourglass_reversed
+        ),
+        stamp_slot_order=_slot_order(
+            len(perm_loadout.stamps), hourglass=ctx.hourglass_reversed
+        ),
     )
 
 

@@ -205,6 +205,19 @@ def capybara_shuffled_loadout(
     return shuffled
 
 
+def compose_scoring_item_sequence(
+    grid_refs: tuple[ScoringItemRef, ...] | list[ScoringItemRef],
+    inventory_refs: tuple[ScoringItemRef, ...] | list[ScoringItemRef],
+    *,
+    hourglass_reversed: bool,
+) -> list[ScoringItemRef]:
+    """Combine cached grid + inventory refs; reverse full list when Hourglass active."""
+    refs = list(grid_refs) + list(inventory_refs)
+    if hourglass_reversed:
+        refs = list(reversed(refs))
+    return refs
+
+
 def build_scoring_item_sequence(
     board: Board,
     path: list[int],
@@ -227,9 +240,9 @@ def build_scoring_item_sequence(
     if not loadout:
         return []
     inv = (
-        list(inventory_refs)
+        inventory_refs
         if inventory_refs is not None
-        else _inventory_item_refs(loadout, rules)
+        else tuple(_inventory_item_refs(loadout, rules))
     )
     grid_refs = path_grid_item_refs(
         board,
@@ -239,15 +252,16 @@ def build_scoring_item_sequence(
         cache=grid_refs_cache,
         cache_timing=grid_refs_timing,
     )
-    refs = list(grid_refs) + inv
     reversed_order = (
         hourglass_reversed
         if hourglass_reversed is not None
         else hourglass_reverses_order(loadout, rules)
     )
-    if reversed_order:
-        refs = list(reversed(refs))
-    return refs
+    return compose_scoring_item_sequence(
+        grid_refs,
+        inv,
+        hourglass_reversed=reversed_order,
+    )
 
 
 def sort_grid_path_refs(

@@ -188,19 +188,31 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
         int(idx) for idx in required_raw
     )
     active = _active_indices(board)
+    searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
     searcher._mult_rules = loadout_mult_rules(
         loadout,
         searcher.scoring.rules,
         board=board,
         path=[active[0]] if active else [],
+        solve_context=searcher._solve_ctx,
     )
     searcher._mult_hints = (
         build_mult_neighbor_hints(searcher._mult_rules)
         if searcher._mult_rules
         else None
     )
-    searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
     searcher._graph_ctx = build_board_graph_context(board)
+    from cursed_words_solver.board_scoring_context import (
+        build_board_scoring_context,
+    )
+
+    searcher._board_scoring_ctx = build_board_scoring_context(
+        board,
+        loadout,
+        searcher._solve_ctx,
+        searcher._graph_ctx,
+        searcher.scoring.rules,
+    )
     from cursed_words_solver.fingerprints import board_fingerprint
     from cursed_words_solver.rules.chess_tiles import clear_chess_attack_cache
 

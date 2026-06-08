@@ -65,6 +65,7 @@ flowchart LR
   subgraph solver [Python solver]
     App[app.py SolverApp]
     Search[search.py WordSearcher]
+    SolveCtx[SolveContext + BoardGraphContext + BoardScoringContext]
     Pipe[rules/pipeline.py ScoringPipeline]
   end
   subgraph ui [Qt overlays]
@@ -78,7 +79,8 @@ flowchart LR
   RS --> App
   GW --> App
   App --> Search
-  Search --> Pipe
+  Search --> SolveCtx
+  SolveCtx --> Pipe
   App --> LS
   LS --> Companion
   Companion --> MM
@@ -104,8 +106,8 @@ Pressing **F8** starts `_solve_worker` in `[app.py](cursed_words_solver/app.py)`
 1. **Reload state** — Read `run_state.json` via `[loadout.py](cursed_words_solver/loadout.py)` (`load_run_state`, `parse_board_from_run_state`).
 2. **Board** — Re-read `run_state.json` on every F8 via `[loadout.py](cursed_words_solver/loadout.py)`. F8 fails with a clear message if the board is missing (press **F7** in-game). When consumables are on the rack but `consumable_rack` has not been exported yet, the solver waits briefly for melmod auto-export (Sandy Saguaro fights and any character with rack tiles). After the baseline word search, it simulates rack placements for any character with unplaced consumables and adopts them only when they improve the best score (Sandy Saguaro boss fights use mandatory placement-first search instead). When rack placement improves the best score, amber dashed circles on the board overlay mark where to place consumables before tracing the green word path; orange numbered circles on the consumable rack mark which slot to use (same step numbers as the path).
 3. **Dictionary** — `[dictionary.py](cursed_words_solver/dictionary.py)` loads `game_words.txt` when present (from melmod), else ENABLE1 (`[config.py](cursed_words_solver/config.py)` `resolve_wordlist`).
-4. **Search** — `[search.py](cursed_words_solver/search.py)` `WordSearcher.find_best_words` runs DFS over active tiles with curse-specific neighbors (standard adjacency, double-letter teleports, chess piece rules, wildcards). Chess movement follows [wiki rules](https://cursedwords.wiki.gg/wiki/Curses#Chess_pieces): piece-specific rays, same-color blocking, pawn forward/double/capture, en passant, and king cannot move into check — see `[chess_tiles.py](cursed_words_solver/rules/chess_tiles.py)`. With **Hungry Snake** (`horizontal_wrap`), col 0 and col 4 connect on each row for letter steps and for chess checks/sliding rays. `PathValidator` prunes invalid prefixes and enforces stamp-specific rules. Search is time-budgeted (`search_time_budget_sec`) with fair per-start slices; extra passes cover void/number words on boards with NUMBER tiles. Boss limits (e.g. Wolf max length, Hyena block) come from `[boss_effects.py](cursed_words_solver/rules/boss_effects.py)`.
-5. **Score** — Each candidate is scored by `[ScoringPipeline](cursed_words_solver/rules/pipeline.py)` using rules from `[data/wiki/stickers.json](data/wiki/stickers.json)` (`[rule_lookup.py](cursed_words_solver/rules/rule_lookup.py)`): base tile sum → Salamander/Robo-Monkey (boss) → grid path bonuses → pin → stickers → stamps, matching [wiki order](https://cursedwords.wiki.gg/wiki/Scoring).
+4. **Search** — `[search.py](cursed_words_solver/search.py)` `WordSearcher.find_best_words` builds a per-solve context stack once: `build_solve_context` → `build_board_graph_context` → `build_board_scoring_context` → chess attack cache init (see [`docs/SEARCH_ARCHITECTURE.md`](docs/SEARCH_ARCHITECTURE.md)). Then DFS runs over active tiles with curse-specific neighbors (standard adjacency, double-letter teleports, chess piece rules, wildcards). Chess movement follows [wiki rules](https://cursedwords.wiki.gg/wiki/Curses#Chess_pieces): piece-specific rays, same-color blocking, pawn forward/double/capture, en passant, and king cannot move into check — see `[chess_tiles.py](cursed_words_solver/rules/chess_tiles.py)`. With **Hungry Snake** (`horizontal_wrap`), col 0 and col 4 connect on each row for letter steps and for chess checks/sliding rays. `PathValidator` prunes invalid prefixes and enforces stamp-specific rules. Search is time-budgeted (`search_time_budget_sec`) with fair per-start slices; extra passes cover void/number words on boards with NUMBER tiles. Boss limits (e.g. Wolf max length, Hyena block) come from `[boss_effects.py](cursed_words_solver/rules/boss_effects.py)`. On eligible loadouts, automatic tier-2 candidate screening and DFS branch-and-bound skip hopeless paths before full scoring (no config needed). Parallel workers in `[search_parallel.py](cursed_words_solver/search_parallel.py)` build the same context stack per process.
+5. **Score** — Each surviving candidate is scored by `[ScoringPipeline](cursed_words_solver/rules/pipeline.py)` using cached contexts and rules from `[data/wiki/stickers.json](data/wiki/stickers.json)` (`[rule_lookup.py](cursed_words_solver/rules/rule_lookup.py)`): base tile sum → Salamander/Robo-Monkey (boss) → grid path bonuses → pin → stickers → stamps, matching [wiki order](https://cursedwords.wiki.gg/wiki/Scoring). When `use_split_pipeline` is true, board-static sticker/stamp rules run via O(path) fast path before dynamic orchestration (`[rule_phase.py](cursed_words_solver/rules/rule_phase.py)`).
 6. **Output** — Top `top_n_results` words are kept; the best is re-scored with a full trace, written to `last_suggestion.json` (with `export_diagnostics`, `export_warnings`, `solver_session_extras`), and debug JSON under `debug/parse_*.json`.
 
 ### Display layer (overlays)
@@ -159,14 +161,22 @@ All paths under `%USERPROFILE%\.cursed_words_solver\`:
 ```text
 cursed_words_solver/   # Python package
   app.py               # Hotkeys, solve orchestration, Qt bridge
-  search.py            # Word search (DFS, time budget, boss limits)
+  search.py            # Word search (DFS, time budget, boss limits, tier-2 screening)
+  search_parallel.py   # Parallel DFS workers (mirrors per-solve context stack)
+  solve_context.py     # Per-solve loadout snapshot (flags, slot order, tier-2 bonuses)
+  board_scoring_context.py  # Per-solve static rule precompute
+  graph_bitboard.py    # Per-solve board masks (chess, Hanafuda, letters)
+  fast_rank.py         # Tier-1/2 bounds and DFS branch-and-bound
+  mult_search.py       # Inventory mult rule enumeration
   loadout.py           # run_state.json → Board / Loadout
   dictionary.py        # game_words.txt / ENABLE1
   suggestion.py        # last_suggestion.json for melmod
   fingerprints.py      # Board/loadout change detection
   rules/               # Scoring pipeline, bosses, rule lookup
+    rule_phase.py      # Static vs dynamic rule classification
   board_display.py     # ASCII grid formatting for logs
   ui/                  # Result overlay, board highlights, calibration, loadout dialog
+docs/                  # SEARCH_ARCHITECTURE.md, DATA_STRUCTURE_ANALYSIS.md, game-research/
 melmod/                # MelonLoader companion (C#) + install/build scripts
 data/wiki/             # stickers.json catalog + wiki scrape inputs
 scripts/               # build_stickers_json, mismatch_to_test — see scripts/README.md
@@ -199,7 +209,9 @@ Word length is derived automatically per solve: minimum is 1, maximum is the act
 - **Melmod board (F7)** — Exact tiles avoid wasted DFS branches; refresh before **F8**.
 - **Game wordlist** — **F7** exports `game_words.txt` for tighter dictionary pruning than ENABLE1.
 - **`search_time_budget_sec`** — Main knob for more candidates within a time limit.
-- **`search_workers`** — Set to `"auto"` or `4` to partition DFS by start cell across processes (helps CPU-bound search; sticker scoring still dominates on heavy loadouts).
+- **`search_workers`** — Set to `"auto"` or `4` to partition DFS by start cell across processes (helps CPU-bound search on multi-core machines).
+- **Automatic optimizations** — Per-solve context precompute, tier-2 candidate screening, static scoring fast path, and chess/Hanafuda hot-path fixes run automatically on eligible loadouts (no config keys). See [`docs/SEARCH_ARCHITECTURE.md`](docs/SEARCH_ARCHITECTURE.md).
+- **Where time goes** — On profiled fixtures ([`docs/DATA_STRUCTURE_ANALYSIS.md`](docs/DATA_STRUCTURE_ANALYSIS.md)), DFS exploration dominates wall time; tier-2 screening helps most when `score_pct` is high. Profile your boards: `python scripts/profile_search.py … --budget 12` or `python scripts/analyze_data_structures.py --budget 12`.
 - **Curse-heavy boards** — Teleports, chess pieces, and wildcards branch heavily; wildcards are searched first. Raise the time budget on dense boards if needed.
 
 ### Troubleshooting
@@ -262,6 +274,7 @@ GitHub Actions runs `pytest tests/` on push and pull request to `main` / `master
 | Integration | `tests/integration/` | Melmod fingerprints, score traces, loadout scoring        |
 | Regression  | `tests/regression/`  | Real mismatch captures under `tests/fixtures/mismatches/` |
 | Unit        | `tests/test_*.py`    | Search, bosses, dictionary, path geometry, etc.           |
+| Performance | `tests/test_static_dynamic_pipeline.py`, `tests/test_tier2_two_phase.py`, `tests/test_search_performance.py` | Static/dynamic scoring parity, tier-2 bounds, search gating |
 
 **Contributing a scoring fix:** F7 → F8 → play the highlighted word → collect mismatch JSON → `python scripts/mismatch_to_test.py …` → fix pipeline → `pytest tests/regression/ -k <fixture_id>` until green → remove that id from `_KNOWN_FAILING` in `[tests/regression/test_scoring_mismatches.py](tests/regression/test_scoring_mismatches.py)`.
 
@@ -269,6 +282,8 @@ New mismatch fixtures are **not** added to `_KNOWN_FAILING` by default, so CI fa
 
 ## Related documentation
 
+- `[docs/SEARCH_ARCHITECTURE.md](docs/SEARCH_ARCHITECTURE.md)` — Per-solve context stack, tier-2 screening, static/dynamic scoring
+- `[docs/DATA_STRUCTURE_ANALYSIS.md](docs/DATA_STRUCTURE_ANALYSIS.md)` — Profiling results, cache hit rates, hot-path analysis
 - `[melmod/README.md](melmod/README.md)` — MelonLoader install, `run_state.json` schema, boss/pin extras
 - `[melmod/SCORING_HOOKS.md](melmod/SCORING_HOOKS.md)` — Harmony hook points for score capture
-- `[scripts/README.md](scripts/README.md)` — Maintenance scripts (`build_stickers_json`, `mismatch_to_test`)
+- `[scripts/README.md](scripts/README.md)` — Maintenance scripts (`build_stickers_json`, `mismatch_to_test`, profiling)

@@ -17,6 +17,24 @@ Generated from `scripts/analyze_data_structures.py` (8s budget, game/ENABLE1 wor
 
 **Implication:** Optimizing search coverage (dictionary pruning, curse neighbor cost, chess checks) helps chess-heavy boards first. Sticker-heavy boards benefit from precomputed `BoardGraphContext` scoring fields and tier-2 screening.
 
+See also [`SEARCH_ARCHITECTURE.md`](SEARCH_ARCHITECTURE.md) for the full context stack and optimization gating.
+
+### 1b. Tier-2 screening and DFS branch-and-bound
+
+`SearchTiming` counters from tier-2 two-phase scoring and in-tree DFS branch-and-bound:
+
+| Counter | Meaning |
+| ------- | ------- |
+| `tier2_screen_skips` | Candidates whose upper bound cannot beat the heap — no `score_total_only` call |
+| `tier2_rank_screen_skips` | Additional rank-bound skips in phase 1 |
+| `tier2_phase1_calls` | Candidates screened in phase 1 |
+| `tier2_phase2_calls` | Deferred candidates fully scored in phase 2 |
+| `tier2_phase2_deferred` | Candidates deferred from phase 1 (optimistic rank held in heap) |
+| `dfs_bb_prunes` | DFS branches pruned by prefix upper bound |
+| `dfs_bb_calls` | Prefix bound evaluations during DFS |
+
+Tier-2 is automatic on sticker/stamp loadouts when gating allows (no Hourglass, Compound Cocktail, unsafe bosses, or setup-weighted ranking with setup stickers). DFS branch-and-bound uses the same gating.
+
 ## 2. Cache hit rates
 
 | Fixture | Score cache | Dict path cache | Chess attack cache | Board.flat calls |
@@ -36,9 +54,9 @@ Generated from `scripts/analyze_data_structures.py` (8s budget, game/ENABLE1 wor
 
 ### Dict path cache (`_dict_path_cache`)
 
-- Keys: `tuple(path)` on chess/item boards; `(pattern, tile_constraint_sig)` elsewhere
-- Hit rate **42–96%** after trie-state refactor
-- Misses invoke `dictionary_word_for_path` (expensive); many wildcard-resolved paths now use `trie_fast_accepts` instead
+- **Scoring-only** (not on DFS accept path): keys are `tuple(path)`
+- Hit rate reflects `_resolved_word_for_path` during candidate scoring (~100–300 calls/solve), not DFS expansions
+- Misses invoke `dictionary_word_for_path` (expensive); trie-confirmed alpha paths skip resolve via `resolved_word` from accept
 
 ### Trie fast accept (`trie_fast_accepts`)
 
@@ -58,11 +76,12 @@ Generated from `scripts/analyze_data_structures.py` (8s budget, game/ENABLE1 wor
 | `loadout_mult_rules`, `build_mult_neighbor_hints` | per solve | Already precomputed at `find_best_words` start |
 | `effective_board_for_loadout` | per solve | Skipped when melmod `source=melmod` |
 | `stickers.json` via `@lru_cache` | per process | Not per candidate |
-| `build_solve_context(loadout)` | **per solve** | Precomputes stamp flags, hourglass, shield blue, boss rules, inventory refs once |
+| `build_solve_context(loadout)` | **per solve** | Precomputes stamp flags, hourglass, shield blue, boss rules, `inventory_refs`, sticker/stamp slot order, `grid_tile_multiply_first` |
 | `build_board_graph_context(board)` | **per solve** | Precomputes `hanafuda_suit_mask`, `grid_base_score`, `coloured_tile_count`, chess masks |
-| `ScoringPipeline._compute_state` | **per candidate** | Full wiki-order pipeline (receives cached `SolveContext` + `BoardGraphContext` via state) |
-| `path_grid_item_refs` | **per path (cached)** | Grid scatter refs cached on `WordSearcher._grid_refs_cache` per solve |
-| `build_scoring_item_sequence` | **per candidate** | Inventory portion from `SolveContext`; grid refs from per-path cache |
+| `build_board_scoring_context(...)` | **per solve** | Cell target bitmasks, static sticker/stamp specs, `use_split_pipeline` |
+| `ScoringPipeline._compute_state` | **per candidate** | Full wiki-order pipeline (receives cached `SolveContext` + `BoardGraphContext` + `BoardScoringContext`) |
+| `path_grid_item_refs` | **per path (cached)** | Grid scatter refs cached on `WordSearcher._grid_refs_cache` per solve; hourglass reversal applied in `_compute_state` |
+| `build_scoring_item_sequence` | **per solve / tests** | Inventory from `SolveContext`; grid refs from per-path cache; used by `loadout_mult_rules`, not `_compute_state` hot path |
 | Tier-2 two-phase scoring | **per candidate** | Phase 1 bounds screen/defer; phase 2 `_compute_state` only for survivors |
 | `board_fingerprint(board)` | **per solve (chess boards)** | Computed once in `clear_chess_attack_cache`; skipped when no chess pieces |
 | `unused_cards_on_board` | **per candidate** | Uses `hanafuda_suit_mask` bitmask + path-only edge cases (no `board.flat`) |
@@ -93,9 +112,12 @@ Generated from `scripts/analyze_data_structures.py` (8s budget, game/ENABLE1 wor
 - `score_cache_hits` / `score_cache_misses`
 - `dict_path_cache_hits` / `dict_path_cache_misses`
 - `chess_attack_cache_hits` / `chess_attack_cache_misses`
+- `grid_refs_cache_hits` / `grid_refs_cache_misses`
 - `board_flat_calls`
 - `trie_fast_accepts`
 - `trie_steps` / `trie_prunes`
+- `tier2_screen_skips`, `tier2_rank_screen_skips`, `tier2_phase1_calls`, `tier2_phase2_calls`, `tier2_phase2_deferred`
+- `dfs_bb_prunes` / `dfs_bb_calls`
 
 Run analysis:
 

@@ -50,6 +50,7 @@ from cursed_words_solver.fast_rank import (
     loadout_allows_tier2_screen,
     loadout_allows_tier2_two_phase,
     mult_aware_lower_bound,
+    prefix_immediate_upper_bound,
     prefix_rank_upper_bound,
     tier2_immediate_lower_bound,
     tier2_immediate_upper_bound,
@@ -260,6 +261,21 @@ class _CandidateHeap:
         if not known:
             return None
         return min(known)
+
+    def max_immediate_score(self) -> float | None:
+        """Best pipeline immediate among scored heap entries, or None if heap empty."""
+        if not self._heap:
+            return None
+        known = [entry[1] for entry in self._heap if entry[1] >= 0.0]
+        if not known:
+            return None
+        return max(known)
+
+    def max_rank_score(self) -> float | None:
+        """Best rank_score among heap entries, or None if heap empty."""
+        if not self._heap:
+            return None
+        return max(entry[0] for entry in self._heap)
 
     def replace_entry(
         self,
@@ -1213,6 +1229,7 @@ def neighbors_mask(
             flags,
             item_mask=item_mask,
             active_mask=active_mask or 0,
+            graph_ctx=graph_ctx,
         )
     else:
         mask = neighbors_standard_mask(
@@ -1958,6 +1975,7 @@ class WordSearcher:
         self._active_timing: SearchTiming | None = None
         self._solve_ctx: SolveContext | None = None
         self._graph_ctx: BoardGraphContext | None = None
+        self._board_scoring_ctx = None
 
     def _board_graph(self, board: Board) -> BoardGraphContext:
         if self._graph_ctx is not None and self._graph_ctx.board is board:
@@ -2063,6 +2081,7 @@ class WordSearcher:
     def _pipeline_cache_kwargs(self) -> dict:
         return {
             "graph_ctx": self._graph_ctx,
+            "board_scoring_ctx": self._board_scoring_ctx,
             "grid_refs_cache": self._grid_refs_cache,
             "grid_refs_timing": self._active_timing,
         }
@@ -2274,44 +2293,9 @@ class WordSearcher:
                     len(candidates) - before
                 )
 
-    def _linguistic_cache_key(
-        self,
-        board: Board,
-        path: list[int],
-        *,
-        chars: list[str] | None = None,
-        pattern_prefix: str | None = None,
-        search_word: str | None = None,
-    ) -> tuple:
-        if chars:
-            word = "".join(chars).lower()
-        elif search_word is not None:
-            word = search_word.lower()
-        else:
-            word = ""
-        if pattern_prefix:
-            pattern = pattern_prefix
-        elif "?" in word or any(c.isdigit() for c in word):
-            pattern = word
-        else:
-            pattern = word
-        needs_spatial = any(
-            board.get_by_index(idx).curse == CurseType.ITEM
-            or board.get_by_index(idx).curse in CHESS_CURSES
-            for idx in path
-        ) or any(
-            tile.curse in CHESS_CURSES or tile.curse == CurseType.ITEM
-            for row in board.tiles
-            for tile in row
-        )
-        if needs_spatial:
-            return tuple(path)
-        sig = tuple(
-            (tile.curse, tile.letter, tile.color, tile.char)
-            for idx in path
-            for tile in [board.get_by_index(idx)]
-        )
-        return (pattern, sig)
+    def _linguistic_cache_key(self, board: Board, path: list[int]) -> tuple[int, ...]:
+        """Scoring-only dict resolve key; path tuple is unique per traversal."""
+        return tuple(path)
 
     def _path_needs_dictionary_resolve(
         self, board: Board, path: list[int], search_word: str
@@ -2335,8 +2319,6 @@ class WordSearcher:
         trie_compatible: bool = False,
         prefix_cursor: TrieCursor | None = None,
         pattern_cursor: TrieCursor | None = None,
-        chars: list[str] | None = None,
-        pattern_prefix: str | None = None,
         use_hanafuda_physical: bool = False,
     ) -> tuple[bool, str]:
         """Whether a path is playable and which word form to score/rank."""
@@ -2372,42 +2354,15 @@ class WordSearcher:
             any(is_number_like_tile(board.get_by_index(i)) for i in path)
             or self._path_needs_dictionary_resolve(board, path, search_word)
         ):
-            cache_key = self._linguistic_cache_key(
-                board,
-                path,
-                chars=chars,
-                pattern_prefix=pattern_prefix,
-                search_word=search_word,
-            )
-            alt = self._dict_path_cache.get(cache_key)
-            timing = self._active_timing
-            if alt is not None:
+            if (
+                trie_compatible
+                and prefix_cursor is not None
+                and self.dictionary.cursor_is_word(prefix_cursor)
+            ):
+                timing = self._active_timing
                 if timing is not None:
-                    timing.dict_path_cache_hits += 1
-                if alt and self.validator.word_ok(board, path, alt, stamp_flags):
-                    return True, scoring_word_for_path_local(alt)
-            if alt is None:
-                if timing is not None:
-                    timing.dict_path_cache_misses += 1
-                from cursed_words_solver.suggestion import dictionary_word_for_path
-
-                resolve_word = search_word
-                if self._path_needs_dictionary_resolve(board, path, search_word):
-                    resolve_word = search_word_from_path(
-                        board, path, flags=stamp_flags
-                    )
-                alt = dictionary_word_for_path(
-                    board,
-                    path,
-                    resolve_word,
-                    loadout,
-                    self.dictionary,
-                    min_len=self.min_len,
-                    pipeline=self.scoring,
-                )
-                self._dict_path_cache[cache_key] = alt or ""
-                if alt and self.validator.word_ok(board, path, alt, stamp_flags):
-                    return True, scoring_word_for_path_local(alt)
+                    timing.trie_fast_accepts += 1
+                return True, scoring_word_for_path_local(search_word)
         return False, search_word
 
     def _collect_words(
@@ -2455,8 +2410,6 @@ class WordSearcher:
             trie_compatible: bool,
             prefix_cursor: TrieCursor | None,
             pattern_cursor: TrieCursor | None = None,
-            chars: list[str] | None = None,
-            pattern_prefix: str | None = None,
         ) -> tuple[bool, str]:
             return self._accept_path_for_search(
                 board,
@@ -2467,8 +2420,6 @@ class WordSearcher:
                 trie_compatible=trie_compatible,
                 prefix_cursor=prefix_cursor,
                 pattern_cursor=pattern_cursor,
-                chars=chars,
-                pattern_prefix=pattern_prefix,
                 use_hanafuda_physical=use_hanafuda_physical,
             )
 
@@ -2496,6 +2447,7 @@ class WordSearcher:
             if getattr(self, "_board_has_number_tiles", False)
             else None
         )
+        bb_mult_cache: dict[tuple[int, ...], float] = {}
 
         def _step_token_cursor(
             cursor: TrieCursor | None, token: str
@@ -2621,21 +2573,20 @@ class WordSearcher:
                 return
 
             letter_trie = not has_digit
-            resolved = "".join(chars).lower()
+            is_alpha_path = not has_wildcard and not has_digit
             trie_fast_end = (
                 letter_trie
+                and is_alpha_path
                 and prefix_cursor is not None
-                and resolved.isalpha()
+                and prefix_len >= self.min_len
                 and self.dictionary.cursor_is_word(prefix_cursor)
             )
             if len(chars) >= self.min_len and (
                 trie_fast_end or has_wildcard or has_digit or stitch_active
             ):
-                word = resolved
+                word = "".join(chars).lower()
                 trie_compatible = (
-                    prefix_cursor is not None
-                    and not has_digit
-                    and word.isalpha()
+                    prefix_cursor is not None and not has_digit and is_alpha_path
                 )
                 ok, score_word = path_accepted(
                     path,
@@ -2643,14 +2594,19 @@ class WordSearcher:
                     trie_compatible=trie_compatible,
                     prefix_cursor=prefix_cursor if letter_trie else None,
                     pattern_cursor=pattern_cursor,
-                    chars=chars,
-                    pattern_prefix=pattern_prefix,
                 )
                 if ok:
                     if not digits_only or any(ch.isdigit() for ch in score_word):
+                        trie_confirmed = (
+                            trie_compatible
+                            and prefix_cursor is not None
+                            and self.dictionary.cursor_is_word(prefix_cursor)
+                        )
                         resolved_word = (
                             score_word
-                            if score_word.isalpha() and "?" not in score_word
+                            if trie_confirmed
+                            and score_word.isalpha()
+                            and "?" not in score_word
                             else None
                         )
                         self._consider_path_candidate(
@@ -2701,21 +2657,52 @@ class WordSearcher:
                         _record_trie_prune()
                         return
 
-            reachable_wild = (
-                graph_ctx.wildcard_mask & graph_ctx.active_mask & ~visited_mask
-            )
             if (
                 use_dfs_bb
                 and use_heap
                 and not stitch_active
                 and not has_wildcard
                 and not has_digit
-                and not reachable_wild
             ):
+                min_imm = candidates.min_immediate_score()
                 min_rank = candidates.min_rank_score()
-                if min_rank is not None:
+                best_imm = candidates.max_immediate_score()
+                no_reachable_wild = not (
+                    graph_ctx.wildcard_mask & graph_ctx.active_mask & ~visited_mask
+                )
+                if (
+                    min_imm is not None
+                    or min_rank is not None
+                    or (no_reachable_wild and best_imm is not None)
+                ):
                     if timing is not None:
                         timing.dfs_bb_calls += 1
+                    imm_ub = prefix_immediate_upper_bound(
+                        prefix_base,
+                        board,
+                        path,
+                        chars,
+                        visited_mask,
+                        steps_left,
+                        loadout,
+                        ctx,
+                        self._mult_rules,
+                        graph_ctx,
+                        search_tile_base,
+                        max_len=max_len,
+                        prefix_red_count=prefix_red_count,
+                    )
+                    if self.mult_search_weight > 0 and self._mult_rules:
+                        path_key = tuple(path)
+                        if path_key not in bb_mult_cache:
+                            bb_mult_cache[path_key] = optimistic_mult_factor(
+                                loadout,
+                                board,
+                                path,
+                                "".join(chars),
+                                self.scoring.rules,
+                                self._mult_rules,
+                            )
                     rank_ub = prefix_rank_upper_bound(
                         prefix_base,
                         board,
@@ -2733,7 +2720,14 @@ class WordSearcher:
                         prefix_red_count=prefix_red_count,
                         hanafuda_level=hanafuda_level,
                     )
-                    if rank_ub < min_rank:
+                    pruned = False
+                    if no_reachable_wild and best_imm is not None and imm_ub <= best_imm:
+                        pruned = True
+                    elif min_imm is not None and imm_ub < min_imm:
+                        pruned = True
+                    elif min_rank is not None and rank_ub < min_rank:
+                        pruned = True
+                    if pruned:
                         if timing is not None:
                             timing.dfs_bb_prunes += 1
                         return
@@ -2798,7 +2792,7 @@ class WordSearcher:
                             pattern_cursor, ch, active=pat_active or True
                         )
                         extensions.append(
-                            (ch, child, next_pat_cursor, True, next_pat)
+                            (ch, child, next_pat_cursor, False, next_pat)
                         )
                 else:
                     next_has_wildcard = has_wildcard or ("?" in token)
@@ -2935,7 +2929,7 @@ class WordSearcher:
                         [ch],
                         1 << start,
                         prefix_cursor=prefix_cursor,
-                        has_wildcard=True,
+                        has_wildcard=False,
                         has_digit=False,
                         prefix_len=1,
                         prefix_base=search_tile_base[start] if use_dfs_bb else 0.0,
@@ -3417,9 +3411,16 @@ class WordSearcher:
                             )
                             if not accepted:
                                 continue
+                            ext_trie_confirmed = (
+                                trie_compatible
+                                and ext_cursor is not None
+                                and self.dictionary.cursor_is_word(ext_cursor)
+                            )
                             resolved_word = (
                                 scoring_word
-                                if scoring_word.isalpha() and "?" not in scoring_word
+                                if ext_trie_confirmed
+                                and scoring_word.isalpha()
+                                and "?" not in scoring_word
                                 else None
                             )
                             if self._consider_path_candidate(
@@ -3513,18 +3514,9 @@ class WordSearcher:
         path: list[int],
         word: str,
         loadout: Loadout,
-        *,
-        chars: list[str] | None = None,
-        pattern_prefix: str | None = None,
     ) -> str:
-        """Dictionary spelling for a wildcard path (cached); '' when unresolved."""
-        cache_key = self._linguistic_cache_key(
-            board,
-            path,
-            chars=chars,
-            pattern_prefix=pattern_prefix,
-            search_word=word,
-        )
+        """Dictionary spelling for a wildcard/chess path (cached); '' when unresolved."""
+        cache_key = self._linguistic_cache_key(board, path)
         cached = self._dict_path_cache.get(cache_key)
         timing = self._active_timing
         if cached is not None:
@@ -3577,10 +3569,12 @@ class WordSearcher:
             if hanafuda_level > 0
             else word
         )
-        if hanafuda_level == 0 and "?" in score_word:
+        if hanafuda_level == 0:
             if resolved_word:
                 score_word = resolved_word
-            else:
+            elif "?" in score_word or self._path_needs_dictionary_resolve(
+                board, path, word
+            ):
                 resolved = self._resolved_word_for_path(board, path, word, loadout)
                 if resolved:
                     score_word = resolved
@@ -3610,6 +3604,7 @@ class WordSearcher:
                     ctx,
                     self._mult_rules,
                     graph_ctx=self._graph_ctx,
+                    board_scoring_ctx=self._board_scoring_ctx,
                 )
                 rank_ub = (
                     tier2_rank_upper_bound(
@@ -3622,6 +3617,7 @@ class WordSearcher:
                         mult_weight=self.mult_search_weight,
                         hanafuda_level=hanafuda_level,
                         graph_ctx=self._graph_ctx,
+                        board_scoring_ctx=self._board_scoring_ctx,
                     )
                     if min_rank is not None
                     else None
@@ -3651,6 +3647,7 @@ class WordSearcher:
                         mult_weight=self.mult_search_weight,
                         hanafuda_level=hanafuda_level,
                         graph_ctx=self._graph_ctx,
+                        board_scoring_ctx=self._board_scoring_ctx,
                     )
                     if rank_lb < min_rank:
                         if timing is not None:
@@ -3752,19 +3749,31 @@ class WordSearcher:
         loadout = loadout or Loadout(money=board.money)
         board = effective_board_for_loadout(board, loadout, self.scoring.rules)
         _active = _active_indices(board)
+        self._solve_ctx = build_solve_context(loadout, self.scoring.rules)
         self._mult_rules = loadout_mult_rules(
             loadout,
             self.scoring.rules,
             board=board,
             path=[_active[0]] if _active else [],
+            solve_context=self._solve_ctx,
         )
         self._mult_hints = (
             build_mult_neighbor_hints(self._mult_rules)
             if self._mult_rules
             else None
         )
-        self._solve_ctx = build_solve_context(loadout, self.scoring.rules)
         self._graph_ctx = build_board_graph_context(board)
+        from cursed_words_solver.board_scoring_context import (
+            build_board_scoring_context,
+        )
+
+        self._board_scoring_ctx = build_board_scoring_context(
+            board,
+            loadout,
+            self._solve_ctx,
+            self._graph_ctx,
+            self.scoring.rules,
+        )
         clear_chess_attack_cache(
             has_chess_pieces=self._graph_ctx.has_chess_pieces,
             board_fingerprint=(

@@ -263,6 +263,18 @@ class BoardGraphContext:
     number_like: tuple[bool, ...] = field(default_factory=lambda: (False,) * CELL_COUNT)
     letter_masks: dict[str, int] = field(default_factory=dict)
     identical_chess_masks: dict[tuple[str, str], int] = field(default_factory=dict)
+    black_piece_mask: int = 0
+    white_piece_mask: int = 0
+    # [allies_can_take][side 0=black 1=white][start_cell]
+    knight_land_mask: tuple[tuple[tuple[int, ...], ...], ...] = field(
+        default_factory=lambda: (((), ()), ((), ()))
+    )
+    king_step_mask: tuple[tuple[tuple[int, ...], ...], ...] = field(
+        default_factory=lambda: (((), ()), ((), ()))
+    )
+    king_step_mask_wrap: tuple[tuple[tuple[int, ...], ...], ...] = field(
+        default_factory=lambda: (((), ()), ((), ()))
+    )
 
     def is_active(self, idx: int) -> bool:
         return bool(self.active_mask & (1 << idx))
@@ -278,6 +290,110 @@ class BoardGraphContext:
             return "white"
         return ""
 
+    def _side_index(self, moving_side: str) -> int:
+        return 0 if moving_side == "black" else 1
+
+    def knight_land_for(
+        self, start_idx: int, moving_side: str, *, allies_can_take: bool
+    ) -> int:
+        allies_i = 1 if allies_can_take else 0
+        return self.knight_land_mask[allies_i][self._side_index(moving_side)][start_idx]
+
+    def king_step_for(
+        self,
+        start_idx: int,
+        moving_side: str,
+        *,
+        allies_can_take: bool,
+        horizontal_wrap: bool,
+    ) -> int:
+        allies_i = 1 if allies_can_take else 0
+        table = self.king_step_mask_wrap if horizontal_wrap else self.king_step_mask
+        return table[allies_i][self._side_index(moving_side)][start_idx]
+
+
+def _build_piece_land_masks(
+    step_masks: list[int],
+    *,
+    active_mask: int,
+    chess_piece_mask: int,
+    chess_side_code: tuple[int, ...],
+    moving_side_code: int,
+    allies_can_take: bool,
+) -> tuple[int, ...]:
+    """Precompute landable targets per start cell for one moving side."""
+    out: list[int] = []
+    for start_idx in range(CELL_COUNT):
+        land = 0
+        for idx in iter_mask(step_masks[start_idx] & active_mask):
+            if chess_piece_mask & (1 << idx):
+                side_code = chess_side_code[idx]
+                if side_code == 0:
+                    continue
+                if side_code == moving_side_code:
+                    if allies_can_take:
+                        land |= 1 << idx
+                else:
+                    land |= 1 << idx
+            else:
+                land |= 1 << idx
+        out.append(land)
+    return tuple(out)
+
+
+def _build_chess_neighbor_masks(
+    *,
+    active_mask: int,
+    chess_piece_mask: int,
+    chess_side_code: tuple[int, ...],
+    black_piece_mask: int,
+    white_piece_mask: int,
+) -> tuple[
+    tuple[tuple[tuple[int, ...], ...], ...],
+    tuple[tuple[tuple[int, ...], ...], ...],
+    tuple[tuple[tuple[int, ...], ...], ...],
+]:
+    knight_tables: list[list[tuple[int, ...]]] = [[], []]
+    king_tables: list[list[tuple[int, ...]]] = [[], []]
+    king_wrap_tables: list[list[tuple[int, ...]]] = [[], []]
+    for allies_i, allies in enumerate((False, True)):
+        for side_code, _side_mask in ((1, black_piece_mask), (2, white_piece_mask)):
+            knight_tables[allies_i].append(
+                _build_piece_land_masks(
+                    KNIGHT_TARGETS,
+                    active_mask=active_mask,
+                    chess_piece_mask=chess_piece_mask,
+                    chess_side_code=chess_side_code,
+                    moving_side_code=side_code,
+                    allies_can_take=allies,
+                )
+            )
+            king_tables[allies_i].append(
+                _build_piece_land_masks(
+                    NEIGHBORS_8,
+                    active_mask=active_mask,
+                    chess_piece_mask=chess_piece_mask,
+                    chess_side_code=chess_side_code,
+                    moving_side_code=side_code,
+                    allies_can_take=allies,
+                )
+            )
+            king_wrap_tables[allies_i].append(
+                _build_piece_land_masks(
+                    NEIGHBORS_8_WRAP,
+                    active_mask=active_mask,
+                    chess_piece_mask=chess_piece_mask,
+                    chess_side_code=chess_side_code,
+                    moving_side_code=side_code,
+                    allies_can_take=allies,
+                )
+            )
+    return (
+        (tuple(knight_tables[0]), tuple(knight_tables[1])),
+        (tuple(king_tables[0]), tuple(king_tables[1])),
+        (tuple(king_wrap_tables[0]), tuple(king_wrap_tables[1])),
+    )
+
 
 def build_board_graph_context(board: Board) -> BoardGraphContext:
     from cursed_words_solver.rules.base_scoring import tile_base_contribution
@@ -288,6 +404,8 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
 
     active_mask = mask_from_active(board)
     chess_piece_mask = 0
+    black_piece_mask = 0
+    white_piece_mask = 0
     item_mask = 0
     wildcard_mask = 0
     chess_curse: list[int] = [0] * CELL_COUNT
@@ -321,7 +439,14 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
             chess_piece_mask |= 1 << idx
             chess_curse[idx] = curse_code[idx]
         if _chess_side_known(tile):
-            chess_side_code[idx] = 1 if _chess_side(tile) == "black" else 2
+            if _chess_side(tile) == "black":
+                chess_side_code[idx] = 1
+                if _is_chess_piece(tile):
+                    black_piece_mask |= 1 << idx
+            else:
+                chess_side_code[idx] = 2
+                if _is_chess_piece(tile):
+                    white_piece_mask |= 1 << idx
         letter = _physical_letter(tile)
         if letter:
             letter_masks[letter] |= 1 << idx
@@ -344,6 +469,15 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
         if _hanafuda_tile_has_suit(tile):
             hanafuda_suit_mask |= 1 << idx
 
+    chess_side_tuple = tuple(chess_side_code)
+    knight_land_mask, king_step_mask, king_step_mask_wrap = _build_chess_neighbor_masks(
+        active_mask=active_mask,
+        chess_piece_mask=chess_piece_mask,
+        chess_side_code=chess_side_tuple,
+        black_piece_mask=black_piece_mask,
+        white_piece_mask=white_piece_mask,
+    )
+
     return BoardGraphContext(
         board=board,
         active_mask=active_mask,
@@ -351,7 +485,7 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
         item_mask=item_mask,
         wildcard_mask=wildcard_mask,
         chess_curse=tuple(chess_curse),
-        chess_side_code=tuple(chess_side_code),
+        chess_side_code=chess_side_tuple,
         has_chess_pieces=bool(chess_piece_mask),
         hanafuda_suit_mask=hanafuda_suit_mask,
         grid_base_score=grid_base_score,
@@ -363,4 +497,9 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
         number_like=tuple(number_like),
         letter_masks=dict(letter_masks),
         identical_chess_masks=dict(identical_chess),
+        black_piece_mask=black_piece_mask,
+        white_piece_mask=white_piece_mask,
+        knight_land_mask=knight_land_mask,
+        king_step_mask=king_step_mask,
+        king_step_mask_wrap=king_step_mask_wrap,
     )

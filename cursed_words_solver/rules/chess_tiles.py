@@ -7,6 +7,7 @@ from collections import OrderedDict
 from cursed_words_solver.fingerprints import board_fingerprint
 from cursed_words_solver.graph_bitboard import (
     DIAG_DIR_INDICES,
+    BoardGraphContext,
     KNIGHT_TARGETS,
     NEIGHBORS_8,
     NEIGHBORS_8_WRAP,
@@ -252,6 +253,28 @@ def _ray_step(
     return None
 
 
+def _can_land_on_chess_square_fast(
+    graph_ctx: BoardGraphContext,
+    idx: int,
+    moving_side: str,
+    visited_mask: int,
+    *,
+    allies_can_take: bool,
+) -> bool:
+    if visited_mask & (1 << idx):
+        return False
+    if not graph_ctx.is_active(idx):
+        return False
+    if not graph_ctx.is_chess_piece_at(idx):
+        return True
+    side = graph_ctx.chess_side_at(idx)
+    if not side:
+        return False
+    if side == moving_side:
+        return allies_can_take
+    return True
+
+
 def _ray_neighbors_mask(
     board: Board,
     start_idx: int,
@@ -262,6 +285,7 @@ def _ray_neighbors_mask(
     straight: bool = False,
     diagonal: bool = False,
     horizontal_wrap: bool = False,
+    graph_ctx: BoardGraphContext | None = None,
 ) -> int:
     lines = RAY_LINES_WRAP if horizontal_wrap else RAY_LINES
     dir_indices: list[int] = []
@@ -272,21 +296,38 @@ def _ray_neighbors_mask(
     mask = 0
     for d in dir_indices:
         for idx in lines[start_idx][d]:
-            if not board.is_active_index(idx):
-                continue
-            if _chess_piece_at(board, idx) is not None:
-                if can_land_on_chess_square(
-                    board,
-                    idx,
-                    moving_side,
-                    visited_mask,
-                    allies_can_take=allies_can_take,
-                ):
-                    mask |= 1 << idx
-                break
-            if visited_mask & (1 << idx):
-                continue
-            mask |= 1 << idx
+            if graph_ctx is not None:
+                if not graph_ctx.is_active(idx):
+                    continue
+                if graph_ctx.is_chess_piece_at(idx):
+                    if _can_land_on_chess_square_fast(
+                        graph_ctx,
+                        idx,
+                        moving_side,
+                        visited_mask,
+                        allies_can_take=allies_can_take,
+                    ):
+                        mask |= 1 << idx
+                    break
+                if visited_mask & (1 << idx):
+                    continue
+                mask |= 1 << idx
+            else:
+                if not board.is_active_index(idx):
+                    continue
+                if _chess_piece_at(board, idx) is not None:
+                    if can_land_on_chess_square(
+                        board,
+                        idx,
+                        moving_side,
+                        visited_mask,
+                        allies_can_take=allies_can_take,
+                    ):
+                        mask |= 1 << idx
+                    break
+                if visited_mask & (1 << idx):
+                    continue
+                mask |= 1 << idx
     return mask
 
 
@@ -297,7 +338,15 @@ def knight_neighbors_mask(
     *,
     moving_side: str,
     allies_can_take: bool = False,
+    graph_ctx: BoardGraphContext | None = None,
 ) -> int:
+    if graph_ctx is not None:
+        return (
+            graph_ctx.knight_land_for(
+                start_idx, moving_side, allies_can_take=allies_can_take
+            )
+            & ~visited_mask
+        )
     mask = 0
     for idx in iter_mask(KNIGHT_TARGETS[start_idx]):
         if can_land_on_chess_square(
@@ -319,8 +368,28 @@ def king_neighbors_mask(
     moving_side: str,
     allies_can_take: bool = False,
     horizontal_wrap: bool = False,
+    graph_ctx: BoardGraphContext | None = None,
 ) -> int:
     opp = opposite_side(moving_side)
+    if graph_ctx is not None:
+        candidates = (
+            graph_ctx.king_step_for(
+                start_idx,
+                moving_side,
+                allies_can_take=allies_can_take,
+                horizontal_wrap=horizontal_wrap,
+            )
+            & ~visited_mask
+        )
+        mask = 0
+        for idx in iter_mask(candidates):
+            nr, nc = idx // 5, idx % 5
+            if is_square_attacked(
+                board, nr, nc, opp, visited_mask, horizontal_wrap=horizontal_wrap
+            ):
+                continue
+            mask |= 1 << idx
+        return mask
     base = NEIGHBORS_8_WRAP[start_idx] if horizontal_wrap else NEIGHBORS_8[start_idx]
     mask = 0
     for idx in iter_mask(base):
@@ -377,6 +446,7 @@ def chess_neighbors_mask(
     *,
     item_mask: int = 0,
     active_mask: int = 0,
+    graph_ctx: BoardGraphContext | None = None,
 ) -> int:
     """Curse-aware neighbor bitmask when stepping from a chess piece."""
     flags = coerce_search_flags(flags)
@@ -390,7 +460,12 @@ def chess_neighbors_mask(
     curse = last_tile.curse
     if curse == CurseType.CHESS_KNIGHT:
         mask = knight_neighbors_mask(
-            board, start_idx, visited_mask, moving_side=side, allies_can_take=allies
+            board,
+            start_idx,
+            visited_mask,
+            moving_side=side,
+            allies_can_take=allies,
+            graph_ctx=graph_ctx,
         )
     elif curse == CurseType.CHESS_ROOK:
         mask = _ray_neighbors_mask(
@@ -401,6 +476,7 @@ def chess_neighbors_mask(
             allies_can_take=allies,
             straight=True,
             horizontal_wrap=wrap,
+            graph_ctx=graph_ctx,
         )
     elif curse == CurseType.CHESS_BISHOP:
         mask = _ray_neighbors_mask(
@@ -411,6 +487,7 @@ def chess_neighbors_mask(
             allies_can_take=allies,
             diagonal=True,
             horizontal_wrap=wrap,
+            graph_ctx=graph_ctx,
         )
     elif curse == CurseType.CHESS_QUEEN:
         mask = _ray_neighbors_mask(
@@ -422,6 +499,7 @@ def chess_neighbors_mask(
             straight=True,
             diagonal=True,
             horizontal_wrap=wrap,
+            graph_ctx=graph_ctx,
         )
     elif curse == CurseType.CHESS_KING:
         mask = king_neighbors_mask(
@@ -431,6 +509,7 @@ def chess_neighbors_mask(
             moving_side=side,
             allies_can_take=allies,
             horizontal_wrap=wrap,
+            graph_ctx=graph_ctx,
         )
     elif curse == CurseType.CHESS_PAWN:
         mask = pawn_neighbors_mask(

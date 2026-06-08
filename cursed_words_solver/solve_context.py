@@ -185,6 +185,19 @@ def _boss_blocks_tier2_screen(loadout: Loadout, rules: dict) -> bool:
     return False
 
 
+def _slot_order(count: int, *, hourglass: bool) -> tuple[int, ...]:
+    slots = tuple(range(count))
+    return tuple(reversed(slots)) if hourglass else slots
+
+
+def _grid_tile_multiply_first(extras: dict) -> bool:
+    return str(extras.get("grid_tile_multiply_first", "")).lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
 def _tier2_screen_enabled(loadout: Loadout, rules: dict, *, hourglass: bool) -> bool:
     if not loadout.stickers and not loadout.stamps:
         return False
@@ -215,6 +228,9 @@ class SolveContext:
     boss_ctx: BossContext
     inventory_refs: tuple[ScoringItemRef, ...]
     capybara_shuffles: bool
+    sticker_slot_order: tuple[int, ...] = ()
+    stamp_slot_order: tuple[int, ...] = ()
+    grid_tile_multiply_first: bool = False
     microscope_base: bool = False
     hanafuda_level: int = 0
     compound_finalize_at_cocktail: bool = False
@@ -248,6 +264,9 @@ def build_solve_context(loadout: Loadout, rules: dict) -> SolveContext:
         boss_ctx=boss_context(loadout, rules),
         inventory_refs=tuple(_inventory_item_refs(loadout, rules)),
         capybara_shuffles=capybara_shuffles_loadout(loadout, rules),
+        sticker_slot_order=_slot_order(len(loadout.stickers), hourglass=hourglass),
+        stamp_slot_order=_slot_order(len(loadout.stamps), hourglass=hourglass),
+        grid_tile_multiply_first=_grid_tile_multiply_first(extras),
         microscope_base=loadout_has_stamp(loadout, "microscope"),
         hanafuda_level=hanafuda_sticker_level(loadout),
         compound_finalize_at_cocktail=str(

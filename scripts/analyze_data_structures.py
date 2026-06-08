@@ -47,7 +47,13 @@ PRECOMPUTE_AUDIT = [
         "item": "build_solve_context(loadout)",
         "when": "per_solve",
         "where": "search.py find_best_words, search_parallel workers",
-        "note": "Precomputes stamp_search_flags, hourglass, shield blue, compound percents once",
+        "note": "Precomputes stamp_search_flags, hourglass, shield blue, inventory_refs, slot orders, grid_tile_multiply_first",
+    },
+    {
+        "item": "build_board_scoring_context(board, loadout)",
+        "when": "per_solve",
+        "where": "search.py find_best_words, search_parallel workers",
+        "note": "Precomputes per-cell target masks and static inventory rule specs for O(path) sticker/stamp fast paths",
     },
     {
         "item": "ScoringPipeline._compute_state",
@@ -56,10 +62,10 @@ PRECOMPUTE_AUDIT = [
         "note": "Full wiki-order pipeline: tile init, pin, stickers L-R, stamps, boss",
     },
     {
-        "item": "build_scoring_item_sequence",
-        "when": "per_candidate",
+        "item": "path_grid_item_refs + SolveContext slot orders",
+        "when": "per_path_cached",
         "where": "rules/pipeline.py _compute_state",
-        "note": "Rebuilds grid-path + item order for every scored word",
+        "note": "Grid scatter refs cached per path; inventory order from SolveContext",
     },
     {
         "item": "board_fingerprint(board)",

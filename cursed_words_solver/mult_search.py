@@ -18,6 +18,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     word_starts_ends_different_suit,
 )
 from cursed_words_solver.rules.scoring_order import build_scoring_item_sequence
+from cursed_words_solver.solve_context import SolveContext
 
 MULT_EFFECT_TYPES = frozenset({"multiply_word_scaled", "tile_multiply"})
 PARTIAL_MULT_WEIGHT = 0.35
@@ -74,6 +75,7 @@ def loadout_mult_rules(
     *,
     board: Board | None = None,
     path: list[int] | None = None,
+    solve_context: SolveContext | None = None,
 ) -> list[MultRule]:
     """Active multiply_word_scaled / tile_multiply rules in scoring order."""
     if board is None or path is None:
@@ -82,7 +84,17 @@ def loadout_mult_rules(
         board = Board(tiles=[[Tile(0, 0, "a", "a", 1)] * 5 for _ in range(5)])
         active = _active_indices(board)
         path = [active[0]] if active else [0]
-    refs = build_scoring_item_sequence(board, path, loadout, rules)
+    if solve_context is not None:
+        refs = build_scoring_item_sequence(
+            board,
+            path,
+            loadout,
+            rules,
+            hourglass_reversed=solve_context.hourglass_reversed,
+            inventory_refs=solve_context.inventory_refs,
+        )
+    else:
+        refs = build_scoring_item_sequence(board, path, loadout, rules)
     out: list[MultRule] = []
     seen: set[str] = set()
     for ref in refs:
