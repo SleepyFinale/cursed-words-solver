@@ -1029,11 +1029,19 @@ def _historic_words_count(raw: str) -> int:
 def reconcile_previous_word_first_letter_from_historic(
     extras: dict[str, Any],
 ) -> None:
-    """Normalize exported previous_word_first_letter (Limnophila uses scoring cache, not encounter historic)."""
+    """Normalize previous_word_first_letter (mirror melmod scoring-cache vs historic)."""
     grid = _grid_number_from_extras(extras)
     hist = str(extras.get("historic_words", "") or "").strip()
     if grid >= 2 and (not hist or hist == "[]"):
         extras.pop("previous_word_first_letter", None)
+        return
+    spc = _scoring_previous_words_count_from_extras(extras)
+    last_from_hist = _previous_letter_from_historic_words(hist)
+    if spc == 0:
+        if last_from_hist:
+            extras["previous_word_first_letter"] = last_from_hist
+        else:
+            extras.pop("previous_word_first_letter", None)
         return
     prev = str(extras.get("previous_word_first_letter") or "").strip().lower()[:1]
     if prev:
@@ -1285,7 +1293,7 @@ def f8_historic_stale_after_merge_warning(
         return None
     return (
         f"run_state previous_word_first_letter ({prev}) does not match "
-        f"last historic word ({last_letter}) — press F7 in-game, then F8."
+        f"last historic word ({last_letter}) — press F8 again."
     )
 
 
@@ -1528,10 +1536,71 @@ def merge_encounter_historic_for_f8_with_retry(
     return merged, stale_note
 
 
+def raw_disk_historic_count_on_grid(grid: int) -> int:
+    """Historic word count on disk for a grid (before reconcile)."""
+    if grid < 1:
+        return 0
+    fresh = load_run_state_raw()
+    if not isinstance(fresh, dict):
+        return 0
+    fresh_extras = fresh.get("extras")
+    if not isinstance(fresh_extras, dict):
+        return 0
+    if _grid_number_from_extras(fresh_extras) != grid:
+        return 0
+    fresh_hist = str(fresh_extras.get("historic_words", "") or "").strip()
+    return _historic_words_count(fresh_hist)
+
+
+def encounter_historic_stale_pruned_on_disk(
+    grid: int,
+    *,
+    board: Board | None = None,
+) -> bool:
+    """True when disk historic remains but reconcile clears it on the current board."""
+    if grid < 1:
+        return False
+    raw_count = raw_disk_historic_count_on_grid(grid)
+    if raw_count <= 0:
+        return False
+    reconciled_count = reconciled_disk_historic_count_on_grid(grid, board=board)
+    return reconciled_count == 0
+
+
+def reconciled_disk_historic_count_on_grid(
+    grid: int,
+    *,
+    board: Board | None = None,
+) -> int:
+    """Historic word count on disk after reconcile_encounter_historic_for_scoring."""
+    if grid < 1:
+        return 0
+    fresh = load_run_state_raw()
+    if not isinstance(fresh, dict):
+        return 0
+    fresh_extras = fresh.get("extras")
+    if not isinstance(fresh_extras, dict):
+        return 0
+    if _grid_number_from_extras(fresh_extras) != grid:
+        return 0
+    fresh_extras_cmp = copy.deepcopy(fresh_extras)
+    reconcile_board = board
+    if reconcile_board is None:
+        reconcile_board = parse_board_from_run_state(fresh)
+    reconcile_encounter_historic_for_scoring(
+        fresh_extras_cmp,
+        board=reconcile_board,
+    )
+    fresh_hist = str(fresh_extras_cmp.get("historic_words", "") or "").strip()
+    return _historic_words_count(fresh_hist)
+
+
 def f8_historic_still_behind_disk_warning(
     embed_extras: dict[str, Any] | None,
+    *,
+    board: Board | None = None,
 ) -> str | None:
-    """Warn when merged F8 embed still has fewer encounter words than disk on the same grid."""
+    """Warn when F8 embed still has fewer encounter words than reconciled disk on same grid."""
     data = embed_extras if isinstance(embed_extras, dict) else {}
     embed_hist = str(data.get("historic_words", "") or "").strip()
     embed_grid = _grid_number_from_extras(data)
@@ -1545,9 +1614,22 @@ def f8_historic_still_behind_disk_warning(
     if not isinstance(fresh_extras, dict):
         return None
 
-    fresh_hist = str(fresh_extras.get("historic_words", "") or "").strip()
     fresh_grid = _grid_number_from_extras(fresh_extras)
-    if not fresh_hist or fresh_hist == "[]" or fresh_grid != embed_grid:
+    if fresh_grid != embed_grid:
+        return None
+
+    fresh_extras_cmp = copy.deepcopy(fresh_extras)
+    reconcile_board = board
+    if reconcile_board is None:
+        reconcile_board = parse_board_from_run_state(fresh)
+    reconcile_encounter_historic_for_scoring(
+        fresh_extras_cmp,
+        board=reconcile_board,
+    )
+    reconcile_previous_word_first_letter_from_historic(fresh_extras_cmp)
+
+    fresh_hist = str(fresh_extras_cmp.get("historic_words", "") or "").strip()
+    if not fresh_hist or fresh_hist == "[]":
         return None
 
     embed_count = _historic_words_count(embed_hist)
@@ -1558,7 +1640,7 @@ def f8_historic_still_behind_disk_warning(
     grid_part = f" on grid {embed_grid}" if embed_grid >= 1 else ""
     return (
         f"Encounter historic on disk ({fresh_count} words{grid_part}) is ahead of "
-        f"this F8 embed ({embed_count}) — press F7 in-game, then F8 before trusting "
+        f"this F8 embed ({embed_count}) — press F8 again before trusting "
         f"predicted scores."
     )
 

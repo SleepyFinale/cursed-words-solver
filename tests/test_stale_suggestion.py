@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
+from cursed_words_solver.models import Loadout
 from cursed_words_solver.suggestion import (
     F8_EXPORT_CATCHUP_GRACE_SEC,
     f8_export_catchup_grace_sec,
@@ -35,7 +37,13 @@ from cursed_words_solver.suggestion import (
     run_state_historic_stale_warnings,
     stale_suggestion_warning,
     workflow_invalidate_suppressed_for_export_catchup,
+    f8_prediction_workflow_stale_warning,
     workflow_stale_vs_f8_snapshot,
+)
+from cursed_words_solver.loadout import (
+    parse_board_from_run_state,
+    reconcile_encounter_historic_for_scoring,
+    sanitize_run_state_snapshot_for_f8,
 )
 
 
@@ -760,7 +768,7 @@ def test_sanitize_run_state_snapshot_strips_stale_bicycle_for_bucket_pin(
     extras = cleaned["extras"]
     assert "bicycle_word_score_bonus" not in extras
     assert "cards_submitted" not in extras
-    assert extras["previous_word_first_letter"] == "f"
+    assert "previous_word_first_letter" not in extras
 
 
 def test_historic_words_count_edge_cases():
@@ -801,6 +809,215 @@ def test_workflow_stale_when_historic_same_count_content_differs():
     assert reason is not None
     assert "historic words changed" in reason
     assert "(2→3)" not in reason
+
+
+def test_grid2_empty_historic_not_blocked_when_stale_pruned_no_telescope(
+    tmp_path, monkeypatch
+):
+    """Grid 2 without Telescope: stale disk historic pruned after board refresh."""
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        sanitize_run_state_snapshot_for_f8,
+    )
+    from cursed_words_solver.models import Board, Loadout
+
+    def _tile(idx: int, ch: str) -> dict:
+        row, col = divmod(idx, 5)
+        return {
+            "row": row,
+            "col": col,
+            "char": ch,
+            "letter": ch,
+            "base_score": 1,
+            "color": "shiny",
+            "curse": "letter",
+            "active": True,
+        }
+
+    tiles = [_tile(i, "Z") for i in range(25)]
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps(
+            {
+                "board": {"rows": 5, "cols": 5, "tiles": tiles, "money": 8},
+                "extras": {
+                    "grid_number": "2",
+                    "scoring_previous_words_count": "1",
+                    "historic_words": json.dumps(
+                        [{"word": "cyanate", "score": 69, "path": [0, 1, 2, 3, 4]}]
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    merged_run_state = json.loads(run_state_path.read_text(encoding="utf-8"))
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    loadout = Loadout(extras={"grid_number": "2"})
+    assert not loadout_needs_encounter_historic(loadout, board)
+    f8_snapshot = sanitize_run_state_snapshot_for_f8(merged_run_state, loadout)
+    f8_extras = f8_snapshot["extras"]
+    empty_warn = empty_historic_on_later_grid_warning(f8_extras)
+    blocked, reason = f8_should_block_save(
+        historic_catchup_stale_note=None,
+        empty_hist_warn=empty_warn,
+        hist_stale_note=None,
+        behind_disk_warn=None,
+        workflow_stale_warn=None,
+        grid_adv_warn=None,
+        loadout=loadout,
+        board=board,
+        f8_extras=f8_extras,
+    )
+    assert not blocked
+    assert reason is None
+
+
+def test_behind_disk_false_positive_when_stale_historic_pruned(tmp_path, monkeypatch):
+    """Disk historic from a prior board is pruned; embed empty must not lag-block."""
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        f8_historic_still_behind_disk_warning,
+        sanitize_run_state_snapshot_for_f8,
+    )
+    from cursed_words_solver.models import (
+        Board,
+        CurseType,
+        Loadout,
+        Tile,
+        TileColor,
+    )
+
+    def _tile(idx: int, ch: str) -> dict:
+        row, col = divmod(idx, 5)
+        return {
+            "row": row,
+            "col": col,
+            "char": ch,
+            "letter": ch,
+            "base_score": 1,
+            "color": "shiny",
+            "curse": "letter",
+            "active": True,
+        }
+
+    tiles = [_tile(i, "Z") for i in range(25)]
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps(
+            {
+                "board": {"rows": 5, "cols": 5, "tiles": tiles, "money": 8},
+                "extras": {
+                    "grid_number": "2",
+                    "scoring_previous_words_count": "1",
+                    "historic_words": json.dumps(
+                        [{"word": "oxyphil", "score": 63, "path": [0, 1, 2, 3, 4]}]
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    merged_run_state = json.loads(run_state_path.read_text(encoding="utf-8"))
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    board.tiles[2][2] = Tile(
+        2,
+        2,
+        "t",
+        "E",
+        0,
+        color=TileColor.RED,
+        curse=CurseType.ITEM,
+        metadata={"scattered_item_id": "telescope", "scattered_item_level": 1},
+    )
+    loadout = Loadout(extras={"grid_number": "2"})
+    f8_snapshot = sanitize_run_state_snapshot_for_f8(merged_run_state, loadout)
+    f8_extras = f8_snapshot["extras"]
+    assert _historic_words_count(str(f8_extras.get("historic_words", "") or "")) == 0
+    assert (
+        f8_historic_still_behind_disk_warning(
+            f8_extras,
+            board=parse_board_from_run_state(merged_run_state),
+        )
+        is None
+    )
+    empty_warn = empty_historic_on_later_grid_warning(f8_extras)
+    blocked, reason = f8_should_block_save(
+        historic_catchup_stale_note=None,
+        empty_hist_warn=empty_warn,
+        hist_stale_note=None,
+        behind_disk_warn=None,
+        workflow_stale_warn=None,
+        grid_adv_warn=None,
+        loadout=loadout,
+        board=board,
+        f8_extras=f8_extras,
+    )
+    assert not blocked
+    assert reason is None
+
+
+def test_workflow_stale_false_positive_after_word_play_prune():
+    """Board refresh prunes stale historic from F8 embed; symmetric reconcile must not block."""
+
+    def _tile(idx: int, ch: str) -> dict:
+        row, col = divmod(idx, 5)
+        return {
+            "row": row,
+            "col": col,
+            "char": ch,
+            "letter": ch,
+            "base_score": 1,
+            "color": "shiny",
+            "curse": "letter",
+            "active": True,
+        }
+
+    tiles = [_tile(i, "Z") for i in range(25)]
+    merged_run_state = {
+        "character": "Rodman",
+        "board": {"rows": 5, "cols": 5, "tiles": tiles, "money": 8},
+        "extras": {
+            "grid_number": "2",
+            "scoring_previous_words_count": "1",
+            "encounter_historic_source": "live",
+            "historic_words": json.dumps(
+                [{"word": "oxyphil", "score": 63, "path": [0, 1, 2, 3, 4]}]
+            ),
+        },
+    }
+    loadout = Loadout(extras={"grid_number": "2"})
+    f8_snapshot = sanitize_run_state_snapshot_for_f8(merged_run_state, loadout)
+    assert f8_snapshot is not None
+    f8_extras = f8_snapshot["extras"]
+    run_extras = merged_run_state["extras"]
+
+    raw_reason = workflow_stale_vs_f8_snapshot(run_extras, f8_extras)
+    assert raw_reason is not None
+    assert "0→1" in raw_reason
+
+    run_extras_compare = copy.deepcopy(run_extras)
+    reconcile_encounter_historic_for_scoring(
+        run_extras_compare,
+        board=parse_board_from_run_state(merged_run_state),
+    )
+    assert workflow_stale_vs_f8_snapshot(run_extras_compare, f8_extras) is None
+    assert f8_prediction_workflow_stale_warning(run_extras_compare, f8_extras) is None
+
+    blocked, _ = f8_should_block_save(
+        historic_catchup_stale_note=None,
+        empty_hist_warn=None,
+        hist_stale_note=None,
+        behind_disk_warn=None,
+        workflow_stale_warn=None,
+        grid_adv_warn=None,
+        loadout=loadout,
+        board=parse_board_from_run_state(merged_run_state),
+        f8_extras=f8_extras,
+    )
+    assert not blocked
 
 
 def test_clear_when_historic_count_increases_reason(tmp_path, monkeypatch):
@@ -1320,9 +1537,27 @@ def test_loadout_reconcile_normalizes_previous_word_not_from_historic():
     extras = {
         "previous_word_first_letter": "E",
         "historic_words": '[{"word":"zooty"}]',
+        "scoring_previous_words_count": "1",
     }
     reconcile_previous_word_first_letter_from_historic(extras)
     assert extras["previous_word_first_letter"] == "e"
+
+
+def test_reconcile_prev_letter_from_historic_when_scoring_cache_empty():
+    from cursed_words_solver.loadout import (
+        f8_historic_stale_after_merge_warning,
+        reconcile_previous_word_first_letter_from_historic,
+    )
+
+    extras = {
+        "grid_number": "2",
+        "scoring_previous_words_count": "0",
+        "previous_word_first_letter": "f",
+        "historic_words": '[{"word":"rectifies","score":30}]',
+    }
+    reconcile_previous_word_first_letter_from_historic(extras)
+    assert extras["previous_word_first_letter"] == "r"
+    assert f8_historic_stale_after_merge_warning(extras) is None
 
 
 def test_reconcile_clears_stale_prev_letter_grid2_empty_historic():
@@ -1368,7 +1603,7 @@ def test_f8_snapshot_merge_refreshes_historic_same_grid(tmp_path, monkeypatch):
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
     assert _historic_words_count(merged["extras"]["historic_words"]) == 2
-    assert merged["extras"]["previous_word_first_letter"] == "f"
+    assert merged["extras"]["previous_word_first_letter"] == "z"
 
 
 def test_gownmen_round_log_workflow_stale_matches_python():
@@ -1954,7 +2189,7 @@ def test_f8_prediction_workflow_stale_warning_penill():
     )
     assert note is not None
     assert "historic words changed" in note or "historic_words changed" in note
-    assert "F7" in note
+    assert "F8 again" in note
 
 
 def test_penill_mismatch_stale_workflow_one_point_delta():
@@ -2075,7 +2310,9 @@ def test_f8_should_not_block_when_grid2_has_historic_and_telescope():
     assert reason is None
 
 
-def test_f8_should_block_when_telescope_and_historic_still_empty():
+def test_f8_should_block_when_telescope_and_historic_still_empty(
+    tmp_path, monkeypatch
+):
     from cursed_words_solver.models import (
         Board,
         CurseType,
@@ -2084,6 +2321,10 @@ def test_f8_should_block_when_telescope_and_historic_still_empty():
         TileColor,
     )
 
+    monkeypatch.setattr(
+        "cursed_words_solver.loadout.RUN_STATE_PATH",
+        tmp_path / "run_state.json",
+    )
     board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
     board.tiles[2][2] = Tile(
         2,
@@ -2114,10 +2355,14 @@ def test_f8_should_block_when_telescope_and_historic_still_empty():
     assert reason == empty_warn
 
 
-def test_f8_should_block_grid2_empty_historic_without_telescope():
+def test_f8_should_block_grid2_empty_historic_without_telescope(tmp_path, monkeypatch):
     """Rodman-like grid 2: melmod blocks historic lag even without Telescope/Movie Camera."""
     from cursed_words_solver.models import Board, Loadout
 
+    monkeypatch.setattr(
+        "cursed_words_solver.loadout.RUN_STATE_PATH",
+        tmp_path / "run_state.json",
+    )
     board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
     loadout = Loadout(extras={"grid_number": "2"})
     empty_warn = empty_historic_on_later_grid_warning(

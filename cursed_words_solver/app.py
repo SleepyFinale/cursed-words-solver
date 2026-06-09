@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import copy
 import json
 import signal
 import sys
@@ -70,10 +71,13 @@ from cursed_words_solver.loadout import (
     melmod_install_hint,
     describe_f8_historic_catchup,
     f8_historic_stale_after_merge_warning,
+    encounter_historic_stale_pruned_on_disk,
     f8_historic_still_behind_disk_warning,
+    _historic_words_count,
     merge_encounter_historic_for_f8_snapshot,
     merge_encounter_historic_for_f8_with_retry,
     merge_loadout_with_board,
+    reconcile_encounter_historic_for_scoring,
     reconcile_previous_word_first_letter_from_historic,
     neapolitan_extras_stale_warning,
     mod_money_from_run_state,
@@ -807,9 +811,40 @@ class SolverApp:
                 if isinstance(run_state_data, dict)
                 else None
             )
+            run_extras_for_warn = (
+                copy.deepcopy(run_extras)
+                if isinstance(run_extras, dict)
+                else None
+            )
+            if isinstance(run_extras_for_warn, dict):
+                reconcile_encounter_historic_for_scoring(
+                    run_extras_for_warn,
+                    board=board,
+                )
+                reconcile_previous_word_first_letter_from_historic(
+                    run_extras_for_warn
+                )
+            raw_hist_count = 0
+            if isinstance(run_extras, dict):
+                raw_hist_count = _historic_words_count(
+                    str(run_extras.get("historic_words", "") or "")
+                )
+            reconciled_hist_count = 0
+            if isinstance(run_extras_for_warn, dict):
+                reconciled_hist_count = _historic_words_count(
+                    str(run_extras_for_warn.get("historic_words", "") or "")
+                )
             for warn in run_state_historic_stale_warnings(
-                run_extras if isinstance(run_extras, dict) else None
+                run_extras_for_warn
+                if isinstance(run_extras_for_warn, dict)
+                else None
             ):
+                if (
+                    "no encounter historic on grid" in warn
+                    and raw_hist_count > 0
+                    and reconciled_hist_count == 0
+                ):
+                    continue
                 print(f"  Warning: {warn}", flush=True)
             if run_state_data and self._loadout_cache is not None:
                 fp_warn = loadout_fingerprint_stale_warning(
@@ -1349,9 +1384,6 @@ class SolverApp:
                 )
                 if catchup_note:
                     print(f"  Warning: {catchup_note}", flush=True)
-                hist_stale_note = f8_historic_stale_after_merge_warning(merged_extras)
-                if hist_stale_note:
-                    print(f"  Warning: {hist_stale_note}", flush=True)
                 fresh_mod_money = mod_money_from_run_state(merged_run_state)
                 merged_loadout = (
                     parse_run_state(
@@ -1472,10 +1504,31 @@ class SolverApp:
                     f8_extras if isinstance(f8_extras, dict) else run_extras
                 )
                 behind_disk_warn = f8_historic_still_behind_disk_warning(
+                    f8_extras if isinstance(f8_extras, dict) else None,
+                    board=parse_board_from_run_state(merged_run_state)
+                    if isinstance(merged_run_state, dict)
+                    else search_board,
+                )
+                run_extras_compare = (
+                    copy.deepcopy(run_extras)
+                    if isinstance(run_extras, dict)
+                    else None
+                )
+                if isinstance(run_extras_compare, dict) and isinstance(
+                    merged_run_state, dict
+                ):
+                    reconcile_encounter_historic_for_scoring(
+                        run_extras_compare,
+                        board=parse_board_from_run_state(merged_run_state),
+                    )
+                    reconcile_previous_word_first_letter_from_historic(
+                        run_extras_compare
+                    )
+                hist_stale_note = f8_historic_stale_after_merge_warning(
                     f8_extras if isinstance(f8_extras, dict) else None
                 )
                 workflow_stale_warn = f8_prediction_workflow_stale_warning(
-                    run_extras if isinstance(run_extras, dict) else None,
+                    run_extras_compare,
                     f8_extras if isinstance(f8_extras, dict) else None,
                 )
                 grid_adv_warn = grid_advanced_since_last_f8_warning(
@@ -1502,18 +1555,23 @@ class SolverApp:
                 )
                 if block_f8_save:
                     print(
-                        "  Warning: Played since last F7 — press F7 in-game, "
-                        "then F8 again before submitting.",
+                        "  Warning: Played since last F8 — press F8 again "
+                        "before submitting.",
                         flush=True,
                     )
+                    seen_warns: set[str] = set()
                     for extra_warn in (
                         workflow_stale_warn,
                         grid_bleed_warn,
                         grid_one_hist_warn,
                         grid_adv_warn,
                         hist_stale_note,
+                        historic_catchup_stale_note,
+                        behind_disk_warn,
+                        empty_hist_warn,
                     ):
-                        if extra_warn:
+                        if extra_warn and extra_warn not in seen_warns:
+                            seen_warns.add(extra_warn)
                             print(f"  Warning: {extra_warn}", flush=True)
                 else:
                     lag_warn = historic_catchup_stale_note or behind_disk_warn
@@ -1528,7 +1586,12 @@ class SolverApp:
                             )
                     if stale_note:
                         print(f"  Warning: {stale_note}", flush=True)
-                    if empty_hist_warn:
+                    if empty_hist_warn and not encounter_historic_stale_pruned_on_disk(
+                        merged_grid,
+                        board=parse_board_from_run_state(merged_run_state)
+                        if isinstance(merged_run_state, dict)
+                        else search_board,
+                    ):
                         print(f"  Warning: {empty_hist_warn}", flush=True)
                     for extra_warn in (
                         workflow_stale_warn,
@@ -1638,13 +1701,13 @@ class SolverApp:
                 elif block_f8_save:
                     print(
                         "  Wrote last_suggestion_blocked.json (diagnostic only; "
-                        "press F7, then F8 before submitting).",
+                        "press F8 again before submitting).",
                         flush=True,
                     )
                 else:
                     print(
                         "  Did not write last_suggestion.json "
-                        "(historic/workflow stale — press F7, then F8).",
+                        "(historic/workflow stale — press F8 again).",
                         flush=True,
                     )
             else:
@@ -1662,8 +1725,7 @@ class SolverApp:
             warnings = self._overlay_warnings(board, unmapped, loadout=loadout)
             if results and block_f8_save:
                 untrusted_warn = (
-                    "Not captured for melmod — press F7 in-game, then F8 "
-                    "before submitting."
+                    "Not captured for melmod — press F8 again before submitting."
                 )
                 warnings = (
                     f"{warnings}<br>{untrusted_warn}" if warnings else untrusted_warn

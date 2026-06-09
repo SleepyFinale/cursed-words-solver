@@ -356,4 +356,4 @@ def test_f8_historic_still_behind_disk_warning(tmp_path, monkeypatch):
     )
     assert note is not None
     assert "ahead of" in note
-    assert "F7" in note
+    assert "F8 again" in note

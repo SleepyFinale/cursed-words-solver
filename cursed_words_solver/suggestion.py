@@ -259,7 +259,7 @@ def historic_previous_letter_mismatch_warning(
         return None
     return (
         f"run_state previous_word_first_letter ({prev}) does not match "
-        f"last historic word ({last_letter}) — press F7 in-game, then F8."
+        f"last historic word ({last_letter}) — press F8 again."
     )
 
 
@@ -603,7 +603,7 @@ def f8_prediction_workflow_stale_warning(
     if reason is None:
         return None
     return (
-        f"F8 prediction may be wrong ({reason}) — press F7 in-game, then F8."
+        f"F8 prediction may be wrong ({reason}) — press F8 again."
     )
 
 
@@ -985,6 +985,12 @@ def f8_should_block_save(
         grid = 0
 
     if empty_hist_warn and hist_empty:
+        if behind_disk_warn:
+            return True, behind_disk_warn
+        from cursed_words_solver.loadout import encounter_historic_stale_pruned_on_disk
+
+        if encounter_historic_stale_pruned_on_disk(grid, board=board):
+            return False, None
         if grid >= 2 or loadout_needs_encounter_historic(loadout, board):
             return True, empty_hist_warn
 

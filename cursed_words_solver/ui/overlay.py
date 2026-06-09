@@ -67,6 +67,7 @@ class ResultOverlay(QWidget):
             QSizePolicy.Policy.Preferred,
             QSizePolicy.Policy.Minimum,
         )
+        self.hero_result.setMinimumHeight(0)
         self.hero_result.hide()
         layout.addWidget(self.hero_result)
 
@@ -77,6 +78,7 @@ class ResultOverlay(QWidget):
             QSizePolicy.Policy.Preferred,
             QSizePolicy.Policy.Minimum,
         )
+        self.warnings_label.setMinimumHeight(0)
         self.warnings_label.hide()
         layout.addWidget(self.warnings_label)
 
@@ -309,7 +311,7 @@ class ResultOverlay(QWidget):
         self.resize(w, h)
 
         # Rich-text / word-wrap labels may raise minimum height after the first pass.
-        for _ in range(2):
+        for _ in range(8):
             min_sz = self.minimumSizeHint()
             new_w = min(max(w, min_sz.width()), max_w)
             new_h = max(h, min_sz.height())
@@ -317,6 +319,10 @@ class ResultOverlay(QWidget):
                 break
             w, h = new_w, new_h
             self.resize(w, h)
+        min_sz = self.minimumSizeHint()
+        final_w = min(max(w, min_sz.width()), max_w)
+        final_h = max(h, min_sz.height())
+        self.setFixedSize(final_w, final_h)
 
     def _draw_paths(
         self,
