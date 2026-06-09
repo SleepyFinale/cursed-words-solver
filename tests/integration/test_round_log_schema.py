@@ -32,6 +32,7 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "round_logs"
         (True, False, True, False, 100, 100, "path_mismatch"),
         (True, True, False, True, 100, 90, "score_mismatch"),
         (True, True, False, True, 100, 100, "score_match"),
+        (True, True, False, True, 100, 100, "suggestion_blocked"),
     ],
 )
 def test_derive_match_status(
@@ -51,6 +52,7 @@ def test_derive_match_status(
             board_matches=board_matches,
             predicted_score=predicted,
             actual_score=actual,
+            capture_blocked=expected == "suggestion_blocked",
         )
         == expected
     )

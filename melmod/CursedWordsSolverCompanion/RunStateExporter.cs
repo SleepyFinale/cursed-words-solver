@@ -1254,7 +1254,13 @@ namespace CursedWordsSolverCompanion
             var finale = RunStateExportFill.ResolveMichaelFinaleState(snapshot, player, bosses);
             if (finale.IsFinale)
             {
-                RunStateExportFill.ApplyMichaelFinaleExport(snapshot, finale.MinWordLength);
+                var michaelBoss = RunStateExportFill.TryFindMichaelBossExtended(player, bosses);
+                RunStateExportFill.ApplyMichaelFinaleExport(
+                    snapshot,
+                    finale.MinWordLength,
+                    player,
+                    michaelBoss
+                );
                 return;
             }
 

@@ -43,6 +43,7 @@ from cursed_words_solver.suggestion import (
     clear_stale_last_suggestion_if_loadout_changed,
     dictionary_word_for_path,
     effective_scoring_word,
+    f8_should_block_save,
     format_suggestion_word,
     format_result_score_display,
     f8_prior_suggestion_stale_note,
@@ -51,6 +52,7 @@ from cursed_words_solver.suggestion import (
     empty_historic_on_later_grid_warning,
     grid_advanced_since_last_f8_warning,
     run_state_historic_stale_warnings,
+    save_blocked_suggestion,
     save_last_suggestion,
 )
 from cursed_words_solver.dictionary import WordDictionary
@@ -70,6 +72,7 @@ from cursed_words_solver.loadout import (
     merge_encounter_historic_for_f8_snapshot,
     merge_encounter_historic_for_f8_with_retry,
     merge_loadout_with_board,
+    reconcile_previous_word_first_letter_from_historic,
     neapolitan_extras_stale_warning,
     mod_money_from_run_state,
     export_diagnostics_from_run_state,
@@ -149,6 +152,7 @@ class _SolveUIUpdate:
     melmod_board_fingerprint: str | None = None
     melmod_loadout_fingerprint: str | None = None
     shop_advice_html: str | None = None
+    trusted_suggestion: bool = True
 
 
 class _HotkeyBridge(QObject):
@@ -558,15 +562,23 @@ class SolverApp:
                 warnings_html=update.warnings_html,
             )
             return
+        if not update.trusted_suggestion:
+            self.overlay.show_stale_notice(
+                "Suggestion not captured — press F7 in-game, then F8 before submitting."
+            )
         self.overlay.show_results(
             update.board,
             update.results,
             board_bgr=update.board_bgr,
             warnings_html=update.warnings_html,
-            on_game_highlight=update.on_game_highlight,
+            on_game_highlight=update.on_game_highlight and update.trusted_suggestion,
             consumable_placements=update.consumable_placements,
         )
-        if update.on_game_highlight and self._overlay_regions.board.is_valid():
+        if (
+            update.on_game_highlight
+            and update.trusted_suggestion
+            and self._overlay_regions.board.is_valid()
+        ):
             if update.melmod_board_fingerprint is not None:
                 self._highlight_board_fingerprint = update.melmod_board_fingerprint
                 self._highlight_loadout_fingerprint = update.melmod_loadout_fingerprint
@@ -1280,6 +1292,8 @@ class SolverApp:
             capybara_stats = None
             historic_catchup_stale_note: str | None = None
             saved_suggestion = False
+            block_f8_save = False
+            block_f8_reason: str | None = None
             if results:
                 top = results[0]
                 # Re-read run_state after search; merge encounter historic before score + embed.
@@ -1444,6 +1458,10 @@ class SolverApp:
                     if isinstance(merged_run_state, dict)
                     else None
                 )
+                if isinstance(f8_extras, dict):
+                    reconcile_previous_word_first_letter_from_historic(f8_extras)
+                if isinstance(run_extras, dict):
+                    reconcile_previous_word_first_letter_from_historic(run_extras)
                 stale_note = f8_prior_suggestion_stale_note(
                     run_extras if isinstance(run_extras, dict) else None
                 )
@@ -1470,23 +1488,32 @@ class SolverApp:
                 )
                 if grid_adv_warn:
                     print(f"  Warning: {grid_adv_warn}", flush=True)
-                block_f8_save = any(
-                    note
-                    for note in (
-                        historic_catchup_stale_note,
-                        empty_hist_warn,
-                        hist_stale_note,
-                        behind_disk_warn,
-                        workflow_stale_warn,
-                        grid_adv_warn,
-                    )
-                    if note
+                block_f8_save, block_f8_reason = f8_should_block_save(
+                    historic_catchup_stale_note=historic_catchup_stale_note,
+                    empty_hist_warn=empty_hist_warn,
+                    hist_stale_note=hist_stale_note,
+                    behind_disk_warn=behind_disk_warn,
+                    workflow_stale_warn=workflow_stale_warn,
+                    grid_adv_warn=grid_adv_warn,
+                    loadout=f8_loadout,
+                    board=search_board,
+                    f8_extras=f8_extras if isinstance(f8_extras, dict) else None,
                 )
                 if block_f8_save:
-                    clear_last_suggestion()
+                    save_blocked_suggestion(
+                        board=search_board,
+                        loadout=f8_loadout,
+                        result=top,
+                        predicted_trace=pred_trace,
+                        run_state_snapshot=f8_snapshot,
+                        scoring_word=score_word,
+                        block_reason=block_f8_reason or "historic_or_workflow_stale",
+                        export_diagnostics=export_diag,
+                        consumable_placements=placement_records or None,
+                    )
                     print(
-                        "  Warning: Skipping overlay save — press F7 in-game, "
-                        "then F8 again before submitting.",
+                        "  Warning: Suggestion not captured (untrusted) — press F7 "
+                        "in-game, then F8 again before submitting.",
                         flush=True,
                     )
                     self._last_invalidation_reason = (
@@ -1540,11 +1567,11 @@ class SolverApp:
 
             if results:
                 top = results[0]
-                stale_score_prefix = (
-                    "STALE? "
-                    if historic_catchup_stale_note
-                    else ""
-                )
+                stale_score_prefix = ""
+                if block_f8_save:
+                    stale_score_prefix = "UNTRUSTED "
+                elif historic_catchup_stale_note:
+                    stale_score_prefix = "STALE? "
                 timing_note = ""
                 if timing is not None and search_elapsed > search_budget + 0.5:
                     core_sec = timing.wall_sec
@@ -1572,6 +1599,12 @@ class SolverApp:
                 if saved_suggestion:
                     print(
                         "  Wrote last_suggestion.json for melmod scoring capture.",
+                        flush=True,
+                    )
+                elif block_f8_save:
+                    print(
+                        "  Wrote last_suggestion_blocked.json (diagnostic only; "
+                        "press F7, then F8 before submitting).",
                         flush=True,
                     )
                 else:
@@ -1624,6 +1657,7 @@ class SolverApp:
                 and self._overlay_regions.board.is_valid()
                 and bool(results)
             )
+            trusted = not block_f8_save if results else True
             self._bridge.solve_finished.emit(
                 _SolveUIUpdate(
                     board=search_board,
@@ -1634,6 +1668,7 @@ class SolverApp:
                     consumable_placements=placement_records or None,
                     melmod_board_fingerprint=melmod_board_fp,
                     melmod_loadout_fingerprint=melmod_loadout_fp,
+                    trusted_suggestion=trusted,
                 )
             )
         except Exception:

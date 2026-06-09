@@ -96,7 +96,18 @@ namespace CursedWordsSolverCompanion
                 || string.IsNullOrEmpty(mergedHistoric)
                 || mergedHistoric == "[]"
             )
-                keys["historic_words"] = "";
+            {
+                var diskHistoric = RunStateExporter.TryReadRunStateExtra("historic_words");
+                if (!string.IsNullOrEmpty(diskHistoric) && diskHistoric != "[]")
+                {
+                    keys["historic_words"] = diskHistoric;
+                    keys["encounter_historic_source"] = "grid_advanced_disk";
+                }
+                else if (redUsed <= 0)
+                {
+                    keys["historic_words"] = "";
+                }
+            }
 
             ApplyScoringCachedPreviousWordLetter(keys);
             RunStateExporter.TryMergeExtrasKeys(keys);
@@ -1298,7 +1309,7 @@ namespace CursedWordsSolverCompanion
             RecordMichaelFinaleProbe(snapshot, player, bosses, finale);
             if (finale.IsFinale)
             {
-                ApplyMichaelFinaleExport(snapshot, finale.MinWordLength);
+                ApplyMichaelFinaleExport(snapshot, finale.MinWordLength, player, michaelBoss);
                 return;
             }
 
@@ -1567,8 +1578,6 @@ namespace CursedWordsSolverCompanion
                 result.IsFinale = true;
             else if (IsMichaelSummonedBossesDefeated(player, michaelBoss))
                 result.IsFinale = true;
-            else if (IsMichaelAreaFinale(snapshot, player, liveMin))
-                result.IsFinale = true;
 
             if (!result.IsFinale)
             {
@@ -1649,14 +1658,6 @@ namespace CursedWordsSolverCompanion
                     return fromEncounter;
             }
 
-            if (michaelBoss != null && IsMichaelBossModifier(michaelBoss))
-            {
-                var drafted = ResolveMichaelDraftedCount(michaelBoss);
-                var area = ResolveMichaelRunArea(player);
-                if (area >= 6 && drafted >= 2 && CountActiveBoardTiles(snapshot) >= 25)
-                    return 25;
-            }
-
             return -1;
         }
 
@@ -1681,20 +1682,6 @@ namespace CursedWordsSolverCompanion
             }
 
             return area;
-        }
-
-        private static bool IsMichaelAreaFinale(
-            RunStateSnapshot snapshot,
-            Player player,
-            int liveMin
-        )
-        {
-            if (liveMin < 25)
-                return false;
-            if (ResolveMichaelRunArea(player) < 6)
-                return false;
-            var activeTiles = CountActiveBoardTiles(snapshot);
-            return activeTiles >= liveMin;
         }
 
         private static void RecordMichaelFinaleProbe(
@@ -1763,21 +1750,35 @@ namespace CursedWordsSolverCompanion
             return 25;
         }
 
-        public static void ApplyMichaelFinaleExport(RunStateSnapshot snapshot, int finaleMin)
+        public static void ApplyMichaelFinaleExport(
+            RunStateSnapshot snapshot,
+            int finaleMin,
+            Player player,
+            BossModifier michaelBoss
+        )
         {
             if (snapshot == null)
                 return;
 
+            var summonedDefeated = IsMichaelSummonedBossesDefeated(player, michaelBoss);
+            var puzzleGrid = IsMichaelPuzzleGridActive();
+
             snapshot.boss_id = "michael";
             snapshot.boss_name = "Michael";
             snapshot.boss_effect = "";
-            snapshot.extras["michael_summoned_bosses_defeated"] = "true";
+            if (summonedDefeated)
+                snapshot.extras["michael_summoned_bosses_defeated"] = "true";
+            else
+                snapshot.extras.Remove("michael_summoned_bosses_defeated");
             snapshot.extras["michael_phase"] = "4";
-            snapshot.extras["boss_modifiers"] = "[]";
-            snapshot.extras.Remove("boss_modifier_floor_mods");
+            if (summonedDefeated || puzzleGrid)
+            {
+                snapshot.extras["boss_modifiers"] = "[]";
+                snapshot.extras.Remove("boss_modifier_floor_mods");
+            }
             snapshot.extras["michael_min_word_length"] = finaleMin.ToString();
             snapshot.extras["encounter_min_word_length"] = finaleMin.ToString();
-            if (IsMichaelPuzzleGridActive())
+            if (puzzleGrid)
             {
                 snapshot.extras["michael_puzzle_grid"] = "true";
             }
@@ -1856,12 +1857,6 @@ namespace CursedWordsSolverCompanion
                     "ActivePhase"
                 );
             if (phase >= 4)
-                return true;
-
-            var effectiveMin = liveMin > 0 ? liveMin : michaelMin;
-            if (draftedCount >= 2 && effectiveMin >= 25)
-                return true;
-            if (draftedCount >= 3 && michaelMin >= 25)
                 return true;
 
             return false;

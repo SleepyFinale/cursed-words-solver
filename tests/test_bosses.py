@@ -167,9 +167,10 @@ def test_michael_finale_fallback_boss_area_six_and_encounter_min_length():
     loadout = _loadout(
         boss_id="salamander",
         extras={
-            "boss_modifiers": ["salamander", "robo_eel"],
+            "boss_modifiers": [],
             "boss_area_number": 6,
             "encounter_min_word_length": 25,
+            "michael_summoned_bosses_defeated": True,
         },
     )
     assert michael_finale_active(loadout, default_max_len=25)
@@ -209,6 +210,7 @@ def test_michael_finale_stale_modifiers_with_min_word_length() -> None:
         extras={
             "boss_modifiers": ["bison", "badger"],
             "michael_min_word_length": 25,
+            "michael_summoned_bosses_defeated": True,
         },
     )
     assert active_boss_ids(loadout) == []
@@ -223,6 +225,7 @@ def test_michael_phase_four_stale_modifiers() -> None:
         extras={
             "boss_modifiers": ["bison", "badger"],
             "michael_phase": 4,
+            "michael_summoned_bosses_defeated": True,
         },
     )
     assert active_boss_ids(loadout) == []
@@ -235,7 +238,11 @@ def test_michael_phase_three_empty_modifiers_falls_back_to_full_board_length():
     board = _board_letters(["aaaaa", "aaaaa", "aaaaa", "aaaaa", "aaaaa"])
     loadout = _loadout(
         boss_id="michael",
-        extras={"michael_phase": 3, "boss_modifiers": []},
+        extras={
+            "michael_phase": 3,
+            "boss_modifiers": [],
+            "michael_summoned_bosses_defeated": True,
+        },
     )
     c = boss_word_constraints(loadout, RULES, default_max_len=sum(board.active))
     assert c.min_len == 25

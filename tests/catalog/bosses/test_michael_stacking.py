@@ -146,21 +146,90 @@ def test_michael_encounter_finale_corrected_export() -> None:
 
 
 def test_michael_encounter_finale_fallback_encounter_min_word_length() -> None:
-    """Stale salamander+robo_eel list with live encounter_min_word_length on area 6."""
+    """Finale export with cleared modifiers and live encounter_min_word_length on area 6."""
     loadout = Loadout(
         boss_id="salamander",
         extras={
-            "boss_modifiers": ["salamander", "robo_eel"],
-            "boss_modifier_floor_mods": '{"salamander": 7, "robo_eel": 3}',
+            "boss_modifiers": [],
             "boss_area_number": 6,
             "encounter_min_word_length": 25,
             "encounter_mode": "encounter",
+            "michael_summoned_bosses_defeated": True,
         },
     )
     assert michael_finale_active(loadout, default_max_len=25)
     assert active_boss_ids(loadout) == []
     c = boss_word_constraints(loadout, RULES, default_max_len=25)
     assert c.min_len == 25
+    assert c.max_len == 25
+
+
+def test_michael_phase_two_probe_vetoes_false_finale() -> None:
+    """Phase 2 wordsmith: probe says draft bosses still active despite stomped finale extras."""
+    loadout = Loadout(
+        boss_id="michael",
+        extras={
+            "boss_modifiers": ["capybara", "cobra"],
+            "boss_area_number": 6,
+            "michael_phase": 4,
+            "michael_summoned_bosses_defeated": True,
+            "michael_min_word_length": 25,
+            "encounter_min_word_length": 25,
+            "michael_finale_probe": (
+                "finale=1,michael_boss=1,summoned_defeated=0,live_min=25,active_tiles=25"
+            ),
+            "encounter_mode": "encounter",
+        },
+    )
+    assert not michael_finale_active(loadout, default_max_len=25)
+    assert active_boss_ids(loadout) == ["capybara", "cobra"]
+    c = boss_word_constraints(loadout, RULES, default_max_len=25)
+    assert c.min_len == 7
+    assert c.max_len == 25
+
+
+def test_michael_phase_two_user_path_movement_and_word() -> None:
+    """Regression: chess path 16-7-18-12-6-1-5 on exported Michael phase 2 board."""
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from cursed_words_solver.search import PathValidator, path_movement_ok, search_word_from_path
+    from cursed_words_solver.dictionary import WordDictionary
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+
+    fixture = Path(__file__).resolve().parents[2] / "fixtures" / "michael_phase2_false_finale_export.json"
+    if not fixture.is_file():
+        pytest.skip(f"fixture not found: {fixture}")
+
+    run_state = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+
+    path = [16, 7, 18, 12, 6, 1, 5]
+    flags = stamp_search_flags_mask(loadout)
+    assert path_movement_ok(board, path, flags=flags)
+
+    word = search_word_from_path(board, path, flags=flags)
+    validator = PathValidator(WordDictionary(), min_len=7)
+    assert validator.word_ok(board, path, word, flags)
+
+    c = boss_word_constraints(loadout, RULES, default_max_len=25)
+    assert c.min_len == 7
+    assert c.max_len == 25
+
+
+def test_michael_phase_two_cobra_min_without_probe() -> None:
+    loadout = Loadout(
+        boss_id="cobra",
+        extras={
+            "boss_modifiers": ["capybara", "cobra"],
+            "boss_area_number": 5,
+            "michael_phase": 2,
+            "encounter_mode": "encounter",
+        },
+    )
+    assert not michael_finale_active(loadout, default_max_len=25)
+    c = boss_word_constraints(loadout, RULES, default_max_len=25)
+    assert c.min_len == 7
     assert c.max_len == 25
 
 

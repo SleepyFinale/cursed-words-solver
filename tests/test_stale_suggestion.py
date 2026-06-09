@@ -21,7 +21,9 @@ from cursed_words_solver.suggestion import (
     empty_historic_on_later_grid_warning,
     fingerprint_invalidate_suppressed_for_post_f8_export,
     f8_prior_suggestion_stale_note,
+    f8_should_block_save,
     grid_advanced_since_last_f8_warning,
+    loadout_needs_encounter_historic,
     historic_previous_letter_mismatch_warning,
     is_export_catchup_drift,
     poll_invalidate_last_suggestion,
@@ -1968,3 +1970,84 @@ def test_schematised_mismatch_stale_f8_embed_flag():
     assert data["predicted_score"] == 3248
     assert data["actual_score"] == 3250
     assert "historic_words changed" in data["stale_f8_reason"]
+
+
+def test_f8_should_not_block_when_grid2_has_historic_and_telescope():
+    from cursed_words_solver.models import (
+        Board,
+        CurseType,
+        Loadout,
+        Tile,
+        TileColor,
+    )
+
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    board.tiles[2][2] = Tile(
+        2,
+        2,
+        "t",
+        "E",
+        0,
+        color=TileColor.RED,
+        curse=CurseType.ITEM,
+        metadata={"scattered_item_id": "telescope", "scattered_item_level": 1},
+    )
+    loadout = Loadout(extras={"grid_number": "2"})
+    assert loadout_needs_encounter_historic(loadout, board)
+    blocked, reason = f8_should_block_save(
+        historic_catchup_stale_note=None,
+        empty_hist_warn=empty_historic_on_later_grid_warning(
+            {"grid_number": "2", "historic_words": ""}
+        ),
+        hist_stale_note=None,
+        behind_disk_warn=None,
+        workflow_stale_warn=None,
+        grid_adv_warn=None,
+        loadout=loadout,
+        board=board,
+        f8_extras={
+            "grid_number": "2",
+            "historic_words": '[{"word":"eyestripe","red_tile_count":7}]',
+        },
+    )
+    assert not blocked
+    assert reason is None
+
+
+def test_f8_should_block_when_telescope_and_historic_still_empty():
+    from cursed_words_solver.models import (
+        Board,
+        CurseType,
+        Loadout,
+        Tile,
+        TileColor,
+    )
+
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    board.tiles[2][2] = Tile(
+        2,
+        2,
+        "t",
+        "E",
+        0,
+        color=TileColor.RED,
+        curse=CurseType.ITEM,
+        metadata={"scattered_item_id": "telescope", "scattered_item_level": 1},
+    )
+    loadout = Loadout(extras={"grid_number": "2"})
+    empty_warn = empty_historic_on_later_grid_warning(
+        {"grid_number": "2", "historic_words": ""}
+    )
+    blocked, reason = f8_should_block_save(
+        historic_catchup_stale_note=None,
+        empty_hist_warn=empty_warn,
+        hist_stale_note=None,
+        behind_disk_warn=None,
+        workflow_stale_warn=None,
+        grid_adv_warn=None,
+        loadout=loadout,
+        board=board,
+        f8_extras={"grid_number": "2", "historic_words": ""},
+    )
+    assert blocked
+    assert reason == empty_warn

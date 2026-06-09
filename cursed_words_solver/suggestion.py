@@ -14,7 +14,7 @@ from typing import Any
 
 
 
-from cursed_words_solver.config import LAST_SUGGESTION_PATH
+from cursed_words_solver.config import LAST_SUGGESTION_BLOCKED_PATH, LAST_SUGGESTION_PATH
 
 from cursed_words_solver.dictionary import WordDictionary
 
@@ -24,12 +24,12 @@ from cursed_words_solver.fingerprints import (
     fingerprints_from_run_state,
 )
 
-from cursed_words_solver.models import Board, Loadout, WordResult
+from cursed_words_solver.models import CHESS_CURSES, Board, CurseType, Loadout, WordResult
 
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 
-from cursed_words_solver.search import PathValidator, physical_word_for_path
+from cursed_words_solver.search import PathValidator, physical_word_for_path, resolve_letter
 
 
 
@@ -631,13 +631,16 @@ def clear_stale_last_suggestion_if_context_changed(
 
 def clear_last_suggestion() -> bool:
     """Remove last_suggestion.json (failed solve or explicit invalidation)."""
-    if not LAST_SUGGESTION_PATH.exists():
-        return False
-    try:
-        LAST_SUGGESTION_PATH.unlink()
-    except OSError:
-        return False
-    return True
+    cleared = False
+    for path in (LAST_SUGGESTION_PATH, LAST_SUGGESTION_BLOCKED_PATH):
+        if not path.exists():
+            continue
+        try:
+            path.unlink()
+            cleared = True
+        except OSError:
+            pass
+    return cleared
 
 
 def clear_stale_last_suggestion_if_loadout_changed(current_loadout_fp: str) -> bool:
@@ -775,6 +778,153 @@ def dictionary_word_for_path(
     return max(pool, key=lambda c: (_physical_letter_overlap(board, path, c), c))
 
 
+def loadout_needs_encounter_historic(loadout: Loadout | None, board: Board | None) -> bool:
+    """True when scoring rules need encounter historic_words (not just red_tiles fallback)."""
+    if loadout is not None:
+        for sticker in loadout.stickers:
+            if (sticker.id or "").lower() == "movie_camera":
+                return True
+    if board is not None:
+        for tile in board.flat:
+            if tile is None:
+                continue
+            scattered = (tile.metadata or {}).get("scattered_item_id")
+            if scattered == "telescope":
+                return True
+    return False
+
+
+def f8_should_block_save(
+    *,
+    historic_catchup_stale_note: str | None,
+    empty_hist_warn: str | None,
+    hist_stale_note: str | None,
+    behind_disk_warn: str | None,
+    workflow_stale_warn: str | None,
+    grid_adv_warn: str | None,
+    loadout: Loadout | None,
+    board: Board | None,
+    f8_extras: dict[str, Any] | None,
+) -> tuple[bool, str | None]:
+    """Whether F8 must skip trusted last_suggestion.json (melmod capture)."""
+    blocking = (
+        historic_catchup_stale_note,
+        behind_disk_warn,
+        hist_stale_note,
+        workflow_stale_warn,
+    )
+    for note in blocking:
+        if note:
+            return True, note
+
+    if empty_hist_warn and loadout_needs_encounter_historic(loadout, board):
+        extras = f8_extras if isinstance(f8_extras, dict) else {}
+        hist = str(extras.get("historic_words", "") or "").strip()
+        if not hist or hist == "[]":
+            return True, empty_hist_warn
+
+    if grid_adv_warn and loadout_needs_encounter_historic(loadout, board):
+        extras = f8_extras if isinstance(f8_extras, dict) else {}
+        hist = str(extras.get("historic_words", "") or "").strip()
+        if not hist or hist == "[]":
+            return True, grid_adv_warn
+
+    return False, None
+
+
+def _trace_word_for_path(
+    board: Board,
+    path: list[int],
+    *,
+    flags: int = 0,
+) -> str:
+    """Word from tile face chars as resolved when tracing the path in-game."""
+    parts: list[str] = []
+    char_pos = 0
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.curse == CurseType.ITEM:
+            ch = (tile.letter or tile.char or "?").strip().lower()[:1]
+            parts.append(ch if ch.isalpha() else "?")
+            char_pos += 1
+        elif tile.curse in CHESS_CURSES:
+            ch = (tile.char or "").strip().lower()
+            parts.append(ch if len(ch) == 1 and ch.isalpha() else "?")
+        else:
+            token = resolve_letter(tile, char_pos, flags=flags).lower()
+            parts.append(token)
+            char_pos += len(token)
+    return "".join(parts)
+
+
+def _valid_dictionary_words_for_path(
+    board: Board,
+    path: list[int],
+    scoring_word: str,
+    loadout: Loadout,
+    dictionary: WordDictionary,
+    *,
+    min_len: int = 3,
+) -> list[str]:
+    word = scoring_word.lower()
+    flags = stamp_search_flags(loadout)
+    validator = PathValidator(dictionary, min_len=min_len)
+    word_len = len(word)
+    valid: list[str] = []
+    for candidate in dictionary.words_of_length(word_len):
+        if not _fixed_letters_align(word, candidate):
+            continue
+        if not validator.word_ok(board, path, candidate, flags):
+            continue
+        valid.append(candidate)
+    return valid
+
+
+def game_word_for_path(
+    board: Board,
+    path: list[int],
+    scoring_word: str,
+    loadout: Loadout,
+    dictionary: WordDictionary | None,
+    *,
+    min_len: int = 3,
+) -> str:
+    """Dictionary word the game submits when tracing this path (not max-score search pick)."""
+    lowered = scoring_word.lower()
+    if dictionary is None:
+        return lowered
+    flags = stamp_search_flags(loadout)
+    validator = PathValidator(dictionary, min_len=min_len)
+    if lowered.isalpha() and validator.word_ok(board, path, lowered, flags):
+        return lowered
+
+    trace = _trace_word_for_path(board, path, flags=flags)
+    if trace.isalpha() and validator.word_ok(board, path, trace, flags):
+        return trace
+
+    valid = _valid_dictionary_words_for_path(
+        board,
+        path,
+        lowered,
+        loadout,
+        dictionary,
+        min_len=min_len,
+    )
+    if not valid:
+        return dictionary_word_for_path(
+            board,
+            path,
+            lowered,
+            loadout,
+            dictionary,
+            min_len=min_len,
+            pipeline=None,
+        ) or lowered
+    if len(valid) == 1:
+        return valid[0]
+    return min(valid)
+
+
 def effective_scoring_word(
     board: Board,
     path: list[int],
@@ -785,22 +935,18 @@ def effective_scoring_word(
     min_len: int = 3,
     pipeline: ScoringPipeline | None = None,
 ) -> str:
-    """Spelling used for scoring: resolve wildcard/item paths to a dictionary word."""
+    """Spelling used for scoring: game-submit word on this path."""
     lowered = word.lower()
-    if "?" not in lowered and lowered.isalpha():
-        return lowered
     if dictionary is None:
         return lowered
-    resolved = dictionary_word_for_path(
+    return game_word_for_path(
         board,
         path,
-        word,
+        lowered,
         loadout,
         dictionary,
         min_len=min_len,
-        pipeline=pipeline,
     )
-    return (resolved or lowered).lower()
 
 
 
@@ -946,12 +1092,77 @@ def save_last_suggestion(
         if capybara_exhaustive is not None:
             payload["capybara_exhaustive"] = bool(capybara_exhaustive)
 
+    if LAST_SUGGESTION_BLOCKED_PATH.exists():
+        try:
+            LAST_SUGGESTION_BLOCKED_PATH.unlink()
+        except OSError:
+            pass
+
     LAST_SUGGESTION_PATH.write_text(
 
         json.dumps(payload, indent=2),
 
         encoding="utf-8",
 
+    )
+
+
+def save_blocked_suggestion(
+    *,
+    board: Board,
+    loadout: Loadout,
+    result: WordResult,
+    predicted_trace: list[dict[str, Any]] | None,
+    run_state_snapshot: dict[str, Any] | None,
+    scoring_word: str,
+    block_reason: str,
+    export_diagnostics: dict[str, Any] | None = None,
+    consumable_placements: list[Any] | None = None,
+) -> None:
+    """Write diagnostic sidecar when F8 ran but trusted capture was blocked."""
+    LAST_SUGGESTION_BLOCKED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    board_fp = ""
+    loadout_fp = ""
+    if run_state_snapshot is not None:
+        board_fp, loadout_fp = fingerprints_from_run_state(run_state_snapshot)
+    f8_sequence = _next_f8_sequence()
+    payload: dict[str, Any] = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "f8_sequence": f8_sequence,
+        "solver_version": SOLVER_VERSION,
+        "capture_blocked": True,
+        "block_reason": block_reason,
+        "word": scoring_word,
+        "scoring_word": scoring_word,
+        "path": list(result.path),
+        "predicted_score": int(result.score),
+        "board_fingerprint": board_fp,
+        "loadout_fingerprint": loadout_fp,
+        "predicted_trace": predicted_trace,
+    }
+    if run_state_snapshot is not None:
+        payload["run_state_snapshot"] = run_state_snapshot
+    if export_diagnostics:
+        payload["export_diagnostics"] = export_diagnostics
+    if consumable_placements:
+        payload["consumable_placements"] = [
+            {
+                "row": p.row,
+                "col": p.col,
+                "index": p.index,
+                "letter": p.letter,
+                "rack_index": p.rack_index,
+            }
+            for p in consumable_placements
+        ]
+    if LAST_SUGGESTION_PATH.exists():
+        try:
+            LAST_SUGGESTION_PATH.unlink()
+        except OSError:
+            pass
+    LAST_SUGGESTION_BLOCKED_PATH.write_text(
+        json.dumps(payload, indent=2),
+        encoding="utf-8",
     )
 
 

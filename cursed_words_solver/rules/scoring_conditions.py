@@ -4845,7 +4845,11 @@ def grid_path_sticker_level(
     ):
         # Deep-void paths use at least level 2 (grid_number export can still be 1).
         return max(2, grid_path_encounter_level(loadout))
-    if loadout is not None and str(loadout.boss_id or "").strip().lower() == "badger":
+    if (
+        loadout is not None
+        and str(loadout.boss_id or "").strip().lower() == "badger"
+        and not tile_level_known
+    ):
         level = max(level, grid_number(loadout))
     if (
         board is not None

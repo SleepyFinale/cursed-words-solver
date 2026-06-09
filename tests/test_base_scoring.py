@@ -485,6 +485,11 @@ def test_bannerettes_mismatch_mole_grid3_electric_guitar_tier():
     _score_mismatch_fixture("20260608_153556.json", 3393)
 
 
+def test_badger_velveteened_mismatch_electric_guitar_tile_level():
+    """Mismatch 20260608_232304: badger must not override path scattered_item_level; game 4479."""
+    _score_mismatch_fixture("20260608_232304.json", 4479)
+
+
 def test_melmod_void_non_dollar_currency_top_row_path_start_penalty():
     """Void ₲ on row 0 at word start gets -10 init; void $ at word start stays 0."""
     from cursed_words_solver.models import Board, CurseType, Tile, TileColor

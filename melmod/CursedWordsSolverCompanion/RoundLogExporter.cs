@@ -139,6 +139,9 @@ namespace CursedWordsSolverCompanion
             if (ctx.Suggestion == null || ctx.Suggestion.path == null || ctx.Suggestion.path.Count == 0)
                 return "no_suggestion";
 
+            if (ctx.Suggestion.capture_blocked)
+                return "suggestion_blocked";
+
             var pathMatch = SuggestionMatcher.PathsEqual(
                 ctx.Suggestion.path,
                 ctx.SubmittedPath
@@ -197,6 +200,12 @@ namespace CursedWordsSolverCompanion
             block["available"] = true;
             block["word"] = ctx.Suggestion.word ?? "";
             block["scoring_word"] = ctx.Suggestion.word ?? "";
+            if (ctx.Suggestion.capture_blocked)
+            {
+                block["capture_blocked"] = true;
+                if (!string.IsNullOrEmpty(ctx.Suggestion.block_reason))
+                    block["block_reason"] = ctx.Suggestion.block_reason;
+            }
             block["path"] = ctx.Suggestion.path ?? new List<int>();
             block["predicted_score"] = ctx.Suggestion.predicted_score;
             if (ctx.Suggestion.score_nondeterministic)

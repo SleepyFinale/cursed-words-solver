@@ -11,6 +11,8 @@ namespace CursedWordsSolverCompanion
     {
         public string word;
         public List<int> path;
+        public bool capture_blocked;
+        public string block_reason;
         public int predicted_score;
         public int predicted_score_min;
         public int predicted_score_max;
@@ -35,17 +37,35 @@ namespace CursedWordsSolverCompanion
             "last_suggestion.json"
         );
 
+        public static readonly string BlockedSuggestionFilePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".cursed_words_solver",
+            "last_suggestion_blocked.json"
+        );
+
         public static LastSuggestion Load()
+        {
+            var suggestion = TryReadSuggestionFile(SuggestionFilePath);
+            if (suggestion != null)
+                TryRefreshWorkflowExtrasOnLoad(suggestion);
+            if (suggestion != null)
+                return suggestion;
+            return LoadBlocked();
+        }
+
+        public static LastSuggestion LoadBlocked()
+        {
+            return TryReadSuggestionFile(BlockedSuggestionFilePath);
+        }
+
+        private static LastSuggestion TryReadSuggestionFile(string path)
         {
             try
             {
-                if (!File.Exists(SuggestionFilePath))
+                if (!File.Exists(path))
                     return null;
-                var json = File.ReadAllText(SuggestionFilePath);
-                var suggestion = JsonConvert.DeserializeObject<LastSuggestion>(json);
-                if (suggestion != null)
-                    TryRefreshWorkflowExtrasOnLoad(suggestion);
-                return suggestion;
+                var json = File.ReadAllText(path);
+                return JsonConvert.DeserializeObject<LastSuggestion>(json);
             }
             catch
             {
@@ -73,16 +93,22 @@ namespace CursedWordsSolverCompanion
         /// </summary>
         public static void TryClearLastSuggestionAfterSubmit()
         {
+            TryDeleteSuggestionFile(SuggestionFilePath);
+            TryDeleteSuggestionFile(BlockedSuggestionFilePath);
+        }
+
+        private static void TryDeleteSuggestionFile(string path)
+        {
             try
             {
-                if (!File.Exists(SuggestionFilePath))
+                if (!File.Exists(path))
                     return;
-                File.Delete(SuggestionFilePath);
+                File.Delete(path);
             }
             catch (Exception ex)
             {
                 CompanionDiagnostics.LogVerboseWarning(
-                    "Could not delete last_suggestion.json: " + ex.Message
+                    "Could not delete " + Path.GetFileName(path) + ": " + ex.Message
                 );
             }
         }
@@ -201,6 +227,8 @@ namespace CursedWordsSolverCompanion
         )
         {
             if (suggestion == null || suggestion.path == null || suggestion.path.Count == 0)
+                return false;
+            if (suggestion.capture_blocked)
                 return false;
             if (!PathsEqual(suggestion.path, path))
                 return false;

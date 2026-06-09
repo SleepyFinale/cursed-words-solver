@@ -119,30 +119,41 @@ def _encounter_min_word_length_value(loadout: Loadout) -> int:
     return _extra_int(loadout, "encounter_min_word_length", 0)
 
 
+def _michael_probe_summoned_defeated(loadout: Loadout) -> bool | None:
+    """Parse companion probe: summoned_defeated=0 means draft bosses still active."""
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    probe = str(extras.get("michael_finale_probe") or "").strip()
+    if not probe:
+        return None
+    for part in probe.split(","):
+        piece = part.strip()
+        if not piece.startswith("summoned_defeated="):
+            continue
+        value = piece.split("=", 1)[1].strip()
+        if value == "1":
+            return True
+        if value == "0":
+            return False
+    return None
+
+
 def michael_finale_active(loadout: Loadout, *, default_max_len: int = 0) -> bool:
     """Michael phase 4 / wordsmith finale: no stacked draft bosses, 25-tile word."""
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
-    if michael_summoned_bosses_defeated(loadout):
-        return True
+    probe_defeated = _michael_probe_summoned_defeated(loadout)
+    if probe_defeated is False:
+        return False
+
     if michael_puzzle_grid_active(loadout):
         return True
     if str(extras.get("encounter_mode") or "").strip().lower() == "puzzle":
         return True
-    if _michael_phase_value(loadout) >= 4:
+
+    if michael_summoned_bosses_defeated(loadout):
         return True
-    michael_min = _michael_min_word_length_value(loadout)
-    encounter_min = _encounter_min_word_length_value(loadout)
-    if encounter_min >= 25 and _michael_context(loadout):
+    if probe_defeated is True:
         return True
-    if michael_min >= 25 and _michael_context(loadout):
-        return True
-    if (
-        michael_min > 0
-        and default_max_len > 0
-        and michael_min >= default_max_len
-        and _michael_context(loadout)
-    ):
-        return True
+
     return _michael_finale_fallback_active(loadout, _parse_boss_modifier_ids(loadout))
 
 
@@ -180,6 +191,10 @@ def _michael_phase_value(loadout: Loadout) -> int:
 
 def _michael_finale_fallback_active(loadout: Loadout, active_modifiers: list[str]) -> bool:
     if not _michael_context(loadout):
+        return False
+    if _michael_probe_summoned_defeated(loadout) is False:
+        return False
+    if not michael_summoned_bosses_defeated(loadout):
         return False
     phase = _michael_phase_value(loadout)
     if phase >= 4:
@@ -450,14 +465,28 @@ def boss_word_constraints(
 
     if not active:
         min_len = 1
-        if michael_min > 0:
+        stale_finale_extras = (
+            _michael_probe_summoned_defeated(loadout) is False and _michael_context(loadout)
+        )
+        if michael_min > 0 and not (
+            stale_finale_extras and michael_min >= default_max_len
+        ):
             min_len = max(min_len, michael_min)
-        elif _michael_context(loadout) and _michael_phase_value(loadout) >= 3:
+        elif (
+            not stale_finale_extras
+            and _michael_context(loadout)
+            and _michael_phase_value(loadout) >= 3
+        ):
             # Defensive fallback: late Michael phases should never drop back to 1-letter words.
             min_len = max(min_len, default_max_len)
         return BossConstraints(min_len=min_len, max_len=default_max_len)
 
-    if michael_min > 0:
+    stale_finale_extras = (
+        _michael_probe_summoned_defeated(loadout) is False and _michael_context(loadout)
+    )
+    if michael_min > 0 and not (
+        stale_finale_extras and michael_min >= default_max_len
+    ):
         min_len = max(min_len, michael_min)
     return BossConstraints(min_len=min_len, max_len=max_len)
 
