@@ -27,6 +27,7 @@ FETOSCOPIC = FIXTURES / "20260607_011836.json"
 VENIREMEN = FIXTURES / "20260608_142113.json"
 AXMAKER = FIXTURES / "20260608_142438.json"
 EYESTRIPE = FIXTURES / "20260608_155545.json"
+RECTIFIES = FIXTURES / "20260609_122845.json"
 
 
 def _replay_score(fixture_path: Path) -> tuple[int, dict, list[int], object, object]:
@@ -271,6 +272,24 @@ def test_equipped_scatter_matches_inventory_level():
     assert level == 3
 
 
+def test_rectifies_telescope_running_counts():
+    """Two non-red separators between reds must not award Telescope gap bonus."""
+    data = json.loads(RECTIFIES.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = data["path"]
+    red_indices = _red_path_indices(board, path)
+    assert red_indices[:2] == [0, 3]
+    assert telescope_running_red_count(loadout, board, path, red_indices[0]) == 1
+    assert telescope_running_red_count(loadout, board, path, red_indices[1]) == 2
+
+
+def test_rectifies_replay_score():
+    score, data, *_ = _replay_score(RECTIFIES)
+    assert score == int(data["actual_score"]) == 60
+
+
 def test_toolbox_boosts_cherry_pie_grid_multiplier():
     from cursed_words_solver.models import (
         Board,
@@ -313,3 +332,47 @@ def test_toolbox_boosts_cherry_pie_grid_multiplier():
     assert level == 2
     factor = scaled_word_multiplier(level, rule, loadout)
     assert factor == 3.0
+
+
+def test_maple_leaf_floor_mod_caps_grid_scatter_level():
+    """reink 20260609_155559: floor mod caps grid Maple at L1 despite export/equipped L2."""
+    from cursed_words_solver.models import (
+        Board,
+        CurseType,
+        Loadout,
+        LoadoutItem,
+        Tile,
+        TileColor,
+    )
+
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    board.tiles[4][1] = Tile(
+        row=4,
+        col=1,
+        char="m",
+        letter="M",
+        base_score=0,
+        color=TileColor.RED,
+        curse=CurseType.ITEM,
+        metadata={
+            "scattered_item_id": "maple_leaf",
+            "scattered_item_level": 2,
+        },
+    )
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="maple_leaf", name="Maple Leaf", level=2)],
+        boss_id="capybara",
+        extras={
+            "grid_number": "1",
+            "boss_floor_modification": "2",
+            "scoring_previous_words_count": "0",
+        },
+    )
+    level = grid_path_sticker_level(
+        loadout,
+        "maple_leaf",
+        board=board,
+        path=[21],
+        path_tile_index=0,
+    )
+    assert level == 1

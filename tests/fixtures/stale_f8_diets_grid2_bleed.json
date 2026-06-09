@@ -1,0 +1,44 @@
+{
+  "grid_number": 2,
+  "run_state_extras": {
+    "grid_number": "2",
+    "encounter_historic_source": "grid_advanced_disk",
+    "historic_words": "[{\"word\":\"ZhOTYPb\",\"score\":85},{\"word\":\"LtNUXEb\",\"score\":89},{\"word\":\"FrEEbIUM\",\"score\":84},{\"word\":\"OVbNtCS\",\"score\":135}]",
+    "scoring_previous_words_count": "2",
+    "previous_word_first_letter": "o",
+    "grid_scattered_items": "[{\"row\":4,\"col\":4,\"id\":\"telescope\",\"level\":1},{\"row\":1,\"col\":0,\"id\":\"fire_extinguisher\",\"level\":1}]"
+  },
+  "disk_extras": {
+    "grid_number": "2",
+    "encounter_historic_source": "live",
+    "historic_words": "[{\"word\":\"FET💥R🎸\",\"score\":23,\"path\":[19,14,13,8,12,16],\"red_tile_count\":3}]",
+    "scoring_previous_words_count": "2",
+    "previous_word_first_letter": "f",
+    "grid_scattered_items": ""
+  },
+  "extras_diff": {
+    "historic_words": {
+      "f8": "[{\"word\":\"ZhOTYPb\",\"score\":85,\"path\":[6,7,18,13,8,4,9],\"red_tile_count\":1},{\"word\":\"LtNUXEb\",\"score\":89,\"path\":[11,16,6,12,18,13,9],\"red_tile_count\":2},{\"word\":\"FrEEbIUM\",\"score\":84,\"path\":[6,7,22,1,5,17,12,18],\"red_tile_count\":2},{\"word\":\"OVbNtCS\",\"score\":135,\"path\":[7,3,9,21,15,18,13],\"red_tile_count\":2}]",
+      "submit": "[{\"word\":\"FET💥R🎸\",\"score\":23,\"path\":[19,14,13,8,12,16],\"red_tile_count\":3}]"
+    },
+    "scoring_previous_words_count": {
+      "f8": "4",
+      "submit": "2"
+    },
+    "previous_word_first_letter": {
+      "f8": "o",
+      "submit": "f"
+    },
+    "grid_scattered_items": {
+      "f8": "[{\"row\":4,\"col\":4,\"id\":\"telescope\",\"level\":1},{\"row\":1,\"col\":0,\"id\":\"fire_extinguisher\",\"level\":1}]",
+      "submit": ""
+    }
+  },
+  "expected_stale_note_contains": [
+    "historic_words changed",
+    "previous_word_first_letter f8='o' submit='f'"
+  ],
+  "expected_bleed_warning_contains": [
+    "prior grid"
+  ]
+}

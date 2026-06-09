@@ -48,6 +48,8 @@ from cursed_words_solver.suggestion import (
     format_result_score_display,
     f8_prior_suggestion_stale_note,
     f8_prediction_workflow_stale_warning,
+    grid_one_historic_cache_mismatch_warning,
+    grid_transition_workflow_bleed_warning,
     poll_invalidate_last_suggestion,
     empty_historic_on_later_grid_warning,
     grid_advanced_since_last_f8_warning,
@@ -195,6 +197,7 @@ class SolverApp:
         self._bridge.solve_finished.connect(self._apply_solve_ui)
         self.overlay.request_quit.connect(self._shutdown)
         self._overlay_regions = resolve_overlay_regions(None, config)
+        self._rack_collapse_warned = False
         atexit.register(keyboard.unhook_all)
         atexit.register(self._shutdown_search_pool)
 
@@ -252,11 +255,13 @@ class SolverApp:
                 flush=True,
             )
         if self._overlay_regions.rack_layout_collapsed:
-            print(
-                "  Warning: consumable rack layout export collapsed — "
-                "using last good F7 alignment (press F7 if markers still wrong)",
-                flush=True,
-            )
+            if not self._rack_collapse_warned:
+                self._rack_collapse_warned = True
+                print(
+                    "  Warning: consumable rack layout export collapsed — "
+                    "using last good F7 alignment (press F7 if markers still wrong)",
+                    flush=True,
+                )
         elif self._overlay_regions.rack_slot_corrected:
             print(
                 "  Warning: consumable rack slot alignment corrected — "
@@ -520,6 +525,15 @@ class SolverApp:
                 print(f"  Suggestion cleared — {reason}", flush=True)
             elif reason is None:
                 self._last_invalidation_reason = None
+        elif (
+            self._highlight_board_fingerprint is not None
+            and not LAST_SUGGESTION_PATH.exists()
+        ):
+            self._last_invalidation_reason = "suggestion_expired"
+            self._clear_highlight_state()
+            self.overlay.show_stale_notice(
+                "Suggestion expired — press F8 again before submitting."
+            )
 
         self._maybe_clear_stale_highlights()
 
@@ -563,9 +577,7 @@ class SolverApp:
             )
             return
         if not update.trusted_suggestion:
-            self.overlay.show_stale_notice(
-                "Suggestion not captured — press F7 in-game, then F8 before submitting."
-            )
+            self._clear_highlight_state()
         self.overlay.show_results(
             update.board,
             update.results,
@@ -573,6 +585,7 @@ class SolverApp:
             warnings_html=update.warnings_html,
             on_game_highlight=update.on_game_highlight and update.trusted_suggestion,
             consumable_placements=update.consumable_placements,
+            trusted=update.trusted_suggestion,
         )
         if (
             update.on_game_highlight
@@ -1313,16 +1326,6 @@ class SolverApp:
                     merged_run_state, historic_catchup_stale_note = (
                         merge_encounter_historic_for_f8_with_retry(merged_run_state)
                     )
-                if historic_catchup_stale_note:
-                    print(
-                        f"  Warning: {historic_catchup_stale_note}",
-                        flush=True,
-                    )
-                    print(
-                        "  Warning: Predicted score may be stale (historic export lag) — "
-                        "press F7 in-game, then F8 again before submitting.",
-                        flush=True,
-                    )
                 merged_extras = (
                     merged_run_state.get("extras")
                     if isinstance(merged_run_state, dict)
@@ -1465,29 +1468,25 @@ class SolverApp:
                 stale_note = f8_prior_suggestion_stale_note(
                     run_extras if isinstance(run_extras, dict) else None
                 )
-                if stale_note:
-                    print(f"  Warning: {stale_note}", flush=True)
                 empty_hist_warn = empty_historic_on_later_grid_warning(
                     f8_extras if isinstance(f8_extras, dict) else run_extras
                 )
-                if empty_hist_warn:
-                    print(f"  Warning: {empty_hist_warn}", flush=True)
                 behind_disk_warn = f8_historic_still_behind_disk_warning(
                     f8_extras if isinstance(f8_extras, dict) else None
                 )
-                if behind_disk_warn:
-                    print(f"  Warning: {behind_disk_warn}", flush=True)
                 workflow_stale_warn = f8_prediction_workflow_stale_warning(
                     run_extras if isinstance(run_extras, dict) else None,
                     f8_extras if isinstance(f8_extras, dict) else None,
                 )
-                if workflow_stale_warn:
-                    print(f"  Warning: {workflow_stale_warn}", flush=True)
                 grid_adv_warn = grid_advanced_since_last_f8_warning(
                     run_extras if isinstance(run_extras, dict) else None
                 )
-                if grid_adv_warn:
-                    print(f"  Warning: {grid_adv_warn}", flush=True)
+                grid_one_hist_warn = grid_one_historic_cache_mismatch_warning(
+                    f8_extras if isinstance(f8_extras, dict) else None
+                )
+                grid_bleed_warn = grid_transition_workflow_bleed_warning(
+                    f8_extras if isinstance(f8_extras, dict) else None
+                )
                 block_f8_save, block_f8_reason = f8_should_block_save(
                     historic_catchup_stale_note=historic_catchup_stale_note,
                     empty_hist_warn=empty_hist_warn,
@@ -1495,10 +1494,50 @@ class SolverApp:
                     behind_disk_warn=behind_disk_warn,
                     workflow_stale_warn=workflow_stale_warn,
                     grid_adv_warn=grid_adv_warn,
+                    grid_bleed_warn=grid_bleed_warn,
+                    grid_one_hist_warn=grid_one_hist_warn,
                     loadout=f8_loadout,
                     board=search_board,
                     f8_extras=f8_extras if isinstance(f8_extras, dict) else None,
                 )
+                if block_f8_save:
+                    print(
+                        "  Warning: Played since last F7 — press F7 in-game, "
+                        "then F8 again before submitting.",
+                        flush=True,
+                    )
+                    for extra_warn in (
+                        workflow_stale_warn,
+                        grid_bleed_warn,
+                        grid_one_hist_warn,
+                        grid_adv_warn,
+                        hist_stale_note,
+                    ):
+                        if extra_warn:
+                            print(f"  Warning: {extra_warn}", flush=True)
+                else:
+                    lag_warn = historic_catchup_stale_note or behind_disk_warn
+                    if lag_warn:
+                        print(f"  Warning: {lag_warn}", flush=True)
+                        if historic_catchup_stale_note:
+                            print(
+                                "  Warning: Predicted score may be stale "
+                                "(historic export lag) — press F7 in-game, "
+                                "then F8 again before submitting.",
+                                flush=True,
+                            )
+                    if stale_note:
+                        print(f"  Warning: {stale_note}", flush=True)
+                    if empty_hist_warn:
+                        print(f"  Warning: {empty_hist_warn}", flush=True)
+                    for extra_warn in (
+                        workflow_stale_warn,
+                        grid_adv_warn,
+                        grid_one_hist_warn,
+                        grid_bleed_warn,
+                    ):
+                        if extra_warn:
+                            print(f"  Warning: {extra_warn}", flush=True)
                 if block_f8_save:
                     save_blocked_suggestion(
                         board=search_board,
@@ -1510,11 +1549,6 @@ class SolverApp:
                         block_reason=block_f8_reason or "historic_or_workflow_stale",
                         export_diagnostics=export_diag,
                         consumable_placements=placement_records or None,
-                    )
-                    print(
-                        "  Warning: Suggestion not captured (untrusted) — press F7 "
-                        "in-game, then F8 again before submitting.",
-                        flush=True,
                     )
                     self._last_invalidation_reason = (
                         "historic_or_workflow_stale"
@@ -1626,6 +1660,14 @@ class SolverApp:
                 )
 
             warnings = self._overlay_warnings(board, unmapped, loadout=loadout)
+            if results and block_f8_save:
+                untrusted_warn = (
+                    "Not captured for melmod — press F7 in-game, then F8 "
+                    "before submitting."
+                )
+                warnings = (
+                    f"{warnings}<br>{untrusted_warn}" if warnings else untrusted_warn
+                )
             if results and encounter_mode_from_run_state(run_state_data) == "encounter":
                 from cursed_words_solver.grid_reroll_advisor import (
                     format_grid_reroll_reason,

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using MelonLoader;
 using Newtonsoft.Json;
 
@@ -12,6 +13,8 @@ namespace CursedWordsSolverCompanion
     public static class RunStateExporter
     {
         private const int BicycleMergeRetryBudget = 12;
+        private const int JsonMergeRetryCount = 12;
+        private const int JsonMergeRetryDelayMs = 40;
         private static int _pendingBicycleMergeRetries = 0;
         private static float _lastMutatingDnaMergeTime = -999f;
         private const float MutatingDnaMergeIntervalSec = 0.5f;
@@ -28,10 +31,10 @@ namespace CursedWordsSolverCompanion
             get { return OutputPath; }
         }
 
-        public static bool TryExport(bool logSuccess)
+        public static bool TryExport(bool logSuccess, string triggerOverride = null)
         {
             var sw = Stopwatch.StartNew();
-            var trigger = logSuccess ? "f7" : "auto";
+            var trigger = triggerOverride ?? (logSuccess ? "f7" : "auto");
             ExportDiagnostics.ClearMergeErrors();
             try
             {
@@ -110,6 +113,14 @@ namespace CursedWordsSolverCompanion
                 MelonLogger.Error("Failed to export run state: " + ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Full run_state export after word submit so historic/previous_letter are fresh for F8.
+        /// </summary>
+        public static bool TryExportAfterWordSubmit()
+        {
+            return TryExport(false, "submit");
         }
 
         private static string TruncateFingerprint(string fp)
@@ -373,14 +384,11 @@ namespace CursedWordsSolverCompanion
 
             try
             {
-                var json = File.ReadAllText(OutputPath, Encoding.UTF8);
-                var root = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
-                if (root == null)
-                    return;
-
-                BoardExporter.MergeSubmitTakeFlagsIntoRunState(root, submitBoard);
-                BoardExporter.MergeSubmitCardMetadataIntoRunState(root, submitBoard);
-                WriteJsonRoot(root);
+                TryReadModifyWriteJsonRoot(root =>
+                {
+                    BoardExporter.MergeSubmitTakeFlagsIntoRunState(root, submitBoard);
+                    BoardExporter.MergeSubmitCardMetadataIntoRunState(root, submitBoard);
+                });
             }
             catch (Exception ex)
             {
@@ -437,18 +445,25 @@ namespace CursedWordsSolverCompanion
                 var freshExtras = BuildExtrasSnapshot();
                 ScoringCaptureSession.MergeScoringContextIntoExtras(freshExtras);
                 TryMergeSteakExtrasAfterSubmit(freshExtras);
-                if (freshExtras == null || freshExtras.Count == 0)
-                    return;
-                TryMergeExtrasKeys(freshExtras);
-                if (!TryMergeBicycleExtrasAfterScore())
-                    QueueBicycleExtrasRetry();
+                if (freshExtras != null && freshExtras.Count > 0)
+                {
+                    TryMergeExtrasKeys(freshExtras);
+                    if (!TryMergeBicycleExtrasAfterScore())
+                        QueueBicycleExtrasRetry();
 
-                RefreshDiagnosticsAfterMerge("submit_merge");
-                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                    RefreshDiagnosticsAfterMerge("submit_merge");
+                }
             }
             catch (Exception ex)
             {
                 ExportDiagnostics.RecordMergeError("TryMergeExtrasAfterSubmit: " + ex.Message);
+            }
+            finally
+            {
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                MelonLogger.Msg(
+                    "Cleared last_suggestion.json after word submit — press F8 before next overlay word."
+                );
             }
         }
 
@@ -660,33 +675,30 @@ namespace CursedWordsSolverCompanion
             if (!File.Exists(OutputPath))
                 return;
 
-            var json = File.ReadAllText(OutputPath, Encoding.UTF8);
-            var root = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
-            if (root == null)
-                return;
-
-            var merged = new Dictionary<string, string>();
-            object extrasObj;
-            if (root.TryGetValue("extras", out extrasObj) && extrasObj != null)
+            TryReadModifyWriteJsonRoot(root =>
             {
-                var existing = extrasObj as Dictionary<string, string>;
-                if (existing != null)
+                var merged = new Dictionary<string, string>();
+                object extrasObj;
+                if (root.TryGetValue("extras", out extrasObj) && extrasObj != null)
                 {
-                    foreach (var kv in existing)
-                        merged[kv.Key] = kv.Value ?? "";
+                    var existing = extrasObj as Dictionary<string, string>;
+                    if (existing != null)
+                    {
+                        foreach (var kv in existing)
+                            merged[kv.Key] = kv.Value ?? "";
+                    }
+                    else if (extrasObj is Newtonsoft.Json.Linq.JObject jobj)
+                    {
+                        foreach (var prop in jobj.Properties())
+                            merged[prop.Name] = prop.Value?.ToString() ?? "";
+                    }
                 }
-                else if (extrasObj is Newtonsoft.Json.Linq.JObject jobj)
-                {
-                    foreach (var prop in jobj.Properties())
-                        merged[prop.Name] = prop.Value?.ToString() ?? "";
-                }
-            }
 
-            foreach (var kv in keysToMerge)
-                merged[kv.Key] = kv.Value ?? "";
+                foreach (var kv in keysToMerge)
+                    merged[kv.Key] = kv.Value ?? "";
 
-            root["extras"] = merged;
-            WriteJsonRoot(root);
+                root["extras"] = merged;
+            });
         }
 
         /// <summary>
@@ -731,6 +743,48 @@ namespace CursedWordsSolverCompanion
                     "TryMergeMutatingDnaExtrasIfChanged: " + ex.Message
                 );
             }
+        }
+
+        /// <summary>
+        /// Read-modify-write run_state.json with retries when Python solver holds the file.
+        /// </summary>
+        private static void TryReadModifyWriteJsonRoot(Action<Dictionary<string, object>> modify)
+        {
+            if (modify == null)
+                return;
+
+            Exception lastError = null;
+            for (var attempt = 0; attempt < JsonMergeRetryCount; attempt++)
+            {
+                try
+                {
+                    if (!File.Exists(OutputPath))
+                        return;
+
+                    var json = File.ReadAllText(OutputPath, Encoding.UTF8);
+                    var root = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
+                    if (root == null)
+                        return;
+
+                    modify(root);
+                    WriteJsonRoot(root);
+                    return;
+                }
+                catch (IOException ex)
+                {
+                    lastError = ex;
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    lastError = ex;
+                }
+
+                if (attempt + 1 < JsonMergeRetryCount)
+                    Thread.Sleep(JsonMergeRetryDelayMs);
+            }
+
+            if (lastError != null)
+                throw lastError;
         }
 
         private static void WriteJsonRoot(Dictionary<string, object> root)
@@ -3058,6 +3112,21 @@ namespace CursedWordsSolverCompanion
         {
             if (player == null)
                 return null;
+
+            try
+            {
+                var encounter = BossResolver.TryGetEncounter();
+                if (encounter != null)
+                {
+                    var words = encounter.GetPreviousWords();
+                    if (words != null && words.Count > 0)
+                        return words;
+                }
+            }
+            catch
+            {
+                // fall through to reflection
+            }
 
             foreach (var name in new[]
             {

@@ -368,11 +368,12 @@ namespace CursedWordsSolverCompanion
             for (var i = 0; i < slotEnd; i++)
             {
                 Transform target = null;
-                if (consumables != null && i < consumables.Count && consumables[i] != null)
-                    target = GetConsumableRectTransform(consumables[i]);
-
-                if (target == null && i < slots.Length)
+                // Slot transforms are stable; consumable tiles can overlap mid-animation.
+                if (i < slots.Length)
                     target = slots[i];
+
+                if (target == null && consumables != null && i < consumables.Count && consumables[i] != null)
+                    target = GetConsumableRectTransform(consumables[i]);
 
                 if (target == null)
                     continue;

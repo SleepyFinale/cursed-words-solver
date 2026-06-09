@@ -141,6 +141,8 @@ namespace CursedWordsSolverCompanion
             if (player == null || tiles == null || player.Stickers == null)
                 return;
 
+            var encounterScatterTier = TryResolveEncounterScatterTier(player);
+
             foreach (var tile in tiles)
             {
                 if (tile == null || string.IsNullOrEmpty(tile.scattered_item_id))
@@ -154,9 +156,30 @@ namespace CursedWordsSolverCompanion
                 var equipped = RunStateExporter.TryGetEquippedStickerLevel(player, scatterSlug);
                 if (equipped < 1)
                     continue;
+                if (
+                    encounterScatterTier > 0
+                    && equipped > encounterScatterTier)
+                    continue;
                 var exported = tile.scattered_item_level ?? 1;
                 tile.scattered_item_level = Math.Max(exported, equipped);
             }
+        }
+
+        /// <summary>
+        /// Encounter-effective scatter tier (grid − boss floor mod) when floor mod is exported.
+        /// Returns 0 when floor mod is absent (no cap).
+        /// </summary>
+        private static int TryResolveEncounterScatterTier(Player player)
+        {
+            var floorRaw = RunStateExporter.TryReadRunStateExtra("boss_floor_modification");
+            if (string.IsNullOrWhiteSpace(floorRaw))
+                return 0;
+            if (!int.TryParse(floorRaw.Trim(), out var floorMod) || floorMod < 0)
+                return 0;
+            var grid = RunStateExportFill.ResolveGridNumber(player);
+            if (grid <= 0)
+                grid = 1;
+            return Math.Max(1, grid - floorMod);
         }
 
         /// <summary>

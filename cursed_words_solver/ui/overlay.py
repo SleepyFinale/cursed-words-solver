@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCloseEvent, QGuiApplication, QImage, QPixmap
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from cursed_words_solver.config import Region
 from cursed_words_solver.consumable_placement import (
@@ -29,6 +29,11 @@ class ResultOverlay(QWidget):
     _PANEL_COLUMNS = 5
     _PANEL_COLUMN_INDEX = 1  # second column from the left (0-based)
     _MARGIN_Y = 32
+    _MAX_CONTENT_WIDTH = 320
+    _MIN_PANEL_WIDTH = 135
+    _MIN_PANEL_HEIGHT = 56
+    # Stylesheet border (2px) + padding (6px) per side — not included in layout.sizeHint().
+    _STYLE_CHROME = 16
 
     def __init__(self) -> None:
         super().__init__()
@@ -57,12 +62,21 @@ class ResultOverlay(QWidget):
         self.hero_result = QLabel()
         self.hero_result.setTextFormat(Qt.TextFormat.RichText)
         self.hero_result.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hero_result.setWordWrap(True)
+        self.hero_result.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Minimum,
+        )
         self.hero_result.hide()
         layout.addWidget(self.hero_result)
 
         self.warnings_label = QLabel()
         self.warnings_label.setWordWrap(True)
         self.warnings_label.setStyleSheet("font-size: 10px; color: #fa0;")
+        self.warnings_label.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Minimum,
+        )
         self.warnings_label.hide()
         layout.addWidget(self.warnings_label)
 
@@ -71,8 +85,6 @@ class ResultOverlay(QWidget):
         self.preview.setScaledContents(True)
         self.preview.hide()
         layout.addWidget(self.preview)
-
-        self.resize(200, 72)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.request_quit.emit()
@@ -85,7 +97,7 @@ class ResultOverlay(QWidget):
         self.hero_result.hide()
         self.warnings_label.hide()
         self.preview.hide()
-        self.resize(200, 56)
+        self._resize_for_content()
         self._position_panel()
         self.show()
         self.raise_()
@@ -107,7 +119,7 @@ class ResultOverlay(QWidget):
         else:
             self.warnings_label.hide()
         self.preview.hide()
-        self._resize_for_content(compact=True)
+        self._resize_for_content()
         self._position_panel()
         self.show()
         self.raise_()
@@ -132,7 +144,7 @@ class ResultOverlay(QWidget):
         self.hero_result.setText(advice_html)
         self.hero_result.show()
         self.preview.hide()
-        self._resize_for_content(compact=True)
+        self._resize_for_content()
         self._position_panel()
         self.show()
         self.raise_()
@@ -146,6 +158,7 @@ class ResultOverlay(QWidget):
         warnings_html: str = "",
         on_game_highlight: bool = False,
         consumable_placements: list | None = None,
+        trusted: bool = True,
     ) -> None:
         self._has_solved = True
         self.idle_label.hide()
@@ -202,13 +215,25 @@ class ResultOverlay(QWidget):
                         "<br><span style='font-size:11px;color:#fa0'>"
                         f"{hint}</span>"
                     )
+            play_line = ""
+            if top.dictionary_word and top.dictionary_word.lower() != top.word.lower():
+                play_line = (
+                    "<br><span style='font-size:12px;color:#fa0'>"
+                    f"play: {top.dictionary_word.upper()}</span>"
+                )
             score_html = format_result_score_display(top)
+            if not trusted:
+                score_html = (
+                    "<span style='color:#fa0;font-weight:bold'>UNTRUSTED</span> "
+                    f"{score_html}"
+                )
             self.hero_result.setText(
                 f"<span style='font-size:22px;font-weight:bold;color:#fff'>"
                 f"{word_html}</span>"
                 f"&nbsp;&nbsp;"
                 f"<span style='font-size:18px;font-weight:bold;color:#0f8'>"
                 f"{score_html}</span>"
+                f"{play_line}"
                 f"{setup_line}"
                 f"{placement_line}"
                 f"{microscope_line}"
@@ -227,7 +252,7 @@ class ResultOverlay(QWidget):
         else:
             self.preview.hide()
 
-        self._resize_for_content(on_game_highlight and bool(best_path))
+        self._resize_for_content()
         self._position_panel()
         self.show()
         self.raise_()
@@ -251,16 +276,47 @@ class ResultOverlay(QWidget):
         self.preview.setPixmap(QPixmap.fromImage(qimg.copy()))
         self.preview.show()
 
-    def _resize_for_content(self, compact: bool) -> None:
-        w = 200
-        h = 56 if not self._has_solved else 72
-        if compact:
-            h = 72
-        elif self.preview.isVisible():
-            h = 200
-        if self.warnings_label.isVisible():
-            h += 22
+    def _resize_for_content(self) -> None:
+        """Size panel from layout hints; never below minimumSizeHint (Qt geometry warnings)."""
+        max_w = self._MAX_CONTENT_WIDTH
+        layout = self.layout()
+        if layout is not None:
+            lm = layout.contentsMargins()
+            horiz_inset = lm.left() + lm.right()
+            vert_inset = lm.top() + lm.bottom()
+        else:
+            horiz_inset = vert_inset = 12
+
+        max_label_w = max(1, max_w - self._STYLE_CHROME - horiz_inset)
+        for label in (self.hero_result, self.warnings_label, self.idle_label):
+            if not label.isVisible():
+                continue
+            label.setMaximumWidth(max_label_w)
+            if label.wordWrap():
+                label.setFixedWidth(max_label_w)
+
+        if layout is not None:
+            layout.activate()
+            hint = layout.sizeHint()
+        else:
+            hint = self.minimumSizeHint()
+
+        w = min(
+            max(hint.width() + self._STYLE_CHROME + horiz_inset, self._MIN_PANEL_WIDTH),
+            max_w,
+        )
+        h = max(hint.height() + self._STYLE_CHROME + vert_inset, self._MIN_PANEL_HEIGHT)
         self.resize(w, h)
+
+        # Rich-text / word-wrap labels may raise minimum height after the first pass.
+        for _ in range(2):
+            min_sz = self.minimumSizeHint()
+            new_w = min(max(w, min_sz.width()), max_w)
+            new_h = max(h, min_sz.height())
+            if new_w == self.width() and new_h == self.height():
+                break
+            w, h = new_w, new_h
+            self.resize(w, h)
 
     def _draw_paths(
         self,

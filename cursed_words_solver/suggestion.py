@@ -337,11 +337,40 @@ def _last_suggestion_age_sec(data: dict[str, Any] | None = None) -> float | None
         return None
 
 
-def is_export_catchup_drift(
+def is_embed_stale_drift(
     f8_extras: dict[str, Any] | None,
     cur_extras: dict[str, Any] | None,
 ) -> bool:
-    """True when run_state workflow extras likely caught up from melmod export, not a new word."""
+    """True when F8 embed workflow is ahead of or inconsistent with live export."""
+    f8 = f8_extras if isinstance(f8_extras, dict) else {}
+    cur = cur_extras if isinstance(cur_extras, dict) else {}
+    hist_f8 = str(f8.get("historic_words", "") or "").strip()
+    hist_cur = str(cur.get("historic_words", "") or "").strip()
+    count_f8 = _historic_words_count(hist_f8)
+    count_cur = _historic_words_count(hist_cur)
+    if count_f8 > count_cur and (hist_f8 or hist_cur):
+        return True
+    if (
+        hist_f8
+        and hist_cur
+        and hist_f8 != hist_cur
+        and count_cur < count_f8
+    ):
+        return True
+    scattered_f8 = str(f8.get("grid_scattered_items", "") or "").strip()
+    scattered_cur = str(cur.get("grid_scattered_items", "") or "").strip()
+    if scattered_f8 and scattered_f8 != "[]" and not scattered_cur:
+        return True
+    return False
+
+
+def is_disk_catchup_drift(
+    f8_extras: dict[str, Any] | None,
+    cur_extras: dict[str, Any] | None,
+) -> bool:
+    """True when live run_state likely caught up from melmod export lag after F8."""
+    if is_embed_stale_drift(f8_extras, cur_extras):
+        return False
     f8 = f8_extras if isinstance(f8_extras, dict) else {}
     cur = cur_extras if isinstance(cur_extras, dict) else {}
     hist_f8 = str(f8.get("historic_words", "") or "").strip()
@@ -360,6 +389,14 @@ def is_export_catchup_drift(
         if prev_f8 and prev_cur and prev_f8 != prev_cur:
             return True
     return False
+
+
+def is_export_catchup_drift(
+    f8_extras: dict[str, Any] | None,
+    cur_extras: dict[str, Any] | None,
+) -> bool:
+    """Alias for disk catchup drift (melmod export lag after F8, not embed ahead)."""
+    return is_disk_catchup_drift(f8_extras, cur_extras)
 
 
 def fingerprint_invalidate_suppressed_for_post_f8_export(
@@ -394,6 +431,10 @@ def workflow_invalidate_suppressed_for_export_catchup(
     data = _last_suggestion_fingerprint_data()
     if data is None:
         return False
+    f8_extras = _f8_snapshot_extras(data)
+    cur_extras = run_state_extras if isinstance(run_state_extras, dict) else {}
+    if is_embed_stale_drift(f8_extras, cur_extras):
+        return False
     age = _last_suggestion_age_sec(data)
     grace = f8_export_catchup_grace_sec(search_budget_sec)
     if age is None or age > grace:
@@ -402,10 +443,84 @@ def workflow_invalidate_suppressed_for_export_catchup(
     cur_board = (current_board_fp or "").strip()
     if not f8_board or not cur_board or not _board_tiles_match(f8_board, cur_board):
         return False
-    return is_export_catchup_drift(
-        _f8_snapshot_extras(data),
-        run_state_extras if isinstance(run_state_extras, dict) else {},
-    )
+    return is_disk_catchup_drift(f8_extras, cur_extras)
+
+
+def grid_one_historic_cache_mismatch_warning(
+    run_state_extras: dict[str, Any] | None,
+) -> str | None:
+    """Warn when grid 1 has encounter historic but the scoring cache is empty."""
+    extras = run_state_extras if isinstance(run_state_extras, dict) else {}
+    try:
+        grid = int(str(extras.get("grid_number") or "0"))
+    except ValueError:
+        return None
+    if grid != 1:
+        return None
+    hist = str(extras.get("historic_words", "") or "").strip()
+    hist_count = _historic_words_count(hist)
+    if hist_count == 0:
+        return None
+    try:
+        scoring_count = int(str(extras.get("scoring_previous_words_count") or "0"))
+    except ValueError:
+        scoring_count = 0
+    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
+    if scoring_count == 0 or source == "grid1_no_scoring_cache":
+        return (
+            f"Grid 1 has {hist_count} encounter historic word(s) but scoring cache is "
+            f"empty (spc={scoring_count}) — Telescope scores may be wrong; "
+            "press F7 in-game, then F8."
+        )
+    return None
+
+
+def grid_transition_workflow_bleed_warning(
+    run_state_extras: dict[str, Any] | None,
+) -> str | None:
+    """Warn when encounter workflow extras likely bled from a prior grid."""
+    extras = run_state_extras if isinstance(run_state_extras, dict) else {}
+    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
+    hist = str(extras.get("historic_words", "") or "").strip()
+    hist_count = _historic_words_count(hist)
+    try:
+        grid = int(str(extras.get("grid_number") or "0"))
+    except ValueError:
+        grid = 0
+    try:
+        scoring_count = int(str(extras.get("scoring_previous_words_count") or "0"))
+    except ValueError:
+        scoring_count = 0
+
+    if grid == 1 and hist_count > 0 and scoring_count == 0:
+        return (
+            f"Grid 1 encounter historic ({hist_count} words) with empty scoring cache — "
+            "press F7 in-game, then F8 before trusting Telescope scores."
+        )
+
+    if grid >= 2 and hist_count > 0 and scoring_count == 0:
+        return (
+            f"Grid {grid} has prior-grid encounter historic ({hist_count} words) but "
+            "scoring cache is empty — press F7 in-game, then F8."
+        )
+
+    if source in ("grid_advanced", "grid_advanced_disk") and hist_count > 0:
+        if scoring_count < hist_count:
+            return (
+                f"Encounter historic may be from prior grid ({hist_count} exported words, "
+                f"scoring cache {scoring_count}) — press F7 in-game, then F8."
+            )
+    scattered = str(extras.get("grid_scattered_items", "") or "").strip()
+    if (
+        scattered
+        and scattered != "[]"
+        and source in ("grid_advanced", "grid_advanced_disk")
+    ):
+        return (
+            "grid_scattered_items may be stale after grid advance — "
+            "press F7 in-game, then F8."
+        )
+    return None
 
 
 def run_state_historic_stale_warnings(
@@ -414,6 +529,8 @@ def run_state_historic_stale_warnings(
     """Collect workflow warnings for stale encounter historic before solving."""
     warnings: list[str] = []
     for fn in (
+        grid_one_historic_cache_mismatch_warning,
+        grid_transition_workflow_bleed_warning,
         grid_advanced_since_last_f8_warning,
         historic_previous_letter_mismatch_warning,
         empty_historic_on_later_grid_warning,
@@ -794,6 +911,36 @@ def loadout_needs_encounter_historic(loadout: Loadout | None, board: Board | Non
     return False
 
 
+_PREVIOUS_WORD_LETTER_STAMPS = frozenset({"bento_box", "bento", "chips", "limnophila"})
+
+
+def loadout_needs_previous_word_letter(loadout: Loadout | None) -> bool:
+    """True when Bento/Chips/Limnophila can apply previous_word_first_letter this grid."""
+    if loadout is None:
+        return False
+    from cursed_words_solver.rules.scoring_conditions import (
+        _limnophila_previous_word_available,
+        grid_number,
+    )
+
+    if grid_number(loadout) < 2:
+        return False
+
+    has_stamp = False
+    for item in (*(loadout.stamps or []), *(loadout.stickers or [])):
+        if (item.id or "").lower() in _PREVIOUS_WORD_LETTER_STAMPS:
+            has_stamp = True
+            break
+    if not has_stamp:
+        return False
+
+    if _limnophila_previous_word_available(loadout):
+        return True
+
+    prev = str((loadout.extras or {}).get("previous_word_first_letter", "") or "").strip()
+    return bool(prev)
+
+
 def f8_should_block_save(
     *,
     historic_catchup_stale_note: str | None,
@@ -802,6 +949,8 @@ def f8_should_block_save(
     behind_disk_warn: str | None,
     workflow_stale_warn: str | None,
     grid_adv_warn: str | None,
+    grid_bleed_warn: str | None = None,
+    grid_one_hist_warn: str | None = None,
     loadout: Loadout | None,
     board: Board | None,
     f8_extras: dict[str, Any] | None,
@@ -810,23 +959,37 @@ def f8_should_block_save(
     blocking = (
         historic_catchup_stale_note,
         behind_disk_warn,
-        hist_stale_note,
         workflow_stale_warn,
+        grid_bleed_warn,
+        grid_one_hist_warn,
     )
     for note in blocking:
         if note:
-            return True, note
+            if note in (grid_bleed_warn, grid_one_hist_warn):
+                if loadout is None and board is None:
+                    return True, note
+                if loadout_needs_encounter_historic(loadout, board):
+                    return True, note
+            else:
+                return True, note
 
-    if empty_hist_warn and loadout_needs_encounter_historic(loadout, board):
-        extras = f8_extras if isinstance(f8_extras, dict) else {}
-        hist = str(extras.get("historic_words", "") or "").strip()
-        if not hist or hist == "[]":
+    if hist_stale_note and loadout_needs_previous_word_letter(loadout):
+        return True, hist_stale_note
+
+    extras = f8_extras if isinstance(f8_extras, dict) else {}
+    hist = str(extras.get("historic_words", "") or "").strip()
+    hist_empty = not hist or hist == "[]"
+    try:
+        grid = int(str(extras.get("grid_number") or "0"))
+    except ValueError:
+        grid = 0
+
+    if empty_hist_warn and hist_empty:
+        if grid >= 2 or loadout_needs_encounter_historic(loadout, board):
             return True, empty_hist_warn
 
     if grid_adv_warn and loadout_needs_encounter_historic(loadout, board):
-        extras = f8_extras if isinstance(f8_extras, dict) else {}
-        hist = str(extras.get("historic_words", "") or "").strip()
-        if not hist or hist == "[]":
+        if hist_empty:
             return True, grid_adv_warn
 
     return False, None

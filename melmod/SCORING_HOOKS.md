@@ -70,6 +70,8 @@ Harmony prefix parameter names must match the game (`tiles`, not `selections`).
 
 Workflow stale detection (`historic_words`, `previous_word_first_letter`, etc.) runs in **`OnScoringContext`**, not in `SubmitWord` prefix. `BuildSubmitWorkflowExtras` at submit time can lag one word behind; `previousWords` from `CalculateOverallScore` is authoritative for whether the F8 embed matches score-time extras.
 
+`CachePreviousWordsForExport` runs only during an active submit (`_submitInFlight` or `_captureCandidate`), not on hover/preview `CalculateOverallScore` calls, so preview paths do not overwrite export `previous_word_first_letter`. Capture is blocked on **pre-sync** workflow drift (original F8 embed vs score-time extras) before `TrySyncWorkflowExtrasToProjected` can mask drift; historic **count** lag is blocked separately.
+
 `PopulateValidityAndScore` also calls score calculation for the preview — session flag must be **submit-only** (capture candidate set in `SubmitWord` prefix, `_active` set in `CalculateOverallScore` prefix, cleared in submit postfix).
 
 ### Round logs vs mismatch capture

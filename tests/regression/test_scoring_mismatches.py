@@ -1951,6 +1951,11 @@ def test_scoring_mismatch(case_path: Path) -> None:
             "capture inconsistency: actual_trace is a 3-tile cluster but "
             "run_state board snapshot does not match that layout"
         )
+    if case_path.stem == "20260609_104918":
+        pytest.skip(
+            "stale F8 workflow capture (satisfy f8#401): board snapshot is "
+            "post-submit; see test_stale_suggestion satisfy stale-F8 tests"
+        )
     expected = int(data["actual_score"])
 
     _adjust_previous_word_letter_extras(run_state, data)
@@ -2362,6 +2367,60 @@ def test_run_state_replay_keeps_michael_phase_boss_extras() -> None:
     loadout = parse_run_state(run_state)
     assert loadout.extras.get("boss_modifiers") == []
     assert int(loadout.extras.get("michael_min_word_length", 0)) == 25
+
+
+def test_ragg_stale_historic_scores_432_before_sanitize() -> None:
+    """Stale grid-1 encounter historic reproduces the 432 Telescope over-prediction."""
+    from copy import deepcopy
+
+    from cursed_words_solver.loadout import sanitize_run_state_snapshot_for_f8
+
+    case_path = FIXTURES / "20260609_123144.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260609_123144 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    raw_snapshot = dict(data["run_state_snapshot"])
+    board = parse_board_from_run_state(raw_snapshot)
+    loadout = parse_run_state(raw_snapshot)
+    score_raw, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score_raw) == int(data["predicted_score"]) == 432
+
+    cleaned = sanitize_run_state_snapshot_for_f8(deepcopy(raw_snapshot), loadout)
+    run_state = prepare_run_state_dict_for_scoring(cleaned)
+    board2 = parse_board_from_run_state(run_state)
+    loadout2 = parse_run_state(run_state)
+    score_clean, _ = ScoringPipeline().score(
+        board2, data["path"], data["word"], loadout2
+    )
+    assert int(score_clean) == int(data["actual_score"]) == 54
+    extras = run_state.get("extras") or {}
+    assert extras.get("scoring_previous_words_count") in ("0", 0)
+    assert not str(extras.get("historic_words") or "").strip()
+
+
+def test_rectifies_replay_matches_actual_score() -> None:
+    case_path = FIXTURES / "20260609_122845.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260609_122845 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 60
+
+
+def test_reink_replay_matches_actual_score() -> None:
+    """Mismatch 20260609_155559: Capybara floor mod caps grid Maple at L1; game 48."""
+    case_path = FIXTURES / "20260609_155559.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260609_155559 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 48
 
 
 @pytest.mark.parametrize(

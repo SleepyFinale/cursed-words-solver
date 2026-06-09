@@ -2102,7 +2102,7 @@ def telescope_running_red_count(
 ) -> int:
     """Running RED count for Telescope at path index (game: historic reds + path prefix).
 
-    First word (no historic_words): +1 when at least two non-red path steps
+    First word (no historic_words): +1 when at least three non-red path steps
     separate the current red from the previous red on the path.
     Later words: prior + prefix reds only (no gap bonus).
     """
@@ -2123,7 +2123,7 @@ def telescope_running_red_count(
         default=-1,
     )
     non_red_gap = path_index - last_red_idx - 1
-    has_gap = last_red_idx >= 0 and non_red_gap >= 2
+    has_gap = last_red_idx >= 0 and non_red_gap >= 3
     return prior + prefix_reds + (1 if has_gap else 0)
 
 
@@ -4792,17 +4792,29 @@ def grid_path_sticker_level(
     encounter_level = scattered_grid_item_level(loadout)
     level = encounter_level
     tile_level_known = False
+    is_grid_path_tile = False
+    floor_mod_capped = False
+    if loadout is not None:
+        extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+        floor_mod_capped = extras.get("boss_floor_modification") not in (None, "")
 
     if board is not None and path is not None and path_tile_index is not None:
         if 0 <= path_tile_index < len(path):
             tile = board.get_by_index(path[path_tile_index])
+            is_grid_path_tile = bool(
+                str((tile.metadata or {}).get("scattered_item_id") or "").strip()
+            )
             raw = (tile.metadata or {}).get("scattered_item_level")
             if raw is not None:
                 try:
                     tile_lv = max(1, int(raw))
                     tile_level_known = True
-                    # Melmod exports component upgrade level; encounter grid tier can be higher.
-                    level = max(tile_lv, encounter_level)
+                    if floor_mod_capped and is_grid_path_tile:
+                        # Floor mod caps grid scatter scoring tier; export may be component level.
+                        level = encounter_level
+                    else:
+                        # Melmod exports component upgrade level; encounter grid tier can be higher.
+                        level = max(tile_lv, encounter_level)
                 except (TypeError, ValueError):
                     pass
 
@@ -4867,7 +4879,11 @@ def grid_path_sticker_level(
             and _toolbox_boost_applies_to_scattered(loadout, scattered_id)
         ):
             level = max(level, _equipped_toolbox_level(loadout))
-    if loadout is not None and loadout.stickers:
+    if (
+        loadout is not None
+        and loadout.stickers
+        and not (floor_mod_capped and is_grid_path_tile)
+    ):
         for sticker in loadout.stickers:
             if slugify_name(str(sticker.id or "")) != slug_norm:
                 continue

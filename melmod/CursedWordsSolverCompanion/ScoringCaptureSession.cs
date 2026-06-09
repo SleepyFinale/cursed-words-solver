@@ -8,6 +8,7 @@ namespace CursedWordsSolverCompanion
     {
         private static bool _active;
         private static bool _captureCandidate;
+        private static bool _submitInFlight;
         private static LastSuggestion _suggestion;
         private static string _word;
         private static List<int> _path;
@@ -46,6 +47,7 @@ namespace CursedWordsSolverCompanion
         {
             _active = false;
             _captureCandidate = false;
+            _submitInFlight = true;
             _actualTrace = null;
             _roundTrace = null;
             _submitBoardSnapshot = null;
@@ -140,7 +142,8 @@ namespace CursedWordsSolverCompanion
         public static void OnScoringContext(List<HistoricWord> previousWords)
         {
             var player = RunStateExporter.GetPlayerForUpdate();
-            RunStateExporter.CachePreviousWordsForExport(previousWords);
+            if (_submitInFlight || _captureCandidate)
+                RunStateExporter.CachePreviousWordsForExport(previousWords);
             var captured = ScoringContextCapture.ExtractFromPreviousWords(previousWords);
             var letterCounts = ScoringContextCapture.ResolveMutatingDnaLetterCounts(
                 player,
@@ -206,6 +209,26 @@ namespace CursedWordsSolverCompanion
                 return;
             }
 
+            var staleCtx = RunStateExporter.BuildStaleF8Context(player);
+            var preSyncDiff = ExtrasDiffHelper.DiffExtras(
+                _originalF8ExtrasForDiff,
+                authoritativeExtras
+            );
+            var preSyncWorkflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(
+                preSyncDiff,
+                staleCtx
+            );
+            if (!string.IsNullOrEmpty(preSyncWorkflowStale))
+            {
+                MelonLogger.Warning(preSyncWorkflowStale);
+                MelonLogger.Warning(
+                    "Blocking score capture — workflow drift; press F8 again before submitting overlay."
+                );
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                _active = false;
+                return;
+            }
+
             SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
                 _suggestion,
                 authoritativeExtras
@@ -213,7 +236,6 @@ namespace CursedWordsSolverCompanion
             var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
                 _suggestion?.run_state_snapshot
             );
-            var staleCtx = RunStateExporter.BuildStaleF8Context(player);
             var diff = ExtrasDiffHelper.DiffExtras(f8Extras, authoritativeExtras);
             var workflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(
                 diff,
@@ -991,6 +1013,7 @@ namespace CursedWordsSolverCompanion
 
                 PersistLastSubmittedWordFirstLetter();
                 RunStateExporter.TryMergeTelescopeEncounterExtrasAfterScore();
+                RunStateExporter.TryExportAfterWordSubmit();
 
                 ConsumablePlacementTracker.ResetAfterSubmit(_boardAtSubmit);
             }
@@ -1002,6 +1025,7 @@ namespace CursedWordsSolverCompanion
             {
                 _active = false;
                 _captureCandidate = false;
+                _submitInFlight = false;
                 _submitBoardSnapshot = null;
                 _originalF8ExtrasForDiff = new Dictionary<string, string>();
                 _preWordScoringExtrasForDiff = new Dictionary<string, string>();

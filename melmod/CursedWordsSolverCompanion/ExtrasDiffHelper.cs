@@ -490,6 +490,44 @@ namespace CursedWordsSolverCompanion
 
 
 
+            if (extrasDiff.TryGetValue("scoring_previous_words_count", out var spcRaw))
+
+            {
+
+                var spcEntry = spcRaw as Dictionary<string, string>;
+
+                if (spcEntry != null)
+
+                {
+
+                    int f8Count;
+
+                    int submitCount;
+
+                    int.TryParse((spcEntry.TryGetValue("f8", out var f8Spc) ? f8Spc : null) ?? "0", out f8Count);
+
+                    int.TryParse((spcEntry.TryGetValue("submit", out var submitSpc) ? submitSpc : null) ?? "0", out submitCount);
+
+                    if (f8Count > submitCount)
+
+                        notes.Add(
+
+                            "scoring_previous_words_count f8="
+
+                                + f8Count
+
+                                + " submit="
+
+                                + submitCount
+
+                        );
+
+                }
+
+            }
+
+
+
             return notes;
 
         }

@@ -166,6 +166,16 @@ namespace CursedWordsSolverCompanion
                 return "path_mismatch";
             }
 
+            var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                ctx.Suggestion.run_state_snapshot
+            );
+            var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, ctx.ScoringExtras);
+            var staleCtx = RunStateExporter.BuildStaleF8Context(
+                RunStateExporter.GetPlayerForUpdate()
+            );
+            if (ExtrasDiffHelper.HasStaleF8ExtrasDrift(extrasDiff, staleCtx))
+                return "stale_f8_extras";
+
             var predicted = ctx.Suggestion.predicted_score;
             if (
                 ctx.Suggestion.score_nondeterministic
@@ -175,18 +185,7 @@ namespace CursedWordsSolverCompanion
             )
                 return "score_match";
             if (predicted != ctx.ActualScore)
-            {
-                var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
-                    ctx.Suggestion.run_state_snapshot
-                );
-                var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, ctx.ScoringExtras);
-                var staleCtx = RunStateExporter.BuildStaleF8Context(
-                    RunStateExporter.GetPlayerForUpdate()
-                );
-                if (ExtrasDiffHelper.HasStaleF8ExtrasDrift(extrasDiff, staleCtx))
-                    return "stale_f8_extras";
                 return "score_mismatch";
-            }
 
             return "score_match";
         }

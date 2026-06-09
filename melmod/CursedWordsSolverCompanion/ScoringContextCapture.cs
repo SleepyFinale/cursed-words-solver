@@ -187,34 +187,97 @@ namespace CursedWordsSolverCompanion
 
             for (var i = previousWords.Count - 1; i >= 0; i--)
             {
-                var pathCounts = CountLettersFromHistoricPath(previousWords[i]);
-                if (pathCounts.Count > 0)
+                var letter = FirstLetterFromHistoricWord(previousWords[i]);
+                if (!string.IsNullOrEmpty(letter))
+                    return letter;
+            }
+
+            return "";
+        }
+
+        /// <summary>
+        /// Path-first parity with FirstLetterFromSubmittedWord / solver _effective_word_start_letter.
+        /// </summary>
+        internal static string FirstLetterFromHistoricWord(HistoricWord historic)
+        {
+            if (historic == null)
+                return "";
+
+            var pathFirst = FirstLetterOnHistoricPath(historic);
+            var word = GetSubmittedWordString(historic);
+            var wordFirst = FirstAlphabeticLetter(word);
+            if (
+                !string.IsNullOrEmpty(pathFirst)
+                && !string.IsNullOrEmpty(wordFirst)
+                && pathFirst != wordFirst
+            )
+                return pathFirst;
+            return !string.IsNullOrEmpty(wordFirst) ? wordFirst : pathFirst;
+        }
+
+        private static List<int> TryGetPathFromHistoric(HistoricWord historic)
+        {
+            var path = new List<int>();
+            var selections = TryGetTileSelections(historic);
+            if (selections == null)
+                return path;
+
+            foreach (var sel in selections)
+            {
+                if (sel?.SelectedTile == null)
+                    continue;
+                try
                 {
-                    foreach (var sel in TryGetTileSelections(previousWords[i]) ?? new List<TileSelection>())
+                    var coords = sel.SelectedTile.GetCoordinates();
+                    path.Add(coords.y * 5 + coords.x);
+                }
+                catch
+                {
+                    // skip bad tile
+                }
+            }
+
+            return path;
+        }
+
+        private static string FirstLetterOnHistoricPath(HistoricWord historic)
+        {
+            var path = TryGetPathFromHistoric(historic);
+            if (path.Count == 0)
+                return "";
+
+            var selections = TryGetTileSelections(historic);
+            if (selections == null)
+                return "";
+
+            const int cols = 5;
+            foreach (var idx in path)
+            {
+                if (idx < 0)
+                    continue;
+                var row = idx / cols;
+                var col = idx % cols;
+                foreach (var sel in selections)
+                {
+                    if (sel?.SelectedTile == null)
+                        continue;
+                    try
                     {
-                        if (sel?.SelectedTile == null)
+                        var coords = sel.SelectedTile.GetCoordinates();
+                        if (coords.y != row || coords.x != col)
                             continue;
-                        try
-                        {
-                            var letter = sel.SelectedTile.Letter;
-                            if (!string.IsNullOrEmpty(letter))
-                            {
-                                var key = letter.Trim().ToLowerInvariant();
-                                if (key.Length == 1 && char.IsLetter(key[0]))
-                                    return key;
-                            }
-                        }
-                        catch
-                        {
-                            // try next
-                        }
+                        var letter = sel.SelectedTile.Letter;
+                        if (string.IsNullOrEmpty(letter))
+                            continue;
+                        var key = letter.Trim().ToLowerInvariant();
+                        if (key.Length == 1 && char.IsLetter(key[0]))
+                            return key;
+                    }
+                    catch
+                    {
+                        // try next selection
                     }
                 }
-
-                var word = GetSubmittedWordString(previousWords[i]);
-                var letterFromWord = FirstAlphabeticLetter(word);
-                if (!string.IsNullOrEmpty(letterFromWord))
-                    return letterFromWord;
             }
 
             return "";

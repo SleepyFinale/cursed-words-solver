@@ -52,8 +52,8 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
-        /// Grid advance: mark metadata and re-export scoring historic from cache/live/disk.
-        /// Does not wipe submit-hook previousWords or encounter historic JSON.
+        /// Grid advance: mark metadata and re-export scoring historic from cache/live only.
+        /// Prior-grid disk historic is never copied onto the new grid.
         /// </summary>
         public static void TryClearStaleHistoricCacheOnGridAdvance(Player player)
         {
@@ -71,6 +71,8 @@ namespace CursedWordsSolverCompanion
                 ["grid_number"] = liveGrid.ToString(),
                 ["encounter_historic_source"] = "grid_advanced",
                 ["previous_word_first_letter"] = "",
+                ["historic_words"] = "",
+                ["grid_scattered_items"] = "",
             };
 
             var redUsed = RunStateExporter.TryGetRedTilesUsedEncounterPublic(player);
@@ -97,16 +99,8 @@ namespace CursedWordsSolverCompanion
                 || mergedHistoric == "[]"
             )
             {
-                var diskHistoric = RunStateExporter.TryReadRunStateExtra("historic_words");
-                if (!string.IsNullOrEmpty(diskHistoric) && diskHistoric != "[]")
-                {
-                    keys["historic_words"] = diskHistoric;
-                    keys["encounter_historic_source"] = "grid_advanced_disk";
-                }
-                else if (redUsed <= 0)
-                {
-                    keys["historic_words"] = "";
-                }
+                keys["historic_words"] = "";
+                keys["encounter_historic_source"] = "grid_advanced";
             }
 
             ApplyScoringCachedPreviousWordLetter(keys);
@@ -509,6 +503,12 @@ namespace CursedWordsSolverCompanion
                     return;
                 }
 
+                if (TryApplyGrid2DiskEncounterHistoricFallback(snapshot, player))
+                {
+                    ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
+                    return;
+                }
+
                 if (ShouldClearEncounterHistoricOnEmptyExport(snapshot))
                     ClearStaleEncounterHistoricExtras(snapshot, player, "live_empty");
                 return;
@@ -586,6 +586,58 @@ namespace CursedWordsSolverCompanion
             foreach (var kv in telescope)
                 snapshot.extras[kv.Key] = kv.Value ?? "";
             snapshot.extras["encounter_historic_source"] = source;
+            return true;
+        }
+
+        /// <summary>
+        /// Grid 2+: when live/cache historic is empty, pull encounter words from on-disk run_state
+        /// (e.g. prior-grid words merged by TryClearStaleHistoricCacheOnGridAdvance).
+        /// </summary>
+        private static bool TryApplyGrid2DiskEncounterHistoricFallback(
+            RunStateSnapshot snapshot,
+            Player player
+        )
+        {
+            if (snapshot?.extras == null || player == null)
+                return false;
+
+            var grid = ResolveGridNumber(player);
+            if (grid < 2)
+                return false;
+
+            string curHistoric;
+            snapshot.extras.TryGetValue("historic_words", out curHistoric);
+            if (!string.IsNullOrEmpty(curHistoric) && curHistoric != "[]")
+                return false;
+
+            if (ShouldClearEncounterHistoricOnEmptyExport(snapshot))
+                return false;
+
+            var diskFallback = new Dictionary<string, string>();
+            foreach (var kv in snapshot.extras)
+                diskFallback[kv.Key] = kv.Value ?? "";
+
+            MergeOnDiskEncounterHistoricInto(diskFallback);
+            TryMergeCachedEncounterHistoricIntoKeys(diskFallback, player, grid);
+
+            string diskHistoric;
+            if (
+                !diskFallback.TryGetValue("historic_words", out diskHistoric)
+                || string.IsNullOrEmpty(diskHistoric)
+                || diskHistoric == "[]"
+            )
+                return false;
+
+            snapshot.extras["historic_words"] = diskHistoric;
+
+            string diskRed;
+            if (
+                diskFallback.TryGetValue("red_tiles_used_encounter", out diskRed)
+                && !string.IsNullOrEmpty(diskRed)
+            )
+                snapshot.extras["red_tiles_used_encounter"] = diskRed;
+
+            snapshot.extras["encounter_historic_source"] = "grid2_disk_fallback";
             return true;
         }
 
@@ -677,6 +729,17 @@ namespace CursedWordsSolverCompanion
             if (scoringPrevious == null || scoringPrevious.Count == 0)
             {
                 ClearGridOneStaleEncounterHistoric(extras);
+                string histJson;
+                if (
+                    extras.TryGetValue("historic_words", out histJson)
+                    && !string.IsNullOrEmpty(histJson)
+                    && histJson != "[]"
+                )
+                {
+                    var prevFromHist = FirstLetterFromHistoricJson(histJson);
+                    if (!string.IsNullOrEmpty(prevFromHist))
+                        extras["previous_word_first_letter"] = prevFromHist;
+                }
                 return;
             }
 
@@ -1156,6 +1219,7 @@ namespace CursedWordsSolverCompanion
                     projected[kv.Key] = kv.Value ?? "";
             }
 
+            ApplyScoringCachedPreviousWordLetter(projected);
             return projected;
         }
 

@@ -23,7 +23,12 @@ from cursed_words_solver.suggestion import (
     f8_prior_suggestion_stale_note,
     f8_should_block_save,
     grid_advanced_since_last_f8_warning,
+    grid_one_historic_cache_mismatch_warning,
+    grid_transition_workflow_bleed_warning,
+    is_disk_catchup_drift,
+    is_embed_stale_drift,
     loadout_needs_encounter_historic,
+    loadout_needs_previous_word_letter,
     historic_previous_letter_mismatch_warning,
     is_export_catchup_drift,
     poll_invalidate_last_suggestion,
@@ -472,6 +477,61 @@ def test_merge_encounter_historic_for_f8_snapshot_from_disk(tmp_path, monkeypatc
     assert merged is not None
     assert merged["extras"]["historic_words"] == '[{"word":"beedie","score":808}]'
     assert merged["extras"]["previous_word_first_letter"] == "b"
+
+
+def test_merge_encounter_historic_with_retry_force_disk_ahead_grid2(
+    tmp_path, monkeypatch
+):
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        f8_historic_still_behind_disk_warning,
+        merge_encounter_historic_for_f8_with_retry,
+    )
+    from cursed_words_solver.suggestion import f8_should_block_save
+
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps(
+            {
+                "extras": {
+                    "historic_words": '[{"word":"prior","score":10}]',
+                    "previous_word_first_letter": "p",
+                    "grid_number": "2",
+                    "encounter_historic_source": "live",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    embed = {
+        "extras": {
+            "historic_words": "",
+            "grid_number": "2",
+            "encounter_historic_source": "live",
+        }
+    }
+    merged, stale = merge_encounter_historic_for_f8_with_retry(
+        embed, max_retries=1, delay_sec=0
+    )
+    assert stale is None
+    assert merged is not None
+    assert merged["extras"]["historic_words"] == '[{"word":"prior","score":10}]'
+    assert merged["extras"]["previous_word_first_letter"] == "p"
+    behind = f8_historic_still_behind_disk_warning(merged["extras"])
+    blocked, _ = f8_should_block_save(
+        historic_catchup_stale_note=None,
+        empty_hist_warn=None,
+        hist_stale_note=None,
+        behind_disk_warn=behind,
+        workflow_stale_warn=None,
+        grid_adv_warn=None,
+        loadout=None,
+        board=None,
+        f8_extras=merged["extras"],
+    )
+    assert blocked is False
+    assert behind is None
 
 
 def test_describe_f8_historic_catchup_pissers_grid3(tmp_path, monkeypatch):
@@ -1535,19 +1595,20 @@ def test_glaived_grid4_first_word_limnophila_off():
         pytest.skip("glaived grid4 fixture not present")
 
     data = json.loads(fixture_path.read_text(encoding="utf-8"))
-    run_state = prepare_run_state_dict_for_scoring(data.get("run_state_snapshot") or {})
-    loadout = parse_run_state(run_state)
-    board = parse_board_from_run_state(run_state)
-    assert loadout is not None and board is not None
+    raw_snapshot = data.get("run_state_snapshot") or {}
+    board = parse_board_from_run_state(raw_snapshot)
+    assert board is not None
 
     path = data["path"]
     word = data["word"]
     pipeline = ScoringPipeline()
 
-    stale_score, stale_trace = pipeline.score(board, path, word, loadout)
+    stale_loadout = parse_run_state(raw_snapshot)
+    stale_score, stale_trace = pipeline.score(board, path, word, stale_loadout)
     assert stale_score == data["predicted_score_stale"]
 
-    loadout.extras["scoring_previous_words_count"] = "0"
+    run_state = prepare_run_state_dict_for_scoring(dict(raw_snapshot))
+    loadout = parse_run_state(run_state)
     fixed_score, fixed_trace = pipeline.score(board, path, word, loadout)
     assert fixed_score == data["actual_score"]
     assert fixed_score == 18
@@ -2051,3 +2112,422 @@ def test_f8_should_block_when_telescope_and_historic_still_empty():
     )
     assert blocked
     assert reason == empty_warn
+
+
+def test_f8_should_block_grid2_empty_historic_without_telescope():
+    """Rodman-like grid 2: melmod blocks historic lag even without Telescope/Movie Camera."""
+    from cursed_words_solver.models import Board, Loadout
+
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    loadout = Loadout(extras={"grid_number": "2"})
+    empty_warn = empty_historic_on_later_grid_warning(
+        {"grid_number": "2", "historic_words": ""}
+    )
+    assert empty_warn is not None
+    assert not loadout_needs_encounter_historic(loadout, board)
+    blocked, reason = f8_should_block_save(
+        historic_catchup_stale_note=None,
+        empty_hist_warn=empty_warn,
+        hist_stale_note=None,
+        behind_disk_warn=None,
+        workflow_stale_warn=None,
+        grid_adv_warn=None,
+        loadout=loadout,
+        board=board,
+        f8_extras={"grid_number": "2", "historic_words": ""},
+    )
+    assert blocked
+    assert reason == empty_warn
+
+
+def test_loadout_needs_previous_word_letter_grid1_bento_off():
+    from cursed_words_solver.models import Loadout, LoadoutItem
+
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras={
+            "grid_number": "1",
+            "previous_word_first_letter": "f",
+            "historic_words": '[{"word":"oATIpFY","score":25}]',
+        },
+    )
+    assert not loadout_needs_previous_word_letter(loadout)
+
+
+def test_f8_should_not_block_prev_letter_mismatch_grid1_bento():
+    from cursed_words_solver.loadout import f8_historic_stale_after_merge_warning
+    from cursed_words_solver.models import Board, Loadout, LoadoutItem
+
+    extras = {
+        "grid_number": "1",
+        "previous_word_first_letter": "f",
+        "historic_words": (
+            '[{"word":"oUERIoE","score":10,"path":[8,3,7,11,10,5,0]},'
+            '{"word":"oATIpFY","score":25,"path":[7,2,1,6,5,10,11]}]'
+        ),
+        "scoring_previous_words_count": "2",
+    }
+    hist_stale = f8_historic_stale_after_merge_warning(extras)
+    assert hist_stale is not None
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras=extras,
+    )
+    blocked, reason = f8_should_block_save(
+        historic_catchup_stale_note=None,
+        empty_hist_warn=None,
+        hist_stale_note=hist_stale,
+        behind_disk_warn=None,
+        workflow_stale_warn=None,
+        grid_adv_warn=None,
+        loadout=loadout,
+        board=Board(tiles=[[None] * 5 for _ in range(5)], money=0),
+        f8_extras=extras,
+    )
+    assert not blocked
+    assert reason is None
+
+
+def test_f8_should_block_prev_letter_mismatch_grid2_bento():
+    from cursed_words_solver.loadout import f8_historic_stale_after_merge_warning
+    from cursed_words_solver.models import Board, Loadout, LoadoutItem
+
+    extras = {
+        "grid_number": "2",
+        "previous_word_first_letter": "f",
+        "historic_words": '[{"word":"oATIpFY","score":25,"path":[7,2,1,6,5,10,11]}]',
+        "scoring_previous_words_count": "1",
+    }
+    hist_stale = f8_historic_stale_after_merge_warning(extras)
+    assert hist_stale is not None
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras=extras,
+    )
+    assert loadout_needs_previous_word_letter(loadout)
+    blocked, reason = f8_should_block_save(
+        historic_catchup_stale_note=None,
+        empty_hist_warn=None,
+        hist_stale_note=hist_stale,
+        behind_disk_warn=None,
+        workflow_stale_warn=None,
+        grid_adv_warn=None,
+        loadout=loadout,
+        board=Board(tiles=[[None] * 5 for _ in range(5)], money=0),
+        f8_extras=extras,
+    )
+    assert blocked
+    assert reason == hist_stale
+
+
+def _collect_workflow_drift_notes_for_capture(
+    extras_diff: dict[str, dict[str, str]],
+    *,
+    has_mutating_dna_stamp: bool = True,
+) -> list[str]:
+    """Workflow keys only — mirror melmod CollectWorkflowDriftNotes."""
+    notes: list[str] = []
+    if entry := extras_diff.get("historic_words"):
+        f8_raw = str(entry.get("f8", "") or "").strip()
+        submit_raw = str(entry.get("submit", "") or "").strip()
+        if f8_raw != submit_raw and (f8_raw or submit_raw):
+            notes.append("historic_words changed")
+
+    if has_mutating_dna_stamp:
+        if entry := extras_diff.get("mutating_dna_letter_counts"):
+            f8_raw = str(entry.get("f8", "") or "")
+            submit_raw = str(entry.get("submit", "") or "")
+            if not _mutating_dna_letter_counts_equal(f8_raw, submit_raw):
+                notes.append("mutating_dna_letter_counts changed")
+
+    if entry := extras_diff.get("previous_word_first_letter"):
+        f8_raw = str(entry.get("f8", "") or "").strip()
+        submit_raw = str(entry.get("submit", "") or "").strip()
+        if f8_raw and submit_raw and f8_raw.lower() != submit_raw.lower():
+            notes.append(
+                f"previous_word_first_letter f8='{f8_raw}' submit='{submit_raw}'"
+            )
+
+    if entry := extras_diff.get("scoring_previous_words_count"):
+        try:
+            f8_count = int(str(entry.get("f8", "") or "0"))
+            submit_count = int(str(entry.get("submit", "") or "0"))
+        except ValueError:
+            f8_count = submit_count = 0
+        if f8_count > submit_count:
+            notes.append(
+                f"scoring_previous_words_count f8={f8_count} submit={submit_count}"
+            )
+
+    return notes
+
+
+def _describe_stale_f8_workflow_drift_capture_block(
+    extras_diff: dict[str, dict[str, str]],
+    *,
+    has_mutating_dna_stamp: bool = True,
+) -> str | None:
+    """Mirror melmod DescribeStaleF8WorkflowDrift for pre-sync capture block."""
+    notes = _collect_workflow_drift_notes_for_capture(
+        extras_diff,
+        has_mutating_dna_stamp=has_mutating_dna_stamp,
+    )
+    if not notes:
+        return None
+    return (
+        "F8 snapshot stale — played word(s) since F8 — press F8 again "
+        "before submitting the overlay suggestion (" + "; ".join(notes) + ")"
+    )
+
+
+def test_presync_workflow_drift_blocks_capture_satisfy_fixture():
+    """satisfy f8#401: stale embed (prev=u) vs submit (prev=f) must block before sync."""
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260609_104918.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    diff = data["extras_diff"]
+    note = _describe_stale_f8_workflow_drift_capture_block(diff)
+    assert note is not None
+    assert "previous_word_first_letter f8='u' submit='f'" in note
+    assert "historic_words changed" in note
+    assert data["stale_f8_extras"] is True
+    assert data["predicted_score"] == 17
+    assert data["actual_score"] == 25
+
+
+def test_satisfy_stale_f8_solver_matches_stale_prediction_on_merged_snapshot():
+    """Merged submit extras replay scores 17 (= stale F8); 25 was in-game Bento on pre-submit board."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.pipeline import ScoringPipeline
+    from cursed_words_solver.rules.scoring_conditions import (
+        apply_snapshot_phased_session_extras,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260609_104918.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(dict(data["run_state_snapshot"]))
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    apply_snapshot_phased_session_extras(loadout, board)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == data["predicted_score"] == 17
+    assert data["actual_score"] == 25
+    assert data["stale_f8_extras"] is True
+
+
+def test_is_embed_stale_drift_historic_shrink():
+    f8 = {"historic_words": '[{"word":"a"},{"word":"b"}]'}
+    cur = {"historic_words": '[{"word":"c"}]'}
+    assert is_embed_stale_drift(f8, cur)
+    assert not is_disk_catchup_drift(f8, cur)
+
+
+def test_is_embed_stale_drift_scattered_cleared():
+    f8 = {
+        "historic_words": '[{"word":"a"}]',
+        "grid_scattered_items": '[{"row":0,"col":1,"id":"telescope","level":1}]',
+    }
+    cur = {"historic_words": '[{"word":"a"}]', "grid_scattered_items": ""}
+    assert is_embed_stale_drift(f8, cur)
+    assert not is_disk_catchup_drift(f8, cur)
+
+
+def test_poll_clears_immediately_on_historic_shrink_within_grace(
+    tmp_path, monkeypatch
+):
+    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
+    board_fp = "board-shrink-test"
+    created = datetime.now(timezone.utc).isoformat()
+    suggestion_path.write_text(
+        json.dumps(
+            {
+                "created_at": created,
+                "board_fingerprint": board_fp,
+                "run_state_snapshot": {
+                    "extras": {
+                        "historic_words": '[{"word":"a"},{"word":"b"}]',
+                        "previous_word_first_letter": "f",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    poll_extras = {
+        "historic_words": '[{"word":"c"}]',
+        "previous_word_first_letter": "m",
+    }
+    assert not workflow_invalidate_suppressed_for_export_catchup(
+        poll_extras,
+        current_board_fp=board_fp,
+    )
+    reason = poll_invalidate_last_suggestion(
+        poll_extras,
+        current_board_fp=board_fp,
+    )
+    assert reason is not None
+    assert "Played word since F8" in reason
+    assert not suggestion_path.exists()
+
+
+def test_diets_grid2_bleed_fixture():
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_diets_grid2_bleed.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    bleed = grid_transition_workflow_bleed_warning(data["run_state_extras"])
+    assert bleed is not None
+    for fragment in data["expected_bleed_warning_contains"]:
+        assert fragment in bleed
+    blocked, reason = f8_should_block_save(
+        historic_catchup_stale_note=None,
+        empty_hist_warn=None,
+        hist_stale_note=None,
+        behind_disk_warn=None,
+        workflow_stale_warn=None,
+        grid_adv_warn=None,
+        grid_bleed_warn=bleed,
+        loadout=None,
+        board=None,
+        f8_extras=data["run_state_extras"],
+    )
+    assert blocked
+    assert reason == bleed
+    note = _describe_stale_f8_workflow_drift_capture_block(
+        data["extras_diff"],
+        has_mutating_dna_stamp=False,
+    )
+    assert note is not None
+    for fragment in data["expected_stale_note_contains"]:
+        assert fragment in note
+
+
+def test_diets_grid2_merge_prefers_disk_historic(tmp_path, monkeypatch):
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        merge_encounter_historic_for_f8_snapshot,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_diets_grid2_bleed.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps({"extras": data["disk_extras"]}),
+        encoding="utf-8",
+    )
+    embed = {
+        "extras": {
+            "historic_words": data["run_state_extras"]["historic_words"],
+            "grid_number": "2",
+            "encounter_historic_source": "grid_advanced_disk",
+            "scoring_previous_words_count": "4",
+        }
+    }
+    merged = merge_encounter_historic_for_f8_snapshot(embed)
+    assert merged is not None
+    assert merged["extras"]["historic_words"] == data["disk_extras"]["historic_words"]
+    assert merged["extras"].get("grid_scattered_items", "") == ""
+
+
+def test_grid_one_historic_cache_mismatch_warning():
+    extras = {
+        "grid_number": "1",
+        "historic_words": (
+            '[{"word":"rectifies","red_tile_count":6},'
+            '{"word":"balistas","red_tile_count":7},'
+            '{"word":"zephyrs","red_tile_count":8}]'
+        ),
+        "scoring_previous_words_count": "0",
+        "encounter_historic_source": "live",
+    }
+    note = grid_one_historic_cache_mismatch_warning(extras)
+    assert note is not None
+    assert "Grid 1" in note
+    assert "scoring cache" in note.lower()
+    assert note in run_state_historic_stale_warnings(extras)
+
+
+def test_f8_should_block_grid_one_historic_cache_mismatch_with_telescope():
+    from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
+
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    board.tiles[2][2] = Tile(
+        2,
+        2,
+        "t",
+        "E",
+        0,
+        color=TileColor.RED,
+        curse=CurseType.ITEM,
+        metadata={"scattered_item_id": "telescope", "scattered_item_level": 1},
+    )
+    loadout = Loadout(extras={"grid_number": "1"})
+    f8_extras = {
+        "grid_number": "1",
+        "historic_words": '[{"word":"zephyrs","red_tile_count":8}]',
+        "scoring_previous_words_count": "0",
+    }
+    grid_one_warn = grid_one_historic_cache_mismatch_warning(f8_extras)
+    assert grid_one_warn is not None
+    blocked, reason = f8_should_block_save(
+        historic_catchup_stale_note=None,
+        empty_hist_warn=None,
+        hist_stale_note=None,
+        behind_disk_warn=None,
+        workflow_stale_warn=None,
+        grid_adv_warn=None,
+        grid_bleed_warn=None,
+        grid_one_hist_warn=grid_one_warn,
+        loadout=loadout,
+        board=board,
+        f8_extras=f8_extras,
+    )
+    assert blocked
+    assert reason == grid_one_warn
+
+
+def test_spc_regression_blocks_capture():
+    diff = {
+        "scoring_previous_words_count": {"f8": "3", "submit": "0"},
+    }
+    note = _describe_stale_f8_workflow_drift_capture_block(diff, has_mutating_dna_stamp=False)
+    assert note is not None
+    assert "scoring_previous_words_count f8=3 submit=0" in note
+
+
+def test_bostangi_historic_shrink_fixture():
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_bostangi_historic_shrink.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    assert is_embed_stale_drift(data["f8_embed_extras"], data["live_extras"])
+    note = _describe_stale_f8_workflow_drift_capture_block(
+        data["extras_diff"],
+        has_mutating_dna_stamp=False,
+    )
+    assert note is not None
+    for fragment in data["expected_capture_block_contains"]:
+        assert fragment in note
+    assert data["predicted_score"] == data["actual_score"]
