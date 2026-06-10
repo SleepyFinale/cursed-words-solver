@@ -1105,6 +1105,8 @@ def reconcile_scoring_previous_words_count(extras: dict[str, Any]) -> None:
     spc = _scoring_previous_words_count_from_extras(extras)
     if hist_count == 0 and spc > 0:
         extras["scoring_previous_words_count"] = "0"
+    elif hist_count > 0 and spc > hist_count:
+        extras["scoring_previous_words_count"] = str(hist_count)
 
 
 def reconcile_historic_after_grid_advance(extras: dict[str, Any]) -> bool:
@@ -1645,6 +1647,57 @@ def f8_historic_still_behind_disk_warning(
     )
 
 
+def project_workflow_extras_for_f8_embed(
+    extras: dict[str, Any],
+    *,
+    board: Board | None = None,
+) -> None:
+    """Shrink F8 embed workflow extras to melmod submit-time projection."""
+    fresh = load_run_state_raw()
+    if not isinstance(fresh, dict):
+        return
+    fresh_extras = fresh.get("extras")
+    if not isinstance(fresh_extras, dict):
+        return
+
+    projected = copy.deepcopy(fresh_extras)
+    reconcile_encounter_historic_for_scoring(projected, board=board)
+
+    embed_hist = str(extras.get("historic_words", "") or "").strip()
+    proj_hist = str(projected.get("historic_words", "") or "").strip()
+    embed_grid = _grid_number_from_extras(extras)
+    proj_grid = _grid_number_from_extras(projected)
+
+    preferred = _historic_words_json_prefer_fresh(
+        embed_hist,
+        proj_hist,
+        embed_grid=embed_grid,
+        fresh_grid=proj_grid,
+    )
+    if preferred is not None:
+        _apply_fresh_encounter_historic_to_extras(extras, projected, preferred)
+    elif (
+        proj_hist
+        and proj_hist != embed_hist
+        and _historic_words_count(proj_hist) < _historic_words_count(embed_hist)
+    ):
+        _apply_fresh_encounter_historic_to_extras(extras, projected, proj_hist)
+
+    embed_spc = _scoring_previous_words_count_from_extras(extras)
+    proj_spc = _scoring_previous_words_count_from_extras(projected)
+    if embed_spc > proj_spc:
+        extras["scoring_previous_words_count"] = str(proj_spc)
+
+    reconcile_scoring_previous_words_count(extras)
+    hist = str(extras.get("historic_words", "") or "").strip()
+    last_from_hist = _previous_letter_from_historic_words(hist)
+    spc = _scoring_previous_words_count_from_extras(extras)
+    if last_from_hist and spc > 0:
+        extras["previous_word_first_letter"] = last_from_hist
+    else:
+        reconcile_previous_word_first_letter_from_historic(extras)
+
+
 def sanitize_run_state_snapshot_for_f8(
     run_state: dict | None,
     loadout: Loadout,
@@ -1689,6 +1742,7 @@ def sanitize_run_state_snapshot_for_f8(
     reconcile_previous_word_first_letter_from_historic(extras)
     board = parse_board_from_run_state(snapshot)
     reconcile_encounter_historic_for_scoring(extras, board=board)
+    project_workflow_extras_for_f8_embed(extras, board=board)
     from cursed_words_solver.fingerprints import loadout_fingerprint as _loadout_fp
 
     extras["loadout_fingerprint"] = _loadout_fp(loadout)

@@ -202,6 +202,9 @@ class SolverApp:
         self.overlay.request_quit.connect(self._shutdown)
         self._overlay_regions = resolve_overlay_regions(None, config)
         self._rack_collapse_warned = False
+        from cursed_words_solver.round_log import round_log_index_size
+
+        self._round_log_index_offset = round_log_index_size()
         atexit.register(keyboard.unhook_all)
         atexit.register(self._shutdown_search_pool)
 
@@ -490,6 +493,23 @@ class SolverApp:
 
     def _poll_run_state_stale(self) -> None:
         """Invalidate stale F8 suggestions and drop highlights when run_state drifts."""
+        from cursed_words_solver.round_log import poll_round_log_submits
+
+        entries, self._round_log_index_offset = poll_round_log_submits(
+            self._round_log_index_offset
+        )
+        if entries:
+            clear_last_suggestion()
+            self._last_invalidation_reason = "word_submitted"
+            self._clear_highlight_state()
+            self.overlay.show_stale_notice(
+                "Word submitted — press F8 again before next overlay word."
+            )
+            print(
+                "  Word submitted — overlay cleared; press F8 again.",
+                flush=True,
+            )
+
         if self._solve_active:
             return
 

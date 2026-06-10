@@ -266,6 +266,218 @@ namespace CursedWordsSolverCompanion
 
         /// <summary>
 
+        /// True when F8 embed is longer than submit projection (benign shrink), not played-since-F8 drift.
+
+        /// </summary>
+
+        public static bool IsBenignWorkflowShrinkDrift(
+
+            Dictionary<string, object> extrasDiff,
+
+            StaleF8Context ctx
+
+        )
+
+        {
+
+            if (extrasDiff == null || extrasDiff.Count == 0)
+
+                return false;
+
+
+
+            if (extrasDiff.TryGetValue("previous_word_first_letter", out var letterRaw))
+
+            {
+
+                var letterEntry = letterRaw as Dictionary<string, string>;
+
+                if (letterEntry != null)
+
+                {
+
+                    string f8Letter;
+
+                    string submitLetter;
+
+                    letterEntry.TryGetValue("f8", out f8Letter);
+
+                    letterEntry.TryGetValue("submit", out submitLetter);
+
+                    f8Letter = (f8Letter ?? "").Trim();
+
+                    submitLetter = (submitLetter ?? "").Trim();
+
+                    if (
+
+                        !string.IsNullOrEmpty(f8Letter)
+
+                        && !string.IsNullOrEmpty(submitLetter)
+
+                        && !string.Equals(f8Letter, submitLetter, StringComparison.OrdinalIgnoreCase)
+
+                    )
+
+                        return false;
+
+                }
+
+            }
+
+
+
+            if (
+
+                ctx != null
+
+                && ctx.HasMutatingDnaStamp
+
+                && extrasDiff.TryGetValue("mutating_dna_letter_counts", out var dnaRaw)
+
+            )
+
+            {
+
+                var dnaEntry = dnaRaw as Dictionary<string, string>;
+
+                if (dnaEntry != null)
+
+                {
+
+                    string f8Dna;
+
+                    string submitDna;
+
+                    dnaEntry.TryGetValue("f8", out f8Dna);
+
+                    dnaEntry.TryGetValue("submit", out submitDna);
+
+                    if (!MutatingDnaLetterCountsEqual(f8Dna, submitDna))
+
+                        return false;
+
+                }
+
+            }
+
+
+
+            var hasShrink = false;
+
+
+
+            if (extrasDiff.TryGetValue("historic_words", out var histRaw))
+
+            {
+
+                var histEntry = histRaw as Dictionary<string, string>;
+
+                if (histEntry != null)
+
+                {
+
+                    string f8Hist;
+
+                    string submitHist;
+
+                    histEntry.TryGetValue("f8", out f8Hist);
+
+                    histEntry.TryGetValue("submit", out submitHist);
+
+                    var f8Count = CountHistoricWordsInJson((f8Hist ?? "").Trim());
+
+                    var submitCount = CountHistoricWordsInJson((submitHist ?? "").Trim());
+
+                    if (submitCount > f8Count)
+
+                        return false;
+
+                    if (
+
+                        f8Count > submitCount
+
+                        || (
+
+                            f8Count == submitCount
+
+                            && !string.Equals(
+
+                                (f8Hist ?? "").Trim(),
+
+                                (submitHist ?? "").Trim(),
+
+                                StringComparison.Ordinal
+
+                            )
+
+                            && (f8Count > 0 || submitCount > 0)
+
+                        )
+
+                    )
+
+                        hasShrink = true;
+
+                }
+
+            }
+
+
+
+            if (extrasDiff.TryGetValue("scoring_previous_words_count", out var spcRaw))
+
+            {
+
+                var spcEntry = spcRaw as Dictionary<string, string>;
+
+                if (spcEntry != null)
+
+                {
+
+                    int f8Count;
+
+                    int submitCount;
+
+                    int.TryParse(
+
+                        (spcEntry.TryGetValue("f8", out var f8Spc) ? f8Spc : null) ?? "0",
+
+                        out f8Count
+
+                    );
+
+                    int.TryParse(
+
+                        (spcEntry.TryGetValue("submit", out var submitSpc) ? submitSpc : null)
+
+                            ?? "0",
+
+                        out submitCount
+
+                    );
+
+                    if (submitCount > f8Count)
+
+                        return false;
+
+                    if (f8Count > submitCount)
+
+                        hasShrink = true;
+
+                }
+
+            }
+
+
+
+            return hasShrink;
+
+        }
+
+
+
+        /// <summary>
+
         /// Bicycle accumulator drift when the Bicycle pin is equipped.
 
         /// </summary>

@@ -218,6 +218,7 @@ Word length is derived automatically per solve: minimum is 1, maximum is the act
 
 ### Troubleshooting
 
+- **Stale overlay after submitting a word** — Press **F8** once per word before tracing the green path. After melmod logs a submit (`score_match` or `stale_f8_extras`), the overlay shows **STALE — press F8** until you solve again; `stale_f8_extras` in `round_logs/index.jsonl` is expected if you used an old F8 suggestion without refreshing.
 - **Wrong words with melmod** — **F7** in-game, then **F8** again; check `run_state.json` has a `board` with 25 tiles.
 - **F8 does nothing** — Install/rebuild melmod, start a run, press **F7**, then **F8** again.
 - **Overlay stuck on “Press F8 to solve”** — Restart the solver; check the terminal for `Done in … Best: WORD` after **F8**.

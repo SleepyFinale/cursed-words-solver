@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
+
+from cursed_words_solver.config import ROUND_LOG_INDEX_PATH
 
 MATCH_STATUSES = frozenset(
     {
@@ -12,8 +15,51 @@ MATCH_STATUSES = frozenset(
         "path_extension",
         "no_suggestion",
         "suggestion_blocked",
+        "stale_f8_extras",
     }
 )
+
+
+def round_log_index_size() -> int:
+    """Current byte length of the append-only round log index."""
+    try:
+        return ROUND_LOG_INDEX_PATH.stat().st_size
+    except OSError:
+        return 0
+
+
+def poll_round_log_submits(since_offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+    """Read new lines from round_logs/index.jsonl since since_offset."""
+    path = ROUND_LOG_INDEX_PATH
+    if not path.exists():
+        return [], since_offset
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return [], since_offset
+    if size < since_offset:
+        since_offset = 0
+    if size == since_offset:
+        return [], since_offset
+    try:
+        with path.open("rb") as handle:
+            handle.seek(since_offset)
+            chunk = handle.read()
+    except OSError:
+        return [], since_offset
+    new_offset = since_offset + len(chunk)
+    entries: list[dict[str, Any]] = []
+    for line in chunk.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            row = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            entries.append(row)
+    return entries, new_offset
 
 
 def derive_match_status(

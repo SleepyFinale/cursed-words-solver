@@ -220,13 +220,34 @@ namespace CursedWordsSolverCompanion
             );
             if (!string.IsNullOrEmpty(preSyncWorkflowStale))
             {
-                MelonLogger.Warning(preSyncWorkflowStale);
-                MelonLogger.Warning(
-                    "Blocking score capture — workflow drift; press F8 again before submitting overlay."
-                );
-                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
-                _active = false;
-                return;
+                if (ExtrasDiffHelper.IsBenignWorkflowShrinkDrift(preSyncDiff, staleCtx))
+                {
+                    SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
+                        _suggestion,
+                        authoritativeExtras
+                    );
+                    _originalF8ExtrasForDiff = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                        _suggestion?.run_state_snapshot
+                    );
+                    preSyncDiff = ExtrasDiffHelper.DiffExtras(
+                        _originalF8ExtrasForDiff,
+                        authoritativeExtras
+                    );
+                    preSyncWorkflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(
+                        preSyncDiff,
+                        staleCtx
+                    );
+                }
+                if (!string.IsNullOrEmpty(preSyncWorkflowStale))
+                {
+                    MelonLogger.Warning(preSyncWorkflowStale);
+                    MelonLogger.Warning(
+                        "Blocking score capture — workflow drift; press F8 again before submitting overlay."
+                    );
+                    SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                    _active = false;
+                    return;
+                }
             }
 
             SuggestionMatcher.TrySyncWorkflowExtrasToProjected(

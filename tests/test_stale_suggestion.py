@@ -2776,3 +2776,472 @@ def test_bostangi_historic_shrink_fixture():
     for fragment in data["expected_capture_block_contains"]:
         assert fragment in note
     assert data["predicted_score"] == data["actual_score"]
+
+
+def _is_benign_workflow_shrink_drift(
+    extras_diff: dict[str, dict[str, str]],
+    *,
+    has_mutating_dna_stamp: bool = True,
+) -> bool:
+    """Mirror melmod ExtrasDiffHelper.IsBenignWorkflowShrinkDrift."""
+    if not extras_diff:
+        return False
+
+    if entry := extras_diff.get("previous_word_first_letter"):
+        f8_raw = str(entry.get("f8", "") or "").strip()
+        submit_raw = str(entry.get("submit", "") or "").strip()
+        if f8_raw and submit_raw and f8_raw.lower() != submit_raw.lower():
+            return False
+
+    if has_mutating_dna_stamp:
+        if entry := extras_diff.get("mutating_dna_letter_counts"):
+            f8_raw = str(entry.get("f8", "") or "")
+            submit_raw = str(entry.get("submit", "") or "")
+            if not _mutating_dna_letter_counts_equal(f8_raw, submit_raw):
+                return False
+
+    has_shrink = False
+
+    if entry := extras_diff.get("historic_words"):
+        from cursed_words_solver.loadout import _historic_words_count
+
+        f8_raw = str(entry.get("f8", "") or "").strip()
+        submit_raw = str(entry.get("submit", "") or "").strip()
+        f8_count = _historic_words_count(f8_raw)
+        submit_count = _historic_words_count(submit_raw)
+        if submit_count > f8_count:
+            return False
+        if f8_count > submit_count:
+            has_shrink = True
+        elif f8_raw != submit_raw and (f8_count > 0 or submit_count > 0):
+            has_shrink = True
+
+    if entry := extras_diff.get("scoring_previous_words_count"):
+        try:
+            f8_count = int(str(entry.get("f8", "") or "0"))
+            submit_count = int(str(entry.get("submit", "") or "0"))
+        except ValueError:
+            f8_count = submit_count = 0
+        if submit_count > f8_count:
+            return False
+        if f8_count > submit_count:
+            has_shrink = True
+
+    return has_shrink
+
+
+def test_poll_round_log_submits_tails_index(tmp_path, monkeypatch):
+    from cursed_words_solver.round_log import poll_round_log_submits
+
+    index_path = tmp_path / "index.jsonl"
+    monkeypatch.setattr("cursed_words_solver.round_log.ROUND_LOG_INDEX_PATH", index_path)
+
+    entries, offset = poll_round_log_submits(0)
+    assert entries == []
+    assert offset == 0
+
+    line1 = json.dumps(
+        {
+            "round_id": "20260609_120000_001",
+            "match_status": "score_match",
+            "submitted_word": "alpha",
+            "solver_word": "alpha",
+        }
+    )
+    index_path.write_text(line1 + "\n", encoding="utf-8")
+
+    entries, offset = poll_round_log_submits(0)
+    assert len(entries) == 1
+    assert entries[0]["match_status"] == "score_match"
+    assert offset == index_path.stat().st_size
+
+    line2 = json.dumps(
+        {
+            "round_id": "20260609_120001_002",
+            "match_status": "stale_f8_extras",
+            "submitted_word": "beta",
+            "solver_word": "gamma",
+        }
+    )
+    with index_path.open("a", encoding="utf-8") as handle:
+        handle.write(line2 + "\n")
+
+    entries, new_offset = poll_round_log_submits(offset)
+    assert len(entries) == 1
+    assert entries[0]["match_status"] == "stale_f8_extras"
+    assert new_offset == index_path.stat().st_size
+
+
+def test_is_benign_workflow_shrink_joey_fixture():
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "stale_f8_joey_shorter_submit.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    diff = dict(data["extras_diff"])
+    diff["scoring_previous_words_count"] = {"f8": "3", "submit": "1"}
+    diff["previous_word_first_letter"] = {"f8": "t", "submit": "t"}
+    assert _is_benign_workflow_shrink_drift(diff, has_mutating_dna_stamp=False)
+
+
+def test_is_benign_workflow_shrink_false_on_letter_mismatch():
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260609_104918.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    assert not _is_benign_workflow_shrink_drift(data["extras_diff"])
+
+
+def test_project_workflow_extras_for_f8_embed_joey(tmp_path, monkeypatch):
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        _previous_letter_from_historic_words,
+        _scoring_previous_words_count_from_extras,
+        project_workflow_extras_for_f8_embed,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "stale_f8_joey_shorter_submit.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    f8_hist = data["extras_diff"]["historic_words"]["f8"]
+    submit_hist = data["extras_diff"]["historic_words"]["submit"]
+
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps(
+            {
+                "extras": {
+                    "historic_words": submit_hist,
+                    "grid_number": data["grid_number"],
+                    "scoring_previous_words_count": "1",
+                    "previous_word_first_letter": "t",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    extras = {
+        "historic_words": f8_hist,
+        "grid_number": data["grid_number"],
+        "scoring_previous_words_count": "3",
+        "previous_word_first_letter": "c",
+    }
+    project_workflow_extras_for_f8_embed(extras, board=None)
+    assert extras["historic_words"] == submit_hist
+    assert _scoring_previous_words_count_from_extras(extras) == 1
+    assert (
+        extras.get("previous_word_first_letter")
+        == _previous_letter_from_historic_words(submit_hist)
+    )
+
+
+def test_sanitize_run_state_snapshot_for_f8_projects_workflow_extras(
+    tmp_path, monkeypatch
+):
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        sanitize_run_state_snapshot_for_f8,
+        _scoring_previous_words_count_from_extras,
+    )
+    from cursed_words_solver.models import Loadout
+
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "stale_f8_joey_shorter_submit.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    f8_hist = data["extras_diff"]["historic_words"]["f8"]
+    submit_hist = data["extras_diff"]["historic_words"]["submit"]
+
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps(
+            {
+                "extras": {
+                    "historic_words": submit_hist,
+                    "grid_number": data["grid_number"],
+                    "scoring_previous_words_count": "1",
+                    "previous_word_first_letter": "t",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    embed = {
+        "extras": {
+            "historic_words": f8_hist,
+            "grid_number": data["grid_number"],
+            "scoring_previous_words_count": "3",
+            "previous_word_first_letter": "c",
+        }
+    }
+    sanitized = sanitize_run_state_snapshot_for_f8(embed, Loadout())
+    assert sanitized is not None
+    assert sanitized["extras"]["historic_words"] == submit_hist
+    assert _scoring_previous_words_count_from_extras(sanitized["extras"]) == 1
+
+
+def test_benign_shrink_presync_workflow_cleared_after_projection():
+    """C# parity: benign shrink syncs before block — projected diff has no workflow drift."""
+    diff = {
+        "historic_words": {
+            "f8": '[{"word":"A"},{"word":"B"},{"word":"C"}]',
+            "submit": '[{"word":"TIFFANY"}]',
+        },
+        "scoring_previous_words_count": {"f8": "3", "submit": "1"},
+        "previous_word_first_letter": {"f8": "t", "submit": "t"},
+    }
+    assert _is_benign_workflow_shrink_drift(diff, has_mutating_dna_stamp=False)
+    projected_diff = {
+        "historic_words": {
+            "f8": diff["historic_words"]["submit"],
+            "submit": diff["historic_words"]["submit"],
+        },
+        "scoring_previous_words_count": {"f8": "1", "submit": "1"},
+        "previous_word_first_letter": {"f8": "t", "submit": "t"},
+    }
+    assert _describe_stale_f8_workflow_drift_capture_block(
+        projected_diff,
+        has_mutating_dna_stamp=False,
+    ) is None
+
+
+def _is_benign_workflow_shrink_drift(
+    extras_diff: dict[str, dict[str, str]],
+    *,
+    has_mutating_dna_stamp: bool = True,
+) -> bool:
+    """Mirror melmod ExtrasDiffHelper.IsBenignWorkflowShrinkDrift."""
+    if not extras_diff:
+        return False
+
+    if entry := extras_diff.get("previous_word_first_letter"):
+        f8_raw = str(entry.get("f8", "") or "").strip()
+        submit_raw = str(entry.get("submit", "") or "").strip()
+        if f8_raw and submit_raw and f8_raw.lower() != submit_raw.lower():
+            return False
+
+    if has_mutating_dna_stamp:
+        if entry := extras_diff.get("mutating_dna_letter_counts"):
+            f8_raw = str(entry.get("f8", "") or "")
+            submit_raw = str(entry.get("submit", "") or "")
+            if not _mutating_dna_letter_counts_equal(f8_raw, submit_raw):
+                return False
+
+    has_shrink = False
+
+    if entry := extras_diff.get("historic_words"):
+        from cursed_words_solver.loadout import _historic_words_count
+
+        f8_raw = str(entry.get("f8", "") or "").strip()
+        submit_raw = str(entry.get("submit", "") or "").strip()
+        f8_count = _historic_words_count(f8_raw)
+        submit_count = _historic_words_count(submit_raw)
+        if submit_count > f8_count:
+            return False
+        if f8_count > submit_count:
+            has_shrink = True
+        elif f8_raw != submit_raw and (f8_count > 0 or submit_count > 0):
+            has_shrink = True
+
+    if entry := extras_diff.get("scoring_previous_words_count"):
+        try:
+            f8_count = int(str(entry.get("f8", "") or "0"))
+            submit_count = int(str(entry.get("submit", "") or "0"))
+        except ValueError:
+            f8_count = submit_count = 0
+        if submit_count > f8_count:
+            return False
+        if f8_count > submit_count:
+            has_shrink = True
+
+    return has_shrink
+
+
+def test_poll_round_log_submits_tails_index(tmp_path, monkeypatch):
+    from cursed_words_solver.config import ROUND_LOG_INDEX_PATH
+    from cursed_words_solver.round_log import poll_round_log_submits
+
+    index_path = tmp_path / "index.jsonl"
+    monkeypatch.setattr("cursed_words_solver.round_log.ROUND_LOG_INDEX_PATH", index_path)
+
+    entries, offset = poll_round_log_submits(0)
+    assert entries == []
+    assert offset == 0
+
+    line1 = json.dumps(
+        {
+            "round_id": "20260609_120000_001",
+            "match_status": "score_match",
+            "submitted_word": "alpha",
+            "solver_word": "alpha",
+        }
+    )
+    index_path.write_text(line1 + "\n", encoding="utf-8")
+
+    entries, offset = poll_round_log_submits(0)
+    assert len(entries) == 1
+    assert entries[0]["match_status"] == "score_match"
+    assert offset == index_path.stat().st_size
+
+    line2 = json.dumps(
+        {
+            "round_id": "20260609_120001_002",
+            "match_status": "stale_f8_extras",
+            "submitted_word": "beta",
+            "solver_word": "gamma",
+        }
+    )
+    with index_path.open("a", encoding="utf-8") as handle:
+        handle.write(line2 + "\n")
+
+    entries, new_offset = poll_round_log_submits(offset)
+    assert len(entries) == 1
+    assert entries[0]["match_status"] == "stale_f8_extras"
+    assert new_offset == index_path.stat().st_size
+
+
+def test_is_benign_workflow_shrink_joey_fixture():
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "stale_f8_joey_shorter_submit.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    diff = dict(data["extras_diff"])
+    diff["scoring_previous_words_count"] = {"f8": "3", "submit": "1"}
+    diff["previous_word_first_letter"] = {"f8": "t", "submit": "t"}
+    assert _is_benign_workflow_shrink_drift(diff, has_mutating_dna_stamp=False)
+
+
+def test_is_benign_workflow_shrink_false_on_letter_mismatch():
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260609_104918.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    assert not _is_benign_workflow_shrink_drift(data["extras_diff"])
+
+
+def test_project_workflow_extras_for_f8_embed_joey(tmp_path, monkeypatch):
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        _previous_letter_from_historic_words,
+        _scoring_previous_words_count_from_extras,
+        project_workflow_extras_for_f8_embed,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "stale_f8_joey_shorter_submit.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    f8_hist = data["extras_diff"]["historic_words"]["f8"]
+    submit_hist = data["extras_diff"]["historic_words"]["submit"]
+
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps(
+            {
+                "extras": {
+                    "historic_words": submit_hist,
+                    "grid_number": data["grid_number"],
+                    "scoring_previous_words_count": "1",
+                    "previous_word_first_letter": "t",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    extras = {
+        "historic_words": f8_hist,
+        "grid_number": data["grid_number"],
+        "scoring_previous_words_count": "3",
+        "previous_word_first_letter": "c",
+    }
+    project_workflow_extras_for_f8_embed(extras, board=None)
+    assert extras["historic_words"] == submit_hist
+    assert _scoring_previous_words_count_from_extras(extras) == 1
+    assert (
+        extras.get("previous_word_first_letter")
+        == _previous_letter_from_historic_words(submit_hist)
+    )
+
+
+def test_sanitize_run_state_snapshot_for_f8_projects_workflow_extras(
+    tmp_path, monkeypatch
+):
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        sanitize_run_state_snapshot_for_f8,
+        _scoring_previous_words_count_from_extras,
+    )
+    from cursed_words_solver.models import Loadout
+
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "stale_f8_joey_shorter_submit.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    f8_hist = data["extras_diff"]["historic_words"]["f8"]
+    submit_hist = data["extras_diff"]["historic_words"]["submit"]
+
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps(
+            {
+                "extras": {
+                    "historic_words": submit_hist,
+                    "grid_number": data["grid_number"],
+                    "scoring_previous_words_count": "1",
+                    "previous_word_first_letter": "t",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    embed = {
+        "extras": {
+            "historic_words": f8_hist,
+            "grid_number": data["grid_number"],
+            "scoring_previous_words_count": "3",
+            "previous_word_first_letter": "c",
+        }
+    }
+    sanitized = sanitize_run_state_snapshot_for_f8(embed, Loadout())
+    assert sanitized is not None
+    assert sanitized["extras"]["historic_words"] == submit_hist
+    assert _scoring_previous_words_count_from_extras(sanitized["extras"]) == 1
+
+
+def test_benign_shrink_presync_workflow_cleared_after_projection():
+    """C# parity: benign shrink syncs before block — projected diff has no workflow drift."""
+    diff = {
+        "historic_words": {
+            "f8": '[{"word":"A"},{"word":"B"},{"word":"C"}]',
+            "submit": '[{"word":"TIFFANY"}]',
+        },
+        "scoring_previous_words_count": {"f8": "3", "submit": "1"},
+        "previous_word_first_letter": {"f8": "t", "submit": "t"},
+    }
+    assert _is_benign_workflow_shrink_drift(diff, has_mutating_dna_stamp=False)
+    projected_diff = {
+        "historic_words": {
+            "f8": diff["historic_words"]["submit"],
+            "submit": diff["historic_words"]["submit"],
+        },
+        "scoring_previous_words_count": {"f8": "1", "submit": "1"},
+        "previous_word_first_letter": {"f8": "t", "submit": "t"},
+    }
+    assert _describe_stale_f8_workflow_drift_capture_block(
+        projected_diff,
+        has_mutating_dna_stamp=False,
+    ) is None
