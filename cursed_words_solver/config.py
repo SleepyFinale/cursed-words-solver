@@ -17,7 +17,6 @@ PREVIOUS_GRID_REROLL_GAP_RATIO = 0.6
 RUN_STATE_PATH = CONFIG_DIR / "run_state.json"
 LAST_SUGGESTION_PATH = CONFIG_DIR / "last_suggestion.json"
 LAST_SUGGESTION_BLOCKED_PATH = CONFIG_DIR / "last_suggestion_blocked.json"
-LAST_GOOD_RACK_LAYOUT_PATH = CONFIG_DIR / "last_good_rack_layout.json"
 SCORING_MISMATCHES_DIR = CONFIG_DIR / "scoring_mismatches"
 ROUND_LOG_DIR = CONFIG_DIR / "round_logs"
 ROUND_LOG_INDEX_PATH = ROUND_LOG_DIR / "index.jsonl"

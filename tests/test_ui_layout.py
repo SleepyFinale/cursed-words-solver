@@ -433,15 +433,11 @@ def test_synthesize_slots_from_wide_rack_block():
         assert abs(y - 556.0) < 2.0
 
 
-def test_degenerate_collapsed_rack_uses_cache(tmp_path, monkeypatch):
-    cache_path = tmp_path / "last_good_rack_layout.json"
-    cache_path.write_text(
-        json.dumps({"consumable_rack": _good_rack_block()}),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "cursed_words_solver.ui.layout.LAST_GOOD_RACK_LAYOUT_PATH",
-        cache_path,
+def test_degenerate_collapsed_rack_uses_manual_fallback():
+    from cursed_words_solver.config import AppConfig, Region
+
+    config = AppConfig(
+        rack_region=Region(x=100, y=500, width=400, height=60),
     )
     run_state = {
         "ui_layout": {
@@ -449,11 +445,8 @@ def test_degenerate_collapsed_rack_uses_cache(tmp_path, monkeypatch):
             "consumable_rack": _collapsed_rack_block(),
         }
     }
-    parsed = parse_ui_layout(run_state)
+    parsed = parse_ui_layout(run_state, config=config)
     assert parsed is not None
-    assert parsed.rack_layout_collapsed is True
     assert parsed.rack_slot_corrected is True
     assert parsed.rack_slot_centers is not None
     assert parsed.rack.width >= 200
-    for _idx, (_x, y) in parsed.rack_slot_centers.items():
-        assert abs(y - 556.0) < 2.0

@@ -1033,7 +1033,8 @@ def reconcile_previous_word_first_letter_from_historic(
     grid = _grid_number_from_extras(extras)
     hist = str(extras.get("historic_words", "") or "").strip()
     if grid >= 2 and (not hist or hist == "[]"):
-        extras.pop("previous_word_first_letter", None)
+        if _scoring_previous_words_count_from_extras(extras) == 0:
+            extras.pop("previous_word_first_letter", None)
         return
     spc = _scoring_previous_words_count_from_extras(extras)
     last_from_hist = _previous_letter_from_historic_words(hist)
@@ -1099,13 +1100,11 @@ def clear_grid_one_stale_encounter_historic(extras: dict[str, Any]) -> bool:
 
 
 def reconcile_scoring_previous_words_count(extras: dict[str, Any]) -> None:
-    """Keep scoring_previous_words_count aligned with historic_words length."""
+    """Cap scoring_previous_words_count when historic JSON is present and trusted."""
     hist = str(extras.get("historic_words", "") or "").strip()
     hist_count = _historic_words_count(hist)
     spc = _scoring_previous_words_count_from_extras(extras)
-    if hist_count == 0 and spc > 0:
-        extras["scoring_previous_words_count"] = "0"
-    elif hist_count > 0 and spc > hist_count:
+    if hist_count > 0 and spc > hist_count:
         extras["scoring_previous_words_count"] = str(hist_count)
 
 
@@ -1194,8 +1193,12 @@ def prune_historic_incompatible_with_board(
             return False
     extras.pop("historic_words", None)
     extras.pop("red_tiles_used_encounter", None)
-    extras["scoring_previous_words_count"] = "0"
-    extras["encounter_historic_source"] = "grid1_no_scoring_cache"
+    grid = _grid_number_from_extras(extras)
+    if grid >= 2:
+        extras["encounter_historic_source"] = "historic_paths_stale"
+    else:
+        extras["scoring_previous_words_count"] = "0"
+        extras["encounter_historic_source"] = "grid1_no_scoring_cache"
     return True
 
 
@@ -1702,14 +1705,11 @@ def sanitize_run_state_snapshot_for_f8(
     run_state: dict | None,
     loadout: Loadout,
 ) -> dict | None:
-    """Drop prior-run extras from the F8 embed when the current loadout no longer uses them."""
+    """Trim unequipped-item extras from the F8 embed; game export is otherwise as-is."""
     if run_state is None:
         return None
 
-    snapshot = merge_encounter_historic_for_f8_snapshot(run_state)
-    if snapshot is None:
-        return None
-    snapshot = copy.deepcopy(snapshot)
+    snapshot = copy.deepcopy(run_state)
     extras = snapshot.get("extras")
     if not isinstance(extras, dict):
         return snapshot
@@ -1739,10 +1739,6 @@ def sanitize_run_state_snapshot_for_f8(
         ):
             extras.pop(key, None)
 
-    reconcile_previous_word_first_letter_from_historic(extras)
-    board = parse_board_from_run_state(snapshot)
-    reconcile_encounter_historic_for_scoring(extras, board=board)
-    project_workflow_extras_for_f8_embed(extras, board=board)
     from cursed_words_solver.fingerprints import loadout_fingerprint as _loadout_fp
 
     extras["loadout_fingerprint"] = _loadout_fp(loadout)

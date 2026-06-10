@@ -38,12 +38,12 @@ _SETUP_STICKER_IDS = frozenset(
     {
         "birthday_cake",
         "hi_vis_jacket",
-        "tile_ninja",
         "michaels_book",
         "michael_book",
         "red_rider",
     }
 )
+_SETUP_STAMP_IDS = frozenset({"tile_ninja"})
 _SAFE_BOSS_EFFECTS = frozenset(EARLY_BOSS_TYPES) | frozenset(
     {
         "boss_steal_money",
@@ -291,5 +291,8 @@ def tier2_setup_blocks_screen(loadout: Loadout) -> bool:
         if sid in _SETUP_STICKER_IDS:
             return True
         if "birthday" in (item.name or "").lower():
+            return True
+    for item in loadout.stamps:
+        if (item.id or "").lower() in _SETUP_STAMP_IDS:
             return True
     return False

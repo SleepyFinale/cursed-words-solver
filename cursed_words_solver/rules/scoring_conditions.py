@@ -1893,7 +1893,7 @@ def golden_record_skips_oden_mult(
 
 
 def rare_item_count(loadout: Loadout) -> int:
-    """Prefer live F8 export; fall back to last-known submit capture."""
+    """Prefer melmod live export; fixture replay may only have last-known capture."""
     live = _extra_int(loadout, "rare_item_count", -1)
     if live >= 0:
         return live
@@ -1946,6 +1946,25 @@ def _limnophila_previous_word_available(loadout: Loadout) -> bool:
     if source == "grid_advanced":
         return False
     return bool(_extra_letter(loadout, "previous_word_first_letter"))
+
+
+def _limnophila_required_next_letter(prev: str) -> str:
+    """Letter that must start the current word for Limnophila (prev + 1)."""
+    if len(prev) != 1:
+        return ""
+    p = prev.lower()
+    if not p.isalpha() or p == "z":
+        return ""
+    return chr(ord(p) + 1)
+
+
+def _word_starts_one_letter_after(prev: str, first: str) -> bool:
+    """Limnophila: current first letter must be exactly prev + 1 (lowercase a-z)."""
+    required = _limnophila_required_next_letter(prev)
+    if not required or len(first) != 1:
+        return False
+    f = first.lower()
+    return f.isalpha() and f == required
 
 
 def consumable_count_on_path(board: Board, path: list[int]) -> int:
@@ -2724,9 +2743,18 @@ def explain_sticker_condition(
         first = _effective_word_start_letter(board, path, word)
         if not prev or not first:
             return False, f"skipped: missing previous or word first letter (prev={prev!r}, word={first!r})"
-        if first <= prev:
-            return False, f"skipped: word starts '{first}', not after previous '{prev}'"
-        return True, f"applied: word starts '{first}' after previous '{prev}'"
+        if not _word_starts_one_letter_after(prev, first):
+            need = _limnophila_required_next_letter(prev)
+            if need:
+                return (
+                    False,
+                    f"skipped: word starts '{first}', need '{need}' after previous '{prev}'",
+                )
+            return (
+                False,
+                f"skipped: word starts '{first}', not one letter after previous '{prev}'",
+            )
+        return True, f"applied: word starts '{first}' one letter after previous '{prev}'"
 
     met = _evaluate_sticker_condition(
         condition,
@@ -2824,7 +2852,7 @@ def _evaluate_sticker_condition(
         first = _effective_word_start_letter(board, path, word)
         if not prev or not first:
             return False
-        return first > prev
+        return _word_starts_one_letter_after(prev, first)
     if condition == "has_double_letter":
         return has_consecutive_double_letter_on_path(board, path, word)
     if condition == "first_grid_of_encounter":
@@ -3793,13 +3821,7 @@ def neapolitan_grid_cap_percent(loadout: Loadout | None) -> int:
 
 
 def neapolitan_base_percent_from_loadout(loadout: Loadout | None) -> tuple[int, str]:
-    """Resolve baseline Neapolitan percent and source.
-
-    Neapolitan only increases within a run. Prefer melmod ``neapolitan_percent``
-    (live) when exported — the game applies that value this submit. Only fall
-    back to higher ``neapolitan_percent_last_known`` when live is a stale ×1.00
-    (100) reflection that under-reports the run baseline (e.g. 110).
-    """
+    """Resolve baseline Neapolitan percent; F8 gather polls live export before solve."""
     extras = (
         loadout.extras
         if loadout is not None and isinstance(loadout.extras, dict)
@@ -3813,20 +3835,17 @@ def neapolitan_base_percent_from_loadout(loadout: Loadout | None) -> tuple[int, 
             and live_percent <= 100
             and cached_percent > live_percent
         ):
-            result: tuple[int, str] = (cached_percent, "cached")
+            return cached_percent, "cached"
         elif (
             cached_percent is not None
             and live_percent > cached_percent
             and cached_percent >= 145
         ):
-            result = (cached_percent, "cached")
-        else:
-            result = (live_percent, "live")
-    elif cached_percent is not None:
-        result = (cached_percent, "cached")
-    else:
-        result = (100, "default")
-    return result
+            return cached_percent, "cached"
+        return live_percent, "live"
+    if cached_percent is not None:
+        return cached_percent, "cached"
+    return 100, "default"
 
 
 def _neapolitan_multiplier_from_extras(
@@ -4024,14 +4043,31 @@ def first_letter_on_path(board: Board, path: list[int]) -> str:
     return ""
 
 
+def _wildcard_before_first_letter_tile(board: Board, path: list[int]) -> bool:
+    """True when a wildcard tile precedes the first literal letter tile on the path."""
+    seen_wildcard = False
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.curse == CurseType.WILDCARD:
+            seen_wildcard = True
+            continue
+        if path_letter_for_count(tile):
+            return seen_wildcard
+    return False
+
+
 def _effective_word_start_letter(board: Board, path: list[int], word: str) -> str:
     """First letter for Bento/Chips-style conditions (melmod path-first parity).
 
     When currency/symbols lead the path but the dictionary word starts elsewhere, the
-    game uses the path's first letter tile (see ScoringContextCapture).
+    game uses the path's first letter tile (see ScoringContextCapture). Wildcard-leading
+    paths use the submitted word's first letter (wildcard assignment), not the first
+    literal tile after the wildcard.
     """
-    path_first = first_letter_on_path(board, path)
     word_first = word_first_letter(word)
+    if _wildcard_before_first_letter_tile(board, path):
+        return word_first or first_letter_on_path(board, path)
+    path_first = first_letter_on_path(board, path)
     if path_first and word_first and path_first != word_first:
         return path_first
     return word_first or path_first

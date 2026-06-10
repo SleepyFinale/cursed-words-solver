@@ -104,6 +104,23 @@ class ResultOverlay(QWidget):
         self.show()
         self.raise_()
 
+    def show_solving_notice(self) -> None:
+        """Brief state while auto-solve runs after an in-game word submit."""
+        self._has_solved = False
+        self._stale_notice_active = False
+        self.idle_label.hide()
+        self.hero_result.setText(
+            "<span style='font-size:13px;font-weight:bold;color:#fa0'>"
+            "Solving…</span>"
+        )
+        self.hero_result.show()
+        self.warnings_label.hide()
+        self.preview.hide()
+        self._resize_for_content()
+        self._position_panel()
+        self.show()
+        self.raise_()
+
     def show_stale_notice(self, message: str) -> None:
         """Warn that the F8 suggestion is stale — user should press F8 again."""
         self._has_solved = False
@@ -217,12 +234,6 @@ class ResultOverlay(QWidget):
                         "<br><span style='font-size:11px;color:#fa0'>"
                         f"{hint}</span>"
                     )
-            play_line = ""
-            if top.dictionary_word and top.dictionary_word.lower() != top.word.lower():
-                play_line = (
-                    "<br><span style='font-size:12px;color:#fa0'>"
-                    f"play: {top.dictionary_word.upper()}</span>"
-                )
             score_html = format_result_score_display(top)
             if not trusted:
                 score_html = (
@@ -235,7 +246,6 @@ class ResultOverlay(QWidget):
                 f"&nbsp;&nbsp;"
                 f"<span style='font-size:18px;font-weight:bold;color:#0f8'>"
                 f"{score_html}</span>"
-                f"{play_line}"
                 f"{setup_line}"
                 f"{placement_line}"
                 f"{microscope_line}"

@@ -21,6 +21,23 @@ namespace CursedWordsSolverCompanion
     /// </summary>
     public static class ConsumablePlacementHelper
     {
+        private static readonly Dictionary<string, string> CurrencyMap =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "฿", "B" },
+                { "¥", "Y" },
+                { "$", "S" },
+                { "₡", "C" },
+                { "€", "E" },
+                { "₭", "K" },
+                { "₮", "T" },
+                { "₦", "N" },
+                { "₩", "W" },
+                { "₱", "P" },
+                { "₣", "F" },
+                { "₲", "G" },
+            };
+
         public static bool BoardFingerprintMatchesSuggestion(
             LastSuggestion suggestion,
             string currentBoardFingerprint
@@ -89,11 +106,48 @@ namespace CursedWordsSolverCompanion
                 if (!current.TryGetValue(key, out curTile) || string.IsNullOrEmpty(curTile))
                     return false;
 
-                if (!curTile.ToUpperInvariant().StartsWith(placementLetter, StringComparison.Ordinal))
+                if (!FpTileMatchesPlacement(placementLetter, curTile))
                     return false;
             }
 
             return true;
+        }
+
+        private static string FpTileLetterPrefix(string fpTileSegment)
+        {
+            if (string.IsNullOrEmpty(fpTileSegment))
+                return "";
+            var slash = fpTileSegment.IndexOf('/');
+            return slash >= 0
+                ? fpTileSegment.Substring(0, slash).Trim()
+                : fpTileSegment.Trim();
+        }
+
+        private static string NormalizePlacementLetter(string letter)
+        {
+            var raw = (letter ?? "").Trim();
+            if (raw == "?")
+                return "?";
+            if (CurrencyMap.TryGetValue(raw, out var mapped))
+                return mapped;
+            if (raw.Length == 1 && char.IsLetter(raw, 0))
+                return raw.ToUpperInvariant();
+            return raw.ToUpperInvariant();
+        }
+
+        private static bool FpTileMatchesPlacement(string placementLetter, string fpTileSegment)
+        {
+            if (string.IsNullOrEmpty(fpTileSegment))
+                return false;
+            var placed = NormalizePlacementLetter(placementLetter);
+            if (placed == "?")
+                return true;
+            var cur = NormalizePlacementLetter(FpTileLetterPrefix(fpTileSegment));
+            if (string.IsNullOrEmpty(cur))
+                return false;
+            return string.Equals(cur, placed, StringComparison.OrdinalIgnoreCase)
+                || cur.StartsWith(placed, StringComparison.OrdinalIgnoreCase)
+                || placed.StartsWith(cur, StringComparison.OrdinalIgnoreCase);
         }
 
         private static Dictionary<string, string> ParseBoardFpTiles(string fingerprint)

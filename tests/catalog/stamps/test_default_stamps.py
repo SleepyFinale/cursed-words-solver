@@ -318,10 +318,102 @@ def test_limnophila_alphabet_progression():
     pipeline = ScoringPipeline()
     loadout = Loadout(
         stamps=[LoadoutItem(id="limnophila", name="Limnophila", kind="stamp")],
-        extras={"previous_word_first_letter": "a"},
+        extras={
+            "grid_number": "2",
+            "scoring_previous_words_count": "1",
+            "previous_word_first_letter": "b",
+        },
     )
     score, bd = pipeline.score(board, [0], "cat", loadout)
     assert bd["multiplier"] == 1.5
+
+
+def test_limnophila_not_any_later_letter():
+    """soz capture: s > o but Limnophila needs exactly p after o."""
+    from cursed_words_solver.rules.scoring_conditions import explain_sticker_condition
+
+    board = _empty_board()
+    board.tiles[0][1] = _tile(0, 1, "S", 16, color=TileColor.COLORLESS)
+    board.tiles[0][2] = _tile(0, 2, "O", 17, color=TileColor.BLUE)
+    board.tiles[1][2] = _tile(
+        1, 2, "?", 1, color=TileColor.BLUE, curse=CurseType.WILDCARD
+    )
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="limnophila", name="Limnophila", kind="stamp")],
+        extras={
+            "grid_number": "2",
+            "scoring_previous_words_count": "2",
+            "previous_word_first_letter": "o",
+        },
+    )
+    met, detail = explain_sticker_condition(
+        "word_starts_after_previous",
+        board,
+        [1, 2, 7],
+        "soz",
+        loadout,
+        applying_sticker_id="limnophila",
+    )
+    assert met is False
+    assert "need 'p'" in detail
+    assert "'o'" in detail
+
+
+def test_limnophila_exact_plus_one_titfers():
+    from cursed_words_solver.rules.scoring_conditions import explain_sticker_condition
+
+    board = _empty_board()
+    board.tiles[0][1] = _tile(0, 1, "T", 11, color=TileColor.COLORLESS)
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="limnophila", name="Limnophila", kind="stamp")],
+        extras={
+            "grid_number": "3",
+            "scoring_previous_words_count": "2",
+            "previous_word_first_letter": "s",
+        },
+    )
+    met, detail = explain_sticker_condition(
+        "word_starts_after_previous",
+        board,
+        [1],
+        "titfers",
+        loadout,
+        applying_sticker_id="limnophila",
+    )
+    assert met is True
+    assert "one letter after" in detail
+
+
+def test_limnophila_wildcard_leading_uses_word_first_letter():
+    """ayus capture: path ? Y U ? — game uses word-first 'a', not path-first 'y'."""
+    from cursed_words_solver.rules.scoring_conditions import explain_sticker_condition
+
+    board = _empty_board()
+    board.tiles[2][2] = _tile(2, 2, "?", 0, curse=CurseType.WILDCARD)
+    board.tiles[3][1] = _tile(3, 1, "Y", 15, color=TileColor.BLUE)
+    board.tiles[3][2] = _tile(3, 2, "U", 17, color=TileColor.RED)
+    board.tiles[4][3] = _tile(
+        4, 3, "?", 1, color=TileColor.BLUE, curse=CurseType.WILDCARD
+    )
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="limnophila", name="Limnophila", kind="stamp")],
+        extras={
+            "grid_number": "3",
+            "scoring_previous_words_count": "2",
+            "previous_word_first_letter": "s",
+        },
+    )
+    met, detail = explain_sticker_condition(
+        "word_starts_after_previous",
+        board,
+        [12, 16, 17, 23],
+        "ayus",
+        loadout,
+        applying_sticker_id="limnophila",
+    )
+    assert met is False
+    assert "'a'" in detail
+    assert "need 't'" in detail
 
 
 def test_bubble_tea_letter_count_multiply():

@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from itertools import combinations, count, permutations
 from typing import Any, Iterator
 
+from cursed_words_solver.loadout import _resolve_letter_for_word
 from cursed_words_solver.models import (
+    CURRENCY_MAP,
     Board,
     CurseType,
     Loadout,
@@ -18,6 +20,7 @@ from cursed_words_solver.models import (
     TileColor,
     WordResult,
     curse_type_from_key,
+    normalize_tile_glyph,
 )
 from cursed_words_solver.rules.base_scoring import tile_base_contribution
 from cursed_words_solver.rules.grid_effects import _clone_board
@@ -135,10 +138,22 @@ def _parse_consumable_rack_raw(loadout: Loadout) -> list[dict[str, Any]]:
 def _placement_letter_for_tile(tile: Tile) -> str:
     if tile.curse == CurseType.FRACTION:
         return format_fraction_tile(tile)
-    raw = (tile.letter or tile.char or "?").strip()
-    if len(raw) == 1 and raw.isalpha():
-        return raw.upper()
-    return raw
+    letter = (tile.letter or "").strip()
+    if letter and letter != "?":
+        glyph = normalize_tile_glyph(letter)
+        if glyph in CURRENCY_MAP:
+            return CURRENCY_MAP[glyph]
+        if len(letter) == 1 and letter.isalpha():
+            return letter.upper()
+        return letter
+    char = normalize_tile_glyph(tile.char or "")
+    if char in CURRENCY_MAP:
+        return CURRENCY_MAP[char]
+    if len(char) == 1 and char.isalpha():
+        return char.upper()
+    if tile.curse == CurseType.WILDCARD:
+        return "?"
+    return char or "?"
 
 
 def placement_record_display_letter(
@@ -197,17 +212,24 @@ def rack_tile_from_entry(entry: dict[str, Any]) -> Tile | None:
         frac_val = float(fraction_value) if fraction_value is not None else None
     except (TypeError, ValueError):
         frac_val = None
+    display_norm = normalize_tile_glyph(display_raw)
     if curse == CurseType.FRACTION:
         ch = display_raw
+        letter = ch
+    elif curse == CurseType.CURRENCY:
+        ch = display_norm or display_raw
+        letter = _resolve_letter_for_word(ch, display_raw, curse)
     elif len(display_raw) == 1:
         ch = display_raw.upper()
+        letter = ch
     else:
         ch = display_raw
+        letter = _resolve_letter_for_word(ch, display_raw, curse)
     tile = Tile(
         row=-1,
         col=-1,
         char=ch,
-        letter=ch,
+        letter=letter,
         base_score=base_score,
         color=color,
         curse=curse,
@@ -320,7 +342,7 @@ def wait_for_rack_export(
     rules: dict[str, Any],
     *,
     reload_loadout: Any,
-    timeout_sec: float = 1.5,
+    timeout_sec: float = 5.0,
     poll_sec: float = 0.1,
 ) -> Loadout:
     """Poll run_state until melmod auto-export writes consumable_rack (or timeout)."""
@@ -343,7 +365,7 @@ def wait_for_sandy_rack_export(
     rules: dict[str, Any],
     *,
     reload_loadout: Any,
-    timeout_sec: float = 1.5,
+    timeout_sec: float = 5.0,
     poll_sec: float = 0.1,
 ) -> Loadout:
     """Backward-compatible alias for wait_for_rack_export."""
@@ -425,6 +447,37 @@ def rack_placement_search_active(
     return len(remaining_rack_tiles(loadout, board)) > 0
 
 
+def consumable_investment_active(loadout: Loadout) -> bool:
+    """True when loadout rewards placing consumables for future grids (Tile Ninja, Hi Vis)."""
+    for item in loadout.stamps:
+        if (item.id or "").lower() == "tile_ninja":
+            return True
+    for item in loadout.stickers:
+        if (item.id or "").lower() == "hi_vis_jacket":
+            return True
+    return False
+
+
+def _result_rank_score(result: WordResult) -> float:
+    """Search ranking score for a placement candidate (includes setup bonus)."""
+    if result.rank_score > 0:
+        return result.rank_score
+    return result.score + result.setup_bonus
+
+
+def _variant_meets_threshold(
+    result: WordResult,
+    *,
+    min_score: float | None,
+    min_rank_score: float | None,
+) -> bool:
+    if min_rank_score is not None:
+        return _result_rank_score(result) >= min_rank_score
+    if min_score is not None:
+        return result.score >= min_score
+    return True
+
+
 def mahjong_rack_placement_active(
     loadout: Loadout,
     board: Board,
@@ -452,6 +505,20 @@ def _mahjong_tile_value(
     return value * mahjong_consumable_factor(loadout, pin_rule)
 
 
+def _consumable_investment_cell_bonus(
+    rack_tile: Tile,
+    loadout: Loadout | None,
+) -> float:
+    if loadout is None:
+        return 0.0
+    bonus = 0.0
+    if any((item.id or "").lower() == "tile_ninja" for item in loadout.stamps):
+        bonus += 8.0
+    if any((item.id or "").lower() == "hi_vis_jacket" for item in loadout.stickers):
+        bonus += float(tile_base_contribution(rack_tile)) * 0.25
+    return bonus
+
+
 def _placement_cell_score(
     board: Board,
     idx: int,
@@ -468,7 +535,8 @@ def _placement_cell_score(
         if letter and nl and len(nl) == 1 and nl.isalpha():
             connectivity += 1.0
     tile_value = _mahjong_tile_value(rack_tile, loadout, rules)
-    return connectivity * 10.0 + tile_value
+    investment = _consumable_investment_cell_bonus(rack_tile, loadout)
+    return connectivity * 10.0 + tile_value + investment
 
 
 def _max_cells_for_rack_count(n: int, *, max_cells: int = 14) -> int:
@@ -697,7 +765,8 @@ def placements_to_records(
 def format_placement_instructions(records: list[ConsumablePlacement]) -> str:
     parts: list[str] = []
     for rec in records:
-        parts.append(f"{rec.letter} at row {rec.row + 1}, col {rec.col + 1}")
+        letter = placement_record_display_letter(rec)
+        parts.append(f"{letter} at row {rec.row + 1}, col {rec.col + 1}")
     return "; ".join(parts)
 
 
@@ -766,8 +835,9 @@ def _finalize_placement_search(
     time_budget: float,
     top_n: int,
     min_score: float | None,
-    prefer_fewest_tiles: bool,
-    require_placements_in_path: bool,
+    min_rank_score: float | None = None,
+    prefer_fewest_tiles: bool = False,
+    require_placements_in_path: bool = False,
     base_required: frozenset[int],
     variant_gen_sec: float,
     variants_screened: int,
@@ -781,7 +851,8 @@ def _finalize_placement_search(
     if not screened:
         return board, [], []
 
-    if prefer_fewest_tiles and min_score is not None:
+    investment = consumable_investment_active(loadout)
+    if prefer_fewest_tiles and min_score is not None and not investment:
         min_tiles = min(row[1] for row in screened)
         screened = [row for row in screened if row[1] == min_tiles]
 
@@ -793,7 +864,7 @@ def _finalize_placement_search(
     refine_share = total_budget - screen_share
     per_refine = max(1.0, refine_share / len(finalists))
 
-    best_score = -1.0
+    best_rank = -1.0
     best_tile_count = 999
     best_board = board
     best_records: list[ConsumablePlacement] = []
@@ -815,16 +886,18 @@ def _finalize_placement_search(
             )
             if not results:
                 continue
-            score = results[0].score
-            if min_score is not None and score < min_score:
+            rank = _result_rank_score(results[0])
+            if not _variant_meets_threshold(
+                results[0], min_score=min_score, min_rank_score=min_rank_score
+            ):
                 continue
-            better = score > best_score or (
+            better = rank > best_rank or (
                 prefer_fewest_tiles
-                and score == best_score
+                and rank == best_rank
                 and tile_count < best_tile_count
             )
             if better:
-                best_score = score
+                best_rank = rank
                 best_tile_count = tile_count
                 best_board = sim_board
                 best_records = placements_to_records(placements)
@@ -833,7 +906,8 @@ def _finalize_placement_search(
         searcher.time_budget = prev_budget
         searcher.validator.required_consumable_indices = base_required
 
-    if min_score is not None and best_score < min_score:
+    threshold = min_rank_score if min_rank_score is not None else min_score
+    if threshold is not None and best_rank < threshold:
         return board, [], []
 
     if best_results:
@@ -849,8 +923,9 @@ def _screen_placement_variants(
     *,
     per_screen: float,
     min_score: float | None,
-    prefer_fewest_tiles: bool,
-    require_placements_in_path: bool,
+    min_rank_score: float | None = None,
+    prefer_fewest_tiles: bool = False,
+    require_placements_in_path: bool = False,
     base_required: frozenset[int],
     screen_full_tier: bool = False,
 ) -> tuple[
@@ -862,6 +937,7 @@ def _screen_placement_variants(
     tier_qualifying = False
     prev_budget = searcher.time_budget
     variants_screened = 0
+    investment = consumable_investment_active(loadout)
     try:
         searcher.time_budget = per_screen
         for placements in variants:
@@ -880,18 +956,22 @@ def _screen_placement_variants(
             )
             if not results:
                 continue
-            score = results[0].score
-            if min_score is not None and score < min_score:
+            result = results[0]
+            if not _variant_meets_threshold(
+                result, min_score=min_score, min_rank_score=min_rank_score
+            ):
                 continue
+            rank = _result_rank_score(result)
             screened.append(
-                (score, len(placements), placements, sim_board, results[0])
+                (rank, len(placements), placements, sim_board, result)
             )
             tier_qualifying = True
             if (
                 not screen_full_tier
                 and prefer_fewest_tiles
+                and not investment
                 and min_score is not None
-                and score >= min_score
+                and result.score >= min_score
             ):
                 break
     finally:
@@ -909,6 +989,7 @@ def _run_placement_search(
     time_budget: float,
     top_n: int,
     min_score: float | None = None,
+    min_rank_score: float | None = None,
     prefer_fewest_tiles: bool = False,
     require_placements_in_path: bool = False,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
@@ -928,6 +1009,7 @@ def _run_placement_search(
         variants,
         per_screen=per_screen,
         min_score=min_score,
+        min_rank_score=min_rank_score,
         prefer_fewest_tiles=prefer_fewest_tiles,
         require_placements_in_path=require_placements_in_path,
         base_required=base_required,
@@ -940,6 +1022,7 @@ def _run_placement_search(
         time_budget=time_budget,
         top_n=top_n,
         min_score=min_score,
+        min_rank_score=min_rank_score,
         prefer_fewest_tiles=prefer_fewest_tiles,
         require_placements_in_path=require_placements_in_path,
         base_required=base_required,
@@ -957,6 +1040,7 @@ def _run_tiered_placement_search(
     time_budget: float,
     top_n: int,
     min_score: float | None = None,
+    min_rank_score: float | None = None,
     prefer_fewest_tiles: bool = False,
     require_placements_in_path: bool = False,
     max_variants: int = 96,
@@ -969,11 +1053,14 @@ def _run_tiered_placement_search(
         return board, [], []
 
     rules = rules or {}
+    investment = consumable_investment_active(loadout)
     cells = _rank_placement_indices(
         board, rack_tiles, loadout=loadout, rules=rules
     )
     n = len(rack_tiles)
     tier_cap = _tier_heap_cap(max_variants)
+    if investment and n >= 4:
+        tier_cap = max(tier_cap, _tier_heap_cap(max_variants + 32))
 
     total_budget = max(2.0, float(time_budget))
     screen_share = min(12.0, total_budget * 0.25)
@@ -1008,6 +1095,7 @@ def _run_tiered_placement_search(
             tier_variants,
             per_screen=per_screen,
             min_score=min_score,
+            min_rank_score=min_rank_score,
             prefer_fewest_tiles=prefer_fewest_tiles,
             require_placements_in_path=require_placements_in_path,
             base_required=base_required,
@@ -1017,7 +1105,12 @@ def _run_tiered_placement_search(
         variants_screened += tier_count
         remaining_screen = max(0.0, remaining_screen - per_screen * len(tier_variants))
 
-        if prefer_fewest_tiles and min_score is not None and tier_qualifying:
+        if (
+            prefer_fewest_tiles
+            and not investment
+            and min_score is not None
+            and tier_qualifying
+        ):
             break
         if variant_gen_budget is not None:
             if time.monotonic() - variant_gen_started >= variant_gen_budget:
@@ -1031,6 +1124,7 @@ def _run_tiered_placement_search(
         time_budget=time_budget,
         top_n=top_n,
         min_score=min_score,
+        min_rank_score=min_rank_score,
         prefer_fewest_tiles=prefer_fewest_tiles,
         require_placements_in_path=require_placements_in_path,
         base_required=base_required,
@@ -1098,16 +1192,23 @@ def search_consumable_score_boost(
     rack_tiles: list[Tile],
     *,
     baseline_score: float,
+    baseline_rank_score: float | None = None,
     time_budget: float,
     top_n: int,
     rules: dict[str, Any] | None = None,
     variant_gen_budget: float | None = None,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
-    """Try rack placements; adopt only when score strictly exceeds baseline."""
+    """Try rack placements; adopt when rank score strictly exceeds baseline."""
     if not rack_tiles:
         return board, [], []
     rules = rules or {}
-    min_score = float(baseline_score) + 1e-9
+    baseline_rank = (
+        baseline_rank_score
+        if baseline_rank_score is not None
+        else baseline_score
+    )
+    min_rank = float(baseline_rank) + 1e-9
+    max_variants = 128 if consumable_investment_active(loadout) and len(rack_tiles) >= 4 else 96
     sim_board, records, results = _run_tiered_placement_search(
         searcher,
         board,
@@ -1115,12 +1216,13 @@ def search_consumable_score_boost(
         rack_tiles,
         time_budget=time_budget,
         top_n=top_n,
-        min_score=min_score,
+        min_rank_score=min_rank,
         prefer_fewest_tiles=True,
         require_placements_in_path=True,
         rules=rules,
         variant_gen_budget=variant_gen_budget,
+        max_variants=max_variants,
     )
-    if not results or results[0].score <= baseline_score:
+    if not results or _result_rank_score(results[0]) <= baseline_rank:
         return board, [], []
     return sim_board, records, results

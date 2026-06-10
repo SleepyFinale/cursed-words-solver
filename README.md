@@ -102,14 +102,13 @@ Field-by-field JSON documentation: `[melmod/README.md](melmod/README.md)`. Do no
 
 ### Solver pipeline (Python)
 
-Pressing **F8** starts `_solve_worker` in `[app.py](cursed_words_solver/app.py)` on a background thread (UI updates are posted back to the Qt main thread via `_HotkeyBridge` signals).
+Pressing **F8** once starts `_solve_worker` in `[app.py](cursed_words_solver/app.py)` on a background thread (UI updates are posted back to the Qt main thread via `_HotkeyBridge` signals).
 
-1. **Reload state** — Read `run_state.json` via `[loadout.py](cursed_words_solver/loadout.py)` (`load_run_state`, `parse_board_from_run_state`).
-2. **Board** — Re-read `run_state.json` on every F8 via `[loadout.py](cursed_words_solver/loadout.py)`. F8 fails with a clear message if the board is missing (press **F7** in-game). When consumables are on the rack but `consumable_rack` has not been exported yet, the solver waits briefly for melmod auto-export (Sandy Saguaro fights and any character with rack tiles). After the baseline word search, it simulates rack placements for any character with unplaced consumables and adopts them only when they improve the best score (Sandy Saguaro boss fights use mandatory placement-first search instead). When rack placement improves the best score, amber dashed circles on the board overlay mark where to place consumables before tracing the green word path; orange numbered circles on the consumable rack mark which slot to use (same step numbers as the path).
+1. **Gather snapshot** — `[f8_snapshot.py](cursed_words_solver/f8_snapshot.py)` polls melmod `run_state.json` until the board and required extras (historic, rack, stamp counters, etc.) are exported. Game export is the source of truth; there is no in-memory loadout cache between F8 presses.
+2. **Search** — Baseline word search via `[search.py](cursed_words_solver/search.py)`, then optional consumable placement simulation (score boost, then target rescue if below `target_score`). Sandy Saguaro uses placement-first search. Amber board circles and orange rack numbers mark consumable steps before the green path.
 3. **Dictionary** — `[dictionary.py](cursed_words_solver/dictionary.py)` loads `game_words.txt` when present (from melmod), else ENABLE1 (`[config.py](cursed_words_solver/config.py)` `resolve_wordlist`).
-4. **Search** — `[search.py](cursed_words_solver/search.py)` `WordSearcher.find_best_words` builds a per-solve context stack once: `build_solve_context` → `build_board_graph_context` → `build_board_scoring_context` → chess attack cache init (see [`docs/SEARCH_ARCHITECTURE.md`](docs/SEARCH_ARCHITECTURE.md)). Then DFS runs over active tiles with curse-specific neighbors (standard adjacency, double-letter teleports, chess piece rules, wildcards). Chess movement follows [wiki rules](https://cursedwords.wiki.gg/wiki/Curses#Chess_pieces): piece-specific rays, same-color blocking, pawn forward/double/capture, en passant, and king cannot move into check — see `[chess_tiles.py](cursed_words_solver/rules/chess_tiles.py)`. With **Hungry Snake** (`horizontal_wrap`), col 0 and col 4 connect on each row for letter steps and for chess checks/sliding rays. `PathValidator` prunes invalid prefixes and enforces stamp-specific rules. Search is time-budgeted (`search_time_budget_sec`) with fair per-start slices; extra passes cover void/number words on boards with NUMBER tiles. Boss limits (e.g. Wolf max length, Hyena block) come from `[boss_effects.py](cursed_words_solver/rules/boss_effects.py)`. On eligible loadouts, automatic tier-2 candidate screening and DFS branch-and-bound skip hopeless paths before full scoring (no config needed). Parallel workers in `[search_parallel.py](cursed_words_solver/search_parallel.py)` build the same context stack per process.
-5. **Score** — Each surviving candidate is scored by `[ScoringPipeline](cursed_words_solver/rules/pipeline.py)` using cached contexts and rules from `[data/wiki/stickers.json](data/wiki/stickers.json)` (`[rule_lookup.py](cursed_words_solver/rules/rule_lookup.py)`): base tile sum → Salamander/Robo-Monkey (boss) → grid path bonuses → pin → stickers → stamps, matching [wiki order](https://cursedwords.wiki.gg/wiki/Scoring). When `use_split_pipeline` is true, board-static sticker/stamp rules run via O(path) fast path before dynamic orchestration (`[rule_phase.py](cursed_words_solver/rules/rule_phase.py)`).
-6. **Output** — Top `top_n_results` words are kept; the best is re-scored with a full trace, written to `last_suggestion.json` (with `export_diagnostics`, `export_warnings`, `solver_session_extras`), and debug JSON under `debug/parse_*.json`.
+4. **Score** — Each surviving candidate is scored by `[ScoringPipeline](cursed_words_solver/rules/pipeline.py)` using rules from `[data/wiki/stickers.json](data/wiki/stickers.json)`.
+5. **Output** — The best word is re-scored with a full trace, written to `last_suggestion.json`, and shown in the overlay. After you submit the word in-game, the overlay clears to **Press F8 to solve** — press F8 again on the next grid when ready.
 
 ### Display layer (overlays)
 
@@ -194,7 +193,7 @@ Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 | `board_region`           | —        | Manual fallback `{x, y, width, height}` when melmod `ui_layout` is absent                  |
 | `rack_region`            | —        | Manual fallback consumable rack row (five equal slots)                                     |
 | `show_board_highlight`   | `true`   | Numbered circles on the game board and consumable rack                                     |
-| `hotkey`                 | `f8`     | Solve hotkey                                                                               |
+| `hotkey`                 | `f8`     | Solve hotkey (one press per grid — gathers live game export, solves, shows result)         |
 | `search_time_budget_sec` | `45`     | Seconds per solve for word search. Legacy values `2` / `15` / `30` auto-upgrade on startup |
 | `top_n_results`          | `3`      | Alternate words shown in the overlay                                                       |
 | `wordlist`               | `game`   | `game` → `game_words.txt`; `enable1` → offline fallback                                    |
@@ -218,7 +217,7 @@ Word length is derived automatically per solve: minimum is 1, maximum is the act
 
 ### Troubleshooting
 
-- **Stale overlay after submitting a word** — Press **F8** once per word before tracing the green path. After melmod logs a submit (`score_match` or `stale_f8_extras`), the overlay shows **STALE — press F8** until you solve again; `stale_f8_extras` in `round_logs/index.jsonl` is expected if you used an old F8 suggestion without refreshing.
+- **After submitting a word** — The overlay clears to **Press F8 to solve**. Press **F8** once on the next grid when you are ready (melmod auto-export usually catches up within a second).
 - **Wrong words with melmod** — **F7** in-game, then **F8** again; check `run_state.json` has a `board` with 25 tiles.
 - **F8 does nothing** — Install/rebuild melmod, start a run, press **F7**, then **F8** again.
 - **Overlay stuck on “Press F8 to solve”** — Restart the solver; check the terminal for `Done in … Best: WORD` after **F8**.

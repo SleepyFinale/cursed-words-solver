@@ -31,6 +31,16 @@ def _two_placement_board(
     return Board(tiles=tiles)
 
 
+def _board_fp_at(row: int, col: int, tile_segment: str, *, fill: str = "x/letter/colorless") -> str:
+    """Melmod-style board fingerprint with one cell using a custom tile segment."""
+    parts = ["0", "|"]
+    for r in range(5):
+        for c in range(5):
+            seg = tile_segment if (r, c) == (row, col) else fill
+            parts.extend([str(r), ",", str(c), ":", seg, ";"])
+    return "".join(parts)
+
+
 def test_fingerprint_change_is_consumable_placement_only():
     before = _board_with_cell(1, 1, "x")
     after = _board_with_cell(1, 1, "u")
@@ -165,3 +175,89 @@ def test_suppress_invalidate_when_placement_matches():
         encoding="utf-8",
     )
     assert fingerprint_invalidate_suppressed_for_consumable_placement(after)
+
+
+def test_currency_symbol_fp_matches_placement_letter_g():
+    before = _board_fp_at(2, 2, "i/letter/colorless")
+    after = _board_fp_at(2, 2, "₲/currency/red")
+    placements = [{"row": 2, "col": 2, "letter": "G", "index": 12}]
+    assert fingerprint_change_is_consumable_placement_progress(
+        before, after, placements
+    )
+
+
+def test_wildcard_placement_letter_accepts_any_tile_at_cell():
+    before = _board_fp_at(2, 2, "i/letter/colorless")
+    after = _board_fp_at(2, 2, "g/currency/red")
+    placements = [{"row": 2, "col": 2, "letter": "?", "index": 12}]
+    assert fingerprint_change_is_consumable_placement_progress(
+        before, after, placements
+    )
+
+
+def test_poll_invalidate_none_for_currency_partial_placement():
+    before = _board_fp_at(1, 1, "x/letter/colorless")
+    after = _board_fp_at(1, 1, "₲/currency/red")
+    LAST_SUGGESTION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LAST_SUGGESTION_PATH.write_text(
+        json.dumps(
+            {
+                "board_fingerprint": before,
+                "consumable_placements": [
+                    {"row": 1, "col": 1, "letter": "G", "index": 6},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert fingerprint_invalidate_suppressed_for_consumable_placement(after)
+    assert (
+        poll_invalidate_last_suggestion(
+            {},
+            current_board_fp=after,
+        )
+        is None
+    )
+
+
+def test_currency_symbol_fp_matches_placement_letter_g():
+    before = _board_fp_at(2, 2, "i/letter/colorless")
+    after = _board_fp_at(2, 2, "₲/currency/red")
+    placements = [{"row": 2, "col": 2, "letter": "G", "index": 12}]
+    assert fingerprint_change_is_consumable_placement_progress(
+        before, after, placements
+    )
+
+
+def test_wildcard_placement_letter_accepts_any_tile_at_cell():
+    before = _board_fp_at(2, 2, "i/letter/colorless")
+    after = _board_fp_at(2, 2, "g/currency/red")
+    placements = [{"row": 2, "col": 2, "letter": "?", "index": 12}]
+    assert fingerprint_change_is_consumable_placement_progress(
+        before, after, placements
+    )
+
+
+def test_poll_invalidate_none_for_currency_partial_placement():
+    before = _board_fp_at(1, 1, "x/letter/colorless")
+    after = _board_fp_at(1, 1, "₲/currency/red")
+    LAST_SUGGESTION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LAST_SUGGESTION_PATH.write_text(
+        json.dumps(
+            {
+                "board_fingerprint": before,
+                "consumable_placements": [
+                    {"row": 1, "col": 1, "letter": "G", "index": 6},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert fingerprint_invalidate_suppressed_for_consumable_placement(after)
+    assert (
+        poll_invalidate_last_suggestion(
+            {},
+            current_board_fp=after,
+        )
+        is None
+    )

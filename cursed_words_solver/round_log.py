@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import time
+from datetime import datetime
 from typing import Any
+
+AUTO_SOLVE_BOARD_WAIT_TIMEOUT_SEC = 10.0
 
 from cursed_words_solver.config import ROUND_LOG_INDEX_PATH
 
@@ -26,6 +30,110 @@ def round_log_index_size() -> int:
         return ROUND_LOG_INDEX_PATH.stat().st_size
     except OSError:
         return 0
+
+
+def auto_solve_board_ready(
+    *,
+    snapshot_board_fp: str,
+    current_board_fp: str,
+    queued_monotonic: float,
+    now_monotonic: float | None = None,
+    timeout_sec: float = AUTO_SOLVE_BOARD_WAIT_TIMEOUT_SEC,
+) -> bool:
+    """True when melmod likely exported the post-submit board (or wait timed out)."""
+    snap = (snapshot_board_fp or "").strip()
+    cur = (current_board_fp or "").strip()
+    if snap and cur and cur != snap:
+        return True
+    if not snap:
+        return True
+    now = time.monotonic() if now_monotonic is None else now_monotonic
+    return (now - queued_monotonic) >= timeout_sec
+
+
+def parse_round_log_id_time(round_id: str) -> datetime | None:
+    """Parse melmod round_id timestamp (local wall clock, naive)."""
+    raw = (round_id or "").strip()
+    if len(raw) < 15:
+        return None
+    try:
+        return datetime.strptime(raw[:15], "%Y%m%d_%H%M%S")
+    except ValueError:
+        return None
+
+
+def round_log_entries_after(
+    entries: list[dict[str, Any]],
+    not_before: datetime,
+) -> list[dict[str, Any]]:
+    """Drop index rows older than not_before (guards index truncation re-reads)."""
+    kept: list[dict[str, Any]] = []
+    for row in entries:
+        if not isinstance(row, dict):
+            continue
+        created = parse_round_log_id_time(str(row.get("round_id", "") or ""))
+        if created is None or created >= not_before:
+            kept.append(row)
+    return kept
+
+
+def round_log_entries_are_word_submits(entries: list[dict[str, Any]]) -> bool:
+    """True when any index row is an in-game word submit (not shop noise)."""
+    for row in entries:
+        if not isinstance(row, dict):
+            continue
+        word = str(row.get("submitted_word", "") or "").strip()
+        if not word:
+            continue
+        status = str(row.get("match_status", "") or "").strip()
+        if status in MATCH_STATUSES:
+            return True
+    return False
+
+
+def _first_letter_of_submitted_word(word: str) -> str | None:
+    """First alphabetic character of an in-game submitted word."""
+    for ch in (word or "").strip().lower():
+        if ch.isalpha():
+            return ch
+    return None
+
+
+def last_round_log_submit_word() -> str | None:
+    """Last submitted word from round_logs/index.jsonl, or None when unavailable."""
+    path = ROUND_LOG_INDEX_PATH
+    if not path.exists():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    last_word: str | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            row = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        word = str(row.get("submitted_word", "") or "").strip()
+        if not word:
+            continue
+        status = str(row.get("match_status", "") or "").strip()
+        if status in MATCH_STATUSES:
+            last_word = word
+    return last_word
+
+
+def last_submit_first_letter() -> str | None:
+    """First letter of the last in-game word submit (for F8 workflow catchup)."""
+    word = last_round_log_submit_word()
+    if not word:
+        return None
+    return _first_letter_of_submitted_word(word)
 
 
 def poll_round_log_submits(since_offset: int = 0) -> tuple[list[dict[str, Any]], int]:

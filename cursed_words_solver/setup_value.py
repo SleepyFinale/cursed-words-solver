@@ -23,12 +23,12 @@ _SETUP_STICKER_IDS = frozenset(
     {
         "birthday_cake",
         "hi_vis_jacket",
-        "tile_ninja",
         "michaels_book",
         "michael_book",
         "red_rider",
     }
 )
+_SETUP_STAMP_IDS = frozenset({"tile_ninja"})
 _BICYCLE_PIN_EFFECTS = frozenset({"bicycle", "bones_the_dog", "bones"})
 
 
@@ -77,6 +77,9 @@ def _has_setup_mechanics(loadout: Loadout) -> bool:
             return True
         if "birthday" in (item.name or "").lower():
             return True
+    for item in loadout.stamps:
+        if (item.id or "").lower() in _SETUP_STAMP_IDS:
+            return True
     return False
 
 
@@ -119,10 +122,6 @@ def project_setup_delta(
                 step = int(sticker_rule_float(_sticker_level(loadout, sid), rule) * 5) or 1
                 delta.consumable_rack_count = step
 
-        elif sid == "tile_ninja":
-            if consumable_count_on_path(board, path) > 0:
-                delta.tile_ninja_bonus = 0.02
-
         elif sid in ("michael_book", "michaels_book"):
             sticker_rules = rules.get("stickers", {})
             rule = sticker_rules.get(sid) or sticker_rules.get("michael_book") or {}
@@ -156,6 +155,13 @@ def project_setup_delta(
             )
             if reds:
                 delta.red_tiles_used_encounter = reds
+
+    consumables_on_path = consumable_count_on_path(board, path)
+    if consumables_on_path > 0:
+        for item in loadout.stamps:
+            if (item.id or "").lower() == "tile_ninja":
+                delta.tile_ninja_bonus = 0.02 * consumables_on_path
+                break
 
     return delta
 

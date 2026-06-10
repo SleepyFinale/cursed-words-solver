@@ -2095,6 +2095,8 @@ namespace CursedWordsSolverCompanion
                 snapshot.extras["tile_ninja_bonus"] = tileNinjaBonus.ToString(
                     System.Globalization.CultureInfo.InvariantCulture
                 );
+            else if (HasTileNinjaStamp(player))
+                snapshot.extras["tile_ninja_bonus"] = "0";
 
             if (TryGetAvocadoMushy(player))
                 snapshot.extras["avocado_mushy"] = "true";
@@ -3102,6 +3104,26 @@ namespace CursedWordsSolverCompanion
                 if (art.IndexOf("mutating", StringComparison.OrdinalIgnoreCase) >= 0)
                     return true;
                 if (art.IndexOf("dna", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool HasTileNinjaStamp(Player player)
+        {
+            if (player?.Stamps == null)
+                return false;
+
+            foreach (var stamp in player.Stamps)
+            {
+                if (stamp == null)
+                    continue;
+                var name = stamp.Name ?? "";
+                var art = stamp.ArtFileName ?? "";
+                if (name.IndexOf("Tile Ninja", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+                if (art.IndexOf("tile_ninja", StringComparison.OrdinalIgnoreCase) >= 0)
                     return true;
             }
 

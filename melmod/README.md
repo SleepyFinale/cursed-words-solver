@@ -14,7 +14,7 @@ This MelonLoader mod writes files under `%USERPROFILE%\.cursed_words_solver\` wh
 
 - **Auto-export** when loadout or board changes (~0.5s debounce)
 
-- **F7** in-game forces an immediate refresh (MelonLoader console log). Auto-export runs when the fingerprint changes (~0.5s debounce), including consumable rack tiles (`extras.consumable_rack`). F8 in the solver re-reads `run_state.json` each solve; F7 is only needed to force export when auto-export has not caught up yet.
+- **F7** in-game forces an immediate refresh (MelonLoader console log). Auto-export runs when the fingerprint changes (~0.5s debounce), including consumable rack tiles (`extras.consumable_rack`). A single **F8** in the solver polls `run_state.json` until the board and required extras are ready; F7 is only needed to force export when auto-export has not caught up yet.
 
 - **Boss context** — `boss_id`, `boss_name`, plus `extras.boss_area_number` (from `Player.CurrentRunProgress.GetStage()`), `extras.boss_cursed` (from `BossModifier.IsCursed`), `extras.hyena_blocked`, `extras.boss_floor_modification`, `extras.grids_remaining`, live `wolf_max_length` / `cobra_min_length` when applicable. Boss discovery uses live `EncounterController.GetBossModifiers()` (then player `ActiveBossModifiers`); boss fields and boss-specific extras are **cleared** when no boss is active. Scoring hooks clear their cache when `bossModifiers` is empty. Wolf maps from game type `MaxWordLength` → wiki id `wolf`. **Bat** boards export all 25 slots with `active: false` on unused cells plus `rows`/`cols` (height × width from `GridData.Dimensions`), `playable_origin`, and `playable_min_row`…`playable_max_col` for overlay alignment. After rebuilding the companion, press **F7** in-game before **F8** solve so shrunk grids (e.g. game **4×3**) export with the correct active columns.
 
@@ -30,7 +30,7 @@ When the solver’s predicted score does not match the game after you play the *
 
 ### Scoring mismatch workflow
 
-1. In-game: **F7** (refresh board/loadout), then run the Python solver and press **F8**.
+1. In-game: open the grid or shop, then run the Python solver and press **F8** once (F7 optional if export is stale).
 2. Solver writes `%USERPROFILE%\.cursed_words_solver\last_suggestion.json` (`scoring_word` / `word`, `path`, fingerprints, `predicted_trace`; optional `dictionary_word` when the game will spell it differently).
 3. Trace the **exact highlighted path** on the **same board** (before the grid changes) and submit. The game shows the **dictionary** spelling (e.g. `settee`); the solver stores the **scoring** form (e.g. `12ttee` with number/shiny tiles). Capture matches on **path + board fingerprint**, not the word string.
 4. On submit, Harmony hooks read the game’s `ScoreCalculation.CalculateOverallScore` steps.
@@ -50,9 +50,9 @@ MelonLoader console logs `Scoring MISMATCH` with the file path, or `Scoring matc
 
 On startup the mod prints the mismatch folder path. After each word submit you should see either `Scoring capture: tracking suggested word …` or `Scoring capture skipped: …` (explains why it did not match, e.g. different path or board changed).
 
-If you only see a score difference in-game but **no** `scoring_mismatches` file, the mod did not recognize the submit as the F8 suggestion — check the skip message (alternate path vs board changed), press **F8** again, then submit on the **highlighted path** before the board changes.
+If you only see a score difference in-game but **no** `scoring_mismatches` file, the mod did not recognize the submit as the F8 suggestion — check the skip message (alternate path vs board changed), then submit on the **highlighted path** before the board changes.
 
-If the board changed since F8, melmod logs a **Warning** at submit (`Solver suggestion is stale…`) and round logs set `comparison.stale_suggestion: true` when `board_fingerprint` on `last_suggestion.json` does not match the current board. **Exception:** when F8 wrote `consumable_placements` (Sandy Saguaro rack tiles), placing those consumables on the suggested cells — including one at a time before submit — is treated as valid board drift; scoring capture and round logs should not mark the suggestion stale for that change alone. The Python overlay uses the same rule (`tests/test_suggestion_placement.py`). For any other board change, press **F8** to refresh before submitting.
+If the board changed since F8 (you played a different word or the grid advanced), melmod logs a **Warning** at submit (`Solver suggestion is stale…`) and round logs set `comparison.stale_suggestion: true` when `board_fingerprint` on `last_suggestion.json` does not match the current board. **Exception:** when F8 wrote `consumable_placements` (Sandy Saguaro rack tiles), placing those consumables on the suggested cells — including one at a time before submit — is treated as valid board drift; scoring capture and round logs should not mark the suggestion stale for that change alone. The Python overlay uses the same rule (`tests/test_suggestion_placement.py`). After submit, the solver clears the overlay; press **F8** on the next grid when ready.
 
 ### Turn a mismatch into a regression fixture
 

@@ -24,7 +24,15 @@ from cursed_words_solver.fingerprints import (
     fingerprints_from_run_state,
 )
 
-from cursed_words_solver.models import CHESS_CURSES, Board, CurseType, Loadout, WordResult
+from cursed_words_solver.models import (
+    CHESS_CURSES,
+    CURRENCY_MAP,
+    Board,
+    CurseType,
+    Loadout,
+    WordResult,
+    normalize_tile_glyph,
+)
 
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
@@ -75,6 +83,39 @@ def _parse_board_fp_tiles(fp: str) -> dict[tuple[int, int], str]:
     return tiles
 
 
+def _fp_tile_letter_prefix(fp_tile_segment: str) -> str:
+    """Letter or currency glyph before the first '/' in a fingerprint tile segment."""
+    return (fp_tile_segment.split("/")[0] or "").strip()
+
+
+def _normalize_placement_letter(letter: str) -> str:
+    """Map currency symbols to A–Z; preserve '?' wildcard."""
+    raw = (letter or "").strip()
+    if raw == "?":
+        return "?"
+    glyph = normalize_tile_glyph(raw)
+    if glyph in CURRENCY_MAP:
+        return CURRENCY_MAP[glyph].upper()
+    if len(glyph) == 1 and glyph.isalpha():
+        return glyph.upper()
+    if len(raw) == 1 and raw.isalpha():
+        return raw.upper()
+    return raw.upper()
+
+
+def _fp_tile_matches_placement(placement_letter: str, fp_tile_segment: str) -> bool:
+    """True when melmod tile segment matches a suggested consumable placement letter."""
+    if not (fp_tile_segment or "").strip():
+        return False
+    placed = _normalize_placement_letter(placement_letter)
+    if placed == "?":
+        return True
+    cur = _normalize_placement_letter(_fp_tile_letter_prefix(fp_tile_segment))
+    if not cur:
+        return False
+    return cur == placed or cur.startswith(placed) or placed.startswith(cur)
+
+
 def _placement_cells_from_records(
     placements: list[Any],
 ) -> dict[tuple[int, int], str]:
@@ -117,7 +158,7 @@ def fingerprint_change_is_consumable_placement_progress(
         if key not in placement_cells:
             return False
         cur_tile = current.get(key, "")
-        if not cur_tile or not cur_tile.upper().startswith(placement_cells[key]):
+        if not _fp_tile_matches_placement(placement_cells[key], cur_tile):
             return False
     return True
 
@@ -172,7 +213,8 @@ def stale_suggestion_warning(
     previous_board = str(data.get("board_fingerprint") or "").strip()
     loadout = (current_loadout_fp or "").strip()
     previous_loadout = str(data.get("loadout_fingerprint") or "").strip()
-    if previous_board and previous_board == current:
+    same_board = previous_board == current or _board_tiles_match(previous_board, current)
+    if previous_board and same_board:
         if loadout and previous_loadout and previous_loadout != loadout:
             return (
                 "Note: loadout changed since last F8 (e.g. Bicycle acc) — "
@@ -427,17 +469,13 @@ def workflow_invalidate_suppressed_for_export_catchup(
     current_board_fp: str = "",
     search_budget_sec: float | None = None,
 ) -> bool:
-    """Skip workflow invalidation when melmod export likely lagged right after F8."""
+    """Skip workflow invalidation when melmod export likely lagged after F8."""
     data = _last_suggestion_fingerprint_data()
     if data is None:
         return False
     f8_extras = _f8_snapshot_extras(data)
     cur_extras = run_state_extras if isinstance(run_state_extras, dict) else {}
     if is_embed_stale_drift(f8_extras, cur_extras):
-        return False
-    age = _last_suggestion_age_sec(data)
-    grace = f8_export_catchup_grace_sec(search_budget_sec)
-    if age is None or age > grace:
         return False
     f8_board = str(data.get("board_fingerprint") or "").strip()
     cur_board = (current_board_fp or "").strip()
@@ -665,25 +703,75 @@ def clear_stale_last_suggestion_if_fingerprint_changed(
     return None
 
 
+def _active_session_same_board_tiles(
+    active_session: Any,
+    current_board_fp: str,
+) -> bool:
+    if active_session is None:
+        return False
+    session_tiles = str(
+        getattr(active_session, "board_tiles_fingerprint", "") or ""
+    ).strip()
+    cur_tiles = board_tiles_fingerprint_suffix(current_board_fp)
+    return bool(session_tiles and cur_tiles and session_tiles == cur_tiles)
+
+
 def poll_invalidate_last_suggestion(
     run_state_extras: dict[str, Any] | None,
     *,
     current_board_fp: str = "",
     current_loadout_fp: str | None = None,
     search_budget_sec: float | None = None,
+    active_session: Any = None,
 ) -> str | None:
-    """Clear last_suggestion.json when workflow or fingerprint drift is detected."""
+    """Clear last_suggestion.json when board/loadout genuinely changes."""
+    del search_budget_sec  # no longer time-gated; session holds suggestion until submit
     if not LAST_SUGGESTION_PATH.exists():
         return None
 
-    suppress_catchup = workflow_invalidate_suppressed_for_export_catchup(
-        run_state_extras,
-        current_board_fp=current_board_fp,
-        search_budget_sec=search_budget_sec,
+    suppress_placement = fingerprint_invalidate_suppressed_for_consumable_placement(
+        current_board_fp
     )
-    suppress_fp = fingerprint_invalidate_suppressed_for_post_f8_export(
+    if suppress_placement:
+        return None
+
+    data = _last_suggestion_fingerprint_data()
+    saved_board = str((data or {}).get("board_fingerprint") or "").strip()
+    f8_extras = _f8_snapshot_extras(data) if data else {}
+    cur_extras = run_state_extras if isinstance(run_state_extras, dict) else {}
+    embed_stale = is_embed_stale_drift(f8_extras, cur_extras)
+    same_tiles = _board_tiles_match(saved_board, current_board_fp)
+
+    if _active_session_same_board_tiles(active_session, current_board_fp):
+        session_loadout = str(
+            getattr(active_session, "loadout_fingerprint", "") or ""
+        ).strip()
+        current_loadout = (current_loadout_fp or "").strip()
+        if session_loadout and current_loadout and session_loadout != current_loadout:
+            if clear_stale_last_suggestion_if_fingerprint_changed(
+                current_board_fp,
+                current_loadout_fp=current_loadout_fp,
+            ):
+                return "loadout changed"
+        if embed_stale:
+            reason = clear_stale_last_suggestion_if_workflow_changed(run_state_extras)
+            if reason:
+                return f"Played word since F8 ({reason})"
+        return None
+
+    suppress_catchup = (
+        not embed_stale
+        and same_tiles
+        and (
+            workflow_invalidate_suppressed_for_export_catchup(
+                run_state_extras,
+                current_board_fp=current_board_fp,
+            )
+            or is_disk_catchup_drift(f8_extras, cur_extras)
+        )
+    )
+    suppress_fp = same_tiles and fingerprint_invalidate_suppressed_for_post_f8_export(
         current_board_fp,
-        search_budget_sec=search_budget_sec,
     )
 
     if not suppress_catchup:
@@ -691,11 +779,7 @@ def poll_invalidate_last_suggestion(
         if reason:
             return f"Played word since F8 ({reason})"
 
-    suppress_placement = fingerprint_invalidate_suppressed_for_consumable_placement(
-        current_board_fp
-    )
-
-    if not suppress_fp and not suppress_catchup and not suppress_placement:
+    if not suppress_fp and not suppress_catchup:
         fp_reason = clear_stale_last_suggestion_if_fingerprint_changed(
             current_board_fp,
             current_loadout_fp=current_loadout_fp,
@@ -943,61 +1027,39 @@ def loadout_needs_previous_word_letter(loadout: Loadout | None) -> bool:
 
 def f8_should_block_save(
     *,
-    historic_catchup_stale_note: str | None,
-    empty_hist_warn: str | None,
-    hist_stale_note: str | None,
-    behind_disk_warn: str | None,
-    workflow_stale_warn: str | None,
-    grid_adv_warn: str | None,
+    historic_catchup_stale_note: str | None = None,
+    empty_hist_warn: str | None = None,
+    hist_stale_note: str | None = None,
+    behind_disk_warn: str | None = None,
+    workflow_stale_warn: str | None = None,
+    grid_adv_warn: str | None = None,
     grid_bleed_warn: str | None = None,
     grid_one_hist_warn: str | None = None,
-    loadout: Loadout | None,
-    board: Board | None,
-    f8_extras: dict[str, Any] | None,
+    loadout: Loadout | None = None,
+    board: Board | None = None,
+    f8_extras: dict[str, Any] | None = None,
+    gather_succeeded: bool = True,
+    mid_solve_grid_advanced: bool = False,
 ) -> tuple[bool, str | None]:
     """Whether F8 must skip trusted last_suggestion.json (melmod capture)."""
-    blocking = (
+    del (
         historic_catchup_stale_note,
+        empty_hist_warn,
+        hist_stale_note,
         behind_disk_warn,
-        workflow_stale_warn,
+        grid_adv_warn,
         grid_bleed_warn,
         grid_one_hist_warn,
+        f8_extras,
+        loadout,
+        board,
     )
-    for note in blocking:
-        if note:
-            if note in (grid_bleed_warn, grid_one_hist_warn):
-                if loadout is None and board is None:
-                    return True, note
-                if loadout_needs_encounter_historic(loadout, board):
-                    return True, note
-            else:
-                return True, note
-
-    if hist_stale_note and loadout_needs_previous_word_letter(loadout):
-        return True, hist_stale_note
-
-    extras = f8_extras if isinstance(f8_extras, dict) else {}
-    hist = str(extras.get("historic_words", "") or "").strip()
-    hist_empty = not hist or hist == "[]"
-    try:
-        grid = int(str(extras.get("grid_number") or "0"))
-    except ValueError:
-        grid = 0
-
-    if empty_hist_warn and hist_empty:
-        if behind_disk_warn:
-            return True, behind_disk_warn
-        from cursed_words_solver.loadout import encounter_historic_stale_pruned_on_disk
-
-        if encounter_historic_stale_pruned_on_disk(grid, board=board):
-            return False, None
-        if grid >= 2 or loadout_needs_encounter_historic(loadout, board):
-            return True, empty_hist_warn
-
-    if grid_adv_warn and loadout_needs_encounter_historic(loadout, board):
-        if hist_empty:
-            return True, grid_adv_warn
-
+    if not gather_succeeded:
+        return True, "gather_incomplete"
+    if mid_solve_grid_advanced:
+        return True, "grid_advanced_during_solve"
+    if workflow_stale_warn:
+        return True, "workflow_extras_stale"
     return False, None
 
 

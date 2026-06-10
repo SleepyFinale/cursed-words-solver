@@ -96,3 +96,30 @@ def test_searcher_score_cache_reuses(tmp_path):
 
 def test_derive_setup_ranking_winner_helper():
     assert derive_setup_ranking_winner(80.0, 100.0, 120.0, 90.0) == "setup"
+
+
+def test_project_tile_ninja_stamp_delta_scales_with_consumables():
+    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
+    grid[0][0] = Tile(
+        0, 0, "G", "G", 1, metadata={"consumable": True, "was_consumable": True}
+    )
+    grid[0][1] = Tile(
+        0, 1, "U", "U", 1, metadata={"consumable": True, "was_consumable": True}
+    )
+    board = Board(tiles=grid, money=0)
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={"grids_remaining": "3"},
+    )
+    delta = project_setup_delta(board, [0, 1], "gu", loadout)
+    assert delta.tile_ninja_bonus == 0.04
+    assert setup_future_value(delta, loadout) > 0
+
+
+def test_project_tile_ninja_stamp_absent_without_stamp():
+    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
+    grid[0][0] = Tile(0, 0, "G", "G", 1, metadata={"consumable": True})
+    board = Board(tiles=grid, money=0)
+    loadout = Loadout(extras={"grids_remaining": "3"})
+    delta = project_setup_delta(board, [0], "g", loadout)
+    assert delta.tile_ninja_bonus == 0.0

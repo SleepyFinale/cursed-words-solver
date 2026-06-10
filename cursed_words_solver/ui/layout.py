@@ -8,11 +8,7 @@ import statistics
 from dataclasses import dataclass
 from typing import Any
 
-from cursed_words_solver.config import (
-    LAST_GOOD_RACK_LAYOUT_PATH,
-    AppConfig,
-    Region,
-)
+from cursed_words_solver.config import AppConfig, Region
 from cursed_words_solver.ui.board_geometry import RACK_MARKER_RADIUS_MAX
 from cursed_words_solver.ui.coordinates import convert_melmod_overlay_to_qt
 
@@ -443,37 +439,13 @@ def _rack_block_from_centers(
     return block
 
 
-def _load_cached_rack_layout() -> dict[str, Any] | None:
-    if not LAST_GOOD_RACK_LAYOUT_PATH.exists():
-        return None
-    try:
-        data = json.loads(LAST_GOOD_RACK_LAYOUT_PATH.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-    block = data.get("consumable_rack") if isinstance(data, dict) else None
-    return block if isinstance(block, dict) else None
-
-
-def _save_cached_rack_layout(rack_block: Any) -> None:
-    if not isinstance(rack_block, dict):
-        return
-    try:
-        LAST_GOOD_RACK_LAYOUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        LAST_GOOD_RACK_LAYOUT_PATH.write_text(
-            json.dumps({"consumable_rack": rack_block}, indent=2),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-
-
 def _repair_degenerate_rack_layout(
     rack_block: Any,
     centers: dict[int, tuple[float, float]] | None,
     *,
     config: AppConfig | None = None,
 ) -> tuple[Any, dict[int, tuple[float, float]] | None, bool, bool]:
-    """Recover collapsed rack exports via cache, synthesis, or manual calibration."""
+    """Recover collapsed rack exports via synthesis or manual calibration."""
     if not _is_degenerate_rack_export(centers, rack_block):
         return rack_block, centers, False, False
 
@@ -482,19 +454,13 @@ def _repair_degenerate_rack_layout(
         if synthesized is not None:
             return rack_block, synthesized, True, False
 
-    cached = _load_cached_rack_layout()
-    if cached is not None:
-        cached_centers = _parse_rack_slot_centers(cached)
-        if cached_centers and _is_valid_rack_layout(cached_centers, cached):
-            return cached, cached_centers, True, True
-
     if config is not None and config.rack_region.is_valid():
         manual_centers = _synthesize_rack_slot_centers_from_region(config.rack_region)
         if manual_centers is not None:
             manual_block = _rack_block_from_centers(manual_centers)
             return manual_block, manual_centers, True, False
 
-    return rack_block, None, False, False
+    return rack_block, None, False, True
 
 
 def _repair_board_region_from_cells(
@@ -547,13 +513,6 @@ def parse_ui_layout(
         )
         if y_corrected:
             rack_slot_corrected = True
-
-    if (
-        rack_slot_centers
-        and isinstance(rack_block, dict)
-        and _is_valid_rack_layout(rack_slot_centers, rack_block)
-    ):
-        _save_cached_rack_layout(rack_block)
 
     rack_slot_sizes = _parse_rack_slot_sizes(
         rack_block, run_state, slot_centers=rack_slot_centers

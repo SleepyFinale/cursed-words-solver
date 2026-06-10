@@ -768,7 +768,7 @@ def test_sanitize_run_state_snapshot_strips_stale_bicycle_for_bucket_pin(
     extras = cleaned["extras"]
     assert "bicycle_word_score_bonus" not in extras
     assert "cards_submitted" not in extras
-    assert "previous_word_first_letter" not in extras
+    assert extras.get("previous_word_first_letter") == "f"
 
 
 def test_historic_words_count_edge_cases():
@@ -935,7 +935,7 @@ def test_behind_disk_false_positive_when_stale_historic_pruned(tmp_path, monkeyp
     loadout = Loadout(extras={"grid_number": "2"})
     f8_snapshot = sanitize_run_state_snapshot_for_f8(merged_run_state, loadout)
     f8_extras = f8_snapshot["extras"]
-    assert _historic_words_count(str(f8_extras.get("historic_words", "") or "")) == 0
+    assert _historic_words_count(str(f8_extras.get("historic_words", "") or "")) == 1
     assert (
         f8_historic_still_behind_disk_warning(
             f8_extras,
@@ -994,17 +994,7 @@ def test_workflow_stale_false_positive_after_word_play_prune():
     f8_extras = f8_snapshot["extras"]
     run_extras = merged_run_state["extras"]
 
-    raw_reason = workflow_stale_vs_f8_snapshot(run_extras, f8_extras)
-    assert raw_reason is not None
-    assert "0→1" in raw_reason
-
-    run_extras_compare = copy.deepcopy(run_extras)
-    reconcile_encounter_historic_for_scoring(
-        run_extras_compare,
-        board=parse_board_from_run_state(merged_run_state),
-    )
-    assert workflow_stale_vs_f8_snapshot(run_extras_compare, f8_extras) is None
-    assert f8_prediction_workflow_stale_warning(run_extras_compare, f8_extras) is None
+    assert workflow_stale_vs_f8_snapshot(run_extras, f8_extras) is None
 
     blocked, _ = f8_should_block_save(
         historic_catchup_stale_note=None,
@@ -1331,9 +1321,8 @@ def test_poll_suppresses_board_money_drift_within_grace(tmp_path, monkeypatch):
         current_board_fp=board_fp_current,
         current_loadout_fp="same-loadout",
     )
-    assert reason is not None
-    assert "board changed" in reason.lower()
-    assert not suggestion_path.exists()
+    assert reason is None
+    assert suggestion_path.exists()
 
 
 def test_poll_suppresses_letter_drift_when_historic_same_count_refreshed(
@@ -1409,7 +1398,7 @@ def test_poll_suppresses_workflow_clear_within_grace(tmp_path, monkeypatch):
     assert suggestion_path.exists()
 
 
-def test_poll_clears_workflow_drift_after_grace(tmp_path, monkeypatch):
+def test_poll_suppresses_workflow_disk_catchup_after_grace(tmp_path, monkeypatch):
     suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
     board_fp = "board-catchup-old"
     old = (datetime.now(timezone.utc) - timedelta(seconds=F8_EXPORT_CATCHUP_GRACE_SEC + 1)).isoformat()
@@ -1432,9 +1421,44 @@ def test_poll_clears_workflow_drift_after_grace(tmp_path, monkeypatch):
         },
         current_board_fp=board_fp,
     )
-    assert reason is not None
-    assert "Played word since F8" in reason
-    assert not suggestion_path.exists()
+    assert reason is None
+    assert suggestion_path.exists()
+
+
+def test_poll_suppresses_disk_catchup_after_search_budget_grace(
+    tmp_path, monkeypatch
+):
+    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
+    board_fp = "2|4,0:A/letter/colorless;"
+    old = (
+        datetime.now(timezone.utc)
+        - timedelta(seconds=f8_export_catchup_grace_sec(45.0) + 1)
+    ).isoformat()
+    suggestion_path.write_text(
+        json.dumps(
+            {
+                "created_at": old,
+                "board_fingerprint": board_fp,
+                "run_state_snapshot": {
+                    "extras": {
+                        "historic_words": "",
+                        "previous_word_first_letter": "g",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    poll_extras = {
+        "historic_words": '[{"word":"penne"},{"word":"zooty"}]',
+        "previous_word_first_letter": "s",
+    }
+    assert poll_invalidate_last_suggestion(
+        poll_extras,
+        current_board_fp=board_fp,
+        search_budget_sec=45.0,
+    ) is None
+    assert suggestion_path.exists()
 
 
 def test_poll_clears_when_board_fingerprint_changes(tmp_path, monkeypatch):
@@ -1840,7 +1864,7 @@ def test_glaived_grid4_first_word_limnophila_off():
 
     stale_loadout = parse_run_state(raw_snapshot)
     stale_score, stale_trace = pipeline.score(board, path, word, stale_loadout)
-    assert stale_score == data["predicted_score_stale"]
+    assert stale_score == data["actual_score"]
 
     run_state = prepare_run_state_dict_for_scoring(dict(raw_snapshot))
     loadout = parse_run_state(run_state)
@@ -2341,18 +2365,12 @@ def test_f8_should_block_when_telescope_and_historic_still_empty(
         {"grid_number": "2", "historic_words": ""}
     )
     blocked, reason = f8_should_block_save(
-        historic_catchup_stale_note=None,
-        empty_hist_warn=empty_warn,
-        hist_stale_note=None,
-        behind_disk_warn=None,
-        workflow_stale_warn=None,
-        grid_adv_warn=None,
+        gather_succeeded=False,
         loadout=loadout,
         board=board,
-        f8_extras={"grid_number": "2", "historic_words": ""},
     )
     assert blocked
-    assert reason == empty_warn
+    assert reason == "gather_incomplete"
 
 
 def test_f8_should_block_grid2_empty_historic_without_telescope(tmp_path, monkeypatch):
@@ -2371,18 +2389,12 @@ def test_f8_should_block_grid2_empty_historic_without_telescope(tmp_path, monkey
     assert empty_warn is not None
     assert not loadout_needs_encounter_historic(loadout, board)
     blocked, reason = f8_should_block_save(
-        historic_catchup_stale_note=None,
-        empty_hist_warn=empty_warn,
-        hist_stale_note=None,
-        behind_disk_warn=None,
-        workflow_stale_warn=None,
-        grid_adv_warn=None,
+        gather_succeeded=True,
         loadout=loadout,
         board=board,
-        f8_extras={"grid_number": "2", "historic_words": ""},
     )
-    assert blocked
-    assert reason == empty_warn
+    assert not blocked
+    assert reason is None
 
 
 def test_loadout_needs_previous_word_letter_grid1_bento_off():
@@ -2451,18 +2463,12 @@ def test_f8_should_block_prev_letter_mismatch_grid2_bento():
     )
     assert loadout_needs_previous_word_letter(loadout)
     blocked, reason = f8_should_block_save(
-        historic_catchup_stale_note=None,
-        empty_hist_warn=None,
-        hist_stale_note=hist_stale,
-        behind_disk_warn=None,
-        workflow_stale_warn=None,
-        grid_adv_warn=None,
+        gather_succeeded=True,
         loadout=loadout,
         board=Board(tiles=[[None] * 5 for _ in range(5)], money=0),
-        f8_extras=extras,
     )
-    assert blocked
-    assert reason == hist_stale
+    assert not blocked
+    assert reason is None
 
 
 def _collect_workflow_drift_notes_for_capture(
@@ -2640,19 +2646,12 @@ def test_diets_grid2_bleed_fixture():
     for fragment in data["expected_bleed_warning_contains"]:
         assert fragment in bleed
     blocked, reason = f8_should_block_save(
-        historic_catchup_stale_note=None,
-        empty_hist_warn=None,
-        hist_stale_note=None,
-        behind_disk_warn=None,
-        workflow_stale_warn=None,
-        grid_adv_warn=None,
-        grid_bleed_warn=bleed,
+        gather_succeeded=True,
         loadout=None,
         board=None,
-        f8_extras=data["run_state_extras"],
     )
-    assert blocked
-    assert reason == bleed
+    assert not blocked
+    assert reason is None
     note = _describe_stale_f8_workflow_drift_capture_block(
         data["extras_diff"],
         has_mutating_dna_stamp=False,
@@ -2735,20 +2734,12 @@ def test_f8_should_block_grid_one_historic_cache_mismatch_with_telescope():
     grid_one_warn = grid_one_historic_cache_mismatch_warning(f8_extras)
     assert grid_one_warn is not None
     blocked, reason = f8_should_block_save(
-        historic_catchup_stale_note=None,
-        empty_hist_warn=None,
-        hist_stale_note=None,
-        behind_disk_warn=None,
-        workflow_stale_warn=None,
-        grid_adv_warn=None,
-        grid_bleed_warn=None,
-        grid_one_hist_warn=grid_one_warn,
+        gather_succeeded=True,
         loadout=loadout,
         board=board,
-        f8_extras=f8_extras,
     )
-    assert blocked
-    assert reason == grid_one_warn
+    assert not blocked
+    assert reason is None
 
 
 def test_spc_regression_blocks_capture():
@@ -2983,8 +2974,8 @@ def test_sanitize_run_state_snapshot_for_f8_projects_workflow_extras(
     }
     sanitized = sanitize_run_state_snapshot_for_f8(embed, Loadout())
     assert sanitized is not None
-    assert sanitized["extras"]["historic_words"] == submit_hist
-    assert _scoring_previous_words_count_from_extras(sanitized["extras"]) == 1
+    assert sanitized["extras"]["historic_words"] == f8_hist
+    assert _scoring_previous_words_count_from_extras(sanitized["extras"]) == 3
 
 
 def test_benign_shrink_presync_workflow_cleared_after_projection():
@@ -3218,8 +3209,8 @@ def test_sanitize_run_state_snapshot_for_f8_projects_workflow_extras(
     }
     sanitized = sanitize_run_state_snapshot_for_f8(embed, Loadout())
     assert sanitized is not None
-    assert sanitized["extras"]["historic_words"] == submit_hist
-    assert _scoring_previous_words_count_from_extras(sanitized["extras"]) == 1
+    assert sanitized["extras"]["historic_words"] == f8_hist
+    assert _scoring_previous_words_count_from_extras(sanitized["extras"]) == 3
 
 
 def test_benign_shrink_presync_workflow_cleared_after_projection():

@@ -609,6 +609,22 @@ def test_remaining_rack_tiles_excludes_placed_by_rack_index():
     assert remaining_rack_tiles(loadout, board) == []
 
 
+def test_currency_rack_tile_maps_symbol_to_letter():
+    entry = {
+        "rack_index": 0,
+        "letter": "₲",
+        "char_display": "₲",
+        "color": "red",
+        "curse": "currency",
+        "base_score": 1.0,
+    }
+    tile = rack_tile_from_entry(entry)
+    assert tile is not None
+    assert tile.letter == "G"
+    assert tile.char == "₲"
+    assert tile.curse == CurseType.CURRENCY
+
+
 def test_placement_cell_score_prefers_high_base_score():
     rules = ScoringPipeline().rules
     loadout = _mahjong_loadout_with_red_rack()

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import atexit
-import copy
 import json
 import signal
 import sys
@@ -37,6 +36,12 @@ from cursed_words_solver.config import (
     describe_wordlist,
     resolve_wordlist,
 )
+from cursed_words_solver.f8_snapshot import (
+    F8SuggestionSession,
+    embed_run_state_for_suggestion,
+    gather_f8_snapshot,
+    session_from_snapshot,
+)
 from cursed_words_solver.suggestion import (
     clear_last_suggestion,
     clear_stale_last_suggestion_if_context_changed,
@@ -47,19 +52,11 @@ from cursed_words_solver.suggestion import (
     f8_should_block_save,
     format_suggestion_word,
     format_result_score_display,
-    f8_prior_suggestion_stale_note,
-    f8_prediction_workflow_stale_warning,
-    grid_one_historic_cache_mismatch_warning,
-    grid_transition_workflow_bleed_warning,
     poll_invalidate_last_suggestion,
-    empty_historic_on_later_grid_warning,
-    grid_advanced_since_last_f8_warning,
-    run_state_historic_stale_warnings,
-    save_blocked_suggestion,
     save_last_suggestion,
 )
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.models import Board, CurseType, Tile, TileColor, WordResult
+from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor, WordResult
 from cursed_words_solver.board_display import format_board_grid
 from cursed_words_solver.loadout import (
     bicycle_extras_stale_warning,
@@ -69,28 +66,16 @@ from cursed_words_solver.loadout import (
     load_run_state_raw,
     melmod_board_available,
     melmod_install_hint,
-    describe_f8_historic_catchup,
-    f8_historic_stale_after_merge_warning,
-    encounter_historic_stale_pruned_on_disk,
-    f8_historic_still_behind_disk_warning,
-    _historic_words_count,
-    merge_encounter_historic_for_f8_snapshot,
-    merge_encounter_historic_for_f8_with_retry,
     merge_loadout_with_board,
-    reconcile_encounter_historic_for_scoring,
-    reconcile_previous_word_first_letter_from_historic,
     neapolitan_extras_stale_warning,
     mod_money_from_run_state,
     export_diagnostics_from_run_state,
     parse_board_from_run_state,
     parse_encounter_grid_reroll,
-    parse_inventory_sell,
     parse_run_state,
     parse_shop_from_run_state,
-    prepare_run_state_dict_for_scoring,
     solver_session_extras_from_loadout,
     validate_run_state_for_scoring,
-    sanitize_run_state_snapshot_for_f8,
     loadout_fingerprint_stale_warning,
     save_loadout,
     save_run_state_template,
@@ -111,12 +96,11 @@ from cursed_words_solver.consumable_placement import (
     mandatory_consumable_indices,
     remaining_rack_tiles,
     sandy_placement_search_active,
-    sandy_requires_rack_export,
-    wait_for_rack_export,
     search_consumable_score_boost,
     search_target_rescue,
     search_with_consumable_placements,
     target_rescue_worth_trying,
+    _result_rank_score,
 )
 from cursed_words_solver.rules.scoring_conditions import (
     consumable_rack_count,
@@ -183,7 +167,7 @@ class SolverApp:
         self._highlight_loadout_fingerprint: str | None = None
         self._highlight_watch_run_state = False
         self._last_invalidation_reason: str | None = None
-        self._loadout_cache = load_run_state()
+        self._active_suggestion_session: F8SuggestionSession | None = None
         self._loadout_source = self._detect_loadout_source()
         self._scoring = ScoringPipeline()
         self._dictionary: WordDictionary | None = None
@@ -193,6 +177,7 @@ class SolverApp:
         self._calibrating = False
         self._hotkey_handle = None
         self._shutting_down = False
+        self._solver_started_at = datetime.now()
         self._bridge = _HotkeyBridge()
         self._bridge.recalibrate.connect(self._run_recalibrate)
         self._bridge.edit_loadout.connect(self._run_edit_loadout)
@@ -335,8 +320,6 @@ class SolverApp:
         )
         if not (CONFIG_DIR / "run_state.json").exists():
             save_run_state_template()
-        self._reload_run_state()
-
         hotkey = self.config.hotkey
         try:
             keyboard.add_hotkey(hotkey, self._on_hotkey_pressed, suppress=False)
@@ -373,12 +356,14 @@ class SolverApp:
             "(Ctrl+C often fails while hotkeys are active).",
             flush=True,
         )
+        startup_loadout = load_run_state()
         print(
-            f"Loadout ({self._loadout_source}): {format_loadout_summary(self._loadout_cache)}",
+            f"Loadout ({self._loadout_source}): "
+            f"{format_loadout_summary(startup_loadout)}",
             flush=True,
         )
         scoring, total, grid_only, unmapped = self._scoring.loadout_mapping_summary(
-            self._loadout_cache
+            startup_loadout
         )
         if total:
             msg = f"  Rules: {scoring}/{total} affect score"
@@ -492,29 +477,32 @@ class SolverApp:
         self._highlight_watch_run_state = False
 
     def _poll_run_state_stale(self) -> None:
-        """Invalidate stale F8 suggestions and drop highlights when run_state drifts."""
-        from cursed_words_solver.round_log import poll_round_log_submits
+        """Clear suggestion on word submit; guard active session from export lag."""
+        from cursed_words_solver.round_log import (
+            poll_round_log_submits,
+            round_log_entries_after,
+        )
 
         entries, self._round_log_index_offset = poll_round_log_submits(
             self._round_log_index_offset
         )
+        entries = round_log_entries_after(entries, self._solver_started_at)
         if entries:
             clear_last_suggestion()
+            self._active_suggestion_session = None
             self._last_invalidation_reason = "word_submitted"
             self._clear_highlight_state()
-            self.overlay.show_stale_notice(
-                "Word submitted — press F8 again before next overlay word."
-            )
-            print(
-                "  Word submitted — overlay cleared; press F8 again.",
-                flush=True,
-            )
+            self.overlay.show_idle()
+            print("  Word submitted — press F8 for the next word.", flush=True)
 
         if self._solve_active:
             return
 
         from cursed_words_solver.config import LAST_SUGGESTION_PATH
-        from cursed_words_solver.fingerprints import fingerprints_from_run_state
+        from cursed_words_solver.fingerprints import (
+            board_tiles_fingerprint_suffix,
+            fingerprints_from_run_state,
+        )
 
         data = load_run_state_raw()
         extras = data.get("extras") if isinstance(data, dict) else None
@@ -533,36 +521,41 @@ class SolverApp:
             )
             if placement_in_progress:
                 self._last_invalidation_reason = None
-                self.overlay.clear_stale_notice()
             reason = poll_invalidate_last_suggestion(
                 extras if isinstance(extras, dict) else None,
                 current_board_fp=board_fp,
                 current_loadout_fp=loadout_fp,
-                search_budget_sec=self.config.search_time_budget_sec,
+                active_session=self._active_suggestion_session,
             )
             if reason and reason != self._last_invalidation_reason:
-                self._last_invalidation_reason = reason
-                self._clear_highlight_state()
-                self.overlay.show_stale_notice(
-                    "Suggestion cleared — press F8 again before submitting."
-                )
-                print(f"  Suggestion cleared — {reason}", flush=True)
-            elif reason is None:
+                if not placement_in_progress:
+                    self._last_invalidation_reason = reason
+                    self._active_suggestion_session = None
+                    self._clear_highlight_state()
+                    self.overlay.show_idle()
+                    print(f"  Suggestion cleared — {reason}", flush=True)
+            elif reason is None and self._active_suggestion_session is not None:
                 self._last_invalidation_reason = None
         elif (
             self._highlight_board_fingerprint is not None
             and not LAST_SUGGESTION_PATH.exists()
         ):
+            self._active_suggestion_session = None
             self._last_invalidation_reason = "suggestion_expired"
             self._clear_highlight_state()
-            self.overlay.show_stale_notice(
-                "Suggestion expired — press F8 again before submitting."
-            )
+            self.overlay.show_idle()
 
-        self._maybe_clear_stale_highlights()
+        self._maybe_clear_stale_highlights(board_tiles_fingerprint_suffix)
 
-    def _maybe_clear_stale_highlights(self) -> None:
+    def _maybe_clear_stale_highlights(self, tiles_fp_fn=None) -> None:
         """Drop on-board path when melmod reports a new round, shop, or missing board."""
+        from cursed_words_solver.fingerprints import (
+            board_tiles_fingerprint_suffix,
+            fingerprints_from_run_state,
+        )
+
+        if tiles_fp_fn is None:
+            tiles_fp_fn = board_tiles_fingerprint_suffix
         if self._highlight_board_fingerprint is None:
             return
         if not self._highlight_watch_run_state:
@@ -575,7 +568,9 @@ class SolverApp:
         current_loadout_fp = ""
         if data:
             current_board_fp, current_loadout_fp = fingerprints_from_run_state(data)
-        if current_board_fp != self._highlight_board_fingerprint:
+        saved_tiles = tiles_fp_fn(self._highlight_board_fingerprint or "")
+        current_tiles = tiles_fp_fn(current_board_fp)
+        if saved_tiles and current_tiles and saved_tiles != current_tiles:
             from cursed_words_solver.suggestion import (
                 fingerprint_invalidate_suppressed_for_consumable_placement,
             )
@@ -759,22 +754,41 @@ class SolverApp:
         try:
             print("Solve started...", flush=True)
 
-            self._reload_run_state()
             run_state_data = load_run_state_raw()
-
             mode = encounter_mode_from_run_state(run_state_data)
             if mode == "shop":
                 self._shop_advisor_worker(run_state_data)
                 return
 
-            mod_money = mod_money_from_run_state(run_state_data)
-            prepared_state = (
-                prepare_run_state_dict_for_scoring(run_state_data)
-                if run_state_data
-                else None
+            if not self._ensure_solver():
+                print("Solver not ready (dictionary failed to load).", flush=True)
+                return
+
+            snapshot = gather_f8_snapshot(
+                rules=self._scoring.rules,
+                on_wait=lambda msg: print(f"  {msg}", flush=True),
             )
-            board = parse_board_from_run_state(prepared_state)
+            run_state_data = snapshot.run_state
+            board = snapshot.board
+            loadout = snapshot.loadout
             board_img = None
+            gather_succeeded = (
+                snapshot.board_available
+                and snapshot.loadout is not None
+                and snapshot.extras_ready
+            )
+            solve_grid_at_start = 0
+            if loadout is not None:
+                from cursed_words_solver.rules.scoring_conditions import grid_number
+
+                try:
+                    solve_grid_at_start = grid_number(loadout)
+                except (TypeError, ValueError):
+                    solve_grid_at_start = 0
+
+            for warn in snapshot.warnings:
+                if not warn.startswith("waiting for melmod"):
+                    print(f"  Warning: {warn}", flush=True)
 
             if board is None:
                 shop = parse_shop_from_run_state(run_state_data)
@@ -808,10 +822,8 @@ class SolverApp:
                     )
                 return
 
-            if not self._ensure_solver():
-                print("Solver not ready (dictionary failed to load).", flush=True)
-                return
-
+            assert loadout is not None
+            mod_money = mod_money_from_run_state(run_state_data)
             print("Board from melmod (run_state.json).", flush=True)
             self._refresh_overlay_regions(run_state_data)
             if self._overlay_regions.source == "melmod":
@@ -831,48 +843,12 @@ class SolverApp:
                 if isinstance(run_state_data, dict)
                 else None
             )
-            run_extras_for_warn = (
-                copy.deepcopy(run_extras)
-                if isinstance(run_extras, dict)
-                else None
+            fp_warn = loadout_fingerprint_stale_warning(
+                loadout,
+                run_extras if isinstance(run_extras, dict) else None,
             )
-            if isinstance(run_extras_for_warn, dict):
-                reconcile_encounter_historic_for_scoring(
-                    run_extras_for_warn,
-                    board=board,
-                )
-                reconcile_previous_word_first_letter_from_historic(
-                    run_extras_for_warn
-                )
-            raw_hist_count = 0
-            if isinstance(run_extras, dict):
-                raw_hist_count = _historic_words_count(
-                    str(run_extras.get("historic_words", "") or "")
-                )
-            reconciled_hist_count = 0
-            if isinstance(run_extras_for_warn, dict):
-                reconciled_hist_count = _historic_words_count(
-                    str(run_extras_for_warn.get("historic_words", "") or "")
-                )
-            for warn in run_state_historic_stale_warnings(
-                run_extras_for_warn
-                if isinstance(run_extras_for_warn, dict)
-                else None
-            ):
-                if (
-                    "no encounter historic on grid" in warn
-                    and raw_hist_count > 0
-                    and reconciled_hist_count == 0
-                ):
-                    continue
-                print(f"  Warning: {warn}", flush=True)
-            if run_state_data and self._loadout_cache is not None:
-                fp_warn = loadout_fingerprint_stale_warning(
-                    self._loadout_cache,
-                    run_extras if isinstance(run_extras, dict) else None,
-                )
-                if fp_warn:
-                    print(f"  Warning: {fp_warn}", flush=True)
+            if fp_warn:
+                print(f"  Warning: {fp_warn}", flush=True)
             if mod_money:
                 print(f"Money: ${mod_money} (mod)", flush=True)
             print("Parsed board:", flush=True)
@@ -911,11 +887,6 @@ class SolverApp:
 
             def variant_gen_budget() -> float:
                 return min(2.0, solve_remaining() * 0.05)
-            loadout = merge_loadout_with_board(
-                self._loadout_cache,
-                board.money,
-                mod_money=mod_money if mod_money > 0 else None,
-            )
             from cursed_words_solver.rules.scoring_conditions import rewind_setup_extras
 
             rewind_notes = rewind_setup_extras(loadout, board)
@@ -943,7 +914,6 @@ class SolverApp:
                     base_percent, source = neapolitan_base_percent_from_loadout(loadout)
                     source_label = {
                         "live": "live export",
-                        "cached": "cached fallback",
                         "default": "default fallback",
                     }.get(source, source)
                     print(
@@ -1014,30 +984,6 @@ class SolverApp:
                 loadout, board, self._scoring.rules
             )
 
-            def _reload_solve_loadout() -> Loadout:
-                self._reload_run_state()
-                fresh_money = mod_money_from_run_state(load_run_state_raw())
-                return merge_loadout_with_board(
-                    self._loadout_cache,
-                    board.money,
-                    mod_money=fresh_money if fresh_money > 0 else None,
-                )
-
-            loadout = wait_for_rack_export(
-                loadout,
-                board,
-                self._scoring.rules,
-                reload_loadout=_reload_solve_loadout,
-            )
-            if sandy_requires_rack_export(loadout, board, self._scoring.rules):
-                print(
-                    "  Sandy Saguaro: consumable rack not in run_state yet — "
-                    "wait a moment and press F8 again, or press F7 in-game "
-                    "to force export.",
-                    flush=True,
-                )
-                clear_last_suggestion()
-                return
             sandy_auto_place = sandy_placement_search_active(
                 loadout, board, self._scoring.rules
             )
@@ -1142,6 +1088,9 @@ class SolverApp:
                 results = []
 
             baseline_score = results[0].score if results else 0.0
+            baseline_rank = (
+                _result_rank_score(results[0]) if results else baseline_score
+            )
             if (
                 not sandy_auto_place
                 and rack_placement_search_active(loadout, board, rules)
@@ -1162,6 +1111,7 @@ class SolverApp:
                             loadout,
                             boost_rack,
                             baseline_score=baseline_score,
+                            baseline_rank_score=baseline_rank,
                             time_budget=phase_budget(rack_boost_budget),
                             top_n=self.config.top_n_results,
                             rules=rules,
@@ -1171,11 +1121,15 @@ class SolverApp:
                     placement_variant_sec += (
                         last_placement_search_stats().variant_gen_sec
                     )
-                    if boost_results and boost_results[0].score > baseline_score:
+                    if (
+                        boost_results
+                        and _result_rank_score(boost_results[0]) > baseline_rank
+                    ):
                         search_board = boost_board
                         placement_records = boost_records
                         results = boost_results
                         baseline_score = boost_results[0].score
+                        baseline_rank = _result_rank_score(boost_results[0])
                         self._searcher.validator.required_consumable_indices = (
                             mandatory_consumable_indices(
                                 loadout, search_board, rules
@@ -1358,71 +1312,39 @@ class SolverApp:
             pred_trace: list | None = None
             export_warnings: list[str] = []
             capybara_stats = None
-            historic_catchup_stale_note: str | None = None
             saved_suggestion = False
             block_f8_save = False
             block_f8_reason: str | None = None
             if results:
                 top = results[0]
-                # Re-read run_state after search; merge encounter historic before score + embed.
-                self._reload_run_state()
                 fresh_run_state = load_run_state_raw()
-                embed_hist_before = ""
-                if isinstance(fresh_run_state, dict):
-                    raw_extras = fresh_run_state.get("extras")
-                    if isinstance(raw_extras, dict):
-                        embed_hist_before = str(
-                            raw_extras.get("historic_words", "") or ""
-                        ).strip()
-                merged_run_state: dict | None = (
-                    fresh_run_state if isinstance(fresh_run_state, dict) else None
+                score_run_state: dict | None = (
+                    fresh_run_state
+                    if isinstance(fresh_run_state, dict)
+                    else run_state_data
                 )
-                if merged_run_state is not None:
-                    merged_run_state, historic_catchup_stale_note = (
-                        merge_encounter_historic_for_f8_with_retry(merged_run_state)
-                    )
-                merged_extras = (
-                    merged_run_state.get("extras")
-                    if isinstance(merged_run_state, dict)
-                    and isinstance(merged_run_state.get("extras"), dict)
-                    else None
-                )
-                merged_hist = ""
-                merged_grid = 0
-                if isinstance(merged_extras, dict):
-                    merged_hist = str(
-                        merged_extras.get("historic_words", "") or ""
-                    ).strip()
+                mid_solve_grid_advanced = False
+                if isinstance(score_run_state, dict):
+                    fresh_loadout = parse_run_state(score_run_state)
+                    from cursed_words_solver.rules.scoring_conditions import grid_number
+
                     try:
-                        merged_grid = int(str(merged_extras.get("grid_number") or "0"))
-                    except ValueError:
-                        merged_grid = 0
-                catchup_note = describe_f8_historic_catchup(
-                    embed_hist_before,
-                    merged_hist,
-                    grid_number=merged_grid,
-                )
-                if catchup_note:
-                    print(f"  Warning: {catchup_note}", flush=True)
-                fresh_mod_money = mod_money_from_run_state(merged_run_state)
-                merged_loadout = (
-                    parse_run_state(
-                        prepare_run_state_dict_for_scoring(merged_run_state)
+                        mid_grid = grid_number(fresh_loadout)
+                    except (TypeError, ValueError):
+                        mid_grid = solve_grid_at_start
+                    mid_solve_grid_advanced = (
+                        solve_grid_at_start > 0 and mid_grid > solve_grid_at_start
                     )
-                    if merged_run_state is not None
-                    else self._loadout_cache
-                )
-                f8_loadout = merge_loadout_with_board(
-                    merged_loadout,
-                    board.money,
-                    mod_money=fresh_mod_money if fresh_mod_money > 0 else None,
-                )
-                fp_stale_note = loadout_fingerprint_stale_warning(
-                    f8_loadout,
-                    merged_extras if isinstance(merged_extras, dict) else None,
-                )
-                if fp_stale_note:
-                    print(f"  Warning: {fp_stale_note}", flush=True)
+                fresh_mod_money = mod_money_from_run_state(score_run_state)
+                f8_loadout = loadout
+                if isinstance(score_run_state, dict):
+                    fresh_board = parse_board_from_run_state(score_run_state)
+                    if fresh_board is not None:
+                        f8_loadout = merge_loadout_with_board(
+                            parse_run_state(score_run_state),
+                            fresh_board.money,
+                            mod_money=fresh_mod_money if fresh_mod_money > 0 else None,
+                        )
                 # Consumables placed onto search_board this solve are no longer on
                 # the rack, so Hi Vis Jacket must score with the post-placement
                 # count (decompiled HiVisJacket: multiplies by consumables still
@@ -1482,11 +1404,11 @@ class SolverApp:
                     top.dictionary_word = score_word
                 else:
                     top.dictionary_word = None
-                export_diag = export_diagnostics_from_run_state(merged_run_state)
-                export_warnings = validate_run_state_for_scoring(
+                export_diag = export_diagnostics_from_run_state(score_run_state)
+                export_warnings = list(snapshot.warnings) + validate_run_state_for_scoring(
                     f8_loadout,
                     board=board,
-                    raw=merged_run_state,
+                    raw=score_run_state,
                 )
                 capybara_warn = capybara_active_warning(
                     f8_loadout, self._scoring.rules
@@ -1499,150 +1421,44 @@ class SolverApp:
                         if sample_warn:
                             export_warnings.append(sample_warn)
                 session_extras = solver_session_extras_from_loadout(f8_loadout)
-                f8_snapshot = sanitize_run_state_snapshot_for_f8(
-                    merged_run_state,
-                    f8_loadout,
-                )
-                f8_extras = (
-                    f8_snapshot.get("extras")
-                    if isinstance(f8_snapshot, dict)
+                embed_state = (
+                    embed_run_state_for_suggestion(score_run_state)
+                    if isinstance(score_run_state, dict)
                     else None
                 )
-                run_extras = (
-                    merged_run_state.get("extras")
-                    if isinstance(merged_run_state, dict)
+                fresh_run_state = load_run_state_raw()
+                fresh_extras = (
+                    fresh_run_state.get("extras")
+                    if isinstance(fresh_run_state, dict)
                     else None
                 )
-                if isinstance(f8_extras, dict):
-                    reconcile_previous_word_first_letter_from_historic(f8_extras)
-                if isinstance(run_extras, dict):
-                    reconcile_previous_word_first_letter_from_historic(run_extras)
-                stale_note = f8_prior_suggestion_stale_note(
-                    run_extras if isinstance(run_extras, dict) else None
-                )
-                empty_hist_warn = empty_historic_on_later_grid_warning(
-                    f8_extras if isinstance(f8_extras, dict) else run_extras
-                )
-                behind_disk_warn = f8_historic_still_behind_disk_warning(
-                    f8_extras if isinstance(f8_extras, dict) else None,
-                    board=parse_board_from_run_state(merged_run_state)
-                    if isinstance(merged_run_state, dict)
-                    else search_board,
-                )
-                run_extras_compare = (
-                    copy.deepcopy(run_extras)
-                    if isinstance(run_extras, dict)
+                embed_extras = (
+                    embed_state.get("extras")
+                    if isinstance(embed_state, dict)
                     else None
                 )
-                if isinstance(run_extras_compare, dict) and isinstance(
-                    merged_run_state, dict
-                ):
-                    reconcile_encounter_historic_for_scoring(
-                        run_extras_compare,
-                        board=parse_board_from_run_state(merged_run_state),
-                    )
-                    reconcile_previous_word_first_letter_from_historic(
-                        run_extras_compare
-                    )
-                hist_stale_note = f8_historic_stale_after_merge_warning(
-                    f8_extras if isinstance(f8_extras, dict) else None
+                from cursed_words_solver.suggestion import (
+                    f8_prediction_workflow_stale_warning,
                 )
+
                 workflow_stale_warn = f8_prediction_workflow_stale_warning(
-                    run_extras_compare,
-                    f8_extras if isinstance(f8_extras, dict) else None,
-                )
-                grid_adv_warn = grid_advanced_since_last_f8_warning(
-                    run_extras if isinstance(run_extras, dict) else None
-                )
-                grid_one_hist_warn = grid_one_historic_cache_mismatch_warning(
-                    f8_extras if isinstance(f8_extras, dict) else None
-                )
-                grid_bleed_warn = grid_transition_workflow_bleed_warning(
-                    f8_extras if isinstance(f8_extras, dict) else None
+                    fresh_extras if isinstance(fresh_extras, dict) else {},
+                    embed_extras if isinstance(embed_extras, dict) else {},
                 )
                 block_f8_save, block_f8_reason = f8_should_block_save(
-                    historic_catchup_stale_note=historic_catchup_stale_note,
-                    empty_hist_warn=empty_hist_warn,
-                    hist_stale_note=hist_stale_note,
-                    behind_disk_warn=behind_disk_warn,
-                    workflow_stale_warn=workflow_stale_warn,
-                    grid_adv_warn=grid_adv_warn,
-                    grid_bleed_warn=grid_bleed_warn,
-                    grid_one_hist_warn=grid_one_hist_warn,
+                    gather_succeeded=gather_succeeded,
+                    mid_solve_grid_advanced=mid_solve_grid_advanced,
                     loadout=f8_loadout,
                     board=search_board,
-                    f8_extras=f8_extras if isinstance(f8_extras, dict) else None,
+                    workflow_stale_warn=workflow_stale_warn,
                 )
-                if block_f8_save:
-                    print(
-                        "  Warning: Played since last F8 — press F8 again "
-                        "before submitting.",
-                        flush=True,
-                    )
-                    seen_warns: set[str] = set()
-                    for extra_warn in (
-                        workflow_stale_warn,
-                        grid_bleed_warn,
-                        grid_one_hist_warn,
-                        grid_adv_warn,
-                        hist_stale_note,
-                        historic_catchup_stale_note,
-                        behind_disk_warn,
-                        empty_hist_warn,
-                    ):
-                        if extra_warn and extra_warn not in seen_warns:
-                            seen_warns.add(extra_warn)
-                            print(f"  Warning: {extra_warn}", flush=True)
-                else:
-                    lag_warn = historic_catchup_stale_note or behind_disk_warn
-                    if lag_warn:
-                        print(f"  Warning: {lag_warn}", flush=True)
-                        if historic_catchup_stale_note:
-                            print(
-                                "  Warning: Predicted score may be stale "
-                                "(historic export lag) — press F7 in-game, "
-                                "then F8 again before submitting.",
-                                flush=True,
-                            )
-                    if stale_note:
-                        print(f"  Warning: {stale_note}", flush=True)
-                    if empty_hist_warn and not encounter_historic_stale_pruned_on_disk(
-                        merged_grid,
-                        board=parse_board_from_run_state(merged_run_state)
-                        if isinstance(merged_run_state, dict)
-                        else search_board,
-                    ):
-                        print(f"  Warning: {empty_hist_warn}", flush=True)
-                    for extra_warn in (
-                        workflow_stale_warn,
-                        grid_adv_warn,
-                        grid_one_hist_warn,
-                        grid_bleed_warn,
-                    ):
-                        if extra_warn:
-                            print(f"  Warning: {extra_warn}", flush=True)
-                if block_f8_save:
-                    save_blocked_suggestion(
-                        board=search_board,
-                        loadout=f8_loadout,
-                        result=top,
-                        predicted_trace=pred_trace,
-                        run_state_snapshot=f8_snapshot,
-                        scoring_word=score_word,
-                        block_reason=block_f8_reason or "historic_or_workflow_stale",
-                        export_diagnostics=export_diag,
-                        consumable_placements=placement_records or None,
-                    )
-                    self._last_invalidation_reason = (
-                        "historic_or_workflow_stale"
-                    )
-                else:
+                if not block_f8_save:
                     save_last_suggestion(
                         board=search_board,
                         loadout=f8_loadout,
                         result=top,
                         predicted_trace=pred_trace,
-                        run_state_snapshot=f8_snapshot,
+                        run_state_snapshot=embed_state,
                         dictionary=self._dictionary,
                         min_len=effective_min,
                         scoring_word=score_word,
@@ -1666,6 +1482,20 @@ class SolverApp:
                     )
                     saved_suggestion = True
                     self._last_invalidation_reason = None
+                    self._active_suggestion_session = session_from_snapshot(snapshot)
+                    if self._active_suggestion_session is None and isinstance(
+                        score_run_state, dict
+                    ):
+                        from cursed_words_solver.f8_snapshot import F8Snapshot
+
+                        self._active_suggestion_session = session_from_snapshot(
+                            F8Snapshot(
+                                run_state=score_run_state,
+                                board=search_board,
+                                loadout=f8_loadout,
+                                board_available=True,
+                            )
+                        )
                 for warn in export_warnings:
                     print(f"  Export warning: {warn}", flush=True)
 
@@ -1684,11 +1514,6 @@ class SolverApp:
 
             if results:
                 top = results[0]
-                stale_score_prefix = ""
-                if block_f8_save:
-                    stale_score_prefix = "UNTRUSTED "
-                elif historic_catchup_stale_note:
-                    stale_score_prefix = "STALE? "
                 timing_note = ""
                 if timing is not None and search_elapsed > search_budget + 0.5:
                     core_sec = timing.wall_sec
@@ -1700,7 +1525,7 @@ class SolverApp:
                 done_msg = (
                     f"Done in {search_elapsed:.1f}s{timing_note}. "
                     f"Best: {format_suggestion_word(top)} "
-                    f"({stale_score_prefix}{format_result_score_display(top)})"
+                    f"({format_result_score_display(top)})"
                 )
                 if placement_records:
                     done_msg += (
@@ -1719,37 +1544,21 @@ class SolverApp:
                         flush=True,
                     )
                 elif block_f8_save:
+                    if block_f8_reason == "workflow_extras_stale" and workflow_stale_warn:
+                        print(f"  {workflow_stale_warn}", flush=True)
                     print(
-                        "  Wrote last_suggestion_blocked.json (diagnostic only; "
-                        "press F8 again before submitting).",
-                        flush=True,
-                    )
-                else:
-                    print(
-                        "  Did not write last_suggestion.json "
-                        "(historic/workflow stale — press F8 again).",
+                        f"  Did not write last_suggestion.json ({block_f8_reason}).",
                         flush=True,
                     )
             else:
                 clear_last_suggestion()
+                self._active_suggestion_session = None
                 print(
                     f"Done in {search_elapsed:.1f}s. No valid words found.",
                     flush=True,
                 )
-                print(
-                    "  If the board changed since your last solve, press F7 "
-                    "in-game then F8 again.",
-                    flush=True,
-                )
 
             warnings = self._overlay_warnings(board, unmapped, loadout=loadout)
-            if results and block_f8_save:
-                untrusted_warn = (
-                    "Not captured for melmod — press F8 again before submitting."
-                )
-                warnings = (
-                    f"{warnings}<br>{untrusted_warn}" if warnings else untrusted_warn
-                )
             if results and encounter_mode_from_run_state(run_state_data) == "encounter":
                 from cursed_words_solver.grid_reroll_advisor import (
                     format_grid_reroll_reason,
@@ -1804,11 +1613,6 @@ class SolverApp:
             self._busy = False
             self._solve_active = False
 
-    def _reload_run_state(self) -> None:
-        """Reload run_state.json (e.g. after melmod F7 export)."""
-        self._loadout_cache = load_run_state()
-        self._loadout_source = self._detect_loadout_source()
-
     def _detect_loadout_source(self) -> str:
         path = CONFIG_DIR / "run_state.json"
         if not path.exists():
@@ -1821,13 +1625,14 @@ class SolverApp:
         board = data.get("board")
         if isinstance(board, dict) and len(board.get("tiles", [])) == 25:
             return "mod"
-        if self._loadout_cache is None:
+        loadout = load_run_state()
+        if loadout is None:
             return "invalid"
         if data.get("character") == "Example":
             return "template"
         if data.get("extras", {}).get("pin_effect") or len(data.get("stickers", [])) > 2:
             return "mod"
-        if self._loadout_cache.stickers or self._loadout_cache.stamps:
+        if loadout.stickers or loadout.stamps:
             return "manual"
         if data.get("character") and data.get("character") != "Example":
             return "mod"
@@ -1944,10 +1749,9 @@ class SolverApp:
         )
 
     def _run_edit_loadout(self) -> None:
-        dlg = LoadoutDialog(self._loadout_cache)
+        dlg = LoadoutDialog(load_run_state())
         if dlg.exec():
-            self._loadout_cache = dlg.get_loadout()
-            save_loadout(self._loadout_cache)
+            save_loadout(dlg.get_loadout())
             self._loadout_source = "manual"
 
     def _run_recalibrate(self) -> None:
