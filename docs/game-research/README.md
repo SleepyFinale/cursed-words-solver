@@ -47,6 +47,7 @@ python scripts/generate_boss_audit.py
 | [tile-audit.md](tile-audit.md) | Enum vs taxonomy coverage (generated) |
 | [bosses.md](bosses.md) | BossModifier taxonomy and scoring order |
 | [boss-audit.md](boss-audit.md) | Per-boss implementation status (generated) |
+| [sim-traceability.md](sim-traceability.md) | Simulator Stage 1 mechanic matrix (game → Python → wiki) |
 
 ## Solver mapping
 
