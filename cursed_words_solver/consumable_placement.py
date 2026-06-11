@@ -114,9 +114,16 @@ def target_rescue_worth_trying(
     baseline_score: float,
     target: int,
     rack_tiles: list[Tile],
+    loadout: Loadout | None = None,
 ) -> bool:
     if target <= 0 or not rack_tiles:
         return False
+    if loadout is not None:
+        from cursed_words_solver.rules.quest_scoring import (
+            target_rescue_worth_trying_quest,
+        )
+
+        return target_rescue_worth_trying_quest(baseline_score, target, loadout)
     return baseline_score < target
 
 
@@ -1301,19 +1308,33 @@ def search_target_rescue(
     rules: dict[str, Any] | None = None,
     variant_gen_budget: float | None = None,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
+    from cursed_words_solver.rules.quest_scoring import bullseye_active
+
     rules = rules or {}
-    return _run_tiered_placement_search(
+    min_score = float(target)
+    if bullseye_active(loadout):
+        min_score = float(target) - 0.5
+    board_out, records, results = _run_tiered_placement_search(
         searcher,
         board,
         loadout,
         rack_tiles,
         time_budget=time_budget,
         top_n=top_n,
-        min_score=float(target),
+        min_score=min_score,
         prefer_fewest_tiles=True,
         rules=rules,
         variant_gen_budget=variant_gen_budget,
     )
+    if bullseye_active(loadout) and results:
+        from cursed_words_solver.rules.quest_scoring import target_met
+
+        results = [
+            r for r in results if target_met(float(r.score), float(target), loadout)
+        ]
+        if not results:
+            return board, [], []
+    return board_out, records, results
 
 
 def search_consumable_score_boost(

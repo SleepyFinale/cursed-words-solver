@@ -1439,16 +1439,33 @@ Purple crown clears unlock character-specific achievements and stickers.
 
 ### 10.1 Quest shop modifiers
 
-| Quest            | Shop effect                |
-| ---------------- | -------------------------- |
-| Antiphilatelist  | No stamps sold             |
-| Masochist        | No stickers sold           |
-| In The Beginning | No stickers or stamps sold |
+F8 shop advice reads `challenge_game_class` and applies rules in `shop_quest_effects.py` (see `[docs/game-research/quests.md](game-research/quests.md)`).
+
+| Quest            | Shop effect                | Solver |
+| ---------------- | -------------------------- | ------ |
+| Shelf Life       | Auto-restock on buy; no manual reroll | Block restock advice |
+| Secret Santa     | Hidden item names in UI    | Warning; advice uses exported ids |
+| Antiphilatelist  | No stamps sold             | Filter stamp offers |
+| Masochist        | No stickers sold           | Filter sticker offers |
+| In The Beginning | No stickers or stamps sold   | Filter both |
+| Do Not Pass Go   | $0 encounter rewards         | Angel investment note; `encounter_reward_for_quest` |
+| Embargo          | Boss inventory wipe; pool ban; no selling | Filter `embargoed_item_types`; block sell advice |
 
 ### 10.2 Challenge scoring hooks
 
-- **Lexographer:** Post-item word penalty when challenge active
-- **Bones challenge:** Poker hand detection step in scoring pipeline
+The F8 solver reads `challenge_game_class` / `challenge_name` from melmod (see `[docs/game-research/quests.md](game-research/quests.md)`).
+
+| Quest (wiki) | Game class | Solver |
+|--------------|------------|--------|
+| On Cooldown | `SupplyAndDemand` | Block `is_crossed_out` tiles |
+| Up and Up | `UpAndUp` | Require center tile |
+| Chromaphobia / Chromaphilia | same | Normal-only / colored-only paths |
+| Cursophobia | `Cursophobia` | No cursed tiles on path |
+| Knight Time | `SicilianDefense` | Knight-only movement |
+| The Bones Round | `TheBonesRound` | Zero tile values + early poker hand bonus |
+| Lexographer | `Lexographer` | Zero cursed tile scores post-items |
+| Two Wrongs / Bullseye | `TwoWrongs` / `Bullseye` | Inverted / exact-hit target math |
+| Playing Favourites | `PlayingFavourites` | HumanBoy favourite inventory only |
 
 ### 10.3 Item rarity tiers
 

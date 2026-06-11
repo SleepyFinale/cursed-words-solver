@@ -5,6 +5,14 @@ from __future__ import annotations
 from cursed_words_solver.models import Board, Loadout, LoadoutItem
 
 
+def _tile_crossed_out_from_metadata(tile: object) -> bool:
+    meta = getattr(tile, "metadata", None) or {}
+    if not isinstance(meta, dict):
+        return False
+    val = meta.get("is_crossed_out")
+    return val in (True, "true", "True", "1", 1)
+
+
 def boss_fingerprint_id(boss_id: str) -> str:
     """Match melmod AppendBossFingerprint (empty boss → '-')."""
     return boss_id if boss_id else "-"
@@ -41,6 +49,21 @@ def _append_items(parts: list[str], items: list[LoadoutItem]) -> None:
         parts.append(str(item.level))
 
 
+def _tile_fingerprint_parts(
+    letter: str,
+    curse: str,
+    color: str,
+    *,
+    crossed_out: bool = False,
+) -> list[str]:
+    """Letter/curse/color segment for one tile (optional /x when crossed out)."""
+    parts = [letter or "", "/", curse or "", "/", color or ""]
+    if crossed_out:
+        parts.append("/x")
+    parts.append(";")
+    return parts
+
+
 def board_fingerprint(board: Board) -> str:
     """Match BoardExporter.ComputeBoardFingerprint."""
     parts: list[str] = [str(board.money), "|"]
@@ -51,12 +74,12 @@ def board_fingerprint(board: Board) -> str:
                 ",",
                 str(t.col),
                 ":",
-                t.letter or "",
-                "/",
-                t.curse.value if t.curse else "",
-                "/",
-                t.color.value if t.color else "",
-                ";",
+                *_tile_fingerprint_parts(
+                    t.letter or "",
+                    t.curse.value if t.curse else "",
+                    t.color.value if t.color else "",
+                    crossed_out=_tile_crossed_out_from_metadata(t),
+                ),
             ]
         )
     return "".join(parts)
@@ -92,18 +115,19 @@ def fingerprints_from_run_state(data: dict) -> tuple[str, str]:
     for t in tiles:
         if not isinstance(t, dict):
             continue
+        crossed = t.get("is_crossed_out") in (True, "true", "True", "1", 1)
         tile_parts.extend(
             [
                 str(t.get("row", 0)),
                 ",",
                 str(t.get("col", 0)),
                 ":",
-                str(t.get("letter") or ""),
-                "/",
-                str(t.get("curse") or ""),
-                "/",
-                str(t.get("color") or ""),
-                ";",
+                *_tile_fingerprint_parts(
+                    str(t.get("letter") or ""),
+                    str(t.get("curse") or ""),
+                    str(t.get("color") or ""),
+                    crossed_out=crossed,
+                ),
             ]
         )
     board_fp = "".join(tile_parts)

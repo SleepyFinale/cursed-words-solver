@@ -2642,7 +2642,11 @@ def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
             if not (letter_tiles == 1 and other == 3):
                 categories.discard("letter")
         elif other > 3:
-            if not (len(path) > 5 and card_from_letter and other >= 5):
+            keep_letter_dense = len(path) > 5 and card_from_letter and (
+                other >= 5
+                or (other == 4 and card_from_non_letter)
+            )
+            if not keep_letter_dense:
                 categories.discard("letter")
         elif letter_tiles >= 2 and other <= 3:
             # ippon: suited NUMBER/FRACTION must not add a separate card bucket.
@@ -3435,9 +3439,17 @@ def celestial_body_tile_eligible(
                 return True
             return False
         return False
+    if is_joker_tile(tile):
+        return True
+    suit = card_suit(tile)
+    if suit == "joker":
+        rank = card_rank(tile)
+        if rank:
+            return is_last_card_rank_on_path(board, path, path_index)
+        return True
     if not tile_matches_target(tile, "card"):
         return False
-    if not card_suit(tile):
+    if not suit:
         return False
     rank = card_rank(tile)
     path_end = len(path) - 1
@@ -3445,6 +3457,9 @@ def celestial_body_tile_eligible(
     salamander = boss_id == "salamander" or "bosslesspoints" in boss_id
 
     if rank and rank.upper() in POKER_RANKS:
+        return is_last_card_rank_on_path(board, path, path_index)
+
+    if rank and wrestlers_endpoint_rank_qualifies(tile):
         return is_last_card_rank_on_path(board, path, path_index)
 
     if tile.base_score == 3:
@@ -3493,7 +3508,7 @@ def celestial_body_tile_eligible(
             return True
         if consecutive_letter_run_length_at(board, path, path_index) >= 3:
             return True
-    if tile.base_score >= 10:
+    if tile.base_score >= 8:
         return is_last_suited_letter_on_path(board, path, path_index)
     if tile.base_score == 4 and (
         path_index == 0 or path_index == path_end
@@ -3588,12 +3603,10 @@ def bicycle_suited_credit_on_path(board: Board, path: list[int]) -> int:
                 suits.add(suit)
     if suited_tile_count == 0:
         return 0
-    if joker_not_at_end and non_joker_suited >= 2:
+    if joker_not_at_end:
         return suited_tile_count
     if len(suits) <= 1:
         return 1
-    if joker_not_at_end:
-        return suited_tile_count
     return unique_suited_card_ranks_on_path_count(board, path)
 
 
@@ -4221,6 +4234,8 @@ def _effective_word_start_letter(board: Board, path: list[int], word: str) -> st
         is_currency_lead = lead.curse == CurseType.CURRENCY or glyph in CURRENCY_MAP
         if is_currency_lead and glyph:
             mapped = CURRENCY_MAP.get(glyph, "").lower()
+            if not mapped and len(glyph) == 1 and glyph.isalpha():
+                mapped = glyph.lower()
             # Currency-leading path uses dictionary first letter when it maps to word-first
             if mapped and word_first and mapped == word_first:
                 return word_first

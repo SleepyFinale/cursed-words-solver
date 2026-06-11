@@ -660,7 +660,15 @@ def _tile_count_from_loadout(loadout: Loadout) -> int:
     return 0
 
 
-def build_shop_context(loadout: Loadout, shop: ShopState) -> ShopAdviceContext:
+def build_shop_context(
+    loadout: Loadout,
+    shop: ShopState,
+    *,
+    quest=None,
+) -> ShopAdviceContext:
+    from cursed_words_solver.rules.shop_quest_effects import shop_quest_constraints
+
+    q = quest if quest is not None else shop_quest_constraints(loadout)
     inventory: list[GameShopItem] = []
     for sticker in loadout.stickers:
         inventory.append(
@@ -694,11 +702,22 @@ def build_shop_context(loadout: Loadout, shop: ShopState) -> ShopAdviceContext:
         restock_cost=max(0, shop.restock_cost),
         free_item_available=shop.free_item_available,
         unlocks=_DEFAULT_UNLOCKS,
+        block_restock=q.block_restock,
+        block_sell=q.block_sell,
+        sticker_shop_enabled=q.sticker_shop_enabled,
+        stamp_shop_enabled=q.stamp_shop_enabled,
     )
 
 
 def compute_shop_advice(loadout: Loadout, shop: ShopState) -> AdviceData:
-    ctx = build_shop_context(loadout, shop)
+    from cursed_words_solver.rules.shop_quest_effects import (
+        filter_shop_offers,
+        shop_quest_constraints,
+    )
+
+    quest = shop_quest_constraints(loadout)
+    shop = filter_shop_offers(loadout, shop)
+    ctx = build_shop_context(loadout, shop, quest=quest)
     advice = select_advice_tier(ctx)
     free_active = ctx.free_item_available
     advice = resolve_advice_actions(advice, ctx, free_item_active=free_active)

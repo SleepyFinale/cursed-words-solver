@@ -187,3 +187,7 @@ class ShopAdviceContext:
     restock_cost: int
     free_item_available: bool
     unlocks: frozenset[str] = field(default_factory=frozenset)
+    block_restock: bool = False
+    block_sell: bool = False
+    sticker_shop_enabled: bool = True
+    stamp_shop_enabled: bool = True

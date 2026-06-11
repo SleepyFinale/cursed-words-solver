@@ -1,0 +1,225 @@
+{
+  "_meta": {
+    "source": "quest_taxonomy.json + ChallengeRuns decompile"
+  },
+  "quests": {
+    "antiphilatelist": {
+      "wiki_name": "Antiphilatelist",
+      "game_class": "Antiphilatelist",
+      "effect_class": "shop_only",
+      "elite_quest": false,
+      "unlock_item": "bar_of_soap",
+      "steam_achievement": "ACH_ANTIPHILATELIST"
+    },
+    "bullseye": {
+      "wiki_name": "Bullseye",
+      "game_class": "Bullseye",
+      "effect_class": "target_scoring",
+      "elite_quest": true,
+      "unlock_item": "dartboard",
+      "steam_achievement": "ACH_BULLSEYE"
+    },
+    "call_of_the_void": {
+      "wiki_name": "Call Of The Void",
+      "game_class": "CallOfTheVoid",
+      "effect_class": "board_layout",
+      "elite_quest": false,
+      "unlock_item": "ruler",
+      "steam_achievement": "ACH_CALL_OF_THE_VOID"
+    },
+    "chromaphilia": {
+      "wiki_name": "Chromaphilia",
+      "game_class": "Chromaphilia",
+      "effect_class": "search_filter",
+      "elite_quest": false,
+      "unlock_item": "christmas_tree",
+      "steam_achievement": "ACH_CHROMAPHILIA"
+    },
+    "chromaphobia": {
+      "wiki_name": "Chromaphobia",
+      "game_class": "Chromaphobia",
+      "effect_class": "search_filter",
+      "elite_quest": false,
+      "unlock_item": "sushi",
+      "steam_achievement": "ACH_CHROMAPHOBIA"
+    },
+    "chromatic_aberration": {
+      "wiki_name": "Chromatic Aberration",
+      "game_class": "ColourSwap",
+      "effect_class": "board_gen",
+      "elite_quest": false,
+      "unlock_item": "can_of_beans",
+      "steam_achievement": "ACH_CHROMATIC_ABERRATION"
+    },
+    "cursophobia": {
+      "wiki_name": "Cursophobia",
+      "game_class": "Cursophobia",
+      "effect_class": "search_filter",
+      "elite_quest": false,
+      "unlock_item": "juice_box",
+      "steam_achievement": "ACH_CURSOPHOBIA"
+    },
+    "shelf_life": {
+      "wiki_name": "Shelf Life",
+      "game_class": "DecisionParalysis",
+      "effect_class": "shop_only",
+      "elite_quest": false,
+      "unlock_item": "head_trauma",
+      "steam_achievement": "ACH_DECISION_PARALYSIS"
+    },
+    "do_not_pass_go": {
+      "wiki_name": "Do Not Pass Go",
+      "game_class": "DoNotPassGo",
+      "effect_class": "shop_only",
+      "elite_quest": false,
+      "unlock_item": "future_funds",
+      "steam_achievement": "ACH_DO_NOT_PASS_GO"
+    },
+    "embargo": {
+      "wiki_name": "Embargo",
+      "game_class": "Embargo",
+      "effect_class": "shop_only",
+      "elite_quest": false,
+      "unlock_item": "eraser",
+      "steam_achievement": "ACH_EMBARGO"
+    },
+    "emptygrid": {
+      "wiki_name": "EmptyGrid",
+      "game_class": "EmptyGrid",
+      "effect_class": "board_gen",
+      "elite_quest": false,
+      "unlock_item": "luffing_jib_crane",
+      "steam_achievement": "ACH_EMPTY_GRID"
+    },
+    "in_the_beginning": {
+      "wiki_name": "In The Beginning",
+      "game_class": "InTheBeginning",
+      "effect_class": "shop_only",
+      "elite_quest": false,
+      "unlock_item": "chick",
+      "steam_achievement": "ACH_IN_THE_BEGINNING"
+    },
+    "lexographer": {
+      "wiki_name": "Lexographer",
+      "game_class": "Lexographer",
+      "effect_class": "scoring_step",
+      "elite_quest": false,
+      "unlock_item": "michaels_book",
+      "steam_achievement": "ACH_LEXOGRAPHER"
+    },
+    "masochist": {
+      "wiki_name": "Masochist",
+      "game_class": "Masochist",
+      "effect_class": "shop_only",
+      "elite_quest": true,
+      "unlock_item": "honeypot",
+      "steam_achievement": "ACH_MASOCHIST"
+    },
+    "munch_time": {
+      "wiki_name": "Munch Time",
+      "game_class": "MunchTime",
+      "effect_class": "board_gen",
+      "elite_quest": true,
+      "unlock_item": "hungry_hippo",
+      "steam_achievement": "ACH_MUNCH_TIME"
+    },
+    "playing_favourites": {
+      "wiki_name": "Playing Favourites",
+      "game_class": "PlayingFavourites",
+      "effect_class": "loadout_filter",
+      "elite_quest": true,
+      "unlock_item": "base_camp",
+      "steam_achievement": "ACH_PLAYING_FAVOURITES"
+    },
+    "red_letter_day": {
+      "wiki_name": "Red Letter Day",
+      "game_class": "RedLetterDay",
+      "effect_class": "board_gen",
+      "elite_quest": false,
+      "unlock_item": "spicy_pepper",
+      "steam_achievement": "ACH_RED_LETTER_DAY"
+    },
+    "red_pepper_day": {
+      "wiki_name": "Red Pepper Day",
+      "game_class": "RedPepperDay",
+      "effect_class": "board_gen",
+      "elite_quest": false,
+      "unlock_item": "rosebud",
+      "steam_achievement": "ACH_RED_PEPPER_DAY"
+    },
+    "secret_santa": {
+      "wiki_name": "Secret Santa",
+      "game_class": "SecretSanta",
+      "effect_class": "shop_only",
+      "elite_quest": false,
+      "unlock_item": "mystery_gift",
+      "steam_achievement": "ACH_SECRET_SANTA"
+    },
+    "knight_time": {
+      "wiki_name": "Knight Time",
+      "game_class": "SicilianDefense",
+      "effect_class": "movement_override",
+      "elite_quest": false,
+      "unlock_item": "eight_ball",
+      "steam_achievement": "ACH_KNIGHT_TIME"
+    },
+    "we_re_finally_landing": {
+      "wiki_name": "We're Finally Landing",
+      "game_class": "SpeedrunChallenge",
+      "effect_class": "meta_timer",
+      "elite_quest": false,
+      "steam_achievement": "ACH_WERE_FINALLY_LANDING"
+    },
+    "advent_calendar": {
+      "wiki_name": "Advent Calendar",
+      "game_class": "Sudoku",
+      "effect_class": "board_gen",
+      "elite_quest": false,
+      "unlock_item": "busy_schedule",
+      "steam_achievement": "ACH_ADVENT_CALENDAR"
+    },
+    "on_cooldown": {
+      "wiki_name": "On Cooldown",
+      "game_class": "SupplyAndDemand",
+      "effect_class": "search_filter",
+      "elite_quest": false,
+      "unlock_item": "mirror_ball",
+      "steam_achievement": "ACH_SUPPLY_AND_DEMAND"
+    },
+    "the_bones_round": {
+      "wiki_name": "The Bones Round",
+      "game_class": "TheBonesRound",
+      "effect_class": "scoring_override",
+      "elite_quest": false,
+      "unlock_item": "wind_chime",
+      "steam_achievement": "ACH_THE_BONES_ROUND",
+      "poker_scores": {
+        "straight_flush": 800,
+        "four_of_a_kind": 420,
+        "full_house": 160,
+        "flush": 140,
+        "straight": 120,
+        "three_of_a_kind": 90,
+        "two_pair": 40,
+        "pair": 20,
+        "high_card": 5
+      }
+    },
+    "two_wrongs": {
+      "wiki_name": "Two Wrongs",
+      "game_class": "TwoWrongs",
+      "effect_class": "target_scoring",
+      "elite_quest": false,
+      "unlock_item": "ambulance",
+      "steam_achievement": "ACH_TWO_WRONGS"
+    },
+    "up_and_up": {
+      "wiki_name": "Up and Up",
+      "game_class": "UpAndUp",
+      "effect_class": "search_filter",
+      "elite_quest": true,
+      "unlock_item": "number_go_up",
+      "steam_achievement": "ACH_UP_AND_UP"
+    }
+  }
+}

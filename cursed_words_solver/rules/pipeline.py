@@ -1409,6 +1409,24 @@ class ScoringPipeline:
         hourglass = ctx.hourglass_reversed
         if not hourglass:
             state = self._apply_early_boss_rules(state, board, path, loadout, ctx)
+        from cursed_words_solver.rules.quest_scoring import (
+            apply_bones_round_early_bonus,
+            apply_lexographer_tile_zero,
+            bones_round_active,
+            lexographer_active,
+            zero_tile_scores_for_bones,
+        )
+
+        if bones_round_active(loadout):
+            zero_tile_scores_for_bones(state)
+            state["base_score"] = 0.0
+            state = apply_bones_round_early_bonus(
+                state,
+                board,
+                path,
+                loadout,
+                trace_step=_trace_step if trace is not None else None,
+            )
         _apply_void_path_bonuses(board, path, loadout, state)
 
         from cursed_words_solver.rules.scoring_conditions import (
@@ -1811,6 +1829,10 @@ class ScoringPipeline:
             state,
             trace_step=_trace_step if trace is not None else None,
         )
+        if lexographer_active(loadout):
+            state = apply_lexographer_tile_zero(state, board, path)
+            if trace is not None:
+                _trace_step(state, "quest_lexographer", detail="cursed tiles zeroed")
         return state
 
     def _apply_early_boss_rules(

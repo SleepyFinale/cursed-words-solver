@@ -1040,6 +1040,7 @@ def f8_should_block_save(
     f8_extras: dict[str, Any] | None = None,
     gather_succeeded: bool = True,
     mid_solve_grid_advanced: bool = False,
+    path: list[int] | None = None,
 ) -> tuple[bool, str | None]:
     """Whether F8 must skip trusted last_suggestion.json (melmod capture)."""
     del (
@@ -1052,7 +1053,6 @@ def f8_should_block_save(
         grid_one_hist_warn,
         f8_extras,
         loadout,
-        board,
     )
     if not gather_succeeded:
         return True, "gather_incomplete"
@@ -1060,7 +1060,24 @@ def f8_should_block_save(
         return True, "grid_advanced_during_solve"
     if workflow_stale_warn:
         return True, "workflow_extras_stale"
+    if f8_path_uses_crossed_out_tiles(board, path):
+        return True, "crossed_out_tile_in_path"
     return False, None
+
+
+def f8_path_uses_crossed_out_tiles(
+    board: Board | None,
+    path: list[int] | None,
+) -> bool:
+    """True when the suggested path includes an on-cooldown (crossed-out) tile."""
+    if board is None or not path:
+        return False
+    from cursed_words_solver.rules.quest_effects import path_uses_crossed_out_tile
+
+    try:
+        return path_uses_crossed_out_tile(board, list(path))
+    except (IndexError, ValueError):
+        return False
 
 
 def _trace_word_for_path(

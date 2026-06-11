@@ -333,3 +333,35 @@ def test_run_shop_advisor_end_to_end():
     )
     advice = run_shop_advisor(loadout, shop)
     assert advice.reason or advice.buys or advice.restock or advice.leave_shop
+
+
+def test_masochist_quest_filters_sticker_advice():
+    loadout = Loadout(
+        stickers=[],
+        stamps=[],
+        money=20,
+        extras={"challenge_game_class": "Masochist"},
+    )
+    shop = ShopState(
+        restock_cost=2,
+        offers=[
+            ShopOffer(
+                slot="sticker",
+                index=0,
+                id="blueberries",
+                name="Blueberries",
+                price=4,
+            ),
+            ShopOffer(
+                slot="stamp",
+                index=0,
+                id="genie",
+                name="Genie",
+                price=5,
+            ),
+        ],
+    )
+    advice = run_shop_advisor(loadout, shop)
+    buy_slots = {b.label.lower() for b in advice.buys}
+    assert not any("blueberr" in label for label in buy_slots)
+    assert any("quest:" in w.lower() or "masochist" in w.lower() for w in advice.warnings)

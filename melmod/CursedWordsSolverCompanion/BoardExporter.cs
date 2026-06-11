@@ -337,6 +337,8 @@ namespace CursedWordsSolverCompanion
                 sb.Append(t.curse ?? "");
                 sb.Append('/');
                 sb.Append(t.color ?? "");
+                if (t.is_crossed_out)
+                    sb.Append("/x");
                 sb.Append(';');
             }
             return sb.ToString();
@@ -1065,6 +1067,26 @@ namespace CursedWordsSolverCompanion
             var voidSteps = MapVoidPenaltySteps(tile, curse, color, letter);
             if (voidSteps.HasValue)
                 snap.void_penalty_steps = voidSteps.Value;
+
+            try
+            {
+                if (tile.IsCrossedOut)
+                    snap.is_crossed_out = true;
+            }
+            catch
+            {
+                // optional
+            }
+
+            try
+            {
+                if (tile.IsNumberGoUpMiddleTile)
+                    snap.is_up_and_up_center = true;
+            }
+            catch
+            {
+                // optional
+            }
 
             return snap;
         }

@@ -187,6 +187,10 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
     searcher.validator.required_consumable_indices = frozenset(
         int(idx) for idx in required_raw
     )
+    searcher.validator.quest_loadout = loadout
+    from cursed_words_solver.search import set_quest_movement_loadout
+
+    set_quest_movement_loadout(loadout)
     active = _active_indices(board)
     searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
     searcher._mult_rules = loadout_mult_rules(
@@ -223,16 +227,20 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
         ),
     )
     mini = _CandidateHeap(heap_k)
-    searcher._collect_words_fair_starts(
-        board,
-        loadout,
-        mini,
-        local_deadline,
-        max_len,
-        starts,
-        digits_only=digits_only,
-    )
-    return mini.best_sorted()
+    try:
+        searcher._collect_words_fair_starts(
+            board,
+            loadout,
+            mini,
+            local_deadline,
+            max_len,
+            starts,
+            digits_only=digits_only,
+        )
+        return mini.best_sorted()
+    finally:
+        searcher.validator.quest_loadout = None
+        set_quest_movement_loadout(None)
 
 
 def parallel_collect_fair_starts(

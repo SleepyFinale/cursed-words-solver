@@ -455,6 +455,10 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
                 meta["scattered_item_level"] = max(1, int(scattered_level))
             except (TypeError, ValueError):
                 pass
+        if entry.get("is_crossed_out") in (True, "true", "True", "1", 1):
+            meta["is_crossed_out"] = True
+        if entry.get("is_up_and_up_center") in (True, "true", "True", "1", 1):
+            meta["is_up_and_up_center"] = True
         void_steps = entry.get("void_penalty_steps")
         if void_steps is not None:
             try:
@@ -668,6 +672,14 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
                 out[int_key] = int(out[int_key])
             except (TypeError, ValueError):
                 out[int_key] = 0
+    for embargo_key in ("embargoed_item_types", "embargoed_item_slugs"):
+        raw_embargo = out.get(embargo_key)
+        if raw_embargo is not None and not isinstance(raw_embargo, str):
+            out[embargo_key] = str(raw_embargo)
+        elif isinstance(raw_embargo, str):
+            out[embargo_key] = ",".join(
+                s.strip() for s in raw_embargo.split(",") if s.strip()
+            )
     for key in (
         "boss_floor_modification",
         "fox_stolen_this_grid",
@@ -938,6 +950,38 @@ def parse_run_state(data: dict[str, Any]) -> Loadout:
     boss = data.get("boss") if isinstance(data.get("boss"), dict) else {}
     boss_id = str(data.get("boss_id") or boss.get("id") or "")
     boss_name = str(data.get("boss_name") or boss.get("name") or "")
+    extras = _normalize_pin_extras(data.get("extras", {}) or {})
+    diag = data.get("export_diagnostics")
+    if isinstance(diag, dict):
+        fp = str(diag.get("fingerprint") or "").strip()
+        if fp:
+            extras.setdefault("export_diagnostics_fingerprint", fp)
+    if data.get("challenge_game_class"):
+        extras["challenge_game_class"] = str(data["challenge_game_class"])
+    if not extras.get("challenge_game_class"):
+        from cursed_words_solver.rules.quest_effects import (
+            challenge_game_class_from_fingerprint,
+        )
+
+        derived = challenge_game_class_from_fingerprint(
+            str(extras.get("export_diagnostics_fingerprint") or "")
+        )
+        if derived:
+            extras["challenge_game_class"] = derived
+    if data.get("challenge_name"):
+        extras["challenge_name"] = str(data["challenge_name"])
+    if data.get("challenge_elite") in (True, "true", "True", "1", 1):
+        extras["challenge_elite"] = "true"
+    fav_stickers: list[str] = []
+    for sticker in data.get("stickers", []):
+        if not isinstance(sticker, dict):
+            continue
+        if sticker.get("is_human_boy_favourite") in (True, "true", "True", "1", 1):
+            sid = str(sticker.get("id") or sticker.get("name") or "").strip().lower()
+            if sid:
+                fav_stickers.append(sid)
+    if fav_stickers and not extras.get("favourite_sticker_ids"):
+        extras["favourite_sticker_ids"] = ",".join(fav_stickers)
     return Loadout(
         character=data.get("character", ""),
         pin_branch=data.get("pin_branch", ""),
@@ -947,7 +991,7 @@ def parse_run_state(data: dict[str, Any]) -> Loadout:
         boss_name=boss_name,
         boss_effect=data.get("boss_effect", ""),
         money=int(data.get("money", 0)),
-        extras=_normalize_pin_extras(data.get("extras", {}) or {}),
+        extras=extras,
     )
 
 
@@ -987,6 +1031,15 @@ def loadout_to_dict(loadout: Loadout) -> dict[str, Any]:
         "boss_id": loadout.boss_id,
         "boss_name": loadout.boss_name,
         "boss_effect": loadout.boss_effect,
+        "challenge_game_class": (loadout.extras or {}).get("challenge_game_class", ""),
+        "challenge_name": (loadout.extras or {}).get("challenge_name", ""),
+        "challenge_elite": (loadout.extras or {}).get("challenge_elite", "") in (
+            True,
+            "true",
+            "True",
+            "1",
+            1,
+        ),
         "extras": dict(loadout.extras),
     }
 

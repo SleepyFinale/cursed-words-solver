@@ -191,10 +191,20 @@ def run_shop_advisor(
     on_progress=None,
 ) -> ShopAdvice:
     del sell_candidates, dictionary, config
+    from cursed_words_solver.rules.shop_quest_effects import (
+        filter_shop_offers,
+        shop_quest_warnings,
+    )
+
     if on_progress:
         on_progress("Computing game shop advice...")
-    advice = compute_shop_advice(loadout, shop)
-    return advice_data_to_shop_advice(advice, shop, money=loadout.money)
+    filtered_shop = filter_shop_offers(loadout, shop)
+    advice = compute_shop_advice(loadout, filtered_shop)
+    result = advice_data_to_shop_advice(advice, filtered_shop, money=loadout.money)
+    for warn in shop_quest_warnings(loadout, shop):
+        if warn not in result.warnings:
+            result.warnings.append(warn)
+    return result
 
 
 def format_shop_advice_text(advice: ShopAdvice) -> str:

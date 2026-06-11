@@ -249,7 +249,11 @@ Rules follow the official [Scoring](https://cursedwords.wiki.gg/wiki/Scoring) or
 
 `[data/wiki/stickers.json](data/wiki/stickers.json)` maps wiki IDs (with aliases for mod `ArtFileName` mismatches). Pin rules use **art slug** via `extras.pin_effect` in `run_state.json`.
 
-**Main Bosses** ([wiki](https://cursedwords.wiki.gg/wiki/Bosses)): scoring bosses use `boss_id` plus `extras.boss_area_number` (1–5) and `extras.boss_cursed`. Hyena sets `hyena_blocked`. Bat exports `rows`/`cols` and `active: false` on off-board cells. Rebuild melmod and **F7** after companion updates.
+**Main Bosses** ([wiki](https://cursedwords.wiki.gg/wiki/Bosses)): scoring bosses use `boss_id` plus `extras.boss_area_number` (1–5) and `extras.boss_cursed`. Hyena sets `hyena_blocked`. Bat exports `rows`/`cols` and `active: false` on off-board cells.
+
+**Quests** ([wiki](https://cursedwords.wiki.gg/wiki/Quests)): active challenge exports as `challenge_game_class` + `challenge_name` (wiki names differ from C# class names — see `[docs/game-research/quests.md](docs/game-research/quests.md)`). Grid-solving quests apply search constraints and scoring overrides on F8; shop-only quests (Shelf Life, Embargo, etc.) gate F8 shop advice.
+
+Rebuild melmod and **F7** after companion updates.
 
 Regenerate the catalog (see also `[scripts/README.md](scripts/README.md)`):
 

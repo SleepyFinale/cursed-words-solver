@@ -1769,19 +1769,14 @@ def _adjust_bento_previous_word_extras(run_state: dict, data: dict) -> None:
     if not _loadout_has_bento_box(run_state):
         return
     if _bento_applied_in_actual_trace(data):
-        from cursed_words_solver.rules.scoring_conditions import (
-            _effective_word_start_letter,
-        )
+        from cursed_words_solver.rules.scoring_conditions import word_first_letter
 
-        board = parse_board_from_run_state(run_state)
-        path = data.get("path")
         word = str(data.get("word") or "")
-        if board is not None and isinstance(path, list) and word:
-            first = _effective_word_start_letter(board, path, word)
-            if first:
-                extras = dict(run_state.get("extras") or {})
-                extras["previous_word_first_letter"] = first
-                run_state["extras"] = extras
+        first = word_first_letter(word)
+        if first:
+            extras = dict(run_state.get("extras") or {})
+            extras["previous_word_first_letter"] = first
+            run_state["extras"] = extras
         return
     extras = dict(run_state.get("extras") or {})
     if extras.pop("previous_word_first_letter", None) is not None:

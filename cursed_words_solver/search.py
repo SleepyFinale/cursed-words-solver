@@ -698,6 +698,14 @@ def number_position_valid(
     return _position_matches_number_values(position, values, flags)
 
 
+_quest_movement_loadout: Loadout | None = None
+
+
+def set_quest_movement_loadout(loadout: Loadout | None) -> None:
+    global _quest_movement_loadout
+    _quest_movement_loadout = loadout
+
+
 def path_movement_ok(
     board: Board,
     path: list[int],
@@ -736,6 +744,7 @@ class PathValidator:
         self.min_len = min_len
         self.relaxed_numbers = relaxed_numbers
         self.required_consumable_indices: frozenset[int] = frozenset()
+        self.quest_loadout: Loadout | None = None
 
     def build_word(self, board: Board, path: list[int], letters: str) -> str:
         return letters.lower()
@@ -788,6 +797,10 @@ class PathValidator:
     ) -> bool:
         required = self.required_consumable_indices
         if required and not required.issubset(path):
+            return False
+        from cursed_words_solver.rules.quest_effects import quest_path_allowed
+
+        if not quest_path_allowed(board, path, loadout=self.quest_loadout):
             return False
         if not path_movement_ok(board, path, flags=stamp_flags):
             return False
@@ -1077,11 +1090,20 @@ def _active_indices(board: Board) -> list[int]:
     return [i for i in range(25) if board.is_active_index(i)]
 
 
+def tile_playable_for_path(tile: Tile) -> bool:
+    """False when SupplyAndDemand (or similar) marks the tile crossed out."""
+    from cursed_words_solver.rules.quest_effects import tile_is_crossed_out
+
+    return not tile_is_crossed_out(tile)
+
+
 def _legal_word_start_indices(board: Board) -> list[int]:
     """Active tiles that may start a word (fractions only when 1-based pos 1 is legal)."""
     out: list[int] = []
     for i in _active_indices(board):
         tile = board.get_by_index(i)
+        if not tile_playable_for_path(tile):
+            continue
         if is_fraction_tile(tile) and not fraction_position_valid(tile, 0, relaxed=False):
             continue
         out.append(i)
@@ -1244,6 +1266,18 @@ def neighbors_mask(
     if flag_test(flags, FLAG_DOUBLE_LETTER_TELEPORT):
         mask |= _double_letter_teleport_mask(
             board, cell_id, visited_mask, graph_ctx=graph_ctx
+        )
+    if _quest_movement_loadout is not None:
+        from cursed_words_solver.rules.quest_movement import neighbors_mask_for_quest
+
+        return neighbors_mask_for_quest(
+            board,
+            visited_mask,
+            cell_id=cell_id,
+            flags=flags,
+            graph_ctx=graph_ctx,
+            loadout=_quest_movement_loadout,
+            standard_mask=mask,
         )
     return mask
 
@@ -2360,6 +2394,9 @@ class WordSearcher:
                 trie_compatible
                 and prefix_cursor is not None
                 and self.dictionary.cursor_is_word(prefix_cursor)
+                and self.validator._path_constraints_ok(
+                    board, path, search_word, stamp_flags
+                )
             ):
                 timing = self._active_timing
                 if timing is not None:
@@ -2757,6 +2794,8 @@ class WordSearcher:
                     timed_out = True
                     break
                 tile = board.get_by_index(idx)
+                if not tile_playable_for_path(tile):
+                    continue
                 if is_fraction_tile(tile) and not fraction_position_valid(
                     tile, len(path), relaxed=False
                 ):
@@ -2905,6 +2944,8 @@ class WordSearcher:
             if timed_out or time.monotonic() > deadline:
                 break
             tile = board.get_by_index(start)
+            if not tile_playable_for_path(tile):
+                continue
             if is_fraction_tile(tile) and not fraction_position_valid(
                 tile, 0, relaxed=False
             ):
@@ -3343,6 +3384,8 @@ class WordSearcher:
                         if deadline is not None and time.monotonic() >= deadline:
                             break
                         tile = board.get_by_index(idx)
+                        if not tile_playable_for_path(tile):
+                            continue
                         if is_fraction_tile(tile) and not fraction_position_valid(
                             tile, len(path), relaxed=False
                         ):
@@ -3751,6 +3794,8 @@ class WordSearcher:
         loadout = loadout or Loadout(money=board.money)
         board = effective_board_for_loadout(board, loadout, self.scoring.rules)
         _active = _active_indices(board)
+        self.validator.quest_loadout = loadout
+        set_quest_movement_loadout(loadout)
         self._solve_ctx = build_solve_context(loadout, self.scoring.rules)
         self._mult_rules = loadout_mult_rules(
             loadout,
@@ -4188,4 +4233,6 @@ class WordSearcher:
         timing.wall_sec = time.monotonic() - solve_start
         self.last_search_timing = timing
         self._active_timing = None
+        self.validator.quest_loadout = None
+        set_quest_movement_loadout(None)
         return unique[:top_n]

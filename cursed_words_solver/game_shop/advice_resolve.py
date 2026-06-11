@@ -14,6 +14,14 @@ from cursed_words_solver.game_shop.types import (
 from cursed_words_solver.game_shop.types import player_should_restock
 
 
+def _apply_quest_gates(advice: AdviceData, ctx: ShopAdviceContext) -> AdviceData:
+    if ctx.block_sell:
+        advice.should_sell = False
+    if ctx.block_restock:
+        advice.should_restock = False
+    return advice
+
+
 def resolve_advice_actions(
     advice: AdviceData,
     ctx: ShopAdviceContext,
@@ -24,7 +32,7 @@ def resolve_advice_actions(
     if advice.specific_reason and (
         advice.should_buy or advice.should_freeze
     ):
-        return advice
+        return _apply_quest_gates(advice, ctx)
 
     if advice.recommended_tiles:
         affordable = [
@@ -33,16 +41,20 @@ def resolve_advice_actions(
         if affordable:
             advice.recommended_tiles = affordable
             advice.should_buy = True
-        return advice
+        return _apply_quest_gates(advice, ctx)
 
     if not advice.recommended_items:
-        if player_should_restock(ctx.money, ctx.restock_cost) and not free_item_active:
+        if (
+            not ctx.block_restock
+            and player_should_restock(ctx.money, ctx.restock_cost)
+            and not free_item_active
+        ):
             advice.should_restock = True
             advice.should_leave = False
         elif not free_item_active:
             advice.should_restock = False
             advice.should_leave = True
-        return advice
+        return _apply_quest_gates(advice, ctx)
 
     affordable = [i for i in advice.recommended_items if i.price <= ctx.money]
     if affordable:
@@ -53,20 +65,21 @@ def resolve_advice_actions(
 
     inventory_ids = {(i.id or "").lower() for i in ctx.inventory}
 
-    if ctx.sticker_count >= 5 and ctx.stamp_count >= 5:
-        advice.should_sell = True
-    elif ctx.sticker_count >= 5:
-        non_stickers = [i for i in advice.recommended_items if i.slot != "sticker"]
-        if non_stickers:
-            advice.recommended_items = non_stickers
-        else:
+    if not ctx.block_sell:
+        if ctx.sticker_count >= 5 and ctx.stamp_count >= 5:
             advice.should_sell = True
-    elif ctx.stamp_count >= 5:
-        non_stamps = [i for i in advice.recommended_items if i.slot != "stamp"]
-        if non_stamps:
-            advice.recommended_items = non_stamps
-        else:
-            advice.should_sell = True
+        elif ctx.sticker_count >= 5 and ctx.sticker_shop_enabled:
+            non_stickers = [i for i in advice.recommended_items if i.slot != "sticker"]
+            if non_stickers:
+                advice.recommended_items = non_stickers
+            else:
+                advice.should_sell = True
+        elif ctx.stamp_count >= 5 and ctx.stamp_shop_enabled:
+            non_stamps = [i for i in advice.recommended_items if i.slot != "stamp"]
+            if non_stamps:
+                advice.recommended_items = non_stamps
+            elif ctx.sticker_shop_enabled:
+                advice.should_sell = True
 
     owned_matches = [
         i
@@ -78,7 +91,7 @@ def resolve_advice_actions(
         advice.should_upgrade = True
         advice.should_sell = False
 
-    return advice
+    return _apply_quest_gates(advice, ctx)
 
 
 def advice_summary(

@@ -16,6 +16,7 @@ from cursed_words_solver.fingerprints import (
     fingerprints_from_run_state,
 )
 from cursed_words_solver.loadout import (
+    encounter_mode_from_run_state,
     hydrate_tile_ninja_loadout_extras,
     load_run_state_raw,
     melmod_board_available,
@@ -33,6 +34,11 @@ from cursed_words_solver.rules.scoring_conditions import (
     consumable_rack_count,
     grid_number,
 )
+from cursed_words_solver.rules.quest_effects import (
+    active_quest_game_class,
+    active_quest_slug,
+    board_has_crossed_out_tile,
+)
 from cursed_words_solver.suggestion import (
     loadout_needs_encounter_historic,
     loadout_needs_previous_word_letter,
@@ -42,6 +48,7 @@ F8_GATHER_POLL_SEC = 0.1
 F8_GATHER_BOARD_TIMEOUT_SEC = 5.0
 F8_GATHER_EXTRAS_TIMEOUT_SEC = 5.0
 F8_RACK_EXPORT_TIMEOUT_SEC = 5.0
+F8_CROSSED_OUT_EXPORT_TIMEOUT_SEC = 5.0
 
 
 @dataclass(frozen=True)
@@ -87,6 +94,34 @@ def _has_tile_ninja_stamp(loadout: Loadout) -> bool:
     )
 
 
+def _supply_and_demand_needs_crossed_out_flags(
+    loadout: Loadout,
+    board: Board | None,
+    extras: dict[str, Any],
+) -> bool:
+    """True when On Cooldown should have crossed-out tiles but export has none."""
+    if active_quest_game_class(loadout) != "SupplyAndDemand":
+        return False
+    try:
+        grid_n = grid_number(loadout)
+    except (TypeError, ValueError):
+        grid_n = 0
+    if grid_n < 2:
+        return False
+    if board is not None and board_has_crossed_out_tile(board):
+        return False
+    words_count = extras.get("words_submitted_this_run_count")
+    if words_count not in (None, "", "0"):
+        return True
+    prev_words = extras.get("scoring_previous_words_count")
+    try:
+        if int(prev_words or 0) >= 1:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return False
+
+
 def _extras_missing_for_loadout(
     loadout: Loadout,
     board: Board,
@@ -115,7 +150,49 @@ def _extras_missing_for_loadout(
     if _has_tile_ninja_stamp(loadout):
         if extras.get("tile_ninja_consumables_used") in (None, ""):
             missing.append("tile_ninja_consumables_used")
+    game_class = active_quest_game_class(loadout)
+    if game_class == "UpAndUp":
+        if extras.get("up_and_up_center_index") in (None, ""):
+            missing.append("up_and_up_center_index")
+        has_center = False
+        if board is not None:
+            for idx in range(25):
+                if not board.is_active_index(idx):
+                    continue
+                if (board.get_by_index(idx).metadata or {}).get("is_up_and_up_center"):
+                    has_center = True
+                    break
+        if not has_center:
+            missing.append("is_up_and_up_center tile flag")
+    if _supply_and_demand_needs_crossed_out_flags(loadout, board, extras):
+        missing.append("is_crossed_out tile flags")
+    if game_class == "PlayingFavourites":
+        if not extras.get("favourite_sticker_ids"):
+            missing.append("favourite_sticker_ids")
+    slug = active_quest_slug(loadout)
+    if slug in ("chromaphobia", "chromaphilia", "cursophobia") and not game_class:
+        missing.append("challenge_game_class")
     return missing
+
+
+def _shop_quest_extras_missing(loadout: Loadout, extras: dict[str, Any]) -> list[str]:
+    """Shop-mode melmod fields required before shop advice."""
+    missing: list[str] = []
+    if active_quest_game_class(loadout) == "Embargo":
+        if "embargoed_item_types" not in extras:
+            missing.append("embargoed_item_types")
+    return missing
+
+
+def shop_extras_ready(run_state: dict[str, Any] | None) -> bool:
+    """True when shop quest extras are present for F8 shop advice."""
+    if not isinstance(run_state, dict):
+        return False
+    if encounter_mode_from_run_state(run_state) != "shop":
+        return True
+    loadout = parse_run_state(run_state)
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    return not _shop_quest_extras_missing(loadout, extras)
 
 
 def _workflow_prev_letter_catchup_note(
@@ -321,6 +398,36 @@ def gather_f8_snapshot(
         snapshot.warnings = list(snapshot.warnings) + [
             f"melmod export incomplete after wait: {', '.join(last_missing)}"
         ]
+
+    if (
+        snapshot.loadout is not None
+        and snapshot.board is not None
+        and _supply_and_demand_needs_crossed_out_flags(
+            snapshot.loadout,
+            snapshot.board,
+            snapshot.loadout.extras if isinstance(snapshot.loadout.extras, dict) else {},
+        )
+    ):
+        deadline_crossed = time.monotonic() + max(0.0, F8_CROSSED_OUT_EXPORT_TIMEOUT_SEC)
+        while time.monotonic() < deadline_crossed:
+            run_state = load_run_state_raw()
+            snapshot = _build_snapshot_from_run_state(run_state, rules=rules)
+            extras = (
+                snapshot.loadout.extras
+                if snapshot.loadout and isinstance(snapshot.loadout.extras, dict)
+                else {}
+            )
+            if not _supply_and_demand_needs_crossed_out_flags(
+                snapshot.loadout, snapshot.board, extras or {}
+            ):
+                break
+            _notify_wait("waiting for melmod: is_crossed_out tile flags")
+            time.sleep(poll_sec)
+        else:
+            snapshot.warnings = list(snapshot.warnings) + [
+                "melmod export incomplete after wait: is_crossed_out tile flags"
+            ]
+            snapshot.extras_ready = False
 
     return snapshot
 

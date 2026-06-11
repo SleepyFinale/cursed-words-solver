@@ -13,6 +13,11 @@ from cursed_words_solver.rules.boss_effects import (
     get_active_boss_rule,
     get_active_boss_rules,
 )
+from cursed_words_solver.rules.quest_effects import (
+    QuestConstraints,
+    filter_playing_favourites_loadout,
+    quest_constraints,
+)
 from cursed_words_solver.rules.boss_scoring import EARLY_BOSS_TYPES
 from cursed_words_solver.rules.rule_lookup import get_pin_scoring_rule, get_rule, resolve_rule_id
 from cursed_words_solver.rules.scoring_conditions import (
@@ -242,9 +247,11 @@ class SolveContext:
     red_tile_bonus_per_red: int = 0
     hanafuda_per_unused: int = 0
     tier2_screen_enabled: bool = False
+    quest_ctx: QuestConstraints = QuestConstraints()
 
 
 def build_solve_context(loadout: Loadout, rules: dict) -> SolveContext:
+    loadout = filter_playing_favourites_loadout(loadout)
     extras = loadout.extras or {}
     hourglass = hourglass_reverses_order(loadout, rules)
     max_wl_bonus, wl_min = _word_length_bonus_meta(loadout, rules)
@@ -281,6 +288,7 @@ def build_solve_context(loadout: Loadout, rules: dict) -> SolveContext:
         red_tile_bonus_per_red=_red_tile_bonus_per_red(loadout, rules),
         hanafuda_per_unused=_hanafuda_per_unused(loadout, rules),
         tier2_screen_enabled=_tier2_screen_enabled(loadout, rules, hourglass=hourglass),
+        quest_ctx=quest_constraints(loadout),
     )
 
 

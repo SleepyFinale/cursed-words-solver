@@ -15,6 +15,9 @@ namespace CursedWordsSolverCompanion
         public string boss_id = "";
         public string boss_name = "";
         public string boss_effect = "";
+        public string challenge_game_class = "";
+        public string challenge_name = "";
+        public bool challenge_elite;
         public Dictionary<string, string> extras = new Dictionary<string, string>();
         public Dictionary<string, object> export_diagnostics;
         public BoardSnapshot board;
@@ -39,5 +42,8 @@ namespace CursedWordsSolverCompanion
         /// </summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public int? birthday_cake_bonus;
+        /// <summary>Playing Favourites quest: HumanBoy favourite sticker.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public bool? is_human_boy_favourite;
     }
 }

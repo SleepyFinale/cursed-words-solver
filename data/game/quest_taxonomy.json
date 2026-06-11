@@ -1,0 +1,164 @@
+{
+  "_meta": {
+    "source": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Cursed Words\\Cursed Words_Data\\Managed\\Assembly-CSharp.dll",
+    "count": 26
+  },
+  "quests": {
+    "antiphilatelist": {
+      "game_class": "Antiphilatelist",
+      "wiki_name": "Antiphilatelist",
+      "elite_quest": false,
+      "effect_class": "shop_only"
+    },
+    "bullseye": {
+      "game_class": "Bullseye",
+      "wiki_name": "Bullseye",
+      "elite_quest": true,
+      "effect_class": "target_scoring"
+    },
+    "callofthevoid": {
+      "game_class": "CallOfTheVoid",
+      "wiki_name": "Call Of The Void",
+      "elite_quest": false,
+      "effect_class": "board_layout"
+    },
+    "chromaphilia": {
+      "game_class": "Chromaphilia",
+      "wiki_name": "Chromaphilia",
+      "elite_quest": false,
+      "effect_class": "search_filter"
+    },
+    "chromaphobia": {
+      "game_class": "Chromaphobia",
+      "wiki_name": "Chromaphobia",
+      "elite_quest": false,
+      "effect_class": "search_filter"
+    },
+    "colourswap": {
+      "game_class": "ColourSwap",
+      "wiki_name": "Chromatic Aberration",
+      "elite_quest": false,
+      "effect_class": "board_gen"
+    },
+    "cursophobia": {
+      "game_class": "Cursophobia",
+      "wiki_name": "Cursophobia",
+      "elite_quest": false,
+      "effect_class": "search_filter"
+    },
+    "decisionparalysis": {
+      "game_class": "DecisionParalysis",
+      "wiki_name": "Shelf Life",
+      "elite_quest": false,
+      "effect_class": "shop_only"
+    },
+    "donotpassgo": {
+      "game_class": "DoNotPassGo",
+      "wiki_name": "Do Not Pass Go",
+      "elite_quest": false,
+      "effect_class": "shop_only"
+    },
+    "embargo": {
+      "game_class": "Embargo",
+      "wiki_name": "Embargo",
+      "elite_quest": false,
+      "effect_class": "shop_only"
+    },
+    "emptygrid": {
+      "game_class": "EmptyGrid",
+      "wiki_name": "",
+      "elite_quest": false,
+      "effect_class": "board_gen"
+    },
+    "inthebeginning": {
+      "game_class": "InTheBeginning",
+      "wiki_name": "In The Beginning",
+      "elite_quest": false,
+      "effect_class": "shop_only"
+    },
+    "lexographer": {
+      "game_class": "Lexographer",
+      "wiki_name": "Lexographer",
+      "elite_quest": false,
+      "effect_class": "scoring_step"
+    },
+    "masochist": {
+      "game_class": "Masochist",
+      "wiki_name": "Masochist",
+      "elite_quest": true,
+      "effect_class": "shop_only"
+    },
+    "munchtime": {
+      "game_class": "MunchTime",
+      "wiki_name": "Munch Time",
+      "elite_quest": true,
+      "effect_class": "board_gen"
+    },
+    "playingfavourites": {
+      "game_class": "PlayingFavourites",
+      "wiki_name": "Playing Favourites",
+      "elite_quest": true,
+      "effect_class": "loadout_filter"
+    },
+    "redletterday": {
+      "game_class": "RedLetterDay",
+      "wiki_name": "Red Letter Day",
+      "elite_quest": false,
+      "effect_class": "board_gen"
+    },
+    "redpepperday": {
+      "game_class": "RedPepperDay",
+      "wiki_name": "Red Pepper Day",
+      "elite_quest": false,
+      "effect_class": "board_gen"
+    },
+    "secretsanta": {
+      "game_class": "SecretSanta",
+      "wiki_name": "Secret Santa",
+      "elite_quest": false,
+      "effect_class": "shop_only"
+    },
+    "siciliandefense": {
+      "game_class": "SicilianDefense",
+      "wiki_name": "Knight Time",
+      "elite_quest": false,
+      "effect_class": "movement_override"
+    },
+    "speedrunchallenge": {
+      "game_class": "SpeedrunChallenge",
+      "wiki_name": "We're Finally Landing",
+      "elite_quest": false,
+      "effect_class": "meta_timer"
+    },
+    "sudoku": {
+      "game_class": "Sudoku",
+      "wiki_name": "Advent Calendar",
+      "elite_quest": false,
+      "effect_class": "board_gen"
+    },
+    "supplyanddemand": {
+      "game_class": "SupplyAndDemand",
+      "wiki_name": "On Cooldown",
+      "elite_quest": false,
+      "effect_class": "search_filter"
+    },
+    "thebonesround": {
+      "game_class": "TheBonesRound",
+      "wiki_name": "The Bones Round",
+      "elite_quest": false,
+      "effect_class": "scoring_override"
+    },
+    "twowrongs": {
+      "game_class": "TwoWrongs",
+      "wiki_name": "Two Wrongs",
+      "elite_quest": false,
+      "effect_class": "target_scoring"
+    },
+    "upandup": {
+      "game_class": "UpAndUp",
+      "wiki_name": "Up and Up",
+      "elite_quest": true,
+      "effect_class": "search_filter"
+    }
+  }
+}

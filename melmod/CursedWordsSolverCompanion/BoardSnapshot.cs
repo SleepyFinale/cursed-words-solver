@@ -54,5 +54,9 @@ namespace CursedWordsSolverCompanion
         public int? scattered_item_level;
         /// <summary>VOID letter: grid index when scattered (face + 10 × steps penalty).</summary>
         public int? void_penalty_steps;
+        /// <summary>On Cooldown (SupplyAndDemand): tile blocked by previous word letters.</summary>
+        public bool is_crossed_out;
+        /// <summary>Up and Up center number tile (must be in word).</summary>
+        public bool is_up_and_up_center;
     }
 }

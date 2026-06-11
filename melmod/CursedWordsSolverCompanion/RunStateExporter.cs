@@ -210,6 +210,8 @@ namespace CursedWordsSolverCompanion
             sb.Append('|');
             AppendBossFingerprint(sb, BossResolver.Resolve(player));
             sb.Append('|');
+            AppendChallengeFingerprint(sb, player);
+            sb.Append('|');
             AppendPinFingerprint(sb, player.MyCharacter);
             sb.Append('|');
             sb.Append(ComputeBoardFingerprint(player));
@@ -837,9 +839,14 @@ namespace CursedWordsSolverCompanion
             FillPinExtras(snapshot, player.MyCharacter);
             FillStickerStampOrchestration(snapshot, player);
             FillRunContextExtras(snapshot, player);
+            QuestExporter.FillChallenge(snapshot, player);
+            QuestExporter.FillEmbargoExtras(snapshot, player);
             snapshot.board = BoardExporter.TryBuild(player);
             if (snapshot.board != null)
+            {
+                QuestExporter.FillUpAndUpCenterExtras(snapshot, snapshot.board);
                 snapshot.ui_layout = UiLayoutExporter.TryExport(snapshot.board);
+            }
             RunStateExportFill.ApplyMetadata(snapshot, player);
             ShopExporter.FillShopState(snapshot, player);
             if (snapshot.board != null)
@@ -1552,14 +1559,25 @@ namespace CursedWordsSolverCompanion
                 if (name == null)
                     name = "";
 
-                result.Add(
-                    new RunStateItem
+                var mapped = new RunStateItem
+                {
+                    id = Slugify(item.ArtFileName, name),
+                    name = name,
+                    level = stampsOnly ? 1 : item.TimesUpgraded + 1,
+                };
+                if (!stampsOnly)
+                {
+                    try
                     {
-                        id = Slugify(item.ArtFileName, name),
-                        name = name,
-                        level = stampsOnly ? 1 : item.TimesUpgraded + 1,
+                        if (item.IsHumanBoyFavouriteSticker)
+                            mapped.is_human_boy_favourite = true;
                     }
-                );
+                    catch
+                    {
+                        // optional
+                    }
+                }
+                result.Add(mapped);
             }
 
             return result;
@@ -4242,6 +4260,30 @@ namespace CursedWordsSolverCompanion
             }
             ids.Sort(StringComparer.Ordinal);
             sb.Append(string.Join("+", ids));
+        }
+
+        public static void AppendChallengeFingerprint(StringBuilder sb, Player player)
+        {
+            if (player == null)
+            {
+                sb.Append("-");
+                return;
+            }
+            try
+            {
+                var progress = player.CurrentRunProgress;
+                var challenge = progress?.Challenge;
+                if (challenge == null)
+                {
+                    sb.Append("-");
+                    return;
+                }
+                sb.Append(challenge.GetType().Name ?? "-");
+            }
+            catch
+            {
+                sb.Append("-");
+            }
         }
 
         public static void AppendPinFingerprint(StringBuilder sb, Character character)

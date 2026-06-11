@@ -185,7 +185,12 @@ def initial_tile_scores(
             and (face := path_letter_for_count(tile))
             and face.lower() == word_lower[i]
         )
-        if void_currency_in_word:
+        # Row-0 path-start void currency still gets the -10 init (gyrene ₲→g).
+        if void_currency_in_word and not (
+            i == 0
+            and tile.row == 0
+            and tile.metadata.get("source") == "melmod"
+        ):
             contrib = 0.0
         elif microscope_base:
             contrib = microscope_init_contribution(tile, money, loadout)

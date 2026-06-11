@@ -1113,6 +1113,28 @@ def test_oden_kaeing_michael_yeti_four_categories():
     assert unique_curse_type_count_on_path(board, path) == 4
 
 
+def test_oden_atmoses_dense_path_five_categories():
+    """Mismatch 20260607_124453: suited non-letter cards keep letter bucket → Oden ×5."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260607_124453.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    assert len(path) == 7
+    assert unique_curse_type_count_on_path(board, path) == 5
+
+
 def test_oden_unfrock_dense_path_four_categories():
     """Mismatch 20260607_141348: dense path drops letter bucket → Oden ×4."""
     from cursed_words_solver.loadout import (

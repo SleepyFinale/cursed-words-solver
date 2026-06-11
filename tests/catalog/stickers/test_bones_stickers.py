@@ -62,6 +62,19 @@ def _letter(row: int, col: int, ch: str, score: int = 1) -> Tile:
     )
 
 
+def _joker_tile(row: int, col: int, suit: str = "joker") -> Tile:
+    return Tile(
+        row=row,
+        col=col,
+        char="?",
+        letter="?",
+        base_score=0,
+        color=TileColor.COLORLESS,
+        curse=CurseType.WILDCARD,
+        metadata={"source": "melmod", "card_suit": suit, "is_joker": True},
+    )
+
+
 def _letter_card(
     row: int, col: int, ch: str, suit: str, score: int = 1
 ) -> Tile:
@@ -188,6 +201,65 @@ def test_celestial_body_duplicate_rank_only_last_gets_bonus():
     assert bd["pipeline"]["tile_scores"][2] == base_bd["pipeline"]["tile_scores"][2] + 10
     assert bd["pipeline"]["tile_scores"][4] == base_bd["pipeline"]["tile_scores"][4] + 10
     assert score == base + 30
+
+
+def test_celestial_body_l1_joker_wildcard_gets_bonus():
+    board = _empty_board()
+    board.tiles[0][0] = _joker_tile(0, 0, "diamonds")
+    board.tiles[0][1] = _letter(0, 1, "E", 1)
+    board.tiles[0][2] = _letter(0, 2, "X", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=1)]
+    )
+    score, bd = pipeline.score(board, [0, 1, 2], "eex", loadout)
+    base, base_bd = pipeline.score(board, [0, 1, 2], "eex", Loadout())
+    assert bd["pipeline"]["tile_scores"][0] == base_bd["pipeline"]["tile_scores"][0] + 10
+    assert score == base + 10
+
+
+def test_celestial_body_l1_joker_suit_rank_i_gets_bonus():
+    board = _empty_board()
+    board.tiles[0][0] = Tile(
+        row=0,
+        col=0,
+        char="i",
+        letter="I",
+        base_score=1,
+        curse=CurseType.LETTER,
+        metadata={"source": "melmod", "card_suit": "joker", "card_rank": "I"},
+    )
+    board.tiles[0][1] = _letter(0, 1, "T", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=1)]
+    )
+    score, bd = pipeline.score(board, [0, 1], "it", loadout)
+    base, base_bd = pipeline.score(board, [0, 1], "it", Loadout())
+    assert bd["pipeline"]["tile_scores"][0] == base_bd["pipeline"]["tile_scores"][0] + 10
+    assert score == base + 10
+
+
+def test_celestial_body_l1_high_value_non_poker_rank_gets_bonus():
+    board = _empty_board()
+    board.tiles[0][0] = Tile(
+        row=0,
+        col=0,
+        char="x",
+        letter="X",
+        base_score=8,
+        curse=CurseType.LETTER,
+        metadata={"source": "melmod", "card_suit": "spades", "card_rank": "X"},
+    )
+    board.tiles[0][1] = _letter(0, 1, "E", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=1)]
+    )
+    score, bd = pipeline.score(board, [0, 1], "xe", loadout)
+    base, base_bd = pipeline.score(board, [0, 1], "xe", Loadout())
+    assert bd["pipeline"]["tile_scores"][0] == base_bd["pipeline"]["tile_scores"][0] + 10
+    assert score == base + 10
 
 
 def test_celestial_body_l3_duplicate_letter_coalesce():
@@ -606,7 +678,7 @@ def test_celestial_before_yellow_glasses_with_bicycle_pin():
     )
     score, bd = pipeline.score(board, path, "dooses", loadout)
     assert bd["multiplier"] == 1.5
-    assert score == 54.0
+    assert score == 55.0
 
 
 def test_peas_of_a_pod_four_of_a_kind():

@@ -85,6 +85,11 @@ from cursed_words_solver.rules.boss_effects import (
     boss_area_number,
     boss_word_constraints,
 )
+from cursed_words_solver.rules.quest_effects import (
+    active_quest_name,
+    quest_constraints,
+)
+from cursed_words_solver.rules.quest_scoring import target_met
 from cursed_words_solver.rules.rule_lookup import boss_display_name, resolve_rule_id
 from cursed_words_solver.consumable_placement import (
     consumable_investment_active,
@@ -728,6 +733,13 @@ class SolverApp:
             run_shop_advisor,
         )
 
+        from cursed_words_solver.f8_snapshot import shop_extras_ready
+
+        extras_deadline = time.monotonic() + 5.0
+        while not shop_extras_ready(run_state_data) and time.monotonic() < extras_deadline:
+            time.sleep(0.1)
+            run_state_data = load_run_state_raw()
+
         shop = parse_shop_from_run_state(run_state_data)
         if shop is None or not shop.offers:
             print(
@@ -744,7 +756,13 @@ class SolverApp:
             loadout.money,
             mod_money=mod_money if mod_money > 0 else None,
         )
-        print(f"Shop advice (${loadout.money} available)...", flush=True)
+        from cursed_words_solver.rules.quest_effects import active_quest_name
+
+        quest_label = active_quest_name(loadout)
+        search_msg = f"Shop advice (${loadout.money} available)"
+        if quest_label:
+            search_msg += f", Quest: {quest_label}"
+        print(search_msg + "...", flush=True)
 
         advice = run_shop_advisor(
             loadout,
@@ -1063,6 +1081,14 @@ class SolverApp:
                 search_msg += f", Boss: {boss_label} (Area {area})"
                 if loadout.extras.get("boss_cursed"):
                     search_msg += " (cursed)"
+            quest_label = active_quest_name(loadout)
+            if quest_label:
+                search_msg += f", Quest: {quest_label}"
+                q = quest_constraints(loadout)
+                if q.bullseye:
+                    search_msg += " (exact target)"
+                elif q.two_wrongs:
+                    search_msg += " (inverted target)"
             print(search_msg + "...", flush=True)
             if constraints.blocked and constraints.block_reason:
                 print(f"  Boss: {constraints.block_reason}", flush=True)
@@ -1211,7 +1237,7 @@ class SolverApp:
             ):
                 rescue_rack = consumable_rack_tiles(loadout, cactus_only=False)
                 if target_rescue_worth_trying(
-                    baseline_score, grid_target, rescue_rack
+                    baseline_score, grid_target, rescue_rack, loadout=loadout
                 ):
                     print(
                         f"  Target: {grid_target} pts (best {int(baseline_score)} "
@@ -1234,7 +1260,9 @@ class SolverApp:
                     placement_variant_sec += (
                         last_placement_search_stats().variant_gen_sec
                     )
-                    if rescue_results and rescue_results[0].score >= grid_target:
+                    if rescue_results and target_met(
+                        float(rescue_results[0].score), float(grid_target), loadout
+                    ):
                         search_board = rescue_board
                         placement_records = rescue_records
                         results = rescue_results
@@ -1268,7 +1296,7 @@ class SolverApp:
             ):
                 rescue_rack = consumable_rack_tiles(loadout, cactus_only=False)
                 if target_rescue_worth_trying(
-                    baseline_score, grid_target, rescue_rack
+                    baseline_score, grid_target, rescue_rack, loadout=loadout
                 ):
                     print(
                         f"  Target: {grid_target} pts (best {int(baseline_score)} "
@@ -1291,7 +1319,9 @@ class SolverApp:
                     placement_variant_sec += (
                         last_placement_search_stats().variant_gen_sec
                     )
-                    if rescue_results and rescue_results[0].score >= grid_target:
+                    if rescue_results and target_met(
+                        float(rescue_results[0].score), float(grid_target), loadout
+                    ):
                         search_board = rescue_board
                         placement_records = rescue_records
                         results = rescue_results
@@ -1513,6 +1543,7 @@ class SolverApp:
                     loadout=f8_loadout,
                     board=search_board,
                     workflow_stale_warn=workflow_stale_warn,
+                    path=top.path,
                 )
                 if not block_f8_save:
                     save_last_suggestion(
