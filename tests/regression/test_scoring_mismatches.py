@@ -307,6 +307,61 @@ def _adjust_steak_percent_extras(run_state: dict, data: dict) -> None:
     extras["steak_word_bonus_percent"] = str(percent)
 
 
+def _tile_ninja_trace_additive_bonus(data: dict) -> float | None:
+    """Infer additive tile_ninja_bonus from actual_trace (total percent minus base 1.2)."""
+    trace = data.get("actual_trace")
+    if not isinstance(trace, list):
+        return None
+    for step in trace:
+        if not isinstance(step, dict):
+            continue
+        item_id = str(step.get("item_id", "") or "").lower()
+        item_name = str(step.get("item_name", "") or "").lower()
+        if item_id != "tile_ninja" and item_name != "tile ninja":
+            continue
+        if not step.get("word_bonus_multiplicative") or step.get("word_bonus_poison"):
+            continue
+        try:
+            percent = int(step.get("word_bonus", 0))
+        except (TypeError, ValueError):
+            continue
+        if percent < 120:
+            continue
+        return (percent / 100.0) - 1.2
+    return None
+
+
+def _has_tile_ninja_stamp(run_state: dict) -> bool:
+    stamps = run_state.get("stamps")
+    if not isinstance(stamps, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and str(item.get("id", "") or "").lower() == "tile_ninja"
+        for item in stamps
+    )
+
+
+def _adjust_tile_ninja_bonus_from_trace(run_state: dict, data: dict) -> None:
+    """Inject Tile Ninja additive bonus when melmod export missed encounter placements."""
+    if not _has_tile_ninja_stamp(run_state):
+        return
+    extras = run_state.get("extras")
+    if not isinstance(extras, dict):
+        return
+    live_raw = extras.get("tile_ninja_bonus")
+    if live_raw not in (None, "", "0", 0, 0.0):
+        try:
+            if float(live_raw) > 0:
+                return
+        except (TypeError, ValueError):
+            pass
+    additive = _tile_ninja_trace_additive_bonus(data)
+    if additive is None:
+        return
+    extras["tile_ninja_bonus"] = str(additive)
+
+
 def _steak_trace_rare_count(data: dict) -> int | None:
     trace = data.get("actual_trace")
     if not isinstance(trace, list):
@@ -1698,10 +1753,23 @@ def _loadout_has_bento_box(run_state: dict) -> bool:
 
 
 def _adjust_bento_previous_word_extras(run_state: dict, data: dict) -> None:
-    """Drop stale previous_word_first_letter when submit trace shows Bento did not fire."""
+    """Reconcile previous_word_first_letter with Bento submit trace."""
     if not _loadout_has_bento_box(run_state):
         return
     if _bento_applied_in_actual_trace(data):
+        from cursed_words_solver.rules.scoring_conditions import (
+            _effective_word_start_letter,
+        )
+
+        board = parse_board_from_run_state(run_state)
+        path = data.get("path")
+        word = str(data.get("word") or "")
+        if board is not None and isinstance(path, list) and word:
+            first = _effective_word_start_letter(board, path, word)
+            if first:
+                extras = dict(run_state.get("extras") or {})
+                extras["previous_word_first_letter"] = first
+                run_state["extras"] = extras
         return
     extras = dict(run_state.get("extras") or {})
     if extras.pop("previous_word_first_letter", None) is not None:
@@ -1963,6 +2031,7 @@ def test_scoring_mismatch(case_path: Path) -> None:
     _adjust_neapolitan_percent_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
+    _adjust_tile_ninja_bonus_from_trace(run_state, data)
 
     board_for_lucky = parse_board_from_run_state(run_state)
     if board_for_lucky is not None:
@@ -2016,6 +2085,8 @@ def test_scoring_mismatch(case_path: Path) -> None:
     _adjust_mutating_dna_extras(run_state, data, board, path)
     loadout = parse_run_state(run_state)
     replay_money = _bank_money_for_replay(data, board, path, loadout)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
     if replay_money is not None:
         board.money = max(board.money, replay_money)
         loadout.money = max(loadout.money, replay_money)
@@ -2144,6 +2215,7 @@ def test_inquirendo_electric_guitar_red_note_mismatch() -> None:
     _adjust_neapolitan_percent_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
+    _adjust_tile_ninja_bonus_from_trace(run_state, data)
 
     board_for_lucky = parse_board_from_run_state(run_state)
     if board_for_lucky is not None:
@@ -2235,6 +2307,7 @@ def test_nat_h4_ram_trace_checkpoints(
     _adjust_neapolitan_percent_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
+    _adjust_tile_ninja_bonus_from_trace(run_state, data)
     board_for_lucky = parse_board_from_run_state(run_state)
     if board_for_lucky is not None:
         _adjust_lucky_dice_target_extras(run_state, data, board_for_lucky, data["path"])
@@ -2396,6 +2469,135 @@ def test_ragg_stale_historic_scores_432_before_sanitize() -> None:
     extras = run_state.get("extras") or {}
     assert extras.get("scoring_previous_words_count") in ("0", 0)
     assert not str(extras.get("historic_words") or "").strip()
+
+
+def test_sequoia_grid11_replay_matches_actual_score() -> None:
+    """Mismatch 20260610_191326: Tile Ninja ×1.4 at submit (165 predicted at stale F8)."""
+    case_path = FIXTURES / "20260610_191326.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260610_191326 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 193
+
+
+def test_deviative_replay_matches_actual_score() -> None:
+    """Mismatch 20260610_193012: Tile Ninja ×1.42 at submit (174 predicted with placement)."""
+    case_path = FIXTURES / "20260610_193012.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260610_193012 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 203
+
+
+def test_oogeneses_replay_matches_actual_score() -> None:
+    """Mismatch 20260610_194510: Tile Ninja ×1.4 at submit (156 predicted at stale F8)."""
+    case_path = FIXTURES / "20260610_194510.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260610_194510 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 168
+
+
+def test_oogeneses_f8_hydrate_scores_168() -> None:
+    """F8 lag: consumables_used=10 backfill yields ×1.4 (168), not rack bump ×1.3 (156)."""
+    from copy import deepcopy
+
+    from cursed_words_solver.loadout import hydrate_tile_ninja_loadout_extras
+
+    case_path = FIXTURES / "20260610_194510.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260610_194510 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    rs = deepcopy(data["run_state_snapshot"])
+    for key, entry in (data.get("extras_diff") or {}).items():
+        if isinstance(entry, dict) and entry.get("f8") not in (None, ""):
+            rs["extras"][key] = entry["f8"]
+    rs["extras"]["tile_ninja_consumables_used"] = "10"
+    board = parse_board_from_run_state(rs)
+    loadout = hydrate_tile_ninja_loadout_extras(parse_run_state(rs), rs)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == 168
+
+
+def test_reawaited_replay_matches_actual_score() -> None:
+    """Mismatch 20260610_201120: Tile Ninja ×1.42 at submit (189 predicted with stale F8)."""
+    case_path = FIXTURES / "20260610_201120.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260610_201120 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 184
+
+
+def test_lychee_replay_matches_actual_score() -> None:
+    """Mismatch 20260610_201918: Tile Ninja ×1.42 at submit (212 predicted with broken F8 export)."""
+    case_path = FIXTURES / "20260610_201918.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260610_201918 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 247
+
+
+def test_lychee_f8_lag_scores_zero_without_live_used() -> None:
+    """Broken F8 export (bonus=0, no used) must not guess Tile Ninja bonus."""
+    case_path = FIXTURES / "20260610_201918.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260610_201918 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = dict(data.get("run_state_snapshot") or {})
+    extras = run_state.setdefault("extras", {})
+    extras["tile_ninja_bonus"] = "0"
+    extras["tile_ninja_bonus_last_known"] = "0"
+    extras.pop("tile_ninja_consumables_used", None)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) < 247
+
+
+def test_ibogaine_replay_matches_actual_score() -> None:
+    """Mismatch 20260610_200505: Tile Ninja ×1.42 at submit (161 predicted with stale F8)."""
+    case_path = FIXTURES / "20260610_200505.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260610_200505 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 154
+
+
+def test_warehouse_replay_matches_actual_score() -> None:
+    """Mismatch 20260610_195716: Tile Ninja ×1.42 at submit (246 predicted with placement)."""
+    case_path = FIXTURES / "20260610_195716.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260610_195716 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 286
 
 
 def test_rectifies_replay_matches_actual_score() -> None:

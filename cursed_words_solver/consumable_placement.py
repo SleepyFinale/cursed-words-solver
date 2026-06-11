@@ -69,6 +69,9 @@ class PlacementSearchStats:
 
     variant_gen_sec: float = 0.0
     variants_screened: int = 0
+    best_screened_rank: float = -1.0
+    threshold_rank: float | None = None
+    adopted: bool = False
 
 
 _last_placement_search_stats = PlacementSearchStats()
@@ -262,6 +265,22 @@ def effective_consumable_rack_tiles(loadout: Loadout) -> list[Tile]:
     return consumable_rack_tiles(loadout, cactus_only=False)
 
 
+def _tile_ninja_used_count_from_extras(extras: dict[str, Any]) -> int:
+    from cursed_words_solver.loadout import tile_ninja_placement_baseline_used
+
+    return tile_ninja_placement_baseline_used(extras)
+
+
+def _sync_tile_ninja_bonus_from_used(extras: dict[str, Any], used: int) -> None:
+    if used < 0:
+        return
+    bonus = used * 0.02
+    serialized = str(bonus)
+    extras["tile_ninja_consumables_used"] = str(used)
+    extras["tile_ninja_bonus"] = serialized
+    extras["tile_ninja_bonus_last_known"] = serialized
+
+
 def loadout_after_consumable_placements(loadout: Loadout, num_placed: int) -> Loadout:
     """Loadout whose consumable rack count reflects ``num_placed`` consumables placed.
 
@@ -270,16 +289,24 @@ def loadout_after_consumable_placements(loadout: Loadout, num_placed: int) -> Lo
     the board removes it from the rack, so the multiplier must use the
     post-placement count. The solver otherwise scores placed boards with the
     pre-placement count, over-multiplying (e.g. x4.0 with 5 instead of x3.4 with 4).
+
+    Tile Ninja: mirror stamp ``ConsumableTilesUsed`` (+0.02 per placement) so
+    simulated boards do not collapse to a lone +0.02 path bump when rack drops
+    below five.
     """
     from dataclasses import replace
 
     from cursed_words_solver.rules.scoring_conditions import consumable_rack_count
+    from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
 
     if num_placed <= 0:
         return loadout
     remaining = max(0, consumable_rack_count(loadout) - int(num_placed))
     new_extras = dict(loadout.extras or {})
     new_extras["consumable_rack_count"] = remaining
+    if loadout_has_stamp(loadout, "tile_ninja"):
+        used = _tile_ninja_used_count_from_extras(new_extras) + int(num_placed)
+        _sync_tile_ninja_bonus_from_used(new_extras, used)
     return replace(loadout, extras=new_extras)
 
 
@@ -826,6 +853,64 @@ def _required_for_placements(
     return base_required
 
 
+_SCREEN_VARIANT_CAP_INVESTMENT = 32
+_SCREEN_VARIANT_CAP_DEFAULT = 24
+
+
+def _placement_screen_share(total_budget: float, *, investment: bool) -> float:
+    share_frac = 0.38 if investment else 0.25
+    cap = 16.0 if investment else 12.0
+    return min(cap, max(2.0, float(total_budget)) * share_frac)
+
+
+def _placement_per_screen(
+    screen_share: float,
+    variant_count: int,
+    *,
+    investment: bool,
+) -> float:
+    if variant_count <= 0:
+        return 0.5 if investment else 0.25
+    floor = 0.5 if investment else 0.25
+    return max(floor, screen_share / variant_count)
+
+
+def _cap_variants_for_screening(
+    board: Board,
+    variants: list[list[tuple[int, Tile]]],
+    *,
+    max_screen: int,
+    loadout: Loadout | None = None,
+    rules: dict[str, Any] | None = None,
+) -> list[list[tuple[int, Tile]]]:
+    if len(variants) <= max_screen:
+        return variants
+    ranked = sorted(
+        variants,
+        key=lambda placements: -_placement_rank(
+            board, placements, loadout=loadout, rules=rules
+        ),
+    )
+    return ranked[:max_screen]
+
+
+def _placement_search_use_serial(
+    searcher: WordSearcher,
+    *,
+    per_screen: float,
+    require_placements_in_path: bool,
+) -> bool:
+    return per_screen < 2.0 or require_placements_in_path
+
+
+def _best_screened_rank(
+    screened: list[tuple[float, int, list[tuple[int, Tile]], Board, WordResult]],
+) -> float:
+    if not screened:
+        return -1.0
+    return max(row[0] for row in screened)
+
+
 def _finalize_placement_search(
     searcher: WordSearcher,
     board: Board,
@@ -843,9 +928,13 @@ def _finalize_placement_search(
     variants_screened: int,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
     global _last_placement_search_stats
+    threshold = min_rank_score if min_rank_score is not None else min_score
     _last_placement_search_stats = PlacementSearchStats(
         variant_gen_sec=variant_gen_sec,
         variants_screened=variants_screened,
+        best_screened_rank=_best_screened_rank(screened),
+        threshold_rank=float(threshold) if threshold is not None else None,
+        adopted=False,
     )
 
     if not screened:
@@ -906,12 +995,12 @@ def _finalize_placement_search(
         searcher.time_budget = prev_budget
         searcher.validator.required_consumable_indices = base_required
 
-    threshold = min_rank_score if min_rank_score is not None else min_score
     if threshold is not None and best_rank < threshold:
         return board, [], []
 
     if best_results:
         _attach_placement_breakdown(best_results, best_records)
+        _last_placement_search_stats.adopted = True
     return best_board, best_records, best_results
 
 
@@ -938,7 +1027,16 @@ def _screen_placement_variants(
     prev_budget = searcher.time_budget
     variants_screened = 0
     investment = consumable_investment_active(loadout)
+    prev_workers = searcher.search_workers
+    use_serial = _placement_search_use_serial(
+        searcher,
+        per_screen=per_screen,
+        require_placements_in_path=require_placements_in_path,
+    )
     try:
+        if use_serial:
+            searcher.search_workers = 1
+        searcher._placement_screen_pass = use_serial
         searcher.time_budget = per_screen
         for placements in variants:
             variants_screened += 1
@@ -976,6 +1074,8 @@ def _screen_placement_variants(
                 break
     finally:
         searcher.time_budget = prev_budget
+        searcher.search_workers = prev_workers
+        searcher._placement_screen_pass = False
         searcher.validator.required_consumable_indices = base_required
     return screened, variants_screened, tier_qualifying
 
@@ -998,15 +1098,30 @@ def _run_placement_search(
         _last_placement_search_stats = PlacementSearchStats()
         return board, [], searcher.find_best_words(board, loadout=loadout, top_n=top_n)
 
+    investment = consumable_investment_active(loadout)
     total_budget = max(2.0, float(time_budget))
-    screen_share = min(12.0, total_budget * 0.25)
-    per_screen = max(0.08, screen_share / len(variants))
+    screen_share = _placement_screen_share(total_budget, investment=investment)
+    screen_cap = (
+        _SCREEN_VARIANT_CAP_INVESTMENT if investment else _SCREEN_VARIANT_CAP_DEFAULT
+    )
+    screen_variants = _cap_variants_for_screening(
+        board,
+        variants,
+        max_screen=screen_cap,
+        loadout=loadout,
+        rules=searcher.scoring.rules,
+    )
+    per_screen = _placement_per_screen(
+        screen_share,
+        len(screen_variants),
+        investment=investment,
+    )
     base_required = searcher.validator.required_consumable_indices
     screened, variants_screened, _ = _screen_placement_variants(
         searcher,
         board,
         loadout,
-        variants,
+        screen_variants,
         per_screen=per_screen,
         min_score=min_score,
         min_rank_score=min_rank_score,
@@ -1063,8 +1178,11 @@ def _run_tiered_placement_search(
         tier_cap = max(tier_cap, _tier_heap_cap(max_variants + 32))
 
     total_budget = max(2.0, float(time_budget))
-    screen_share = min(12.0, total_budget * 0.25)
+    screen_share = _placement_screen_share(total_budget, investment=investment)
     remaining_screen = screen_share
+    screen_cap = (
+        _SCREEN_VARIANT_CAP_INVESTMENT if investment else _SCREEN_VARIANT_CAP_DEFAULT
+    )
 
     screened: list[tuple[float, int, list[tuple[int, Tile]], Board, WordResult]] = []
     variants_screened = 0
@@ -1087,12 +1205,23 @@ def _run_tiered_placement_search(
         if not tier_variants:
             continue
 
-        per_screen = max(0.08, remaining_screen / len(tier_variants))
+        tier_screen_batch = _cap_variants_for_screening(
+            board,
+            tier_variants,
+            max_screen=screen_cap,
+            loadout=loadout,
+            rules=rules,
+        )
+        per_screen = _placement_per_screen(
+            remaining_screen,
+            len(tier_screen_batch),
+            investment=investment,
+        )
         tier_screened, tier_count, tier_qualifying = _screen_placement_variants(
             searcher,
             board,
             loadout,
-            tier_variants,
+            tier_screen_batch,
             per_screen=per_screen,
             min_score=min_score,
             min_rank_score=min_rank_score,
@@ -1103,7 +1232,9 @@ def _run_tiered_placement_search(
         )
         screened.extend(tier_screened)
         variants_screened += tier_count
-        remaining_screen = max(0.0, remaining_screen - per_screen * len(tier_variants))
+        remaining_screen = max(
+            0.0, remaining_screen - per_screen * len(tier_screen_batch)
+        )
 
         if (
             prefer_fewest_tiles

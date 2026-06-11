@@ -51,6 +51,7 @@ namespace CursedWordsSolverCompanion
                 MergePreservedExtrasFromDisk(snapshot, player);
                 RunStateExportFill.EnsureEncounterHistoricExtras(snapshot, player);
                 SyncLiveBicycleExtrasIntoSnapshot(snapshot, player);
+                SyncTileNinjaExtrasIntoSnapshot(snapshot, player);
                 FillSnapshotCopyExtras(snapshot, player);
                 SanitizeLoadoutSpecificExtras(snapshot, player);
                 BoardExporter.FillGridScatteredItemsExtra(snapshot);
@@ -445,6 +446,7 @@ namespace CursedWordsSolverCompanion
                 var freshExtras = BuildExtrasSnapshot();
                 ScoringCaptureSession.MergeScoringContextIntoExtras(freshExtras);
                 TryMergeSteakExtrasAfterSubmit(freshExtras);
+                TryMergeTileNinjaExtrasAfterSubmit(freshExtras);
                 if (freshExtras != null && freshExtras.Count > 0)
                 {
                     TryMergeExtrasKeys(freshExtras);
@@ -1024,11 +1026,281 @@ namespace CursedWordsSolverCompanion
                 }
 
                 ApplyResolvedRareItemCount(snapshot, onDisk);
+                ApplyResolvedTileNinjaBonus(snapshot, onDisk, player);
             }
             catch (Exception ex)
             {
                 ExportDiagnostics.RecordMergeError("MergePreservedExtrasFromDisk: " + ex.Message);
             }
+        }
+
+        public static bool TryParseTileNinjaAdditiveForExport(string raw, out double additive)
+        {
+            return TryParseTileNinjaAdditive(raw, out additive);
+        }
+
+        public static double TryGetTileNinjaBonusForExport(Player player)
+        {
+            return TryGetTileNinjaBonus(player);
+        }
+
+        private static bool TryParseTileNinjaAdditive(string raw, out double additive)
+        {
+            additive = 0;
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+            if (
+                !double.TryParse(
+                    raw.Trim(),
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out additive
+                )
+            )
+                return false;
+            return additive > 0;
+        }
+
+        /// <summary>
+        /// Read Tile Ninja from live stamp instance (game source of truth).
+        /// </summary>
+        private static bool TryReadTileNinjaLive(
+            Player player,
+            out int consumablesUsed,
+            out int wordBonusPercent
+        )
+        {
+            consumablesUsed = -1;
+            wordBonusPercent = -1;
+            if (player == null)
+                return false;
+
+            try
+            {
+                foreach (TileNinja tn in player.GetUnpackedItemsOfType(typeof(TileNinja)))
+                {
+                    if (tn == null)
+                        continue;
+                    consumablesUsed = tn.ConsumableTilesUsed;
+                    wordBonusPercent = 120 + consumablesUsed * 2;
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                ExportDiagnostics.RecordMergeError("TryReadTileNinjaLive: " + ex.Message);
+            }
+
+            consumablesUsed = TryGetTileNinjaConsumableTilesUsedFromStamps(player);
+            if (consumablesUsed >= 0)
+            {
+                wordBonusPercent = 120 + consumablesUsed * 2;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static void ExportTileNinjaLiveExtras(
+            Dictionary<string, string> extras,
+            int consumablesUsed,
+            int wordBonusPercent
+        )
+        {
+            if (extras == null)
+                return;
+
+            var additive = consumablesUsed * 0.02;
+            var serialized = additive <= 0
+                ? "0"
+                : additive.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            extras["tile_ninja_consumables_used"] = consumablesUsed.ToString();
+            extras["tile_ninja_word_bonus_percent"] = wordBonusPercent.ToString();
+            extras["tile_ninja_bonus"] = serialized;
+            extras["tile_ninja_bonus_last_known"] = serialized;
+        }
+
+        private static bool IsTileNinjaItem(Item item)
+        {
+            if (item == null)
+                return false;
+            var name = item.Name ?? "";
+            var art = item.ArtFileName ?? "";
+            return name.IndexOf("Tile Ninja", StringComparison.OrdinalIgnoreCase) >= 0
+                || art.IndexOf("tile_ninja", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static int TryGetTileNinjaConsumableTilesUsedFromStamps(Player player)
+        {
+            if (player?.Stamps == null)
+                return -1;
+
+            foreach (var stamp in player.Stamps)
+            {
+                if (!IsTileNinjaItem(stamp))
+                    continue;
+
+                var count = TryGetIntMember(
+                    stamp,
+                    "ConsumableTilesUsed",
+                    "ConsumablesPlaced",
+                    "ConsumableTilesPlaced",
+                    "TilesPlacedFromConsumables"
+                );
+                if (count >= 0)
+                    return count;
+            }
+
+            return -1;
+        }
+
+        private static void ApplyResolvedTileNinjaBonus(
+            RunStateSnapshot snapshot,
+            Dictionary<string, string> onDisk,
+            Player player
+        )
+        {
+            if (snapshot?.extras == null || !HasTileNinjaStamp(player))
+                return;
+
+            if (TryReadTileNinjaLive(player, out var used, out var percent))
+                ExportTileNinjaLiveExtras(snapshot.extras, used, percent);
+            else
+                ExportDiagnostics.RecordMergeError("ApplyResolvedTileNinjaBonus: live read failed");
+        }
+
+        private static void SyncTileNinjaExtrasIntoSnapshot(
+            RunStateSnapshot snapshot,
+            Player player
+        )
+        {
+            if (snapshot?.extras == null || !HasTileNinjaStamp(player))
+                return;
+
+            var onDisk = TryReadExtrasFromDisk();
+            try
+            {
+                if (TryReadTileNinjaLive(player, out var used, out var percent))
+                    ExportTileNinjaLiveExtras(snapshot.extras, used, percent);
+                else
+                    ExportDiagnostics.RecordMergeError(
+                        "SyncTileNinjaExtrasIntoSnapshot: live read failed"
+                    );
+            }
+            catch (Exception ex)
+            {
+                ExportDiagnostics.RecordMergeError("SyncTileNinjaExtrasIntoSnapshot: " + ex.Message);
+            }
+
+            EnsureTileNinjaConsumablesUsedExtra(snapshot.extras, player, onDisk);
+            SyncTileNinjaGridStartBaseline(snapshot, player, onDisk);
+        }
+
+        /// <summary>
+        /// Always export consumables-used when Tile Ninja is equipped so the solver
+        /// does not block F8 gather waiting for a key that reflection may omit.
+        /// </summary>
+        private static void EnsureTileNinjaConsumablesUsedExtra(
+            Dictionary<string, string> extras,
+            Player player,
+            Dictionary<string, string> onDisk = null
+        )
+        {
+            if (extras == null || !HasTileNinjaStamp(player))
+                return;
+
+            if (TryReadTileNinjaLive(player, out var used, out var percent))
+                ExportTileNinjaLiveExtras(extras, used, percent);
+        }
+
+        /// <summary>
+        /// Committed Tile Ninja bonus at grid start (before rack placements on this grid).
+        /// Refreshed on grid advance; preserved across submits on the same grid.
+        /// </summary>
+        private static void SyncTileNinjaGridStartBaseline(
+            RunStateSnapshot snapshot,
+            Player player,
+            Dictionary<string, string> onDisk = null
+        )
+        {
+            if (snapshot?.extras == null || !HasTileNinjaStamp(player))
+                return;
+
+            onDisk = onDisk ?? TryReadExtrasFromDisk();
+            var liveGrid = RunStateExportFill.ResolveGridNumber(player);
+            var diskGridRaw = "";
+            onDisk.TryGetValue("grid_number", out diskGridRaw);
+            var diskGrid = RunStateExportFill.TryParseGridNumber(diskGridRaw);
+
+            if (liveGrid >= 1 && diskGrid >= 1 && liveGrid > diskGrid)
+            {
+                if (TryReadTileNinjaLive(player, out var used, out _))
+                {
+                    snapshot.extras["tile_ninja_bonus_at_grid_start"] = (used * 0.02).ToString(
+                        System.Globalization.CultureInfo.InvariantCulture
+                    );
+                }
+                return;
+            }
+
+            string preserved;
+            if (
+                onDisk.TryGetValue("tile_ninja_bonus_at_grid_start", out preserved)
+                && !string.IsNullOrEmpty(preserved)
+            )
+            {
+                if (
+                    TryReadTileNinjaLive(player, out var liveUsed, out _)
+                    && liveUsed > 0
+                    && (
+                        preserved == "0"
+                        || (
+                            TryParseTileNinjaAdditive(preserved, out var preservedBonus)
+                            && preservedBonus <= 0
+                        )
+                    )
+                )
+                {
+                    snapshot.extras["tile_ninja_bonus_at_grid_start"] = (liveUsed * 0.02).ToString(
+                        System.Globalization.CultureInfo.InvariantCulture
+                    );
+                    return;
+                }
+
+                snapshot.extras["tile_ninja_bonus_at_grid_start"] = preserved;
+                return;
+            }
+
+            if (
+                snapshot.extras.ContainsKey("tile_ninja_bonus_at_grid_start")
+                && !string.IsNullOrEmpty(snapshot.extras["tile_ninja_bonus_at_grid_start"])
+            )
+                return;
+
+            if (TryReadTileNinjaLive(player, out var seedUsed, out _))
+            {
+                snapshot.extras["tile_ninja_bonus_at_grid_start"] = (seedUsed * 0.02).ToString(
+                    System.Globalization.CultureInfo.InvariantCulture
+                );
+            }
+        }
+
+        private static Dictionary<string, string> BuildTileNinjaExtrasMerge(
+            int consumablesUsed,
+            int wordBonusPercent
+        )
+        {
+            var additive = consumablesUsed * 0.02;
+            var serialized = additive <= 0
+                ? "0"
+                : additive.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return new Dictionary<string, string>
+            {
+                ["tile_ninja_consumables_used"] = consumablesUsed.ToString(),
+                ["tile_ninja_word_bonus_percent"] = wordBonusPercent.ToString(),
+                ["tile_ninja_bonus"] = serialized,
+                ["tile_ninja_bonus_last_known"] = serialized,
+            };
         }
 
         /// <summary>
@@ -1143,6 +1415,13 @@ namespace CursedWordsSolverCompanion
                 snapshot.extras.Remove("steak_word_bonus_percent");
                 snapshot.extras.Remove("rare_item_count");
                 snapshot.extras.Remove("rare_item_count_last_known");
+            }
+
+            if (!PlayerHasStampSlug(player, "tile_ninja"))
+            {
+                snapshot.extras.Remove("tile_ninja_bonus");
+                snapshot.extras.Remove("tile_ninja_bonus_last_known");
+                snapshot.extras.Remove("tile_ninja_bonus_at_grid_start");
             }
 
             if (!PlayerHasStickerSlug(player, "snapshot"))
@@ -2090,13 +2369,7 @@ namespace CursedWordsSolverCompanion
             if (rackOverflow >= 0)
                 snapshot.extras["rack_overflow"] = rackOverflow.ToString();
 
-            var tileNinjaBonus = TryGetTileNinjaBonus(player);
-            if (tileNinjaBonus >= 0)
-                snapshot.extras["tile_ninja_bonus"] = tileNinjaBonus.ToString(
-                    System.Globalization.CultureInfo.InvariantCulture
-                );
-            else if (HasTileNinjaStamp(player))
-                snapshot.extras["tile_ninja_bonus"] = "0";
+            EnsureTileNinjaConsumablesUsedExtra(snapshot.extras, player);
 
             if (TryGetAvocadoMushy(player))
                 snapshot.extras["avocado_mushy"] = "true";
@@ -2749,18 +3022,73 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
+        /// Tile Ninja live multiplicative WordBonus percent (e.g. 124 = ×1.24). Returns -1 if unknown.
+        /// </summary>
+        public static int TryGetTileNinjaWordBonusPercent(Player player)
+        {
+            if (TryReadTileNinjaLive(player, out _, out var percent))
+                return percent;
+
+            if (player?.Stamps == null)
+                return -1;
+
+            foreach (var stamp in player.Stamps)
+            {
+                if (!IsTileNinjaItem(stamp))
+                    continue;
+
+                var nestedPercent = TryGetTileNinjaWordBonusPercentFromObject(stamp);
+                if (nestedPercent >= 0)
+                    return nestedPercent;
+
+                foreach (var nested in TryGetNestedStickerTargets(stamp))
+                {
+                    nestedPercent = TryGetTileNinjaWordBonusPercentFromObject(nested);
+                    if (nestedPercent >= 0)
+                        return nestedPercent;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int TryGetTileNinjaWordBonusPercentFromObject(object target)
+        {
+            if (target == null)
+                return -1;
+
+            var bonus = TryGetAccumulatedWordBonusFromObject(target);
+            if (bonus >= 120 && bonus <= 300)
+                return bonus;
+
+            return -1;
+        }
+
+        /// <summary>
         /// Additive ×WORD bonus for Tile Ninja (wiki: +0.02 per consumable placed).
         /// Returns -1 if unknown.
         /// </summary>
+        private static int TryGetTileNinjaConsumableTilesUsed(Player player)
+        {
+            if (TryReadTileNinjaLive(player, out var used, out _))
+                return used;
+
+            return TryGetTileNinjaConsumableTilesUsedFromStamps(player);
+        }
+
         private static double TryGetTileNinjaBonus(Player player)
         {
+            var consumablesUsed = TryGetTileNinjaConsumableTilesUsed(player);
+            if (consumablesUsed >= 0)
+                return consumablesUsed * 0.02;
+
             var direct = TryGetDoubleProperty(
                 player,
                 "TileNinjaBonus",
                 "TileNinjaMultiplierBonus",
                 "TileNinjaWordBonus"
             );
-            if (direct >= 0)
+            if (direct > 0)
                 return direct;
 
             var placed = TryGetIntProperty(
@@ -2769,10 +3097,10 @@ namespace CursedWordsSolverCompanion
                 "ConsumableTilesPlaced",
                 "TilesPlacedFromConsumables"
             );
-            if (placed >= 0)
+            if (placed > 0)
                 return placed * 0.02;
 
-            return TryGetStampMultiplierBonus(
+            var stampBonus = TryGetStampMultiplierBonus(
                 player,
                 name => name.IndexOf("Tile Ninja", StringComparison.OrdinalIgnoreCase) >= 0,
                 art => art.IndexOf("tile_ninja", StringComparison.OrdinalIgnoreCase) >= 0,
@@ -2784,6 +3112,127 @@ namespace CursedWordsSolverCompanion
                     "Bonus",
                 }
             );
+            if (stampBonus > 0)
+                return stampBonus;
+
+            var wordPercent = TryGetTileNinjaWordBonusPercent(player);
+            if (wordPercent >= 120)
+                return (wordPercent / 100.0) - 1.2;
+
+            return -1;
+        }
+
+        /// <summary>
+        /// Additive Tile Ninja bonus from score steps (total percent minus base 1.2). Returns -1 if unknown.
+        /// </summary>
+        public static double TryGetTileNinjaAdditiveFromSteps(List<ScoreCalcVizInfo> steps)
+        {
+            if (steps == null)
+                return -1;
+
+            try
+            {
+                for (var i = 0; i < steps.Count; i++)
+                {
+                    var step = steps[i];
+                    if (step?.RelevantItem == null || step.WordBonus == null)
+                        continue;
+
+                    var itemId = Slugify(
+                        step.RelevantItem.ArtFileName,
+                        step.RelevantItem.Name
+                    );
+                    if (!string.Equals(itemId, "tile_ninja", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (!step.WordBonus.IsMultiplicative || step.WordBonus.IsPoison)
+                        continue;
+
+                    var bonus = step.WordBonus.Bonus != null ? step.WordBonus.Bonus.Score : 0L;
+                    if (bonus < 120L)
+                        continue;
+
+                    var additive = (bonus / 100.0) - 1.2;
+                    return additive >= 0 ? additive : -1;
+                }
+            }
+            catch
+            {
+                // best-effort only
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// Persist Tile Ninja additive bonus after CalculateOverallScore (for next F8).
+        /// </summary>
+        public static bool TryMergeTileNinjaExtrasAfterScore(List<ScoreCalcVizInfo> steps = null)
+        {
+            try
+            {
+                var player = GetPlayer();
+                if (player == null || !PlayerHasStampSlug(player, "tile_ninja"))
+                    return true;
+
+                if (TryReadTileNinjaLive(player, out var used, out var percent))
+                {
+                    TryMergeExtrasKeys(BuildTileNinjaExtrasMerge(used, percent));
+                    return true;
+                }
+
+                var additive = TryGetTileNinjaAdditiveFromSteps(steps);
+                if (additive < 0)
+                    return true;
+
+                var usedFromSteps = (int)Math.Round(additive / 0.02);
+                TryMergeExtrasKeys(
+                    BuildTileNinjaExtrasMerge(usedFromSteps, 120 + usedFromSteps * 2)
+                );
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void TryMergeTileNinjaExtrasAfterSubmit(Dictionary<string, string> freshExtras)
+        {
+            if (freshExtras == null)
+                return;
+
+            try
+            {
+                var player = GetPlayer();
+                if (player == null || !PlayerHasStampSlug(player, "tile_ninja"))
+                    return;
+
+                if (TryReadTileNinjaLive(player, out var used, out var percent))
+                {
+                    foreach (var kv in BuildTileNinjaExtrasMerge(used, percent))
+                        freshExtras[kv.Key] = kv.Value;
+                    return;
+                }
+
+                var additive = TryGetTileNinjaAdditiveFromSteps(
+                    CalculateOverallScorePatch.LastCalculatedSteps
+                );
+                if (additive < 0)
+                    return;
+
+                var usedFromSteps = (int)Math.Round(additive / 0.02);
+                foreach (
+                    var kv in BuildTileNinjaExtrasMerge(usedFromSteps, 120 + usedFromSteps * 2)
+                )
+                    freshExtras[kv.Key] = kv.Value;
+            }
+            catch (Exception ex)
+            {
+                ExportDiagnostics.RecordMergeError(
+                    "TryMergeTileNinjaExtrasAfterSubmit: " + ex.Message
+                );
+            }
         }
 
         private static bool TryGetAvocadoMushy(Player player)

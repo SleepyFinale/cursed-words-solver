@@ -72,6 +72,7 @@ namespace CursedWordsSolverCompanion
                 RunStateExporter.QueueBicycleExtrasRetry();
             RunStateExporter.TryMergeMovieCameraExtrasAfterScore();
             RunStateExporter.TryMergeBirthdayCakeExtrasAfterScore(__result);
+            RunStateExporter.TryMergeTileNinjaExtrasAfterScore(__result);
             RunStateExporter.TryMergeTelescopeEncounterExtrasAfterScore();
             RunStateExporter.TryMergeCachedGridNumber();
         }

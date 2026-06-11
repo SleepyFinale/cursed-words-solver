@@ -161,6 +161,18 @@ namespace CursedWordsSolverCompanion
 
             if (HasStamp(player, "steak") && !extras.ContainsKey("steak_word_bonus_percent"))
                 missing.Add("steak_word_bonus_percent");
+
+            if (HasStamp(player, "tile_ninja"))
+            {
+                var hasLive = extras.ContainsKey("tile_ninja_bonus")
+                    && !string.IsNullOrEmpty(extras["tile_ninja_bonus"]);
+                var hasCached = extras.ContainsKey("tile_ninja_bonus_last_known")
+                    && !string.IsNullOrEmpty(extras["tile_ninja_bonus_last_known"]);
+                var hasGridStart = extras.ContainsKey("tile_ninja_bonus_at_grid_start")
+                    && !string.IsNullOrEmpty(extras["tile_ninja_bonus_at_grid_start"]);
+                if (!hasLive && !hasCached && !hasGridStart)
+                    missing.Add("tile_ninja_bonus");
+            }
         }
 
         private static bool HasSticker(Player player, string slugPart)

@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 AUTO_SOLVE_BOARD_WAIT_TIMEOUT_SEC = 10.0
 
-from cursed_words_solver.config import ROUND_LOG_INDEX_PATH
+from cursed_words_solver.config import ROUND_LOG_DIR, ROUND_LOG_INDEX_PATH
 
 MATCH_STATUSES = frozenset(
     {
@@ -129,11 +130,95 @@ def last_round_log_submit_word() -> str | None:
 
 
 def last_submit_first_letter() -> str | None:
-    """First letter of the last in-game word submit (for F8 workflow catchup)."""
+    """Dictionary first letter of the last in-game word submit."""
     word = last_round_log_submit_word()
     if not word:
         return None
     return _first_letter_of_submitted_word(word)
+
+
+def _last_round_log_index_row() -> dict[str, Any] | None:
+    """Last word-submit row from round_logs/index.jsonl."""
+    path = ROUND_LOG_INDEX_PATH
+    if not path.exists():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    last_row: dict[str, Any] | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            row = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        word = str(row.get("submitted_word", "") or "").strip()
+        if not word:
+            continue
+        status = str(row.get("match_status", "") or "").strip()
+        if status in MATCH_STATUSES:
+            last_row = row
+    return last_row
+
+
+def load_last_round_log_payload() -> dict[str, Any] | None:
+    """Full JSON for the last indexed word submit, or None."""
+    row = _last_round_log_index_row()
+    if not row:
+        return None
+    file_raw = str(row.get("file", "") or "").strip()
+    candidates: list[Any] = []
+    if file_raw:
+        candidates.append(file_raw)
+    round_id = str(row.get("round_id", "") or "").strip()
+    if round_id:
+        candidates.append(ROUND_LOG_DIR / f"{round_id}.json")
+    for candidate in candidates:
+        try:
+            log_path = candidate if isinstance(candidate, Path) else Path(candidate)
+            if not log_path.exists():
+                continue
+            data = json.loads(log_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            continue
+    return None
+
+
+def last_submit_effective_first_letter() -> str | None:
+    """Melmod-parity first letter for Bento workflow catchup after last submit."""
+    payload = load_last_round_log_payload()
+    if isinstance(payload, dict):
+        actual = payload.get("actual")
+        if isinstance(actual, dict):
+            letter = str(actual.get("submitted_word_first_letter", "") or "").strip().lower()[:1]
+            if letter:
+                return letter
+        actual = actual if isinstance(actual, dict) else {}
+        word = str(actual.get("word", "") or "").strip()
+        path = actual.get("path")
+        run_state = payload.get("run_state")
+        if word and isinstance(path, list) and isinstance(run_state, dict):
+            try:
+                from cursed_words_solver.loadout import parse_board_from_run_state
+                from cursed_words_solver.rules.scoring_conditions import (
+                    _effective_word_start_letter,
+                )
+
+                board = parse_board_from_run_state(run_state)
+                if board is not None:
+                    first = _effective_word_start_letter(board, path, word)
+                    if first:
+                        return first.lower()[:1]
+            except Exception:
+                pass
+    return last_submit_first_letter()
 
 
 def poll_round_log_submits(since_offset: int = 0) -> tuple[list[dict[str, Any]], int]:

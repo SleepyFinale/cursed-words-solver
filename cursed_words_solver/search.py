@@ -1977,6 +1977,7 @@ class WordSearcher:
         self._solve_ctx: SolveContext | None = None
         self._graph_ctx: BoardGraphContext | None = None
         self._board_scoring_ctx = None
+        self._placement_screen_pass = False
 
     def _board_graph(self, board: Board) -> BoardGraphContext:
         if self._graph_ctx is not None and self._graph_ctx.board is board:
@@ -3798,13 +3799,18 @@ class WordSearcher:
             if board.get_by_index(i).color == TileColor.VOID
             and board.get_by_index(i).curse == CurseType.LETTER
         ]
+        placement_screen = bool(getattr(self, "_placement_screen_pass", False))
+        required_placement = bool(self.validator.required_consumable_indices)
         if has_number_tiles:
             # Tight budgets need more time reserved for digit passes; otherwise
             # the cap progression (7 -> 8) can time out before reaching cap=8.
-            number_reserve = min(
-                10.0,
-                self.time_budget * (0.6 if self.time_budget < 3.0 else 0.45),
-            )
+            if self.time_budget < 2.0 and (placement_screen or required_placement):
+                number_reserve = min(0.5, self.time_budget * 0.25)
+            else:
+                number_reserve = min(
+                    10.0,
+                    self.time_budget * (0.6 if self.time_budget < 3.0 else 0.45),
+                )
             fraction_cluster_reserve = (
                 min(15.0, self.time_budget * 0.35) if has_fraction_tiles else 0.0
             )

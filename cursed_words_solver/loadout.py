@@ -751,6 +751,18 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
             out["tile_ninja_bonus"] = float(out["tile_ninja_bonus"])
         except (TypeError, ValueError):
             out["tile_ninja_bonus"] = 0.0
+    if "tile_ninja_bonus_last_known" in out:
+        try:
+            out["tile_ninja_bonus_last_known"] = float(out["tile_ninja_bonus_last_known"])
+        except (TypeError, ValueError):
+            out["tile_ninja_bonus_last_known"] = 0.0
+    if "tile_ninja_bonus_at_grid_start" in out:
+        try:
+            out["tile_ninja_bonus_at_grid_start"] = float(
+                out["tile_ninja_bonus_at_grid_start"]
+            )
+        except (TypeError, ValueError):
+            out["tile_ninja_bonus_at_grid_start"] = 0.0
     if "avocado_mushy" in out:
         out["avocado_mushy"] = out["avocado_mushy"] in (
             True,
@@ -1034,7 +1046,11 @@ def reconcile_previous_word_first_letter_from_historic(
     hist = str(extras.get("historic_words", "") or "").strip()
     if grid >= 2 and (not hist or hist == "[]"):
         if _scoring_previous_words_count_from_extras(extras) == 0:
-            extras.pop("previous_word_first_letter", None)
+            prev = str(extras.get("previous_word_first_letter") or "").strip().lower()[:1]
+            if prev:
+                extras["previous_word_first_letter"] = prev
+            else:
+                extras.pop("previous_word_first_letter", None)
         return
     spc = _scoring_previous_words_count_from_extras(extras)
     last_from_hist = _previous_letter_from_historic_words(hist)
@@ -1699,6 +1715,168 @@ def project_workflow_extras_for_f8_embed(
         extras["previous_word_first_letter"] = last_from_hist
     else:
         reconcile_previous_word_first_letter_from_historic(extras)
+
+
+TILE_NINJA_LIVE_EXTRA_KEYS = (
+    "tile_ninja_bonus",
+    "tile_ninja_bonus_last_known",
+    "tile_ninja_bonus_at_grid_start",
+    "tile_ninja_consumables_used",
+    "tile_ninja_word_bonus_percent",
+)
+
+
+def merge_tile_ninja_extras_into(
+    dest: dict[str, Any],
+    src: dict[str, Any] | None,
+) -> None:
+    """Overlay live melmod Tile Ninja fields into F8 embed / loadout extras."""
+    if not isinstance(dest, dict) or not isinstance(src, dict):
+        return
+    src_extras = src.get("extras") if "extras" in src else src
+    if not isinstance(src_extras, dict):
+        return
+    for key in TILE_NINJA_LIVE_EXTRA_KEYS:
+        val = src_extras.get(key)
+        if val is None or str(val).strip() == "":
+            continue
+        if key == "tile_ninja_consumables_used":
+            try:
+                int(val)
+            except (TypeError, ValueError):
+                dest[key] = val
+                continue
+            dest[key] = str(val)
+            continue
+        try:
+            float(val)
+        except (TypeError, ValueError):
+            dest[key] = val
+            continue
+        dest[key] = val
+    _backfill_tile_ninja_at_grid_start(dest)
+    _backfill_tile_ninja_from_consumables_used(dest)
+
+
+def hydrate_tile_ninja_loadout_extras(
+    loadout: Loadout,
+    run_state: dict[str, Any] | None = None,
+) -> Loadout:
+    """Merge live Tile Ninja counters into loadout before F8 search/scoring."""
+    from dataclasses import replace
+
+    from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
+
+    if not loadout_has_stamp(loadout, "tile_ninja"):
+        return loadout
+    extras = dict(loadout.extras or {})
+    if isinstance(run_state, dict):
+        merge_tile_ninja_extras_into(extras, run_state)
+    else:
+        _backfill_tile_ninja_from_consumables_used(extras)
+    return replace(loadout, extras=extras)
+
+
+def tile_ninja_placement_baseline_used(extras: dict[str, Any]) -> int:
+    """Cumulative consumables-used anchor for placement sim."""
+    if not isinstance(extras, dict):
+        return 0
+    raw = extras.get("tile_ninja_consumables_used")
+    if raw not in (None, ""):
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            pass
+    try:
+        grid_start = float(extras.get("tile_ninja_bonus_at_grid_start", 0) or 0)
+    except (TypeError, ValueError):
+        grid_start = 0.0
+    if grid_start > 0:
+        return round(grid_start / 0.02)
+    return infer_tile_ninja_used_from_extras(extras)
+
+
+def infer_tile_ninja_used_from_extras(extras: dict[str, Any]) -> int:
+    """Best-effort cumulative Tile Ninja consumables-used from melmod extras."""
+    if not isinstance(extras, dict):
+        return 0
+
+    raw = extras.get("tile_ninja_consumables_used")
+    try:
+        exported = int(raw) if raw not in (None, "") else -1
+    except (TypeError, ValueError):
+        exported = -1
+
+    bonus_derived = 0
+    for key in (
+        "tile_ninja_bonus",
+        "tile_ninja_bonus_last_known",
+        "tile_ninja_bonus_at_grid_start",
+    ):
+        try:
+            bonus = float(extras.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if bonus > 0:
+            bonus_derived = max(bonus_derived, round(bonus / 0.02))
+
+    if exported > 0:
+        return max(exported, bonus_derived)
+    if exported == 0:
+        return bonus_derived if bonus_derived > 0 else 0
+    return bonus_derived if bonus_derived > 0 else 0
+
+
+def _backfill_tile_ninja_from_consumables_used(dest: dict[str, Any]) -> None:
+    """When live bonus export is zero, derive from melmod consumables-used counter."""
+    if not isinstance(dest, dict):
+        return
+    try:
+        live = float(dest.get("tile_ninja_bonus", 0))
+    except (TypeError, ValueError):
+        live = 0.0
+    try:
+        last_known = float(dest.get("tile_ninja_bonus_last_known", 0))
+    except (TypeError, ValueError):
+        last_known = 0.0
+    if max(live, last_known) > 0:
+        return
+    used = infer_tile_ninja_used_from_extras(dest)
+    if used <= 0:
+        return
+    bonus = used * 0.02
+    serialized = str(bonus)
+    dest["tile_ninja_bonus"] = serialized
+    dest["tile_ninja_bonus_last_known"] = serialized
+
+
+def _backfill_tile_ninja_at_grid_start(dest: dict[str, Any]) -> None:
+    """Seed at_grid_start from last_known when live export still carries zero."""
+    if not isinstance(dest, dict):
+        return
+    try:
+        grid_start = float(dest.get("tile_ninja_bonus_at_grid_start", 0))
+    except (TypeError, ValueError):
+        grid_start = 0.0
+    if grid_start > 0:
+        return
+    seed = 0.0
+    seed_key = ""
+    for key in ("tile_ninja_bonus_last_known", "tile_ninja_bonus"):
+        try:
+            val = float(dest.get(key, 0))
+        except (TypeError, ValueError):
+            continue
+        if val > seed:
+            seed = val
+            seed_key = key
+    if seed <= 0 or not seed_key:
+        return
+    raw = dest.get(seed_key)
+    if isinstance(raw, str) and raw.strip():
+        dest["tile_ninja_bonus_at_grid_start"] = raw.strip()
+    else:
+        dest["tile_ninja_bonus_at_grid_start"] = str(seed)
 
 
 def sanitize_run_state_snapshot_for_f8(

@@ -36,6 +36,24 @@ namespace CursedWordsSolverCompanion
             if (suggestion == null)
                 return;
 
+            if (
+                suggestion.path != null
+                && path != null
+                && !SuggestionMatcher.PathsEqual(suggestion.path, path)
+                && !SuggestionMatcher.PathsIsPrefixExtension(suggestion.path, path)
+            )
+            {
+                MelonLogger.Msg(
+                    "Path mismatch (F8 vs submit): skipping score mismatch export for '"
+                        + word
+                        + "' — predicted "
+                        + suggestion.predicted_score
+                        + ", actual "
+                        + actualScore
+                );
+                return;
+            }
+
             var predicted = suggestion.predicted_score;
             if (
                 suggestion.score_nondeterministic

@@ -377,6 +377,7 @@ namespace CursedWordsSolverCompanion
                     "mutating_dna_letter_counts",
                     "encounter_historic_source",
                     "birthday_cake_bonus",
+                    "tile_ninja_bonus",
                     "pin_memory",
                     "pin_memory_count",
                     "consumable_rack_count",

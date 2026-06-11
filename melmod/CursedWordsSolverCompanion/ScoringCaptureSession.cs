@@ -353,6 +353,34 @@ namespace CursedWordsSolverCompanion
             }
         }
 
+        /// <summary>Best-effort Tile Ninja additive bonus from the latest scoring context.</summary>
+        public static double TryGetScoringContextTileNinjaBonus()
+        {
+            if (_scoringContextExtras == null)
+                return -1;
+
+            string raw;
+            if (
+                !_scoringContextExtras.TryGetValue("tile_ninja_bonus", out raw)
+                || string.IsNullOrEmpty(raw)
+            )
+                return -1;
+
+            double additive;
+            if (
+                !double.TryParse(
+                    raw,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out additive
+                )
+                || additive <= 0
+            )
+                return -1;
+
+            return additive;
+        }
+
         /// <summary>
         /// Keys written from live pin via TryMergeBicycleExtrasAfterScore — do not let
         /// derived capture values overwrite pin WordScoreBonus in run_state.json.
@@ -380,6 +408,11 @@ namespace CursedWordsSolverCompanion
             "mutating_dna_letter_counts",
         };
 
+        private static readonly string[] ScoringContextPreserveKeys =
+        {
+            "tile_ninja_bonus",
+        };
+
         private static bool IsWorkflowExtrasPreserveKey(string key)
         {
             if (string.IsNullOrEmpty(key))
@@ -389,6 +422,60 @@ namespace CursedWordsSolverCompanion
                 if (string.Equals(key, preserveKey, StringComparison.OrdinalIgnoreCase))
                     return true;
             }
+            return false;
+        }
+
+        private static bool IsScoringContextPreserveKey(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+                return false;
+            foreach (var preserveKey in ScoringContextPreserveKeys)
+            {
+                if (string.Equals(key, preserveKey, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool ShouldPreserveScoringContextExtra(
+            Dictionary<string, string> extras,
+            string key,
+            string liveValue
+        )
+        {
+            if (extras == null || !IsScoringContextPreserveKey(key))
+                return false;
+
+            string captured;
+            if (!extras.TryGetValue(key, out captured) || string.IsNullOrEmpty(captured))
+                return false;
+
+            double capVal;
+            if (
+                !double.TryParse(
+                    captured,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out capVal
+                )
+                || capVal <= 0
+            )
+                return false;
+
+            if (string.IsNullOrEmpty(liveValue) || liveValue == "0")
+                return true;
+
+            double liveVal;
+            if (
+                double.TryParse(
+                    liveValue,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out liveVal
+                )
+            )
+                return liveVal < capVal;
+
             return false;
         }
 
@@ -404,6 +491,32 @@ namespace CursedWordsSolverCompanion
                     continue;
                 if (IsPostSubmitLiveExtraKey(kv.Key) && ShouldKeepPostSubmitLiveExtra(target, kv.Key))
                     continue;
+                if (IsScoringContextPreserveKey(kv.Key))
+                {
+                    string existing;
+                    target.TryGetValue(kv.Key, out existing);
+                    double capturedVal = 0;
+                    double existVal = 0;
+                    var hasCaptured =
+                        !string.IsNullOrEmpty(kv.Value)
+                        && double.TryParse(
+                            kv.Value,
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out capturedVal
+                        )
+                        && capturedVal > 0;
+                    var hasExisting =
+                        !string.IsNullOrEmpty(existing)
+                        && double.TryParse(
+                            existing,
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out existVal
+                        );
+                    if (hasExisting && (!hasCaptured || existVal >= capturedVal))
+                        continue;
+                }
                 target[kv.Key] = kv.Value ?? "";
             }
         }
@@ -482,6 +595,8 @@ namespace CursedWordsSolverCompanion
                     && extras.ContainsKey(kv.Key)
                     && !string.IsNullOrEmpty(extras[kv.Key])
                 )
+                    continue;
+                if (ShouldPreserveScoringContextExtra(extras, kv.Key, kv.Value))
                     continue;
                 extras[kv.Key] = kv.Value ?? "";
             }
@@ -625,6 +740,7 @@ namespace CursedWordsSolverCompanion
             CaptureBirthdayCakeBonusFromSteps(steps);
             CaptureNeapolitanPercentFromSteps(steps);
             CaptureRareItemCountFromSteps(steps);
+            CaptureTileNinjaBonusFromSteps(steps);
             CaptureSnapshotCopyFromSteps(steps);
             TryPersistScoringContextExtras();
             _roundTrace = ScoringTraceCollector.SerializeSteps(steps, _path);
@@ -944,6 +1060,55 @@ namespace CursedWordsSolverCompanion
                         continue;
 
                     _scoringContextExtras["steak_word_bonus_percent"] = bonus.ToString();
+                    break;
+                }
+            }
+            catch
+            {
+                // best-effort only
+            }
+        }
+
+        /// <summary>
+        /// Capture Tile Ninja's live additive ×WORD bonus (wiki: +0.02 per consumable placed).
+        /// Game reports total multiplicative percent (e.g. 124); solver expects additive on base 1.2.
+        /// </summary>
+        private static void CaptureTileNinjaBonusFromSteps(List<ScoreCalcVizInfo> steps)
+        {
+            if (steps == null || _scoringContextExtras == null)
+                return;
+
+            try
+            {
+                for (var i = 0; i < steps.Count; i++)
+                {
+                    var step = steps[i];
+                    if (step?.RelevantItem == null || step.WordBonus == null)
+                        continue;
+
+                    var itemId = RunStateExporter.Slugify(
+                        step.RelevantItem.ArtFileName,
+                        step.RelevantItem.Name
+                    );
+                    if (!string.Equals(itemId, "tile_ninja", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (!step.WordBonus.IsMultiplicative || step.WordBonus.IsPoison)
+                        continue;
+
+                    var bonus = step.WordBonus.Bonus != null ? step.WordBonus.Bonus.Score : 0L;
+                    if (bonus < 120L)
+                        continue;
+
+                    var additive = (bonus / 100.0) - 1.2;
+                    if (additive < 0)
+                        continue;
+
+                    var serialized = additive.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture
+                    );
+                    _scoringContextExtras["tile_ninja_bonus"] = serialized;
+                    _scoringContextExtras["tile_ninja_bonus_last_known"] = serialized;
                     break;
                 }
             }

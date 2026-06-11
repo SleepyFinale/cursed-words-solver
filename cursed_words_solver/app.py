@@ -87,6 +87,7 @@ from cursed_words_solver.rules.boss_effects import (
 )
 from cursed_words_solver.rules.rule_lookup import boss_display_name, resolve_rule_id
 from cursed_words_solver.consumable_placement import (
+    consumable_investment_active,
     consumable_placement_count_on_board,
     consumable_rack_tiles,
     format_placement_instructions,
@@ -1043,7 +1044,8 @@ class SolverApp:
             search_board = board
             results: list = []
             rescue_budget = search_budget * 0.4
-            rack_boost_budget = search_budget * 0.3
+            rack_boost_share = 0.45 if consumable_investment_active(loadout) else 0.3
+            rack_boost_budget = search_budget * rack_boost_share
             rules = self._scoring.rules
             if sandy_auto_place and rack_tiles and solve_remaining() >= 1.0:
                 search_board, placement_records, results = (
@@ -1145,6 +1147,30 @@ class SolverApp:
                             f"({int(boost_results[0].score)} pts)",
                             flush=True,
                         )
+                    elif boost_rack:
+                        boost_stats = last_placement_search_stats()
+                        best = boost_stats.best_screened_rank
+                        threshold = boost_stats.threshold_rank
+                        thresh_label = (
+                            f"{int(threshold)}"
+                            if threshold is not None
+                            else f"{int(baseline_rank)}"
+                        )
+                        if boost_stats.variants_screened > 0 and best >= 0:
+                            print(
+                                f"  Consumable boost: screened "
+                                f"{boost_stats.variants_screened} variants, "
+                                f"best rank {int(best)} ≤ baseline {thresh_label} "
+                                "— no placement adopted",
+                                flush=True,
+                            )
+                        else:
+                            print(
+                                f"  Consumable boost: no variant beat baseline "
+                                f"({boost_stats.variants_screened} screened, "
+                                f"baseline rank {thresh_label})",
+                                flush=True,
+                            )
             if (
                 has_target
                 and grid_target > 0
@@ -1345,6 +1371,11 @@ class SolverApp:
                             fresh_board.money,
                             mod_money=fresh_mod_money if fresh_mod_money > 0 else None,
                         )
+                    from cursed_words_solver.loadout import hydrate_tile_ninja_loadout_extras
+
+                    f8_loadout = hydrate_tile_ninja_loadout_extras(
+                        f8_loadout, score_run_state
+                    )
                 # Consumables placed onto search_board this solve are no longer on
                 # the rack, so Hi Vis Jacket must score with the post-placement
                 # count (decompiled HiVisJacket: multiplies by consumables still

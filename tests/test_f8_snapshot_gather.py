@@ -11,12 +11,17 @@ from cursed_words_solver.config import AppConfig, LAST_SUGGESTION_PATH
 from cursed_words_solver.f8_snapshot import (
     F8Snapshot,
     F8SuggestionSession,
+    _build_snapshot_from_run_state,
+    _extras_missing_for_loadout,
     gather_f8_snapshot,
     session_from_snapshot,
 )
+from cursed_words_solver.loadout import parse_board_from_run_state
+from cursed_words_solver.models import Loadout, LoadoutItem
 from cursed_words_solver.fingerprints import board_tiles_fingerprint_suffix
 from cursed_words_solver.round_log import (
     last_round_log_submit_word,
+    last_submit_effective_first_letter,
     last_submit_first_letter,
 )
 from cursed_words_solver.suggestion import (
@@ -85,6 +90,45 @@ def test_last_submit_first_letter_from_round_log(tmp_path, monkeypatch):
     monkeypatch.setattr(round_log_mod, "ROUND_LOG_INDEX_PATH", index_path)
     assert last_round_log_submit_word() == "malvesies"
     assert last_submit_first_letter() == "m"
+
+
+def test_last_submit_effective_first_letter_from_round_log(tmp_path, monkeypatch):
+    import cursed_words_solver.round_log as round_log_mod
+
+    log_dir = tmp_path / "round_logs"
+    log_dir.mkdir()
+    round_id = "20260610_185834_528"
+    log_path = log_dir / f"{round_id}.json"
+    log_path.write_text(
+        json.dumps(
+            {
+                "actual": {
+                    "word": "yeehaw",
+                    "path": [6, 12, 14, 8, 9, 13],
+                    "submitted_word_first_letter": "e",
+                },
+                "run_state": {"board": {"tiles": []}, "extras": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    index_path = log_dir / "index.jsonl"
+    index_path.write_text(
+        json.dumps(
+            {
+                "round_id": round_id,
+                "file": str(log_path),
+                "submitted_word": "yeehaw",
+                "match_status": "score_mismatch",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(round_log_mod, "ROUND_LOG_INDEX_PATH", index_path)
+    monkeypatch.setattr(round_log_mod, "ROUND_LOG_DIR", log_dir)
+    assert last_submit_first_letter() == "y"
+    assert last_submit_effective_first_letter() == "e"
 
 
 def test_f8_prediction_workflow_stale_warning_blocks_save():
@@ -288,3 +332,48 @@ def test_poll_keeps_suggestion_with_active_session_same_tiles(
         active_session=session,
     ) is None
     assert suggestion_path.exists()
+
+
+def test_tile_ninja_missing_consumables_used_blocks_f8_gather():
+    board = parse_board_from_run_state(_board_run_state(prev_letter=""))
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={"consumable_rack_count": 5},
+    )
+    missing = _extras_missing_for_loadout(
+        loadout,
+        board,
+        {"tile_ninja_bonus": "0", "tile_ninja_bonus_last_known": "0"},
+    )
+    assert "tile_ninja_consumables_used" in missing
+
+    ready = _extras_missing_for_loadout(
+        loadout,
+        board,
+        {"tile_ninja_consumables_used": "10"},
+    )
+    assert "tile_ninja_consumables_used" not in ready
+
+
+def test_tile_ninja_missing_export_marks_extras_not_ready():
+    run_state = _board_run_state(prev_letter="")
+    run_state["stamps"] = [
+        {"id": "tile_ninja", "name": "Tile Ninja", "kind": "stamp"},
+    ]
+    run_state["extras"]["tile_ninja_bonus"] = "0"
+    run_state["extras"]["tile_ninja_bonus_last_known"] = "0"
+    run_state["extras"]["consumable_rack"] = json.dumps(
+        [
+            {
+                "rack_index": 0,
+                "letter": "A",
+                "char_display": "a",
+                "color": "red",
+                "curse": "letter",
+                "base_score": 2,
+            }
+        ]
+    )
+    snapshot = _build_snapshot_from_run_state(run_state, rules={})
+    assert not snapshot.extras_ready
+    assert any("tile_ninja_consumables_used" in w for w in snapshot.warnings)

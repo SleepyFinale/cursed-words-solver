@@ -221,6 +221,10 @@ namespace CursedWordsSolverCompanion
                 suggestedPath,
                 submittedPath
             );
+            block["f8_path_exact_match"] = SuggestionMatcher.PathsEqual(
+                suggestedPath,
+                submittedPath
+            );
             block["suggested_path_length"] = suggestedPath.Count;
             block["submitted_path_length"] = submittedPath.Count;
 
@@ -253,7 +257,13 @@ namespace CursedWordsSolverCompanion
             List<Dictionary<string, object>> pathTiles
         )
         {
-            return new Dictionary<string, object>
+            var submitBoard = ctx.SubmitBoardSnapshot ?? ctx.BoardAtSubmit;
+            var submittedFirst = ScoringContextCapture.FirstLetterFromSubmittedWord(
+                ctx.SubmittedWord ?? "",
+                ctx.SubmittedPath,
+                submitBoard
+            );
+            var block = new Dictionary<string, object>
             {
                 ["word"] = ctx.SubmittedWord ?? "",
                 ["path"] = ctx.SubmittedPath ?? new List<int>(),
@@ -261,6 +271,9 @@ namespace CursedWordsSolverCompanion
                 ["score"] = ctx.ActualScore,
                 ["trace"] = ctx.ActualTrace ?? new List<Dictionary<string, object>>(),
             };
+            if (!string.IsNullOrEmpty(submittedFirst))
+                block["submitted_word_first_letter"] = submittedFirst;
+            return block;
         }
 
         private static Dictionary<string, object> BuildConsumablesBlock(RoundCaptureContext ctx)

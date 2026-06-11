@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import (
     Board,
@@ -230,7 +232,10 @@ def test_bento_box_path_first_letter_not_dictionary_word():
 
 def test_yegg_bento_box_with_previous_word_letter():
     """Regression: Bento Box ×1.5 when current word matches previous first letter (yegg)."""
-    from tests.regression.test_scoring_mismatches import _run_state_for_replay
+    from tests.regression.test_scoring_mismatches import (
+        _adjust_bento_previous_word_extras,
+        _run_state_for_replay,
+    )
 
     fixture = (
         Path(__file__).resolve().parents[2]
@@ -240,6 +245,7 @@ def test_yegg_bento_box_with_previous_word_letter():
     )
     data = json.loads(fixture.read_text(encoding="utf-8"))
     run_state = _run_state_for_replay(data)
+    _adjust_bento_previous_word_extras(run_state, data)
     board = parse_board_from_run_state(run_state)
     loadout = parse_run_state(run_state)
     pipeline = ScoringPipeline()
@@ -249,7 +255,10 @@ def test_yegg_bento_box_with_previous_word_letter():
 
 def test_woo_bento_box_with_previous_word_letter():
     """Regression: Bento Box ×1.5 when current word matches previous first letter (woo)."""
-    from tests.regression.test_scoring_mismatches import _run_state_for_replay
+    from tests.regression.test_scoring_mismatches import (
+        _adjust_bento_previous_word_extras,
+        _run_state_for_replay,
+    )
 
     fixture = (
         Path(__file__).resolve().parents[2]
@@ -259,6 +268,7 @@ def test_woo_bento_box_with_previous_word_letter():
     )
     data = json.loads(fixture.read_text(encoding="utf-8"))
     run_state = _run_state_for_replay(data)
+    _adjust_bento_previous_word_extras(run_state, data)
     board = parse_board_from_run_state(run_state)
     loadout = parse_run_state(run_state)
     pipeline = ScoringPipeline()
@@ -268,7 +278,10 @@ def test_woo_bento_box_with_previous_word_letter():
 
 def test_vielles_bento_box_with_previous_word_letter():
     """Regression: Bento Box ×1.5 when current word matches previous first letter (vielles)."""
-    from tests.regression.test_scoring_mismatches import _run_state_for_replay
+    from tests.regression.test_scoring_mismatches import (
+        _adjust_bento_previous_word_extras,
+        _run_state_for_replay,
+    )
 
     fixture = (
         Path(__file__).resolve().parents[2]
@@ -278,6 +291,7 @@ def test_vielles_bento_box_with_previous_word_letter():
     )
     data = json.loads(fixture.read_text(encoding="utf-8"))
     run_state = _run_state_for_replay(data)
+    _adjust_bento_previous_word_extras(run_state, data)
     board = parse_board_from_run_state(run_state)
     loadout = parse_run_state(run_state)
     pipeline = ScoringPipeline()
@@ -448,6 +462,337 @@ def test_tile_ninja_base_and_bonus():
     score, bd = pipeline.score(board, [0], "a", loadout)
     assert bd["multiplier"] == 1.26
     assert score == int(10 * 1.26)  # game floors fractional totals
+
+
+def test_tile_ninja_two_consumable_placements_bonus():
+    """Encounter bonus after two consumable placements: ×1.24 (120% + 4%)."""
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 10)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={"tile_ninja_bonus": 0.04},
+    )
+    score, bd = pipeline.score(board, [0], "a", loadout)
+    assert bd["multiplier"] == 1.24
+    assert score == int(10 * 1.24)
+
+
+def test_tile_ninja_path_consumable_bump_when_export_missing():
+    """F8-before-submit: count was_consumable tiles on path when bonus export is 0."""
+    from cursed_words_solver.rules.scoring_conditions import tile_ninja_multiplier_bonus
+
+    board = _empty_board()
+    for idx, ch in enumerate("ab"):
+        tile = _tile(0, idx, ch, 10)
+        tile.metadata["was_consumable"] = True
+        board.tiles[0][idx] = tile
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={},
+    )
+    assert tile_ninja_multiplier_bonus(loadout, board=board, path=[0, 1]) == 0.04
+
+
+def test_tile_ninja_last_known_when_live_export_zero():
+    """Stale F8 export zero: use tile_ninja_bonus_last_known from prior submit."""
+    from cursed_words_solver.rules.scoring_conditions import tile_ninja_multiplier_bonus
+
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={"tile_ninja_bonus": 0, "tile_ninja_bonus_last_known": 0.16},
+    )
+    assert tile_ninja_multiplier_bonus(loadout) == 0.16
+
+
+def test_tile_ninja_consumables_used_when_live_export_zero():
+    from cursed_words_solver.rules.scoring_conditions import tile_ninja_multiplier_bonus
+
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={
+            "tile_ninja_bonus": 0,
+            "tile_ninja_bonus_last_known": 0,
+            "tile_ninja_consumables_used": 10,
+        },
+    )
+    assert tile_ninja_multiplier_bonus(loadout) == pytest.approx(0.2)
+
+
+def test_merge_tile_ninja_consumables_used_backfill():
+    from cursed_words_solver.loadout import merge_tile_ninja_extras_into
+
+    dest = {
+        "tile_ninja_bonus": "0",
+        "tile_ninja_bonus_last_known": "0",
+        "tile_ninja_consumables_used": "10",
+    }
+    merge_tile_ninja_extras_into(dest, dest)
+    assert dest["tile_ninja_bonus"] == "0.2"
+    assert dest["tile_ninja_bonus_last_known"] == "0.2"
+
+
+def test_merge_tile_ninja_extras_monotonic_ignores_zero_live():
+    """F8 embed must not downgrade when live run_state exports stale zero."""
+    from cursed_words_solver.loadout import merge_tile_ninja_extras_into
+
+    dest = {
+        "tile_ninja_bonus": "0.24",
+        "tile_ninja_bonus_last_known": "0.24",
+        "tile_ninja_bonus_at_grid_start": "0.24",
+    }
+    merge_tile_ninja_extras_into(
+        dest,
+        {
+            "tile_ninja_bonus": "0",
+            "tile_ninja_bonus_last_known": "0",
+            "tile_ninja_bonus_at_grid_start": "0",
+        },
+    )
+    assert dest["tile_ninja_bonus"] == "0.24"
+    assert dest["tile_ninja_bonus_last_known"] == "0.24"
+    assert dest["tile_ninja_bonus_at_grid_start"] == "0.24"
+
+
+def test_merge_tile_ninja_at_grid_start_backfill_from_last_known():
+    """F8 embed seeds at_grid_start when live export leaves it at zero."""
+    from cursed_words_solver.loadout import merge_tile_ninja_extras_into
+
+    dest = {
+        "tile_ninja_bonus": "0.24",
+        "tile_ninja_bonus_last_known": "0.24",
+        "tile_ninja_bonus_at_grid_start": "0",
+    }
+    merge_tile_ninja_extras_into(
+        dest,
+        {
+            "tile_ninja_bonus": "0.24",
+            "tile_ninja_bonus_last_known": "0.24",
+            "tile_ninja_bonus_at_grid_start": "0",
+        },
+    )
+    assert dest["tile_ninja_bonus_at_grid_start"] == "0.24"
+
+
+def test_tile_ninja_adds_on_path_bump_when_export_lags_board():
+    """parathas-style: committed export 0.14 + two new on-path placements → 0.18."""
+    from cursed_words_solver.rules.scoring_conditions import tile_ninja_multiplier_bonus
+
+    board = _empty_board()
+    # Seven prior-grid placements (already in export) plus two new on-path tiles.
+    for idx, ch in enumerate("abcdefgxy"):
+        row, col = divmod(idx, 5)
+        tile = _tile(row, col, ch, 10)
+        tile.metadata["was_consumable"] = True
+        board.tiles[row][col] = tile
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={"tile_ninja_bonus": 0.14},
+    )
+    path = [7, 8]
+    assert tile_ninja_multiplier_bonus(loadout, board=board, path=path) == pytest.approx(
+        0.18
+    )
+
+
+def test_tile_ninja_committed_uses_max_of_live_and_last_known():
+    """F8 export: committed bonus is max(tile_ninja_bonus, last_known), not first key."""
+    from cursed_words_solver.rules.scoring_conditions import tile_ninja_multiplier_bonus
+
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={
+            "tile_ninja_bonus": 0.28,
+            "tile_ninja_bonus_last_known": 0.24,
+            "tile_ninja_bonus_at_grid_start": 0.24,
+        },
+    )
+    assert tile_ninja_multiplier_bonus(loadout) == 0.28
+
+
+def test_tile_ninja_pending_bump_uses_enriched_base_baseline():
+    """On-path bump baseline uses enriched export (not raw grid_start alone)."""
+    from cursed_words_solver.rules.scoring_conditions import tile_ninja_multiplier_bonus
+
+    board = _empty_board()
+    for col in range(4):
+        board.tiles[0][col] = _tile(0, col, "A", 1)
+        board.tiles[0][col].metadata["was_consumable"] = True
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={
+            "tile_ninja_bonus": 0.08,
+            "tile_ninja_bonus_at_grid_start": 0.04,
+        },
+    )
+    # live 0.08 already covers 4 board placements — no extra on-path bump
+    assert tile_ninja_multiplier_bonus(loadout, board=board, path=[0]) == pytest.approx(
+        0.08
+    )
+
+    lag_board = _empty_board()
+    for col in range(3):
+        lag_board.tiles[0][col] = _tile(0, col, "A", 1)
+        lag_board.tiles[0][col].metadata["was_consumable"] = True
+    lag_loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={
+            "tile_ninja_bonus": 0,
+            "tile_ninja_consumables_used": 2,
+        },
+    )
+    # used 2 -> base 0.04; 3 on board -> 1 pending; one on path -> +0.02
+    assert tile_ninja_multiplier_bonus(
+        lag_loadout, board=lag_board, path=[0]
+    ) == pytest.approx(0.06)
+
+
+def test_tile_ninja_no_double_count_when_export_matches_board():
+    """Post-submit export already includes board placements — no extra bump."""
+    from cursed_words_solver.rules.scoring_conditions import tile_ninja_multiplier_bonus
+
+    board = _empty_board()
+    for idx, ch in enumerate("ab"):
+        tile = _tile(0, idx, ch, 10)
+        tile.metadata["was_consumable"] = True
+        board.tiles[0][idx] = tile
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={"tile_ninja_bonus": 0.18},
+    )
+    assert tile_ninja_multiplier_bonus(loadout, board=board, path=[0, 1]) == 0.18
+
+
+def test_tile_ninja_missing_export_single_on_path_floor():
+    """olearias-style: no export, one on-path placement → 0.02."""
+    from cursed_words_solver.rules.scoring_conditions import tile_ninja_multiplier_bonus
+
+    board = _empty_board()
+    tile = _tile(0, 0, "a", 10)
+    tile.metadata["was_consumable"] = True
+    board.tiles[0][0] = tile
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={},
+    )
+    assert tile_ninja_multiplier_bonus(loadout, board=board, path=[0]) == 0.02
+
+
+def test_sequoia_skips_currency_glyph_mapped_vowel():
+    """€ currency resolves to E for scoring but must not match Sequoia vowel target."""
+    from cursed_words_solver.rules.scoring_conditions import tile_matches_target
+
+    board = _empty_board()
+    board.tiles[2][1] = _tile(2, 1, "E", 0, curse=CurseType.CURRENCY)
+    board.tiles[2][1].char = "€"
+    tile = board.get_by_index(11)
+    assert tile.letter == "E"
+    assert not tile_matches_target(tile, "vowel")
+
+
+def test_bento_applies_when_currency_leads_path_and_previous_matches_path_first():
+    """wootzes-style: ₩-leading path uses first letter tile 'o', not dictionary 'w'."""
+    board = _empty_board()
+    board.tiles[2][1] = _tile(2, 1, "₩", 0, curse=CurseType.CURRENCY)
+    board.tiles[2][1].metadata["was_consumable"] = True
+    board.tiles[1][1] = _tile(1, 1, "O", 1)
+    board.tiles[1][2] = _tile(1, 2, "O", 1)
+    board.tiles[1][3] = _tile(1, 3, "T", 1)
+    board.tiles[2][3] = _tile(2, 3, "Z", 10)
+    board.tiles[2][4] = _tile(2, 4, "E", 1)
+    board.tiles[2][2] = _tile(2, 2, "S", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras={"previous_word_first_letter": "o", "grid_number": "3"},
+    )
+    path = [11, 6, 7, 8, 13, 12]
+    score, bd = pipeline.score(board, path, "wootzes", loadout)
+    assert bd["multiplier"] == pytest.approx(1.5)
+    assert int(score) == 21
+
+
+def test_bento_skipped_benelux_style_baht_leading_prev_e():
+    """benelux-style: ฿ at path[0] maps to word 'b'; prev 'e' must not trigger Bento."""
+    board = _empty_board()
+    board.tiles[1][3] = _tile(1, 3, "฿", 0, curse=CurseType.CURRENCY)
+    board.tiles[1][3].metadata["was_consumable"] = True
+    board.tiles[0][2] = _tile(0, 2, "E", 1)
+    board.tiles[0][3] = _tile(0, 3, "N", 1)
+    board.tiles[0][4] = _tile(0, 4, "E", 1)
+    board.tiles[1][4] = _tile(1, 4, "L", 1)
+    board.tiles[2][4] = _tile(2, 4, "U", 1)
+    board.tiles[2][3] = _tile(2, 3, "X", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras={"previous_word_first_letter": "e", "grid_number": "3"},
+    )
+    path = [8, 2, 3, 4, 9, 14, 13]
+    score, bd = pipeline.score(board, path, "benelux", loadout)
+    assert bd["multiplier"] == 1.0
+    assert int(score) == 6
+
+
+def test_bento_skipped_when_currency_maps_to_word_first_letter():
+    """boluses-style: ฿→B matches dictionary 'b'; game uses word-first, not path 'o'."""
+    board = _empty_board()
+    board.tiles[2][3] = _tile(2, 3, "฿", 0, curse=CurseType.CURRENCY)
+    board.tiles[2][3].metadata["was_consumable"] = True
+    board.tiles[1][3] = _tile(1, 3, "O", 1)
+    board.tiles[2][2] = _tile(2, 2, "L", 1)
+    board.tiles[2][4] = _tile(2, 4, "U", 1)
+    board.tiles[3][4] = _tile(3, 4, "S", 1)
+    board.tiles[3][3] = _tile(3, 3, "E", 1)
+    board.tiles[3][2] = _tile(3, 2, "S", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras={"previous_word_first_letter": "o", "grid_number": "3"},
+    )
+    path = [13, 8, 12, 17, 18, 22]
+    score, bd = pipeline.score(board, path, "boluses", loadout)
+    assert bd["multiplier"] == 1.0
+    assert int(score) == 5
+
+
+def test_bento_skipped_when_word_first_letter_differs_from_path_leading_tile():
+    """sclerae-style: currency/path tile 'c' must not trigger Bento when word starts 's'."""
+    board = _empty_board()
+    board.tiles[2][2] = _tile(2, 2, "?", 0, curse=CurseType.CURRENCY)
+    board.tiles[2][2].metadata["was_consumable"] = False
+    board.tiles[2][3] = _tile(2, 3, "S", 1)
+    board.tiles[2][4] = _tile(2, 4, "C", 1)
+    board.tiles[3][4] = _tile(3, 4, "L", 1)
+    board.tiles[4][4] = _tile(4, 4, "E", 1)
+    board.tiles[4][3] = _tile(4, 3, "R", 1)
+    board.tiles[4][2] = _tile(4, 2, "A", 1)
+    board.tiles[4][1] = _tile(4, 1, "E", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras={"previous_word_first_letter": "c", "grid_number": "3"},
+    )
+    path = [12, 13, 14, 19, 24, 23, 22]
+    score, bd = pipeline.score(board, path, "sclerae", loadout)
+    assert bd["multiplier"] == 1.0
+    assert int(score) == 6
+
+
+def test_tile_ninja_fourteen_percent_on_high_subtotal():
+    """Seven consumable placements: ×1.34 on pre-Ninja subtotal (woozier-style)."""
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "W", 10)
+    board.tiles[0][1] = _tile(0, 1, "O", 10)
+    board.tiles[0][2] = _tile(0, 2, "O", 10)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={"tile_ninja_bonus": 0.14},
+    )
+    score, bd = pipeline.score(board, [0, 1, 2], "woo", loadout)
+    assert bd["multiplier"] == pytest.approx(1.34)
+    assert score == int(30 * 1.34)
 
 
 def test_hungry_snake_horizontal_wrap_neighbors():

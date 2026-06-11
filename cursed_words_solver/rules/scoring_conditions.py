@@ -2672,7 +2672,11 @@ def word_starts_ends_consumable(board: Board, path: list[int]) -> bool:
         return False
     start = board.get_by_index(path[0])
     end = board.get_by_index(path[-1])
-    return is_consumable_tile(start) and is_consumable_tile(end)
+
+    def _endpoint_consumable(tile: Tile) -> bool:
+        return is_consumable_tile(tile) or is_placed_consumable_tile(tile)
+
+    return _endpoint_consumable(start) and _endpoint_consumable(end)
 
 
 def shield_blue_base_from_loadout(loadout: Loadout, rules: dict) -> int | None:
@@ -2975,8 +2979,13 @@ def tile_matches_target(tile: Tile, target: str) -> bool:
     if target == "wildcard":
         return tile.curse == CurseType.WILDCARD or tile.letter == "?"
     if target == "vowel":
+        # Currency glyphs map to letters (€→E) for scoring but are not vowel tiles.
+        if tile.curse == CurseType.CURRENCY:
+            return False
         return is_vowel_letter(tile.letter)
     if target == "consonant":
+        if tile.curse == CurseType.CURRENCY:
+            return False
         return is_consonant_letter(tile.letter)
     if target == "red_note":
         return is_red_note_tile(tile)
@@ -3776,12 +3785,63 @@ def brain_multiplier(level: int, rule: dict) -> float:
     return base + per_level * max(level, 1)
 
 
-def tile_ninja_multiplier_bonus(loadout: Loadout) -> float:
-    """Additive bonus on top of base ×WORD factor (wiki: +0.02 per consumable placed)."""
+def _tile_ninja_used_count(loadout: Loadout) -> int:
+    """Live cumulative consumables used from melmod export."""
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    used = _extra_int(loadout, "tile_ninja_consumables_used", -1)
+    if used >= 0:
+        return used
+
+    raw_pct = extras.get("tile_ninja_word_bonus_percent")
+    if raw_pct not in (None, ""):
+        try:
+            return max(0, (int(raw_pct) - 120) // 2)
+        except (TypeError, ValueError):
+            pass
+
     try:
-        return float((loadout.extras or {}).get("tile_ninja_bonus", 0))
+        bonus = float(extras.get("tile_ninja_bonus", 0) or 0)
     except (TypeError, ValueError):
+        bonus = 0.0
+    if bonus > 0:
+        return round(bonus / 0.02)
+    return -1
+
+
+def tile_ninja_multiplier_bonus(
+    loadout: Loadout,
+    *,
+    board: Board | None = None,
+    path: list[int] | None = None,
+) -> float:
+    """Additive bonus on top of base ×WORD factor (wiki: +0.02 per consumable placed)."""
+    if not any(
+        (s.id or "").strip().lower() == "tile_ninja" for s in (loadout.stamps or [])
+    ):
         return 0.0
+
+    used = _tile_ninja_used_count(loadout)
+    if used < 0:
+        return 0.0
+
+    base = used * 0.02
+
+    placed = placed_consumable_indices(board) if board is not None else frozenset()
+    on_path = (
+        sum(1 for idx in path if idx in placed)
+        if path is not None and placed
+        else 0
+    )
+
+    if board is None or path is None or not placed or on_path <= 0:
+        return base
+
+    board_placed = len(placed)
+    pending = max(0, board_placed - used)
+    if pending > 0:
+        return base + 0.02 * min(on_path, pending)
+
+    return base
 
 
 def _is_neapolitan_rule(rule: dict) -> bool:
@@ -3968,7 +4028,7 @@ def scaled_word_multiplier(
     if loadout is not None:
         scale = rule.get("scale_from_extras")
         if scale == "tile_ninja_bonus":
-            factor += tile_ninja_multiplier_bonus(loadout)
+            factor += tile_ninja_multiplier_bonus(loadout, board=board, path=path)
         elif scale == "rare_item_count":
             if loadout is not None:
                 raw_pct = (loadout.extras or {}).get("steak_word_bonus_percent")
@@ -4067,6 +4127,20 @@ def _effective_word_start_letter(board: Board, path: list[int], word: str) -> st
     word_first = word_first_letter(word)
     if _wildcard_before_first_letter_tile(board, path):
         return word_first or first_letter_on_path(board, path)
+    if path:
+        lead = board.get_by_index(path[0])
+        glyph = normalize_tile_glyph(lead.letter or lead.char or "")
+        is_currency_lead = lead.curse == CurseType.CURRENCY or glyph in CURRENCY_MAP
+        if is_currency_lead and glyph:
+            mapped = CURRENCY_MAP.get(glyph, "").lower()
+            # boluses/benelux-style: ฿ leading path uses dictionary first letter
+            if (
+                glyph == "฿"
+                and mapped
+                and word_first
+                and mapped == word_first
+            ):
+                return word_first
     path_first = first_letter_on_path(board, path)
     if path_first and word_first and path_first != word_first:
         return path_first

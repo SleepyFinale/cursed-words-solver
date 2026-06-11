@@ -104,6 +104,29 @@ namespace CursedWordsSolverCompanion
             }
 
             ApplyScoringCachedPreviousWordLetter(keys);
+            if (RunStateExporter.PlayerHasStampSlug(player, "tile_ninja"))
+            {
+                var baseline = RunStateExporter.TryGetTileNinjaBonusForExport(player);
+                if (baseline < 0)
+                {
+                    var lastKnown = RunStateExporter.TryReadRunStateExtra(
+                        "tile_ninja_bonus_last_known"
+                    );
+                    if (
+                        RunStateExporter.TryParseTileNinjaAdditiveForExport(
+                            lastKnown,
+                            out var parsed
+                        )
+                    )
+                        baseline = parsed;
+                }
+                if (baseline >= 0)
+                {
+                    keys["tile_ninja_bonus_at_grid_start"] = baseline.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture
+                    );
+                }
+            }
             RunStateExporter.TryMergeExtrasKeys(keys);
         }
 

@@ -1,10 +1,14 @@
 from pathlib import Path
 
+import pytest
+
 from cursed_words_solver import consumable_placement as cp
 from cursed_words_solver.consumable_placement import (
     ConsumablePlacement,
     _placement_cell_score,
+    _placement_per_screen,
     _rank_placement_indices,
+    _tile_ninja_used_count_from_extras,
     _tier_heap_cap,
     _top_variants_for_tier,
     apply_consumable_placements,
@@ -14,6 +18,7 @@ from cursed_words_solver.consumable_placement import (
     has_exported_consumable_rack,
     has_mahjong_pin,
     iter_placement_variants_fewest_first,
+    loadout_after_consumable_placements,
     mahjong_rack_placement_active,
     rack_placement_search_active,
     placement_variants_fewest_first,
@@ -31,13 +36,19 @@ from cursed_words_solver.consumable_placement import (
     wait_for_sandy_rack_export,
 )
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.loadout import load_run_state_raw, parse_run_state
-from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
+from cursed_words_solver.loadout import (
+    hydrate_tile_ninja_loadout_extras,
+    load_run_state_raw,
+    parse_board_from_run_state,
+    parse_run_state,
+)
+from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.rules.boss_effects import load_rules_catalog
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.scoring_conditions import (
     consumable_rack_count,
     placed_consumable_indices,
+    tile_ninja_multiplier_bonus,
 )
 from cursed_words_solver.search import WordSearcher
 from tests.test_search import _tile
@@ -641,6 +652,11 @@ def test_placement_cell_score_prefers_high_base_score():
     assert high_score > low_score
 
 
+def test_placement_per_screen_floor_investment():
+    assert _placement_per_screen(3.0, 50, investment=True) >= 0.5
+    assert _placement_per_screen(3.0, 50, investment=False) >= 0.25
+
+
 def test_search_consumable_score_boost_adopts_when_improved(tmp_path):
     wl = tmp_path / "words.txt"
     wl.write_text("cat\n", encoding="utf-8")
@@ -906,3 +922,170 @@ def test_swivets_placed_wildcard_no_color_bonus_scores_189():
     placed = apply_consumable_placements(board, [(8, wildcard)])
     score, _ = ScoringPipeline().score(placed, data["path"], data["word"], loadout)
     assert int(score) == data["actual_score"] == 189
+
+
+def test_loadout_after_consumable_placements_advances_tile_ninja():
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={
+            "tile_ninja_consumables_used": "10",
+            "tile_ninja_bonus": "0",
+            "consumable_rack_count": 5,
+        },
+    )
+    after = loadout_after_consumable_placements(loadout, 1)
+    assert after.extras["tile_ninja_consumables_used"] == "11"
+    assert float(after.extras["tile_ninja_bonus"]) == pytest.approx(0.22)
+    assert after.extras["consumable_rack_count"] == 4
+
+
+def test_deviative_placement_simulation_scores_203():
+    """F8 placement sim must not collapse Tile Ninja to ×1.22 (mismatch 20260610_193012)."""
+    import json
+    from copy import deepcopy
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260610_193012.json"
+    )
+    if not fixture.is_file():
+        pytest.skip("fixture 20260610_193012 not installed")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    rs = deepcopy(data["run_state_snapshot"])
+    extras = rs["extras"]
+    extras["tile_ninja_bonus"] = "0"
+    extras["tile_ninja_bonus_last_known"] = "0"
+    extras["tile_ninja_consumables_used"] = "10"
+    extras["consumable_rack"] = data["extras_diff"]["consumable_rack"]["f8"]
+    board = parse_board_from_run_state(rs)
+    loadout = hydrate_tile_ninja_loadout_extras(parse_run_state(rs), rs)
+    rack_raw = json.loads(extras["consumable_rack"])
+    bishop = rack_tile_from_entry(rack_raw[0])
+    placed_board = apply_consumable_placements(board, [(11, bishop)])
+    var_loadout = loadout_after_consumable_placements(loadout, 1)
+    assert tile_ninja_multiplier_bonus(
+        var_loadout, board=placed_board, path=data["path"]
+    ) == pytest.approx(0.22)
+    score, _ = ScoringPipeline().score(
+        placed_board, data["path"], data["word"], var_loadout
+    )
+    assert int(score) == 203
+
+
+def test_tile_ninja_used_count_ignores_false_zero_when_bonus_exported():
+    assert _tile_ninja_used_count_from_extras(
+        {"tile_ninja_consumables_used": "0", "tile_ninja_bonus": "0.2"}
+    ) == 10
+
+
+def test_reawaited_placement_simulation_scores_184():
+    """F8 placement sim must not inflate Tile Ninja to ×1.46 (mismatch 20260610_201120)."""
+    import json
+    from copy import deepcopy
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260610_201120.json"
+    )
+    if not fixture.is_file():
+        pytest.skip("fixture 20260610_201120 not installed")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    rs = deepcopy(data["run_state_snapshot"])
+    for key, entry in (data.get("extras_diff") or {}).items():
+        if isinstance(entry, dict) and entry.get("f8") not in (None, ""):
+            rs["extras"][key] = entry["f8"]
+    rs["extras"]["consumable_rack"] = data["extras_diff"]["consumable_rack"]["f8"]
+    rs["extras"]["tile_ninja_consumables_used"] = "12"
+    rs["extras"]["tile_ninja_bonus"] = "0.24"
+    rs["extras"]["tile_ninja_bonus_last_known"] = "0.24"
+    rs["extras"]["tile_ninja_bonus_at_grid_start"] = "0.2"
+    board = parse_board_from_run_state(rs)
+    loadout = hydrate_tile_ninja_loadout_extras(parse_run_state(rs), rs)
+    rack_raw = json.loads(rs["extras"]["consumable_rack"])
+    letter_a = rack_tile_from_entry(rack_raw[0])
+    placed_board = apply_consumable_placements(board, [(11, letter_a)])
+    var_loadout = loadout_after_consumable_placements(loadout, 1)
+    assert tile_ninja_multiplier_bonus(
+        var_loadout, board=placed_board, path=data["path"]
+    ) == pytest.approx(0.22)
+    score, _ = ScoringPipeline().score(
+        placed_board, data["path"], data["word"], var_loadout
+    )
+    assert int(score) == 184
+
+
+def test_ibogaine_placement_simulation_scores_154():
+    """F8 placement sim must not inflate Tile Ninja to ×1.48 (mismatch 20260610_200505)."""
+    import json
+    from copy import deepcopy
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260610_200505.json"
+    )
+    if not fixture.is_file():
+        pytest.skip("fixture 20260610_200505 not installed")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    rs = deepcopy(data["run_state_snapshot"])
+    for key, entry in (data.get("extras_diff") or {}).items():
+        if isinstance(entry, dict) and entry.get("f8") not in (None, ""):
+            rs["extras"][key] = entry["f8"]
+    rs["extras"]["consumable_rack"] = data["extras_diff"]["consumable_rack"]["f8"]
+    rs["extras"]["tile_ninja_consumables_used"] = "13"
+    rs["extras"]["tile_ninja_bonus"] = "0.26"
+    rs["extras"]["tile_ninja_bonus_last_known"] = "0.26"
+    rs["extras"]["tile_ninja_bonus_at_grid_start"] = "0.2"
+    board = parse_board_from_run_state(rs)
+    loadout = hydrate_tile_ninja_loadout_extras(parse_run_state(rs), rs)
+    rack_raw = json.loads(rs["extras"]["consumable_rack"])
+    wildcard = rack_tile_from_entry(rack_raw[0])
+    placed_board = apply_consumable_placements(board, [(6, wildcard)])
+    var_loadout = loadout_after_consumable_placements(loadout, 1)
+    assert tile_ninja_multiplier_bonus(
+        var_loadout, board=placed_board, path=data["path"]
+    ) == pytest.approx(0.22)
+    score, _ = ScoringPipeline().score(
+        placed_board, data["path"], data["word"], var_loadout
+    )
+    assert int(score) == 154
+
+
+def test_warehouse_placement_simulation_scores_286():
+    """F8 placement sim must not collapse Tile Ninja to ×1.22 (mismatch 20260610_195716)."""
+    import json
+    from copy import deepcopy
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260610_195716.json"
+    )
+    if not fixture.is_file():
+        pytest.skip("fixture 20260610_195716 not installed")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    rs = deepcopy(data["run_state_snapshot"])
+    for key, entry in (data.get("extras_diff") or {}).items():
+        if isinstance(entry, dict) and entry.get("f8") not in (None, ""):
+            rs["extras"][key] = entry["f8"]
+    rs["extras"]["consumable_rack"] = data["extras_diff"]["consumable_rack"]["f8"]
+    rs["extras"]["tile_ninja_consumables_used"] = "10"
+    board = parse_board_from_run_state(rs)
+    loadout = hydrate_tile_ninja_loadout_extras(parse_run_state(rs), rs)
+    rack_raw = json.loads(rs["extras"]["consumable_rack"])
+    queen = rack_tile_from_entry(rack_raw[0])
+    placed_board = apply_consumable_placements(board, [(11, queen)])
+    var_loadout = loadout_after_consumable_placements(loadout, 1)
+    assert tile_ninja_multiplier_bonus(
+        var_loadout, board=placed_board, path=data["path"]
+    ) == pytest.approx(0.22)
+    score, _ = ScoringPipeline().score(
+        placed_board, data["path"], data["word"], var_loadout
+    )
+    assert int(score) == 286

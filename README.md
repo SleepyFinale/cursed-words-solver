@@ -239,6 +239,8 @@ With melmod companion **v1.1.6+**:
 
 **Lucky Dice** needs `extras.target_number` (the grid’s chosen number tile value). Hayley’s Lucky Dice sticker adds **+50 WORD SCORE** when your word contains that number. If predictions are low by exactly 50 with Lucky Dice equipped, press **F7** after rebuilding melmod so `target_number` is exported; the companion also sets `lucky_dice_target_missing` when it cannot read the target. Mismatch replay can infer a missing target from `actual_trace` when Lucky Dice clearly fired.
 
+**Tile Ninja** cumulative bonus comes from the live stamp field `TileNinja.ConsumableTilesUsed` (decompiled in `scripts/decompile_type/out/TileNinja.decompiled.cs`). The game applies multiplicative word bonus `120 + used × 2` percent (e.g. 11 placed → ×1.42). Melmod exports `tile_ninja_consumables_used` and `tile_ninja_word_bonus_percent` on every auto-export; F8 waits for `tile_ninja_consumables_used` when the stamp is equipped instead of guessing from stale disk cache.
+
 Rebuild after pulling solver changes: `.\melmod\build.ps1`. Details: `[melmod/README.md](melmod/README.md#scoring-mismatch-capture-v116)`, `[melmod/SCORING_HOOKS.md](melmod/SCORING_HOOKS.md)`.
 
 ## Sticker rules catalog

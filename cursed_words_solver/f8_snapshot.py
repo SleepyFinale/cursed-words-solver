@@ -16,6 +16,7 @@ from cursed_words_solver.fingerprints import (
     fingerprints_from_run_state,
 )
 from cursed_words_solver.loadout import (
+    hydrate_tile_ninja_loadout_extras,
     load_run_state_raw,
     melmod_board_available,
     merge_encounter_historic_for_f8_with_retry,
@@ -25,7 +26,7 @@ from cursed_words_solver.loadout import (
     parse_run_state,
     validate_run_state_for_scoring,
 )
-from cursed_words_solver.round_log import last_submit_first_letter
+from cursed_words_solver.round_log import last_submit_effective_first_letter
 from cursed_words_solver.models import Board, Loadout
 from cursed_words_solver.rules.scoring_conditions import (
     consumable_rack_count,
@@ -78,6 +79,13 @@ def _has_steak_stamp(loadout: Loadout) -> bool:
     )
 
 
+def _has_tile_ninja_stamp(loadout: Loadout) -> bool:
+    return any(
+        str(getattr(stamp, "id", "") or "").strip().lower() == "tile_ninja"
+        for stamp in (loadout.stamps or [])
+    )
+
+
 def _extras_missing_for_loadout(
     loadout: Loadout,
     board: Board,
@@ -103,6 +111,9 @@ def _extras_missing_for_loadout(
             missing.append("steak_word_bonus_percent/rare_item_count")
     if consumable_rack_count(loadout) > 0 and not has_exported_consumable_rack(loadout):
         missing.append("consumable_rack")
+    if _has_tile_ninja_stamp(loadout):
+        if extras.get("tile_ninja_consumables_used") in (None, ""):
+            missing.append("tile_ninja_consumables_used")
     return missing
 
 
@@ -113,7 +124,7 @@ def _workflow_prev_letter_catchup_note(
     """Human-readable lag when run_state prev letter trails last round-log submit."""
     if loadout is None or not loadout_needs_previous_word_letter(loadout):
         return None
-    expected = last_submit_first_letter()
+    expected = last_submit_effective_first_letter()
     if not expected:
         return None
     cur = str(extras.get("previous_word_first_letter", "") or "").strip().lower()[:1]
@@ -152,6 +163,7 @@ def _build_snapshot_from_run_state(
         board.money,
         mod_money=mod_money if mod_money > 0 else None,
     )
+    loadout = hydrate_tile_ninja_loadout_extras(loadout, run_state)
     warnings = validate_run_state_for_scoring(
         loadout,
         board=board,
@@ -277,7 +289,9 @@ def gather_f8_snapshot(
         run_state = load_run_state_raw()
         snapshot = _build_snapshot_from_run_state(run_state, rules=rules)
         if snapshot.loadout is not None:
-            snapshot.loadout = updated_loadout
+            snapshot.loadout = hydrate_tile_ninja_loadout_extras(
+                updated_loadout, run_state
+            )
 
     if last_missing and not snapshot.extras_ready:
         snapshot.warnings = list(snapshot.warnings) + [
@@ -309,7 +323,10 @@ def session_from_snapshot(snapshot: F8Snapshot) -> F8SuggestionSession | None:
 
 def embed_run_state_for_suggestion(run_state: dict[str, Any]) -> dict[str, Any]:
     """Copy of game export for last_suggestion.json (trim unequipped item extras only)."""
-    from cursed_words_solver.loadout import sanitize_run_state_snapshot_for_f8
+    from cursed_words_solver.loadout import (
+        merge_tile_ninja_extras_into,
+        sanitize_run_state_snapshot_for_f8,
+    )
 
     loadout = parse_run_state(run_state)
     board = parse_board_from_run_state(run_state)
@@ -321,4 +338,10 @@ def embed_run_state_for_suggestion(run_state: dict[str, Any]) -> dict[str, Any]:
             mod_money=mod_money if mod_money > 0 else None,
         )
     sanitized = sanitize_run_state_snapshot_for_f8(run_state, loadout)
-    return sanitized if isinstance(sanitized, dict) else dict(run_state)
+    if not isinstance(sanitized, dict):
+        return dict(run_state)
+    fresh = load_run_state_raw()
+    extras = sanitized.get("extras")
+    if isinstance(fresh, dict) and isinstance(extras, dict):
+        merge_tile_ninja_extras_into(extras, fresh)
+    return sanitized

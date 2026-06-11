@@ -11,6 +11,23 @@ namespace CursedWordsSolverCompanion
     /// </summary>
     public static class ScoringContextCapture
     {
+        private static readonly Dictionary<string, string> CurrencyMap =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "฿", "B" },
+                { "¥", "Y" },
+                { "$", "S" },
+                { "₡", "C" },
+                { "€", "E" },
+                { "₭", "K" },
+                { "₮", "T" },
+                { "₦", "N" },
+                { "₩", "W" },
+                { "₱", "P" },
+                { "₣", "F" },
+                { "₲", "G" },
+            };
+
         private static readonly BindingFlags MemberFlags =
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
@@ -203,9 +220,14 @@ namespace CursedWordsSolverCompanion
             if (historic == null)
                 return "";
 
-            var pathFirst = FirstLetterOnHistoricPath(historic);
+            var path = TryGetPathFromHistoric(historic);
             var word = GetSubmittedWordString(historic);
             var wordFirst = FirstAlphabeticLetter(word);
+            var currencyWordFirst = TryCurrencyWordFirstLetter(path, historic, wordFirst);
+            if (!string.IsNullOrEmpty(currencyWordFirst))
+                return currencyWordFirst;
+
+            var pathFirst = FirstLetterOnHistoricPath(historic);
             if (
                 !string.IsNullOrEmpty(pathFirst)
                 && !string.IsNullOrEmpty(wordFirst)
@@ -298,7 +320,7 @@ namespace CursedWordsSolverCompanion
                 {
                     var value = method.Invoke(historic, null) as string;
                     if (!string.IsNullOrEmpty(value))
-                        return value;
+                        return RunStateExportFill.StripHistoricWordRichText(value);
                 }
             }
             catch
@@ -306,12 +328,14 @@ namespace CursedWordsSolverCompanion
                 // fall through
             }
 
-            return TryGetStringProperty(
-                historic,
-                "Word",
-                "SubmittedWord",
-                "Text",
-                "SubmittedText"
+            return RunStateExportFill.StripHistoricWordRichText(
+                TryGetStringProperty(
+                    historic,
+                    "Word",
+                    "SubmittedWord",
+                    "Text",
+                    "SubmittedText"
+                )
             );
         }
 
@@ -342,6 +366,7 @@ namespace CursedWordsSolverCompanion
 
         private static string FirstAlphabeticLetter(string word)
         {
+            word = RunStateExportFill.StripHistoricWordRichText(word);
             if (string.IsNullOrEmpty(word))
                 return "";
 
@@ -366,6 +391,9 @@ namespace CursedWordsSolverCompanion
         {
             var pathFirst = FirstLetterOnBoardPath(path, board);
             var wordFirst = FirstAlphabeticLetter(word);
+            var currencyWordFirst = TryCurrencyWordFirstLetter(path, board, wordFirst);
+            if (!string.IsNullOrEmpty(currencyWordFirst))
+                return currencyWordFirst;
             if (
                 !string.IsNullOrEmpty(pathFirst)
                 && !string.IsNullOrEmpty(wordFirst)
@@ -373,6 +401,96 @@ namespace CursedWordsSolverCompanion
             )
                 return pathFirst;
             return !string.IsNullOrEmpty(wordFirst) ? wordFirst : pathFirst;
+        }
+
+        /// <summary>
+        /// When a currency tile leads the path and maps to the dictionary word's first letter,
+        /// the game uses word-first (boluses-style), not the next path letter.
+        /// </summary>
+        private static string TryCurrencyWordFirstLetter(
+            List<int> path,
+            BoardSnapshot board,
+            string wordFirst
+        )
+        {
+            if (path == null || path.Count == 0 || board?.tiles == null)
+                return "";
+            if (string.IsNullOrEmpty(wordFirst))
+                return "";
+
+            const int cols = 5;
+            var idx = path[0];
+            if (idx < 0)
+                return "";
+            var row = idx / cols;
+            var col = idx % cols;
+            foreach (var tile in board.tiles)
+            {
+                if (tile == null || tile.row != row || tile.col != col)
+                    continue;
+                if (!string.Equals(tile.curse, "currency", StringComparison.OrdinalIgnoreCase))
+                    return "";
+                var raw = (tile.letter ?? tile.char_display ?? "").Trim();
+                if (raw != "฿")
+                    return "";
+                string mapped;
+                if (!CurrencyMap.TryGetValue(raw, out mapped))
+                    return "";
+                if (string.Equals(mapped, wordFirst, StringComparison.OrdinalIgnoreCase))
+                    return wordFirst;
+                return "";
+            }
+
+            return "";
+        }
+
+        private static string TryCurrencyWordFirstLetter(
+            List<int> path,
+            HistoricWord historic,
+            string wordFirst
+        )
+        {
+            if (path == null || path.Count == 0 || historic == null)
+                return "";
+            if (string.IsNullOrEmpty(wordFirst))
+                return "";
+
+            var selections = TryGetTileSelections(historic);
+            if (selections == null)
+                return "";
+
+            const int cols = 5;
+            var idx = path[0];
+            if (idx < 0)
+                return "";
+            var row = idx / cols;
+            var col = idx % cols;
+            foreach (var sel in selections)
+            {
+                if (sel?.SelectedTile == null)
+                    continue;
+                try
+                {
+                    var coords = sel.SelectedTile.GetCoordinates();
+                    if (coords.y != row || coords.x != col)
+                        continue;
+                    var raw = (sel.SelectedTile.Letter ?? "").Trim();
+                    if (raw != "฿")
+                        return "";
+                    string mapped;
+                    if (!CurrencyMap.TryGetValue(raw, out mapped))
+                        return "";
+                    if (string.Equals(mapped, wordFirst, StringComparison.OrdinalIgnoreCase))
+                        return wordFirst;
+                    return "";
+                }
+                catch
+                {
+                    // try next selection
+                }
+            }
+
+            return "";
         }
 
         private static string FirstLetterOnBoardPath(List<int> path, BoardSnapshot board)

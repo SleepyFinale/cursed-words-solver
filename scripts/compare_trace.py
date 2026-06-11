@@ -35,6 +35,7 @@ def _replay_mismatch(data: dict) -> tuple[int, list[dict]]:
         _adjust_scattered_item_level_from_trace,
         _adjust_snapshot_copy_from_trace,
         _adjust_steak_percent_extras,
+        _adjust_tile_ninja_bonus_from_trace,
         _adjust_void_penalty_from_trace,
         _run_state_for_replay,
     )
@@ -51,6 +52,7 @@ def _replay_mismatch(data: dict) -> tuple[int, list[dict]]:
         _adjust_neapolitan_percent_extras,
         _adjust_rare_item_count_extras,
         _adjust_steak_percent_extras,
+        _adjust_tile_ninja_bonus_from_trace,
     ):
         fn(run_state, data)
     board = parse_board_from_run_state(run_state)
