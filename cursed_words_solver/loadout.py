@@ -812,6 +812,35 @@ def solver_session_extras_from_loadout(loadout: Loadout | None) -> dict[str, Any
     return {key: extras[key] for key in _SESSION_EXTRA_KEYS if key in extras}
 
 
+def encounter_implies_active_boss(loadout: Loadout | None) -> bool:
+    """True when run_state suggests a boss fight (not a normal encounter grid)."""
+    if loadout is None:
+        return False
+    extras = loadout.extras or {}
+    if extras.get("encounter_has_boss") in (True, "true", "True", "1", 1):
+        return True
+    if extras.get("boss_cursed") in (True, "true", "True", "1", 1):
+        return True
+    node = str(extras.get("run_node_type") or "").strip().lower()
+    if "boss" in node:
+        return True
+    mods = extras.get("boss_modifiers")
+    if isinstance(mods, list) and any(str(m).strip() for m in mods):
+        return True
+    if isinstance(mods, str) and mods.strip() not in ("", "[]"):
+        return True
+    return False
+
+
+def encounter_missing_boss_should_warn(loadout: Loadout | None) -> bool:
+    """Warn only when export looks like a boss fight but boss_id/name are absent."""
+    if loadout is None:
+        return False
+    if loadout.boss_id or loadout.boss_name:
+        return False
+    return encounter_implies_active_boss(loadout)
+
+
 def validate_run_state_for_scoring(
     loadout: Loadout | None,
     *,
@@ -867,6 +896,11 @@ def validate_run_state_for_scoring(
 
     if board is None and extras.get("encounter_mode") == "encounter":
         warnings.append("encounter active but board could not be parsed")
+
+    if encounter_missing_boss_should_warn(loadout):
+        warnings.append(
+            "boss fight active but boss_id/boss_name missing (press F7 in-game)"
+        )
 
     if board is not None:
         scattered = [
@@ -1040,6 +1074,28 @@ def _historic_words_count(raw: str) -> int:
     except (json.JSONDecodeError, TypeError):
         return 0
     return len(arr) if isinstance(arr, list) else 0
+
+
+def project_previous_word_first_letter_from_round_log(
+    run_state: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Project round-log submit letter when melmod export lags one cycle after submit."""
+    from cursed_words_solver.round_log import last_submit_effective_first_letter
+
+    if not isinstance(run_state, dict):
+        return run_state
+    expected = last_submit_effective_first_letter()
+    if not expected:
+        return run_state
+    extras = run_state.get("extras")
+    if not isinstance(extras, dict):
+        extras = {}
+        run_state["extras"] = extras
+    exp = expected.lower()[:1]
+    cur = str(extras.get("previous_word_first_letter") or "").strip().lower()[:1]
+    if cur != exp:
+        extras["previous_word_first_letter"] = exp
+    return run_state
 
 
 def reconcile_previous_word_first_letter_from_historic(

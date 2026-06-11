@@ -683,6 +683,18 @@ def _adjust_dusty_coffin_level_from_trace(
     if units <= 0:
         return
     level1 = sticker_rule_int(1, rule)
+    extras = run_state.setdefault("extras", {})
+    if not isinstance(extras, dict):
+        return
+    for level in range(1, 25):
+        if sticker_rule_int(level, rule) * units == bonus:
+            if level > 1:
+                _write_scattered_item_level_on_board(
+                    run_state, board, path, "dusty_coffin", level
+                )
+            return
+    if level1 > 0 and bonus % level1 == 0:
+        extras["dusty_void_units_override"] = str(bonus // level1)
     if level1 <= 0 or bonus % (level1 * units) == 0:
         inferred = max(1, bonus // (level1 * units))
     else:

@@ -1516,6 +1516,50 @@ def dusty_coffin_scattered_on_path(board: Board, path: list[int]) -> bool:
     return False
 
 
+def _path_void_letters_in_word_count(
+    board: Board, path: list[int], letters_in_word: set[str]
+) -> int:
+    """VOID letter tiles on the path whose face appears in the submitted word."""
+    count = 0
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.color != TileColor.VOID or tile.curse != CurseType.LETTER:
+            continue
+        face = path_letter_for_count(tile)
+        if face and face.lower() in letters_in_word:
+            count += 1
+    return count
+
+
+def _path_void_letter_in_word_counts_for_dusty(
+    board: Board, path: list[int], letters_in_word: set[str]
+) -> bool:
+    """Whether path void letters in the word contribute to Dusty void units."""
+    n = _path_void_letters_in_word_count(board, path, letters_in_word)
+    return n == 1 or n >= 3
+
+
+def _path_has_void_currency_in_word(
+    board: Board, path: list[int], letters_in_word: set[str]
+) -> bool:
+    """True when a VOID currency tile on the path has its face in the word."""
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.color != TileColor.VOID or tile.curse != CurseType.CURRENCY:
+            continue
+        face = path_letter_for_count(tile)
+        if not face:
+            continue
+        if (
+            (face.lower() == "b" or face == "฿")
+            and "b" in letters_in_word
+        ):
+            continue
+        if face.lower() in letters_in_word:
+            return True
+    return False
+
+
 def dusty_coffin_void_units(
     board: Board,
     word: str,
@@ -1542,7 +1586,8 @@ def dusty_coffin_void_units(
                     return max(0, int(raw))
                 except (TypeError, ValueError):
                     pass
-    count = void_tiles_letter_not_in_word(board, word, path=path)
+    off_path_count = void_tiles_letter_not_in_word(board, word, path=path)
+    count = off_path_count
     copy_is_dusty = (
         loadout is not None
         and snapshot_copy_slug(loadout) == "dusty_coffin"
@@ -1550,19 +1595,57 @@ def dusty_coffin_void_units(
     if path is not None and dusty_coffin_scattered_on_path(board, path):
         if applying == "dusty_coffin" or (applying == "snapshot" and copy_is_dusty):
             letters_in_word = set((word or "").lower())
+            if _path_has_void_currency_in_word(board, path, letters_in_word):
+                return off_path_count
+            void_letters_in_word_on_path = _path_void_letters_in_word_count(
+                board, path, letters_in_word
+            )
+            count_path_void_letters_in_word = _path_void_letter_in_word_counts_for_dusty(
+                board, path, letters_in_word
+            )
             for idx in path:
                 tile = board.get_by_index(idx)
                 slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
                 if slug == "dusty_coffin":
                     face = path_letter_for_count(tile)
                     if face and face.lower() not in letters_in_word:
+                        if (
+                            tile.color != TileColor.VOID
+                            and void_letters_in_word_on_path >= 1
+                        ):
+                            # Non-void scattered dusty (e.g. shiny) when a void
+                            # letter on the path is in the word (bethankit, not blunge).
+                            count += 1
+                        elif (
+                            off_path_count > 0
+                            and void_letters_in_word_on_path == 1
+                        ):
+                            # Void dusty face only with exactly one void letter in word on path.
+                            count += 1
+                    continue
+                if tile.color != TileColor.VOID:
+                    continue
+                face = void_tile_face_for_dusty_coffin(tile)
+                if not face:
+                    face = path_letter_for_count(tile)
+                if not face:
+                    continue
+                if (
+                    tile.curse == CurseType.CURRENCY
+                    and (face.lower() == "b" or face == "฿")
+                    and "b" in letters_in_word
+                ):
+                    continue
+                if face.lower() in letters_in_word:
+                    if (
+                        tile.curse == CurseType.LETTER
+                        and count_path_void_letters_in_word
+                    ):
                         count += 1
                     continue
-                if tile.color != TileColor.VOID or tile.curse != CurseType.LETTER:
+                if off_path_count == 0:
                     continue
-                face = path_letter_for_count(tile)
-                if face and face.lower() in letters_in_word:
-                    count += 1
+                count += 1
     return count
 
 
@@ -2728,17 +2811,7 @@ def explain_sticker_condition(
         return True, f"applied: word '{first}' matches path first letter '{path_first}'"
 
     if condition == "word_starts_same_as_previous":
-        if _extra_bool(loadout, "is_first_grid_of_encounter"):
-            return False, "skipped: no previous word on first grid"
-        if grid_number(loadout) == 1:
-            return False, "skipped: no previous word on first grid"
-        prev = _extra_letter(loadout, "previous_word_first_letter")
-        first = _effective_word_start_letter(board, path, word)
-        if not prev or not first:
-            return False, f"skipped: missing previous or word first letter (prev={prev!r}, word={first!r})"
-        if first != prev:
-            return False, f"skipped: word starts '{first}', previous '{prev}'"
-        return True, f"applied: word starts '{first}' same as previous"
+        return _bento_matches_previous_word_start(board, path, word, loadout)
 
     if condition == "word_starts_after_previous":
         if not _limnophila_previous_word_available(loadout):
@@ -2840,15 +2913,7 @@ def _evaluate_sticker_condition(
             return False
         return first == first_letter_on_path(board, path)
     if condition == "word_starts_same_as_previous":
-        if _extra_bool(loadout, "is_first_grid_of_encounter"):
-            return False
-        if grid_number(loadout) == 1:
-            return False
-        prev = _extra_letter(loadout, "previous_word_first_letter")
-        first = _effective_word_start_letter(board, path, word)
-        if not prev or not first:
-            return False
-        return first == prev
+        return _bento_matches_previous_word_start(board, path, word, loadout)[0]
     if condition == "word_starts_after_previous":
         if not _limnophila_previous_word_available(loadout):
             return False
@@ -4116,6 +4181,29 @@ def _wildcard_before_first_letter_tile(board: Board, path: list[int]) -> bool:
     return False
 
 
+def _bento_matches_previous_word_start(
+    board: Board, path: list[int], word: str, loadout: Loadout
+) -> tuple[bool, str]:
+    """Bento: dictionary word start must match previous and align with the path."""
+    if _extra_bool(loadout, "is_first_grid_of_encounter"):
+        return False, "skipped: no previous word on first grid"
+    if grid_number(loadout) == 1:
+        return False, "skipped: no previous word on first grid"
+    prev = _extra_letter(loadout, "previous_word_first_letter")
+    word_first = word_first_letter(word)
+    if not prev or not word_first:
+        return False, f"skipped: missing previous or word first letter (prev={prev!r}, word={word_first!r})"
+    path_start = _effective_word_start_letter(board, path, word)
+    if path_start != word_first:
+        return (
+            False,
+            f"skipped: path starts '{path_start}', dictionary '{word_first}'",
+        )
+    if word_first != prev:
+        return False, f"skipped: word starts '{word_first}', previous '{prev}'"
+    return True, f"applied: word starts '{word_first}' same as previous"
+
+
 def _effective_word_start_letter(board: Board, path: list[int], word: str) -> str:
     """First letter for Bento/Chips-style conditions (melmod path-first parity).
 
@@ -4873,6 +4961,52 @@ def _toolbox_boost_applies_to_scattered(loadout: Loadout, scattered_slug: str) -
     return True
 
 
+def _grid_scattered_level_from_extras(
+    loadout: Loadout | None,
+    slug: str,
+    *,
+    board: Board | None = None,
+    path: list[int] | None = None,
+    path_tile_index: int | None = None,
+) -> int | None:
+    """Level from grid_scattered_items JSON when per-tile metadata is missing."""
+    if loadout is None or board is None or path is None or path_tile_index is None:
+        return None
+    if not (0 <= path_tile_index < len(path)):
+        return None
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    raw = str(extras.get("grid_scattered_items") or "").strip()
+    if not raw or raw == "[]":
+        return None
+    try:
+        entries = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(entries, list):
+        return None
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    slug_norm = slugify_name(slug)
+    tile = board.get_by_index(path[path_tile_index])
+    row, col = tile.row, tile.col
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if slugify_name(str(entry.get("id") or "")) != slug_norm:
+            continue
+        try:
+            er = int(entry.get("row", -1))
+            ec = int(entry.get("col", -1))
+        except (TypeError, ValueError):
+            continue
+        if er == row and ec == col:
+            try:
+                return max(1, int(entry.get("level", 1)))
+            except (TypeError, ValueError):
+                return 1
+    return None
+
+
 def grid_path_sticker_level(
     loadout: Loadout | None,
     slug: str,
@@ -4923,14 +5057,26 @@ def grid_path_sticker_level(
                 except (TypeError, ValueError):
                     pass
 
+    if not tile_level_known and loadout is not None:
+        extras_level = _grid_scattered_level_from_extras(
+            loadout,
+            slug_norm,
+            board=board,
+            path=path,
+            path_tile_index=path_tile_index,
+        )
+        if extras_level is not None:
+            tile_level_known = True
+            if floor_mod_capped and is_grid_path_tile:
+                level = encounter_level
+            else:
+                level = max(extras_level, encounter_level)
+
     if (
-        slug_norm == "down_under"
+        slug_norm in ("down_under", "dusty_coffin", "deep_sea_horror")
         and loadout is not None
         and loadout.stickers
-        and not (
-            tile_level_known
-            and snapshot_copies_down_under_above_grid_scatter(loadout, level)
-        )
+        and (not floor_mod_capped or not tile_level_known)
     ):
         max_equipped = 1
         for sticker in loadout.stickers:
@@ -4938,7 +5084,10 @@ def grid_path_sticker_level(
                 max_equipped = max(max_equipped, max(1, int(sticker.level)))
             except (TypeError, ValueError):
                 pass
-        level = max(level, max_equipped)
+        if not floor_mod_capped:
+            level = max(level, max_equipped)
+        elif not tile_level_known:
+            level = max(level, max_equipped)
 
     if slug_norm == "tombstone" and loadout is not None and loadout.stickers:
         pool = grid_scatter_sticker_slugs(board) if board is not None else set()
@@ -4984,11 +5133,8 @@ def grid_path_sticker_level(
             and _toolbox_boost_applies_to_scattered(loadout, scattered_id)
         ):
             level = max(level, _equipped_toolbox_level(loadout))
-    if (
-        loadout is not None
-        and loadout.stickers
-        and not (floor_mod_capped and is_grid_path_tile)
-    ):
+    skip_equipped_merge = floor_mod_capped and is_grid_path_tile and slug_norm != "tombstone"
+    if loadout is not None and loadout.stickers and not skip_equipped_merge:
         for sticker in loadout.stickers:
             if slugify_name(str(sticker.id or "")) != slug_norm:
                 continue

@@ -54,6 +54,7 @@ namespace CursedWordsSolverCompanion
                 SyncTileNinjaExtrasIntoSnapshot(snapshot, player);
                 FillSnapshotCopyExtras(snapshot, player);
                 SanitizeLoadoutSpecificExtras(snapshot, player);
+                BoardExporter.ApplyGridScatteredLevelsFromExtras(snapshot);
                 BoardExporter.FillGridScatteredItemsExtra(snapshot);
                 sw.Stop();
                 ExportDiagnostics.ApplyToSnapshot(

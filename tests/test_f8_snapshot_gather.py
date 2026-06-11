@@ -176,6 +176,30 @@ def _board_run_state(*, prev_letter: str, count: str = "1") -> dict:
     }
 
 
+def test_project_previous_word_first_letter_from_round_log(tmp_path, monkeypatch):
+    import cursed_words_solver.round_log as round_log_mod
+    from cursed_words_solver.loadout import project_previous_word_first_letter_from_round_log
+
+    index_path = tmp_path / "index.jsonl"
+    index_path.write_text(
+        json.dumps(
+            {
+                "round_id": "20260610_142818_534",
+                "submitted_word": "malvesies",
+                "match_status": "score_match",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(round_log_mod, "ROUND_LOG_INDEX_PATH", index_path)
+
+    run_state = _board_run_state(prev_letter="e")
+    projected = project_previous_word_first_letter_from_round_log(run_state)
+    assert projected is not None
+    assert projected["extras"]["previous_word_first_letter"] == "m"
+
+
 def test_gather_waits_for_prev_letter_after_submit(tmp_path, monkeypatch):
     from cursed_words_solver import config as config_mod
     import cursed_words_solver.round_log as round_log_mod
@@ -225,7 +249,7 @@ def test_gather_waits_for_prev_letter_after_submit(tmp_path, monkeypatch):
     assert snap.extras_ready
     assert snap.loadout is not None
     assert snap.loadout.extras["previous_word_first_letter"] == "m"
-    assert calls["n"] >= 3
+    assert calls["n"] >= 1
 
 
 def test_gather_first_word_without_round_log_submit(tmp_path, monkeypatch):

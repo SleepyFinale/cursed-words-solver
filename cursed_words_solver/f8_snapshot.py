@@ -24,6 +24,7 @@ from cursed_words_solver.loadout import (
     mod_money_from_run_state,
     parse_board_from_run_state,
     parse_run_state,
+    project_previous_word_first_letter_from_round_log,
     validate_run_state_for_scoring,
 )
 from cursed_words_solver.round_log import last_submit_effective_first_letter
@@ -153,6 +154,8 @@ def _build_snapshot_from_run_state(
     if not isinstance(run_state, dict):
         return F8Snapshot(run_state=None, board=None, loadout=None)
 
+    run_state = project_previous_word_first_letter_from_round_log(run_state)
+
     board = parse_board_from_run_state(run_state)
     if board is None:
         return F8Snapshot(run_state=run_state, board=None, loadout=None)
@@ -215,6 +218,13 @@ def gather_f8_snapshot(
     if not snapshot.board_available:
         return snapshot
 
+    logged_wait: set[str] = set()
+
+    def _notify_wait(msg: str) -> None:
+        if on_wait and msg not in logged_wait:
+            logged_wait.add(msg)
+            on_wait(msg)
+
     deadline_extras = time.monotonic() + max(0.0, extras_timeout_sec)
     last_missing: list[str] = []
     while time.monotonic() < deadline_extras:
@@ -226,12 +236,13 @@ def gather_f8_snapshot(
         last_missing = _extras_missing_for_loadout(
             snapshot.loadout, snapshot.board, extras or {}
         )
-        if on_wait and last_missing:
-            on_wait(f"waiting for melmod: {', '.join(last_missing)}")
+        if last_missing:
+            _notify_wait(f"waiting for melmod: {', '.join(last_missing)}")
         time.sleep(poll_sec)
 
     if isinstance(run_state, dict):
         run_state, historic_stale = _apply_historic_merge_to_run_state(run_state)
+        run_state = project_previous_word_first_letter_from_round_log(run_state)
         snapshot = _build_snapshot_from_run_state(run_state, rules=rules)
         if historic_stale:
             snapshot.warnings = list(snapshot.warnings) + [historic_stale]
@@ -246,22 +257,35 @@ def gather_f8_snapshot(
         if workflow_note is None:
             break
         last_workflow_note = workflow_note
-        if on_wait:
-            on_wait(f"waiting for melmod: {workflow_note}")
+        _notify_wait(f"waiting for melmod: {workflow_note}")
         time.sleep(poll_sec)
         run_state = load_run_state_raw()
         if isinstance(run_state, dict):
             run_state, _ = _apply_historic_merge_to_run_state(run_state)
+            run_state = project_previous_word_first_letter_from_round_log(run_state)
         snapshot = _build_snapshot_from_run_state(run_state, rules=rules)
 
     if snapshot.loadout is not None:
         extras = snapshot.loadout.extras if isinstance(snapshot.loadout.extras, dict) else {}
         if _workflow_prev_letter_catchup_note(snapshot.loadout, extras or {}):
-            snapshot.warnings = list(snapshot.warnings) + [
-                "melmod workflow export incomplete after wait: "
-                + (last_workflow_note or "previous_word_first_letter")
-            ]
-            snapshot.extras_ready = False
+            if isinstance(run_state, dict):
+                run_state = project_previous_word_first_letter_from_round_log(run_state)
+                snapshot = _build_snapshot_from_run_state(run_state, rules=rules)
+                extras = (
+                    snapshot.loadout.extras
+                    if snapshot.loadout and isinstance(snapshot.loadout.extras, dict)
+                    else {}
+                )
+            if _workflow_prev_letter_catchup_note(snapshot.loadout, extras or {}):
+                snapshot.warnings = list(snapshot.warnings) + [
+                    "melmod workflow export incomplete after wait: "
+                    + (last_workflow_note or "previous_word_first_letter")
+                ]
+                snapshot.extras_ready = False
+            else:
+                snapshot.warnings = list(snapshot.warnings) + [
+                    "projected previous_word_first_letter from round log (melmod lag)"
+                ]
 
     if snapshot.loadout is not None and snapshot.board is not None and rules is not None:
         def _reload() -> Loadout | None:

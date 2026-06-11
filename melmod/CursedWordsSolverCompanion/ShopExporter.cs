@@ -68,6 +68,12 @@ namespace CursedWordsSolverCompanion
         private const BindingFlags MemberFlags =
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
+        /// <summary>Last good remaining target when reflection reads fail mid-transition.</summary>
+        private static int _lastKnownRemainingTarget = -1;
+
+        /// <summary>Encounter total used to invalidate stale remaining cache.</summary>
+        private static int _lastKnownEncounterTotal = -1;
+
         public static void FillShopState(RunStateSnapshot snapshot, Player player)
         {
             if (snapshot == null || player == null)
@@ -321,12 +327,26 @@ namespace CursedWordsSolverCompanion
                 return;
 
             var remaining = ReadScorePacketField(encounter, "_remainingTarget");
-            if (remaining >= 0)
-                snapshot.extras["encounter_remaining_target"] = remaining.ToString();
-
             var total = ReadScorePacketField(encounter, "_totalTarget");
+
             if (total >= 0)
+            {
+                if (_lastKnownEncounterTotal >= 0 && total != _lastKnownEncounterTotal)
+                    _lastKnownRemainingTarget = -1;
+                _lastKnownEncounterTotal = (int)total;
                 snapshot.extras["encounter_total_target"] = total.ToString();
+            }
+
+            if (remaining >= 0)
+            {
+                _lastKnownRemainingTarget = (int)remaining;
+                snapshot.extras["encounter_remaining_target"] = remaining.ToString();
+            }
+            else if (_lastKnownRemainingTarget >= 0)
+            {
+                remaining = _lastKnownRemainingTarget;
+                snapshot.extras["encounter_remaining_target"] = remaining.ToString();
+            }
 
             if (total >= 0 && remaining >= 0)
             {

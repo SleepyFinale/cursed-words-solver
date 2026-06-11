@@ -168,6 +168,7 @@ class SolverApp:
         self._highlight_loadout_fingerprint: str | None = None
         self._highlight_watch_run_state = False
         self._last_invalidation_reason: str | None = None
+        self._workflow_stale_overlay_reason: str | None = None
         self._active_suggestion_session: F8SuggestionSession | None = None
         self._loadout_source = self._detect_loadout_source()
         self._scoring = ScoringPipeline()
@@ -492,6 +493,7 @@ class SolverApp:
             clear_last_suggestion()
             self._active_suggestion_session = None
             self._last_invalidation_reason = "word_submitted"
+            self._workflow_stale_overlay_reason = None
             self._clear_highlight_state()
             self.overlay.show_idle()
             print("  Word submitted — press F8 for the next word.", flush=True)
@@ -546,7 +548,33 @@ class SolverApp:
             self._clear_highlight_state()
             self.overlay.show_idle()
 
+        self._maybe_show_workflow_stale_overlay(extras if isinstance(extras, dict) else None)
         self._maybe_clear_stale_highlights(board_tiles_fingerprint_suffix)
+
+    def _maybe_show_workflow_stale_overlay(
+        self,
+        run_state_extras: dict | None,
+    ) -> None:
+        """Show STALE overlay and clear path when F8 embed extras drift on same board."""
+        from cursed_words_solver.config import LAST_SUGGESTION_PATH
+        from cursed_words_solver.suggestion import f8_prior_suggestion_stale_note
+
+        if self._highlight_board_fingerprint is None:
+            self._workflow_stale_overlay_reason = None
+            return
+        if self._solve_active or not LAST_SUGGESTION_PATH.exists():
+            return
+        stale_note = f8_prior_suggestion_stale_note(run_state_extras)
+        if stale_note is None:
+            if self._workflow_stale_overlay_reason is not None:
+                self._workflow_stale_overlay_reason = None
+            return
+        if stale_note == self._workflow_stale_overlay_reason:
+            return
+        self._workflow_stale_overlay_reason = stale_note
+        self._active_suggestion_session = None
+        self._clear_highlight_state()
+        self.overlay.show_stale_notice(stale_note)
 
     def _maybe_clear_stale_highlights(self, tiles_fp_fn=None) -> None:
         """Drop on-board path when melmod reports a new round, shop, or missing board."""
@@ -974,12 +1002,15 @@ class SolverApp:
                 print(msg, flush=True)
             if unmapped:
                 print(f"  Unmapped: {', '.join(unmapped[:6])}", flush=True)
-            if board_source == "melmod" and not (loadout.boss_id or loadout.boss_name):
-                print(
-                    "  Boss not in run_state.json — press F7 in-game; "
-                    "rebuild melmod if you are fighting a boss.",
-                    flush=True,
-                )
+            if board_source == "melmod":
+                from cursed_words_solver.loadout import encounter_missing_boss_should_warn
+
+                if encounter_missing_boss_should_warn(loadout):
+                    print(
+                        "  Boss not in run_state.json — press F7 in-game; "
+                        "rebuild melmod if you are fighting a boss.",
+                        flush=True,
+                    )
             placed_consumables = placed_consumable_indices(board)
             mandatory = mandatory_consumable_indices(
                 loadout, board, self._scoring.rules

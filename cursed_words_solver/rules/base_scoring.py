@@ -162,7 +162,10 @@ def melmod_void_currency_init_contribution(
     if glyph == "$":
         if path_index <= 0:
             return 0.0
-        return -float(_void_currency_path_init_penalty(tile, loadout))
+        # Game waives void $ init unless it is the second tile on the path (index 1).
+        if path_index == 1:
+            return -float(_void_currency_path_init_penalty(tile, loadout))
+        return 0.0
     if path_index <= 0 and tile.row == 0:
         return -float(_void_currency_top_row_path_start_penalty(tile, loadout))
     return 0.0

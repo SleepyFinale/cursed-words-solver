@@ -168,6 +168,9 @@ def initial_tile_scores(
             first_void_currency_path_index = i
             break
 
+    from cursed_words_solver.rules.scoring_conditions import path_letter_for_count
+
+    word_lower = (word or "").lower()
     scores: list[float] = []
     total = 0.0
     for i, idx in enumerate(path):
@@ -175,7 +178,16 @@ def initial_tile_scores(
         if tile.curse == CT.ITEM:
             scores.append(0.0)
             continue
-        if microscope_base:
+        void_currency_in_word = (
+            tile.color == TileColor.VOID
+            and tile.curse == CT.CURRENCY
+            and i < len(word_lower)
+            and (face := path_letter_for_count(tile))
+            and face.lower() == word_lower[i]
+        )
+        if void_currency_in_word:
+            contrib = 0.0
+        elif microscope_base:
             contrib = microscope_init_contribution(tile, money, loadout)
         elif tile.color == TileColor.BLUE and blue_base_override is not None:
             contrib = float(blue_base_override)

@@ -52,6 +52,10 @@ namespace CursedWordsSolverCompanion
                 if (fromEncounter != null && fromEncounter.Count > 0)
                     return fromEncounter;
 
+                // Encounter API can lag one frame; scoring cache is still authoritative mid-fight.
+                if (_cachedFromScoring != null && _cachedFromScoring.Count > 0)
+                    return _cachedFromScoring;
+
                 ClearScoringCache();
                 return null;
             }

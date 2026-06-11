@@ -232,6 +232,92 @@ namespace CursedWordsSolverCompanion
             snapshot.extras["grid_scattered_items"] = JsonConvert.SerializeObject(rows);
         }
 
+        /// <summary>
+        /// Backfill scattered_item_level on board item tiles from extras.grid_scattered_items
+        /// when live tile export omitted level (F8 parity with submit_board_tiles).
+        /// </summary>
+        public static void ApplyGridScatteredLevelsFromExtras(RunStateSnapshot snapshot)
+        {
+            if (snapshot?.board?.tiles == null || snapshot.extras == null)
+                return;
+
+            string json;
+            if (
+                !snapshot.extras.TryGetValue("grid_scattered_items", out json)
+                || string.IsNullOrWhiteSpace(json)
+            )
+                return;
+
+            List<Dictionary<string, object>> rows;
+            try
+            {
+                rows = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(json);
+            }
+            catch
+            {
+                return;
+            }
+
+            if (rows == null || rows.Count == 0)
+                return;
+
+            foreach (var row in rows)
+            {
+                if (row == null)
+                    continue;
+                object rowObj;
+                object colObj;
+                object idObj;
+                object levelObj;
+                if (!row.TryGetValue("row", out rowObj) || !row.TryGetValue("col", out colObj))
+                    continue;
+                if (!row.TryGetValue("id", out idObj))
+                    continue;
+                if (!row.TryGetValue("level", out levelObj))
+                    continue;
+
+                int tileRow;
+                int tileCol;
+                int level;
+                if (!int.TryParse(Convert.ToString(rowObj), out tileRow))
+                    continue;
+                if (!int.TryParse(Convert.ToString(colObj), out tileCol))
+                    continue;
+                if (!int.TryParse(Convert.ToString(levelObj), out level) || level < 1)
+                    continue;
+
+                var scatterId = Convert.ToString(idObj) ?? "";
+                if (string.IsNullOrWhiteSpace(scatterId))
+                    continue;
+
+                foreach (var tile in snapshot.board.tiles)
+                {
+                    if (tile == null)
+                        continue;
+                    if (tile.row != tileRow || tile.col != tileCol)
+                        continue;
+                    if (!string.Equals(tile.curse, "item", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (
+                        !string.Equals(
+                            tile.scattered_item_id ?? "",
+                            scatterId,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                        continue;
+                    if (!tile.scattered_item_level.HasValue)
+                        tile.scattered_item_level = level;
+                    else
+                        tile.scattered_item_level = Math.Max(
+                            tile.scattered_item_level.Value,
+                            level
+                        );
+                    break;
+                }
+            }
+        }
+
         public static string ComputeBoardFingerprint(BoardSnapshot board)
         {
             if (board == null || board.tiles == null || board.tiles.Count == 0)
