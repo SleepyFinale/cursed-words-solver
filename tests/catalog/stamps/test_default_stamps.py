@@ -690,8 +690,8 @@ def test_sequoia_skips_currency_glyph_mapped_vowel():
     assert not tile_matches_target(tile, "vowel")
 
 
-def test_bento_applies_when_currency_leads_path_and_previous_matches_path_first():
-    """wootzes-style: ₩-leading path uses first letter tile 'o', not dictionary 'w'."""
+def test_bento_skipped_wootzes_style_won_leading_prev_o():
+    """wootzes-style: ₩→W matches dictionary 'w'; prev 'o' must not trigger Bento."""
     board = _empty_board()
     board.tiles[2][1] = _tile(2, 1, "₩", 0, curse=CurseType.CURRENCY)
     board.tiles[2][1].metadata["was_consumable"] = True
@@ -708,8 +708,8 @@ def test_bento_applies_when_currency_leads_path_and_previous_matches_path_first(
     )
     path = [11, 6, 7, 8, 13, 12]
     score, bd = pipeline.score(board, path, "wootzes", loadout)
-    assert bd["multiplier"] == pytest.approx(1.5)
-    assert int(score) == 21
+    assert bd["multiplier"] == 1.0
+    assert int(score) == 14
 
 
 def test_bento_skipped_benelux_style_baht_leading_prev_e():
@@ -754,6 +754,28 @@ def test_bento_skipped_when_currency_maps_to_word_first_letter():
     score, bd = pipeline.score(board, path, "boluses", loadout)
     assert bd["multiplier"] == 1.0
     assert int(score) == 5
+
+
+def test_bento_skipped_sauteed_style_dollar_leading_prev_a():
+    """sauteed-style: $ at path[0] maps to word 's'; prev 'a' must not trigger Bento."""
+    board = _empty_board()
+    board.tiles[2][3] = _tile(2, 3, "$", 0, curse=CurseType.CURRENCY)
+    board.tiles[2][3].metadata["was_consumable"] = True
+    board.tiles[2][2] = _tile(2, 2, "A", 1)
+    board.tiles[3][2] = _tile(3, 2, "U", 1)
+    board.tiles[3][3] = _tile(3, 3, "T", 1)
+    board.tiles[2][4] = _tile(2, 4, "E", 1)
+    board.tiles[0][1] = _tile(0, 1, "E", 1)
+    board.tiles[1][0] = _tile(1, 0, "D", 2)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras={"previous_word_first_letter": "a", "grid_number": "4"},
+    )
+    path = [13, 12, 17, 18, 14, 1, 5]
+    score, bd = pipeline.score(board, path, "sauteed", loadout)
+    assert bd["multiplier"] == 1.0
+    assert int(score) == 7
 
 
 def test_bento_skipped_when_word_first_letter_differs_from_path_leading_tile():

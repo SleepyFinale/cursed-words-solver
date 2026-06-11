@@ -291,6 +291,9 @@ Run context extras (default-unlocked stickers):
 | `frozen_in_shop` | `true` when Avocado is mushy / shop freeze active (`avocado_mushy` still exported) |
 | `character_slug` | Wiki-style slug for the active character |
 | `encounter_mode` | `encounter`, `shop`, or `none` |
+| `run_stage` | Current run stage (1–6) from `CurrentRunProgress.GetStage()`; always exported during a run |
+| `run_node_type` | Current node in the stage: `EncounterFirst`, `Boss`, `ShopZero`, `ShopOne`, `ShopTwo`, `MegShop`, or `None` |
+| `encounter_score_earned` | Points scored this encounter so far (`encounter_total_target − encounter_remaining_target`) |
 | `shop_node` | When in shop: `ShopZero`, `ShopOne`, `ShopTwo`, or `MegShop` (from `CurrentRunProgress.CurrentNodeType`) |
 
 ### Shop advisor export (v1.2+)
@@ -310,6 +313,7 @@ Top-level `run_state.json` fields:
 | `encounter_grid_reroll` | Encounter **grid** reroll (not shop restock): `remaining`, `cost_per_use` (0 default, $1 with Wheel), `can_reroll`, `wheel_equipped`, `fan_equipped` |
 | `extras.encounter_remaining_target` | Score still needed this encounter (from `_remainingTarget`) |
 | `extras.encounter_total_target` | Encounter total target score (from `_totalTarget`) |
+| `extras.encounter_score_earned` | Points scored this encounter (`total_target − remaining_target`) |
 
 Capture a shop fixture for regression tests: press **F7** in the shop and copy `%USERPROFILE%\.cursed_words_solver\run_state.json` to `tests/fixtures/shops/`.
 | `grids_total` | Total grids in encounter (Badger) when readable |

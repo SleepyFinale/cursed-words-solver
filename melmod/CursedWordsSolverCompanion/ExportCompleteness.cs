@@ -63,6 +63,22 @@ namespace CursedWordsSolverCompanion
             if (!extras.ContainsKey("grid_number"))
                 missing.Add("grid_number");
 
+            var encounterMode = extras.TryGetValue("encounter_mode", out var modeRaw)
+                ? modeRaw
+                : RunStateExportFill.DetectEncounterMode(player);
+            if (encounterMode == "encounter")
+            {
+                if (!extras.ContainsKey("run_stage"))
+                    missing.Add("run_stage");
+                if (!extras.ContainsKey("run_node_type"))
+                    missing.Add("run_node_type");
+                if (
+                    extras.ContainsKey("encounter_total_target")
+                    && !extras.ContainsKey("encounter_score_earned")
+                )
+                    missing.Add("encounter_score_earned");
+            }
+
             if (HasFrankenstein(player))
             {
                 if (

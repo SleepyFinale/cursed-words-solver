@@ -188,6 +188,7 @@ namespace CursedWordsSolverCompanion
             FillEquippedStampFlags(snapshot, player);
             FillFrozenInShop(snapshot, player);
             FillEncounterMode(snapshot, player);
+            FillRunProgressExtras(snapshot, player);
             FillFutureProofTierA(snapshot, player);
             FillBossParams(snapshot, player);
             RunStateExporter.FillSnapshotCopyExtras(snapshot, player);
@@ -465,6 +466,42 @@ namespace CursedWordsSolverCompanion
         private static void FillEncounterMode(RunStateSnapshot snapshot, Player player)
         {
             snapshot.extras["encounter_mode"] = DetectEncounterMode(player);
+        }
+
+        private static void FillRunProgressExtras(RunStateSnapshot snapshot, Player player)
+        {
+            if (snapshot?.extras == null || player == null)
+                return;
+
+            var stage = BossResolver.TryGetRunStage(player);
+            if (stage >= 1)
+                snapshot.extras["run_stage"] = stage.ToString();
+
+            var nodeType = TryGetCurrentNodeType(player);
+            if (!string.IsNullOrEmpty(nodeType))
+                snapshot.extras["run_node_type"] = nodeType;
+        }
+
+        private static string TryGetCurrentNodeType(Player player)
+        {
+            if (player?.CurrentRunProgress == null)
+                return "";
+
+            try
+            {
+                return player.CurrentRunProgress.GetCurrentNodeType().ToString();
+            }
+            catch
+            {
+                try
+                {
+                    return player.CurrentRunProgress.CurrentNodeType.ToString();
+                }
+                catch
+                {
+                    return "";
+                }
+            }
         }
 
         private static void FillFutureProofTierA(RunStateSnapshot snapshot, Player player)
@@ -2490,15 +2527,22 @@ namespace CursedWordsSolverCompanion
                 return null;
             try
             {
-                var prop = player.GetType().GetProperty(
-                    "CurrentRunProgress",
-                    BindingFlags.Public | BindingFlags.Instance
-                );
-                return prop?.GetValue(player, null);
+                return player.CurrentRunProgress;
             }
             catch
             {
-                return null;
+                try
+                {
+                    var field = player.GetType().GetField(
+                        "CurrentRunProgress",
+                        BindingFlags.Public | BindingFlags.Instance
+                    );
+                    return field?.GetValue(player);
+                }
+                catch
+                {
+                    return null;
+                }
             }
         }
 

@@ -431,8 +431,6 @@ namespace CursedWordsSolverCompanion
                 if (!string.Equals(tile.curse, "currency", StringComparison.OrdinalIgnoreCase))
                     return "";
                 var raw = (tile.letter ?? tile.char_display ?? "").Trim();
-                if (raw != "฿")
-                    return "";
                 string mapped;
                 if (!CurrencyMap.TryGetValue(raw, out mapped))
                     return "";
@@ -475,8 +473,6 @@ namespace CursedWordsSolverCompanion
                     if (coords.y != row || coords.x != col)
                         continue;
                     var raw = (sel.SelectedTile.Letter ?? "").Trim();
-                    if (raw != "฿")
-                        return "";
                     string mapped;
                     if (!CurrencyMap.TryGetValue(raw, out mapped))
                         return "";

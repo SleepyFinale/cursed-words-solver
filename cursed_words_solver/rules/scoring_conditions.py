@@ -4133,13 +4133,8 @@ def _effective_word_start_letter(board: Board, path: list[int], word: str) -> st
         is_currency_lead = lead.curse == CurseType.CURRENCY or glyph in CURRENCY_MAP
         if is_currency_lead and glyph:
             mapped = CURRENCY_MAP.get(glyph, "").lower()
-            # boluses/benelux-style: ฿ leading path uses dictionary first letter
-            if (
-                glyph == "฿"
-                and mapped
-                and word_first
-                and mapped == word_first
-            ):
+            # Currency-leading path uses dictionary first letter when it maps to word-first
+            if mapped and word_first and mapped == word_first:
                 return word_first
     path_first = first_letter_on_path(board, path)
     if path_first and word_first and path_first != word_first:

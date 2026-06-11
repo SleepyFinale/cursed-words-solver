@@ -707,6 +707,10 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
         "michael_min_word_length",
         "michael_phase",
         "encounter_min_word_length",
+        "run_stage",
+        "encounter_score_earned",
+        "encounter_remaining_target",
+        "encounter_total_target",
     ):
         if key in out:
             try:
