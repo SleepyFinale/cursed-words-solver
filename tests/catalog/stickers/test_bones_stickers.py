@@ -432,6 +432,22 @@ def test_wrestlers_poker_rank_letter_endpoints():
     assert score == int(base * 1.5)
 
 
+def test_wrestlers_flush_all_suited_letter_endpoints():
+    """All-suited path with letter endpoints on different suits triggers Wrestlers (rood)."""
+    board = _empty_board()
+    board.tiles[3][4] = _letter_card(3, 4, "R", "diamonds", 1)
+    board.tiles[2][3] = _letter_card(2, 3, "O", "diamonds", 1)
+    board.tiles[4][1] = _letter_card(4, 1, "O", "diamonds", 1)
+    board.tiles[4][0] = _letter_card(4, 0, "D", "hearts", 2)
+    path = [19, 13, 21, 20]
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=1)])
+    score, bd = pipeline.score(board, path, "rood", loadout)
+    base, _ = pipeline.score(board, path, "rood", Loadout())
+    assert bd["multiplier"] == 1.5
+    assert score == int(base * 1.5)
+
+
 def test_wrestlers_bones_rank_letter_endpoints_mismatch_value():
     """D/I suited ends with different tile values do not trigger Wrestlers (dooses)."""
     board = _empty_board()
@@ -563,6 +579,73 @@ def test_celestial_body_l3_last_suited_single_letter():
     base, base_bd = pipeline.score(board, path, "yecchs", Loadout())
     tiles = bd["pipeline"]["tile_scores"]
     assert tiles == [4.0, 1.0, 31.0, 31.0, 31.0, 31.0]
+    assert sum(tiles) == sum(base_bd["pipeline"]["tile_scores"]) + 120
+    assert score == base + 120
+
+
+def test_celestial_body_l3_mid_path_last_suited_low_card():
+    """klongs-style: suited L/N mid-path (last suited, not path end) get +30 at L3."""
+    board = _empty_board()
+    board.tiles[3][1] = _letter_card(3, 1, "K", "clubs", 5)
+    board.tiles[2][2] = _letter_card(2, 2, "L", "spades", 1)
+    board.tiles[1][2] = _letter(1, 2, "O", 1)
+    board.tiles[2][3] = _letter_card(2, 3, "N", "diamonds", 1)
+    board.tiles[3][3] = _letter_card(3, 3, "G", "hearts", 2)
+    board.tiles[4][4] = _letter(4, 4, "S", 1)
+    path = [16, 12, 7, 13, 18, 24]
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=3)]
+    )
+    score, bd = pipeline.score(board, path, "klongs", loadout)
+    base, base_bd = pipeline.score(board, path, "klongs", Loadout())
+    tiles = bd["pipeline"]["tile_scores"]
+    assert tiles == [35.0, 31.0, 1.0, 31.0, 32.0, 1.0]
+    assert sum(tiles) == sum(base_bd["pipeline"]["tile_scores"]) + 120
+    assert score == base + 120
+
+
+def test_celestial_body_l3_base2_suited_path_end():
+    """jabbed-style: suited D at path end (base 2) gets +30 at L3."""
+    board = _empty_board()
+    board.tiles[1][3] = _letter_card(1, 3, "J", "hearts", 8)
+    board.tiles[1][4] = _letter(1, 4, "A", 1)
+    board.tiles[0][4] = _letter(0, 4, "B", 3)
+    board.tiles[0][2] = _letter_card(0, 2, "B", "clubs", 3)
+    board.tiles[1][2] = _letter(1, 2, "E", 1)
+    board.tiles[2][3] = _letter_card(2, 3, "D", "hearts", 2)
+    path = [8, 9, 4, 2, 7, 13]
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=3)]
+    )
+    score, bd = pipeline.score(board, path, "jabbed", loadout)
+    base, base_bd = pipeline.score(board, path, "jabbed", Loadout())
+    tiles = bd["pipeline"]["tile_scores"]
+    assert tiles == [38.0, 1.0, 3.0, 33.0, 1.0, 32.0]
+    assert tiles[-1] == base_bd["pipeline"]["tile_scores"][-1] + 30
+    assert sum(tiles) == sum(base_bd["pipeline"]["tile_scores"]) + 90
+
+
+def test_celestial_body_l3_path_start_last_suited_low_cards():
+    """togging-style: suited T/O at path start (last suited, not path end) get +30 at L3."""
+    board = _empty_board()
+    board.tiles[1][3] = _letter_card(1, 3, "T", "clubs", 1)
+    board.tiles[2][3] = _letter_card(2, 3, "O", "clubs", 1)
+    board.tiles[1][4] = _letter_card(1, 4, "G", "diamonds", 2)
+    board.tiles[3][0] = _letter(3, 0, "G", 2)
+    board.tiles[2][1] = _letter_card(2, 1, "I", "clubs", 1)
+    board.tiles[2][2] = _letter(2, 2, "N", 1)
+    board.tiles[1][1] = _letter(1, 1, "G", 2)
+    path = [8, 13, 9, 15, 11, 12, 6]
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=3)]
+    )
+    score, bd = pipeline.score(board, path, "togging", loadout)
+    base, base_bd = pipeline.score(board, path, "togging", Loadout())
+    tiles = bd["pipeline"]["tile_scores"]
+    assert tiles == [31.0, 31.0, 32.0, 2.0, 31.0, 1.0, 2.0]
     assert sum(tiles) == sum(base_bd["pipeline"]["tile_scores"]) + 120
     assert score == base + 120
 

@@ -670,9 +670,15 @@ def word_starts_ends_different_suit(board: Board, path: list[int]) -> bool:
             path_start.curse == CurseType.LETTER
             and path_end.curse == CurseType.LETTER
         ):
-            return _wrestlers_letter_endpoints_qualify(
+            if _wrestlers_letter_endpoints_qualify(
                 board, path, path_start, path_end
-            )
+            ):
+                return True
+            if all(
+                _wrestlers_real_suit(board.get_by_index(i)) for i in path
+            ):
+                return True
+            return False
         return True
 
     if bool(start_suit) != bool(end_suit) and not is_joker_tile(path_start):
@@ -3432,10 +3438,7 @@ def celestial_body_tile_eligible(
                 and is_last_card_rank_on_path(board, path, path_index)
             ):
                 return True
-            if (
-                path_index == len(path) - 1
-                and is_last_suited_letter_on_path(board, path, path_index)
-            ):
+            if is_last_suited_letter_on_path(board, path, path_index):
                 return True
             return False
         return False
@@ -3528,6 +3531,12 @@ def celestial_body_tile_eligible(
     if tile.base_score == 2 and level >= 2:
         if letter_count >= 2:
             return is_last_suited_letter_on_path(board, path, path_index)
+        if (
+            level >= 3
+            and card_suit(tile)
+            and is_last_suited_letter_on_path(board, path, path_index)
+        ):
+            return True
         if path_index in (0, path_end):
             return False
         return is_last_card_rank_on_path(board, path, path_index)
@@ -3558,7 +3567,7 @@ def suited_tiles_on_path_count(board: Board, path: list[int]) -> int:
 
 
 def suited_cards_on_path_count(board: Board, path: list[int]) -> int:
-    """Bicycle suited credit on path (single-suit paths credit 1, else unique ranks)."""
+    """Bicycle suited credit on path (single-suit paths credit 1, else suited tile count)."""
     return bicycle_suited_credit_on_path(board, path)
 
 
@@ -3607,7 +3616,7 @@ def bicycle_suited_credit_on_path(board: Board, path: list[int]) -> int:
         return suited_tile_count
     if len(suits) <= 1:
         return 1
-    return unique_suited_card_ranks_on_path_count(board, path)
+    return suited_tile_count
 
 
 def effective_suited_cards_on_path(

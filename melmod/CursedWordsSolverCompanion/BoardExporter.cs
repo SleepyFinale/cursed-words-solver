@@ -461,7 +461,7 @@ namespace CursedWordsSolverCompanion
                 return 1;
             if (jokerNotAtEnd)
                 return suitedTileCount;
-            return ranks.Count > 0 ? ranks.Count : suits.Count;
+            return suitedTileCount;
         }
 
         /// <summary>
