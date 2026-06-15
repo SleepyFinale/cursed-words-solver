@@ -1,6 +1,6 @@
 # MelonLoader companion (recommended)
 
-**Python solver setup:** see the [repository README](../README.md#setup) (`pip install -r requirements.txt`, `pip install -e .`, then `python -m cursed_words_solver.app`).
+**Python solver setup:** see the [repository README](../README.md#python-solver) (`pip install -r requirements.txt`, `pip install -e .`, then `python -m cursed_words_solver.app`).
 
 This MelonLoader mod writes files under `%USERPROFILE%\.cursed_words_solver\` while you play:
 
@@ -346,17 +346,17 @@ Pure card glyphs export `curse: "card"`. Suited overlays only set `card_suit` / 
 
 1. Start a run in Cursed Words (mod auto-exports loadout and board).
 
-2. Run the Python solver: `python -m cursed_words_solver.app` (see [root README](../README.md#setup)).
+2. Run the Python solver: `python -m cursed_words_solver.app` (see [root README](../README.md#python-solver)).
 
 3. Press **F7** in-game if you want to force an export before solving (also writes `game_words.txt`).
 
 4. Press **F8** in the solver — terminal should show `Word list: game (...)` and `Board from melmod` with the correct grid.
 
-4. Press **F8** in the solver. Overlays align automatically from `ui_layout` when melmod is current.
+5. Press **F8** in the solver. Overlays align automatically from `ui_layout` when melmod is current.
 
-5. **F10** in the solver is manual overlay calibration — only needed if `ui_layout` is missing from `run_state.json`.
+6. **F10** in the solver is manual overlay calibration — only needed if `ui_layout` is missing from `run_state.json`.
 
-6. **ESC** hides the solver overlay and board highlights.
+7. **ESC** hides the solver overlay and board highlights.
 
 ## Troubleshooting
 
