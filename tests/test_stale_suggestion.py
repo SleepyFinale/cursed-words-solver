@@ -2596,9 +2596,10 @@ def test_is_embed_stale_drift_scattered_cleared():
     assert not is_disk_catchup_drift(f8, cur)
 
 
-def test_poll_clears_immediately_on_historic_shrink_within_grace(
+def test_poll_keeps_suggestion_on_workflow_drift_same_board_fp(
     tmp_path, monkeypatch
 ):
+    """Workflow extras may lag on the same grid; only tile changes invalidate."""
     suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
     board_fp = "board-shrink-test"
     created = datetime.now(timezone.utc).isoformat()
@@ -2621,17 +2622,12 @@ def test_poll_clears_immediately_on_historic_shrink_within_grace(
         "historic_words": '[{"word":"c"}]',
         "previous_word_first_letter": "m",
     }
-    assert not workflow_invalidate_suppressed_for_export_catchup(
-        poll_extras,
-        current_board_fp=board_fp,
-    )
     reason = poll_invalidate_last_suggestion(
         poll_extras,
         current_board_fp=board_fp,
     )
-    assert reason is not None
-    assert "Played word since F8" in reason
-    assert not suggestion_path.exists()
+    assert reason is None
+    assert suggestion_path.exists()
 
 
 def test_diets_grid2_bleed_fixture():

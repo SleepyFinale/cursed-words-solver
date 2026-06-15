@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
@@ -177,6 +177,7 @@ class ResultOverlay(QWidget):
         warnings_html: str = "",
         on_game_highlight: bool = False,
         consumable_placements: list | None = None,
+        twinkle_toes_swap: Any | None = None,
         trusted: bool = True,
     ) -> None:
         self._has_solved = True
@@ -201,6 +202,7 @@ class ResultOverlay(QWidget):
                     f"+{top.setup_bonus:,.0f} setup (rank {top.rank_score:,.0f})</span>"
                 )
             placement_line = ""
+            swap_line = ""
             microscope_line = ""
             ms_hint = (top.breakdown or {}).get("microscope_hint")
             if ms_hint:
@@ -234,6 +236,32 @@ class ResultOverlay(QWidget):
                         "<br><span style='font-size:11px;color:#fa0'>"
                         f"{hint}</span>"
                     )
+            if twinkle_toes_swap:
+                row_a = int(
+                    getattr(twinkle_toes_swap, "row_a", 0)
+                    if not isinstance(twinkle_toes_swap, dict)
+                    else twinkle_toes_swap.get("row_a", 0)
+                )
+                col_a = int(
+                    getattr(twinkle_toes_swap, "col_a", 0)
+                    if not isinstance(twinkle_toes_swap, dict)
+                    else twinkle_toes_swap.get("col_a", 0)
+                )
+                row_b = int(
+                    getattr(twinkle_toes_swap, "row_b", 0)
+                    if not isinstance(twinkle_toes_swap, dict)
+                    else twinkle_toes_swap.get("row_b", 0)
+                )
+                col_b = int(
+                    getattr(twinkle_toes_swap, "col_b", 0)
+                    if not isinstance(twinkle_toes_swap, dict)
+                    else twinkle_toes_swap.get("col_b", 0)
+                )
+                swap_line = (
+                    "<br><span style='font-size:11px;color:#f6a'>"
+                    f"Swap ({row_a + 1},{col_a + 1}) \u2194 ({row_b + 1},{col_b + 1}) first"
+                    "</span>"
+                )
             score_html = format_result_score_display(top)
             if not trusted:
                 score_html = (
@@ -248,6 +276,7 @@ class ResultOverlay(QWidget):
                 f"{score_html}</span>"
                 f"{setup_line}"
                 f"{placement_line}"
+                f"{swap_line}"
                 f"{microscope_line}"
             )
             self.hero_result.show()

@@ -220,7 +220,10 @@ namespace CursedWordsSolverCompanion
             );
             if (!string.IsNullOrEmpty(preSyncWorkflowStale))
             {
-                if (ExtrasDiffHelper.IsBenignWorkflowShrinkDrift(preSyncDiff, staleCtx))
+                if (
+                    ExtrasDiffHelper.IsBenignWorkflowShrinkDrift(preSyncDiff, staleCtx)
+                    || ExtrasDiffHelper.IsStaleExportAheadDrift(preSyncDiff)
+                )
                 {
                     SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
                         _suggestion,
@@ -242,7 +245,7 @@ namespace CursedWordsSolverCompanion
                 {
                     MelonLogger.Warning(preSyncWorkflowStale);
                     MelonLogger.Warning(
-                        "Blocking score capture — workflow drift; press F8 again before submitting overlay."
+                        "Blocking score capture — workflow drift; board changed since F8."
                     );
                     SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
                     _active = false;
@@ -264,10 +267,28 @@ namespace CursedWordsSolverCompanion
             );
             if (!string.IsNullOrEmpty(workflowStale))
             {
-                MelonLogger.Warning(workflowStale);
-                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
-                _active = false;
-                return;
+                if (ExtrasDiffHelper.IsStaleExportAheadDrift(diff))
+                {
+                    SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
+                        _suggestion,
+                        authoritativeExtras
+                    );
+                    f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                        _suggestion?.run_state_snapshot
+                    );
+                    diff = ExtrasDiffHelper.DiffExtras(f8Extras, authoritativeExtras);
+                    workflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(
+                        diff,
+                        staleCtx
+                    );
+                }
+                if (!string.IsNullOrEmpty(workflowStale))
+                {
+                    MelonLogger.Warning(workflowStale);
+                    SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                    _active = false;
+                    return;
+                }
             }
 
             ExtrasDiffHelper.LogStaleF8DriftWarnings(

@@ -906,6 +906,13 @@ def validate_run_state_for_scoring(
         if not has_pct and not has_rare:
             warnings.append("Steak equipped but steak_word_bonus_percent missing")
 
+    if "twinkle_toes" in stamp_ids:
+        if extras.get("twinkle_toes_swap_available") in (None, ""):
+            warnings.append(
+                "twinkle_toes equipped but swap state not exported — "
+                "rebuild melmod and press F7"
+            )
+
     if board is None and extras.get("encounter_mode") == "encounter":
         warnings.append("encounter active but board could not be parsed")
 

@@ -41,6 +41,7 @@ from cursed_words_solver.f8_snapshot import (
     embed_run_state_for_suggestion,
     gather_f8_snapshot,
     session_from_snapshot,
+    write_f8_export_request,
 )
 from cursed_words_solver.suggestion import (
     clear_last_suggestion,
@@ -108,6 +109,12 @@ from cursed_words_solver.consumable_placement import (
     target_rescue_worth_trying,
     _result_rank_score,
 )
+from cursed_words_solver.rules.twinkle_toes import (
+    TwinkleToesSwap,
+    format_swap_instructions,
+    search_with_twinkle_toes_swap,
+    twinkle_toes_swap_pending,
+)
 from cursed_words_solver.rules.scoring_conditions import (
     consumable_rack_count,
     placed_consumable_indices,
@@ -144,6 +151,7 @@ class _SolveUIUpdate:
     warnings_html: str
     on_game_highlight: bool
     consumable_placements: list | None = None
+    twinkle_toes_swap: TwinkleToesSwap | None = None
     # Fingerprints from run_state.json at solve time (melmod); used to detect shop/round end.
     melmod_board_fingerprint: str | None = None
     melmod_loadout_fingerprint: str | None = None
@@ -317,7 +325,7 @@ class SolverApp:
                 None,
                 "MelonLoader mod required",
                 melmod_install_hint()
-                + "\n\nF8 will not solve until run_state.json contains a board (press F7 in-game).",
+                + "\n\nF8 will not solve until run_state.json contains a board (start a round).",
             )
 
         wl_path = resolve_wordlist(self.config.wordlist)
@@ -390,8 +398,7 @@ class SolverApp:
             )
         elif self._loadout_source in ("missing", "invalid"):
             print(
-                "  Tip: F7 works in the game (MelonLoader console), not in this terminal. "
-                "Start a run, press F7, then F8 here.",
+                "  Tip: start a run in-game, then press F8 here.",
                 flush=True,
             )
         if melmod_board_available(board_data):
@@ -418,7 +425,7 @@ class SolverApp:
         elif self._loadout_source == "mod":
             print(
                 "Melmod loadout found but no board in run_state.json — "
-                "press F7 during a round with tiles visible.",
+                "start a round, then press F8.",
                 flush=True,
             )
         if not overlay_regions_ready(self._overlay_regions):
@@ -501,7 +508,7 @@ class SolverApp:
             self._workflow_stale_overlay_reason = None
             self._clear_highlight_state()
             self.overlay.show_idle()
-            print("  Word submitted — press F8 for the next word.", flush=True)
+            print("  Word submitted — press F8 for the next grid.", flush=True)
 
         if self._solve_active:
             return
@@ -553,33 +560,7 @@ class SolverApp:
             self._clear_highlight_state()
             self.overlay.show_idle()
 
-        self._maybe_show_workflow_stale_overlay(extras if isinstance(extras, dict) else None)
         self._maybe_clear_stale_highlights(board_tiles_fingerprint_suffix)
-
-    def _maybe_show_workflow_stale_overlay(
-        self,
-        run_state_extras: dict | None,
-    ) -> None:
-        """Show STALE overlay and clear path when F8 embed extras drift on same board."""
-        from cursed_words_solver.config import LAST_SUGGESTION_PATH
-        from cursed_words_solver.suggestion import f8_prior_suggestion_stale_note
-
-        if self._highlight_board_fingerprint is None:
-            self._workflow_stale_overlay_reason = None
-            return
-        if self._solve_active or not LAST_SUGGESTION_PATH.exists():
-            return
-        stale_note = f8_prior_suggestion_stale_note(run_state_extras)
-        if stale_note is None:
-            if self._workflow_stale_overlay_reason is not None:
-                self._workflow_stale_overlay_reason = None
-            return
-        if stale_note == self._workflow_stale_overlay_reason:
-            return
-        self._workflow_stale_overlay_reason = stale_note
-        self._active_suggestion_session = None
-        self._clear_highlight_state()
-        self.overlay.show_stale_notice(stale_note)
 
     def _maybe_clear_stale_highlights(self, tiles_fp_fn=None) -> None:
         """Drop on-board path when melmod reports a new round, shop, or missing board."""
@@ -638,6 +619,7 @@ class SolverApp:
             warnings_html=update.warnings_html,
             on_game_highlight=update.on_game_highlight and update.trusted_suggestion,
             consumable_placements=update.consumable_placements,
+            twinkle_toes_swap=update.twinkle_toes_swap,
             trusted=update.trusted_suggestion,
         )
         if (
@@ -658,6 +640,7 @@ class SolverApp:
                 update.results[0].path,
                 update.board,
                 placements=update.consumable_placements,
+                twinkle_toes_swap=update.twinkle_toes_swap,
                 cell_centers=self._overlay_regions.board_cell_centers,
             )
             if (
@@ -744,7 +727,7 @@ class SolverApp:
         if shop is None or not shop.offers:
             print(
                 "Shop mode detected but no shop offers in run_state.json — "
-                "rebuild melmod, press F7 in the Ej?A56 shop, then F8 again.",
+                "rebuild melmod, press F8 in the Ej?A56 shop.",
                 flush=True,
             )
             return
@@ -811,8 +794,10 @@ class SolverApp:
                 print("Solver not ready (dictionary failed to load).", flush=True)
                 return
 
+            f8_request_id = write_f8_export_request()
             snapshot = gather_f8_snapshot(
                 rules=self._scoring.rules,
+                f8_request_id=f8_request_id,
                 on_wait=lambda msg: print(f"  {msg}", flush=True),
             )
             run_state_data = snapshot.run_state
@@ -847,24 +832,24 @@ class SolverApp:
                 if run_state_data is None:
                     print(
                         "Could not read run_state.json (file locked or invalid JSON). "
-                        "Press F7 in-game, wait a moment, then press F8 again.",
+                        "Press F8 again — waiting for live game export.",
                         flush=True,
                     )
                 elif isinstance(run_state_data.get("shop"), dict):
                     print(
-                        "Shop export has no offers — press F7 in the Ej?A56 shop, "
-                        "then F8 again. Rebuild melmod if offers stay empty.",
+                        "Shop export has no offers — press F8 in the Ej?A56 shop. "
+                        "Rebuild melmod if offers stay empty.",
                         flush=True,
                     )
                 elif not isinstance(run_state_data.get("board"), dict):
                     print(
-                        "No board in run_state.json — press F7 in-game during a round.",
+                        "No board in run_state.json — start a round, then press F8.",
                         flush=True,
                     )
                 else:
                     n = len(run_state_data.get("board", {}).get("tiles", []))
                     print(
-                        f"Board export invalid ({n} tiles, need 25) — press F7 again.",
+                        f"Board export invalid ({n} tiles, need 25) — press F8 again.",
                         flush=True,
                     )
                 return
@@ -972,7 +957,7 @@ class SolverApp:
                     if source == "default" and not neapolitan_has_live_percent(loadout):
                         print(
                             "  Warning: Neapolitan baseline missing from run_state — "
-                            "press F7 in-game or submit a word so melmod can capture "
+                            "press F8 again so melmod can capture "
                             "neapolitan_percent.",
                             flush=True,
                         )
@@ -1025,7 +1010,7 @@ class SolverApp:
 
                 if encounter_missing_boss_should_warn(loadout):
                     print(
-                        "  Boss not in run_state.json — press F7 in-game; "
+                        "  Boss not in run_state.json — press F8 again; "
                         "rebuild melmod if you are fighting a boss.",
                         flush=True,
                     )
@@ -1039,6 +1024,7 @@ class SolverApp:
             )
             rack_tiles: list = []
             placement_records: list = []
+            twinkle_swap_record: TwinkleToesSwap | None = None
             has_target = "target_score" in (loadout.extras or {})
             grid_target = target_score_from_loadout(loadout) if has_target else 0
             if mandatory:
@@ -1114,6 +1100,7 @@ class SolverApp:
                         time_budget=phase_budget(search_budget),
                         top_n=self.config.top_n_results,
                         rules=rules,
+                        solve_deadline=solve_deadline,
                     )
                 )
                 placement_variant_sec += last_placement_search_stats().variant_gen_sec
@@ -1137,11 +1124,42 @@ class SolverApp:
                         f"  Target: {grid_target} pts (best {int(results[0].score)})",
                         flush=True,
                     )
+            elif twinkle_toes_swap_pending(loadout) and solve_remaining() >= 1.0:
+                print(
+                    "  Twinkle Toes: swap pending — simulating tile pairs…",
+                    flush=True,
+                )
+                search_board, twinkle_swap_record, results = (
+                    search_with_twinkle_toes_swap(
+                        self._searcher,
+                        board,
+                        loadout,
+                        time_budget=solve_remaining(),
+                        top_n=self.config.top_n_results,
+                        solve_deadline=solve_deadline,
+                    )
+                )
+                if twinkle_swap_record:
+                    print(
+                        f"  {format_swap_instructions(twinkle_swap_record)}",
+                        flush=True,
+                    )
+                elif not results:
+                    print(
+                        "  No valid word found after Twinkle Toes swap search.",
+                        flush=True,
+                    )
+                if has_target and results:
+                    print(
+                        f"  Target: {grid_target} pts (best {int(results[0].score)})",
+                        flush=True,
+                    )
             elif solve_remaining() >= 0.5:
                 results = self._searcher.find_best_words(
                     board,
                     loadout=loadout,
                     top_n=self.config.top_n_results,
+                    deadline=solve_deadline,
                 )
             else:
                 results = []
@@ -1175,6 +1193,7 @@ class SolverApp:
                             top_n=self.config.top_n_results,
                             rules=rules,
                             variant_gen_budget=variant_gen_budget(),
+                            solve_deadline=solve_deadline,
                         )
                     )
                     placement_variant_sec += (
@@ -1255,6 +1274,7 @@ class SolverApp:
                             top_n=self.config.top_n_results,
                             rules=rules,
                             variant_gen_budget=variant_gen_budget(),
+                            solve_deadline=solve_deadline,
                         )
                     )
                     placement_variant_sec += (
@@ -1314,6 +1334,7 @@ class SolverApp:
                             top_n=self.config.top_n_results,
                             rules=rules,
                             variant_gen_budget=variant_gen_budget(),
+                            solve_deadline=solve_deadline,
                         )
                     )
                     placement_variant_sec += (
@@ -1381,11 +1402,41 @@ class SolverApp:
                     if placement_variant_sec > 0.001
                     else ""
                 )
+                if timing.reserve_scaling_applied and timing.main_dfs_slice_sec > 0:
+                    pool_note += f", main DFS {timing.main_dfs_slice_sec:.1f}s"
+                overrun_note = ""
+                if timing.refine_overrun_sec > 0.05:
+                    overrun_note = (
+                        f", refine overrun +{timing.refine_overrun_sec:.1f}s"
+                        f" ({timing.refine_overrun_deferred} deferred)"
+                    )
+                over_budget = search_elapsed > search_budget + 0.5
+                extra_timing = ""
+                if over_budget and (
+                    timing.refine_sec > 0.05
+                    or timing.seed_sec > 0.05
+                    or timing.tier2_phase2_deferred > 0
+                    or timing.refine_overrun_sec > 0.05
+                ):
+                    extra_timing = (
+                        f", refine {timing.refine_sec:.1f}s"
+                        f", seed {timing.seed_sec:.1f}s"
+                    )
+                    if (
+                        timing.tier2_phase2_deferred > 0
+                        and timing.refine_sec > search_budget * 0.25
+                    ):
+                        extra_timing += (
+                            f" (tier-2 deferred "
+                            f"{timing.tier2_phase2_deferred}, "
+                            f"refined {timing.tier2_phase2_calls})"
+                        )
                 print(
                     f"  Timing: {variant_note}"
                     f"dfs {timing.dfs_sec:.1f}s{fallback_note}, "
                     f"extend {timing.extend_sec:.1f}s, "
-                    f"chess {timing.chess_sec:.1f}s, score {total_score:.1f}s "
+                    f"chess {timing.chess_sec:.1f}s, score {total_score:.1f}s"
+                    f"{extra_timing}{overrun_note} "
                     f"({score_pct} of {timing.wall_sec:.1f}s{worker_note}{pool_note})",
                     flush=True,
                 )
@@ -1559,6 +1610,7 @@ class SolverApp:
                         export_warnings=export_warnings,
                         solver_session_extras=session_extras,
                         consumable_placements=placement_records or None,
+                        twinkle_toes_swap=twinkle_swap_record,
                         score_nondeterministic=capybara_stats is not None,
                         predicted_score_min=(
                             int(capybara_stats.min_score) if capybara_stats else None
@@ -1637,8 +1689,6 @@ class SolverApp:
                         flush=True,
                     )
                 elif block_f8_save:
-                    if block_f8_reason == "workflow_extras_stale" and workflow_stale_warn:
-                        print(f"  {workflow_stale_warn}", flush=True)
                     print(
                         f"  Did not write last_suggestion.json ({block_f8_reason}).",
                         flush=True,
@@ -1692,6 +1742,7 @@ class SolverApp:
                     warnings_html=warnings,
                     on_game_highlight=highlight,
                     consumable_placements=placement_records or None,
+                    twinkle_toes_swap=twinkle_swap_record,
                     melmod_board_fingerprint=melmod_board_fp,
                     melmod_loadout_fingerprint=melmod_loadout_fp,
                     trusted_suggestion=trusted,

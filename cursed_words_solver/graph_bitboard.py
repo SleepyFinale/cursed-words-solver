@@ -67,14 +67,6 @@ def index_of(row: int, col: int) -> int:
     return row * GRID_SIZE + col
 
 
-def _wrap_partner_col(col: int) -> int | None:
-    if col == 0:
-        return 4
-    if col == 4:
-        return 0
-    return None
-
-
 def _ray_step(
     row: int,
     col: int,
@@ -105,9 +97,16 @@ def _build_neighbors_8(*, horizontal_wrap: bool) -> list[int]:
             if 0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE:
                 mask |= 1 << index_of(nr, nc)
         if horizontal_wrap:
-            partner = _wrap_partner_col(col)
-            if partner is not None:
-                mask |= 1 << index_of(row, partner)
+            if col == 0:
+                for dr in (-1, 0, 1):
+                    nr = row + dr
+                    if 0 <= nr < GRID_SIZE:
+                        mask |= 1 << index_of(nr, 4)
+            elif col == 4:
+                for dr in (-1, 0, 1):
+                    nr = row + dr
+                    if 0 <= nr < GRID_SIZE:
+                        mask |= 1 << index_of(nr, 0)
         out.append(mask)
     return out
 

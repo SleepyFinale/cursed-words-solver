@@ -317,3 +317,46 @@ def placement_geometry(
             PlacementMarker(x=cx, y=cy, letter=str(letter or "?").upper())
         )
     return markers
+
+
+def _swap_indices(swap: Any) -> tuple[int, int] | None:
+    if swap is None:
+        return None
+    row_a = getattr(swap, "row_a", None)
+    col_a = getattr(swap, "col_a", None)
+    row_b = getattr(swap, "row_b", None)
+    col_b = getattr(swap, "col_b", None)
+    if isinstance(swap, dict):
+        row_a = swap.get("row_a", row_a)
+        col_a = swap.get("col_a", col_a)
+        row_b = swap.get("row_b", row_b)
+        col_b = swap.get("col_b", col_b)
+    if row_a is None or col_a is None or row_b is None or col_b is None:
+        return None
+    return int(row_a) * _GRID_SLOTS + int(col_a), int(row_b) * _GRID_SLOTS + int(col_b)
+
+
+def swap_geometry(
+    region: Region,
+    swap: Any,
+    board: Board | None = None,
+    *,
+    cell_centers: dict[int, tuple[float, float]] | None = None,
+) -> list[PlacementMarker]:
+    """Map Twinkle Toes swap cells to overlay-local centers."""
+    if not region.is_valid():
+        return []
+    indices = _swap_indices(swap)
+    if indices is None:
+        return []
+    w, h = float(region.width), float(region.height)
+    slot_w = w / float(_GRID_SLOTS)
+    slot_h = h / float(_GRID_SLOTS)
+    markers: list[PlacementMarker] = []
+    for idx in indices:
+        if cell_centers and int(idx) in cell_centers:
+            cx, cy = _absolute_to_local(region, *cell_centers[int(idx)])
+        else:
+            cx, cy = _index_center(int(idx), slot_w=slot_w, slot_h=slot_h, board=board)
+        markers.append(PlacementMarker(x=cx, y=cy, letter=""))
+    return markers

@@ -13,8 +13,11 @@ from cursed_words_solver.f8_snapshot import (
     F8SuggestionSession,
     _build_snapshot_from_run_state,
     _extras_missing_for_loadout,
+    _f8_export_acknowledged,
     gather_f8_snapshot,
     session_from_snapshot,
+    wait_for_f8_export_ack,
+    write_f8_export_request,
 )
 from cursed_words_solver.loadout import parse_board_from_run_state
 from cursed_words_solver.models import Loadout, LoadoutItem
@@ -50,15 +53,15 @@ def test_f8_should_block_save_blocks_grid_advance():
     assert reason == "grid_advanced_during_solve"
 
 
-def test_f8_should_block_save_workflow_stale():
+def test_f8_should_block_save_workflow_stale_no_longer_blocks():
     blocked, reason = f8_should_block_save(
         gather_succeeded=True,
         workflow_stale_warn=(
             "F8 prediction may be wrong (previous word letter e→m) — press F8 again."
         ),
     )
-    assert blocked
-    assert reason == "workflow_extras_stale"
+    assert not blocked
+    assert reason is None
 
 
 def test_last_submit_first_letter_from_round_log(tmp_path, monkeypatch):
@@ -131,7 +134,7 @@ def test_last_submit_effective_first_letter_from_round_log(tmp_path, monkeypatch
     assert last_submit_effective_first_letter() == "e"
 
 
-def test_f8_prediction_workflow_stale_warning_blocks_save():
+def test_f8_prediction_workflow_stale_warning_does_not_block_save():
     warn = f8_prediction_workflow_stale_warning(
         {"previous_word_first_letter": "m"},
         {"previous_word_first_letter": "e"},
@@ -141,8 +144,8 @@ def test_f8_prediction_workflow_stale_warning_blocks_save():
         gather_succeeded=True,
         workflow_stale_warn=warn,
     )
-    assert blocked
-    assert reason == "workflow_extras_stale"
+    assert not blocked
+    assert reason is None
 
 
 def _board_run_state(*, prev_letter: str, count: str = "1") -> dict:
@@ -310,6 +313,102 @@ def test_session_from_snapshot(tmp_path, monkeypatch):
     session = session_from_snapshot(snap)
     assert session is not None
     assert session.grid_number == 1
+
+
+def test_poll_ignores_workflow_extras_drift_on_same_tiles(tmp_path, monkeypatch):
+    from cursed_words_solver import suggestion as suggestion_mod
+
+    suggestion_path = tmp_path / "last_suggestion.json"
+    monkeypatch.setattr(suggestion_mod, "LAST_SUGGESTION_PATH", suggestion_path)
+
+    tiles = "4,0:R/letter/colorless;4,1:A/letter/colorless;"
+    board_fp = f"5|{tiles}"
+    created = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
+    suggestion_path.write_text(
+        json.dumps(
+            {
+                "created_at": created,
+                "board_fingerprint": board_fp,
+                "loadout_fingerprint": "loadout-a",
+                "run_state_snapshot": {
+                    "extras": {
+                        "historic_words": '[{"word":"old"}]',
+                        "previous_word_first_letter": "n",
+                        "scoring_previous_words_count": "2",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    poll_extras = {
+        "historic_words": "[]",
+        "previous_word_first_letter": "o",
+        "scoring_previous_words_count": "1",
+    }
+    assert poll_invalidate_last_suggestion(
+        poll_extras,
+        current_board_fp=board_fp,
+        current_loadout_fp="loadout-a",
+    ) is None
+    assert suggestion_path.exists()
+
+
+def test_f8_export_acknowledged_matches_request_id():
+    run_state = {
+        "export_diagnostics": {
+            "export_trigger": "f8",
+            "f8_request_id": "12345",
+        }
+    }
+    assert _f8_export_acknowledged(run_state, "12345")
+    assert not _f8_export_acknowledged(run_state, "99999")
+    assert not _f8_export_acknowledged(run_state, "")
+
+
+def test_wait_for_f8_export_ack(tmp_path, monkeypatch):
+    from cursed_words_solver import config as config_mod
+
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr(config_mod, "RUN_STATE_PATH", run_state_path)
+
+    calls = {"n": 0}
+
+    def fake_load():
+        calls["n"] += 1
+        state = _board_run_state(prev_letter="m")
+        if calls["n"] >= 2:
+            state["export_diagnostics"] = {
+                "export_trigger": "f8",
+                "f8_request_id": "req-1",
+            }
+        run_state_path.write_text(json.dumps(state), encoding="utf-8")
+        return json.loads(run_state_path.read_text(encoding="utf-8"))
+
+    monkeypatch.setattr(
+        "cursed_words_solver.f8_snapshot.load_run_state_raw",
+        fake_load,
+    )
+
+    assert wait_for_f8_export_ack(
+        "req-1",
+        timeout_sec=1.0,
+        poll_sec=0.05,
+    )
+    assert calls["n"] >= 2
+
+
+def test_write_f8_export_request(tmp_path, monkeypatch):
+    import cursed_words_solver.f8_snapshot as f8_mod
+
+    request_path = tmp_path / "f8_export_request.json"
+    monkeypatch.setattr(f8_mod, "F8_EXPORT_REQUEST_PATH", request_path)
+    monkeypatch.setattr(f8_mod, "CONFIG_DIR", tmp_path)
+
+    request_id = write_f8_export_request()
+    assert request_path.exists()
+    data = json.loads(request_path.read_text(encoding="utf-8"))
+    assert data["request_id"] == request_id
 
 
 def test_poll_keeps_suggestion_with_active_session_same_tiles(

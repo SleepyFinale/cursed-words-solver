@@ -93,6 +93,7 @@ namespace CursedWordsSolverCompanion
             {
                 snapshot.encounter_grid_reroll = ExportEncounterGridReroll(encounter, player);
                 FillEncounterTargetExtras(snapshot, encounter);
+                ExportTwinkleToesExtras(encounter, player, snapshot.extras);
             }
         }
 
@@ -303,6 +304,37 @@ namespace CursedWordsSolverCompanion
             };
         }
 
+        private static void ExportTwinkleToesExtras(
+            EncounterController encounter,
+            Player player,
+            Dictionary<string, string> extras
+        )
+        {
+            if (extras == null)
+                return;
+
+            if (!HasTwinkleToesStamp(player))
+            {
+                extras.Remove("twinkle_toes_swap_available");
+                return;
+            }
+
+            var swapAvailable = ReadBoolField(encounter, "TwinkleToesSwapAvailable");
+            try
+            {
+                if (
+                    encounter.GetEncounterThreadStage() == EncounterThreadStage.SwappingTiles
+                )
+                    swapAvailable = false;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            extras["twinkle_toes_swap_available"] = swapAvailable ? "true" : "false";
+        }
+
         private static bool IsWaitingForWordSubmission(EncounterController encounter)
         {
             if (encounter == null)
@@ -416,6 +448,23 @@ namespace CursedWordsSolverCompanion
                     continue;
                 var slug = RunStateExporter.Slugify(stamp.ArtFileName, stamp.Name);
                 if (string.Equals(slug, "wheel", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool HasTwinkleToesStamp(Player player)
+        {
+            if (player?.Stamps == null)
+                return false;
+
+            foreach (var stamp in player.Stamps)
+            {
+                if (stamp == null)
+                    continue;
+                var slug = RunStateExporter.Slugify(stamp.ArtFileName, stamp.Name);
+                if (string.Equals(slug, "twinkle_toes", StringComparison.OrdinalIgnoreCase))
                     return true;
             }
 

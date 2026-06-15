@@ -37,6 +37,8 @@ from cursed_words_solver.models import (
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 
+from cursed_words_solver.rules.twinkle_toes import TwinkleToesSwap
+
 from cursed_words_solver.search import PathValidator, physical_word_for_path, resolve_letter
 
 
@@ -724,62 +726,19 @@ def poll_invalidate_last_suggestion(
     search_budget_sec: float | None = None,
     active_session: Any = None,
 ) -> str | None:
-    """Clear last_suggestion.json when board/loadout genuinely changes."""
-    del search_budget_sec  # no longer time-gated; session holds suggestion until submit
+    """Clear last_suggestion.json when board tiles or loadout genuinely change."""
+    del run_state_extras, search_budget_sec, active_session
     if not LAST_SUGGESTION_PATH.exists():
         return None
 
-    suppress_placement = fingerprint_invalidate_suppressed_for_consumable_placement(
+    if fingerprint_invalidate_suppressed_for_consumable_placement(
         current_board_fp
-    )
-    if suppress_placement:
+    ):
         return None
 
     data = _last_suggestion_fingerprint_data()
     saved_board = str((data or {}).get("board_fingerprint") or "").strip()
-    f8_extras = _f8_snapshot_extras(data) if data else {}
-    cur_extras = run_state_extras if isinstance(run_state_extras, dict) else {}
-    embed_stale = is_embed_stale_drift(f8_extras, cur_extras)
-    same_tiles = _board_tiles_match(saved_board, current_board_fp)
-
-    if _active_session_same_board_tiles(active_session, current_board_fp):
-        session_loadout = str(
-            getattr(active_session, "loadout_fingerprint", "") or ""
-        ).strip()
-        current_loadout = (current_loadout_fp or "").strip()
-        if session_loadout and current_loadout and session_loadout != current_loadout:
-            if clear_stale_last_suggestion_if_fingerprint_changed(
-                current_board_fp,
-                current_loadout_fp=current_loadout_fp,
-            ):
-                return "loadout changed"
-        if embed_stale:
-            reason = clear_stale_last_suggestion_if_workflow_changed(run_state_extras)
-            if reason:
-                return f"Played word since F8 ({reason})"
-        return None
-
-    suppress_catchup = (
-        not embed_stale
-        and same_tiles
-        and (
-            workflow_invalidate_suppressed_for_export_catchup(
-                run_state_extras,
-                current_board_fp=current_board_fp,
-            )
-            or is_disk_catchup_drift(f8_extras, cur_extras)
-        )
-    )
-    suppress_fp = same_tiles and fingerprint_invalidate_suppressed_for_post_f8_export(
-        current_board_fp,
-    )
-
-    if not suppress_catchup:
-        reason = clear_stale_last_suggestion_if_workflow_changed(run_state_extras)
-        if reason:
-            return f"Played word since F8 ({reason})"
-
-    if not suppress_fp and not suppress_catchup:
+    if not _board_tiles_match(saved_board, current_board_fp):
         fp_reason = clear_stale_last_suggestion_if_fingerprint_changed(
             current_board_fp,
             current_loadout_fp=current_loadout_fp,
@@ -787,12 +746,14 @@ def poll_invalidate_last_suggestion(
         if fp_reason:
             return fp_reason
 
-    if not suppress_catchup and clear_stale_last_suggestion_if_context_changed(
-        current_board_fp,
-        current_loadout_fp=current_loadout_fp,
-        run_state_extras=run_state_extras,
-    ):
-        return "loadout or scoring extras changed on same board"
+    previous_loadout = str((data or {}).get("loadout_fingerprint") or "").strip()
+    current_loadout = (current_loadout_fp or "").strip()
+    if current_loadout and previous_loadout and previous_loadout != current_loadout:
+        if clear_stale_last_suggestion_if_fingerprint_changed(
+            current_board_fp,
+            current_loadout_fp=current_loadout_fp,
+        ):
+            return "loadout changed"
 
     return None
 
@@ -1048,6 +1009,7 @@ def f8_should_block_save(
         empty_hist_warn,
         hist_stale_note,
         behind_disk_warn,
+        workflow_stale_warn,
         grid_adv_warn,
         grid_bleed_warn,
         grid_one_hist_warn,
@@ -1058,8 +1020,6 @@ def f8_should_block_save(
         return True, "gather_incomplete"
     if mid_solve_grid_advanced:
         return True, "grid_advanced_during_solve"
-    if workflow_stale_warn:
-        return True, "workflow_extras_stale"
     if f8_path_uses_crossed_out_tiles(board, path):
         return True, "crossed_out_tile_in_path"
     return False, None
@@ -1220,6 +1180,7 @@ def save_last_suggestion(
     export_warnings: list[str] | None = None,
     solver_session_extras: dict[str, Any] | None = None,
     consumable_placements: list[Any] | None = None,
+    twinkle_toes_swap: TwinkleToesSwap | None = None,
     score_nondeterministic: bool = False,
     predicted_score_min: int | None = None,
     predicted_score_max: int | None = None,
@@ -1322,6 +1283,14 @@ def save_last_suggestion(
             for p in consumable_placements
         ]
 
+    if twinkle_toes_swap is not None:
+        payload["twinkle_toes_swap"] = {
+            "row_a": twinkle_toes_swap.row_a,
+            "col_a": twinkle_toes_swap.col_a,
+            "row_b": twinkle_toes_swap.row_b,
+            "col_b": twinkle_toes_swap.col_b,
+        }
+
     ms_hint = (result.breakdown or {}).get("microscope_hint")
     if ms_hint:
         payload["microscope_hint"] = ms_hint
@@ -1366,6 +1335,7 @@ def save_blocked_suggestion(
     block_reason: str,
     export_diagnostics: dict[str, Any] | None = None,
     consumable_placements: list[Any] | None = None,
+    twinkle_toes_swap: TwinkleToesSwap | None = None,
 ) -> None:
     """Write diagnostic sidecar when F8 ran but trusted capture was blocked."""
     LAST_SUGGESTION_BLOCKED_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -1403,6 +1373,13 @@ def save_blocked_suggestion(
             }
             for p in consumable_placements
         ]
+    if twinkle_toes_swap is not None:
+        payload["twinkle_toes_swap"] = {
+            "row_a": twinkle_toes_swap.row_a,
+            "col_a": twinkle_toes_swap.col_a,
+            "row_b": twinkle_toes_swap.row_b,
+            "col_b": twinkle_toes_swap.col_b,
+        }
     if LAST_SUGGESTION_PATH.exists():
         try:
             LAST_SUGGESTION_PATH.unlink()

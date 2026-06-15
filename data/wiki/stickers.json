@@ -2766,8 +2766,7 @@
     "twinkle_toes": {
       "name": "Twinkle Toes",
       "type": "custom",
-      "effect_class": "scatter",
-      "grid_effect": "After a grid is generated, choose a pair of tiles to swap positions",
+      "effect_class": "tile_swap",
       "wiki_effect": "After a grid is generated, choose a pair of tiles to swap positions",
       "wiki_page": "Twinkle_Toes",
       "shop_price": 16,
@@ -2898,6 +2897,41 @@
     }
   },
   "bosses": {
+    "mole": {
+      "name": "Mole",
+      "type": "custom",
+      "effect_class": "grid",
+      "game_class": "ExtraVoids",
+      "wiki_page": "Mole",
+      "wiki_effect": "Scatter void tiles (count scales by area)",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 3,
+          "cursed": 5
+        },
+        {
+          "area": 2,
+          "value": 4,
+          "cursed": 6
+        },
+        {
+          "area": 3,
+          "value": 5,
+          "cursed": 8
+        },
+        {
+          "area": 4,
+          "value": 5,
+          "cursed": 8
+        },
+        {
+          "area": 5,
+          "value": 6,
+          "cursed": 10
+        }
+      ]
+    },
     "axolotl": {
       "name": "Axolotl",
       "type": "custom",
@@ -2933,38 +2967,108 @@
         }
       ]
     },
-    "badger": {
-      "name": "Badger",
+    "bison": {
+      "name": "Bison",
       "type": "custom",
-      "effect_class": "encounter",
-      "game_class": "FewerGrids",
-      "wiki_page": "Badger",
-      "wiki_effect": "Fewer grids per encounter",
+      "effect_class": "grid",
+      "game_class": "AddNumbers",
+      "wiki_page": "Bison",
+      "wiki_effect": "Scatters high number tiles (range scales by area)",
       "scaling": [
         {
           "area": 1,
-          "value": 1,
-          "cursed": 2
+          "value": 9,
+          "cursed": 11
         },
         {
           "area": 2,
-          "value": 1,
-          "cursed": 2
+          "value": 10,
+          "cursed": 12
         },
         {
           "area": 3,
-          "value": 1,
-          "cursed": 2
+          "value": 11,
+          "cursed": 14
         },
         {
           "area": 4,
-          "value": 1,
-          "cursed": 2
+          "value": 12,
+          "cursed": 15
         },
         {
           "area": 5,
-          "value": 1,
-          "cursed": 2
+          "value": 13,
+          "cursed": 17
+        }
+      ]
+    },
+    "yeti_crab": {
+      "name": "Yeti Crab",
+      "type": "custom",
+      "effect_class": "grid",
+      "game_class": "DiscolourTiles",
+      "wiki_page": "Yeti_Crab",
+      "wiki_effect": "Makes colored tiles colorless",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 2,
+          "value": 3,
+          "cursed": 4
+        },
+        {
+          "area": 3,
+          "value": 4,
+          "cursed": 6
+        },
+        {
+          "area": 4,
+          "value": 4,
+          "cursed": 7
+        },
+        {
+          "area": 5,
+          "value": 5,
+          "cursed": 8
+        }
+      ]
+    },
+    "robo_eel": {
+      "name": "Robo-Eel",
+      "type": "custom",
+      "effect_class": "grid",
+      "game_class": "DestroyGrid",
+      "wiki_page": "Robo-Eel",
+      "wiki_effect": "Eats tiles each grid (board reflects eaten tiles)",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 2,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 3,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 4,
+          "value": 3,
+          "cursed": 4
+        },
+        {
+          "area": 5,
+          "value": 3,
+          "cursed": 5
         }
       ]
     },
@@ -3013,40 +3117,98 @@
         }
       ]
     },
-    "bison": {
-      "name": "Bison",
+    "badger": {
+      "name": "Badger",
       "type": "custom",
-      "effect_class": "grid",
-      "game_class": "AddNumbers",
-      "wiki_page": "Bison",
-      "wiki_effect": "Scatters high number tiles (range scales by area)",
+      "effect_class": "encounter",
+      "game_class": "FewerGrids",
+      "wiki_page": "Badger",
+      "wiki_effect": "Fewer grids per encounter",
       "scaling": [
         {
           "area": 1,
-          "value": 9,
-          "cursed": 11
+          "value": 1,
+          "cursed": 2
         },
         {
           "area": 2,
-          "value": 10,
-          "cursed": 12
+          "value": 1,
+          "cursed": 2
         },
         {
           "area": 3,
-          "value": 11,
-          "cursed": 14
+          "value": 1,
+          "cursed": 2
         },
         {
           "area": 4,
-          "value": 12,
-          "cursed": 15
+          "value": 1,
+          "cursed": 2
         },
         {
           "area": 5,
-          "value": 13,
-          "cursed": 17
+          "value": 1,
+          "cursed": 2
         }
       ]
+    },
+    "fox": {
+      "name": "Fox",
+      "type": "custom",
+      "effect_class": "encounter",
+      "game_class": "StealsMoney",
+      "wiki_page": "Fox",
+      "wiki_effect": "Steals money each grid",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 2,
+          "value": 3,
+          "cursed": 5
+        },
+        {
+          "area": 3,
+          "value": 4,
+          "cursed": 6
+        },
+        {
+          "area": 4,
+          "value": 5,
+          "cursed": 8
+        },
+        {
+          "area": 5,
+          "na": true
+        }
+      ]
+    },
+    "hyena": {
+      "name": "Hyena",
+      "type": "custom",
+      "effect_class": "encounter",
+      "game_class": "ForcedSell",
+      "wiki_page": "Hyena",
+      "wiki_effect": "Blocks submissions until a sticker or stamp is sold"
+    },
+    "cretaceous_meg": {
+      "name": "Cretaceous Meg",
+      "type": "custom",
+      "effect_class": "encounter",
+      "game_class": "CretaceousMegBoss",
+      "wiki_page": "Cretaceous_Meg_(boss)",
+      "wiki_effect": "Strips loadout to special shop ($120/$160/$200 by stage); rebuild before challenge grids"
+    },
+    "sandy_saguaro": {
+      "name": "Sandy Saguaro",
+      "type": "custom",
+      "effect_class": "encounter",
+      "game_class": "SandySaguaroBoss",
+      "wiki_page": "Sandy_Saguaro_(boss)",
+      "wiki_effect": "Gives 2 CACTUS consumable tiles; must be used in submitted words"
     },
     "capybara": {
       "name": "Capybara",
@@ -3117,148 +3279,37 @@
         }
       ]
     },
-    "fox": {
-      "name": "Fox",
-      "type": "custom",
-      "effect_class": "encounter",
-      "game_class": "StealsMoney",
-      "wiki_page": "Fox",
-      "wiki_effect": "Steals money each grid",
+    "wolf": {
+      "name": "Wolf",
+      "type": "boss_word_max_length",
+      "game_class": "MaxWordLength",
+      "effect_class": "search_only",
+      "wiki_page": "Wolf",
       "scaling": [
         {
           "area": 1,
-          "value": 2,
-          "cursed": 3
+          "max_length": 5,
+          "cursed_max_length": 4
         },
         {
           "area": 2,
-          "value": 3,
-          "cursed": 5
+          "max_length": 5,
+          "cursed_max_length": 4
         },
         {
           "area": 3,
-          "value": 4,
-          "cursed": 6
+          "max_length": 4,
+          "cursed_max_length": 3
         },
         {
           "area": 4,
-          "value": 5,
-          "cursed": 8
+          "max_length": 4,
+          "cursed_max_length": 3
         },
         {
           "area": 5,
-          "na": true
-        }
-      ]
-    },
-    "hyena": {
-      "name": "Hyena",
-      "type": "custom",
-      "effect_class": "encounter",
-      "game_class": "ForcedSell",
-      "wiki_page": "Hyena",
-      "wiki_effect": "Blocks submissions until a sticker or stamp is sold"
-    },
-    "mole": {
-      "name": "Mole",
-      "type": "custom",
-      "effect_class": "grid",
-      "game_class": "ExtraVoids",
-      "wiki_page": "Mole",
-      "wiki_effect": "Scatter void tiles (count scales by area)",
-      "scaling": [
-        {
-          "area": 1,
-          "value": 3,
-          "cursed": 5
-        },
-        {
-          "area": 2,
-          "value": 4,
-          "cursed": 6
-        },
-        {
-          "area": 3,
-          "value": 5,
-          "cursed": 8
-        },
-        {
-          "area": 4,
-          "value": 5,
-          "cursed": 8
-        },
-        {
-          "area": 5,
-          "value": 6,
-          "cursed": 10
-        }
-      ]
-    },
-    "robo_eel": {
-      "name": "Robo-Eel",
-      "type": "custom",
-      "effect_class": "grid",
-      "game_class": "DestroyGrid",
-      "wiki_page": "Robo-Eel",
-      "wiki_effect": "Eats tiles each grid (board reflects eaten tiles)",
-      "scaling": [
-        {
-          "area": 1,
-          "value": 2,
-          "cursed": 3
-        },
-        {
-          "area": 2,
-          "value": 2,
-          "cursed": 3
-        },
-        {
-          "area": 3,
-          "value": 2,
-          "cursed": 3
-        },
-        {
-          "area": 4,
-          "value": 3,
-          "cursed": 4
-        },
-        {
-          "area": 5,
-          "value": 3,
-          "cursed": 5
-        }
-      ]
-    },
-    "robo_monkey": {
-      "name": "Robo-Monkey",
-      "type": "boss_subtract_word_score_money",
-      "game_class": "NegativeMoney",
-      "effect_class": "scoring_early",
-      "wiki_page": "Robo-Monkey",
-      "scaling": [
-        {
-          "area": 1,
-          "multiplier": 1,
-          "cursed_multiplier": 2
-        },
-        {
-          "area": 2,
-          "multiplier": 5,
-          "cursed_multiplier": 7
-        },
-        {
-          "area": 3,
-          "multiplier": 9,
-          "cursed_multiplier": 12
-        },
-        {
-          "area": 4,
-          "multiplier": 15,
-          "cursed_multiplier": 20
-        },
-        {
-          "area": 5,
-          "na": true
+          "max_length": 4,
+          "cursed_max_length": 3
         }
       ]
     },
@@ -3296,6 +3347,39 @@
         }
       ]
     },
+    "robo_monkey": {
+      "name": "Robo-Monkey",
+      "type": "boss_subtract_word_score_money",
+      "game_class": "NegativeMoney",
+      "effect_class": "scoring_early",
+      "wiki_page": "Robo-Monkey",
+      "scaling": [
+        {
+          "area": 1,
+          "multiplier": 1,
+          "cursed_multiplier": 2
+        },
+        {
+          "area": 2,
+          "multiplier": 5,
+          "cursed_multiplier": 7
+        },
+        {
+          "area": 3,
+          "multiplier": 9,
+          "cursed_multiplier": 12
+        },
+        {
+          "area": 4,
+          "multiplier": 15,
+          "cursed_multiplier": 20
+        },
+        {
+          "area": 5,
+          "na": true
+        }
+      ]
+    },
     "toothed_whale": {
       "name": "Toothed Whale",
       "type": "boss_target_score_multiplier",
@@ -3329,91 +3413,6 @@
           "cursed_multiplier": 2.25
         }
       ]
-    },
-    "wolf": {
-      "name": "Wolf",
-      "type": "boss_word_max_length",
-      "game_class": "MaxWordLength",
-      "effect_class": "search_only",
-      "wiki_page": "Wolf",
-      "scaling": [
-        {
-          "area": 1,
-          "max_length": 5,
-          "cursed_max_length": 4
-        },
-        {
-          "area": 2,
-          "max_length": 5,
-          "cursed_max_length": 4
-        },
-        {
-          "area": 3,
-          "max_length": 4,
-          "cursed_max_length": 3
-        },
-        {
-          "area": 4,
-          "max_length": 4,
-          "cursed_max_length": 3
-        },
-        {
-          "area": 5,
-          "max_length": 4,
-          "cursed_max_length": 3
-        }
-      ]
-    },
-    "yeti_crab": {
-      "name": "Yeti Crab",
-      "type": "custom",
-      "effect_class": "grid",
-      "game_class": "DiscolourTiles",
-      "wiki_page": "Yeti_Crab",
-      "wiki_effect": "Makes colored tiles colorless",
-      "scaling": [
-        {
-          "area": 1,
-          "value": 2,
-          "cursed": 3
-        },
-        {
-          "area": 2,
-          "value": 3,
-          "cursed": 4
-        },
-        {
-          "area": 3,
-          "value": 4,
-          "cursed": 6
-        },
-        {
-          "area": 4,
-          "value": 4,
-          "cursed": 7
-        },
-        {
-          "area": 5,
-          "value": 5,
-          "cursed": 8
-        }
-      ]
-    },
-    "cretaceous_meg": {
-      "name": "Cretaceous Meg",
-      "type": "custom",
-      "effect_class": "encounter",
-      "game_class": "CretaceousMegBoss",
-      "wiki_page": "Cretaceous_Meg_(boss)",
-      "wiki_effect": "Strips loadout to special shop ($120/$160/$200 by stage); rebuild before challenge grids"
-    },
-    "sandy_saguaro": {
-      "name": "Sandy Saguaro",
-      "type": "custom",
-      "effect_class": "encounter",
-      "game_class": "SandySaguaroBoss",
-      "wiki_page": "Sandy_Saguaro_(boss)",
-      "wiki_effect": "Gives 2 CACTUS consumable tiles; must be used in submitted words"
     }
   },
   "pins": {

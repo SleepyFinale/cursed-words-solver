@@ -15,6 +15,7 @@ from cursed_words_solver.ui.board_geometry import (
     PlacementMarker,
     path_geometry,
     placement_geometry,
+    swap_geometry,
 )
 
 _GRID_SLOTS = 5
@@ -36,6 +37,7 @@ class BoardHighlightOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self._steps: list[PathStep] = []
         self._placements: list[PlacementMarker] = []
+        self._swap_markers: list[PlacementMarker] = []
 
     def show_path(
         self,
@@ -44,9 +46,10 @@ class BoardHighlightOverlay(QWidget):
         board: Board | None = None,
         *,
         placements: list[Any] | None = None,
+        twinkle_toes_swap: Any | None = None,
         cell_centers: dict[int, tuple[float, float]] | None = None,
     ) -> None:
-        if not region.is_valid() or (not path and not placements):
+        if not region.is_valid() or (not path and not placements and not twinkle_toes_swap):
             self.hide()
             return
         self._steps = (
@@ -55,6 +58,11 @@ class BoardHighlightOverlay(QWidget):
         self._placements = (
             placement_geometry(region, placements, board, cell_centers=cell_centers)
             if placements
+            else []
+        )
+        self._swap_markers = (
+            swap_geometry(region, twinkle_toes_swap, board, cell_centers=cell_centers)
+            if twinkle_toes_swap
             else []
         )
         self.setGeometry(region.x, region.y, region.width, region.height)
@@ -66,10 +74,11 @@ class BoardHighlightOverlay(QWidget):
     def clear(self) -> None:
         self._steps = []
         self._placements = []
+        self._swap_markers = []
         self.hide()
 
     def paintEvent(self, _event) -> None:  # noqa: N802
-        if not self._steps and not self._placements:
+        if not self._steps and not self._placements and not self._swap_markers:
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -81,6 +90,12 @@ class BoardHighlightOverlay(QWidget):
         font.setBold(True)
         font.setPointSize(max(9, int(cell * 0.22)))
         painter.setFont(font)
+
+        for marker in self._swap_markers:
+            pt = QPointF(marker.x, marker.y)
+            painter.setBrush(QColor(255, 105, 180, 95))
+            painter.setPen(QPen(QColor(255, 50, 160, 255), 3, Qt.PenStyle.DashLine))
+            painter.drawEllipse(pt, radius * 1.08, radius * 1.08)
 
         for marker in self._placements:
             pt = QPointF(marker.x, marker.y)

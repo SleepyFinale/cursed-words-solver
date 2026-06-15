@@ -548,22 +548,26 @@ namespace CursedWordsSolverCompanion
         /// Export per-word historic list for Telescope / Movie Camera (F7/F8 and submit).
         /// Always refreshes from live player, cached previousWords, or longer fallback JSON.
         /// </summary>
-        public static void EnsureEncounterHistoricExtras(RunStateSnapshot snapshot, Player player)
+        public static void EnsureEncounterHistoricExtras(
+            RunStateSnapshot snapshot,
+            Player player,
+            bool liveOnly = false
+        )
         {
             if (snapshot?.extras == null || player == null)
                 return;
 
             var fallbackExtras = BuildEncounterHistoricFallbackExtras(snapshot, player);
-            var built = BuildBestHistoricExtras(player, fallbackExtras);
+            var built = BuildBestHistoricExtras(player, fallbackExtras, liveOnly);
             if (built == null || built.Count == 0)
             {
-                if (TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
+                if (!liveOnly && TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
                 {
                     ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
                     return;
                 }
 
-                if (TryApplyGrid2DiskEncounterHistoricFallback(snapshot, player))
+                if (!liveOnly && TryApplyGrid2DiskEncounterHistoricFallback(snapshot, player))
                 {
                     ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
                     return;
@@ -611,7 +615,7 @@ namespace CursedWordsSolverCompanion
                 || liveHistoric == "[]"
             )
             {
-                if (TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
+                if (!liveOnly && TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
                 {
                     ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
                     return;
@@ -1125,14 +1129,15 @@ namespace CursedWordsSolverCompanion
         /// </summary>
         public static Dictionary<string, string> BuildBestHistoricExtras(
             Player player,
-            Dictionary<string, string> fallbackExtras = null
+            Dictionary<string, string> fallbackExtras = null,
+            bool liveOnly = false
         )
         {
             var result = new Dictionary<string, string>();
             if (player == null)
                 return result;
 
-            var historic = PickBestHistoricWordList(player);
+            var historic = PickBestHistoricWordList(player, liveOnly);
             string serialized = null;
             if (historic != null && historic.Count > 0)
                 serialized = SerializeHistoricWords(historic, player);
@@ -1166,11 +1171,15 @@ namespace CursedWordsSolverCompanion
                     && liveGrid == fallbackGrid;
                 if (liveCount > 0 && liveCount < fallbackCount)
                 {
+                    // F8 live export: never inflate historic from stale disk/cache JSON.
+                    if (liveOnly)
+                        bestHistoric = serialized;
                     // Same grid: live reflection can lag after the last scored word — keep longer disk/cache JSON.
                     // Grid advance: shorter live list is the new encounter historic.
-                    bestHistoric = sameGrid || liveGrid <= fallbackGrid
-                        ? fallbackHistoric
-                        : serialized;
+                    else
+                        bestHistoric = sameGrid || liveGrid <= fallbackGrid
+                            ? fallbackHistoric
+                            : serialized;
                 }
                 else if (
                     liveCount > 0
@@ -1283,13 +1292,22 @@ namespace CursedWordsSolverCompanion
             return projected;
         }
 
-        public static List<HistoricWord> PickBestHistoricWordList(Player player)
+        public static List<HistoricWord> PickBestHistoricWordList(Player player, bool liveOnly = false)
         {
             var fromPlayer = RunStateExporter.TryGetHistoricPreviousWordsPublic(player);
             var fromCached = RunStateExporter.GetCachedPreviousWords();
             var playerCount = fromPlayer != null ? fromPlayer.Count : 0;
             var cachedCount = fromCached != null ? fromCached.Count : 0;
             var grid = ResolveGridNumber(player);
+
+            if (liveOnly)
+            {
+                if (playerCount > 0)
+                    return fromPlayer;
+                if (grid >= 2 && cachedCount > 0 && playerCount == 0)
+                    return fromCached;
+                return cachedCount > 0 && playerCount == 0 ? fromCached : null;
+            }
 
             if (grid >= 2 && cachedCount > 0 && playerCount == 0)
                 return fromCached;

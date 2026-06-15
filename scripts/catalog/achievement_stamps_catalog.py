@@ -598,9 +598,10 @@ ACHIEVEMENT_STAMPS: dict[str, dict] = {
         "Trophy_Of_Wealth",
     )
     | {"shop_price": 18},
-    "twinkle_toes": _grid_scatter(
+    "twinkle_toes": _custom_effect(
         "Twinkle Toes",
         "After a grid is generated, choose a pair of tiles to swap positions",
+        "tile_swap",
         "Twinkle_Toes",
     )
     | {"shop_price": 16},

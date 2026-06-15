@@ -282,6 +282,7 @@ Run context extras (default-unlocked stickers):
 | `consumable_rack_count` | Hi Vis Jacket (tiles on consumable rack) |
 | `consumable_rack` | JSON array of rack tile snapshots (letters, colors, `cactus_growth`) for solver placement simulation |
 | `grid_number` | Current grid index in the encounter (1-based; also updated from `CalculateOverallScore`) |
+| `twinkle_toes_swap_available` | `true` when Twinkle Toes stamp is equipped and the player has not yet swapped tiles this grid (`EncounterController.TwinkleToesSwapAvailable`). Press **F7** before **F8** on a fresh grid so the solver can recommend which pair to swap. |
 | `run_seed` | Run RNG seed when readable from player/progress |
 | `rare_item_count` | Owned RARE stickers/stamps/pin |
 | `steak_word_bonus_percent` | Steak multiplicative ×WORD percent (e.g. `250` = ×2.5). Auto-exported from live stamp reflection or `100 + 25 × rare_item_count`; submit/F8 trace overwrites when the game formula differs. Press **F7** after equipping Steak if the solver warns it is missing. |

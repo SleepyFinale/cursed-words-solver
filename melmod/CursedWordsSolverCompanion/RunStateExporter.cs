@@ -19,6 +19,36 @@ namespace CursedWordsSolverCompanion
         private static float _lastMutatingDnaMergeTime = -999f;
         private const float MutatingDnaMergeIntervalSec = 0.5f;
         private static List<HistoricWord> _cachedPreviousWords;
+        private static bool _exportLiveOnlyHistoric;
+        private static bool _exportSkipWorkflowDiskMerge;
+        private static string _f8ExportRequestId = "";
+
+        internal static bool ExportLiveOnlyHistoric
+        {
+            get { return _exportLiveOnlyHistoric; }
+        }
+
+        internal static bool ExportSkipWorkflowDiskMerge
+        {
+            get { return _exportSkipWorkflowDiskMerge; }
+        }
+
+        public static bool TryExportForF8(string requestId)
+        {
+            _exportLiveOnlyHistoric = true;
+            _exportSkipWorkflowDiskMerge = true;
+            _f8ExportRequestId = requestId ?? "";
+            try
+            {
+                return TryExport(false, "f8");
+            }
+            finally
+            {
+                _exportLiveOnlyHistoric = false;
+                _exportSkipWorkflowDiskMerge = false;
+                _f8ExportRequestId = "";
+            }
+        }
 
         private static readonly string OutputPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -49,7 +79,11 @@ namespace CursedWordsSolverCompanion
                 var fingerprint = ComputeFingerprint(player);
                 var snapshot = BuildSnapshot(player);
                 MergePreservedExtrasFromDisk(snapshot, player);
-                RunStateExportFill.EnsureEncounterHistoricExtras(snapshot, player);
+                RunStateExportFill.EnsureEncounterHistoricExtras(
+                    snapshot,
+                    player,
+                    _exportLiveOnlyHistoric
+                );
                 SyncLiveBicycleExtrasIntoSnapshot(snapshot, player);
                 SyncTileNinjaExtrasIntoSnapshot(snapshot, player);
                 FillSnapshotCopyExtras(snapshot, player);
@@ -62,7 +96,8 @@ namespace CursedWordsSolverCompanion
                     player,
                     trigger,
                     fingerprint,
-                    sw.ElapsedMilliseconds
+                    sw.ElapsedMilliseconds,
+                    _f8ExportRequestId
                 );
                 WriteSnapshot(snapshot);
                 TryClearLastSuggestionIfWorkflowStale(snapshot, player);
@@ -155,6 +190,8 @@ namespace CursedWordsSolverCompanion
             var workflow = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(diff, ctx);
             if (!string.IsNullOrEmpty(workflow))
             {
+                if (ExtrasDiffHelper.IsStaleExportAheadDrift(diff))
+                    return;
                 SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
                 CompanionDiagnostics.LogVerbose("Cleared stale F8 suggestion (" + workflow + ")");
                 return;
@@ -467,7 +504,7 @@ namespace CursedWordsSolverCompanion
             {
                 SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
                 MelonLogger.Msg(
-                    "Cleared last_suggestion.json after word submit — press F8 before next overlay word."
+                    "Cleared last_suggestion.json after word submit — press F8 for the next grid."
                 );
             }
         }
@@ -854,6 +891,15 @@ namespace CursedWordsSolverCompanion
             return snapshot;
         }
 
+        private static readonly string[] WorkflowExtrasFromDisk =
+        {
+            "historic_words",
+            "previous_word_first_letter",
+            "scoring_previous_words_count",
+            "red_tiles_used_encounter",
+            "mutating_dna_letter_counts",
+        };
+
         private static readonly string[] ExtrasPreserveFromDisk =
         {
             "historic_words",
@@ -904,6 +950,18 @@ namespace CursedWordsSolverCompanion
             }
 
             return onDisk;
+        }
+
+        private static bool IsWorkflowDiskExtraKey(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+                return false;
+            foreach (var workflowKey in WorkflowExtrasFromDisk)
+            {
+                if (string.Equals(key, workflowKey, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
         }
 
         private static bool TryParseExtraPercent(string raw, out int percent)
@@ -966,6 +1024,12 @@ namespace CursedWordsSolverCompanion
 
                 foreach (var key in ExtrasPreserveFromDisk)
                 {
+                    if (
+                        _exportSkipWorkflowDiskMerge
+                        && IsWorkflowDiskExtraKey(key)
+                    )
+                        continue;
+
                     if (
                         !hasBicyclePin
                         && (
@@ -1439,6 +1503,9 @@ namespace CursedWordsSolverCompanion
                 snapshot.extras.Remove("snapshot_copy_captured_at");
                 snapshot.extras.Remove("snapshot_copy_source");
             }
+
+            if (!PlayerHasStampSlug(player, "twinkle_toes"))
+                snapshot.extras.Remove("twinkle_toes_swap_available");
         }
 
         public static bool PlayerHasStampSlug(Player player, string slug)

@@ -933,6 +933,7 @@ def _finalize_placement_search(
     base_required: frozenset[int],
     variant_gen_sec: float,
     variants_screened: int,
+    solve_deadline: float | None = None,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
     global _last_placement_search_stats
     threshold = min_rank_score if min_rank_score is not None else min_score
@@ -978,7 +979,10 @@ def _finalize_placement_search(
                 loadout, len(placements)
             )
             results = searcher.find_best_words(
-                sim_board, loadout=var_loadout, top_n=top_n
+                sim_board,
+                loadout=var_loadout,
+                top_n=top_n,
+                deadline=solve_deadline,
             )
             if not results:
                 continue
@@ -1024,6 +1028,7 @@ def _screen_placement_variants(
     require_placements_in_path: bool = False,
     base_required: frozenset[int],
     screen_full_tier: bool = False,
+    solve_deadline: float | None = None,
 ) -> tuple[
     list[tuple[float, int, list[tuple[int, Tile]], Board, WordResult]],
     int,
@@ -1057,7 +1062,10 @@ def _screen_placement_variants(
                 loadout, len(placements)
             )
             results = searcher.find_best_words(
-                sim_board, loadout=var_loadout, top_n=1
+                sim_board,
+                loadout=var_loadout,
+                top_n=1,
+                deadline=solve_deadline,
             )
             if not results:
                 continue
@@ -1099,11 +1107,17 @@ def _run_placement_search(
     min_rank_score: float | None = None,
     prefer_fewest_tiles: bool = False,
     require_placements_in_path: bool = False,
+    solve_deadline: float | None = None,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
     if not variants:
         global _last_placement_search_stats
         _last_placement_search_stats = PlacementSearchStats()
-        return board, [], searcher.find_best_words(board, loadout=loadout, top_n=top_n)
+        return board, [], searcher.find_best_words(
+            board,
+            loadout=loadout,
+            top_n=top_n,
+            deadline=solve_deadline,
+        )
 
     investment = consumable_investment_active(loadout)
     total_budget = max(2.0, float(time_budget))
@@ -1135,6 +1149,7 @@ def _run_placement_search(
         prefer_fewest_tiles=prefer_fewest_tiles,
         require_placements_in_path=require_placements_in_path,
         base_required=base_required,
+        solve_deadline=solve_deadline,
     )
     return _finalize_placement_search(
         searcher,
@@ -1150,6 +1165,7 @@ def _run_placement_search(
         base_required=base_required,
         variant_gen_sec=0.0,
         variants_screened=variants_screened,
+        solve_deadline=solve_deadline,
     )
 
 
@@ -1168,6 +1184,7 @@ def _run_tiered_placement_search(
     max_variants: int = 96,
     rules: dict[str, Any] | None = None,
     variant_gen_budget: float | None = None,
+    solve_deadline: float | None = None,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
     if not rack_tiles:
         global _last_placement_search_stats
@@ -1236,6 +1253,7 @@ def _run_tiered_placement_search(
             require_placements_in_path=require_placements_in_path,
             base_required=base_required,
             screen_full_tier=True,
+            solve_deadline=solve_deadline,
         )
         screened.extend(tier_screened)
         variants_screened += tier_count
@@ -1268,6 +1286,7 @@ def _run_tiered_placement_search(
         base_required=base_required,
         variant_gen_sec=variant_gen_sec,
         variants_screened=variants_screened,
+        solve_deadline=solve_deadline,
     )
 
 
@@ -1280,6 +1299,7 @@ def search_with_consumable_placements(
     time_budget: float,
     top_n: int,
     rules: dict[str, Any] | None = None,
+    solve_deadline: float | None = None,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
     rules = rules or {}
     variants = _placement_variants(
@@ -1293,6 +1313,7 @@ def search_with_consumable_placements(
         time_budget=time_budget,
         top_n=top_n,
         require_placements_in_path=True,
+        solve_deadline=solve_deadline,
     )
 
 
@@ -1307,6 +1328,7 @@ def search_target_rescue(
     top_n: int,
     rules: dict[str, Any] | None = None,
     variant_gen_budget: float | None = None,
+    solve_deadline: float | None = None,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
     from cursed_words_solver.rules.quest_scoring import bullseye_active
 
@@ -1325,6 +1347,7 @@ def search_target_rescue(
         prefer_fewest_tiles=True,
         rules=rules,
         variant_gen_budget=variant_gen_budget,
+        solve_deadline=solve_deadline,
     )
     if bullseye_active(loadout) and results:
         from cursed_words_solver.rules.quest_scoring import target_met
@@ -1349,6 +1372,7 @@ def search_consumable_score_boost(
     top_n: int,
     rules: dict[str, Any] | None = None,
     variant_gen_budget: float | None = None,
+    solve_deadline: float | None = None,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
     """Try rack placements; adopt when rank score strictly exceeds baseline."""
     if not rack_tiles:
@@ -1374,6 +1398,7 @@ def search_consumable_score_boost(
         rules=rules,
         variant_gen_budget=variant_gen_budget,
         max_variants=max_variants,
+        solve_deadline=solve_deadline,
     )
     if not results or _result_rank_score(results[0]) <= baseline_rank:
         return board, [], []

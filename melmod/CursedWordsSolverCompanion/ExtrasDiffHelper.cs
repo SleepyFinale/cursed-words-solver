@@ -266,6 +266,102 @@ namespace CursedWordsSolverCompanion
 
         /// <summary>
 
+        /// True when F8 embed workflow is ahead of live/submit (stale export lag), not user played since F8.
+
+        /// </summary>
+
+        public static bool IsStaleExportAheadDrift(Dictionary<string, object> extrasDiff)
+
+        {
+
+            if (extrasDiff == null || extrasDiff.Count == 0)
+
+                return false;
+
+
+
+            if (extrasDiff.TryGetValue("historic_words", out var histRaw))
+
+            {
+
+                var histEntry = histRaw as Dictionary<string, string>;
+
+                if (histEntry != null)
+
+                {
+
+                    string f8Hist;
+
+                    string submitHist;
+
+                    histEntry.TryGetValue("f8", out f8Hist);
+
+                    histEntry.TryGetValue("submit", out submitHist);
+
+                    var f8Count = CountHistoricWordsInJson((f8Hist ?? "").Trim());
+
+                    var submitCount = CountHistoricWordsInJson((submitHist ?? "").Trim());
+
+                    if (f8Count > submitCount)
+
+                        return true;
+
+                }
+
+            }
+
+
+
+            if (extrasDiff.TryGetValue("scoring_previous_words_count", out var spcRaw))
+
+            {
+
+                var spcEntry = spcRaw as Dictionary<string, string>;
+
+                if (spcEntry != null)
+
+                {
+
+                    int f8Count;
+
+                    int submitCount;
+
+                    int.TryParse(
+
+                        (spcEntry.TryGetValue("f8", out var f8Spc) ? f8Spc : null) ?? "0",
+
+                        out f8Count
+
+                    );
+
+                    int.TryParse(
+
+                        (spcEntry.TryGetValue("submit", out var submitSpc) ? submitSpc : null)
+
+                            ?? "0",
+
+                        out submitCount
+
+                    );
+
+                    if (f8Count > submitCount)
+
+                        return true;
+
+                }
+
+            }
+
+
+
+            return false;
+
+        }
+
+
+
+        /// <summary>
+
         /// True when F8 embed is longer than submit projection (benign shrink), not played-since-F8 drift.
 
         /// </summary>
@@ -318,7 +414,13 @@ namespace CursedWordsSolverCompanion
 
                     )
 
-                        return false;
+                    {
+
+                        if (!IsStaleExportAheadDrift(extrasDiff))
+
+                            return false;
+
+                    }
 
                 }
 

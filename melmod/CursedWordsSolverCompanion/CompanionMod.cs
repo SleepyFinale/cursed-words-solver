@@ -74,6 +74,8 @@ namespace CursedWordsSolverCompanion
                 return;
             }
 
+            F8ExportRequestPoller.TryPollAndExport();
+
             var player = GetPlayerSafe();
             if (player == null)
                 return;

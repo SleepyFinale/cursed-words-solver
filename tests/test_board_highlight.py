@@ -1,7 +1,10 @@
+import pytest
+
 from cursed_words_solver.config import Region
 from cursed_words_solver.consumable_placement import ConsumablePlacement
 from cursed_words_solver.models import Board
-from cursed_words_solver.ui.board_geometry import placement_geometry, path_geometry
+from cursed_words_solver.rules.twinkle_toes import TwinkleToesSwap
+from cursed_words_solver.ui.board_geometry import placement_geometry, path_geometry, swap_geometry
 from tests.test_search import _tile
 
 
@@ -19,3 +22,15 @@ def test_placement_geometry_maps_indices():
     assert len(path) == 2
     assert path[0].x == markers[0].x
     assert path[0].y == markers[0].y
+
+
+def test_swap_geometry_maps_two_indices():
+    region = Region(x=0, y=0, width=500, height=500)
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    swap = TwinkleToesSwap(row_a=0, col_a=1, row_b=3, col_b=0)
+    markers = swap_geometry(region, swap, board)
+    assert len(markers) == 2
+    assert markers[0].x == pytest.approx(150.0)
+    assert markers[0].y == pytest.approx(50.0)
+    assert markers[1].x == pytest.approx(50.0)
+    assert markers[1].y == pytest.approx(350.0)

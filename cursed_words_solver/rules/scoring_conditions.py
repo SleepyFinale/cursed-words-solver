@@ -2539,7 +2539,7 @@ _ODEN_NON_CHESS_CATEGORIES: dict[CurseType, str] = {
     CurseType.CARD: "card",
     CurseType.CURRENCY: "currency",
     CurseType.NUMBER: "number",
-    CurseType.FRACTION: "number",
+    CurseType.FRACTION: "fraction",
     CurseType.LETTER: "letter",
 }
 
@@ -2553,6 +2553,32 @@ _ODEN_CHESS_CURSES = frozenset(
         CurseType.CHESS_KING,
     }
 )
+
+_ODEN_CHESS_BUCKET_NAMES = frozenset(c.value for c in _ODEN_CHESS_CURSES)
+
+
+def _path_has_number_and_fraction(board: Board, path: list[int]) -> bool:
+    has_number = has_fraction = False
+    for idx in path:
+        curse = board.get_by_index(idx).curse
+        if curse == CurseType.NUMBER:
+            has_number = True
+        elif curse == CurseType.FRACTION:
+            has_fraction = True
+    return has_number and has_fraction
+
+
+def _merge_oden_number_fraction(categories: set[str]) -> None:
+    if "fraction" in categories:
+        categories.discard("fraction")
+        categories.add("number")
+
+
+def _collapse_oden_chess_categories(categories: set[str]) -> None:
+    chess_types = categories & _ODEN_CHESS_BUCKET_NAMES
+    if len(chess_types) >= 3:
+        categories -= chess_types
+        categories.add("chess")
 
 
 def _oden_categories_for_tile(tile: Tile) -> set[str]:
@@ -2602,6 +2628,16 @@ def _oden_categories_on_path(
             cats.discard("card")
         categories |= cats
     return categories, letter_tiles
+
+
+def _apply_oden_number_fraction_merge_if_triggered(
+    categories: set[str], board: Board, path: list[int]
+) -> None:
+    if (
+        ("wildcard" in categories or "card" in categories)
+        and _path_has_number_and_fraction(board, path)
+    ):
+        _merge_oden_number_fraction(categories)
 
 
 def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
@@ -2667,6 +2703,7 @@ def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
                 for idx in path
             ):
                 categories.discard("card")
+            _merge_oden_number_fraction(categories)
     if letter_tiles < 2 and "card" in categories:
         suited_non_wildcard = [
             idx
@@ -2681,6 +2718,18 @@ def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
             for idx in suited_non_wildcard
         ):
             categories.discard("card")
+        elif (
+            "wildcard" in categories
+            and len(categories & _ODEN_CHESS_BUCKET_NAMES) >= 2
+            and not any(
+                board.get_by_index(idx).curse
+                in (CurseType.ITEM, CurseType.CURRENCY, CurseType.NUMBER, CurseType.FRACTION)
+                for idx in path
+            )
+        ):
+            categories.discard("card")
+    _apply_oden_number_fraction_merge_if_triggered(categories, board, path)
+    _collapse_oden_chess_categories(categories)
     return len(categories)
 
 

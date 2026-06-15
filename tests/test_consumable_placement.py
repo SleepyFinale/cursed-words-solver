@@ -332,7 +332,7 @@ def test_search_target_rescue_adopts_only_when_score_meets_target(tmp_path, monk
     ]
     searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
 
-    def fake_find(board_arg, loadout=None, top_n=1):
+    def fake_find(board_arg, loadout=None, top_n=1, **kwargs):
         word = "cat" if any(
             (board_arg.get_by_index(i) or _tile("x", 0, 0)).letter == "T"
             for i in range(25)
@@ -439,7 +439,7 @@ def test_placement_search_sets_required_indices_per_variant(tmp_path, monkeypatc
     recorded: list[frozenset[int]] = []
     real_find = searcher.find_best_words
 
-    def wrapped(board_arg, loadout=None, top_n=1):
+    def wrapped(board_arg, loadout=None, top_n=1, **kwargs):
         recorded.append(frozenset(searcher.validator.required_consumable_indices))
         return real_find(board_arg, loadout=loadout, top_n=top_n)
 
@@ -718,7 +718,7 @@ def test_search_consumable_score_boost_returns_empty_when_not_improved(
     rack = [Tile(-1, -1, "Z", "Z", 1, metadata={"rack_index": 0})]
     searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=2.0)
 
-    def fake_find(board_arg, loadout=None, top_n=1):
+    def fake_find(board_arg, loadout=None, top_n=1, **kwargs):
         from cursed_words_solver.models import WordResult
 
         return [WordResult(word="zzz", path=[0], score=500.0, breakdown={})]
@@ -799,7 +799,7 @@ def test_iter_variants_stops_after_winning_k1_tier(tmp_path, monkeypatch):
     ]
     searcher = WordSearcher(dictionary=d, min_len=1, max_len=5, time_budget=4.0)
 
-    def qualify_single_placement(sim_board, loadout=None, top_n=1):
+    def qualify_single_placement(sim_board, loadout=None, top_n=1, **kwargs):
         placed = sum(
             1
             for i in range(25)
@@ -851,7 +851,7 @@ def test_variant_gen_budget_limits_tier_generation(tmp_path, monkeypatch):
 
     searcher = WordSearcher(dictionary=d, min_len=1, max_len=5, time_budget=2.0)
 
-    def never_qualify(board_arg, loadout=None, top_n=1):
+    def never_qualify(board_arg, loadout=None, top_n=1, **kwargs):
         return []
 
     monkeypatch.setattr(searcher, "find_best_words", never_qualify)

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Callable
+
+from cursed_words_solver.config import CONFIG_DIR, F8_EXPORT_REQUEST_PATH
 
 from cursed_words_solver.consumable_placement import (
     has_exported_consumable_rack,
@@ -47,6 +51,7 @@ from cursed_words_solver.suggestion import (
 F8_GATHER_POLL_SEC = 0.1
 F8_GATHER_BOARD_TIMEOUT_SEC = 5.0
 F8_GATHER_EXTRAS_TIMEOUT_SEC = 5.0
+F8_EXPORT_ACK_TIMEOUT_SEC = 5.0
 F8_RACK_EXPORT_TIMEOUT_SEC = 5.0
 F8_CROSSED_OUT_EXPORT_TIMEOUT_SEC = 5.0
 
@@ -59,6 +64,56 @@ class F8SuggestionSession:
     loadout_fingerprint: str
     board_tiles_fingerprint: str
     grid_number: int = 0
+
+
+def write_f8_export_request() -> str:
+    """Ask melmod for a live game-memory export before gathering run_state."""
+    request_id = str(int(time.time() * 1000))
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "request_id": request_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    F8_EXPORT_REQUEST_PATH.write_text(
+        json.dumps(payload, indent=2),
+        encoding="utf-8",
+    )
+    return request_id
+
+
+def _f8_export_acknowledged(
+    run_state: dict[str, Any] | None,
+    request_id: str,
+) -> bool:
+    if not isinstance(run_state, dict) or not request_id:
+        return False
+    diag = run_state.get("export_diagnostics")
+    if not isinstance(diag, dict):
+        return False
+    ack = str(diag.get("f8_request_id") or "").strip()
+    trigger = str(diag.get("export_trigger") or "").strip().lower()
+    return ack == request_id and trigger == "f8"
+
+
+def wait_for_f8_export_ack(
+    request_id: str,
+    *,
+    timeout_sec: float = F8_EXPORT_ACK_TIMEOUT_SEC,
+    poll_sec: float = F8_GATHER_POLL_SEC,
+    on_wait: Callable[[str], None] | None = None,
+) -> bool:
+    """Poll run_state until melmod acknowledges the F8 export request."""
+    deadline = time.monotonic() + max(0.0, timeout_sec)
+    notified = False
+    while time.monotonic() < deadline:
+        run_state = load_run_state_raw()
+        if _f8_export_acknowledged(run_state, request_id):
+            return True
+        if on_wait and not notified:
+            notified = True
+            on_wait("waiting for live game export from melmod")
+        time.sleep(poll_sec)
+    return _f8_export_acknowledged(load_run_state_raw(), request_id)
 
 
 @dataclass
@@ -274,12 +329,30 @@ def _build_snapshot_from_run_state(
 def gather_f8_snapshot(
     *,
     rules: dict[str, Any] | None = None,
+    f8_request_id: str | None = None,
     board_timeout_sec: float = F8_GATHER_BOARD_TIMEOUT_SEC,
     extras_timeout_sec: float = F8_GATHER_EXTRAS_TIMEOUT_SEC,
     poll_sec: float = F8_GATHER_POLL_SEC,
     on_wait: Callable[[str], None] | None = None,
 ) -> F8Snapshot:
     """Poll melmod run_state until board and required extras are exported."""
+    if f8_request_id:
+        acked = wait_for_f8_export_ack(
+            f8_request_id,
+            timeout_sec=min(board_timeout_sec, F8_EXPORT_ACK_TIMEOUT_SEC),
+            poll_sec=poll_sec,
+            on_wait=on_wait,
+        )
+        if not acked:
+            # Retry request once in case melmod missed the first write.
+            retry_id = write_f8_export_request()
+            wait_for_f8_export_ack(
+                retry_id,
+                timeout_sec=F8_EXPORT_ACK_TIMEOUT_SEC,
+                poll_sec=poll_sec,
+                on_wait=on_wait,
+            )
+
     deadline_board = time.monotonic() + max(0.0, board_timeout_sec)
     run_state: dict[str, Any] | None = None
 

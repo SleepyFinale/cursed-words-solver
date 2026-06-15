@@ -15,6 +15,7 @@ PREVIOUS_DEFAULT_SEARCH_TIME_BUDGET_SEC = 30.0
 LEGACY_MAX_WORD_LENGTH = 12
 PREVIOUS_GRID_REROLL_GAP_RATIO = 0.6
 RUN_STATE_PATH = CONFIG_DIR / "run_state.json"
+F8_EXPORT_REQUEST_PATH = CONFIG_DIR / "f8_export_request.json"
 LAST_SUGGESTION_PATH = CONFIG_DIR / "last_suggestion.json"
 LAST_SUGGESTION_BLOCKED_PATH = CONFIG_DIR / "last_suggestion_blocked.json"
 SCORING_MISMATCHES_DIR = CONFIG_DIR / "scoring_mismatches"
@@ -169,7 +170,7 @@ def describe_wordlist(path: Path, preference: str = "game") -> str:
     if path == GAME_WORDLIST_PATH:
         return f"game ({count_str})"
     if preference == "game":
-        return f"enable1 fallback ({count_str}) — press F7 in-game to export game_words.txt"
+        return f"enable1 fallback ({count_str}) — start a run and press F8 to export game_words.txt"
     return f"enable1 ({count_str})"
 
 

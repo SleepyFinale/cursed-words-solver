@@ -788,9 +788,9 @@ def test_find_best_words_wall_sec_includes_refine_and_finalize(tmp_path):
     loadout = Loadout()
     original_refine = searcher._refine_provisional_heap
 
-    def slow_refine(board, loadout, candidates):
+    def slow_refine(board, loadout, candidates, **kwargs):
         time.sleep(0.05)
-        original_refine(board, loadout, candidates)
+        original_refine(board, loadout, candidates, **kwargs)
 
     searcher._refine_provisional_heap = slow_refine
     searcher.find_best_words(board, loadout=loadout, top_n=1)

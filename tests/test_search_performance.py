@@ -26,7 +26,11 @@ from cursed_words_solver.fast_rank import (
 from cursed_words_solver.graph_bitboard import RED_COLOR_CODE, build_board_graph_context
 from cursed_words_solver.mult_search import loadout_mult_rules
 from cursed_words_solver.solve_context import build_solve_context
-from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+from cursed_words_solver.loadout import (
+    parse_board_from_run_state,
+    parse_run_state,
+    prepare_run_state_dict_for_scoring,
+)
 from cursed_words_solver.models import Loadout, LoadoutItem
 from cursed_words_solver.rules.chess_tiles import (
     clear_chess_attack_cache,
@@ -37,6 +41,8 @@ from cursed_words_solver.search import (
     WordSearcher,
     _chess_prefix_budget_sec,
     _chess_tile_count,
+    REFINE_OVERRUN_SEC,
+    _scale_post_dfs_reserves,
 )
 from tests.helpers.boards import _board_cat_horizontal, _make_wordlist
 from tests.regression.test_scoring_mismatches import _run_state_for_replay
@@ -772,3 +778,258 @@ def test_linguistic_cache_key_spatial_on_chess_board(tmp_path):
     path = [0, 1, 2]
     key = searcher._linguistic_cache_key(board, path)
     assert key == tuple(path)
+
+
+OCTACLES_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260615_134052.json"
+)
+
+
+def _octacles_curse_heavy_board_and_loadout():
+    if not OCTACLES_FIXTURE.exists():
+        pytest.skip("octacles curse-heavy fixture required")
+    data = json.loads(OCTACLES_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    return board, loadout
+
+
+def test_refine_provisional_heap_stops_at_deadline():
+    """Tier-2 phase 2 must not run unbounded when the solve deadline has passed."""
+    from cursed_words_solver.search import SearchTiming, _CandidateHeap
+
+    board, loadout = _sticker_board_and_loadout()
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH) if GAME_WORDLIST_PATH.exists() else None,
+        min_len=3,
+        max_len=12,
+        time_budget=5.0,
+    )
+    if searcher.dictionary is None:
+        pytest.skip("game wordlist required")
+    searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
+    timing = SearchTiming()
+    searcher._active_timing = timing
+    searcher._provisional_candidates = {
+        (tuple(range(i, i + 3)), f"?w{i}"): float(1000 - i) for i in range(80)
+    }
+    heap = _CandidateHeap(50)
+    searcher._refine_provisional_heap(
+        board,
+        loadout,
+        heap,
+        deadline=time.monotonic(),
+    )
+    assert timing.tier2_phase2_calls == 0
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_curse_heavy_tier2_search_within_f8_budget():
+    """Regression: tier-2 refine must not blow past the configured search budget."""
+    from cursed_words_solver.search_parallel import warmup_search_pool
+
+    board, loadout = _octacles_curse_heavy_board_and_loadout()
+    budget = 12.0
+    warmup_search_pool(GAME_WORDLIST_PATH, 2)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=1,
+        max_len=25,
+        time_budget=budget,
+        wordlist_path=GAME_WORDLIST_PATH,
+        search_workers=2,
+    )
+    solve_deadline = time.monotonic() + budget
+    t0 = time.perf_counter()
+    results = searcher.find_best_words(
+        board,
+        loadout,
+        top_n=1,
+        deadline=solve_deadline,
+    )
+    elapsed = time.perf_counter() - t0
+    assert results
+    timing = searcher.last_search_timing
+    assert timing is not None
+    assert timing.wall_sec < budget * 1.15 + REFINE_OVERRUN_SEC
+    assert elapsed < budget * 1.15 + REFINE_OVERRUN_SEC
+    if timing.tier2_phase2_deferred > 0:
+        assert timing.tier2_phase2_calls <= timing.tier2_phase2_deferred
+
+
+YICKER_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260615_142317_454.json"
+)
+
+
+def _yicker_board_and_loadout():
+    if not YICKER_FIXTURE.exists():
+        pytest.skip("yicker round-log fixture required")
+    data = json.loads(YICKER_FIXTURE.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state"])
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    return board, loadout
+
+
+def test_reserve_scaling_leaves_positive_main_slice():
+    """Curse-heavy boards must keep at least 30% of budget for primary DFS."""
+    board, _loadout = _yicker_board_and_loadout()
+    from cursed_words_solver.search import is_fraction_tile, is_number_like_tile
+
+    tb = 45.0
+    has_num = any(is_number_like_tile(t) for t in board.flat)
+    has_frac = any(is_fraction_tile(t) for t in board.flat)
+    nr = min(10.0, tb * 0.45) if has_num else 0.0
+    fr = min(15.0, tb * 0.35) if has_frac else 0.0
+    cr = min(8.0, tb * 0.35) if _chess_tile_count(board) >= 3 else 0.0
+    er = min(5.0, tb * 0.12)
+    scaled = _scale_post_dfs_reserves(
+        time_budget=tb,
+        number_reserve=nr,
+        void_reserve=0.0,
+        fraction_cluster_reserve=fr,
+        chess_reserve=cr,
+        seed_reserve=0.0,
+        extension_reserve=er,
+    )
+    main_slice = tb - sum(scaled[:6])
+    assert main_slice >= tb * 0.30
+
+
+def test_serial_workers_finds_candidates_on_yicker_board():
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    board, loadout = _yicker_board_and_loadout()
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=1,
+        max_len=25,
+        time_budget=45.0,
+        wordlist_path=GAME_WORDLIST_PATH,
+        search_workers=1,
+    )
+    results = searcher.find_best_words(board, loadout=loadout, top_n=1)
+    assert results
+    timing = searcher.last_search_timing
+    assert timing is not None
+    assert timing.main_dfs_slice_sec >= 45.0 * 0.30
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_yicker_board_finds_high_scoring_word():
+    """Regression: da-prefix board must find yicker-class scores, not 2-letter junk."""
+    from cursed_words_solver.search_parallel import warmup_search_pool
+
+    board, loadout = _yicker_board_and_loadout()
+    budget = 45.0
+    warmup_search_pool(GAME_WORDLIST_PATH, 2)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=1,
+        max_len=25,
+        time_budget=budget,
+        wordlist_path=GAME_WORDLIST_PATH,
+        search_workers=8,
+    )
+    results = searcher.find_best_words(
+        board,
+        loadout,
+        top_n=1,
+        deadline=time.monotonic() + budget,
+    )
+    assert results
+    timing = searcher.last_search_timing
+    assert timing is not None
+    assert timing.wall_sec < budget + REFINE_OVERRUN_SEC + 2.0
+    assert timing.main_dfs_slice_sec >= budget * 0.30
+    best = results[0]
+    assert best.score >= 2000 or best.word == "yicker"
+
+
+XYLOMETERS_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260615_150843_021.json"
+)
+XYLOMETERS_PATH = [1, 4, 3, 8, 12, 17, 23, 24, 15, 21]
+
+
+def _xylometers_board_and_loadout():
+    if not XYLOMETERS_FIXTURE.exists():
+        pytest.skip("xylometers round-log fixture required")
+    data = json.loads(XYLOMETERS_FIXTURE.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state"])
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    return board, loadout
+
+
+def test_xylometers_path_movement_ok_with_hungry_snake():
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+    from cursed_words_solver.search import path_movement_ok
+
+    board, loadout = _xylometers_board_and_loadout()
+    flags = stamp_search_flags_mask(loadout)
+    assert path_movement_ok(board, XYLOMETERS_PATH, flags=flags)
+
+
+def test_xylometers_path_scores_like_game():
+    board, loadout = _xylometers_board_and_loadout()
+    score, _bd = ScoringPipeline().score(
+        board, XYLOMETERS_PATH, "xylometers", loadout
+    )
+    assert score == pytest.approx(6615, abs=5)
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_xylometers_board_finds_high_scoring_word():
+    """Regression: Hungry Snake wrap path must reach xylometers, not short wildcard junk."""
+    from cursed_words_solver.search_parallel import warmup_search_pool
+
+    board, loadout = _xylometers_board_and_loadout()
+    budget = 45.0
+    warmup_search_pool(GAME_WORDLIST_PATH, 2)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=1,
+        max_len=25,
+        time_budget=budget,
+        wordlist_path=GAME_WORDLIST_PATH,
+        search_workers=8,
+    )
+    results = searcher.find_best_words(
+        board,
+        loadout,
+        top_n=1,
+        deadline=time.monotonic() + budget + REFINE_OVERRUN_SEC,
+    )
+    assert results
+    timing = searcher.last_search_timing
+    assert timing is not None
+    assert timing.wall_sec < budget + REFINE_OVERRUN_SEC + 15.0
+    best = results[0]
+    assert best.score >= 6000

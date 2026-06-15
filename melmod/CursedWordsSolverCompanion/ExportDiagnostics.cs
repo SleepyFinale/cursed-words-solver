@@ -45,7 +45,8 @@ namespace CursedWordsSolverCompanion
             Player player,
             string exportTrigger,
             string fingerprint,
-            long exportMs
+            long exportMs,
+            string f8RequestId = null
         )
         {
             var missing = ExportCompleteness.CollectMissing(snapshot, player);
@@ -80,6 +81,7 @@ namespace CursedWordsSolverCompanion
                     ? gv
                     : "",
                 ["export_trigger"] = exportTrigger ?? "",
+                ["f8_request_id"] = f8RequestId ?? "",
                 ["fingerprint"] = fingerprint ?? "",
                 ["fingerprint_changed"] = fingerprintChanged,
                 ["missing_keys"] = missing,
@@ -102,13 +104,21 @@ namespace CursedWordsSolverCompanion
             Player player,
             string exportTrigger,
             string fingerprint,
-            long exportMs
+            long exportMs,
+            string f8RequestId = null
         )
         {
             if (snapshot == null)
                 return;
 
-            snapshot.export_diagnostics = Build(snapshot, player, exportTrigger, fingerprint, exportMs);
+            snapshot.export_diagnostics = Build(
+                snapshot,
+                player,
+                exportTrigger,
+                fingerprint,
+                exportMs,
+                f8RequestId
+            );
             ExportCompleteness.LogWarningsIfNeeded(snapshot, player, true);
 
             if (!CompanionDiagnostics.WriteAuditJsonl)

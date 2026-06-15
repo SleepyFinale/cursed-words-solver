@@ -60,10 +60,17 @@ def test_neighbors_8_corner_has_three_neighbors():
     assert NEIGHBORS_8[24].bit_count() == 3
 
 
-def test_neighbors_8_wrap_adds_horizontal_partner():
-    # Cell 0 (row 0, col 0) wrap partner is col 4 same row -> index 4
+def test_neighbors_8_wrap_adds_cross_edge_neighbors():
+    # Cell 0 (row 0, col 0): game adds (4, row-1), (4, row), (4, row+1) in bounds
     wrap_only = NEIGHBORS_8_WRAP[0] & ~NEIGHBORS_8[0]
-    assert wrap_only == (1 << 4)
+    assert wrap_only == (1 << 4) | (1 << 9)
+
+
+def test_neighbors_8_wrap_corner_24_reaches_15():
+    # (4,4) -> (3,0) via Hungry Snake wrap diagonal (xylometers path step)
+    wrap_only = NEIGHBORS_8_WRAP[24] & ~NEIGHBORS_8[24]
+    assert 15 in iter_mask(wrap_only)
+    assert 20 in iter_mask(wrap_only)
 
 
 def test_knight_targets_center():
@@ -123,7 +130,7 @@ def test_neighbors_mask_parity_with_hungry_snake():
     flags = stamp_search_flags_mask(loadout)
     assert flags & FLAG_HORIZONTAL_WRAP
     ctx = build_board_graph_context(board)
-    for cell in (0, 4, 10, 14):
+    for cell in range(25):
         path = [cell]
         visited = 1 << cell
         expected = neighbors_from_tile(board, path, visited, flags=flags)
