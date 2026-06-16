@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -56,6 +57,8 @@ F8_GATHER_EXTRAS_TIMEOUT_SEC = 5.0
 F8_EXPORT_ACK_TIMEOUT_SEC = 5.0
 F8_RACK_EXPORT_TIMEOUT_SEC = 5.0
 F8_CROSSED_OUT_EXPORT_TIMEOUT_SEC = 5.0
+F8_EXPORT_WRITE_RETRIES = 12
+F8_EXPORT_WRITE_RETRY_DELAY_SEC = 0.04
 
 
 @dataclass(frozen=True)
@@ -76,11 +79,28 @@ def write_f8_export_request() -> str:
         "request_id": request_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    F8_EXPORT_REQUEST_PATH.write_text(
-        json.dumps(payload, indent=2),
-        encoding="utf-8",
-    )
-    return request_id
+    content = json.dumps(payload, indent=2)
+    tmp_path = F8_EXPORT_REQUEST_PATH.with_suffix(".json.tmp")
+    last_error: OSError | None = None
+    for attempt in range(max(1, F8_EXPORT_WRITE_RETRIES)):
+        try:
+            tmp_path.write_text(content, encoding="utf-8")
+            os.replace(tmp_path, F8_EXPORT_REQUEST_PATH)
+            return request_id
+        except OSError as exc:
+            last_error = exc
+            if attempt + 1 >= F8_EXPORT_WRITE_RETRIES:
+                break
+            time.sleep(F8_EXPORT_WRITE_RETRY_DELAY_SEC)
+        finally:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+    if last_error is not None:
+        raise last_error
+    raise OSError("failed to write F8 export request")
 
 
 def _f8_export_acknowledged(

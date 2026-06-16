@@ -24,7 +24,7 @@ from cursed_words_solver.rules.chess_tiles import (
 from cursed_words_solver.rules.scoring_conditions import chess_balanced_colors, chess_take_strict_mode
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import StampSearchFlags, stamp_search_flags
-from cursed_words_solver.search import WordSearcher, neighbors_from_tile, resolve_letter
+from cursed_words_solver.search import WordSearcher, neighbors_from_tile, path_movement_ok, resolve_letter
 
 
 def _tile(
@@ -220,6 +220,70 @@ def test_king_cannot_move_into_check():
     nbrs = _nbrs(board, king_idx)
     assert index_of(1, 2) not in nbrs
     assert index_of(3, 3) in nbrs
+
+
+ADMIXES_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "boards" / "20260616_admixes_king_wrap_check.json"
+)
+ADMIXES_PATH = [6, 10, 16, 12, 17, 22, 13]
+
+
+def _admixes_board_and_loadout():
+    data = json.loads(ADMIXES_FIXTURE.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data)
+    loadout = parse_run_state(data)
+    assert board is not None
+    return board, loadout
+
+
+def test_admixes_king_cannot_step_into_wrap_pawn_check():
+    """Hungry Snake: white pawn (3,4) threatens (2,0) via wrap; king may not step to D."""
+    board, loadout = _admixes_board_and_loadout()
+    flags = stamp_search_flags(loadout)
+    assert flags.horizontal_wrap is True
+    visited = {index_of(1, 1)}
+    assert is_square_attacked(
+        board, 2, 0, "white", visited, horizontal_wrap=True
+    )
+    nbrs = neighbors_from_tile(board, [index_of(1, 1)], visited, flags=flags)
+    assert index_of(2, 0) not in nbrs
+    assert not path_movement_ok(board, ADMIXES_PATH, flags=flags)
+
+
+def test_admixes_not_in_search(tmp_path):
+    board, loadout = _admixes_board_and_loadout()
+    wl = tmp_path / "words.txt"
+    wl.write_text("admixes\n", encoding="utf-8")
+    searcher = WordSearcher(
+        dictionary=WordDictionary(wl),
+        min_len=3,
+        max_len=15,
+        time_budget=5.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=20)
+    paths = [r.path for r in results]
+    assert ADMIXES_PATH not in paths
+
+
+def test_pawn_wrap_diagonal_capture_with_hungry_snake():
+    """White pawn at (3,4) can capture at (2,0) when Hungry Snake wrap is active."""
+    board = _empty_board()
+    board.tiles[3][4] = _chess(3, 4, CurseType.CHESS_PAWN, "white")
+    board.tiles[2][0] = _chess(2, 0, CurseType.CHESS_KNIGHT, "black")
+    flags = stamp_search_flags(
+        Loadout(stamps=[LoadoutItem(id="hungry_snake", name="Hungry Snake", kind="stamp")])
+    )
+    nbrs = _nbrs(board, index_of(3, 4), flags=flags)
+    assert index_of(2, 0) in nbrs
+
+
+def test_pawn_no_wrap_diagonal_capture_without_hungry_snake():
+    """Without Hungry Snake, pawn at (3,4) cannot capture at (2,0)."""
+    board = _empty_board()
+    board.tiles[3][4] = _chess(3, 4, CurseType.CHESS_PAWN, "white")
+    board.tiles[2][0] = _chess(2, 0, CurseType.CHESS_KNIGHT, "black")
+    nbrs = _nbrs(board, index_of(3, 4))
+    assert index_of(2, 0) not in nbrs
 
 
 DROWSINESS_FIXTURE = (

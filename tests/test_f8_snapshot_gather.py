@@ -388,11 +388,13 @@ def test_write_f8_export_request(tmp_path, monkeypatch):
     import cursed_words_solver.f8_snapshot as f8_mod
 
     request_path = tmp_path / "f8_export_request.json"
+    tmp_path_file = tmp_path / "f8_export_request.json.tmp"
     monkeypatch.setattr(f8_mod, "F8_EXPORT_REQUEST_PATH", request_path)
     monkeypatch.setattr(f8_mod, "CONFIG_DIR", tmp_path)
 
     request_id = write_f8_export_request()
     assert request_path.exists()
+    assert not tmp_path_file.exists()
     data = json.loads(request_path.read_text(encoding="utf-8"))
     assert data["request_id"] == request_id
 

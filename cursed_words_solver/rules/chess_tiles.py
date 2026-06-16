@@ -417,6 +417,7 @@ def pawn_neighbors_mask(
     *,
     moving_side: str,
     allies_can_take: bool = False,
+    horizontal_wrap: bool = False,
 ) -> int:
     return mask_from_indices(
         pawn_neighbors(
@@ -425,6 +426,7 @@ def pawn_neighbors_mask(
             visited_mask,
             moving_side=moving_side,
             allies_can_take=allies_can_take,
+            horizontal_wrap=horizontal_wrap,
         )
     )
 
@@ -513,7 +515,12 @@ def chess_neighbors_mask(
         )
     elif curse == CurseType.CHESS_PAWN:
         mask = pawn_neighbors_mask(
-            board, start_idx, visited_mask, moving_side=side, allies_can_take=allies
+            board,
+            start_idx,
+            visited_mask,
+            moving_side=side,
+            allies_can_take=allies,
+            horizontal_wrap=wrap,
         )
     else:
         mask = 0
@@ -627,6 +634,20 @@ def _pawn_attack_dirs(side: str) -> list[tuple[int, int]]:
     return [(dr, -1), (dr, 1)]
 
 
+def _pawn_attack_cols(pawn_col: int, *, horizontal_wrap: bool) -> list[int]:
+    """Columns a pawn on pawn_col can attack diagonally (Hungry Snake: col 0 ↔ 4)."""
+    cols: list[int] = []
+    if pawn_col > 0:
+        cols.append(pawn_col - 1)
+    if pawn_col < 4:
+        cols.append(pawn_col + 1)
+    if horizontal_wrap:
+        partner = _wrap_partner_col(pawn_col)
+        if partner is not None and partner not in cols:
+            cols.append(partner)
+    return cols
+
+
 def _pawn_forward_clear(
     board: Board,
     row: int,
@@ -652,10 +673,12 @@ def _pawn_diagonal_capture(
     visited: int | set[int],
     *,
     allies_can_take: bool,
+    horizontal_wrap: bool = False,
 ) -> list[int]:
+    dr = _pawn_forward_delta(side)
     out: list[int] = []
-    for dr, dc in _pawn_attack_dirs(side):
-        nr, nc = row + dr, col + dc
+    for nc in _pawn_attack_cols(col, horizontal_wrap=horizontal_wrap):
+        nr = row + dr
         if not (0 <= nr < 5 and 0 <= nc < 5):
             continue
         idx = index_of(nr, nc)
@@ -724,6 +747,7 @@ def pawn_neighbors(
     *,
     moving_side: str,
     allies_can_take: bool = False,
+    horizontal_wrap: bool = False,
 ) -> list[int]:
     row, col = start_idx // 5, start_idx % 5
     dr = _pawn_forward_delta(moving_side)
@@ -767,6 +791,7 @@ def pawn_neighbors(
             moving_side,
             visited,
             allies_can_take=allies_can_take,
+            horizontal_wrap=horizontal_wrap,
         )
     )
     out.extend(
@@ -783,20 +808,23 @@ def _pawn_at_attacks_target(
     target_col: int,
     side: str,
     visited: int | set[int],
+    *,
+    horizontal_wrap: bool = False,
 ) -> bool:
     dr = _pawn_forward_delta(side)
-    for dc in (-1, 1):
-        if pawn_row + dr == target_row and pawn_col + dc == target_col:
-            idx = index_of(pawn_row, pawn_col)
-            tile = _chess_piece_at(board, idx)
-            if tile is None:
-                return False
-            return (
-                tile.curse == CurseType.CHESS_PAWN
-                and chess_side_known(tile)
-                and chess_side(tile) == side
-            )
-    return False
+    if pawn_row + dr != target_row:
+        return False
+    if target_col not in _pawn_attack_cols(pawn_col, horizontal_wrap=horizontal_wrap):
+        return False
+    idx = index_of(pawn_row, pawn_col)
+    tile = _chess_piece_at(board, idx)
+    if tile is None:
+        return False
+    return (
+        tile.curse == CurseType.CHESS_PAWN
+        and chess_side_known(tile)
+        and chess_side(tile) == side
+    )
 
 
 def _is_square_attacked_by_pawn(
@@ -814,7 +842,14 @@ def _is_square_attacked_by_pawn(
         if not (0 <= pr < 5 and 0 <= pc < 5):
             continue
         if _pawn_at_attacks_target(
-            board, pr, pc, target_row, target_col, side, visited
+            board,
+            pr,
+            pc,
+            target_row,
+            target_col,
+            side,
+            visited,
+            horizontal_wrap=horizontal_wrap,
         ):
             return True
     if horizontal_wrap:
@@ -822,7 +857,14 @@ def _is_square_attacked_by_pawn(
         if partner is not None:
             pr, pc = target_row - dr, partner
             if 0 <= pr < 5 and _pawn_at_attacks_target(
-                board, pr, pc, target_row, target_col, side, visited
+                board,
+                pr,
+                pc,
+                target_row,
+                target_col,
+                side,
+                visited,
+                horizontal_wrap=horizontal_wrap,
             ):
                 return True
     return False

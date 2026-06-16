@@ -2488,9 +2488,12 @@ def word_starts_ends_different_color(board: Board, path: list[int]) -> bool:
 
 
 def _path_step_adjacent(idx_a: int, idx_b: int) -> bool:
+    """Match GridUtilitySingleton.AreAdjacentTiles (8-dir, incl. diagonal)."""
+    if idx_a == idx_b:
+        return False
     r1, c1 = divmod(idx_a, 5)
     r2, c2 = divmod(idx_b, 5)
-    return abs(r1 - r2) + abs(c1 - c2) == 1
+    return abs(r1 - r2) <= 1 and abs(c1 - c2) <= 1
 
 
 def non_adjacent_step_count(path: list[int]) -> int:

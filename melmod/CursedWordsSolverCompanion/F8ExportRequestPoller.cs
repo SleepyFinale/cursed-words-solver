@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
+using System.Threading;
 using MelonLoader;
 using Newtonsoft.Json;
 
@@ -11,6 +13,9 @@ namespace CursedWordsSolverCompanion
     /// </summary>
     public static class F8ExportRequestPoller
     {
+        private const int ReadRetryCount = 12;
+        private const int ReadRetryDelayMs = 40;
+
         private static readonly string RequestPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".cursed_words_solver",
@@ -26,7 +31,7 @@ namespace CursedWordsSolverCompanion
                 if (!File.Exists(RequestPath))
                     return;
 
-                var json = File.ReadAllText(RequestPath);
+                var json = ReadRequestJsonWithRetry();
                 if (string.IsNullOrWhiteSpace(json))
                     return;
 
@@ -58,6 +63,41 @@ namespace CursedWordsSolverCompanion
                     "F8 export request poll failed: " + ex.Message
                 );
             }
+        }
+
+        private static string ReadRequestJsonWithRetry()
+        {
+            Exception lastError = null;
+            for (var attempt = 0; attempt < ReadRetryCount; attempt++)
+            {
+                try
+                {
+                    using (var stream = new FileStream(
+                        RequestPath,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.ReadWrite))
+                    using (var reader = new StreamReader(stream, Encoding.UTF8))
+                    {
+                        return reader.ReadToEnd();
+                    }
+                }
+                catch (IOException ex)
+                {
+                    lastError = ex;
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    lastError = ex;
+                }
+
+                if (attempt + 1 < ReadRetryCount)
+                    Thread.Sleep(ReadRetryDelayMs);
+            }
+
+            if (lastError != null)
+                throw lastError;
+            return "";
         }
     }
 }
