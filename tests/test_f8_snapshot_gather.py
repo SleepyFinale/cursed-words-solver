@@ -486,3 +486,82 @@ def test_tile_ninja_missing_export_marks_extras_not_ready():
     snapshot = _build_snapshot_from_run_state(run_state, rules={})
     assert not snapshot.extras_ready
     assert any("tile_ninja_consumables_used" in w for w in snapshot.warnings)
+
+
+def _telescope_board_and_loadout(*, grid_number: str) -> tuple:
+    from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
+
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    board.tiles[0][3] = Tile(
+        0,
+        3,
+        "t",
+        "E",
+        0,
+        color=TileColor.RED,
+        curse=CurseType.ITEM,
+        metadata={"scattered_item_id": "telescope", "scattered_item_level": 1},
+    )
+    loadout = Loadout(extras={"grid_number": grid_number})
+    return board, loadout
+
+
+def test_grid1_telescope_grid1_no_scoring_cache_historic_ready():
+    """Grid 1 + Telescope: melmod clears historic; gather must not block."""
+    from cursed_words_solver.suggestion import loadout_needs_encounter_historic
+
+    board, loadout = _telescope_board_and_loadout(grid_number="1")
+    assert loadout_needs_encounter_historic(loadout, board)
+    extras = {
+        "grid_number": "1",
+        "scoring_previous_words_count": "0",
+        "encounter_historic_source": "grid1_no_scoring_cache",
+    }
+    missing = _extras_missing_for_loadout(loadout, board, extras)
+    assert "historic_words" not in missing
+
+    tiles = [
+        {
+            "row": r,
+            "col": c,
+            "char": "a",
+            "letter": "A",
+            "base_score": 1,
+            "color": "colorless",
+            "curse": "letter",
+            "active": True,
+        }
+        for r in range(5)
+        for c in range(5)
+    ]
+    tiles[3]["char"] = "t"
+    tiles[3]["letter"] = "E"
+    tiles[3]["color"] = "red"
+    tiles[3]["curse"] = "item"
+    tiles[3]["scattered_item_id"] = "telescope"
+    tiles[3]["scattered_item_level"] = 1
+    run_state = {
+        "board": {"tiles": tiles, "money": 0},
+        "character": "Test",
+        "stickers": [],
+        "stamps": [],
+        "extras": extras,
+    }
+    snapshot = _build_snapshot_from_run_state(run_state, rules={})
+    assert snapshot.extras_ready
+    assert not any("historic_words" in w for w in snapshot.warnings)
+
+
+def test_grid2_telescope_empty_historic_still_missing():
+    """Grid 2+ with Telescope still waits for encounter historic export."""
+    from cursed_words_solver.suggestion import loadout_needs_encounter_historic
+
+    board, loadout = _telescope_board_and_loadout(grid_number="2")
+    assert loadout_needs_encounter_historic(loadout, board)
+    extras = {
+        "grid_number": "2",
+        "scoring_previous_words_count": "1",
+        "historic_words": "",
+    }
+    missing = _extras_missing_for_loadout(loadout, board, extras)
+    assert "historic_words" in missing

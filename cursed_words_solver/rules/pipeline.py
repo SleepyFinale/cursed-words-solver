@@ -2587,6 +2587,20 @@ class ScoringPipeline:
                     board, path
                 )
             rid = (rule_id or applying_sticker_id or "").lower()
+            if (
+                met
+                and rid == "creaky_chair"
+                and condition.startswith("curse_types_gte:")
+            ):
+                from cursed_words_solver.rules.scoring_conditions import (
+                    golden_record_halves_oden_count,
+                )
+
+                if golden_record_halves_oden_count(loadout, board, path, state):
+                    met = False
+                    cond_explanation = "skipped (golden_record_halves_oden)"
+                    rule_trace_context["condition_met"] = False
+                    rule_trace_context["condition_explanation"] = cond_explanation
             is_neapolitan = rid == "neapolitan"
             apply_neapolitan = is_neapolitan
             if not met and not apply_neapolitan:
@@ -2760,17 +2774,18 @@ class ScoringPipeline:
 
         elif effect_type == "multiply_word_by_unique_curse_type_count":
             from cursed_words_solver.rules.scoring_conditions import (
-                golden_record_skips_oden_mult,
+                golden_record_halves_oden_count,
             )
 
-            if not golden_record_skips_oden_mult(loadout, board, path, state):
-                n = unique_curse_type_count_on_path(board, path)
-                if n >= 1:
-                    factor = float(n)
-                    _queue_word_multiplier(state, factor, rule_id)
-                    state["effects"].append(
-                        f"×{factor} word ({n} unique curse type(s))"
-                    )
+            n = unique_curse_type_count_on_path(board, path)
+            if golden_record_halves_oden_count(loadout, board, path, state):
+                n = max(1, n // 2)
+            if n >= 1:
+                factor = float(n)
+                _queue_word_multiplier(state, factor, rule_id)
+                state["effects"].append(
+                    f"×{factor} word ({n} unique curse type(s))"
+                )
 
         elif effect_type == "multiply_word_by_number_count":
             if word_all_numbers_on_path(board, path):

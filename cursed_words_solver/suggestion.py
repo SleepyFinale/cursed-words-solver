@@ -914,6 +914,17 @@ def path_needs_dictionary_resolve(
     return False
 
 
+def _validator_for_loadout(
+    dictionary: WordDictionary,
+    loadout: Loadout,
+    *,
+    min_len: int = 3,
+) -> PathValidator:
+    validator = PathValidator(dictionary, min_len=min_len)
+    validator.quest_loadout = loadout
+    return validator
+
+
 def _physical_letter_overlap(board: Board, path: list[int], candidate: str) -> int:
     """Count positions where candidate matches the tile's physical letter."""
     score = 0
@@ -953,7 +964,7 @@ def dictionary_word_for_path(
 
     flags = stamp_search_flags(loadout)
 
-    validator = PathValidator(dictionary, min_len=min_len)
+    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
 
     if word.isalpha() and validator.word_ok(board, path, word, flags):
 
@@ -1074,7 +1085,6 @@ def f8_should_block_save(
         grid_bleed_warn,
         grid_one_hist_warn,
         f8_extras,
-        loadout,
     )
     if not gather_succeeded:
         return True, "gather_incomplete"
@@ -1082,7 +1092,28 @@ def f8_should_block_save(
         return True, "grid_advanced_during_solve"
     if f8_path_uses_crossed_out_tiles(board, path):
         return True, "crossed_out_tile_in_path"
+    if f8_path_missing_up_and_up_center(board, path, loadout):
+        return True, "up_and_up_center_not_in_path"
     return False, None
+
+
+def f8_path_missing_up_and_up_center(
+    board: Board | None,
+    path: list[int] | None,
+    loadout: Loadout | None,
+) -> bool:
+    """True when Up and Up is active but the path omits the required center tile."""
+    if board is None or not path or loadout is None:
+        return False
+    from cursed_words_solver.rules.quest_effects import quest_constraints, quest_path_allowed
+
+    center_idx = quest_constraints(loadout).require_center_index
+    if center_idx is None:
+        return False
+    try:
+        return not quest_path_allowed(board, list(path), loadout=loadout)
+    except (IndexError, ValueError):
+        return True
 
 
 def f8_path_uses_crossed_out_tiles(
@@ -1136,7 +1167,7 @@ def _valid_dictionary_words_for_path(
 ) -> list[str]:
     word = scoring_word.lower()
     flags = stamp_search_flags(loadout)
-    validator = PathValidator(dictionary, min_len=min_len)
+    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
     word_len = dictionary_word_length_for_path(board, path, word)
     valid: list[str] = []
     for candidate in dictionary.words_of_length(word_len):
@@ -1162,7 +1193,7 @@ def game_word_for_path(
     if dictionary is None:
         return lowered
     flags = stamp_search_flags(loadout)
-    validator = PathValidator(dictionary, min_len=min_len)
+    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
     if lowered.isalpha() and validator.word_ok(board, path, lowered, flags):
         return lowered
 

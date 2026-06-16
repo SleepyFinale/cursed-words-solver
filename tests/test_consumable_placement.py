@@ -29,8 +29,12 @@ from cursed_words_solver.consumable_placement import (
     sandy_placement_search_active,
     sandy_requires_rack_export,
     search_consumable_score_boost,
+    search_consumable_placement_fallback,
     search_target_rescue,
     search_with_consumable_placements,
+    _placement_screen_floor,
+    _screen_variant_limit,
+    _placement_hard_from_loadout,
     target_rescue_worth_trying,
     wait_for_rack_export,
     wait_for_sandy_rack_export,
@@ -204,6 +208,64 @@ def test_search_with_consumable_placements_finds_cats(tmp_path):
     assert placed_consumable_indices(sim_board) == placement_indices
     assert placement_indices.issubset(results[0].path)
     assert format_placement_instructions(records)
+
+
+def test_board_only_empty_rack_placement_enables_word(tmp_path):
+    """Board-only search finds nothing; rack tiles unlock the word via placement."""
+    wl = tmp_path / "words.txt"
+    wl.write_text("cats\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    tiles = [[_tile("x", r, c) for c in range(5)] for r in range(5)]
+    tiles[0][0] = _tile("c", 0, 0)
+    tiles[0][1] = _tile("a", 0, 1)
+    board = Board(tiles=tiles)
+    loadout = parse_run_state(
+        {
+            "character": "Octacles",
+            "extras": {
+                "consumable_rack": [
+                    {
+                        "rack_index": 0,
+                        "letter": "T",
+                        "char_display": "t",
+                        "color": "blue",
+                        "curse": "letter",
+                        "base_score": 1.0,
+                    },
+                    {
+                        "rack_index": 1,
+                        "letter": "S",
+                        "char_display": "s",
+                        "color": "blue",
+                        "curse": "letter",
+                        "base_score": 1.0,
+                    },
+                ],
+            },
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+    rack = consumable_rack_tiles(loadout)
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=2.0)
+    assert not searcher.find_best_words(board, top_n=1)
+    rules = ScoringPipeline().rules
+    assert rack_placement_search_active(loadout, board, rules)
+    sim_board, records, results = search_with_consumable_placements(
+        searcher,
+        board,
+        loadout,
+        rack,
+        time_budget=4.0,
+        top_n=3,
+        rules=rules,
+    )
+    assert len(records) == 2
+    assert results
+    assert results[0].word == "cats"
+    placement_indices = frozenset(rec.index for rec in records)
+    assert placed_consumable_indices(sim_board) == placement_indices
+    assert placement_indices.issubset(results[0].path)
 
 
 def test_placements_to_records():
@@ -1089,3 +1151,162 @@ def test_warehouse_placement_simulation_scores_286():
         placed_board, data["path"], data["word"], var_loadout
     )
     assert int(score) == 286
+
+
+def test_live_octacles_up_and_up_rack_ready_for_placement_fallback():
+    """Regression: rack wildcards exported and eligible when board-only search fails."""
+    from cursed_words_solver.config import resolve_wordlist
+    from cursed_words_solver.rules.quest_effects import quest_constraints
+
+    run_state_path = Path.home() / ".cursed_words_solver" / "run_state.json"
+    if not run_state_path.is_file():
+        pytest.skip("live run_state.json not present")
+    raw = load_run_state_raw(run_state_path)
+    extras = raw.get("extras") or {}
+    quest_class = raw.get("challenge_game_class") or extras.get("challenge_game_class")
+    if quest_class != "UpAndUp":
+        pytest.skip("run_state is not Up and Up")
+    loadout = parse_run_state(raw)
+    board = parse_board_from_run_state(raw)
+    rules = ScoringPipeline().rules
+    rack = remaining_rack_tiles(loadout, board)
+    assert len(rack) >= 1
+    assert all(t.curse == CurseType.WILDCARD for t in rack)
+    assert rack_placement_search_active(loadout, board, rules)
+    assert quest_constraints(loadout).require_center_index == 12
+
+    wl_path = resolve_wordlist(None)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(wl_path),
+        min_len=5,
+        max_len=25,
+        time_budget=8.0,
+        search_workers=1,
+    )
+    sim_board, records, placed_results = search_with_consumable_placements(
+        searcher,
+        board,
+        loadout,
+        rack,
+        time_budget=12.0,
+        top_n=1,
+        rules=rules,
+    )
+    assert sim_board is not None
+    if placed_results:
+        assert records
+        assert all(
+            idx in placed_results[0].path
+            for idx in placed_consumable_indices(sim_board)
+        )
+
+
+_WESTERNISATIONS_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260616_000741_westernisations.json"
+)
+
+
+def test_placement_screen_floor_hard_up_and_up():
+    loadout = parse_run_state(
+        {
+            "challenge_game_class": "UpAndUp",
+            "extras": {"up_and_up_center_index": "12"},
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+    assert _placement_hard_from_loadout(loadout)
+    assert _placement_screen_floor(investment=False, hard=True) == 2.0
+    assert _screen_variant_limit(10.0, 2.0, 24) == 5
+
+
+def test_westernisations_placement_candidates_regression() -> None:
+    """Round log 20260616_000741: placement pool must include winning consumable cells."""
+    import json
+
+    from cursed_words_solver.consumable_placement import (
+        _placement_rank,
+        _rank_placement_indices,
+        _tier_heap_cap,
+        _top_variants_for_tier,
+    )
+    from cursed_words_solver.rules.pipeline import ScoringPipeline
+
+    if not _WESTERNISATIONS_FIXTURE.is_file():
+        pytest.skip("fixture 20260616_000741_westernisations not installed")
+    data = json.loads(_WESTERNISATIONS_FIXTURE.read_text(encoding="utf-8"))
+    rs = data["run_state_snapshot"]
+    board = parse_board_from_run_state(rs)
+    loadout = parse_run_state(rs)
+    rules = ScoringPipeline().rules
+    rack = consumable_rack_tiles(loadout)
+    assert len(rack) == 2
+
+    cells = _rank_placement_indices(board, rack, loadout=loadout, rules=rules)
+    assert 12 not in cells, "Up and Up center must not be overwritten"
+    for idx in data["expected_placement_indices"]:
+        assert idx in cells
+
+    tier_cap = _tier_heap_cap(128)
+    tier2 = _top_variants_for_tier(
+        board, rack, cells, 2, tier_cap=tier_cap, loadout=loadout, rules=rules
+    )
+    pair_set = {tuple(sorted(i for i, _ in pl)) for pl in tier2}
+    expected_pair = tuple(sorted(data["expected_placement_indices"]))
+    assert expected_pair in pair_set
+
+    target_placements = [
+        (data["expected_placement_indices"][0], rack[0]),
+        (data["expected_placement_indices"][1], rack[1]),
+    ]
+    assert _placement_rank(
+        board, target_placements, loadout=loadout, rules=rules
+    ) > 0.0
+
+
+@pytest.mark.slow
+def test_westernisations_consumable_fallback_finds_center_word() -> None:
+    """Fallback must return a center-using word on the westernisations board (not board-only)."""
+    import json
+
+    from cursed_words_solver.config import resolve_wordlist
+    from cursed_words_solver.rules.boss_effects import boss_word_constraints
+    from cursed_words_solver.rules.pipeline import ScoringPipeline
+
+    if not _WESTERNISATIONS_FIXTURE.is_file():
+        pytest.skip("fixture 20260616_000741_westernisations not installed")
+    data = json.loads(_WESTERNISATIONS_FIXTURE.read_text(encoding="utf-8"))
+    rs = data["run_state_snapshot"]
+    board = parse_board_from_run_state(rs)
+    loadout = parse_run_state(rs)
+    rules = ScoringPipeline().rules
+    rack = consumable_rack_tiles(loadout)
+
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    wl_path = resolve_wordlist(None)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(wl_path),
+        min_len=max(7, constraints.min_len),
+        max_len=min(25, constraints.max_len or 25),
+        time_budget=45.0,
+        search_workers=1,
+    )
+    board_only = searcher.find_best_words(board, loadout=loadout, top_n=1)
+    assert not board_only, "board-only search should not satisfy Up and Up on this grid"
+
+    sim_board, records, results = search_consumable_placement_fallback(
+        searcher,
+        board,
+        loadout,
+        rack,
+        time_budget=45.0,
+        top_n=1,
+        rules=rules,
+    )
+    assert results, "consumable placement fallback should find a center-using word"
+    assert 12 in results[0].path, "Up and Up center tile must be in path"
+    assert records
+    assert all(idx in results[0].path for idx in (rec.index for rec in records))

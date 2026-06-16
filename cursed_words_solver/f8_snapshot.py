@@ -21,6 +21,8 @@ from cursed_words_solver.fingerprints import (
     fingerprints_from_run_state,
 )
 from cursed_words_solver.loadout import (
+    _grid_number_from_extras,
+    _scoring_previous_words_count_from_extras,
     encounter_mode_from_run_state,
     hydrate_tile_ninja_loadout_extras,
     load_run_state_raw,
@@ -189,6 +191,19 @@ def _supply_and_demand_needs_crossed_out_flags(
     return False
 
 
+def _encounter_historic_export_ready(extras: dict[str, Any], hist: str) -> bool:
+    """True when melmod exported encounter historic (empty is valid on grid 1)."""
+    if hist and hist != "[]":
+        return True
+    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
+    if source == "grid1_no_scoring_cache":
+        return True
+    return (
+        _grid_number_from_extras(extras) == 1
+        and _scoring_previous_words_count_from_extras(extras) == 0
+    )
+
+
 def _extras_missing_for_loadout(
     loadout: Loadout,
     board: Board,
@@ -202,7 +217,7 @@ def _extras_missing_for_loadout(
             missing.append("previous_word_first_letter")
     if loadout_needs_encounter_historic(loadout, board):
         hist = str(extras.get("historic_words", "") or "").strip()
-        if not hist or hist == "[]":
+        if not _encounter_historic_export_ready(extras, hist):
             missing.append("historic_words")
     if _has_neapolitan_stamp(loadout):
         if extras.get("neapolitan_percent") in (None, ""):

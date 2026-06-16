@@ -180,6 +180,13 @@ def _void_face_value(tile: Tile, loadout: Loadout | None = None) -> int:
             return tile.number_value
         if tile.letter.isdigit():
             return int(tile.letter)
+    if tile.curse == CurseType.FRACTION:
+        from cursed_words_solver.rules.fraction_tiles import fraction_parts
+
+        parts = fraction_parts(tile)
+        if parts is not None:
+            num, den = parts
+            return num + den
     chess_val = _CHESS_VOID_VALUES.get(tile.curse)
     if chess_val is not None:
         return chess_val

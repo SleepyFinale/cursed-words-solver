@@ -525,6 +525,72 @@ def _active_indices(board: Board) -> list[int]:
     return [i for i in range(25) if board.is_active_index(i)]
 
 
+def _placement_hard_from_loadout(loadout: Loadout | None) -> bool:
+    if loadout is None:
+        return False
+    from cursed_words_solver.rules.quest_effects import quest_constraints
+
+    if quest_constraints(loadout).require_center_index is not None:
+        return True
+    if (loadout.boss_id or "").strip().lower() == "cobra":
+        return True
+    for key in ("cobra_min_length", "encounter_min_word_length"):
+        try:
+            if int((loadout.extras or {}).get(key, 0) or 0) >= 7:
+                return True
+        except (TypeError, ValueError):
+            pass
+    return False
+
+
+def _placement_search_hard(
+    searcher: WordSearcher,
+    loadout: Loadout | None,
+) -> bool:
+    """True when placement screening needs longer per-variant search budgets."""
+    if loadout is not None:
+        from cursed_words_solver.rules.quest_effects import quest_constraints
+
+        if quest_constraints(loadout).require_center_index is not None:
+            return True
+    if _placement_hard_from_loadout(loadout):
+        return True
+    min_len = int(getattr(searcher.validator, "min_len", 1) or 1)
+    return min_len >= 7
+
+
+def _placement_screen_floor(*, investment: bool, hard: bool) -> float:
+    if hard:
+        return 2.0
+    return 0.5 if investment else 0.25
+
+
+def _screen_variant_limit(
+    screen_share: float,
+    screen_floor: float,
+    screen_cap: int,
+) -> int:
+    by_budget = max(1, int(screen_share / screen_floor))
+    return min(screen_cap, by_budget)
+
+
+def format_placement_search_stats_line() -> str:
+    """One-line summary of the last placement search for terminal logging."""
+    stats = last_placement_search_stats()
+    if stats.variants_screened <= 0:
+        return "Consumable placement: no variants screened"
+    best = (
+        f", best rank {int(stats.best_screened_rank)}"
+        if stats.best_screened_rank >= 0
+        else ""
+    )
+    adopted = " — adopted" if stats.adopted else ""
+    return (
+        f"Consumable placement: screened {stats.variants_screened} variants"
+        f"{best}{adopted}"
+    )
+
+
 def _mahjong_tile_value(
     rack_tile: Tile,
     loadout: Loadout | None,
@@ -573,7 +639,14 @@ def _placement_cell_score(
     return connectivity * 10.0 + tile_value + investment
 
 
-def _max_cells_for_rack_count(n: int, *, max_cells: int = 14) -> int:
+def _max_cells_for_rack_count(
+    n: int,
+    *,
+    max_cells: int = 14,
+    hard: bool = False,
+) -> int:
+    if hard:
+        return 25
     if n >= 5:
         return min(max_cells, 10)
     if n >= 4:
@@ -605,9 +678,20 @@ def _rank_placement_indices(
     max_cells: int = 14,
     loadout: Loadout | None = None,
     rules: dict[str, Any] | None = None,
+    hard: bool = False,
 ) -> list[int]:
-    max_cells = _max_cells_for_rack_count(len(rack_tiles), max_cells=max_cells)
+    if not hard:
+        hard = _placement_hard_from_loadout(loadout)
+    max_cells = _max_cells_for_rack_count(
+        len(rack_tiles), max_cells=max_cells, hard=hard
+    )
     active = _active_indices(board)
+    if loadout is not None:
+        from cursed_words_solver.rules.quest_effects import quest_constraints
+
+        center = quest_constraints(loadout).require_center_index
+        if center is not None:
+            active = [i for i in active if i != center]
     if len(active) <= max_cells:
         return active
     scored: list[tuple[float, int]] = []
@@ -875,10 +959,11 @@ def _placement_per_screen(
     variant_count: int,
     *,
     investment: bool,
+    hard: bool = False,
 ) -> float:
+    floor = _placement_screen_floor(investment=investment, hard=hard)
     if variant_count <= 0:
-        return 0.5 if investment else 0.25
-    floor = 0.5 if investment else 0.25
+        return floor
     return max(floor, screen_share / variant_count)
 
 
@@ -934,6 +1019,7 @@ def _finalize_placement_search(
     variant_gen_sec: float,
     variants_screened: int,
     solve_deadline: float | None = None,
+    hard: bool = False,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
     global _last_placement_search_stats
     threshold = min_rank_score if min_rank_score is not None else min_score
@@ -959,7 +1045,8 @@ def _finalize_placement_search(
     total_budget = max(2.0, float(time_budget))
     screen_share = min(12.0, total_budget * 0.25)
     refine_share = total_budget - screen_share
-    per_refine = max(1.0, refine_share / len(finalists))
+    refine_floor = 2.0 if hard else 1.0
+    per_refine = max(refine_floor, refine_share / len(finalists))
 
     best_rank = -1.0
     best_tile_count = 999
@@ -1120,15 +1207,18 @@ def _run_placement_search(
         )
 
     investment = consumable_investment_active(loadout)
+    hard = _placement_search_hard(searcher, loadout)
+    screen_floor = _placement_screen_floor(investment=investment, hard=hard)
     total_budget = max(2.0, float(time_budget))
     screen_share = _placement_screen_share(total_budget, investment=investment)
     screen_cap = (
         _SCREEN_VARIANT_CAP_INVESTMENT if investment else _SCREEN_VARIANT_CAP_DEFAULT
     )
+    screen_limit = _screen_variant_limit(screen_share, screen_floor, screen_cap)
     screen_variants = _cap_variants_for_screening(
         board,
         variants,
-        max_screen=screen_cap,
+        max_screen=screen_limit,
         loadout=loadout,
         rules=searcher.scoring.rules,
     )
@@ -1136,6 +1226,7 @@ def _run_placement_search(
         screen_share,
         len(screen_variants),
         investment=investment,
+        hard=hard,
     )
     base_required = searcher.validator.required_consumable_indices
     screened, variants_screened, _ = _screen_placement_variants(
@@ -1166,6 +1257,7 @@ def _run_placement_search(
         variant_gen_sec=0.0,
         variants_screened=variants_screened,
         solve_deadline=solve_deadline,
+        hard=hard,
     )
 
 
@@ -1193,6 +1285,8 @@ def _run_tiered_placement_search(
 
     rules = rules or {}
     investment = consumable_investment_active(loadout)
+    hard = _placement_search_hard(searcher, loadout)
+    screen_floor = _placement_screen_floor(investment=investment, hard=hard)
     cells = _rank_placement_indices(
         board, rack_tiles, loadout=loadout, rules=rules
     )
@@ -1207,6 +1301,7 @@ def _run_tiered_placement_search(
     screen_cap = (
         _SCREEN_VARIANT_CAP_INVESTMENT if investment else _SCREEN_VARIANT_CAP_DEFAULT
     )
+    screen_limit = _screen_variant_limit(screen_share, screen_floor, screen_cap)
 
     screened: list[tuple[float, int, list[tuple[int, Tile]], Board, WordResult]] = []
     variants_screened = 0
@@ -1232,7 +1327,7 @@ def _run_tiered_placement_search(
         tier_screen_batch = _cap_variants_for_screening(
             board,
             tier_variants,
-            max_screen=screen_cap,
+            max_screen=screen_limit,
             loadout=loadout,
             rules=rules,
         )
@@ -1240,6 +1335,7 @@ def _run_tiered_placement_search(
             remaining_screen,
             len(tier_screen_batch),
             investment=investment,
+            hard=hard,
         )
         tier_screened, tier_count, tier_qualifying = _screen_placement_variants(
             searcher,
@@ -1287,6 +1383,7 @@ def _run_tiered_placement_search(
         variant_gen_sec=variant_gen_sec,
         variants_screened=variants_screened,
         solve_deadline=solve_deadline,
+        hard=hard,
     )
 
 
@@ -1302,17 +1399,43 @@ def search_with_consumable_placements(
     solve_deadline: float | None = None,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
     rules = rules or {}
-    variants = _placement_variants(
-        board, rack_tiles, loadout=loadout, rules=rules
-    )
-    return _run_placement_search(
+    return _run_tiered_placement_search(
         searcher,
         board,
         loadout,
-        variants,
+        rack_tiles,
         time_budget=time_budget,
         top_n=top_n,
         require_placements_in_path=True,
+        max_variants=72,
+        rules=rules,
+        solve_deadline=solve_deadline,
+    )
+
+
+def search_consumable_placement_fallback(
+    searcher: WordSearcher,
+    board: Board,
+    loadout: Loadout,
+    rack_tiles: list[Tile],
+    *,
+    time_budget: float,
+    top_n: int,
+    rules: dict[str, Any] | None = None,
+    solve_deadline: float | None = None,
+) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
+    """Tiered placement search when board-only DFS found no valid word."""
+    rules = rules or {}
+    return _run_tiered_placement_search(
+        searcher,
+        board,
+        loadout,
+        rack_tiles,
+        time_budget=time_budget,
+        top_n=top_n,
+        require_placements_in_path=True,
+        max_variants=128,
+        rules=rules,
         solve_deadline=solve_deadline,
     )
 

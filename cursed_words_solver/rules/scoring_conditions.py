@@ -1947,9 +1947,12 @@ def golden_record_multiplies_word_score_only(
         board.get_by_index(idx).curse != CurseType.LETTER for idx in path
     ):
         return False
-    if any(
-        board.get_by_index(idx).curse in (CurseType.NUMBER, CurseType.FRACTION)
-        for idx in path
+    if (
+        any(
+            board.get_by_index(idx).curse in (CurseType.NUMBER, CurseType.FRACTION)
+            for idx in path
+        )
+        and not _oden_item_start_fraction_end_path(board, path)
     ):
         return False
     tile_sum = float(sum(state.get("tile_scores") or []))
@@ -1957,13 +1960,13 @@ def golden_record_multiplies_word_score_only(
     return word > tile_sum > 0
 
 
-def golden_record_skips_oden_mult(
+def golden_record_halves_oden_count(
     loadout: Loadout | None,
     board: Board | None,
     path: list[int] | None,
     state: dict,
 ) -> bool:
-    """Golden Record short rack-full words without letter tiles skip Oden (lyne 20260607_135939)."""
+    """Golden Record short rack-full words without letter tiles halve Oden (lyne 20260607_135939)."""
     from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
 
     if loadout is None or board is None or path is None or not path:
@@ -1979,6 +1982,16 @@ def golden_record_skips_oden_mult(
     tile_sum = float(sum(state.get("tile_scores") or []))
     word = float(state.get("word_score") or 0)
     return word > tile_sum > 0
+
+
+def golden_record_skips_oden_mult(
+    loadout: Loadout | None,
+    board: Board | None,
+    path: list[int] | None,
+    state: dict,
+) -> bool:
+    """Deprecated alias: Golden Record no longer fully skips Oden."""
+    return False
 
 
 def rare_item_count(loadout: Loadout) -> int:
@@ -2583,6 +2596,8 @@ def _collapse_oden_chess_categories(categories: set[str]) -> None:
 
 def _oden_categories_for_tile(tile: Tile) -> set[str]:
     """Oden buckets for one tile (joker wilds → card; chess by piece type only)."""
+    if tile.color == TileColor.VOID and tile.curse == CurseType.ITEM:
+        return set()
     categories: set[str] = set()
     if tile.curse in (CurseType.WILDCARD, CurseType.BLANK):
         if is_joker_tile(tile) or card_suit(tile) == "joker":
@@ -2633,16 +2648,50 @@ def _oden_categories_on_path(
 def _apply_oden_number_fraction_merge_if_triggered(
     categories: set[str], board: Board, path: list[int]
 ) -> None:
-    if (
-        ("wildcard" in categories or "card" in categories)
-        and _path_has_number_and_fraction(board, path)
-    ):
+    if not _path_has_number_and_fraction(board, path):
+        return
+    start = board.get_by_index(path[0])
+    end = board.get_by_index(path[-1])
+    if start.curse == CurseType.FRACTION:
+        if (
+            "wildcard" in categories
+            or "item" in categories
+            or "card" in categories
+        ):
+            _merge_oden_number_fraction(categories)
+            # endorsable 20260615_223142: wildcard triggers merge but does not
+            # remain its own bucket when the word ends on a number tile.
+            if end.curse == CurseType.NUMBER and "wildcard" in categories:
+                categories.discard("wildcard")
+    elif "wildcard" in categories or "card" in categories:
         _merge_oden_number_fraction(categories)
+
+
+def _oden_item_start_fraction_end_path(board: Board, path: list[int]) -> bool:
+    if not path:
+        return False
+    start = board.get_by_index(path[0])
+    end = board.get_by_index(path[-1])
+    return (
+        start.curse == CurseType.ITEM and end.curse == CurseType.FRACTION
+    )
+
+
+def _oden_item_start_wildcard_end_path(board: Board, path: list[int]) -> bool:
+    if not path:
+        return False
+    start = board.get_by_index(path[0])
+    end = board.get_by_index(path[-1])
+    return start.curse == CurseType.ITEM and end.curse in (
+        CurseType.WILDCARD,
+        CurseType.BLANK,
+    )
 
 
 def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
     """Distinct Oden curse categories on the path."""
     categories, letter_tiles = _oden_categories_on_path(board, path)
+    letter_suppressed_dense = False
     if "letter" in categories:
         other_cats = categories - {"letter"}
         card_from_letter = any(
@@ -2672,10 +2721,14 @@ def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
             not in (CurseType.LETTER, CurseType.ITEM)
             for idx in path
         )
-        if card_from_letter and not card_from_non_letter:
+        if card_from_letter and not card_from_non_letter and not _oden_item_start_fraction_end_path(
+            board, path
+        ):
             categories.discard("card")
             other_cats.discard("card")
-        other = len(other_cats)
+        other_cats_for_gate = set(other_cats)
+        _collapse_oden_chess_categories(other_cats_for_gate)
+        other = len(other_cats_for_gate)
         # In-game: letter bucket only contributes when the path has 2+ letter
         # tiles and at most 3 other curse categories (ens/zanjas yes; bottega/checkstop no).
         # One letter counts when exactly three other categories are present (upon).
@@ -2684,18 +2737,30 @@ def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
             if not (letter_tiles == 1 and other == 3):
                 categories.discard("letter")
         elif other > 3:
+            item_start_wildcard_end = _oden_item_start_wildcard_end_path(board, path)
             keep_letter_dense = len(path) > 5 and card_from_letter and (
-                other >= 5
+                (other >= 5 and card_from_non_letter)
                 or (other == 4 and card_from_non_letter)
             )
-            if not keep_letter_dense:
+            if not keep_letter_dense and not (
+                item_start_wildcard_end and letter_tiles >= 2
+            ):
                 categories.discard("letter")
+                letter_suppressed_dense = True
+                if card_from_letter and not card_from_non_letter:
+                    categories.discard("card")
         elif letter_tiles >= 2 and other <= 3:
+            item_start_wildcard_end = _oden_item_start_wildcard_end_path(board, path)
             # ippon: suited NUMBER/FRACTION must not add a separate card bucket.
             categories, _ = _oden_categories_on_path(
                 board, path, include_number_card_suit=False
             )
-            if card_from_letter and not card_from_non_letter:
+            if (
+                card_from_letter
+                and not card_from_non_letter
+                and not _oden_item_start_fraction_end_path(board, path)
+                and not item_start_wildcard_end
+            ):
                 categories.discard("card")
             if card_from_scattered_item and any(
                 board.get_by_index(idx).curse
@@ -2704,6 +2769,10 @@ def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
             ):
                 categories.discard("card")
             _merge_oden_number_fraction(categories)
+            if _path_has_number_and_fraction(board, path) and (
+                "wildcard" in categories or "item" in categories
+            ):
+                categories.discard("letter")
     if letter_tiles < 2 and "card" in categories:
         suited_non_wildcard = [
             idx
@@ -2729,6 +2798,8 @@ def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
         ):
             categories.discard("card")
     _apply_oden_number_fraction_merge_if_triggered(categories, board, path)
+    if letter_suppressed_dense and _path_has_number_and_fraction(board, path):
+        _merge_oden_number_fraction(categories)
     _collapse_oden_chess_categories(categories)
     return len(categories)
 

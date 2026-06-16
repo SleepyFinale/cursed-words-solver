@@ -104,8 +104,10 @@ from cursed_words_solver.consumable_placement import (
     remaining_rack_tiles,
     sandy_placement_search_active,
     search_consumable_score_boost,
+    search_consumable_placement_fallback,
     search_target_rescue,
     search_with_consumable_placements,
+    format_placement_search_stats_line,
     target_rescue_worth_trying,
     _result_rank_score,
 )
@@ -1050,9 +1052,21 @@ class SolverApp:
             effective_max = min(board_max_len, constraints.max_len)
             if effective_max < effective_min:
                 effective_max = effective_min
+            rules = self._scoring.rules
+            rack_placement_pending = (
+                not sandy_auto_place
+                and rack_placement_search_active(loadout, board, rules)
+            )
+            rack_reserve_frac = 0.35
+            primary_search_budget = (
+                search_budget * (1.0 - rack_reserve_frac)
+                if rack_placement_pending
+                else search_budget
+            )
+            rack_fallback_budget = search_budget * rack_reserve_frac
             self._searcher.min_len = effective_min
             self._searcher.max_len = effective_max
-            self._searcher.time_budget = phase_budget(search_budget)
+            self._searcher.time_budget = phase_budget(primary_search_budget)
             self._searcher.validator.min_len = self._searcher.min_len
             self._searcher.validator.required_consumable_indices = mandatory
             self._searcher.blocked = constraints.blocked
@@ -1089,7 +1103,6 @@ class SolverApp:
             rescue_budget = search_budget * 0.4
             rack_boost_share = 0.45 if consumable_investment_active(loadout) else 0.3
             rack_boost_budget = search_budget * rack_boost_share
-            rules = self._scoring.rules
             if sandy_auto_place and rack_tiles and solve_remaining() >= 1.0:
                 search_board, placement_records, results = (
                     search_with_consumable_placements(
@@ -1163,6 +1176,64 @@ class SolverApp:
                 )
             else:
                 results = []
+
+            if not results:
+                q_center = quest_constraints(loadout).require_center_index
+                if q_center is not None:
+                    print(
+                        "  Warning: No words found that use the center tile "
+                        "(Up and Up).",
+                        flush=True,
+                    )
+
+            if (
+                not results
+                and not sandy_auto_place
+                and rack_placement_search_active(loadout, board, rules)
+                and solve_remaining() >= 1.0
+            ):
+                fallback_rack = remaining_rack_tiles(loadout, board)
+                if fallback_rack:
+                    print(
+                        "  No board-only word — simulating consumable placements…",
+                        flush=True,
+                    )
+                    search_board, placement_records, results = (
+                        search_consumable_placement_fallback(
+                            self._searcher,
+                            board,
+                            loadout,
+                            fallback_rack,
+                            time_budget=phase_budget(rack_fallback_budget),
+                            top_n=self.config.top_n_results,
+                            rules=rules,
+                            solve_deadline=solve_deadline,
+                        )
+                    )
+                    placement_variant_sec += (
+                        last_placement_search_stats().variant_gen_sec
+                    )
+                    print(
+                        f"  {format_placement_search_stats_line()}",
+                        flush=True,
+                    )
+                    self._searcher.validator.required_consumable_indices = (
+                        mandatory_consumable_indices(
+                            loadout, search_board, rules
+                        )
+                    )
+                    if placement_records:
+                        print(
+                            f"  Place consumables: "
+                            f"{format_placement_instructions(placement_records)}",
+                            flush=True,
+                        )
+                    elif not results:
+                        print(
+                            "  No valid word found with simulated consumable "
+                            "placements.",
+                            flush=True,
+                        )
 
             baseline_score = results[0].score if results else 0.0
             baseline_rank = (
@@ -1864,6 +1935,10 @@ class SolverApp:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "validate-path":
+        from cursed_words_solver.debug_path import cli_validate_path
+
+        sys.exit(cli_validate_path(sys.argv[2:]))
     parser = argparse.ArgumentParser(
         description="Cursed Words solver (requires MelonLoader companion mod)"
     )

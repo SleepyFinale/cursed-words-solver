@@ -906,7 +906,7 @@ def test_reserve_scaling_leaves_positive_main_slice():
         seed_reserve=0.0,
         extension_reserve=er,
     )
-    main_slice = tb - sum(scaled[:6])
+    main_slice = tb - sum(scaled[:7])
     assert main_slice >= tb * 0.30
 
 

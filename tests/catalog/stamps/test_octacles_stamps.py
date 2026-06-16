@@ -1087,14 +1087,41 @@ def test_oden_teggs_path_four_categories():
     assert int(score) == data["actual_score"]
 
 
-def test_oden_lyne_golden_record_skips_oden_mult():
-    """Mismatch 20260607_135939: GR short word, no letters → Oden skipped, not ×3."""
+def test_oden_modificative_dense_chess_keeps_letter_bucket():
+    """Mismatch 20260615_230257: 3 chess types collapse before letter gate → Oden ×4."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260615_230257.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    assert unique_curse_type_count_on_path(board, path) == 4
+    loadout = parse_run_state(run_state)
+    score, bd = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert int(score) == data["actual_score"]
+    assert any("×4.0 word (4 unique curse type(s))" in e for e in bd["pipeline"]["effects"])
+
+
+def test_oden_lyne_golden_record_halves_oden_mult():
+    """Mismatch 20260607_135939: GR short word, no letters → Oden ×2 (not ×4 or skip)."""
     from cursed_words_solver.loadout import (
         parse_board_from_run_state,
         parse_run_state,
         prepare_run_state_dict_for_scoring,
     )
     from cursed_words_solver.rules.scoring_conditions import (
+        golden_record_halves_oden_count,
         letter_tile_count_on_path,
         unique_curse_type_count_on_path,
     )
@@ -1110,13 +1137,15 @@ def test_oden_lyne_golden_record_skips_oden_mult():
     board = parse_board_from_run_state(run_state)
     path = data["path"]
     assert letter_tile_count_on_path(board, path) == 0
-    # Fraction and number are separate buckets on this letterless path (×4 raw types;
-    # Golden Record skips Oden mult regardless of category count).
     assert unique_curse_type_count_on_path(board, path) == 4
+    loadout = parse_run_state(run_state)
+    state = {"tile_scores": [8.0, 3.0, 3.0, 5.0], "word_score": 36.0}
+    assert golden_record_halves_oden_count(loadout, board, path, state)
     pipeline = ScoringPipeline()
-    score, bd = pipeline.score(board, path, data["word"], parse_run_state(run_state))
+    score, bd = pipeline.score(board, path, data["word"], loadout)
     effects = bd["pipeline"]["effects"]
-    assert not any("oden" in e.lower() and "×" in e for e in effects)
+    assert any("×2.0 word (2 unique curse type(s))" in e for e in effects)
+    assert not any("curse_types_gte" in e for e in effects)
     assert int(score) != 2970
 
 
@@ -1190,9 +1219,9 @@ def test_oden_atmoses_dense_path_five_categories():
 
 
 @pytest.mark.skip(
-    reason="Dense letter-path Oden category suppression WIP (20260607_141348)"
+    reason="Dense letter-path Oden category suppression covered by test_oden_unfrock_dense_path_four_categories"
 )
-def test_oden_unfrock_dense_path_four_categories():
+def test_oden_unfrock_dense_path_four_categories_legacy():
     """Mismatch 20260607_141348: dense path drops letter bucket → Oden ×4."""
     from cursed_words_solver.loadout import (
         parse_board_from_run_state,
@@ -1233,6 +1262,206 @@ def test_oden_tranqs_axolotl_three_categories():
     board = parse_board_from_run_state(run_state)
     path = data["path"]
     assert unique_curse_type_count_on_path(board, path) == 3
+
+
+def test_oden_stache_path_two_categories():
+    """Mismatch 20260615_201534: fraction start + wildcard end → Oden ×2 with Broom."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260615_201534.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    assert unique_curse_type_count_on_path(board, path) == 2
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert int(score) == 50
+
+
+def test_oden_adorner_path_two_categories():
+    """Mismatch 20260615_201731: fraction start + item end → Oden ×2 with Broom."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260615_201731.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    assert unique_curse_type_count_on_path(board, path) == 2
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert int(score) == 54
+
+
+def test_oden_asseverated_void_item_four_categories():
+    """Mismatch 20260615_214341: VOID scattered item on path → Oden ×4, not ×5."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260615_214341.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    assert unique_curse_type_count_on_path(board, path) == 4
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert int(score) == 456
+
+
+def test_oden_ovary_path_three_categories():
+    """Mismatch 20260615_201904: void fraction start merges number+fraction → Oden ×3."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260615_201904.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    assert unique_curse_type_count_on_path(board, path) == 3
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert int(score) == 156
+
+
+def test_oden_endorsable_fraction_start_number_end():
+    """Mismatch 20260615_223142: fraction start + number end drops wildcard bucket → Oden ×3."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260615_223142.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    assert unique_curse_type_count_on_path(board, path) == 3
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert int(score) == data["actual_score"]
+
+
+def test_oden_miha_item_start_fraction_end():
+    """Mismatch 20260607_123029: suited item start + fraction end keeps card bucket → Oden ×4."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260607_123029.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    assert unique_curse_type_count_on_path(board, path) == 4
+    loadout = parse_run_state(run_state)
+    score, bd = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert any("×4.0 word (4 unique curse type(s))" in e for e in bd["pipeline"]["effects"])
+    assert int(score) == data["actual_score"]
+
+
+def test_oden_morias_item_start_wildcard_end():
+    """Mismatch 20260607_123150: item start + wildcard end keeps letter bucket → Oden ×5."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260607_123150.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    assert unique_curse_type_count_on_path(board, path) == 5
+
+
+def test_oden_unfrock_dense_path_four_categories():
+    """Mismatch 20260607_141348: dense path drops letter bucket → Oden ×4."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260607_141348.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    assert len(path) == 7
+    assert unique_curse_type_count_on_path(board, path) == 4
+    loadout = parse_run_state(run_state)
+    score, bd = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert any("×4.0 word (4 unique curse type(s))" in e for e in bd["pipeline"]["effects"])
+    assert int(score) < data["predicted_score"]
 
 
 def test_golden_record_upon_all_letters_full_subtotal():
