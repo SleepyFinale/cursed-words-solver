@@ -16,6 +16,7 @@ from cursed_words_solver.search import (
     PathValidator,
     WordSearcher,
     format_microscope_position_hint,
+    is_numeric_wildcard,
     microscope_position_uses,
     physical_word_for_path,
 )
@@ -358,6 +359,75 @@ def test_hyena_board_serial_beats_single_tile_one():
     assert len(top.path) > 1
 
 
+POW_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260615_181233_pow.json"
+)
+POW_PATH = [12, 7, 11]
+
+
+def _board_and_loadout_from_mismatch(fixture: Path):
+    if not fixture.exists():
+        pytest.skip(f"fixture required: {fixture.name}")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    from tests.regression.test_scoring_mismatches import _run_state_for_replay
+
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None and loadout is not None
+    return board, loadout, data
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_multidigit_number_face_dictionary_resolve_pow():
+    """Face '11' inflates search form to 1123; resolve still finds letter words."""
+    board, loadout, _data = _board_and_loadout_from_mismatch(POW_FIXTURE)
+    d = WordDictionary(GAME_WORDLIST_PATH)
+    flags = stamp_search_flags(loadout)
+    v = PathValidator(d, min_len=1)
+    assert v.word_ok(board, POW_PATH, "pow", flags)
+    valid = dictionary_word_for_path(
+        board,
+        POW_PATH,
+        "1123",
+        loadout,
+        d,
+        min_len=1,
+        pipeline=ScoringPipeline(),
+    )
+    assert valid is not None
+    assert v.word_ok(board, POW_PATH, valid, flags)
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_pow_path_rank_beats_single_tile_one():
+    """Regression: 3-tile letter word through multi-digit face beats lone '1'."""
+    board, loadout, _data = _board_and_loadout_from_mismatch(POW_FIXTURE)
+    d = WordDictionary(GAME_WORDLIST_PATH)
+    searcher = WordSearcher(
+        dictionary=d,
+        min_len=1,
+        max_len=25,
+        time_budget=10.0,
+        wordlist_path=GAME_WORDLIST_PATH,
+        search_workers=1,
+    )
+    pow_rank = searcher._rank_score_for_candidate(board, POW_PATH, "1123", loadout)
+    one_rank = searcher._rank_score_for_candidate(board, [15], "1", loadout)
+    assert pow_rank is not None and one_rank is not None
+    assert pow_rank > one_rank
+    assert pow_rank > 251
+
+
 @pytest.mark.skipif(
     not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
     reason="game wordlist required",
@@ -387,3 +457,68 @@ def test_hyena_board_parallel_beats_single_tile_one():
     assert top.score > 100
     assert top.word != "1"
     assert len(top.path) > 1
+
+
+AAHING_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260615_aahing_invalid.json"
+)
+AAHING_PATH = [4, 9, 14, 18, 12, 6]
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+@pytest.mark.skipif(not AAHING_FIXTURE.exists(), reason="fixture required")
+def test_aahing_path_rejected_on_advent_calendar_board():
+    """Only one numeric wildcard (tile 3 at pos 2); game rejects aahing."""
+    board, loadout, _data = _board_and_loadout_from_mismatch(AAHING_FIXTURE)
+    d = WordDictionary(GAME_WORDLIST_PATH)
+    flags = stamp_search_flags(loadout)
+    v = PathValidator(d, min_len=3)
+    phys = physical_word_for_path(board, AAHING_PATH, flags=flags)
+    assert phys == "1820317214"
+    assert not v.word_ok(board, AAHING_PATH, "aahing", flags)
+    assert is_numeric_wildcard(
+        board.get_by_index(AAHING_PATH[2]), 2, flags=flags, segment="aahing"
+    )
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+@pytest.mark.skipif(not AAHING_FIXTURE.exists(), reason="fixture required")
+@pytest.mark.slow
+def test_aahing_board_search_does_not_suggest_invalid_word():
+    board, loadout, _data = _board_and_loadout_from_mismatch(AAHING_FIXTURE)
+    d = WordDictionary(GAME_WORDLIST_PATH)
+    flags = stamp_search_flags(loadout)
+    v = PathValidator(d, min_len=3)
+    searcher = WordSearcher(
+        dictionary=d,
+        min_len=3,
+        max_len=25,
+        time_budget=15.0,
+        wordlist_path=GAME_WORDLIST_PATH,
+        search_workers=1,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=5)
+    _assert_top_results_valid(board, loadout, results, v, flags)
+    assert "aahing" not in {r.word for r in results}
+    for r in results:
+        if r.path == AAHING_PATH:
+            resolved = dictionary_word_for_path(
+                board,
+                r.path,
+                r.word,
+                loadout,
+                d,
+                min_len=3,
+                pipeline=ScoringPipeline(),
+            )
+            if resolved:
+                assert v.word_ok(board, r.path, resolved, flags)

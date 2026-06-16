@@ -432,6 +432,13 @@ def is_disk_catchup_drift(
         prev_cur = str(cur.get("previous_word_first_letter", "") or "").strip().lower()
         if prev_f8 and prev_cur and prev_f8 != prev_cur:
             return True
+    try:
+        bday_f8 = int(str(f8.get("birthday_cake_bonus") or "0"))
+        bday_cur = int(str(cur.get("birthday_cake_bonus") or "0"))
+        if bday_cur > bday_f8:
+            return True
+    except (TypeError, ValueError):
+        pass
     return False
 
 
@@ -854,6 +861,59 @@ def _fixed_letters_align(scoring_word: str, candidate: str) -> bool:
     return True
 
 
+def dictionary_word_length_for_path(
+    board: Board, path: list[int], scoring_word: str
+) -> int:
+    """Dictionary word length for this path (one letter per tile on number boards)."""
+    from cursed_words_solver.rules.scoring_conditions import is_number_like_tile
+
+    word = scoring_word.lower()
+    if len(path) > 1 and any(
+        is_number_like_tile(board.get_by_index(i)) for i in path
+    ):
+        if not word.isalpha() or len(word) != len(path):
+            return len(path)
+    return len(word)
+
+
+def _candidate_aligns_scoring_word(
+    scoring_word: str, candidate: str, *, word_len: int
+) -> bool:
+    """True when candidate length matches resolve length and fixed letters align."""
+    if len(candidate) != word_len:
+        return False
+    if len(scoring_word) == word_len:
+        return _fixed_letters_align(scoring_word, candidate)
+    if scoring_word.isdigit():
+        return True
+    return False
+
+
+def path_needs_dictionary_resolve(
+    board: Board, path: list[int], search_word: str
+) -> bool:
+    """True when search_word must be resolved to a dictionary spelling for scoring."""
+    from cursed_words_solver.rules.scoring_conditions import is_number_like_tile
+
+    if "?" in search_word:
+        return True
+    has_number = False
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.curse == CurseType.ITEM or tile.curse in CHESS_CURSES:
+            return True
+        if is_number_like_tile(tile):
+            has_number = True
+    if not has_number:
+        return False
+    word = search_word.lower()
+    if len(word) != len(path):
+        return True
+    if len(path) > 1 and not word.isalpha():
+        return True
+    return False
+
+
 def _physical_letter_overlap(board: Board, path: list[int], candidate: str) -> int:
     """Count positions where candidate matches the tile's physical letter."""
     score = 0
@@ -901,12 +961,12 @@ def dictionary_word_for_path(
 
 
 
-    word_len = len(word)
+    word_len = dictionary_word_length_for_path(board, path, word)
 
     valid: list[str] = []
 
     for candidate in dictionary.words_of_length(word_len):
-        if not _fixed_letters_align(word, candidate):
+        if not _candidate_aligns_scoring_word(word, candidate, word_len=word_len):
             continue
         if not validator.word_ok(board, path, candidate, flags):
             continue
@@ -1077,10 +1137,10 @@ def _valid_dictionary_words_for_path(
     word = scoring_word.lower()
     flags = stamp_search_flags(loadout)
     validator = PathValidator(dictionary, min_len=min_len)
-    word_len = len(word)
+    word_len = dictionary_word_length_for_path(board, path, word)
     valid: list[str] = []
     for candidate in dictionary.words_of_length(word_len):
-        if not _fixed_letters_align(word, candidate):
+        if not _candidate_aligns_scoring_word(word, candidate, word_len=word_len):
             continue
         if not validator.word_ok(board, path, candidate, flags):
             continue
@@ -1119,15 +1179,7 @@ def game_word_for_path(
         min_len=min_len,
     )
     if not valid:
-        return dictionary_word_for_path(
-            board,
-            path,
-            lowered,
-            loadout,
-            dictionary,
-            min_len=min_len,
-            pipeline=None,
-        ) or lowered
+        return lowered
     if len(valid) == 1:
         return valid[0]
     return min(valid)

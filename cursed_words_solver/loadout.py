@@ -1845,6 +1845,35 @@ TILE_NINJA_LIVE_EXTRA_KEYS = (
     "tile_ninja_word_bonus_percent",
 )
 
+# Workflow extras embedded in last_suggestion.json (must match F8 scoring loadout).
+F8_EMBED_WORKFLOW_EXTRA_KEYS = (
+    "historic_words",
+    "previous_word_first_letter",
+    "red_tiles_used_encounter",
+    "scoring_previous_words_count",
+    "mutating_dna_letter_counts",
+    "encounter_historic_source",
+    "birthday_cake_bonus",
+    "pin_memory",
+    "pin_memory_count",
+    "consumable_rack_count",
+    *TILE_NINJA_LIVE_EXTRA_KEYS,
+)
+
+
+def merge_f8_workflow_extras_into(
+    dest: dict[str, Any],
+    loadout_extras: dict[str, Any] | None,
+) -> None:
+    """Copy scoring loadout workflow fields into F8 embed extras (no disk read)."""
+    if not isinstance(dest, dict) or not isinstance(loadout_extras, dict):
+        return
+    for key in F8_EMBED_WORKFLOW_EXTRA_KEYS:
+        val = loadout_extras.get(key)
+        if val is None or str(val).strip() == "":
+            continue
+        dest[key] = str(val) if not isinstance(val, str) else val
+
 
 def merge_tile_ninja_extras_into(
     dest: dict[str, Any],

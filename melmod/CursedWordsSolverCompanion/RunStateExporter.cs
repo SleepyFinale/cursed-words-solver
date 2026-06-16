@@ -187,13 +187,13 @@ namespace CursedWordsSolverCompanion
             );
             var diff = ExtrasDiffHelper.DiffExtras(f8Extras, snapshot.extras);
             var ctx = BuildStaleF8Context(player);
-            var workflow = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(diff, ctx);
-            if (!string.IsNullOrEmpty(workflow))
+            if (ExtrasDiffHelper.HasPlayedWordSinceF8(diff))
             {
-                if (ExtrasDiffHelper.IsStaleExportAheadDrift(diff))
-                    return;
+                var workflow = ExtrasDiffHelper.DescribePlayedWordSinceF8Drift(diff, ctx);
                 SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
-                CompanionDiagnostics.LogVerbose("Cleared stale F8 suggestion (" + workflow + ")");
+                CompanionDiagnostics.LogVerbose(
+                    "Cleared stale F8 suggestion (" + (workflow ?? "workflow advanced") + ")"
+                );
                 return;
             }
 
@@ -1099,11 +1099,54 @@ namespace CursedWordsSolverCompanion
 
                 ApplyResolvedRareItemCount(snapshot, onDisk);
                 ApplyResolvedTileNinjaBonus(snapshot, onDisk, player);
+                ResolveBirthdayCakeBonusForExport(snapshot, player, onDisk);
             }
             catch (Exception ex)
             {
                 ExportDiagnostics.RecordMergeError("MergePreservedExtrasFromDisk: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// Birthday Cake only increases within a run — prefer max(live, disk, snapshot).
+        /// </summary>
+        private static void ResolveBirthdayCakeBonusForExport(
+            RunStateSnapshot snapshot,
+            Player player,
+            Dictionary<string, string> onDisk
+        )
+        {
+            if (snapshot?.extras == null || player == null)
+                return;
+            if (!HasBirthdayCakeInRun(player))
+                return;
+
+            var best = -1;
+            var live = TryGetBirthdayCakeBonus(player);
+            if (live >= 0)
+                best = live;
+
+            if (onDisk != null)
+            {
+                string diskRaw;
+                if (onDisk.TryGetValue("birthday_cake_bonus", out diskRaw))
+                {
+                    int diskVal;
+                    if (int.TryParse((diskRaw ?? "").Trim(), out diskVal) && diskVal >= 0)
+                        best = best >= 0 ? Math.Max(best, diskVal) : diskVal;
+                }
+            }
+
+            string snapRaw;
+            if (snapshot.extras.TryGetValue("birthday_cake_bonus", out snapRaw))
+            {
+                int snapVal;
+                if (int.TryParse((snapRaw ?? "").Trim(), out snapVal) && snapVal >= 0)
+                    best = best >= 0 ? Math.Max(best, snapVal) : snapVal;
+            }
+
+            if (best >= 0)
+                snapshot.extras["birthday_cake_bonus"] = best.ToString();
         }
 
         public static bool TryParseTileNinjaAdditiveForExport(string raw, out double additive)
@@ -1472,9 +1515,20 @@ namespace CursedWordsSolverCompanion
                 snapshot.extras.Remove("cards_submitted");
             }
 
-            var mutatingDna = MutatingDnaLetterCounts.TryReadFromPlayer(player);
-            if (mutatingDna == null || mutatingDna.Count == 0)
+            if (!HasMutatingDnaStamp(player))
                 snapshot.extras.Remove("mutating_dna_letter_counts");
+            else
+            {
+                var previousWords = TryGetHistoricPreviousWords(player);
+                var rebuilt = ScoringContextCapture.ResolveMutatingDnaLetterCounts(
+                    player,
+                    previousWords
+                );
+                snapshot.extras["mutating_dna_letter_counts"] =
+                    ScoringContextCapture.SerializeLetterCounts(
+                        rebuilt ?? new Dictionary<string, int>()
+                    );
+            }
 
             if (!PlayerHasStampSlug(player, "neapolitan"))
             {
@@ -1567,7 +1621,7 @@ namespace CursedWordsSolverCompanion
                 ctx.HasBicyclePin = IsBicyclePin(player.MyCharacter.CharacterItem);
 
             var mutatingDna = MutatingDnaLetterCounts.TryReadFromPlayer(player);
-            ctx.HasMutatingDnaStamp = mutatingDna != null && mutatingDna.Count > 0;
+            ctx.HasMutatingDnaStamp = MutatingDnaLetterCounts.PlayerHasMutatingDnaStamp(player);
             return ctx;
         }
 
@@ -1588,16 +1642,27 @@ namespace CursedWordsSolverCompanion
                 Directory.CreateDirectory(dir);
 
             var temp = path + ".tmp";
-            File.WriteAllText(temp, content, new UTF8Encoding(false));
-            try
+            Exception lastError = null;
+            for (var attempt = 0; attempt < JsonMergeRetryCount; attempt++)
             {
-                if (File.Exists(path))
-                    File.Replace(temp, path, null);
-                else
-                    File.Move(temp, path);
-            }
-            catch
-            {
+                File.WriteAllText(temp, content, new UTF8Encoding(false));
+                try
+                {
+                    if (File.Exists(path))
+                        File.Replace(temp, path, null);
+                    else
+                        File.Move(temp, path);
+                    return;
+                }
+                catch (IOException ex)
+                {
+                    lastError = ex;
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    lastError = ex;
+                }
+
                 try
                 {
                     if (File.Exists(temp))
@@ -1607,8 +1672,13 @@ namespace CursedWordsSolverCompanion
                 {
                     // ignore cleanup failure
                 }
-                throw;
+
+                if (attempt + 1 < JsonMergeRetryCount)
+                    Thread.Sleep(JsonMergeRetryDelayMs);
             }
+
+            if (lastError != null)
+                throw lastError;
         }
 
         private static List<RunStateItem> MapItems(Item[] items, bool stampsOnly)

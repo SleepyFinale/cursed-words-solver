@@ -28,6 +28,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     is_number_like_tile,
     normalize_scoring_path,
     path_letter_for_count,
+    tile_string_representation,
     rewind_bicycle_pre_word_extras,
     rewind_birthday_cake_pre_word_extras,
     rewind_movie_camera_pre_word_extras,
@@ -1694,15 +1695,15 @@ def _infer_mutating_dna_counts_from_trace(
 
     counts: dict[str, int] = {}
     for i, idx in enumerate(path):
-        ch = path_letter_for_count(board.get_by_index(idx))
-        if not ch:
+        key = tile_string_representation(board.get_by_index(idx))
+        if not key:
             continue
         try:
             delta = int(after[i]) - int(before[i])
         except (TypeError, ValueError):
             continue
-        if ch not in counts and delta > 0:
-            counts[ch] = delta
+        if key not in counts and delta > 0:
+            counts[key] = delta
     return counts
 
 
@@ -1818,17 +1819,10 @@ def _adjust_mutating_dna_extras(
         return
 
     extras = dict(run_state.get("extras") or {})
-    snapshot_extras = data.get("extras_snapshot") or {}
-    has_captured = bool(
-        extras.get("mutating_dna_letter_counts")
-        or (isinstance(snapshot_extras, dict)
-            and snapshot_extras.get("mutating_dna_letter_counts"))
-    )
     counts = _parse_mutating_dna_counts(extras.get("mutating_dna_letter_counts"))
-    if not counts and not has_captured:
+    if not counts:
         inferred = _infer_mutating_dna_counts_from_trace(data, board, path)
-        # Large deltas (e.g. a:9) are historic use counts; small ones are not reliable.
-        if inferred and max(inferred.values(), default=0) >= 8:
+        if inferred:
             counts = inferred
     if not counts:
         return

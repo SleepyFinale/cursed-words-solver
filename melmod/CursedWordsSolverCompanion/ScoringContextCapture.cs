@@ -60,28 +60,130 @@ namespace CursedWordsSolverCompanion
             {
                 if (historic == null)
                     continue;
-
-                var fromPath = CountLettersFromHistoricPath(historic);
-                if (fromPath.Count > 0)
-                {
-                    MergeLetterCounts(counts, fromPath);
-                    continue;
-                }
-
-                var word = GetSubmittedWordString(historic);
-                if (string.IsNullOrEmpty(word))
-                    continue;
-
-                foreach (var ch in word)
-                {
-                    if (!char.IsLetter(ch))
-                        continue;
-                    var key = char.ToLowerInvariant(ch).ToString();
-                    IncrementCount(counts, key);
-                }
+                ApplyMutatingDnaHistoricWord(counts, historic);
             }
 
             return counts;
+        }
+
+        /// <summary>
+        /// Mirror MutatingDNA.ApplyTileBonus key updates for one historic submit.
+        /// </summary>
+        private static void ApplyMutatingDnaHistoricWord(
+            Dictionary<string, int> counts,
+            HistoricWord historic
+        )
+        {
+            var selections = TryGetTileSelections(historic);
+            if (selections == null || selections.Count == 0)
+                return;
+
+            foreach (var sel in selections)
+            {
+                if (sel?.SelectedTile == null)
+                    continue;
+                try
+                {
+                    var key = TileMutatingDnaKey(sel.SelectedTile);
+                    if (string.IsNullOrEmpty(key))
+                        continue;
+                    ApplyMutatingDnaKeyUpdate(counts, key);
+                }
+                catch
+                {
+                    // skip bad tile
+                }
+            }
+        }
+
+        /// <summary>
+        /// Same state transition as MutatingDNA.ApplyTileBonus (count only, no score).
+        /// </summary>
+        internal static void ApplyMutatingDnaKeyUpdate(
+            Dictionary<string, int> counts,
+            string key
+        )
+        {
+            if (string.IsNullOrEmpty(key))
+                return;
+            if (counts.ContainsKey(key))
+                counts[key]++;
+            else
+                counts[key] = 1;
+        }
+
+        /// <summary>
+        /// Tile.GetStringRepresentation() parity for Mutating DNA keys.
+        /// </summary>
+        internal static string TileMutatingDnaKey(Tile tile)
+        {
+            if (tile == null)
+                return "";
+
+            try
+            {
+                var method = tile.GetType().GetMethod(
+                    "GetStringRepresentation",
+                    MemberFlags,
+                    null,
+                    new[] { typeof(bool) },
+                    null
+                );
+                if (method != null)
+                {
+                    var raw = method.Invoke(tile, new object[] { false }) as string;
+                    if (!string.IsNullOrWhiteSpace(raw))
+                        return raw.Trim();
+                }
+
+                method = tile.GetType().GetMethod(
+                    "GetStringRepresentation",
+                    MemberFlags,
+                    null,
+                    Type.EmptyTypes,
+                    null
+                );
+                if (method != null)
+                {
+                    var raw = method.Invoke(tile, null) as string;
+                    if (!string.IsNullOrWhiteSpace(raw))
+                        return raw.Trim();
+                }
+            }
+            catch
+            {
+                // fall through
+            }
+
+            try
+            {
+                if (tile.IsNumber())
+                {
+                    var num = tile.GetNumber();
+                    return num.ToString();
+                }
+            }
+            catch
+            {
+                // fall through
+            }
+
+            try
+            {
+                var letter = tile.Letter;
+                if (!string.IsNullOrWhiteSpace(letter))
+                {
+                    var key = letter.Trim().ToLowerInvariant();
+                    if (key.Length == 1 && char.IsLetter(key[0]))
+                        return key;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return "";
         }
 
         /// <summary>
@@ -92,11 +194,34 @@ namespace CursedWordsSolverCompanion
             List<HistoricWord> previousWords
         )
         {
+            var fromHistoric = LetterUseCountsFromPreviousWords(previousWords);
             var fromStamp = MutatingDnaLetterCounts.TryReadFromPlayer(player);
-            if (fromStamp != null && fromStamp.Count > 0)
-                return fromStamp;
 
-            return LetterUseCountsFromPreviousWords(previousWords);
+            Dictionary<string, int> result;
+            if (fromStamp != null && fromStamp.Count > 0)
+                result = fromStamp;
+            else if (fromHistoric != null && fromHistoric.Count > 0)
+                result = fromHistoric;
+            else
+                result = fromStamp ?? fromHistoric ?? new Dictionary<string, int>();
+
+            if (
+                MutatingDnaLetterCounts.PlayerHasMutatingDnaStamp(player)
+                && result.Count == 0
+            )
+            {
+                var liveN = fromStamp?.Count ?? 0;
+                var histN = fromHistoric?.Count ?? 0;
+                CompanionDiagnostics.LogVerbose(
+                    "Mutating DNA stamp equipped but LetterUseCounts export empty (live="
+                        + liveN
+                        + " historic="
+                        + histN
+                        + " keys)"
+                );
+            }
+
+            return result;
         }
 
         public static string SerializeLetterCounts(Dictionary<string, int> counts)
@@ -660,21 +785,31 @@ namespace CursedWordsSolverCompanion
             if (player?.Stamps == null)
                 return null;
 
-            Dictionary<string, int> best = null;
             foreach (var stamp in player.Stamps)
             {
                 if (stamp == null || !LooksLikeMutatingDna(stamp))
                     continue;
 
-                var counts = TryReadFromItem(stamp);
-                if (counts == null || counts.Count == 0)
-                    continue;
-
-                if (best == null || SumCounts(counts) > SumCounts(best))
-                    best = counts;
+                var counts = TryReadFromItem(stamp, allowEmpty: true);
+                if (counts != null)
+                    return counts;
             }
 
-            return best;
+            return null;
+        }
+
+        public static bool PlayerHasMutatingDnaStamp(Player player)
+        {
+            if (player?.Stamps == null)
+                return false;
+
+            foreach (var stamp in player.Stamps)
+            {
+                if (stamp != null && LooksLikeMutatingDna(stamp))
+                    return true;
+            }
+
+            return false;
         }
 
         private static bool LooksLikeMutatingDna(Item item)
@@ -695,18 +830,45 @@ namespace CursedWordsSolverCompanion
             return sum;
         }
 
-        private static Dictionary<string, int> TryReadFromItem(Item stamp)
+        private static Dictionary<string, int> TryReadFromItem(Item stamp, bool allowEmpty = false)
         {
-            var counts = TryReadDictionaryFromObject(stamp);
-            if (counts != null && counts.Count > 0)
+            Dictionary<string, int> counts;
+            var foundEmpty = false;
+            bool parseFailed;
+
+            counts = TryReadDictionaryFromObject(stamp, allowEmpty, out foundEmpty, out parseFailed);
+            if (counts != null && (allowEmpty || counts.Count > 0))
                 return counts;
+            if (parseFailed)
+            {
+                CompanionDiagnostics.LogVerboseWarning(
+                    "Mutating DNA LetterUseCounts on stamp had entries but none parsed as valid keys"
+                );
+            }
 
             foreach (var nested in TryGetNestedTargets(stamp))
             {
-                counts = TryReadDictionaryFromObject(nested);
-                if (counts != null && counts.Count > 0)
+                bool nestedEmpty;
+                counts = TryReadDictionaryFromObject(
+                    nested,
+                    allowEmpty,
+                    out nestedEmpty,
+                    out parseFailed
+                );
+                if (nestedEmpty)
+                    foundEmpty = true;
+                if (counts != null && (allowEmpty || counts.Count > 0))
                     return counts;
+                if (parseFailed)
+                {
+                    CompanionDiagnostics.LogVerboseWarning(
+                        "Mutating DNA LetterUseCounts on nested stamp object had entries but none parsed"
+                    );
+                }
             }
+
+            if (allowEmpty && foundEmpty)
+                return new Dictionary<string, int>();
 
             return null;
         }
@@ -744,8 +906,15 @@ namespace CursedWordsSolverCompanion
             }
         }
 
-        private static Dictionary<string, int> TryReadDictionaryFromObject(object target)
+        private static Dictionary<string, int> TryReadDictionaryFromObject(
+            object target,
+            bool allowEmpty,
+            out bool foundEmptyMember,
+            out bool parseFailedWithEntries
+        )
         {
+            foundEmptyMember = false;
+            parseFailedWithEntries = false;
             if (target == null)
                 return null;
 
@@ -761,35 +930,69 @@ namespace CursedWordsSolverCompanion
                 "MutatingDnaLetterCounts",
             })
             {
-                var counts = TryReadNamedDictionaryMember(target, name);
-                if (counts != null && counts.Count > 0)
+                var counts = TryReadNamedDictionaryMember(
+                    target,
+                    name,
+                    allowEmpty,
+                    out foundEmptyMember,
+                    out parseFailedWithEntries
+                );
+                if (counts != null && (allowEmpty || counts.Count > 0))
+                    return counts;
+                if (foundEmptyMember || parseFailedWithEntries)
                     return counts;
             }
 
-            return TryScanDictionaryMembers(target);
+            return TryScanDictionaryMembers(
+                target,
+                allowEmpty,
+                out foundEmptyMember,
+                out parseFailedWithEntries
+            );
+        }
+
+        private static Dictionary<string, int> TryReadDictionaryFromObject(
+            object target,
+            bool allowEmpty = false
+        )
+        {
+            bool foundEmpty;
+            bool parseFailed;
+            return TryReadDictionaryFromObject(target, allowEmpty, out foundEmpty, out parseFailed);
         }
 
         private static Dictionary<string, int> TryReadNamedDictionaryMember(
             object target,
-            string memberName
+            string memberName,
+            bool allowEmpty,
+            out bool foundEmptyMember,
+            out bool parseFailedWithEntries
         )
         {
+            foundEmptyMember = false;
+            parseFailedWithEntries = false;
             try
             {
                 var prop = target.GetType().GetProperty(memberName, MemberFlags);
                 if (prop != null)
                 {
-                    var counts = ParseDictionary(prop.GetValue(target, null));
-                    if (counts != null && counts.Count > 0)
-                        return counts;
+                    return ParseDictionaryMemberValue(
+                        prop.GetValue(target, null),
+                        allowEmpty,
+                        out foundEmptyMember,
+                        out parseFailedWithEntries
+                    );
                 }
 
                 var field = target.GetType().GetField(memberName, MemberFlags);
                 if (field != null)
                 {
-                    var counts = ParseDictionary(field.GetValue(target));
-                    if (counts != null && counts.Count > 0)
-                        return counts;
+                    return ParseDictionaryMemberValue(
+                        field.GetValue(target),
+                        allowEmpty,
+                        out foundEmptyMember,
+                        out parseFailedWithEntries
+                    );
                 }
             }
             catch
@@ -800,8 +1003,65 @@ namespace CursedWordsSolverCompanion
             return null;
         }
 
-        private static Dictionary<string, int> TryScanDictionaryMembers(object target)
+        private static Dictionary<string, int> TryReadNamedDictionaryMember(
+            object target,
+            string memberName,
+            bool allowEmpty = false
+        )
         {
+            bool foundEmpty;
+            bool parseFailed;
+            return TryReadNamedDictionaryMember(
+                target,
+                memberName,
+                allowEmpty,
+                out foundEmpty,
+                out parseFailed
+            );
+        }
+
+        private static Dictionary<string, int> ParseDictionaryMemberValue(
+            object raw,
+            bool allowEmpty,
+            out bool foundEmptyMember,
+            out bool parseFailedWithEntries
+        )
+        {
+            foundEmptyMember = false;
+            parseFailedWithEntries = false;
+            if (raw == null)
+                return null;
+
+            var dict = raw as IDictionary;
+            if (dict != null && dict.Count == 0)
+            {
+                foundEmptyMember = true;
+                return allowEmpty ? new Dictionary<string, int>() : null;
+            }
+
+            var counts = ParseDictionary(raw);
+            if (counts != null && counts.Count > 0)
+                return counts;
+            if (counts != null && counts.Count == 0 && allowEmpty)
+            {
+                foundEmptyMember = true;
+                return counts;
+            }
+            if (dict != null && dict.Count > 0)
+                parseFailedWithEntries = true;
+
+            return null;
+        }
+
+        private static Dictionary<string, int> TryScanDictionaryMembers(
+            object target,
+            bool allowEmpty,
+            out bool foundEmptyMember,
+            out bool parseFailedWithEntries
+        )
+        {
+            foundEmptyMember = false;
+            parseFailedWithEntries = false;
             var type = target.GetType();
             Dictionary<string, int> best = null;
 
@@ -809,8 +1069,19 @@ namespace CursedWordsSolverCompanion
             {
                 if (!MemberNameLooksLikeLetterCounts(prop.Name))
                     continue;
-                var counts = ParseDictionary(prop.GetValue(target, null));
-                if (counts == null || counts.Count == 0)
+                bool empty;
+                bool failed;
+                var counts = ParseDictionaryMemberValue(
+                    prop.GetValue(target, null),
+                    allowEmpty,
+                    out empty,
+                    out failed
+                );
+                if (empty)
+                    foundEmptyMember = true;
+                if (failed)
+                    parseFailedWithEntries = true;
+                if (counts == null || (!allowEmpty && counts.Count == 0))
                     continue;
                 if (best == null || SumCounts(counts) > SumCounts(best))
                     best = counts;
@@ -820,14 +1091,67 @@ namespace CursedWordsSolverCompanion
             {
                 if (!MemberNameLooksLikeLetterCounts(field.Name))
                     continue;
-                var counts = ParseDictionary(field.GetValue(target));
-                if (counts == null || counts.Count == 0)
+                bool empty;
+                bool failed;
+                var counts = ParseDictionaryMemberValue(
+                    field.GetValue(target),
+                    allowEmpty,
+                    out empty,
+                    out failed
+                );
+                if (empty)
+                    foundEmptyMember = true;
+                if (failed)
+                    parseFailedWithEntries = true;
+                if (counts == null || (!allowEmpty && counts.Count == 0))
                     continue;
                 if (best == null || SumCounts(counts) > SumCounts(best))
                     best = counts;
             }
 
             return best;
+        }
+
+        private static Dictionary<string, int> TryScanDictionaryMembers(
+            object target,
+            bool allowEmpty = false
+        )
+        {
+            bool foundEmpty;
+            bool parseFailed;
+            return TryScanDictionaryMembers(target, allowEmpty, out foundEmpty, out parseFailed);
+        }
+
+        /// <summary>
+        /// Mutating DNA dictionary keys: lowercase letters or number strings (Tile.GetStringRepresentation).
+        /// </summary>
+        internal static string NormalizeMutatingDnaDictionaryKey(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return null;
+
+            var key = raw.Trim();
+            if (key.Length == 1 && char.IsLetter(key[0]))
+                return key.ToLowerInvariant();
+
+            if (IsDigitString(key))
+                return key;
+
+            return null;
+        }
+
+        private static bool IsDigitString(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return false;
+
+            for (var i = 0; i < value.Length; i++)
+            {
+                if (!char.IsDigit(value[i]))
+                    return false;
+            }
+
+            return true;
         }
 
         private static bool MemberNameLooksLikeLetterCounts(string name)
@@ -856,12 +1180,11 @@ namespace CursedWordsSolverCompanion
                 {
                     if (entry == null)
                         continue;
-                    var key = TryGetStringProperty(entry, "Key", "Letter", "Character");
+                    var key = NormalizeMutatingDnaDictionaryKey(
+                        TryGetStringProperty(entry, "Key", "Letter", "Character")
+                    );
                     var value = TryGetIntProperty(entry, "Value", "Count", "Uses", "TimesUsed");
                     if (string.IsNullOrEmpty(key) || value < 0)
-                        continue;
-                    key = key.Trim().ToLowerInvariant();
-                    if (key.Length != 1 || !char.IsLetter(key[0]))
                         continue;
                     counts[key] = value;
                 }
@@ -874,14 +1197,16 @@ namespace CursedWordsSolverCompanion
 
         private static Dictionary<string, int> ParseGenericDictionary(IDictionary dict)
         {
+            if (dict == null)
+                return null;
+
             var counts = new Dictionary<string, int>();
+            var hadAnyKey = false;
             foreach (DictionaryEntry entry in dict)
             {
-                var key = entry.Key as string;
+                hadAnyKey = true;
+                var key = NormalizeMutatingDnaDictionaryKey(entry.Key?.ToString());
                 if (string.IsNullOrEmpty(key))
-                    continue;
-                key = key.Trim().ToLowerInvariant();
-                if (key.Length != 1 || !char.IsLetter(key[0]))
                     continue;
 
                 var value = TryReadIntLike(entry.Value);
@@ -890,7 +1215,12 @@ namespace CursedWordsSolverCompanion
                 counts[key] = value;
             }
 
-            return counts.Count > 0 ? counts : null;
+            if (counts.Count > 0)
+                return counts;
+            if (!hadAnyKey)
+                return new Dictionary<string, int>();
+
+            return null;
         }
 
         private static string TryGetStringProperty(object target, params string[] names)

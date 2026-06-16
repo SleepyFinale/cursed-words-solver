@@ -268,8 +268,16 @@ namespace CursedWordsSolverCompanion
                 )
                 {
                     parts.Add(
-                        "submitted path extends F8 highlight (press F8 again after extending, "
-                            + "or play the exact highlighted path for score compare)"
+                        "submitted path extends F8 highlight — a longer path may beat the "
+                            + "F8 prefix (solver extension miss); press F8 again after extending "
+                            + "for an updated suggestion"
+                    );
+                }
+                else if (boardMatches)
+                {
+                    parts.Add(
+                        "alternate path on same board (score compare needs the exact highlighted path; "
+                            + "round log saved for solver replay)"
                     );
                 }
                 else

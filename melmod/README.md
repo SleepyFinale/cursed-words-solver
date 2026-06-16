@@ -75,7 +75,7 @@ After **every** word submit (encounter or puzzle), the mod writes a structured r
 
 1. **F7** refresh, then **F8** solve (Python writes `last_suggestion.json` with `f8_sequence`, path, predicted score/trace).
 2. Submit any word (F8 path, alternate path, or manual).
-3. Mod writes `%USERPROFILE%\.cursed_words_solver\round_logs\<timestamp>.json` with `match_status`: `score_match`, `score_mismatch`, `path_mismatch`, or `no_suggestion`.
+3. Mod writes `%USERPROFILE%\.cursed_words_solver\round_logs\<timestamp>.json` with `match_status`: `score_match`, `score_mismatch`, `path_mismatch`, or `no_suggestion`. **`no_suggestion`** means you submitted without a valid F8 `last_suggestion.json` (manual play or cleared suggestion) — it is informational, not a mod error. Press **F8** in the solver before submit for score capture. **`path_mismatch`** with the same board fingerprint and a higher score than F8 often means the solver missed a better route — use the round log (`comparison.submitted_beat_suggestion`) and replay tests under `tests/regression/test_path_mismatch_round_log.py`.
 4. Append-only index: `round_logs/index.jsonl` (round id, file path, scores, words).
 
 Each log includes: full `run_state` at submit, solver block (when `last_suggestion.json` exists), actual word/path/score/trace, consumable rack before/after, and `consumables.placements_this_round` (board-diff detections between submits).
@@ -273,7 +273,7 @@ Run context extras (default-unlocked stickers):
 | `stitched_sticker_ids` | Frankenstein (JSON array of stitched sticker art slugs) |
 | `overhand_level` | Overhand (`UpgradeableComponents[0].VariableValue` — extra stamp applications per slot) |
 | `hourglass_count` | Hourglass (odd count reverses pin/sticker/stamp scoring order) |
-| `mutating_dna_letter_counts` | Mutating DNA (JSON map letter → use count) |
+| `mutating_dna_letter_counts` | Mutating DNA pre-submit use counts (JSON map: lowercase letters **or number strings** like `"1"`, `"22"` from `Tile.GetStringRepresentation`) |
 | `tile_ninja_bonus` | Tile Ninja (additive ×WORD bonus; wiki +0.02 per consumable placed) |
 | `avocado_mushy` | Avocado frozen in shop (`true` → ×-2 WORD SCORE instead of ×2) |
 | `red_tiles_used_encounter` | Telescope fallback when `historic_words` lacks per-word red counts; also merged from the sum of prior-word RED tiles after each `CalculateOverallScore`, and derived on **F7** when the game property is missing |

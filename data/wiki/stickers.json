@@ -2222,7 +2222,7 @@
     },
     "mutating_dna": {
       "name": "Mutating DNA",
-      "type": "custom",
+      "type": "mutating_dna_tile_bonus",
       "effect_class": "meta",
       "wiki_effect": "Each time you use a letter, tiles with that letter get +1 TILE SCORE whilst you have this item",
       "wiki_page": "Mutating_DNA",

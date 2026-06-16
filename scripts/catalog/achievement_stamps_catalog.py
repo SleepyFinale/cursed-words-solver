@@ -393,7 +393,7 @@ ACHIEVEMENT_STAMPS: dict[str, dict] = {
         "meta",
         "Mutating_DNA",
     )
-    | {"shop_price": 18},
+    | {"shop_price": 18, "type": "mutating_dna_tile_bonus"},
     "neapolitan": {
         "name": "Neapolitan",
         "type": "multiply_word_scaled",

@@ -576,6 +576,105 @@ def test_extension_from_short_chess_item_prefix():
     assert extended[0][0] > short_score
 
 
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_extension_from_aahed_prefix_finds_fjelds():
+    """Regression: +1 tile from aahed prefix finds fjelds (20260615 path_extension)."""
+    import json
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from cursed_words_solver.search import (
+        _CandidateHeap,
+        search_word_from_path,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260615_184801_fjelds.json"
+    )
+    if not fixture.exists():
+        pytest.skip("20260615_184801_fjelds.json fixture required")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data["run_state_snapshot"])
+    loadout = parse_run_state(data["run_state_snapshot"])
+    assert board is not None
+
+    short_path = data["short_path"]
+    expected_path = data["expected_path"]
+    pipeline = ScoringPipeline()
+    short_score = pipeline.score_total_only(
+        board, short_path, data["short_word"], loadout
+    )
+
+    flags = stamp_search_flags(loadout)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=15,
+        time_budget=10.0,
+    )
+    candidates = _CandidateHeap(200)
+    sw = search_word_from_path(board, short_path, flags=flags)
+    sc = searcher._rank_score_for_candidate(board, short_path, sw, loadout)
+    candidates.consider(sc or 0, sw, short_path)
+    searcher._extend_top_candidates(
+        board, loadout, candidates, top_paths=30, max_rounds=3
+    )
+    extended = [
+        (rank_sc, word, list(path))
+        for rank_sc, word, path in candidates.best_sorted()
+        if list(path) == expected_path
+    ]
+    assert extended
+    assert extended[0][0] > short_score
+    assert extended[0][0] >= data["expected_score"] - 20
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_find_best_words_fjelds_beats_aahed():
+    """Integration: post-refine extension picks 6-tile fjelds over 5-tile aahed."""
+    import json
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260615_184801_fjelds.json"
+    )
+    if not fixture.exists():
+        pytest.skip("20260615_184801_fjelds.json fixture required")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data["run_state_snapshot"])
+    loadout = parse_run_state(data["run_state_snapshot"])
+    assert board is not None
+
+    pipeline = ScoringPipeline()
+    short_score = pipeline.score_total_only(
+        board, data["short_path"], data["short_word"], loadout
+    )
+
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=15,
+        time_budget=20.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=5)
+    assert results
+    assert results[0].path == data["expected_path"]
+    assert results[0].score > short_score
+    assert results[0].score >= data["expected_score"] - 20
+
+
 def _tile(
     ch: str,
     row: int,

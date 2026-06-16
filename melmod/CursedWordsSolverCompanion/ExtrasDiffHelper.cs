@@ -60,6 +60,8 @@ namespace CursedWordsSolverCompanion
 
             "mutating_dna_letter_counts",
 
+            "birthday_cake_bonus",
+
         };
 
 
@@ -185,6 +187,240 @@ namespace CursedWordsSolverCompanion
                 return "F8 prediction used empty historic, score used " + authCount + "-word historic";
 
             return "F8 prediction used " + f8Count + "-word historic, score used " + authCount + "-word historic";
+
+        }
+
+
+
+        /// <summary>
+
+        /// True when submit-time workflow shows a word was played after F8 (historic or count advanced).
+
+        /// </summary>
+
+        public static bool HasPlayedWordSinceF8(Dictionary<string, object> extrasDiff)
+
+        {
+
+            if (extrasDiff == null || extrasDiff.Count == 0)
+
+                return false;
+
+
+
+            if (extrasDiff.TryGetValue("scoring_previous_words_count", out var spcRaw))
+
+            {
+
+                var spcEntry = spcRaw as Dictionary<string, string>;
+
+                if (spcEntry != null)
+
+                {
+
+                    int f8Count;
+
+                    int submitCount;
+
+                    int.TryParse(
+
+                        (spcEntry.TryGetValue("f8", out var f8Spc) ? f8Spc : null) ?? "0",
+
+                        out f8Count
+
+                    );
+
+                    int.TryParse(
+
+                        (spcEntry.TryGetValue("submit", out var submitSpc) ? submitSpc : null)
+
+                            ?? "0",
+
+                        out submitCount
+
+                    );
+
+                    if (submitCount > f8Count)
+
+                        return true;
+
+                }
+
+            }
+
+
+
+            if (extrasDiff.TryGetValue("historic_words", out var histRaw))
+
+            {
+
+                var histEntry = histRaw as Dictionary<string, string>;
+
+                if (histEntry != null)
+
+                {
+
+                    string f8Hist;
+
+                    string submitHist;
+
+                    histEntry.TryGetValue("f8", out f8Hist);
+
+                    histEntry.TryGetValue("submit", out submitHist);
+
+                    var f8Count = CountHistoricWordsInJson((f8Hist ?? "").Trim());
+
+                    var submitCount = CountHistoricWordsInJson((submitHist ?? "").Trim());
+
+                    if (submitCount > f8Count)
+
+                        return true;
+
+                }
+
+            }
+
+
+
+            return false;
+
+        }
+
+
+
+        /// <summary>
+
+        /// Human-readable note when a word was played after F8 without refreshing the suggestion.
+
+        /// </summary>
+
+        public static string DescribePlayedWordSinceF8Drift(
+
+            Dictionary<string, object> extrasDiff,
+
+            StaleF8Context ctx
+
+        )
+
+        {
+
+            if (!HasPlayedWordSinceF8(extrasDiff))
+
+                return null;
+
+
+
+            var notes = new List<string>();
+
+
+
+            if (extrasDiff.TryGetValue("scoring_previous_words_count", out var spcRaw))
+
+            {
+
+                var spcEntry = spcRaw as Dictionary<string, string>;
+
+                if (spcEntry != null)
+
+                {
+
+                    int f8Count;
+
+                    int submitCount;
+
+                    int.TryParse(
+
+                        (spcEntry.TryGetValue("f8", out var f8Spc) ? f8Spc : null) ?? "0",
+
+                        out f8Count
+
+                    );
+
+                    int.TryParse(
+
+                        (spcEntry.TryGetValue("submit", out var submitSpc) ? submitSpc : null)
+
+                            ?? "0",
+
+                        out submitCount
+
+                    );
+
+                    if (submitCount > f8Count)
+
+                        notes.Add(
+
+                            "scoring_previous_words_count f8="
+
+                                + f8Count
+
+                                + " submit="
+
+                                + submitCount
+
+                        );
+
+                }
+
+            }
+
+
+
+            if (extrasDiff.TryGetValue("historic_words", out var histRaw))
+
+            {
+
+                var histEntry = histRaw as Dictionary<string, string>;
+
+                if (histEntry != null)
+
+                {
+
+                    string f8Hist;
+
+                    string submitHist;
+
+                    histEntry.TryGetValue("f8", out f8Hist);
+
+                    histEntry.TryGetValue("submit", out submitHist);
+
+                    var f8Count = CountHistoricWordsInJson((f8Hist ?? "").Trim());
+
+                    var submitCount = CountHistoricWordsInJson((submitHist ?? "").Trim());
+
+                    if (submitCount > f8Count)
+
+                        notes.Add(
+
+                            "historic_words f8=" + f8Count + " submit=" + submitCount
+
+                        );
+
+                }
+
+            }
+
+
+
+            if (notes.Count == 0)
+
+                notes.Add("workflow advanced since F8");
+
+
+
+            var sb = new StringBuilder();
+
+            sb.Append(
+
+                "F8 snapshot stale — played word(s) since F8 — press F8 again before submitting the overlay suggestion ("
+
+            );
+
+            sb.Append(string.Join("; ", notes.ToArray()));
+
+            sb.Append(")");
+
+            return sb.ToString();
 
         }
 
@@ -1093,6 +1329,30 @@ namespace CursedWordsSolverCompanion
                 if (!MutatingDnaLetterCountsEqual(f8Raw, submitRaw))
 
                     notes.Add("mutating_dna_letter_counts changed");
+
+                return;
+
+            }
+
+            if (key == "birthday_cake_bonus")
+
+            {
+
+                int f8Val;
+
+                int submitVal;
+
+                if (
+
+                    int.TryParse(f8Raw, out f8Val)
+
+                    && int.TryParse(submitRaw, out submitVal)
+
+                    && submitVal > f8Val
+
+                )
+
+                    notes.Add("birthday_cake_bonus f8=" + f8Val + " submit=" + submitVal);
 
                 return;
 

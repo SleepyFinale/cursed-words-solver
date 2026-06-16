@@ -703,11 +703,40 @@ def tile_number_position_values(
             nv = int(tile.letter)
         if nv is not None and nv >= 1:
             values.append(nv)
+        if (
+            flag_test(flags, FLAG_SHINY_AS_ONE)
+            and tile.color == TileColor.SHINY
+            and 1 not in values
+        ):
+            values.append(1)
     if flag_test(flags, FLAG_MICROSCOPE_BASE_SCORE):
         bp = _microscope_base_as_position(tile)
         if bp is not None and bp not in values:
             values.append(bp)
     return values
+
+
+def is_numeric_wildcard(
+    tile: Tile,
+    path_index: int,
+    *,
+    flags: SearchFlagsMask = 0,
+    segment: str | None = None,
+) -> bool:
+    """True when tile is a numeric wildcard at path_index (game Tile.IsNumericWildcard)."""
+    flags = coerce_search_flags(flags)
+    if tile.curse != CurseType.NUMBER:
+        return False
+    if (
+        flag_test(flags, FLAG_NUMBER_ASCENDING_FREE_POSITION)
+        and segment
+        and number_digits_ascending(segment)
+    ):
+        return True
+    values = tile_number_position_values(tile, flags)
+    if not values:
+        return False
+    return _position_matches_number_values(path_index, values, flags)
 
 
 def _position_matches_number_values(
@@ -741,6 +770,14 @@ def number_position_valid(
         return True
     if relaxed or tile.curse != CurseType.NUMBER:
         return True
+    if (
+        segment
+        and position < len(segment)
+        and segment[position].isalpha()
+    ):
+        return is_numeric_wildcard(
+            tile, position, flags=flags, segment=segment
+        )
     if (
         flag_test(flags, FLAG_NUMBER_ASCENDING_FREE_POSITION)
         and segment
@@ -1070,9 +1107,13 @@ class PathValidator:
                             char_pos += 1
                             continue
                     if ch.isalpha():
-                        pattern_chars.append("?")
-                        char_pos += 1
-                        continue
+                        if is_numeric_wildcard(
+                            tile, i, flags=stamp_flags, segment=word
+                        ):
+                            pattern_chars.append("?")
+                            char_pos += 1
+                            continue
+                        return False
                     return False
                 if tile.curse == CurseType.LETTER:
                     token = _tile_word_token(tile, char_pos, flags=stamp_flags)
@@ -2483,13 +2524,9 @@ class WordSearcher:
     def _path_needs_dictionary_resolve(
         self, board: Board, path: list[int], search_word: str
     ) -> bool:
-        if "?" in search_word:
-            return True
-        for idx in path:
-            tile = board.get_by_index(idx)
-            if tile.curse == CurseType.ITEM or tile.curse in CHESS_CURSES:
-                return True
-        return False
+        from cursed_words_solver.suggestion import path_needs_dictionary_resolve
+
+        return path_needs_dictionary_resolve(board, path, search_word)
 
     def _accept_path_for_search(
         self,
@@ -2548,6 +2585,18 @@ class WordSearcher:
                 timing = self._active_timing
                 if timing is not None:
                     timing.trie_fast_accepts += 1
+                return True, scoring_word_for_path_local(search_word)
+        if self._path_needs_dictionary_resolve(board, path, search_word):
+            from cursed_words_solver.suggestion import _valid_dictionary_words_for_path
+
+            if _valid_dictionary_words_for_path(
+                board,
+                path,
+                search_word,
+                loadout,
+                self.dictionary,
+                min_len=self.min_len,
+            ):
                 return True, scoring_word_for_path_local(search_word)
         return False, search_word
 
@@ -4484,13 +4533,21 @@ class WordSearcher:
                 if any("?" in word for _sc, word, _path in preview):
                     top_paths = min(120, len(candidates), heap_k)
                     max_extend_rounds = min(self.max_len - self.min_len, 16)
+            leader_extra_seeds = [
+                (sc, word, path)
+                for sc, word, path in candidates.best_sorted()[:5]
+            ]
+            combined_extra_seeds: list[tuple[float, str, tuple[int, ...]]] = []
+            if chess_seeds:
+                combined_extra_seeds.extend(chess_seeds)
+            combined_extra_seeds.extend(leader_extra_seeds)
             self._extend_top_candidates(
                 board,
                 loadout,
                 candidates,
                 top_paths=top_paths,
                 max_rounds=max_extend_rounds,
-                extra_seeds=chess_seeds or None,
+                extra_seeds=combined_extra_seeds or None,
                 deadline=extend_deadline if extension_reserve > 0 else deadline,
             )
             timing.extend_sec = time.monotonic() - extend_start
@@ -4532,6 +4589,26 @@ class WordSearcher:
             timing.refine_overrun_sec = time.monotonic() - overrun_start
             timing.refine_overrun_deferred = unrefined
         timing.refine_sec = time.monotonic() - refine_start
+
+        if (
+            self.max_len > self.min_len
+            and extension_reserve > 0
+            and len(candidates) > 0
+        ):
+            post_extend_start = time.monotonic()
+            post_extend_reserve = min(8.0, max(extension_reserve, 5.0))
+            post_extend_deadline = deadline + post_extend_reserve
+            post_top_paths = min(heap_k, 60, len(candidates))
+            post_max_rounds = min(3, self.max_len - self.min_len)
+            self._extend_top_candidates(
+                board,
+                loadout,
+                candidates,
+                top_paths=post_top_paths,
+                max_rounds=post_max_rounds,
+                deadline=post_extend_deadline,
+            )
+            timing.extend_sec += time.monotonic() - post_extend_start
 
         best_by_word: dict[
             str, tuple[float, float, float, str, tuple[int, ...]]

@@ -124,6 +124,30 @@ namespace CursedWordsSolverCompanion
                 var statusLabel = matchStatus;
                 if (staleSuggestion && (matchStatus == "path_mismatch" || matchStatus == "path_extension"))
                     statusLabel = matchStatus + " (stale F8 board)";
+                else if (
+                    (matchStatus == "path_mismatch" || matchStatus == "path_extension")
+                    && ctx.Suggestion != null
+                    && ConsumablePlacementHelper.BoardFingerprintMatchesSuggestion(
+                        ctx.Suggestion,
+                        ctx.BoardFingerprint
+                    )
+                    && ctx.ActualScore > ctx.Suggestion.predicted_score
+                )
+                {
+                    var advantage = ctx.ActualScore - ctx.Suggestion.predicted_score;
+                    var pathNote = matchStatus == "path_extension"
+                        ? "Extended path beat F8 prefix by +"
+                        : "Alternate path beat F8 by +";
+                    MelonLogger.Msg(
+                        pathNote
+                            + advantage
+                            + " pts ("
+                            + ctx.ActualScore
+                            + " vs "
+                            + ctx.Suggestion.predicted_score
+                            + "); round log saved for solver replay."
+                    );
+                }
                 MelonLogger.Msg("Round log: " + outPath + " (" + statusLabel + ")");
                 return outPath;
             }
@@ -330,6 +354,18 @@ namespace CursedWordsSolverCompanion
             var staleSuggestion =
                 ctx.Suggestion != null && !boardFingerprintMatches;
             var staleF8Extras = matchStatus == "stale_f8_extras";
+            var submittedBeatSuggestion = false;
+            var submittedScoreAdvantage = 0;
+            if (
+                ctx.Suggestion != null
+                && boardFingerprintMatches
+                && !pathMatches
+                && ctx.ActualScore > predicted
+            )
+            {
+                submittedBeatSuggestion = true;
+                submittedScoreAdvantage = ctx.ActualScore - predicted;
+            }
 
             string staleF8Reason = null;
             if (ctx.Suggestion != null && ctx.ScoringExtras != null)
@@ -349,6 +385,8 @@ namespace CursedWordsSolverCompanion
                 ["score_delta"] = ctx.ActualScore - predicted,
                 ["path_matches_suggestion"] = pathMatches,
                 ["board_fingerprint_matches_suggestion"] = boardFingerprintMatches,
+                ["submitted_beat_suggestion"] = submittedBeatSuggestion,
+                ["submitted_score_advantage"] = submittedScoreAdvantage,
                 ["stale_suggestion"] = staleSuggestion || staleF8Extras,
                 ["stale_f8_extras"] = staleF8Extras,
                 ["stale_f8_reason"] = staleF8Reason ?? "",

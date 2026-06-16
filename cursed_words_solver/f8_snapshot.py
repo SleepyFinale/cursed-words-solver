@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import time
 from dataclasses import dataclass, field
@@ -24,15 +25,14 @@ from cursed_words_solver.loadout import (
     hydrate_tile_ninja_loadout_extras,
     load_run_state_raw,
     melmod_board_available,
-    merge_encounter_historic_for_f8_with_retry,
+    merge_f8_workflow_extras_into,
     merge_loadout_with_board,
     mod_money_from_run_state,
     parse_board_from_run_state,
     parse_run_state,
-    project_previous_word_first_letter_from_round_log,
+    sanitize_run_state_snapshot_for_f8,
     validate_run_state_for_scoring,
 )
-from cursed_words_solver.round_log import last_submit_effective_first_letter
 from cursed_words_solver.models import Board, Loadout
 from cursed_words_solver.rules.scoring_conditions import (
     consumable_rack_count,
@@ -149,6 +149,18 @@ def _has_tile_ninja_stamp(loadout: Loadout) -> bool:
     )
 
 
+def _has_mutating_dna_stamp(loadout: Loadout) -> bool:
+    return any(
+        "mutating" in (stamp.id or "").lower() or "dna" in (stamp.id or "").lower()
+        for stamp in (loadout.stamps or [])
+    )
+
+
+def _mutating_dna_counts_missing(extras: dict[str, Any]) -> bool:
+    raw = str(extras.get("mutating_dna_letter_counts", "") or "").strip()
+    return not raw or raw == "{}"
+
+
 def _supply_and_demand_needs_crossed_out_flags(
     loadout: Loadout,
     board: Board | None,
@@ -200,6 +212,8 @@ def _extras_missing_for_loadout(
         has_rare = extras.get("rare_item_count") not in (None, "")
         if not has_pct and not has_rare:
             missing.append("steak_word_bonus_percent/rare_item_count")
+    if _has_mutating_dna_stamp(loadout) and _mutating_dna_counts_missing(extras):
+        missing.append("mutating_dna_letter_counts")
     if consumable_rack_count(loadout) > 0 and not has_exported_consumable_rack(loadout):
         missing.append("consumable_rack")
     if _has_tile_ninja_stamp(loadout):
@@ -250,34 +264,6 @@ def shop_extras_ready(run_state: dict[str, Any] | None) -> bool:
     return not _shop_quest_extras_missing(loadout, extras)
 
 
-def _workflow_prev_letter_catchup_note(
-    loadout: Loadout | None,
-    extras: dict[str, Any],
-) -> str | None:
-    """Human-readable lag when run_state prev letter trails last round-log submit."""
-    if loadout is None or not loadout_needs_previous_word_letter(loadout):
-        return None
-    expected = last_submit_effective_first_letter()
-    if not expected:
-        return None
-    cur = str(extras.get("previous_word_first_letter", "") or "").strip().lower()[:1]
-    if not cur:
-        return f"previous_word_first_letter (expect {expected}, got empty)"
-    if cur != expected.lower()[:1]:
-        return f"previous_word_first_letter (expect {expected}, got {cur})"
-    return None
-
-
-def _apply_historic_merge_to_run_state(
-    run_state: dict[str, Any] | None,
-) -> tuple[dict[str, Any] | None, str | None]:
-    """Merge encounter historic from disk; return merged state and optional stale note."""
-    if not isinstance(run_state, dict):
-        return run_state, None
-    merged, stale_note = merge_encounter_historic_for_f8_with_retry(run_state)
-    return merged if merged is not None else run_state, stale_note
-
-
 def _build_snapshot_from_run_state(
     run_state: dict[str, Any] | None,
     *,
@@ -285,8 +271,6 @@ def _build_snapshot_from_run_state(
 ) -> F8Snapshot:
     if not isinstance(run_state, dict):
         return F8Snapshot(run_state=None, board=None, loadout=None)
-
-    run_state = project_previous_word_first_letter_from_round_log(run_state)
 
     board = parse_board_from_run_state(run_state)
     if board is None:
@@ -390,53 +374,6 @@ def gather_f8_snapshot(
             _notify_wait(f"waiting for melmod: {', '.join(last_missing)}")
         time.sleep(poll_sec)
 
-    if isinstance(run_state, dict):
-        run_state, historic_stale = _apply_historic_merge_to_run_state(run_state)
-        run_state = project_previous_word_first_letter_from_round_log(run_state)
-        snapshot = _build_snapshot_from_run_state(run_state, rules=rules)
-        if historic_stale:
-            snapshot.warnings = list(snapshot.warnings) + [historic_stale]
-
-    deadline_workflow = time.monotonic() + max(0.0, extras_timeout_sec)
-    last_workflow_note: str | None = None
-    while time.monotonic() < deadline_workflow:
-        if snapshot.loadout is None:
-            break
-        extras = snapshot.loadout.extras if isinstance(snapshot.loadout.extras, dict) else {}
-        workflow_note = _workflow_prev_letter_catchup_note(snapshot.loadout, extras or {})
-        if workflow_note is None:
-            break
-        last_workflow_note = workflow_note
-        _notify_wait(f"waiting for melmod: {workflow_note}")
-        time.sleep(poll_sec)
-        run_state = load_run_state_raw()
-        if isinstance(run_state, dict):
-            run_state, _ = _apply_historic_merge_to_run_state(run_state)
-            run_state = project_previous_word_first_letter_from_round_log(run_state)
-        snapshot = _build_snapshot_from_run_state(run_state, rules=rules)
-
-    if snapshot.loadout is not None:
-        extras = snapshot.loadout.extras if isinstance(snapshot.loadout.extras, dict) else {}
-        if _workflow_prev_letter_catchup_note(snapshot.loadout, extras or {}):
-            if isinstance(run_state, dict):
-                run_state = project_previous_word_first_letter_from_round_log(run_state)
-                snapshot = _build_snapshot_from_run_state(run_state, rules=rules)
-                extras = (
-                    snapshot.loadout.extras
-                    if snapshot.loadout and isinstance(snapshot.loadout.extras, dict)
-                    else {}
-                )
-            if _workflow_prev_letter_catchup_note(snapshot.loadout, extras or {}):
-                snapshot.warnings = list(snapshot.warnings) + [
-                    "melmod workflow export incomplete after wait: "
-                    + (last_workflow_note or "previous_word_first_letter")
-                ]
-                snapshot.extras_ready = False
-            else:
-                snapshot.warnings = list(snapshot.warnings) + [
-                    "projected previous_word_first_letter from round log (melmod lag)"
-                ]
-
     if snapshot.loadout is not None and snapshot.board is not None and rules is not None:
         def _reload() -> Loadout | None:
             fresh = load_run_state_raw()
@@ -502,6 +439,9 @@ def gather_f8_snapshot(
             ]
             snapshot.extras_ready = False
 
+    if isinstance(snapshot.run_state, dict):
+        snapshot.run_state = copy.deepcopy(snapshot.run_state)
+
     return snapshot
 
 
@@ -525,27 +465,52 @@ def session_from_snapshot(snapshot: F8Snapshot) -> F8SuggestionSession | None:
     )
 
 
-def embed_run_state_for_suggestion(run_state: dict[str, Any]) -> dict[str, Any]:
-    """Copy of game export for last_suggestion.json (trim unequipped item extras only)."""
-    from cursed_words_solver.loadout import (
-        merge_tile_ninja_extras_into,
-        sanitize_run_state_snapshot_for_f8,
-    )
+def embed_f8_snapshot(
+    snapshot: F8Snapshot,
+    *,
+    scoring_loadout: Loadout | None = None,
+) -> dict[str, Any] | None:
+    """Embed for last_suggestion.json from the frozen F8 gather snapshot."""
+    if not isinstance(snapshot.run_state, dict):
+        return None
 
-    loadout = parse_run_state(run_state)
+    loadout = scoring_loadout or snapshot.loadout
+    if loadout is None:
+        return copy.deepcopy(snapshot.run_state)
+
+    run_state = copy.deepcopy(snapshot.run_state)
+    sanitized = sanitize_run_state_snapshot_for_f8(run_state, loadout)
+    if not isinstance(sanitized, dict):
+        return copy.deepcopy(snapshot.run_state)
+
+    extras = sanitized.get("extras")
+    if isinstance(extras, dict) and isinstance(loadout.extras, dict):
+        merge_f8_workflow_extras_into(extras, loadout.extras)
+        sanitized["extras"] = extras
+    return sanitized
+
+
+def embed_run_state_for_suggestion(run_state: dict[str, Any]) -> dict[str, Any]:
+    """Legacy wrapper — prefer embed_f8_snapshot with a gathered F8Snapshot."""
     board = parse_board_from_run_state(run_state)
     mod_money = mod_money_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
     if board is not None:
         loadout = merge_loadout_with_board(
             loadout,
             board.money,
             mod_money=mod_money if mod_money > 0 else None,
         )
-    sanitized = sanitize_run_state_snapshot_for_f8(run_state, loadout)
-    if not isinstance(sanitized, dict):
-        return dict(run_state)
-    fresh = load_run_state_raw()
-    extras = sanitized.get("extras")
-    if isinstance(fresh, dict) and isinstance(extras, dict):
-        merge_tile_ninja_extras_into(extras, fresh)
-    return sanitized
+    loadout = hydrate_tile_ninja_loadout_extras(loadout, run_state)
+    return (
+        embed_f8_snapshot(
+            F8Snapshot(
+                run_state=run_state,
+                board=board,
+                loadout=loadout,
+                board_available=board is not None,
+            ),
+            scoring_loadout=loadout,
+        )
+        or dict(run_state)
+    )

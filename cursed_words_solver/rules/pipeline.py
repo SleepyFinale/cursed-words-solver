@@ -3112,34 +3112,16 @@ class ScoringPipeline:
                 state["effects"].append(f"+{bonus} shiny chain")
 
         elif effect_type == "mutating_dna_tile_bonus":
-            wrestlers_factor = 1.0
-            if word_starts_ends_different_suit(board, path):
-                for item in loadout.stickers:
-                    if (item.id or "").lower() == "wrestlers":
-                        _wkey, wrule = get_rule(
-                            self.rules,
-                            "stickers",
-                            item.id,
-                            item.name or "",
-                        )
-                        if wrule:
-                            wrestlers_factor = scaled_word_multiplier(
-                                item.level, wrule, loadout, path=path
-                            )
-                        break
             tile_bonus, word_bonus = apply_mutating_dna_bonus(
                 board,
                 path,
                 state["tile_scores"],
                 loadout,
-                word_score=float(state["word_score"]),
-                wrestlers_factor=wrestlers_factor,
             )
-            if word_bonus:
-                _add_word_score(state, word_bonus)
             if tile_bonus:
                 state["effects"].append(f"+{int(tile_bonus)} mutating DNA tile")
             if word_bonus:
+                _add_word_score(state, word_bonus)
                 state["effects"].append(f"+{int(word_bonus)} mutating DNA word")
 
         elif effect_type == "boss_zero_vowel":

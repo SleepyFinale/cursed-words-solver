@@ -38,7 +38,7 @@ from cursed_words_solver.config import (
 )
 from cursed_words_solver.f8_snapshot import (
     F8SuggestionSession,
-    embed_run_state_for_suggestion,
+    embed_f8_snapshot,
     gather_f8_snapshot,
     session_from_snapshot,
     write_f8_export_request,
@@ -1455,44 +1455,10 @@ class SolverApp:
             block_f8_reason: str | None = None
             if results:
                 top = results[0]
-                fresh_run_state = load_run_state_raw()
-                score_run_state: dict | None = (
-                    fresh_run_state
-                    if isinstance(fresh_run_state, dict)
-                    else run_state_data
+                score_run_state = (
+                    run_state_data if isinstance(run_state_data, dict) else None
                 )
-                mid_solve_grid_advanced = False
-                if isinstance(score_run_state, dict):
-                    fresh_loadout = parse_run_state(score_run_state)
-                    from cursed_words_solver.rules.scoring_conditions import grid_number
-
-                    try:
-                        mid_grid = grid_number(fresh_loadout)
-                    except (TypeError, ValueError):
-                        mid_grid = solve_grid_at_start
-                    mid_solve_grid_advanced = (
-                        solve_grid_at_start > 0 and mid_grid > solve_grid_at_start
-                    )
-                fresh_mod_money = mod_money_from_run_state(score_run_state)
                 f8_loadout = loadout
-                if isinstance(score_run_state, dict):
-                    fresh_board = parse_board_from_run_state(score_run_state)
-                    if fresh_board is not None:
-                        f8_loadout = merge_loadout_with_board(
-                            parse_run_state(score_run_state),
-                            fresh_board.money,
-                            mod_money=fresh_mod_money if fresh_mod_money > 0 else None,
-                        )
-                    from cursed_words_solver.loadout import hydrate_tile_ninja_loadout_extras
-
-                    f8_loadout = hydrate_tile_ninja_loadout_extras(
-                        f8_loadout, score_run_state
-                    )
-                # Consumables placed onto search_board this solve are no longer on
-                # the rack, so Hi Vis Jacket must score with the post-placement
-                # count (decompiled HiVisJacket: multiplies by consumables still
-                # owned and drops one on submit). Scoring with the pre-placement
-                # count over-multiplies (x4.0 vs x3.4, etc.).
                 num_placed = consumable_placement_count_on_board(
                     search_board
                 ) - consumable_placement_count_on_board(board)
@@ -1564,36 +1530,15 @@ class SolverApp:
                         if sample_warn:
                             export_warnings.append(sample_warn)
                 session_extras = solver_session_extras_from_loadout(f8_loadout)
-                embed_state = (
-                    embed_run_state_for_suggestion(score_run_state)
-                    if isinstance(score_run_state, dict)
-                    else None
-                )
-                fresh_run_state = load_run_state_raw()
-                fresh_extras = (
-                    fresh_run_state.get("extras")
-                    if isinstance(fresh_run_state, dict)
-                    else None
-                )
-                embed_extras = (
-                    embed_state.get("extras")
-                    if isinstance(embed_state, dict)
-                    else None
-                )
-                from cursed_words_solver.suggestion import (
-                    f8_prediction_workflow_stale_warning,
-                )
-
-                workflow_stale_warn = f8_prediction_workflow_stale_warning(
-                    fresh_extras if isinstance(fresh_extras, dict) else {},
-                    embed_extras if isinstance(embed_extras, dict) else {},
+                embed_state = embed_f8_snapshot(
+                    snapshot,
+                    scoring_loadout=f8_loadout,
                 )
                 block_f8_save, block_f8_reason = f8_should_block_save(
                     gather_succeeded=gather_succeeded,
-                    mid_solve_grid_advanced=mid_solve_grid_advanced,
+                    mid_solve_grid_advanced=False,
                     loadout=f8_loadout,
                     board=search_board,
-                    workflow_stale_warn=workflow_stale_warn,
                     path=top.path,
                 )
                 if not block_f8_save:

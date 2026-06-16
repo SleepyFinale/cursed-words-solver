@@ -56,6 +56,12 @@ namespace CursedWordsSolverCompanion
             _preWordScoringExtrasForDiff = new Dictionary<string, string>();
             _f8PredictionHistoricStaleNote = "";
             _suggestion = SuggestionMatcher.Load();
+            if (_suggestion == null)
+            {
+                MelonLogger.Warning(
+                    "No F8 suggestion on disk — press F8 in the solver before submit for score capture."
+                );
+            }
             _word = SuggestionMatcher.WordFromSubmit(selections, words);
             _path = SuggestionMatcher.PathFromSelections(selections);
             _submitMethod = submitMethod;
@@ -214,81 +220,47 @@ namespace CursedWordsSolverCompanion
                 _originalF8ExtrasForDiff,
                 authoritativeExtras
             );
-            var preSyncWorkflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(
-                preSyncDiff,
-                staleCtx
-            );
-            if (!string.IsNullOrEmpty(preSyncWorkflowStale))
+            if (ExtrasDiffHelper.HasPlayedWordSinceF8(preSyncDiff))
             {
-                if (
-                    ExtrasDiffHelper.IsBenignWorkflowShrinkDrift(preSyncDiff, staleCtx)
-                    || ExtrasDiffHelper.IsStaleExportAheadDrift(preSyncDiff)
-                )
-                {
-                    SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
-                        _suggestion,
-                        authoritativeExtras
-                    );
-                    _originalF8ExtrasForDiff = ExtrasDiffHelper.ExtrasFromRunStateObject(
-                        _suggestion?.run_state_snapshot
-                    );
-                    preSyncDiff = ExtrasDiffHelper.DiffExtras(
-                        _originalF8ExtrasForDiff,
-                        authoritativeExtras
-                    );
-                    preSyncWorkflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(
-                        preSyncDiff,
-                        staleCtx
-                    );
-                }
-                if (!string.IsNullOrEmpty(preSyncWorkflowStale))
-                {
-                    MelonLogger.Warning(preSyncWorkflowStale);
-                    MelonLogger.Warning(
-                        "Blocking score capture — workflow drift; board changed since F8."
-                    );
-                    SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
-                    _active = false;
-                    return;
-                }
+                var playedSinceF8 = ExtrasDiffHelper.DescribePlayedWordSinceF8Drift(
+                    preSyncDiff,
+                    staleCtx
+                );
+                if (!string.IsNullOrEmpty(playedSinceF8))
+                    MelonLogger.Warning(playedSinceF8);
+                MelonLogger.Warning(
+                    "Blocking score capture — workflow drift; press F8 again before submitting overlay."
+                );
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                _active = false;
+                return;
             }
 
             SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
                 _suggestion,
                 authoritativeExtras
             );
+            _originalF8ExtrasForDiff = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                _suggestion?.run_state_snapshot
+            );
             var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
                 _suggestion?.run_state_snapshot
             );
             var diff = ExtrasDiffHelper.DiffExtras(f8Extras, authoritativeExtras);
-            var workflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(
-                diff,
-                staleCtx
-            );
-            if (!string.IsNullOrEmpty(workflowStale))
+            if (ExtrasDiffHelper.HasPlayedWordSinceF8(diff))
             {
-                if (ExtrasDiffHelper.IsStaleExportAheadDrift(diff))
-                {
-                    SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
-                        _suggestion,
-                        authoritativeExtras
-                    );
-                    f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
-                        _suggestion?.run_state_snapshot
-                    );
-                    diff = ExtrasDiffHelper.DiffExtras(f8Extras, authoritativeExtras);
-                    workflowStale = ExtrasDiffHelper.DescribeStaleF8WorkflowDrift(
-                        diff,
-                        staleCtx
-                    );
-                }
-                if (!string.IsNullOrEmpty(workflowStale))
-                {
-                    MelonLogger.Warning(workflowStale);
-                    SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
-                    _active = false;
-                    return;
-                }
+                var playedSinceF8 = ExtrasDiffHelper.DescribePlayedWordSinceF8Drift(
+                    diff,
+                    staleCtx
+                );
+                if (!string.IsNullOrEmpty(playedSinceF8))
+                    MelonLogger.Warning(playedSinceF8);
+                MelonLogger.Warning(
+                    "Blocking score capture — workflow drift; press F8 again before submitting overlay."
+                );
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                _active = false;
+                return;
             }
 
             ExtrasDiffHelper.LogStaleF8DriftWarnings(

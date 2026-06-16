@@ -1275,7 +1275,7 @@ def highest_number_on_path(board: Board, path: list[int]) -> float:
 
 
 def path_starts_ends_number(board: Board, path: list[int]) -> bool:
-    if len(path) < 2:
+    if not path:
         return False
     return is_number_like_tile(board.get_by_index(path[0])) and is_number_like_tile(
         board.get_by_index(path[-1])
@@ -4310,55 +4310,58 @@ def letter_counts_on_path(board: Board, path: list[int]) -> dict[str, int]:
     return dict(Counter(ch for ch in letters if ch))
 
 
+def tile_string_representation(tile: Tile, *, for_word_validity: bool = False) -> str:
+    """Mirror Tile.GetStringRepresentation (Mutating DNA dictionary keys)."""
+    if tile.curse == CurseType.NUMBER:
+        if for_word_validity:
+            return "!"
+        if tile.number_value is not None:
+            return str(int(tile.number_value))
+        raw = (tile.char or tile.letter or "").strip()
+        if raw.isdigit():
+            return raw
+        return ""
+    if tile.curse == CurseType.CURRENCY:
+        glyph = (tile.letter or tile.char or "").strip()
+        if for_word_validity:
+            mapped = CURRENCY_MAP.get(glyph, "")
+            if mapped:
+                return mapped.lower()
+            if len(glyph) == 1 and glyph.isalpha():
+                return glyph.lower()
+            return glyph.lower() if glyph else ""
+        return glyph
+    if tile.curse == CurseType.FRACTION:
+        return "!" if for_word_validity else (tile.char or tile.letter or "")
+    ch = path_letter_for_count(tile)
+    if ch:
+        return ch
+    raw = (tile.char or tile.letter or "").strip().lower()
+    if len(raw) == 1 and raw.isalpha():
+        return raw
+    return raw if raw and not for_word_validity else ""
+
+
 def mutating_dna_letter_counts_from_loadout(loadout: Loadout) -> dict[str, int]:
-    """Per-letter use counts before this word (from melmod extras JSON)."""
+    """Pre-submit LetterUseCounts from melmod (letters and number strings)."""
     raw = (loadout.extras or {}).get("mutating_dna_letter_counts")
     if raw is None or raw == "":
         return {}
     try:
         data = json.loads(raw) if isinstance(raw, str) else raw
         if isinstance(data, dict):
-            return {
-                str(k).lower(): int(v)
-                for k, v in data.items()
-                if str(k).strip()
-            }
+            out: dict[str, int] = {}
+            for k, v in data.items():
+                key = str(k).strip()
+                if not key:
+                    continue
+                if len(key) == 1 and key.isalpha():
+                    key = key.lower()
+                out[key] = int(v)
+            return out
     except (TypeError, ValueError, json.JSONDecodeError):
         pass
     return {}
-
-
-def _mutating_dna_tile_increment(
-    board: Board,
-    path: list[int],
-    path_index: int,
-    path_letters: list[str],
-    prev: int,
-    prior_total: int,
-) -> float:
-    """Per-tile Mutating DNA bonus from historic letter use counts."""
-    tile = board.get_by_index(path[path_index])
-    ch = path_letters[path_index]
-    if not ch or tile.base_score >= 3:
-        return 0.0
-    rank = card_rank(tile)
-    poker = bool(rank and rank.upper() in POKER_RANKS)
-    if prev > 0:
-        bonus = float(prev)
-        if any(path_letters[j] == ch for j in range(path_index)):
-            bonus += 1.0
-        elif tile.base_score < 2 and not poker:
-            bonus += 1.0
-        return bonus
-    if poker:
-        return 0.0
-    if (
-        card_suit(tile)
-        and has_consecutive_double_letter_on_path(board, path)
-        and tile.base_score not in (2, 4)
-    ):
-        return 1.0
-    return 0.0
 
 
 def apply_mutating_dna_bonus(
@@ -4370,97 +4373,19 @@ def apply_mutating_dna_bonus(
     word_score: float = 0.0,
     wrestlers_factor: float = 1.0,
 ) -> tuple[float, float]:
-    """Apply Mutating DNA tile bonuses and matching word bonuses for this submit."""
-    counts = dict(mutating_dna_letter_counts_from_loadout(loadout))
-    prior_total = sum(counts.values())
-    path_letters: list[str] = []
-    for idx in path:
-        path_letters.append(path_letter_for_count(board.get_by_index(idx)))
-
+    """Apply Mutating DNA tile bonuses (game MutatingDNA.ApplyTileBonus per path index)."""
+    del word_score, wrestlers_factor
+    counts = mutating_dna_letter_counts_from_loadout(loadout)
     tile_total = 0.0
-    early_game = 0 < prior_total < 8
-    for i, ch in enumerate(path_letters):
-        if not ch:
+    for i, idx in enumerate(path):
+        key = tile_string_representation(board.get_by_index(idx))
+        if not key:
             continue
-        prev = counts.get(ch, 0)
-        if early_game:
-            inc = _mutating_dna_tile_increment(
-                board, path, i, path_letters, prev, prior_total
-            )
-            if inc > 0:
-                tile_scores[i] += inc
-                tile_total += inc
-        elif prev > 0:
+        prev = counts.get(key, 0)
+        if prev > 0:
             tile_scores[i] += prev
             tile_total += prev
-            if prior_total == 0 or prior_total == 8:
-                for j in range(i):
-                    if path_letters[j] == ch:
-                        tile_scores[j] += 1
-                        tile_total += 1
-        counts[ch] = prev + 1
-
-    cards_submitted = 0
-    try:
-        cards_submitted = int((loadout.extras or {}).get("cards_submitted", 0) or 0)
-    except (TypeError, ValueError):
-        cards_submitted = 0
-    if prior_total == 0 and cards_submitted == 0:
-        word_total = float(2 * sum(counts.values()) + 2)
-    elif prior_total > 8:
-        repeat_pairs = 0
-        for i in range(1, len(path_letters)):
-            ch = path_letters[i]
-            if ch and ch == path_letters[i - 1]:
-                repeat_pairs += 1
-        if (loadout.boss_id or "").strip().lower() == "salamander":
-            word_total = 0.0
-        elif repeat_pairs >= 3:
-            word_total = tile_total + (tile_total * 74) // 97
-        else:
-            if (
-                wrestlers_factor > 1.0
-                and word_starts_ends_different_suit(board, path)
-            ):
-                if prior_total >= 99:
-                    eff = wrestlers_factor
-                elif detect_card_hand("three_of_a_kind", board, path, loadout):
-                    # Mid-run DNA + Kadomatsu hand: partial Wrestlers on word bonus.
-                    eff = 1.0 + (wrestlers_factor - 1.0) * 0.765
-                else:
-                    eff = 1.0
-                word_total = int(2.0 * tile_total * eff)
-                if prior_total >= 110 and wrestlers_factor > 1.0:
-                    bump = tile_total // 4
-                    if tile_total == 49:
-                        bump -= 1
-                    elif tile_total >= 130:
-                        bump += 1
-                    if 165 <= tile_total <= 190:
-                        bump += 1
-                    elif 85 <= tile_total <= 100:
-                        bump += 1
-                    word_total += bump
-            else:
-                # Tile-only DNA bonus when Wrestlers did not proc; ×WORD runs later.
-                word_total = 0.0
-    elif prior_total == 8:
-        word_total = 0.0
-        replay = dict(mutating_dna_letter_counts_from_loadout(loadout))
-        for i, ch in enumerate(path_letters):
-            if not ch:
-                continue
-            prev = replay.get(ch, 0)
-            if prev > 0:
-                word_total += prev
-                for j in range(i):
-                    if path_letters[j] == ch:
-                        word_total += 1
-            replay[ch] = prev + 1
-        word_total += len(replay)
-    else:
-        word_total = 0.0
-    return tile_total, word_total
+    return tile_total, 0.0
 
 
 def money_word_multiplier(level: int, rule: dict, money: int) -> float:

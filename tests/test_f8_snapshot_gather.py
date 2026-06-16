@@ -203,33 +203,19 @@ def test_project_previous_word_first_letter_from_round_log(tmp_path, monkeypatch
     assert projected["extras"]["previous_word_first_letter"] == "m"
 
 
-def test_gather_waits_for_prev_letter_after_submit(tmp_path, monkeypatch):
+def test_gather_waits_for_prev_letter_export(tmp_path, monkeypatch):
+    """F8 gather polls melmod until previous_word_first_letter is exported."""
     from cursed_words_solver import config as config_mod
-    import cursed_words_solver.round_log as round_log_mod
 
     run_state_path = tmp_path / "run_state.json"
     monkeypatch.setattr(config_mod, "RUN_STATE_PATH", run_state_path)
-
-    index_path = tmp_path / "index.jsonl"
-    index_path.write_text(
-        json.dumps(
-            {
-                "round_id": "20260610_142818_534",
-                "submitted_word": "malvesies",
-                "match_status": "score_match",
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(round_log_mod, "ROUND_LOG_INDEX_PATH", index_path)
 
     calls = {"n": 0}
 
     def fake_load():
         calls["n"] += 1
         state = _board_run_state(
-            prev_letter="m" if calls["n"] >= 3 else "e",
+            prev_letter="m" if calls["n"] >= 3 else "",
             count="1",
         )
         run_state_path.write_text(json.dumps(state), encoding="utf-8")
@@ -252,7 +238,7 @@ def test_gather_waits_for_prev_letter_after_submit(tmp_path, monkeypatch):
     assert snap.extras_ready
     assert snap.loadout is not None
     assert snap.loadout.extras["previous_word_first_letter"] == "m"
-    assert calls["n"] >= 1
+    assert calls["n"] >= 3
 
 
 def test_gather_first_word_without_round_log_submit(tmp_path, monkeypatch):
