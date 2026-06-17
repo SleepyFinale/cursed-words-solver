@@ -1429,7 +1429,14 @@
       "wiki_effect": "Do nothing (Submit a number's name to improve this)",
       "wiki_page": "Bar_Chart",
       "shop_price": 10,
-      "game_class": "BarChart"
+      "game_class": "BarChart",
+      "setup_stamp": true,
+      "improve_words": [
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+        "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+        "seventeen", "eighteen", "nineteen", "twenty",
+        "twentyone", "twentytwo", "twentythree", "twentyfour", "twentyfive"
+      ]
     },
     "bar_of_soap": {
       "name": "Bar Of Soap",
@@ -1531,7 +1538,11 @@
       "wiki_effect": "Do nothing (Submit a chess piece name to improve this)",
       "wiki_page": "Book_Of_Openings",
       "shop_price": 12,
-      "game_class": "BookOfOpenings"
+      "game_class": "BookOfOpenings",
+      "setup_stamp": true,
+      "improve_words": [
+        "pawn", "knight", "bishop", "rook", "queen", "king"
+      ]
     },
     "briefcase": {
       "name": "Briefcase",
@@ -1857,7 +1868,12 @@
       "wiki_effect": "Do nothing (Submit a tile colour name to improve this)",
       "wiki_page": "Flashy_Fountain_Pen",
       "shop_price": 10,
-      "game_class": "FlashyFountainPen"
+      "game_class": "FlashyFountainPen",
+      "setup_stamp": true,
+      "improve_words": [
+        "red", "blue", "void", "shiny", "purple", "gold", "white",
+        "green", "pink", "glitch", "cactus"
+      ]
     },
     "fleur_de_lis": {
       "name": "Fleur De Lis",

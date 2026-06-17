@@ -235,7 +235,14 @@ def _extras_missing_for_loadout(
         prev = str(extras.get("previous_word_first_letter", "") or "").strip()
         if not prev:
             missing.append("previous_word_first_letter")
-    if loadout_needs_encounter_historic(loadout, board):
+    needs_historic = loadout_needs_encounter_historic(loadout, board)
+    if (
+        not needs_historic
+        and _grid_number_from_extras(extras) >= 2
+        and _scoring_previous_words_count_from_extras(extras) > 0
+    ):
+        needs_historic = True
+    if needs_historic:
         hist = str(extras.get("historic_words", "") or "").strip()
         if not _encounter_historic_export_ready(extras, hist):
             missing.append("historic_words")
@@ -318,6 +325,10 @@ def _build_snapshot_from_run_state(
         mod_money=mod_money if mod_money > 0 else None,
     )
     loadout = hydrate_tile_ninja_loadout_extras(loadout, run_state)
+    if isinstance(loadout.extras, dict):
+        from cursed_words_solver.loadout import reconcile_encounter_historic_for_scoring
+
+        reconcile_encounter_historic_for_scoring(loadout.extras, board=board)
     warnings = validate_run_state_for_scoring(
         loadout,
         board=board,

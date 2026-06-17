@@ -35,11 +35,16 @@ from cursed_words_solver.models import (
 )
 
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+from cursed_words_solver.rules.stamp_behaviors import SearchFlagsMask, stamp_search_flags
 
 from cursed_words_solver.rules.twinkle_toes import TwinkleToesSwap
 
-from cursed_words_solver.search import PathValidator, physical_word_for_path, resolve_letter
+from cursed_words_solver.search import (
+    PathValidator,
+    physical_word_for_path,
+    resolve_letter,
+    search_word_from_path,
+)
 
 
 
@@ -914,6 +919,17 @@ def path_needs_dictionary_resolve(
     return False
 
 
+def path_tiles_need_dictionary_resolve(
+    board: Board,
+    path: list[int],
+    *,
+    flags: SearchFlagsMask = 0,
+) -> bool:
+    """True when path tiles require dictionary-resolve search (chess, fraction, etc.)."""
+    search_word = search_word_from_path(board, path, flags=flags)
+    return path_needs_dictionary_resolve(board, path, search_word)
+
+
 def _validator_for_loadout(
     dictionary: WordDictionary,
     loadout: Loadout,
@@ -1057,6 +1073,15 @@ def loadout_needs_previous_word_letter(loadout: Loadout | None) -> bool:
     return bool(prev)
 
 
+def _loadout_has_bento_box(loadout: Loadout | None) -> bool:
+    if loadout is None:
+        return False
+    for item in (*(loadout.stamps or []), *(loadout.stickers or [])):
+        if (item.id or "").lower() in ("bento_box", "bento"):
+            return True
+    return False
+
+
 def f8_should_block_save(
     *,
     historic_catchup_stale_note: str | None = None,
@@ -1075,17 +1100,7 @@ def f8_should_block_save(
     path: list[int] | None = None,
 ) -> tuple[bool, str | None]:
     """Whether F8 must skip trusted last_suggestion.json (melmod capture)."""
-    del (
-        historic_catchup_stale_note,
-        empty_hist_warn,
-        hist_stale_note,
-        behind_disk_warn,
-        workflow_stale_warn,
-        grid_adv_warn,
-        grid_bleed_warn,
-        grid_one_hist_warn,
-        f8_extras,
-    )
+    del grid_adv_warn, grid_bleed_warn, grid_one_hist_warn
     if not gather_succeeded:
         return True, "gather_incomplete"
     if mid_solve_grid_advanced:
@@ -1094,6 +1109,26 @@ def f8_should_block_save(
         return True, "crossed_out_tile_in_path"
     if f8_path_missing_up_and_up_center(board, path, loadout):
         return True, "up_and_up_center_not_in_path"
+    if _loadout_has_bento_box(loadout) and loadout_needs_previous_word_letter(loadout):
+        extras = (loadout.extras or {}) if loadout is not None else {}
+        from cursed_words_solver.loadout import f8_historic_stale_after_merge_warning
+
+        if hist_stale_note or f8_historic_stale_after_merge_warning(extras):
+            return True, "bento_previous_word_stale"
+        if workflow_stale_warn and "previous word letter" in workflow_stale_warn.lower():
+            return True, "bento_previous_word_stale"
+        if isinstance(f8_extras, dict):
+            drift = workflow_stale_vs_f8_snapshot(extras, f8_extras)
+            if drift and "previous word letter" in drift:
+                return True, "bento_previous_word_stale"
+    if empty_hist_warn and loadout is not None and loadout_needs_encounter_historic(
+        loadout, board
+    ):
+        return True, "empty_historic_on_later_grid"
+    if historic_catchup_stale_note:
+        return True, "historic_catchup_stale"
+    if behind_disk_warn:
+        return True, "behind_disk"
     return False, None
 
 

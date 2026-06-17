@@ -2347,12 +2347,6 @@ namespace CursedWordsSolverCompanion
             if (redUsed >= 0)
                 snapshot.extras["red_tiles_used_encounter"] = redUsed.ToString();
 
-            var greenPoison = ScoringContextCapture.ComputeGreenPoisonBonus(historicWords);
-            if (greenPoison > 0.001)
-                snapshot.extras["green_poison_bonus"] = greenPoison.ToString(
-                    System.Globalization.CultureInfo.InvariantCulture
-                );
-
             try
             {
                 var hourglassType = Type.GetType("Hourglass");

@@ -793,6 +793,13 @@ namespace CursedWordsSolverCompanion
             if (scoringPrevious == null || scoringPrevious.Count == 0)
             {
                 ClearGridOneStaleEncounterHistoric(extras);
+                var gridNum = TryParseGridNumber(
+                    extras.TryGetValue("grid_number", out var gridRaw) ? gridRaw : null
+                );
+                // Grid 2+: no scoring-cache prior means no Bento prev on this grid —
+                // do not fall back to encounter-wide historic (grid-1 bleed).
+                if (gridNum >= 2)
+                    return;
                 string histJson;
                 if (
                     extras.TryGetValue("historic_words", out histJson)
@@ -2305,6 +2312,17 @@ namespace CursedWordsSolverCompanion
 
                 try
                 {
+                    var greenCount = CountGreenTilesInHistoric(hw);
+                    if (greenCount > 0)
+                        row["green_tile_count"] = greenCount;
+                }
+                catch
+                {
+                    // optional
+                }
+
+                try
+                {
                     var takeValue = ComputeHistoricMovieCameraTakeValue(hw, takeLimit);
                     if (takeValue > 0)
                         row["chess_take_value"] = takeValue;
@@ -2328,6 +2346,19 @@ namespace CursedWordsSolverCompanion
             foreach (var tile in hw.Tiles)
             {
                 if (tile != null && tile.IsTileType(TileType.Red))
+                    count++;
+            }
+            return count;
+        }
+
+        private static int CountGreenTilesInHistoric(HistoricWord hw)
+        {
+            if (hw?.Tiles == null)
+                return 0;
+            var count = 0;
+            foreach (var tile in hw.Tiles)
+            {
+                if (tile != null && tile.IsTileType(TileType.Green))
                     count++;
             }
             return count;

@@ -77,7 +77,87 @@ def test_haunted_mirror_grid_scatter():
     assert rule.get("effect_class") == "scatter"
 
 
-def test_oden_two_curse_types_doubles_word():
+def test_oden_game_curse_types_match_tile_get_curse_types():
+    """Parity with Tile.GetCurseTypes / Oden.ApplyWordBonus decompile."""
+    from cursed_words_solver.rules.scoring_conditions import game_curse_types_for_tile
+
+    assert game_curse_types_for_tile(_tile(0, 0, "A", 1)) == set()
+    assert game_curse_types_for_tile(
+        Tile(0, 0, "?", "?", 1, TileColor.COLORLESS, CurseType.CHESS_KNIGHT)
+    ) == {"chess"}
+    assert game_curse_types_for_tile(
+        Tile(0, 0, "2", "2", 2, TileColor.COLORLESS, CurseType.NUMBER, number_value=2)
+    ) == {"number"}
+    assert game_curse_types_for_tile(
+        Tile(
+            0,
+            0,
+            "1/2",
+            "0.5",
+            1,
+            TileColor.COLORLESS,
+            CurseType.FRACTION,
+            fraction_value=0.5,
+        )
+    ) == {"number"}
+    suited = _tile(0, 0, "A", 1)
+    suited.metadata["card_suit"] = "hearts"
+    assert game_curse_types_for_tile(suited) == {"card"}
+    void_item = Tile(
+        0,
+        0,
+        "?",
+        "?",
+        0,
+        TileColor.VOID,
+        CurseType.ITEM,
+        metadata={"scattered_item_id": "lucky_scarf"},
+    )
+    assert game_curse_types_for_tile(void_item) == {"scattereditem"}
+    joker_wild = Tile(
+        0,
+        0,
+        "🃏",
+        "?",
+        0,
+        TileColor.COLORLESS,
+        CurseType.WILDCARD,
+        metadata={"is_joker": True, "card_suit": "joker"},
+    )
+    assert game_curse_types_for_tile(joker_wild) == {"card"}
+    assert game_curse_types_for_tile(_tile(0, 0, "?", 0, curse=CurseType.WILDCARD)) == {
+        "blank"
+    }
+
+
+def test_oden_joker_wildcard_with_chess_doubles_not_triples():
+    """Single joker wildcard + chess → ×2 (card + chess), not ×3 with spurious blank."""
+    board = _empty_board()
+    board.tiles[0][0] = Tile(
+        0,
+        0,
+        "🃏",
+        "?",
+        0,
+        TileColor.COLORLESS,
+        CurseType.WILDCARD,
+        metadata={"is_joker": True, "card_suit": "joker"},
+    )
+    board.tiles[0][1] = Tile(
+        0,
+        1,
+        "k",
+        "?",
+        9,
+        TileColor.COLORLESS,
+        CurseType.CHESS_KNIGHT,
+        metadata={"chess_color": "white"},
+    )
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stamps=[LoadoutItem(id="oden", name="Oden", kind="stamp")])
+    score, bd = pipeline.score(board, [0, 1], "??", loadout)
+    assert bd["multiplier"] == 2.0
+    assert score == bd["tile_total"] * bd["multiplier"]
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "?", 5, curse=CurseType.WILDCARD)
     board.tiles[0][1] = _tile(0, 1, "2", 5, curse=CurseType.NUMBER, number_value=2)
@@ -109,8 +189,8 @@ def test_oden_three_curse_types_triples_word():
     assert score == 36
 
 
-def test_oden_letter_and_chess_counts_two_categories():
-    """Two letter tiles plus chess → letter + chess_knight (×2)."""
+def test_oden_letter_and_chess_counts_chess_only():
+    """Plain letters have no CurseType in game; only chess contributes → no Oden mult."""
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "Q", 10, curse=CurseType.LETTER)
     board.tiles[0][1] = _tile(0, 1, "U", 1, curse=CurseType.LETTER)
@@ -127,8 +207,8 @@ def test_oden_letter_and_chess_counts_two_categories():
     pipeline = ScoringPipeline()
     loadout = Loadout(stamps=[LoadoutItem(id="oden", name="Oden", kind="stamp")])
     score, bd = pipeline.score(board, [0, 1, 2], "quk", loadout)
-    assert bd["multiplier"] == 2.0
-    assert score == 28.0
+    assert bd["multiplier"] == 1.0
+    assert score == 14.0
 
 
 def test_oden_single_letter_and_chess_counts_chess_only():
@@ -152,8 +232,8 @@ def test_oden_single_letter_and_chess_counts_chess_only():
     assert score == 13.0
 
 
-def test_oden_currency_and_letters_doubles_word():
-    """Mismatch 20260607_120420: 2+ letter tiles + currency → Oden ×2."""
+def test_oden_currency_and_letters_no_oden_mult():
+    """Plain letters are not curse types; only currency on path → Oden inactive (n=1)."""
     from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
 
     board = _empty_board()
@@ -169,14 +249,14 @@ def test_oden_currency_and_letters_doubles_word():
     board.tiles[0][1] = _tile(0, 1, "N", 1)
     board.tiles[0][2] = _tile(0, 2, "S", 1)
     path = [0, 1, 2]
-    assert unique_curse_type_count_on_path(board, path) == 2
+    assert unique_curse_type_count_on_path(board, path) == 1
 
     pipeline = ScoringPipeline()
     loadout = Loadout(stamps=[LoadoutItem(id="oden", name="Oden", kind="stamp")])
     score, bd = pipeline.score(board, path, "ens", loadout)
-    assert bd["multiplier"] == 2.0
-    assert score == 4.0
-    assert any("×2.0 word (2 unique curse type(s))" in e for e in bd["pipeline"]["effects"])
+    assert bd["multiplier"] == 1.0
+    assert score == 2.0
+    assert not any("unique curse type" in e for e in bd["pipeline"]["effects"])
 
 
 def test_oden_joker_wildcard_is_card_category():
@@ -296,7 +376,8 @@ def test_oden_suited_number_adds_card_category():
     assert unique_curse_type_count_on_path(board, [0]) == 2
 
 
-def test_oden_two_chess_pieces_count_separately():
+def test_oden_two_chess_pieces_single_chess_bucket():
+    """Game uses one Chess curse type regardless of piece count (plus blank + currency)."""
     from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
 
     board = _empty_board()
@@ -337,11 +418,11 @@ def test_oden_two_chess_pieces_count_separately():
         CurseType.CURRENCY,
     )
     path = [5, 10, 7, 13]
-    assert unique_curse_type_count_on_path(board, path) == 4
+    assert unique_curse_type_count_on_path(board, path) == 3
 
 
-def test_oden_bottega_path_six_categories():
-    """Mismatch 20260607_115833: wildcard + bishop + king + currency + suited number → ×6."""
+def test_oden_bottega_path_five_categories():
+    """Synthetic bottega path: blank + chess + card + currency + number → ×5."""
     from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
 
     board = _empty_board()
@@ -395,12 +476,12 @@ def test_oden_bottega_path_six_categories():
         metadata={"card_suit": "hearts", "card_rank": "7"},
     )
     path = [5, 10, 2, 7, 13, 8, 3]
-    assert unique_curse_type_count_on_path(board, path) == 6
+    assert unique_curse_type_count_on_path(board, path) == 5
 
     pipeline = ScoringPipeline()
     loadout = Loadout(stamps=[LoadoutItem(id="oden", name="Oden", kind="stamp")])
     score, bd = pipeline.score(board, path, "bottega", loadout)
-    assert bd["multiplier"] == 6.0
+    assert bd["multiplier"] == 5.0
     assert score == bd["tile_total"] * bd["multiplier"]
 
 
@@ -578,8 +659,8 @@ def test_creaky_chair_pouffing_regression():
     assert score == 38640
 
 
-def test_oden_whatas_path_five_categories():
-    """Mismatch 20260607_122219: letter + rook + fraction + item + card suit → ×5."""
+def test_oden_whatas_path_four_categories():
+    """Mismatch 20260607_122219: rook + fraction + item + card suit → ×4 (letters excluded)."""
     from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
 
     board = _empty_board()
@@ -622,7 +703,7 @@ def test_oden_whatas_path_five_categories():
     board.tiles[1][1] = _tile(1, 1, "t", 1)
     board.tiles[1][2] = _tile(1, 2, "a", 1)
     path = [5, 0, 1, 6, 7, 2]
-    assert unique_curse_type_count_on_path(board, path) == 5
+    assert unique_curse_type_count_on_path(board, path) == 4
 
     loadout = Loadout(
         stickers=[
@@ -645,8 +726,8 @@ def test_oden_whatas_path_five_categories():
     )
     pipeline = ScoringPipeline()
     score, bd = pipeline.score(board, path, "whatas", loadout)
-    assert score == 3330
-    assert any("×5.0 word (5 unique curse type(s))" in e for e in bd["pipeline"]["effects"])
+    assert score == 2664
+    assert any("×4.0 word (4 unique curse type(s))" in e for e in bd["pipeline"]["effects"])
     assert any("Birthday Cake: 21 + 1" in e for e in bd["pipeline"]["effects"])
 
 
@@ -1113,8 +1194,8 @@ def test_oden_modificative_dense_chess_keeps_letter_bucket():
     assert any("×4.0 word (4 unique curse type(s))" in e for e in bd["pipeline"]["effects"])
 
 
-def test_oden_lyne_golden_record_halves_oden_mult():
-    """Mismatch 20260607_135939: GR short word, no letters → Oden ×2 (not ×4 or skip)."""
+def test_oden_lyne_golden_record_oden_times_two():
+    """Mismatch 20260607_135939: chess + number on path → Oden ×2 with Golden Record."""
     from cursed_words_solver.loadout import (
         parse_board_from_run_state,
         parse_run_state,
@@ -1137,7 +1218,7 @@ def test_oden_lyne_golden_record_halves_oden_mult():
     board = parse_board_from_run_state(run_state)
     path = data["path"]
     assert letter_tile_count_on_path(board, path) == 0
-    assert unique_curse_type_count_on_path(board, path) == 4
+    assert unique_curse_type_count_on_path(board, path) == 2
     loadout = parse_run_state(run_state)
     state = {"tile_scores": [8.0, 3.0, 3.0, 5.0], "word_score": 36.0}
     assert golden_record_halves_oden_count(loadout, board, path, state)
@@ -1149,8 +1230,8 @@ def test_oden_lyne_golden_record_halves_oden_mult():
     assert int(score) != 2970
 
 
-def test_oden_upsprings_path_seven_categories():
-    """Mismatch 20260607_140102: long path keeps letter bucket → Oden ×7."""
+def test_oden_upsprings_path_six_categories():
+    """Mismatch 20260607_140102: long path, game CurseType enum → Oden ×6."""
     from cursed_words_solver.loadout import (
         parse_board_from_run_state,
         parse_run_state,
@@ -1169,10 +1250,10 @@ def test_oden_upsprings_path_seven_categories():
     board = parse_board_from_run_state(run_state)
     path = data["path"]
     assert len(path) > 5
-    assert unique_curse_type_count_on_path(board, path) == 7
+    assert unique_curse_type_count_on_path(board, path) == 6
     loadout = parse_run_state(run_state)
     score, bd = ScoringPipeline().score(board, path, data["word"], loadout)
-    assert any("×7.0 word (7 unique curse type(s))" in e for e in bd["pipeline"]["effects"])
+    assert any("×6.0 word (6 unique curse type(s))" in e for e in bd["pipeline"]["effects"])
 
 
 def test_oden_kaeing_michael_yeti_four_categories():
@@ -1196,8 +1277,8 @@ def test_oden_kaeing_michael_yeti_four_categories():
     assert unique_curse_type_count_on_path(board, path) == 4
 
 
-def test_oden_atmoses_dense_path_five_categories():
-    """Mismatch 20260607_124453: suited non-letter cards keep letter bucket → Oden ×5."""
+def test_oden_atmoses_dense_path_four_categories():
+    """Mismatch 20260607_124453: letters excluded; blank + card + chess + number → ×4."""
     from cursed_words_solver.loadout import (
         parse_board_from_run_state,
         prepare_run_state_dict_for_scoring,
@@ -1215,7 +1296,7 @@ def test_oden_atmoses_dense_path_five_categories():
     board = parse_board_from_run_state(run_state)
     path = data["path"]
     assert len(path) == 7
-    assert unique_curse_type_count_on_path(board, path) == 5
+    assert unique_curse_type_count_on_path(board, path) == 4
 
 
 @pytest.mark.skip(
@@ -1315,7 +1396,7 @@ def test_oden_adorner_path_two_categories():
 
 
 def test_oden_asseverated_void_item_four_categories():
-    """Mismatch 20260615_214341: VOID scattered item on path → Oden ×4, not ×5."""
+    """Mismatch 20260615_214341: void scattered item still counts as ScatteredItem → Oden ×4."""
     from cursed_words_solver.loadout import (
         parse_board_from_run_state,
         parse_run_state,
@@ -1390,7 +1471,7 @@ def test_oden_endorsable_fraction_start_number_end():
 
 
 def test_oden_miha_item_start_fraction_end():
-    """Mismatch 20260607_123029: suited item start + fraction end keeps card bucket → Oden ×4."""
+    """Mismatch 20260607_123029: item + card suit + fraction → Oden ×3."""
     from cursed_words_solver.loadout import (
         parse_board_from_run_state,
         parse_run_state,
@@ -1408,15 +1489,15 @@ def test_oden_miha_item_start_fraction_end():
     run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
     board = parse_board_from_run_state(run_state)
     path = data["path"]
-    assert unique_curse_type_count_on_path(board, path) == 4
+    assert unique_curse_type_count_on_path(board, path) == 3
     loadout = parse_run_state(run_state)
     score, bd = ScoringPipeline().score(board, path, data["word"], loadout)
-    assert any("×4.0 word (4 unique curse type(s))" in e for e in bd["pipeline"]["effects"])
-    assert int(score) == data["actual_score"]
+    assert any("×3.0 word (3 unique curse type(s))" in e for e in bd["pipeline"]["effects"])
+    assert int(score) == 1656
 
 
 def test_oden_morias_item_start_wildcard_end():
-    """Mismatch 20260607_123150: item start + wildcard end keeps letter bucket → Oden ×5."""
+    """Mismatch 20260607_123150: item + wildcard + card + number → Oden ×4."""
     from cursed_words_solver.loadout import (
         parse_board_from_run_state,
         parse_run_state,
@@ -1434,7 +1515,7 @@ def test_oden_morias_item_start_wildcard_end():
     run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
     board = parse_board_from_run_state(run_state)
     path = data["path"]
-    assert unique_curse_type_count_on_path(board, path) == 5
+    assert unique_curse_type_count_on_path(board, path) == 4
 
 
 def test_oden_unfrock_dense_path_four_categories():
@@ -1490,3 +1571,46 @@ def test_golden_record_upon_all_letters_full_subtotal():
     assert letter_tile_count_on_path(board, path) == 1
     state = {"tile_scores": [0.0, 15.0, 1.0, 0.0], "word_score": 57.0}
     assert not golden_record_multiplies_word_score_only(loadout, board, path, state)
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "expected_categories", "expected_multiplier"),
+    [
+        ("20260617_105710", 2, 2.0),  # needing: void chess queen suppressed
+        ("20260617_105558", 2, 2.0),  # earthier: currency+letter+1 chess
+        ("20260617_111126", 4, 4.0),  # efference: currency+letter+2 chess+wildcard
+        ("20260617_121345", 2, 2.0),  # obit: letter+chess collapsed when 2 pieces
+        ("20260617_121617", 3, 3.0),  # beefs: letter+fraction+chess; poison +1
+    ],
+)
+def test_oden_jun17_masochist_category_counts(
+    fixture_name: str, expected_categories: int, expected_multiplier: float
+):
+    """Jun 17 Octacles Masochist Oden mismatches: category count matches in-game multiplier."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / f"{fixture_name}.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    payload = dict(data.get("run_state_snapshot") or {})
+    if data.get("extras_snapshot") is not None:
+        payload["extras_snapshot"] = data.get("extras_snapshot")
+    if data.get("submit_board_tiles") is not None:
+        payload["submit_board_tiles"] = data.get("submit_board_tiles")
+    run_state = prepare_run_state_dict_for_scoring(payload)
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    assert unique_curse_type_count_on_path(board, path) == expected_categories
+    loadout = parse_run_state(run_state)
+    _score, bd = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert bd["multiplier"] == expected_multiplier
+    assert int(_score) == data["actual_score"]

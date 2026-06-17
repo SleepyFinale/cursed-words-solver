@@ -96,6 +96,25 @@ def test_mysterious_amulet_cursed_tile_bonus():
     assert score == base + 8
 
 
+def test_mysterious_amulet_counts_suited_letter():
+    """Suited letter glyphs count as cursed (Tile.IsCursed CardSuit parity)."""
+    board = _empty_board()
+    suited = _tile(0, 0, "W", 5, color=TileColor.BLUE)
+    suited.metadata["card_suit"] = "clubs"
+    suited.metadata["card_rank"] = "W"
+    board.tiles[0][0] = suited
+    board.tiles[0][1] = _tile(0, 1, "E", 1)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="mysterious_amulet", name="Mysterious Amulet", level=1)]
+    )
+    score, bd = pipeline.score(board, [0, 1], "we", loadout)
+    base, base_bd = pipeline.score(board, [0, 1], "we", Loadout())
+    assert bd["pipeline"]["tile_scores"][0] == base_bd["pipeline"]["tile_scores"][0] + 8
+    assert bd["pipeline"]["tile_scores"][1] == base_bd["pipeline"]["tile_scores"][1]
+    assert score == base + 8
+
+
 def test_moai_sticker_colourless_cursed_only():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "4", 4, curse=CurseType.NUMBER)

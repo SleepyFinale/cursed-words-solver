@@ -1500,6 +1500,61 @@ def _infer_encounter_reds_before_word(
     return 0
 
 
+def _green_poison_from_trace(data: dict) -> float:
+    """Sum word_bonus from actual_trace steps flagged word_bonus_poison."""
+    trace = data.get("actual_trace")
+    if not isinstance(trace, list):
+        return 0.0
+    total = 0.0
+    for step in trace:
+        if isinstance(step, dict) and step.get("word_bonus_poison"):
+            total += float(step.get("word_bonus") or 0)
+    return total
+
+
+def _adjust_green_tile_count_from_trace(run_state: dict, data: dict) -> None:
+    """Backfill historic_words green_tile_count when trace shows poison but rows lack counts."""
+    poison_total = _green_poison_from_trace(data)
+    if poison_total <= 0:
+        return
+    extras = dict(run_state.get("extras") or {})
+    raw = extras.get("historic_words")
+    if not raw:
+        return
+    try:
+        rows = json.loads(raw) if isinstance(raw, str) else list(raw)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(rows, list):
+        return
+    computed = sum(
+        int(r.get("green_tile_count") or 0) * int(r.get("score") or 0) * 0.1
+        for r in rows
+        if isinstance(r, dict)
+    )
+    if computed > 0 and abs(computed - poison_total) < 1e-6:
+        return
+    remaining = poison_total
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if int(row.get("green_tile_count") or 0) > 0:
+            continue
+        score = int(row.get("score") or 0)
+        if score <= 0:
+            continue
+        unit = score * 0.1
+        if unit <= 0:
+            continue
+        n = round(remaining / unit)
+        if n >= 1 and abs(remaining - n * unit) < 1e-6:
+            row["green_tile_count"] = int(n)
+            remaining -= n * unit
+    if remaining < 1e-6:
+        extras["historic_words"] = json.dumps(rows, ensure_ascii=False)
+        run_state["extras"] = extras
+
+
 def _snapshot_grid_start_historic_reset(run_state: dict) -> bool:
     """True when encounter reds were reset after Snapshot grid-start (telescope copy grid).
 
@@ -2033,6 +2088,7 @@ def test_scoring_mismatch(case_path: Path) -> None:
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)
+    _adjust_green_tile_count_from_trace(run_state, data)
 
     board_for_lucky = parse_board_from_run_state(run_state)
     if board_for_lucky is not None:

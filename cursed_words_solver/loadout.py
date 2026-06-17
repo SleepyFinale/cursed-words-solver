@@ -566,6 +566,73 @@ def _first_alphabetic_letter(word: str) -> str:
     return ""
 
 
+def _parse_historic_words_rows(raw: Any) -> list[dict[str, Any]]:
+    """Parse melmod historic_words JSON into a list of row dicts."""
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(parsed, list):
+            return [row for row in parsed if isinstance(row, dict)]
+        return []
+    if isinstance(raw, list):
+        return [row for row in raw if isinstance(row, dict)]
+    return []
+
+
+def _encounter_score_earned_from_extras(extras: dict[str, Any]) -> float:
+    try:
+        return float(extras.get("encounter_score_earned") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def green_poison_from_historic_words(extras: dict[str, Any] | None) -> float:
+    """ApplyPoisonEffect parity: sum green_tile_count × 10% of each prior word score."""
+    if not isinstance(extras, dict):
+        return 0.0
+    raw = extras.get("historic_words")
+    rows = _parse_historic_words_rows(raw)
+    if not rows:
+        return 0.0
+    enc_earned = _encounter_score_earned_from_extras(extras)
+    if enc_earned <= 0:
+        raw_enc = extras.get("encounter_score_earned")
+        enc_missing = raw_enc is None or str(raw_enc).strip() == ""
+        grid = _grid_number_from_extras(extras)
+        spc = _scoring_previous_words_count_from_extras(extras)
+        if enc_missing and grid >= 2 and spc > 0:
+            enc_earned = sum(
+                float(row.get("score") or 0)
+                for row in rows
+                if isinstance(row, dict)
+            )
+        if enc_earned <= 0:
+            return 0.0
+    total = 0.0
+    score_used = 0.0
+    for row in reversed(rows):
+        try:
+            green_count = int(row.get("green_tile_count") or 0)
+        except (TypeError, ValueError):
+            green_count = 0
+        if green_count <= 0:
+            continue
+        try:
+            word_score = float(row.get("score") or 0)
+        except (TypeError, ValueError):
+            word_score = 0.0
+        if word_score <= 0:
+            continue
+        if score_used + word_score > enc_earned + 1e-6:
+            continue
+        score_used += word_score
+        scaled = round(word_score * 0.1)
+        total += green_count * scaled
+    return total
+
+
 def _previous_letter_from_historic_words(raw: Any) -> str:
     """Last historic word's first letter (Bento Box / Limnophila parity with melmod)."""
     rows: list[Any]
@@ -1166,11 +1233,7 @@ def reconcile_previous_word_first_letter_from_historic(
     hist = str(extras.get("historic_words", "") or "").strip()
     if grid >= 2 and (not hist or hist == "[]"):
         if _scoring_previous_words_count_from_extras(extras) == 0:
-            prev = str(extras.get("previous_word_first_letter") or "").strip().lower()[:1]
-            if prev:
-                extras["previous_word_first_letter"] = prev
-            else:
-                extras.pop("previous_word_first_letter", None)
+            extras.pop("previous_word_first_letter", None)
         return
     spc = _scoring_previous_words_count_from_extras(extras)
     last_from_hist = _previous_letter_from_historic_words(hist)
@@ -1309,6 +1372,8 @@ def prune_historic_incompatible_with_board(
     """Clear encounter historic when no exported word path matches the current board."""
     if board is None:
         return False
+    if str(extras.get("encounter_historic_source", "") or "").strip() == "green_poison_only":
+        return False
     if (
         _grid_number_from_extras(extras) == 1
         and _scoring_previous_words_count_from_extras(extras) == 0
@@ -1327,6 +1392,31 @@ def prune_historic_incompatible_with_board(
     for row in arr:
         if isinstance(row, dict) and _historic_entry_matches_board(board, row):
             return False
+    grid = _grid_number_from_extras(extras)
+    try:
+        enc_earned = int(extras.get("encounter_score_earned") or 0)
+    except (TypeError, ValueError):
+        enc_earned = 0
+    if grid == 1 and enc_earned == 0:
+        extras.pop("historic_words", None)
+        extras.pop("red_tiles_used_encounter", None)
+        extras["scoring_previous_words_count"] = "0"
+        extras.pop("previous_word_first_letter", None)
+        extras["encounter_historic_source"] = "grid1_no_scoring_cache"
+        return True
+    poison_rows = [
+        {
+            "word": row.get("word"),
+            "score": row.get("score"),
+            "green_tile_count": int(row.get("green_tile_count") or 0),
+        }
+        for row in arr
+        if isinstance(row, dict) and int(row.get("green_tile_count") or 0) > 0
+    ]
+    if poison_rows:
+        extras["historic_words"] = json.dumps(poison_rows, ensure_ascii=False)
+        extras["encounter_historic_source"] = "green_poison_only"
+        return True
     extras.pop("historic_words", None)
     extras.pop("red_tiles_used_encounter", None)
     grid = _grid_number_from_extras(extras)
@@ -1851,6 +1941,9 @@ F8_EMBED_WORKFLOW_EXTRA_KEYS = (
     "previous_word_first_letter",
     "red_tiles_used_encounter",
     "scoring_previous_words_count",
+    "encounter_score_earned",
+    "encounter_total_target",
+    "encounter_remaining_target",
     "mutating_dna_letter_counts",
     "encounter_historic_source",
     "birthday_cake_bonus",

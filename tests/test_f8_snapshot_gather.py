@@ -567,3 +567,47 @@ def test_grid2_telescope_empty_historic_still_missing():
     }
     missing = _extras_missing_for_loadout(loadout, board, extras)
     assert "historic_words" in missing
+
+
+def test_grid2_spc_positive_requires_historic_without_telescope():
+    """Queen Bee poison: grid 2+ with prior words must wait for historic_words."""
+    from cursed_words_solver.models import Board, Loadout
+
+    board = Board(tiles=[[None] * 5 for _ in range(5)])
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="queen_bee", name="Queen Bee", kind="sticker")],
+    )
+    extras = {
+        "grid_number": "2",
+        "scoring_previous_words_count": "1",
+        "historic_words": "",
+    }
+    missing = _extras_missing_for_loadout(loadout, board, extras)
+    assert "historic_words" in missing
+    extras["historic_words"] = json.dumps(
+        [{"word": "jWwwqD", "score": 72, "green_tile_count": 1}]
+    )
+    missing = _extras_missing_for_loadout(loadout, board, extras)
+    assert "historic_words" not in missing
+
+
+def test_grid2_spc_positive_requires_historic_without_telescope():
+    """Queen Bee poison: grid 2+ with prior words must wait for historic_words."""
+    from cursed_words_solver.models import Board, Loadout
+
+    board = Board(tiles=[[None] * 5 for _ in range(5)])
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="queen_bee", name="Queen Bee", kind="sticker")],
+    )
+    extras = {
+        "grid_number": "2",
+        "scoring_previous_words_count": "1",
+        "historic_words": "",
+    }
+    missing = _extras_missing_for_loadout(loadout, board, extras)
+    assert "historic_words" in missing
+    extras["historic_words"] = json.dumps(
+        [{"word": "jWwwqD", "score": 72, "green_tile_count": 1}]
+    )
+    missing = _extras_missing_for_loadout(loadout, board, extras)
+    assert "historic_words" not in missing

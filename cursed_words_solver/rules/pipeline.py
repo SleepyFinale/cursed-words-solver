@@ -1,28 +1,23 @@
 """Full scoring pipeline: tile init -> pin -> stickers L→R -> stamps L→R -> boss -> finalize."""
 
-
-
 from __future__ import annotations
-
-
-
 import json
 import math
-
 from pathlib import Path
-
 from typing import TYPE_CHECKING, Any
-
-
-
-from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
-
+from cursed_words_solver.models import (
+    Board,
+    CurseType,
+    Loadout,
+    LoadoutItem,
+    Tile,
+    TileColor,
+)
 from cursed_words_solver.rules.base_scoring import (
     _scrabble_value,
     microscope_init_contribution,
     tile_base_contribution,
 )
-
 from cursed_words_solver.rules.pin_effects import apply_pin_word_scoring
 from cursed_words_solver.rules.stamp_effects import (
     PIPELINE_SKIP_TYPES as _STAMP_SKIP_TYPES,
@@ -50,7 +45,6 @@ from cursed_words_solver.solve_context import SolveContext, build_solve_context
 if TYPE_CHECKING:
     from cursed_words_solver.board_scoring_context import BoardScoringContext
 from cursed_words_solver.graph_bitboard import BoardGraphContext
-
 from cursed_words_solver.rules.boss_effects import (
     boss_context,
     boss_rule_applies,
@@ -163,24 +157,13 @@ from cursed_words_solver.rules.scoring_conditions import (
     highest_number_on_path,
 )
 
-
-
 STICKERS_PATH = Path(__file__).resolve().parents[2] / "data" / "wiki" / "stickers.json"
 
 
-
-
-
 def _load_sticker_rules() -> dict[str, Any]:
-
     if STICKERS_PATH.exists():
-
         return json.loads(STICKERS_PATH.read_text(encoding="utf-8"))
-
     return {"stickers": {}, "stamps": {}, "bosses": {}, "pins": {}, "aliases": {}}
-
-
-
 
 
 def _init_tile_contribution(
@@ -210,15 +193,10 @@ def _init_state(
     blue_base_override: int | None = None,
     microscope_base: bool = False,
 ) -> dict[str, Any]:
-
     tile_scores: list[float] = []
-
     base_total = 0.0
-
     for idx in path:
-
         tile = board.get_by_index(idx)
-
         contrib = _init_tile_contribution(
             tile,
             board.money,
@@ -226,35 +204,21 @@ def _init_state(
             microscope_base=microscope_base,
             blue_base_override=blue_base_override,
         )
-
         tile_scores.append(contrib)
-
         base_total += contrib
-
     return {
-
         "word": word,
-
         "path": path,
-
         "base_score": base_total,
-
         "tile_scores": tile_scores,
-
         "word_score": 0.0,
-
         "multiplier": 1.0,
-
         "money_bonus": 0,
-
         "effects": [],
-
         "pending_word_multipliers": [],
         "pending_word_percent_bonuses": [],
         "pending_word_finalize_steps": [],
-
         "salamander_post_mutating_mults": [],
-
     }
 
 
@@ -267,7 +231,6 @@ def _apply_void_path_bonuses(
     board: Board, path: list[int], loadout: Loadout, state: dict[str, Any]
 ) -> None:
     """Built-in void path bonus: +2 TILE SCORE on a letter (Scrabble value ≥ 8) immediately before a void NUMBER.
-
     In-game, the bonus does not apply when that void number is immediately followed by another
     void number on the path (consecutive void-number run).
     """
@@ -380,7 +343,6 @@ def _queue_word_percent_bonus(
     defer_finalize: bool = False,
 ) -> None:
     """Queue multiplicative WordBonus token (game: multiply total by percent/100).
-
     Example: wiki ×1.5 => percent 150; wiki ×4 => percent 400.
     """
     # Allow negative percents for "negative multiplier" stickers (e.g. Avocado mushy).
@@ -541,10 +503,7 @@ def _sort_finalize_steps_by_sticker_order(
 ) -> list[tuple]:
     if len(steps) < 2 or loadout is None:
         return steps
-    equipped = {
-        slugify_name(str(s.id or s.name))
-        for s in (loadout.stickers or [])
-    }
+    equipped = {slugify_name(str(s.id or s.name)) for s in (loadout.stickers or [])}
     for step in steps:
         rid = slugify_name(str(step[2]) if len(step) > 2 else "")
         if rid not in equipped:
@@ -568,7 +527,9 @@ def _apply_pending_word_finalize_steps(
     loadout: Loadout | None = None,
 ) -> float:
     """GetScoreFromScoreCalcInfo: apply queued WordBonus steps in sticker order."""
-    entries = steps if steps is not None else state.get("pending_word_finalize_steps", [])
+    entries = (
+        steps if steps is not None else state.get("pending_word_finalize_steps", [])
+    )
     entries = _sort_finalize_steps_by_sticker_order(list(entries), loadout)
     if not entries:
         return subtotal
@@ -670,7 +631,9 @@ def _parse_percent_list(raw: str) -> list[int] | None:
 def _compound_word_percents_from_loadout(loadout: Loadout | None) -> list[int] | None:
     if loadout is None:
         return None
-    raw = str((loadout.extras or {}).get("compound_word_percents_on_tile_sum", "")).strip()
+    raw = str(
+        (loadout.extras or {}).get("compound_word_percents_on_tile_sum", "")
+    ).strip()
     if not raw:
         return None
     return _parse_percent_list(raw)
@@ -802,7 +765,8 @@ def _flush_pending_through_rule(state: dict[str, Any], through_rule_id: str) -> 
         for entry in state.get("pending_word_percent_bonuses", [])
         if isinstance(entry, tuple)
         and len(entry) >= 2
-        and str(entry[1] or "").strip().lower() not in {
+        and str(entry[1] or "").strip().lower()
+        not in {
             str(s[2] or "").strip().lower()
             for s in apply_steps
             if isinstance(s, tuple) and len(s) >= 3
@@ -813,7 +777,8 @@ def _flush_pending_through_rule(state: dict[str, Any], through_rule_id: str) -> 
         for entry in state.get("pending_word_multipliers", [])
         if isinstance(entry, tuple)
         and len(entry) >= 2
-        and str(entry[1] or "").strip().lower() not in {
+        and str(entry[1] or "").strip().lower()
+        not in {
             str(s[2] or "").strip().lower()
             for s in apply_steps
             if isinstance(s, tuple) and len(s) >= 3
@@ -873,9 +838,9 @@ def _apply_snapshot_phased_word_finalize(
         snapshot_phased_word_scoring,
     )
 
-    if state.get("_snapshot_phased_finalize_applied") or not snapshot_phased_word_scoring(
-        loadout
-    ):
+    if state.get(
+        "_snapshot_phased_finalize_applied"
+    ) or not snapshot_phased_word_scoring(loadout):
         return
     steps = state.get("pending_word_finalize_steps")
     if not steps:
@@ -1119,6 +1084,25 @@ def _apply_post_cocktail_word_percent_if_needed(
     state["_post_cocktail_applied"] = True
 
 
+def _apply_green_poison_finalize(
+    total: float,
+    loadout: Loadout | None,
+    state: dict[str, Any],
+    *,
+    trace: list[dict[str, Any]] | None = None,
+) -> float:
+    """ApplyPoisonEffect: additive word bonus after queued ×WORD steps."""
+    from cursed_words_solver.rules.tile_scoring import poison_from_previous_words
+
+    poison = poison_from_previous_words(loadout)
+    if poison <= 0:
+        return float(total)
+    state.setdefault("effects", []).append(f"+{poison:g} green poison")
+    if trace is not None:
+        _trace_step(state, "poison", detail=f"+{poison:g} word bonus (post-mult)")
+    return float(total) + poison
+
+
 def _finalize(
     state: dict[str, Any],
     board: Board | None = None,
@@ -1139,7 +1123,8 @@ def _finalize(
         str(extras.get("compound_post_cocktail_percents", "")).strip()
     )
     if state.get("_compound_word_percents_applied") and not has_compound_post:
-        return float(sum(state["tile_scores"]) + state["word_score"])
+        base = float(sum(state["tile_scores"]) + state["word_score"])
+        return _apply_green_poison_finalize(base, loadout, state)
     if board is not None and path is not None:
         apply_green_tile_word_transfer(
             board,
@@ -1166,28 +1151,29 @@ def _finalize(
     if state.get("_snapshot_phased_finalize_applied") or state.get(
         "_compound_post_cocktail_applied"
     ):
-        return float(sum(state["tile_scores"]) + state["word_score"])
+        base = float(sum(state["tile_scores"]) + state["word_score"])
+        return _apply_green_poison_finalize(base, loadout, state)
     subtotal = sum(state["tile_scores"]) + state["word_score"]
     from cursed_words_solver.rules.scoring_conditions import (
         golden_record_multiplies_word_score_only,
     )
 
-    word_only = golden_record_multiplies_word_score_only(
-        loadout, board, path, state
-    )
+    word_only = golden_record_multiplies_word_score_only(loadout, board, path, state)
     tile_only = bool(
         state.get("_additive_word_after_pending_percent")
         and state.get("pending_word_finalize_steps")
         and not word_only
     )
-    return float(
+    return _apply_green_poison_finalize(
         _apply_pending_word_finalize_steps(
             state,
             subtotal,
             multiply_tile_sum_only=tile_only,
             multiply_word_score_only=word_only,
             loadout=loadout,
-        )
+        ),
+        loadout,
+        state,
     )
 
 
@@ -1210,8 +1196,10 @@ def _finalize_with_trace(
     has_compound_post = bool(
         str(extras.get("compound_post_cocktail_percents", "")).strip()
     )
+    trace = state.get("_trace")
     if state.get("_compound_word_percents_applied") and not has_compound_post:
-        return float(sum(state["tile_scores"]) + state["word_score"]), []
+        base = float(sum(state["tile_scores"]) + state["word_score"])
+        return _apply_green_poison_finalize(base, loadout, state, trace=trace), []
     if board is not None and path is not None:
         apply_green_tile_word_transfer(
             board,
@@ -1219,7 +1207,6 @@ def _finalize_with_trace(
             state,
             trace_step=_trace_step if state.get("_trace") is not None else None,
         )
-    trace = state.get("_trace")
     _apply_post_cocktail_word_percent_if_needed(
         state, loadout, board=board, path=path, rules=rules
     )
@@ -1239,7 +1226,8 @@ def _finalize_with_trace(
     if state.get("_snapshot_phased_finalize_applied") or state.get(
         "_compound_post_cocktail_applied"
     ):
-        return float(sum(state["tile_scores"]) + state["word_score"]), []
+        base = float(sum(state["tile_scores"]) + state["word_score"])
+        return _apply_green_poison_finalize(base, loadout, state, trace=trace), []
     subtotal = sum(state["tile_scores"]) + state["word_score"]
     if trace is not None:
         _trace_step(state, "pre_multiply", detail="tile sum + word score")
@@ -1247,9 +1235,7 @@ def _finalize_with_trace(
         golden_record_multiplies_word_score_only,
     )
 
-    word_only = golden_record_multiplies_word_score_only(
-        loadout, board, path, state
-    )
+    word_only = golden_record_multiplies_word_score_only(loadout, board, path, state)
     tile_only = bool(
         state.get("_additive_word_after_pending_percent")
         and state.get("pending_word_finalize_steps")
@@ -1263,41 +1249,23 @@ def _finalize_with_trace(
         multiply_word_score_only=word_only,
         loadout=loadout,
     )
-    return float(total), []
-
-
-
+    return _apply_green_poison_finalize(float(total), loadout, state, trace=trace), []
 
 
 class ScoringPipeline:
-
     """Apply loadout effects in game order (pin -> stickers -> stamps -> boss)."""
 
-
-
     def __init__(self) -> None:
-
         self.rules = _load_sticker_rules()
 
-
-
     def loadout_mapping_summary(
-
         self, loadout: Loadout | None
-
     ) -> tuple[int, int, int, list[str]]:
-
         """Scoring-active count, total items, grid-only count, unmapped labels."""
-
         loadout = loadout or Loadout()
-
         scoring, total, grid_only = count_scoring_items(self.rules, loadout)
-
         unmapped = collect_unmapped_items(self.rules, loadout)
-
         return scoring, total, grid_only, unmapped
-
-
 
     def _compute_state(
         self,
@@ -1378,7 +1346,6 @@ class ScoringPipeline:
                     trial_score=_trial_score if expected is not None else None,
                     expected_score=expected,
                 )
-
         ctx = (
             solve_context
             if solve_context is not None
@@ -1428,7 +1395,6 @@ class ScoringPipeline:
                 trace_step=_trace_step if trace is not None else None,
             )
         _apply_void_path_bonuses(board, path, loadout, state)
-
         from cursed_words_solver.rules.scoring_conditions import (
             grid_path_word_mult_defer_for_pin,
             grid_path_word_mult_is_immediate,
@@ -1438,7 +1404,6 @@ class ScoringPipeline:
         compound_percents = ctx.compound_percents
         if compound_percents or ctx.compound_finalize_at_cocktail:
             state["_defer_word_mults_for_compound"] = True
-
         grid_refs = list(
             path_grid_item_refs(
                 board,
@@ -1496,27 +1461,30 @@ class ScoringPipeline:
                     state["_grid_dango_word_flushed"] = True
                 _flush_pending_word_mults(state)
             state["_immediate_word_percent"] = prev_immediate_pct
-            _trace_step(state, "grid_item", rule_id=ref.rule_id, detail="scattered grid item")
-        if str((loadout.extras or {}).get("flush_word_mults_after_grid", "")).lower() in (
+            _trace_step(
+                state, "grid_item", rule_id=ref.rule_id, detail="scattered grid item"
+            )
+        if str(
+            (loadout.extras or {}).get("flush_word_mults_after_grid", "")
+        ).lower() in (
             "1",
             "true",
             "yes",
         ):
             _flush_pending_word_mults(state)
-
         pin_effect = str(loadout.extras.get("pin_effect", "") or "").strip()
         if pin_effect and not hourglass:
             state = self._apply_pin(
                 loadout, pin_effect, state, board, path, hourglass_reversed=False
             )
             _trace_step(state, "pin", rule_id=pin_effect, detail="pin applied")
-        from cursed_words_solver.rules.scoring_conditions import snapshot_phased_word_scoring
-
+        from cursed_words_solver.rules.scoring_conditions import (
+            snapshot_phased_word_scoring,
+        )
         from cursed_words_solver.rules.scoring_conditions import (
             snapshot_dusty_interleaved_word_scoring,
             snapshot_phased_word_scoring,
         )
-
         from cursed_words_solver.rules.scoring_conditions import (
             post_cocktail_sunflower_session,
         )
@@ -1528,7 +1496,9 @@ class ScoringPipeline:
             == "random_access_memory"
         ):
             _flush_pending_through_rule(state, "burrito")
-        elif str((loadout.extras or {}).get("flush_word_mults_after_pin", "")).lower() in (
+        elif str(
+            (loadout.extras or {}).get("flush_word_mults_after_pin", "")
+        ).lower() in (
             "1",
             "true",
             "yes",
@@ -1543,7 +1513,6 @@ class ScoringPipeline:
             if not compound_word_finalize_at_cocktail(loadout, board):
                 _flush_pending_word_mults(state)
         defer_multiply_stickers = _salamander_defer_multiply_for_mutating(loadout)
-
         _skip_types = _STAMP_SKIP_TYPES
 
         def _apply_static_sticker_slot(
@@ -1622,13 +1591,9 @@ class ScoringPipeline:
             nonlocal state
             for slot in ctx.sticker_slot_order:
                 sticker = loadout.stickers[slot]
-                _key, rule = get_rule(
-                    self.rules, "stickers", sticker.id, sticker.name
-                )
+                _key, rule = get_rule(self.rules, "stickers", sticker.id, sticker.name)
                 slug = slugify_name(sticker.id or sticker.name)
-                if slug != "snapshot" and (
-                    not rule or rule.get("type") in _skip_types
-                ):
+                if slug != "snapshot" and (not rule or rule.get("type") in _skip_types):
                     continue
                 is_multiply = rule.get("type") == "multiply_word_scaled"
                 if slug != "snapshot" and multiply_only != is_multiply:
@@ -1659,7 +1624,9 @@ class ScoringPipeline:
                         if not compound_word_finalize_at_cocktail(loadout, board):
                             _flush_pending_through_rule(state, "burrito")
                     elif str(
-                        (loadout.extras or {}).get("flush_word_mults_before_cocktail", "")
+                        (loadout.extras or {}).get(
+                            "flush_word_mults_before_cocktail", ""
+                        )
                     ).lower() in ("1", "true", "yes") and not (
                         snapshot_phased_word_scoring(loadout)
                     ):
@@ -1705,7 +1672,9 @@ class ScoringPipeline:
                         and post_compound is None
                     ):
                         compound = (
-                            list(ctx.compound_percents) if ctx.compound_percents else None
+                            list(ctx.compound_percents)
+                            if ctx.compound_percents
+                            else None
                         )
                         if compound:
                             state["word_score"] = 0.0
@@ -1815,9 +1784,11 @@ class ScoringPipeline:
             state["_immediate_word_mult"] = True
             _apply_sticker_pass(multiply_only=True)
             state["_immediate_word_mult"] = False
-        if pin_effect and resolve_rule_id(
-            self.rules, "pins", pin_effect, pin_effect
-        ) == "human_boy":
+        if (
+            pin_effect
+            and resolve_rule_id(self.rules, "pins", pin_effect, pin_effect)
+            == "human_boy"
+        ):
             state = self._apply_human_hands(loadout, state, board, path)
         if hourglass:
             state = self._apply_hourglass_boss_rules(state, board, path, loadout, ctx)
@@ -2045,79 +2016,41 @@ class ScoringPipeline:
             hourglass_reversed=hourglass_reversed,
         )
 
-
-
     def _apply_human_hands(
-
         self,
-
         loadout: Loadout,
-
         state: dict,
-
         board: Board,
-
         path: list[int],
-
     ) -> dict:
-
         left = pin_left_level(loadout)
-
         right = pin_right_level(loadout)
-
         fav_sticker = str(
-
             (loadout.extras or {}).get("favourite_sticker_id", "") or ""
-
         ).strip()
-
         fav_stamp = str(
-
             (loadout.extras or {}).get("favourite_stamp_id", "") or ""
-
         ).strip()
-
-
-
         if fav_sticker:
-
             for sticker in loadout.stickers:
-
                 if sticker.id == fav_sticker or sticker.name == fav_sticker:
-
                     _key, rule = get_rule(
-
                         self.rules, "stickers", sticker.id, sticker.name
-
                     )
-
                     if rule and rule.get("type") not in ("unmodeled", "custom"):
-
                         eff_level = sticker.level + left
-
                         state = self._apply_rule(
-
                             rule, state, board, path, loadout, eff_level
-
                         )
-
                         state["effects"].append(
-
                             f"Human Hands: favourite sticker +{left} level(s)"
-
                         )
-
                     break
-
-
-
         stamp_extra = human_hands_stamp_extra_apps(loadout)
         if fav_stamp and stamp_extra > 0:
             for stamp in loadout.stamps:
                 if stamp.id == fav_stamp or stamp.name == fav_stamp:
-                    _key, rule = get_rule(
-                        self.rules, "stamps", stamp.id, stamp.name
-                    )
+                    _key, rule = get_rule(self.rules, "stamps", stamp.id, stamp.name)
                     if rule and rule.get("type") not in ("unmodeled", "custom"):
                         for _ in range(stamp_extra):
                             state = self._apply_rule(
@@ -2127,73 +2060,38 @@ class ScoringPipeline:
                             f"Human Hands: favourite stamp ×{stamp_extra} extra"
                         )
                     break
-
-
-
         return state
-
-
 
     def _apply_named_effect(
-
         self,
-
         effect_id: str,
-
         state: dict,
-
         board: Board,
-
         path: list[int],
-
         loadout: Loadout,
-
     ) -> dict:
-
         for bucket in ("pins", "stickers", "stamps", "bosses"):
-
             _key, rule = get_rule(self.rules, bucket, effect_id, effect_id)
-
             if rule and rule.get("type") not in ("unmodeled", "custom", None):
-
                 return self._apply_rule(rule, state, board, path, loadout, 1)
-
         canonical = resolve_rule_id(self.rules, "stickers", effect_id, effect_id)
-
         if canonical:
-
             rule = self.rules.get("stickers", {}).get(canonical)
-
             if rule and rule.get("type") not in ("unmodeled", "custom"):
-
                 return self._apply_rule(rule, state, board, path, loadout, 1)
-
         return state
 
-
-
     def _apply_rule(
-
         self,
-
         rule: dict,
-
         state: dict,
-
         board: Board,
-
         path: list[int],
-
         loadout: Loadout,
-
         level: int,
-
         applying_sticker_id: str = "",
-
     ) -> dict:
-
         effect_type = rule.get("type", "")
-
         if effect_type in (
             "unmodeled",
             "custom",
@@ -2201,83 +2099,66 @@ class ScoringPipeline:
             "human_hands_pin",
             "blue_tile_base_override",
         ):
-
             return state
-
         trace_before = (
             _trace_rule_snapshot(state) if state.get("_trace") is not None else None
         )
         effects_before = len(state.get("effects") or [])
         rule_trace_context: dict[str, Any] = {}
         rule_id = applying_sticker_id or str(rule.get("id", "") or rule.get("name", ""))
-
-        value = sticker_rule_int(level, rule) if "base" in rule or effect_type in (
-            "add_tile_score",
-            "add_word_score",
-            "red_tile_bonus",
-            "word_length_bonus",
-            "shiny_chain",
-        ) else rule.get("value", 0) * level
-
+        value = (
+            sticker_rule_int(level, rule)
+            if "base" in rule
+            or effect_type
+            in (
+                "add_tile_score",
+                "add_word_score",
+                "red_tile_bonus",
+                "word_length_bonus",
+                "shiny_chain",
+            )
+            else rule.get("value", 0) * level
+        )
         if effect_type == "colored_number_tile_bonus":
-
             bonus_each = abacus_colored_number_bonus(loadout, rule)
-
             count = 0
-
             for i, idx in enumerate(path):
-
                 if is_colored_number_tile(board.get_by_index(idx)):
-
                     state["tile_scores"][i] += bonus_each
-
                     count += 1
-
             if count:
-
                 state["effects"].append(
-
                     f"+{bonus_each * count} coloured number tile ({count} tile(s))"
-
                 )
-
         elif effect_type == "multiply_if_number_sum":
-
             min_sum = int(rule.get("min_sum", 7))
-
             num_sum = number_sum_on_path(board, path)
-
             if num_sum >= min_sum:
-
                 factor = brain_multiplier(level, rule)
-
-                _queue_word_multiplier(
-                    state, factor, rule_id, defer_finalize=True
-                )
-
+                _queue_word_multiplier(state, factor, rule_id, defer_finalize=True)
                 state["effects"].append(
-
                     f"×{factor} word (number sum {num_sum} ≥ {min_sum})"
-
                 )
-
         elif effect_type == "tile_multiply":
             factor = float(rule.get("factor", 2.0))
             if rule.get("scale_by_pin_right"):
                 factor = mahjong_consumable_factor(loadout, rule)
             elif rule.get("per_level_factor"):
-                factor = float(rule.get("factor_base", 1.0)) + float(
-                    rule.get("factor_per_level", 1.0)
-                ) * level
+                factor = (
+                    float(rule.get("factor_base", 1.0))
+                    + float(rule.get("factor_per_level", 1.0)) * level
+                )
             elif "base" in rule:
                 factor = scaled_word_multiplier(level, rule)
-            if rule.get("scale_from_extras") == "grid_number_half" and loadout is not None:
+            if (
+                rule.get("scale_from_extras") == "grid_number_half"
+                and loadout is not None
+            ):
                 factor = grid_number_half(loadout)
             if rule.get("scale_by_consumable_count_on_path"):
                 factor = float(max(consumable_count_on_path(board, path), 1))
             if factor < 0:
                 factor = float(sticker_rule_int(level, rule))
-
             target = rule.get("target", "number")
             applied = 0
             if target == "first_of_each_colour":
@@ -2366,7 +2247,6 @@ class ScoringPipeline:
                         applied += 1
             if applied:
                 state["effects"].append(f"×{factor} {target} tile score ({applied})")
-
         elif effect_type == "add_tile_score":
             target = rule.get("target", "all")
             bonus_each = sticker_rule_int(level, rule)
@@ -2386,9 +2266,7 @@ class ScoringPipeline:
                         state["tile_scores"][i] += add
                         total_bonus += add
                 if total_bonus:
-                    state["effects"].append(
-                        f"+{total_bonus} void-adjacent tile score"
-                    )
+                    state["effects"].append(f"+{total_bonus} void-adjacent tile score")
             elif target == "chess_piece":
                 curse = target_chess_curse_from_loadout(loadout)
                 count = 0
@@ -2424,7 +2302,6 @@ class ScoringPipeline:
                     state["effects"].append(
                         f"{sign}{total_bonus} {target} tile score ({count})"
                     )
-
         elif effect_type == "add_word_score":
             word_mode = rule.get("word_mode", "flat")
             bonus = 0
@@ -2534,7 +2411,6 @@ class ScoringPipeline:
                 _add_word_score(state, bonus)
                 if word_mode != "birthday_cake_bonus":
                     state["effects"].append(f"+{bonus} word score ({word_mode})")
-
         elif effect_type == "consecutive_number_tile_bonus":
             bonus_each = sticker_rule_int(level, rule)
             positions = consecutive_number_run_path_positions(path, board)
@@ -2544,7 +2420,6 @@ class ScoringPipeline:
                 state["effects"].append(
                     f"+{bonus_each * len(positions)} consecutive number tile ({len(positions)})"
                 )
-
         elif effect_type == "multiply_word_scaled":
             condition = rule.get("condition", "")
             cond_explanation = ""
@@ -2624,13 +2499,13 @@ class ScoringPipeline:
                         improve_neapolitan
                     )
                     if improve_neapolitan:
-                        rule_trace_context[
-                            "condition_explanation"
-                        ] = "applied: stored multiplier + submit improve"
+                        rule_trace_context["condition_explanation"] = (
+                            "applied: stored multiplier + submit improve"
+                        )
                     else:
-                        rule_trace_context[
-                            "condition_explanation"
-                        ] = "applied: stored multiplier (no improve this submit)"
+                        rule_trace_context["condition_explanation"] = (
+                            "applied: stored multiplier (no improve this submit)"
+                        )
                 effective_level = level
                 if (
                     rid == "yellow_glasses"
@@ -2662,9 +2537,7 @@ class ScoringPipeline:
                     and level >= 3
                     and salamander_defer
                 ):
-                    state["salamander_post_mutating_mults"].append(
-                        (factor, rule_id)
-                    )
+                    state["salamander_post_mutating_mults"].append((factor, rule_id))
                     state["effects"].append(f"×{factor} word ({label})")
                 elif (
                     rid == "wrestlers"
@@ -2672,9 +2545,7 @@ class ScoringPipeline:
                     and salamander_defer
                     and word_starts_ends_different_suit(board, path)
                 ):
-                    state["salamander_post_mutating_mults"].append(
-                        (factor, rule_id)
-                    )
+                    state["salamander_post_mutating_mults"].append((factor, rule_id))
                     state["effects"].append(f"×{factor} word ({label})")
                 elif (
                     rid == "wrestlers"
@@ -2710,7 +2581,6 @@ class ScoringPipeline:
                         state, percent, rule_id, wiki_factor=factor
                     )
                     state["effects"].append(f"×{factor} word ({label})")
-
         elif effect_type == "tile_multiply_by_letter_count":
             counts = letter_counts_on_path(board, path)
             applied = 0
@@ -2721,17 +2591,13 @@ class ScoringPipeline:
                     state["tile_scores"][i] *= mult
                     applied += 1
             if applied:
-                state["effects"].append(
-                    f"×letter-count tile score ({applied} tile(s))"
-                )
-
+                state["effects"].append(f"×letter-count tile score ({applied} tile(s))")
         elif effect_type == "multiply_word_by_high_letter_count":
             min_count = int(rule.get("min_letter_count", 3))
             factor = max_qualifying_letter_half_multiplier(board, path, min_count)
             if factor > 1.0:
                 _queue_word_multiplier(state, factor, rule_id)
                 state["effects"].append(f"×{factor} word (letter count ≥{min_count})")
-
         elif effect_type == "multiply_word_by_longest_red_run":
             run = longest_red_run_on_path(board, path)
             if run >= 1:
@@ -2741,7 +2607,6 @@ class ScoringPipeline:
                 state["effects"].append(
                     f"{label}: ×{factor} word (longest RED run {run})"
                 )
-
         elif effect_type == "multiply_word_per_path_tile":
             per_tile = float(rule.get("factor", -1.1))
             if path:
@@ -2750,16 +2615,13 @@ class ScoringPipeline:
                 state["effects"].append(
                     f"×{factor} word ({len(path)} tile(s) @ {per_tile})"
                 )
-
         elif effect_type == "multiply_word_by_unique_colour_count":
             n = unique_colour_count_on_path(board, path)
             factor = float(n)
             if n == 0:
                 # Preserve hard-zero behavior for Dango when there are no coloured tiles.
                 _queue_word_multiplier(state, factor, rule_id)
-                state["effects"].append(
-                    f"×{factor} word ({n} unique colour(s))"
-                )
+                state["effects"].append(f"×{factor} word ({n} unique colour(s))")
             else:
                 percent = word_percent_bonus_from_multiplier(factor, rule, level=level)
                 _queue_word_percent_bonus(
@@ -2768,40 +2630,32 @@ class ScoringPipeline:
                     rule_id,
                     wiki_factor=factor,
                 )
-                state["effects"].append(
-                    f"×{factor} word ({n} unique colour(s))"
-                )
-
+                state["effects"].append(f"×{factor} word ({n} unique colour(s))")
         elif effect_type == "multiply_word_by_unique_curse_type_count":
             from cursed_words_solver.rules.scoring_conditions import (
                 golden_record_halves_oden_count,
             )
 
             n = unique_curse_type_count_on_path(board, path)
-            if golden_record_halves_oden_count(loadout, board, path, state):
-                n = max(1, n // 2)
-            if n >= 1:
+            # Golden Record halving only mattered when the old per-piece Oden model
+            # over-counted (4+ types). Game-parity counts ≤3 must not be halved to 1.
+            if golden_record_halves_oden_count(loadout, board, path, state) and n > 2:
+                n = max(2, n // 2)
+            if n != 1:
                 factor = float(n)
                 _queue_word_multiplier(state, factor, rule_id)
-                state["effects"].append(
-                    f"×{factor} word ({n} unique curse type(s))"
-                )
-
+                state["effects"].append(f"×{factor} word ({n} unique curse type(s))")
         elif effect_type == "multiply_word_by_number_count":
             if word_all_numbers_on_path(board, path):
                 n = number_tile_count_on_path(board, path)
                 if n >= 1:
                     factor = float(n)
                     _queue_word_multiplier(state, factor, rule_id)
-                    state["effects"].append(
-                        f"×{factor} word ({n} number tile(s))"
-                    )
-
+                    state["effects"].append(f"×{factor} word ({n} number tile(s))")
         elif effect_type == "use_base_score_tiles":
             # Microscope applies at init (_init_tile_contribution); stamp pass is a no-op
             # so later sticker tile bonuses (e.g. Artist's Palette) are preserved.
             pass
-
         elif effect_type == "multiply_word_per_distinct_pair":
             pairs = distinct_pair_count_on_path(board, path)
             if pairs:
@@ -2811,9 +2665,11 @@ class ScoringPipeline:
                 state["effects"].append(
                     f"×{rate}^{pairs} word ({pairs} distinct pair(s))"
                 )
-
         elif effect_type == "multiply_money_bonus":
-            if str(rule_id or "").strip().lower() == "sunflower" and loadout is not None:
+            if (
+                str(rule_id or "").strip().lower() == "sunflower"
+                and loadout is not None
+            ):
                 from cursed_words_solver.rules.scoring_conditions import (
                     compound_word_finalize_at_cocktail,
                 )
@@ -2830,22 +2686,14 @@ class ScoringPipeline:
             )
             if factor != 1.0:
                 percent = word_percent_bonus_from_multiplier(factor, rule, level=level)
-                _queue_word_percent_bonus(
-                    state, percent, rule_id, wiki_factor=factor
-                )
+                _queue_word_percent_bonus(state, percent, rule_id, wiki_factor=factor)
                 state["effects"].append(f"×{factor} word (money bonus)")
-
         elif effect_type == "multiply_consumable_rack":
             factor = consumable_rack_multiplier(level, rule, loadout)
             if factor != 1.0:
-                percent = word_percent_bonus_from_multiplier(
-                    factor, rule, level=level
-                )
-                _queue_word_percent_bonus(
-                    state, percent, rule_id, wiki_factor=factor
-                )
+                percent = word_percent_bonus_from_multiplier(factor, rule, level=level)
+                _queue_word_percent_bonus(state, percent, rule_id, wiki_factor=factor)
                 state["effects"].append(f"×{factor} word (consumable rack)")
-
         elif effect_type == "multiply_word_other_sticker_levels":
             factor = burrito_word_multiplier(
                 level,
@@ -2856,9 +2704,7 @@ class ScoringPipeline:
                 rules=self.rules,
             )
             if factor != 1.0:
-                percent = word_percent_bonus_from_multiplier(
-                    factor, rule, level=level
-                )
+                percent = word_percent_bonus_from_multiplier(factor, rule, level=level)
                 _queue_word_percent_bonus(
                     state,
                     percent,
@@ -2866,16 +2712,13 @@ class ScoringPipeline:
                     wiki_factor=factor,
                 )
                 state["effects"].append(f"×{factor} word (other sticker levels)")
-
         elif effect_type == "red_encounter_tile_bonus":
             per_level = level
             if per_level:
                 count = 0
                 for i, idx in enumerate(path):
                     if board.get_by_index(idx).color.value == "red":
-                        running = telescope_running_red_count(
-                            loadout, board, path, i
-                        )
+                        running = telescope_running_red_count(loadout, board, path, i)
                         add = per_level * running
                         state["tile_scores"][i] += add
                         count += 1
@@ -2885,7 +2728,6 @@ class ScoringPipeline:
                         f"{tele_label}: +{per_level}×encounter red count per red tile"
                         f" ({count} tile(s))"
                     )
-
         elif effect_type == "multiply":
             condition = rule.get("condition", "")
             if condition:
@@ -2914,47 +2756,26 @@ class ScoringPipeline:
                 if level > 1 and factor > 0:
                     factor = factor**level
                 percent = word_percent_bonus_from_multiplier(factor, rule, level=level)
-                _queue_word_percent_bonus(
-                    state, percent, rule_id, wiki_factor=factor
-                )
+                _queue_word_percent_bonus(state, percent, rule_id, wiki_factor=factor)
                 state["effects"].append(f"×{factor} word")
-
         elif effect_type == "red_tile_bonus":
-
             for i, idx in enumerate(path):
-
                 if board.get_by_index(idx).color.value == "red":
-
                     state["tile_scores"][i] += value
-
             red_count = sum(
-
                 1 for i in path if board.get_by_index(i).color.value == "red"
-
             )
-
             if red_count:
-
                 state["effects"].append(f"+{value} per red tile ({red_count})")
-
         elif effect_type == "unique_colour_word_bonus":
-
             per_colour = rainbow_per_colour_bonus(loadout, rule)
-
             colours = unique_colours_on_path(board, path)
-
             if colours:
-
                 bonus = per_colour * len(colours)
-
                 _add_word_score(state, bonus)
-
                 state["effects"].append(
-
                     f"+{bonus} word ({len(colours)} unique colour(s))"
-
                 )
-
         elif effect_type == "chess_take_word_bonus":
             strict_takes = chess_take_strict_mode(
                 board,
@@ -2962,9 +2783,10 @@ class ScoringPipeline:
                 strict_requested=rule.get("strict_takes", False),
             )
             rid_take = slugify_name(rule_id or applying_sticker_id or "")
-            if rid_take in ("super_8", "super_eight") and super_8_uses_melmod_take_metadata(
-                board, path
-            ):
+            if rid_take in (
+                "super_8",
+                "super_eight",
+            ) and super_8_uses_melmod_take_metadata(board, path):
                 strict_takes = True
             mode = rule.get("mode", "flat")
             if mode == "piece_value_first_n":
@@ -2976,12 +2798,17 @@ class ScoringPipeline:
                     board, path, n, loadout, strict=strict_takes
                 )
                 accumulated = bonus - improve
-                if not bonus and level >= 3 and chess_takes_on_path(
-                    board,
-                    path,
-                    strict=strict_takes,
-                    search_flags=state.get("_search_flags", 0),
-                ) == 0:
+                if (
+                    not bonus
+                    and level >= 3
+                    and chess_takes_on_path(
+                        board,
+                        path,
+                        strict=strict_takes,
+                        search_flags=state.get("_search_flags", 0),
+                    )
+                    == 0
+                ):
                     bonus = n * n
                     accumulated = 0
                     improve = bonus
@@ -3002,7 +2829,6 @@ class ScoringPipeline:
                     bonus = per_take * takes
                     _add_word_score(state, bonus)
                     state["effects"].append(f"+{bonus} word ({takes} take(s))")
-
         elif effect_type == "card_hand_word_bonus":
             hand = rule.get("hand", "")
             if rule.get("word_mode") == "per_unused_card":
@@ -3037,7 +2863,6 @@ class ScoringPipeline:
                 if bonus:
                     _add_word_score(state, bonus)
                     state["effects"].append(f"+{bonus} word ({hand})")
-
         elif effect_type == "add_money_on_hand":
             hand = rule.get("hand", "")
             if detect_card_hand(hand, board, path, loadout):
@@ -3045,7 +2870,6 @@ class ScoringPipeline:
                 if amount:
                     state["money_bonus"] = state.get("money_bonus", 0) + amount
                     state["effects"].append(f"+${amount} ({hand})")
-
         elif effect_type == "add_money_on_condition":
             condition = rule.get("condition", "")
             if evaluate_sticker_condition(
@@ -3061,7 +2885,6 @@ class ScoringPipeline:
                 if amount:
                     state["money_bonus"] = state.get("money_bonus", 0) + amount
                     state["effects"].append(f"+${amount} ({condition})")
-
         elif effect_type == "cards_submitted_word_bonus":
             bonus = bicycle_word_bonus(board, path, loadout, rule)
             if bonus:
@@ -3076,16 +2899,13 @@ class ScoringPipeline:
                         f"+{bonus} word (Bicycle: {acc} acc + {suited} suited × {per_card})"
                     )
                 else:
-                    state["effects"].append(f"+{bonus} word (Bicycle: {acc} accumulated)")
-
+                    state["effects"].append(
+                        f"+{bonus} word (Bicycle: {acc} accumulated)"
+                    )
         elif effect_type == "void_flip":
-
             for i, idx in enumerate(path):
-
                 t = board.get_by_index(idx)
-
                 if t.color.value == "void":
-
                     from cursed_words_solver.rules.base_scoring import (
                         _void_face_value,
                     )
@@ -3093,39 +2913,18 @@ class ScoringPipeline:
                     flip = abs(t.base_score) * 2
                     if t.base_score == 0:
                         flip = float(_void_face_value(t)) * 2
-
                     state["tile_scores"][i] += flip
-
                     state["effects"].append("void flip")
-
         elif effect_type == "word_length_bonus":
-
             if len(state["word"]) >= rule.get("min_length", 4):
-
                 _add_word_score(state, value)
-
                 state["effects"].append(f"+{value} long word")
-
         elif effect_type == "shiny_chain":
-
-            shiny = sum(
-
-                1
-
-                for i in path
-
-                if board.get_by_index(i).color.value == "shiny"
-
-            )
-
+            shiny = sum(1 for i in path if board.get_by_index(i).color.value == "shiny")
             if shiny >= 2:
-
                 bonus = value * (shiny - 1)
-
                 _add_word_score(state, bonus)
-
                 state["effects"].append(f"+{bonus} shiny chain")
-
         elif effect_type == "mutating_dna_tile_bonus":
             tile_bonus, word_bonus = apply_mutating_dna_bonus(
                 board,
@@ -3138,17 +2937,11 @@ class ScoringPipeline:
             if word_bonus:
                 _add_word_score(state, word_bonus)
                 state["effects"].append(f"+{int(word_bonus)} mutating DNA word")
-
         elif effect_type == "boss_zero_vowel":
-
             vowels = set("aeiou")
-
             if any(c in vowels for c in state["word"].lower()):
-
                 state["multiplier"] = 0
-
                 state["effects"].append("boss: no vowels")
-
         elif effect_type == "boss_tile_penalty":
             ctx = boss_context(loadout, self.rules)
             rule_key = str(loadout.extras.get("_scoring_boss_rule_key") or "")
@@ -3162,26 +2955,20 @@ class ScoringPipeline:
                 for i in range(len(state["tile_scores"])):
                     state["tile_scores"][i] -= p
                 state["effects"].append(f"-{p} per tile (boss)")
-
         elif effect_type == "boss_subtract_word_score_money":
             ctx = boss_context(loadout, self.rules)
-            mult = resolve_boss_scaling(
-                rule, ctx.area, ctx.cursed, field="multiplier"
-            )
+            mult = resolve_boss_scaling(rule, ctx.area, ctx.cursed, field="multiplier")
             if mult is not None:
                 sub = int(mult * loadout.money)
                 state["word_score"] -= sub
                 state["effects"].append(f"-{sub} word score (boss × money)")
-
         elif effect_type == "boss_steal_money":
             from cursed_words_solver.rules.boss_scoring import apply_boss_steal_money
 
             ctx = boss_context(loadout, self.rules)
             apply_boss_steal_money(state, loadout, rule, ctx)
-
         elif effect_type in ("boss_word_min_length", "boss_word_max_length"):
             pass
-
         if trace_before is not None:
             _trace_rule_step(
                 state,
@@ -3193,5 +2980,3 @@ class ScoringPipeline:
                 trace_context=rule_trace_context,
             )
         return state
-
-

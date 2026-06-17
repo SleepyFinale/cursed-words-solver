@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
+from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.tile_scoring import (
     apply_tile_init,
@@ -101,10 +101,27 @@ def test_tile_init_trace_phases() -> None:
     assert "glitch_settle" in phases or "init_scores" in phases
 
 
-def test_poison_from_extras() -> None:
+def test_poison_applied_post_multiply() -> None:
+    board = _board_with((0, TileColor.COLORLESS, CurseType.WILDCARD))
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="oden", name="Oden", kind="stamp")],
+        extras={
+            "historic_words": '[{"word":"gree","score":10,"green_tile_count":1}]',
+            "encounter_score_earned": "10",
+        },
+    )
+    pipe = ScoringPipeline()
+    final, _, tr = pipe.score_with_trace(board, [0], "A", loadout)
+    assert final == 2.0  # 1 tile + 1 poison after ×1 oden
+    assert any(s.get("phase") == "poison" for s in tr)
+    assert not any(s.get("phase_detail") == "poison" for s in tr)
+
+
+def test_poison_from_extras_fallback() -> None:
+    """Deprecated green_poison_bonus extra still works for old fixtures."""
     board = _board_with((0, TileColor.COLORLESS, CurseType.LETTER))
     loadout = Loadout(extras={"green_poison_bonus": "12.5"})
     pipe = ScoringPipeline()
-    final, breakdown, tr = pipe.score_with_trace(board, [0], "A", loadout)
-    assert final >= 12.5
-    assert any(s.get("phase") == "tile_init" for s in tr)
+    final, _, tr = pipe.score_with_trace(board, [0], "A", loadout)
+    assert final == 13.5
+    assert any(s.get("phase") == "poison" for s in tr)

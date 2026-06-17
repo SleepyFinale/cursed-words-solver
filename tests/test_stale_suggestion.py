@@ -2464,11 +2464,37 @@ def test_f8_should_block_prev_letter_mismatch_grid2_bento():
     assert loadout_needs_previous_word_letter(loadout)
     blocked, reason = f8_should_block_save(
         gather_succeeded=True,
+        hist_stale_note=hist_stale,
         loadout=loadout,
         board=Board(tiles=[[None] * 5 for _ in range(5)], money=0),
     )
-    assert not blocked
-    assert reason is None
+    assert blocked
+    assert reason == "bento_previous_word_stale"
+
+
+def test_f8_should_block_bento_grid2_stale_grid1_prev_letter():
+    """First word on grid 2 must not trust grid-1 previous_word_first_letter for Bento."""
+    from cursed_words_solver.loadout import f8_historic_stale_after_merge_warning
+    from cursed_words_solver.models import Board, Loadout, LoadoutItem
+
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="bento_box", name="Bento Box", kind="stamp")],
+        extras={
+            "grid_number": "4",
+            "scoring_previous_words_count": "0",
+            "previous_word_first_letter": "r",
+            "historic_words": '[{"word":"greenways","score":10}]',
+        },
+    )
+    assert loadout_needs_previous_word_letter(loadout)
+    blocked, reason = f8_should_block_save(
+        gather_succeeded=True,
+        hist_stale_note=f8_historic_stale_after_merge_warning(loadout.extras),
+        loadout=loadout,
+        board=Board(tiles=[[None] * 5 for _ in range(5)], money=0),
+    )
+    assert blocked
+    assert reason == "bento_previous_word_stale"
 
 
 def _collect_workflow_drift_notes_for_capture(

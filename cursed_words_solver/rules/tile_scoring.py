@@ -178,20 +178,32 @@ def initial_tile_scores(
         if tile.curse == CT.ITEM:
             scores.append(0.0)
             continue
-        void_currency_in_word = (
+        void_currency_in_word = False
+        if (
             tile.color == TileColor.VOID
             and tile.curse == CT.CURRENCY
             and i < len(word_lower)
-            and (face := path_letter_for_count(tile))
-            and face.lower() == word_lower[i]
-        )
-        # Row-0 path-start void currency still gets the -10 init (gyrene ₲→g).
+        ):
+            glyph = normalize_tile_glyph(tile.char or tile.letter or "")
+            mapped = CURRENCY_MAP.get(glyph, "").lower()
+            if not mapped and len(glyph) == 1 and glyph.isalpha():
+                mapped = glyph.lower()
+            face = path_letter_for_count(tile)
+            if mapped and mapped == word_lower[i]:
+                void_currency_in_word = True
+            elif face and face.lower() == word_lower[i]:
+                void_currency_in_word = True
+        # Row-0 path-start void currency still gets melmod_void_currency_init (gyrene).
         if void_currency_in_word and not (
             i == 0
             and tile.row == 0
             and tile.metadata.get("source") == "melmod"
         ):
-            contrib = 0.0
+            from cursed_words_solver.rules.base_scoring import (
+                _void_currency_path_init_penalty,
+            )
+
+            contrib = -float(_void_currency_path_init_penalty(tile, loadout))
         elif microscope_base:
             contrib = microscope_init_contribution(tile, money, loadout)
         elif tile.color == TileColor.BLUE and blue_base_override is not None:
@@ -269,7 +281,23 @@ def poison_from_previous_words(loadout: Loadout | None) -> float:
     """ApplyPoisonEffect: sum over historic words of green_count × 10% word score."""
     if not loadout:
         return 0.0
-    raw = loadout.extras.get("green_poison_bonus")
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    from cursed_words_solver.loadout import (
+        _grid_number_from_extras,
+        _scoring_previous_words_count_from_extras,
+        green_poison_from_historic_words,
+    )
+
+    if (
+        _grid_number_from_extras(extras) == 1
+        and _scoring_previous_words_count_from_extras(extras) == 0
+    ):
+        return 0.0
+
+    derived = green_poison_from_historic_words(extras)
+    if derived > 0:
+        return derived
+    raw = extras.get("green_poison_bonus")
     if raw is not None:
         try:
             return float(raw)
@@ -291,7 +319,7 @@ def apply_tile_init(
 ) -> Board:
     """
     Run pre-item tile pipeline on a scoring board copy.
-    Mutates state tile_scores / money_bonus / word_score (poison).
+    Mutates state tile_scores / money_bonus / word_score.
     """
     work = scoring_board_copy(board)
     settled = settle_glitch_tiles(work, path, loadout)
@@ -336,18 +364,6 @@ def apply_tile_init(
                 "tile_init",
                 phase_detail="pink",
                 detail=f"saved ${pink_saved}",
-            )
-
-    poison = poison_from_previous_words(loadout)
-    if poison:
-        state["word_score"] = state.get("word_score", 0) + poison
-        state["effects"].append(f"+{poison:g} green poison")
-        if trace_step:
-            trace_step(
-                state,
-                "tile_init",
-                phase_detail="poison",
-                detail=f"+{poison:g} word bonus",
             )
 
     if trace_step:

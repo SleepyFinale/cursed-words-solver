@@ -675,6 +675,128 @@ def test_find_best_words_fjelds_beats_aahed():
     assert results[0].score >= data["expected_score"] - 20
 
 
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_extension_from_aahs_prefix_finds_eelskin():
+    """Regression: +3 tiles from aahs wildcard prefix finds eelskin (20260617 path_extension)."""
+    import json
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from cursed_words_solver.search import (
+        _CandidateHeap,
+        search_word_from_path,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260617_142738_eelskin.json"
+    )
+    if not fixture.exists():
+        pytest.skip("20260617_142738_eelskin.json fixture required")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data["run_state_snapshot"])
+    loadout = parse_run_state(data["run_state_snapshot"])
+    assert board is not None
+
+    short_path = data["short_path"]
+    expected_path = data["expected_path"]
+    pipeline = ScoringPipeline()
+    short_score = pipeline.score_total_only(
+        board, short_path, data["short_word"], loadout
+    )
+
+    flags = stamp_search_flags(loadout)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=15,
+        time_budget=10.0,
+    )
+    candidates = _CandidateHeap(200)
+    sc = searcher._rank_score_for_candidate(
+        board, short_path, data["short_word"], loadout
+    )
+    candidates.consider(sc or 0, data["short_word"], short_path)
+    searcher._extend_top_candidates(
+        board, loadout, candidates, top_paths=30, max_rounds=4
+    )
+    extended = [
+        (rank_sc, word, list(path))
+        for rank_sc, word, path in candidates.best_sorted()
+        if list(path) == expected_path
+    ]
+    assert extended
+    assert extended[0][0] > short_score
+    assert extended[0][0] >= data["expected_score"] - 5
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_solve_extension_picks_eelskin_over_aahs():
+    """Integration: extension passes (incl. post-extend) beat aahs prefix on chess/fraction board."""
+    import json
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260617_142738_eelskin.json"
+    )
+    if not fixture.exists():
+        pytest.skip("20260617_142738_eelskin.json fixture required")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data["run_state_snapshot"])
+    loadout = parse_run_state(data["run_state_snapshot"])
+    assert board is not None
+
+    pipeline = ScoringPipeline()
+    short_path = data["short_path"]
+    expected_path = data["expected_path"]
+    short_score = pipeline.score_total_only(
+        board, short_path, data["short_word"], loadout
+    )
+
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=15,
+        time_budget=10.0,
+    )
+    from cursed_words_solver.search import _CandidateHeap
+
+    candidates = _CandidateHeap(200)
+    sc = searcher._rank_score_for_candidate(
+        board, short_path, data["short_word"], loadout
+    )
+    candidates.consider(sc or 0, data["short_word"], short_path)
+    searcher._extend_top_candidates(
+        board,
+        loadout,
+        candidates,
+        top_paths=120,
+        max_rounds=16,
+    )
+    searcher._extend_top_candidates(
+        board,
+        loadout,
+        candidates,
+        top_paths=60,
+        max_rounds=3,
+    )
+    best_sc, best_word, best_path = candidates.best_sorted()[0]
+    assert list(best_path) == expected_path
+    assert best_sc > short_score
+    assert best_sc >= data["expected_score"] - 5
+
+
 def _tile(
     ch: str,
     row: int,

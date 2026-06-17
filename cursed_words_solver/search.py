@@ -118,6 +118,7 @@ from cursed_words_solver.setup_value import (
     rank_score_for_word,
     setup_future_value,
 )
+from cursed_words_solver.stamp_improve_words import equipped_improve_words
 
 # 8 directions
 DIRS_8 = [
@@ -846,10 +847,12 @@ class PathValidator:
         dictionary: WordDictionary,
         min_len: int = 3,
         relaxed_numbers: bool = False,
+        extra_valid_words: frozenset[str] = frozenset(),
     ) -> None:
         self.dictionary = dictionary
         self.min_len = min_len
         self.relaxed_numbers = relaxed_numbers
+        self.extra_valid_words = extra_valid_words
         self.required_consumable_indices: frozenset[int] = frozenset()
         self.quest_loadout: Loadout | None = None
 
@@ -893,6 +896,13 @@ class PathValidator:
             and self._may_extend_to_number_word(board, path, steps_remaining)
         ):
             return True
+        if self.extra_valid_words:
+            pl = prefix.lower()
+            if any(
+                w.startswith(pl) and len(w) >= self.min_len
+                for w in self.extra_valid_words
+            ):
+                return True
         return False
 
     def _path_constraints_ok(
@@ -939,6 +949,8 @@ class PathValidator:
             return self._wildcard_valid(word)
         if any(is_number_like_tile(board.get_by_index(i)) for i in path):
             return self._number_word_valid(board, path, word, stamp_flags)
+        if word.lower() in self.extra_valid_words:
+            return len(word) >= self.min_len
         return self.dictionary.is_valid_word(word, self.min_len)
 
     def _stitched_word_ok(
@@ -2009,6 +2021,64 @@ def _paths_between_indices(
     return found
 
 
+def _paths_spelling_word(
+    board: Board,
+    target: str,
+    max_len: int,
+    *,
+    flags: SearchFlagsMask = 0,
+    path_cap: int = 24,
+) -> list[list[int]]:
+    """Acyclic paths whose resolved letters equal target (for improve-word seeding)."""
+    target = target.lower()
+    length = len(target)
+    if length > max_len or length < 1:
+        return []
+    found: list[list[int]] = []
+
+    for start in _legal_word_start_indices(board):
+        if len(found) >= path_cap:
+            break
+        if (
+            resolve_letter(board.get_by_index(start), 0, flags=flags).lower()
+            != target[0]
+        ):
+            continue
+
+        def dfs(path: list[int], visited: int, pos: int) -> None:
+            if len(found) >= path_cap:
+                return
+            if pos == length:
+                found.append(list(path))
+                return
+            if len(path) >= max_len:
+                return
+            cell_id = path[-1]
+            nbr_mask = neighbors_mask(
+                board, visited, cell_id=cell_id, flags=flags
+            )
+            for nbr in _iter_expansion_neighbors(
+                board,
+                visited,
+                cell_id=cell_id,
+                path=path,
+                path_length=len(path),
+                flags=flags,
+                nbr_mask=nbr_mask,
+            ):
+                if (
+                    resolve_letter(board.get_by_index(nbr), pos, flags=flags).lower()
+                    != target[pos]
+                ):
+                    continue
+                path.append(nbr)
+                dfs(path, visited | (1 << nbr), pos + 1)
+                path.pop()
+
+        dfs([start], 1 << start, 1)
+    return found
+
+
 def _all_shortest_paths_between_indices(
     board: Board,
     start: int,
@@ -2804,6 +2874,7 @@ class WordSearcher:
         ctx = self._search_ctx(loadout)
         stamp_flags = ctx.search_flags
         graph_ctx = self._board_graph(board)
+        from cursed_words_solver.suggestion import path_tiles_need_dictionary_resolve
         hanafuda_level = ctx.hanafuda_level
         use_hanafuda_physical = hanafuda_level > 0
         use_dfs_bb = self._use_dfs_bb_for(
@@ -2938,6 +3009,9 @@ class WordSearcher:
             pattern_prefix: str | None,
             pattern_cursor: TrieCursor | None,
             has_digit_path: bool,
+            *,
+            path: list[int],
+            steps_left: int,
         ) -> bool:
             if letter_trie and prefix_cursor is not None:
                 return True
@@ -2945,6 +3019,13 @@ class WordSearcher:
                 return True
             if has_digit_path and pattern_prefix is not None:
                 return self.dictionary.pattern_has_prefix(pattern_prefix)
+            if (
+                steps_left > 0
+                and path_tiles_need_dictionary_resolve(
+                    board, path, flags=stamp_flags
+                )
+            ):
+                return True
             return False
 
         def _step_pattern_cursor(
@@ -3042,6 +3123,8 @@ class WordSearcher:
                 pattern_prefix,
                 pattern_cursor,
                 has_digit,
+                path=path,
+                steps_left=steps_left,
             ):
                 if stitch_active:
                     if not (
@@ -3284,6 +3367,17 @@ class WordSearcher:
                     next_prefix_cursor = (
                         None if next_has_digit and ext_cursor is None else ext_cursor
                     )
+                    next_has_wildcard = ext_wildcard
+                    if (
+                        not next_has_digit
+                        and next_prefix_cursor is None
+                        and not next_has_wildcard
+                        and path_tiles_need_dictionary_resolve(
+                            board, path + [idx], flags=stamp_flags
+                        )
+                    ):
+                        next_has_wildcard = True
+                        next_prefix_cursor = None
                     next_suffix = suffix_cursors
                     next_is_word_end = is_word_end_at_depth
                     if stitch_active and not (ext_wildcard or next_has_digit):
@@ -3315,7 +3409,7 @@ class WordSearcher:
                         chars,
                         visited_mask | (1 << idx),
                         prefix_cursor=next_prefix_cursor,
-                        has_wildcard=ext_wildcard,
+                        has_wildcard=next_has_wildcard,
                         has_digit=next_has_digit,
                         prefix_len=next_prefix_len,
                         prefix_base=next_prefix_base,
@@ -3466,6 +3560,42 @@ class WordSearcher:
                     candidates.consider(
                         sc,
                         word,
+                        path,
+                        immediate=cached[0] if cached is not None else None,
+                    )
+
+    def _seed_stamp_improve_words(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: "_CandidateHeap",
+        improve_words: frozenset[str],
+    ) -> None:
+        """Seed paths spelling stamp improve words (colour/number/chess names)."""
+        if not improve_words:
+            return
+        flags = self._search_ctx(loadout).search_flags
+        cap = self.max_len
+        for word in sorted(improve_words, key=len):
+            if len(word) < self.min_len or len(word) > cap:
+                continue
+            for path in _paths_spelling_word(board, word, cap, flags=flags):
+                if len(path) < self.min_len:
+                    continue
+                spelled = "".join(
+                    resolve_letter(board.get_by_index(i), j, flags=flags)
+                    for j, i in enumerate(path)
+                ).lower()
+                if spelled != word:
+                    continue
+                if not self.validator.word_ok(board, path, spelled, flags):
+                    continue
+                sc = self._rank_score_for_candidate(board, path, spelled, loadout)
+                if sc is not None:
+                    cached = self._score_cache.get((tuple(path), spelled))
+                    candidates.consider(
+                        sc,
+                        spelled,
                         path,
                         immediate=cached[0] if cached is not None else None,
                     )
@@ -3790,6 +3920,7 @@ class WordSearcher:
             max_rounds = min(self.max_len - self.min_len, 12)
         stamp_flags = self._search_ctx(loadout).search_flags
         graph_ctx = self._board_graph(board)
+        from cursed_words_solver.suggestion import path_tiles_need_dictionary_resolve
 
         use_prune = self._use_mult_prune_for(loadout)
         use_tier2 = self._use_tier2_screen_for(loadout)
@@ -3835,16 +3966,28 @@ class WordSearcher:
                     if key in seen_prefixes:
                         continue
                     seen_prefixes.add(key)
-                    seed_lower = seed_word.lower()
-                    seed_has_wildcard = "?" in seed_lower
-                    seed_has_digit = any(c.isdigit() for c in seed_lower)
-                    seed_cursor: TrieCursor | None = (
-                        None
-                        if (seed_has_wildcard or seed_has_digit)
-                        else self.dictionary.step_token_cursor(
-                            self.dictionary.root_cursor(), seed_lower
+                    if path_tiles_need_dictionary_resolve(
+                        board, path, flags=stamp_flags
+                    ):
+                        seed_lower = search_word_from_path(
+                            board, path, flags=stamp_flags
+                        ).lower()
+                        seed_has_wildcard = "?" in seed_lower or any(
+                            c.isdigit() for c in seed_lower
                         )
-                    )
+                        seed_has_digit = any(c.isdigit() for c in seed_lower)
+                        seed_cursor = None
+                    else:
+                        seed_lower = seed_word.lower()
+                        seed_has_wildcard = "?" in seed_lower
+                        seed_has_digit = any(c.isdigit() for c in seed_lower)
+                        seed_cursor = (
+                            None
+                            if (seed_has_wildcard or seed_has_digit)
+                            else self.dictionary.step_token_cursor(
+                                self.dictionary.root_cursor(), seed_lower
+                            )
+                        )
                     visited_mask = sum(1 << idx for idx in path)
                     prefix_len = path_word_char_len(
                         board, path, flags=stamp_flags
@@ -4531,6 +4674,7 @@ class WordSearcher:
         board = effective_board_for_loadout(board, loadout, self.scoring.rules)
         _active = _active_indices(board)
         self.validator.quest_loadout = loadout
+        self.validator.extra_valid_words = equipped_improve_words(loadout)
         set_quest_movement_loadout(loadout)
         self._solve_ctx = build_solve_context(loadout, self.scoring.rules)
         self._mult_rules = loadout_mult_rules(
@@ -4948,6 +5092,14 @@ class WordSearcher:
 
             if has_number_tiles:
                 self._seed_single_number_tile_words(board, loadout, candidates)
+
+            improve_words = equipped_improve_words(loadout)
+            if improve_words:
+                self._seed_stamp_improve_words(
+                    board, loadout, candidates, improve_words
+                )
+
+            if has_number_tiles:
                 self._parallel_executor = None
                 if fraction_cluster_reserve > 0 and time.monotonic() < pre_extend_deadline:
                     cluster_starts = _fraction_cluster_number_starts(board)
@@ -5123,7 +5275,18 @@ class WordSearcher:
             max_extend_rounds: int | None = None
             if self.max_len > self.min_len:
                 preview = candidates.best_sorted()[:top_paths]
-                if any("?" in word for _sc, word, _path in preview):
+                ext_stamp_flags = self._search_ctx(loadout).search_flags
+                from cursed_words_solver.suggestion import (
+                    path_tiles_need_dictionary_resolve,
+                )
+
+                if any(
+                    "?" in word
+                    or path_tiles_need_dictionary_resolve(
+                        board, list(path), flags=ext_stamp_flags
+                    )
+                    for _sc, word, path in preview
+                ):
                     top_paths = min(120, len(candidates), heap_k)
                     max_extend_rounds = min(self.max_len - self.min_len, 16)
             leader_extra_seeds = [
@@ -5308,6 +5471,7 @@ class WordSearcher:
         self._active_timing = None
         self._active_deadline = None
         self.validator.quest_loadout = None
+        self.validator.extra_valid_words = frozenset()
         set_quest_movement_loadout(None)
         if center_idx is not None:
             unique = [r for r in unique if center_idx in r.path]

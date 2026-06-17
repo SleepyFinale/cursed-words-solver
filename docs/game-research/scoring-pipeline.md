@@ -46,9 +46,12 @@ Final score: `GetScoreFromScoreCalcInfo` — sum of **last step** tile scores, t
 | Init tile values | `GetInitialScoreInfo` / `Tile.GetValue` | `_init_state` + `initial_tile_scores` |
 | Currency money | `GetMoneyFromCurrencyTiles` | `currency_money_from_path` → `money_bonus` |
 | Pink piggy bank | `StoreMoneyInPinkTiles` | `pink_store_money` — −$1 per pink while money > 0 |
-| Poison (later words) | `ApplyPoisonEffect` | `poison_from_previous_words` — from `extras.green_poison_bonus` |
 
 Cactus ([wiki Tiles — CACTUS](https://cursedwords.wiki.gg/wiki/Tiles)): grid tiles gain +1 BASE SCORE at each grid start. Melmod `base_score` is the post-growth packet (`GetValue`); do not add `cactus_growth` metadata again. `apply_cactus_grid_growth` runs only for OCR/simulated boards (not `board_from_melmod`). [Sandy Saguaro](https://cursedwords.wiki.gg/wiki/Sandy_Saguaro_(boss)) consumables placed mid-round use rack/board `base_score` as-is and skip grid growth. Purple: `IsTileType(Red|Blue)` via `tile_counts_as_color`.
+
+| Step | Game method | Solver |
+| ---- | ------------- | ------ |
+| Poison (prior green words) | `ApplyPoisonEffect` after items + Lexographer | `_apply_green_poison_finalize` — derived from `historic_words[].green_tile_count × score × 0.1` (post-mult additive) |
 
 ## Boss modifiers
 
@@ -85,12 +88,12 @@ How the Python solver maps the game pipeline above. Full search-side detail: [`.
 
 `ScoringPipeline._compute_state` receives cached `solve_context`, `graph_ctx`, and `board_scoring_ctx` from the search hot path.
 
-1. Tile init (glitch, bases, currency, pink, poison) — unchanged from game order
+1. Tile init (glitch, bases, currency, pink) — unchanged from game order
 2. Early/late bosses per Hourglass state
 3. Inventory loop in slot order:
    - When `board_scoring_ctx.use_split_pipeline` is true, board-static rules run first via `apply_static_rule` (O(path)); debug traces may show `detail: "static tile_add"`
    - Dynamic/orchestration rules follow via `apply_*_with_orchestration` (Frankenstein, RAM, Overhand, scaled factors, etc.)
-4. GREEN tile transfer and `_finalize` word multipliers
+4. GREEN tile transfer, `_finalize` word multipliers, then green poison (additive)
 
 `blocks_split_pipeline()` disables the static fast path when Capybara, Compound Cocktail, Snapshot, Frankenstein, or RAM pin prevent safe interleaving.
 

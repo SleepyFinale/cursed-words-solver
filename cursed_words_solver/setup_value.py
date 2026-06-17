@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from cursed_words_solver.models import Board, Loadout
 from cursed_words_solver.rules.rule_lookup import (
@@ -18,6 +18,12 @@ from cursed_words_solver.rules.scoring_conditions import (
     sticker_rule_int,
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.stamp_improve_words import (
+    STAMP_IMPROVE_LABELS,
+    equipped_improve_stamps,
+    stamp_improve_match,
+    stamp_improve_npv_weight,
+)
 
 _SETUP_STICKER_IDS = frozenset(
     {
@@ -28,7 +34,14 @@ _SETUP_STICKER_IDS = frozenset(
         "red_rider",
     }
 )
-_SETUP_STAMP_IDS = frozenset({"tile_ninja"})
+_SETUP_STAMP_IDS = frozenset(
+    {
+        "tile_ninja",
+        "flashy_fountain_pen",
+        "bar_chart",
+        "book_of_openings",
+    }
+)
 _BICYCLE_PIN_EFFECTS = frozenset({"bicycle", "bones_the_dog", "bones"})
 
 
@@ -39,6 +52,7 @@ class SetupDelta:
     consumable_rack_count: int = 0
     tile_ninja_bonus: float = 0.0
     red_tiles_used_encounter: int = 0
+    stamp_improves: dict[str, str] = field(default_factory=dict)
 
     def total_future_points(self, grids_remaining: int, *, discount: float = 0.85) -> float:
         """Heuristic NPV of accumulator gains over remaining encounter grids."""
@@ -57,6 +71,10 @@ class SetupDelta:
             total += self.tile_ninja_bonus * 500.0 * uses * (d ** 1)
         if self.red_tiles_used_encounter:
             total += self.red_tiles_used_encounter * g * 15.0 * (d ** 1)
+        for slug, token in self.stamp_improves.items():
+            weight = stamp_improve_npv_weight(slug, token)
+            if weight:
+                total += weight * g * (d ** 1)
         return total
 
 
@@ -80,6 +98,8 @@ def _has_setup_mechanics(loadout: Loadout) -> bool:
     for item in loadout.stamps:
         if (item.id or "").lower() in _SETUP_STAMP_IDS:
             return True
+    if equipped_improve_stamps(loadout):
+        return True
     return False
 
 
@@ -163,6 +183,9 @@ def project_setup_delta(
                 delta.tile_ninja_bonus = 0.02 * consumables_on_path
                 break
 
+    for slug, token in stamp_improve_match(loadout, word):
+        delta.stamp_improves[slug] = token
+
     return delta
 
 
@@ -227,5 +250,8 @@ def format_setup_bonus_summary(setup_bonus: float, delta: SetupDelta) -> str:
         parts.append(f"Ninja +{delta.tile_ninja_bonus:.2f}")
     if delta.red_tiles_used_encounter:
         parts.append(f"Red +{delta.red_tiles_used_encounter}")
+    for slug, token in delta.stamp_improves.items():
+        label = STAMP_IMPROVE_LABELS.get(slug, slug)
+        parts.append(f"{label} +{token}")
     detail = ", ".join(parts) if parts else "setup"
     return f"+{setup_bonus:,.0f} setup ({detail})"

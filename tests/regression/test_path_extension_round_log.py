@@ -23,6 +23,12 @@ FIXTURE = (
     / "mismatches"
     / "20260615_184801_fjelds.json"
 )
+EELSKIN_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "mismatches"
+    / "20260617_142738_eelskin.json"
+)
 
 
 def _round_log_to_replay(data: dict) -> dict:
@@ -82,3 +88,12 @@ def test_round_log_path_extension_replay_submitted_path():
     assert score > f8_score
     assert replay["actual_score"] == 1170
     assert 1168 <= score <= 1196
+
+
+@pytest.mark.skipif(not EELSKIN_FIXTURE.exists(), reason="eelskin fixture required")
+def test_eelskin_fixture_replay_submitted_path():
+    data = json.loads(EELSKIN_FIXTURE.read_text(encoding="utf-8"))
+    score = _score_submitted(data)
+    assert data["actual_score"] == 183
+    assert score > int(data.get("short_score", 109) or 109)
+    assert 178 <= score <= 188

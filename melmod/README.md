@@ -7,7 +7,7 @@ This MelonLoader mod writes files under `%USERPROFILE%\.cursed_words_solver\` wh
 - **Loadout** — character, stickers, stamps, boss, pin, money (`run_state.json`). Top-level `schema_version` (currently `1`) and `exported_at` (UTC ISO) on each export.
 
 - **Board** — live 5×5 tiles (letters, scores, colors, curse types) from game `GridData` (`run_state.json`). Per-tile: `was_glitch`, `cactus_growth`, `scattered_item_id`, `arrow` curse mapping. `extras.board_from_melmod` is `true` when a live board is exported (solver skips scatter simulation).
-- **Tile scoring extras** — `extras.green_poison_bonus` (10% × green tiles per prior word), pink piggy bank handled in solver `tile_scoring.py`
+- **Tile scoring extras** — `historic_words[].green_tile_count` per prior word (solver derives green poison at finalize); pink piggy bank handled in solver `tile_scoring.py`
 - **Boss extras** — `boss_floor_modification` (from active `BossModifier`), `fox_stolen_this_grid` / `fox_stolen_this_word` when applicable
 
 - **Dictionary** — full active-language vocabulary from game `WordTrie` (`game_words.txt` + `game_words_meta.json`)
