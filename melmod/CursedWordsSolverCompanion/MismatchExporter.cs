@@ -105,6 +105,14 @@ namespace CursedWordsSolverCompanion
                 BoardExporter.MergeSubmitCardMetadataIntoRunState(runStateSnapshot, submitBoard);
             }
 
+            var pathTiles = RoundLogExporter.BuildPathTiles(path, submitBoard);
+            if (pathTiles != null && pathTiles.Count > 0)
+            {
+                if (extrasSnapshot == null)
+                    extrasSnapshot = new Dictionary<string, string>();
+                extrasSnapshot["path_resolved_word"] = word ?? "";
+            }
+
             var f8Extras = originalF8Extras != null && originalF8Extras.Count > 0
                 ? originalF8Extras
                 : ExtrasDiffHelper.ExtrasFromRunStateObject(suggestion.run_state_snapshot);
@@ -175,6 +183,7 @@ namespace CursedWordsSolverCompanion
                 ["extras_snapshot"] = extrasSnapshot ?? new Dictionary<string, string>(),
                 ["extras_diff"] = extrasDiff,
                 ["submit_board_tiles"] = submitBoard?.tiles,
+                ["path_tiles"] = pathTiles,
                 ["f8_sequence"] = suggestion.f8_sequence,
                 ["solver_version"] = suggestion.solver_version ?? "",
                 ["stale_f8_extras"] = staleF8Extras,

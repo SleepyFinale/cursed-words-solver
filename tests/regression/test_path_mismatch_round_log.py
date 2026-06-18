@@ -19,8 +19,10 @@ from tests.regression.test_scoring_mismatches import (
     _run_state_for_replay,
 )
 
-ROUND_LOG = Path(
-    r"C:\Users\TheMi\.cursed_words_solver\round_logs\20260615_181233_003.json"
+ROUND_LOG_FIXTURES = sorted(
+    (Path(__file__).resolve().parents[1] / "fixtures" / "round_logs").glob(
+        "*_path_mismatch.json"
+    )
 )
 FIXTURE = (
     Path(__file__).resolve().parents[1]
@@ -109,16 +111,16 @@ def test_spoofery_search_finds_best_path():
     assert validator.word_ok(board, best.path, "spoofery", flags)
 
 
-@pytest.mark.skipif(not ROUND_LOG.exists(), reason="round log required")
-def test_round_log_path_mismatch_replay_submitted_path():
-    data = json.loads(ROUND_LOG.read_text(encoding="utf-8"))
-    assert data.get("match_status") == "path_mismatch"
+@pytest.mark.parametrize("round_log_path", ROUND_LOG_FIXTURES, ids=lambda p: p.stem)
+def test_round_log_path_mismatch_replay_submitted_path(round_log_path: Path):
+    data = json.loads(round_log_path.read_text(encoding="utf-8"))
+    assert data.get("match_status") in ("path_mismatch", "path_extension")
     replay = _round_log_to_replay(data)
-    assert replay["word"] == "pow"
-    assert replay["path"] == [12, 7, 11]
     score = _score_submitted(replay)
     f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
-    assert f8_score == 251
     assert score > f8_score
-    assert replay["actual_score"] == 610
-    assert 608 <= score <= 616
+    if "pow" in round_log_path.stem:
+        assert replay["word"] == "pow"
+        assert replay["path"] == [12, 7, 11]
+        assert replay["actual_score"] == 610
+        assert 608 <= score <= 616

@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
 
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.trace_compare import compare_traces
 
 
 def _replay_mismatch(data: dict) -> tuple[int, list[dict]]:
@@ -96,28 +97,14 @@ class DiffResult:
     actual_score: int
     delta: int
     first_diff: str
+    hypothesis: str = ""
 
 
-def _first_trace_diff(pred_trace: list[dict], actual_trace: list[dict]) -> str:
-    n = min(len(pred_trace), len(actual_trace))
-    for i in range(n):
-        p = pred_trace[i]
-        a = actual_trace[i]
-        p_tiles = [int(x) for x in p.get("tile_scores", [])]
-        a_tiles = [int(x) for x in a.get("tile_scores", [])]
-        if p_tiles != a_tiles:
-            return f"[{i}] tile_scores pred={p_tiles} actual={a_tiles}"
-        p_id = _pred_step_id(p).lower()
-        a_id = _actual_step_id(a).lower()
-        if p_id and a_id and p_id != a_id:
-            return f"[{i}] step_id pred={p_id} actual={a_id}"
-        p_word = _pred_word_bonus(p)
-        a_word = _actual_word_bonus(a)
-        if a_word and p_word != a_word:
-            return f"[{i}] word_bonus pred_word_score={p_word} actual_word_bonus={a_word}"
-    if len(pred_trace) != len(actual_trace):
-        return f"length mismatch pred={len(pred_trace)} actual={len(actual_trace)}"
-    return "none"
+def _first_trace_diff(pred_trace: list[dict], actual_trace: list[dict]) -> tuple[str, str]:
+    diff = compare_traces(pred_trace, actual_trace)
+    if diff.has_divergence:
+        return diff.summary, diff.hypothesis
+    return "none", ""
 
 
 def _compare_file(path: Path, *, replay: bool = False) -> DiffResult:
@@ -142,7 +129,7 @@ def _compare_file(path: Path, *, replay: bool = False) -> DiffResult:
         pred_score = int(pred_score)
     actual_trace = data.get("actual_trace") or []
     actual_score = int(data.get("actual_score") or 0)
-    first_diff = _first_trace_diff(pred_trace, actual_trace)
+    first_diff, hypothesis = _first_trace_diff(pred_trace, actual_trace)
 
     return DiffResult(
         stem=path.stem,
@@ -150,6 +137,7 @@ def _compare_file(path: Path, *, replay: bool = False) -> DiffResult:
         actual_score=actual_score,
         delta=int(pred_score) - actual_score,
         first_diff=first_diff,
+        hypothesis=hypothesis,
     )
 
 
@@ -180,10 +168,13 @@ def main() -> int:
             failures += 1
             print(f"{f.name}: ERROR {exc}")
             continue
-        print(
+        line = (
             f"{r.stem}: pred={r.predicted_score} actual={r.actual_score} "
             f"delta={r.delta} first_diff={r.first_diff}"
         )
+        if r.hypothesis:
+            line += f" hypothesis={r.hypothesis}"
+        print(line)
         if r.delta != 0:
             failures += 1
     return 1 if failures else 0

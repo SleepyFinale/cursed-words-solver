@@ -148,6 +148,8 @@ class F8Snapshot:
     warnings: list[str] = field(default_factory=list)
     board_available: bool = False
     extras_ready: bool = False
+    gather_missing: list[str] = field(default_factory=list)
+    f8_export_acked: bool = False
 
 
 def _has_neapolitan_stamp(loadout: Loadout) -> bool:
@@ -342,8 +344,11 @@ def _build_snapshot_from_run_state(
 
     extras_ready = not missing
     if missing:
+        from cursed_words_solver.f8_messages import gather_incomplete_message
+
         warnings = list(warnings) + [
-            f"waiting for melmod export: {', '.join(missing)}"
+            f"waiting for melmod export: {', '.join(missing)}",
+            gather_incomplete_message(missing),
         ]
 
     return F8Snapshot(
@@ -353,6 +358,7 @@ def _build_snapshot_from_run_state(
         warnings=warnings,
         board_available=True,
         extras_ready=extras_ready,
+        gather_missing=list(missing),
     )
 
 
@@ -366,6 +372,7 @@ def gather_f8_snapshot(
     on_wait: Callable[[str], None] | None = None,
 ) -> F8Snapshot:
     """Poll melmod run_state until board and required extras are exported."""
+    f8_export_acked = False
     if f8_request_id:
         acked = wait_for_f8_export_ack(
             f8_request_id,
@@ -376,12 +383,13 @@ def gather_f8_snapshot(
         if not acked:
             # Retry request once in case melmod missed the first write.
             retry_id = write_f8_export_request()
-            wait_for_f8_export_ack(
+            acked = wait_for_f8_export_ack(
                 retry_id,
                 timeout_sec=F8_EXPORT_ACK_TIMEOUT_SEC,
                 poll_sec=poll_sec,
                 on_wait=on_wait,
             )
+        f8_export_acked = acked
 
     deadline_board = time.monotonic() + max(0.0, board_timeout_sec)
     run_state: dict[str, Any] | None = None
@@ -395,6 +403,7 @@ def gather_f8_snapshot(
         run_state = load_run_state_raw()
 
     snapshot = _build_snapshot_from_run_state(run_state, rules=rules)
+    snapshot.f8_export_acked = f8_export_acked
     if not snapshot.board_available:
         return snapshot
 
@@ -451,8 +460,11 @@ def gather_f8_snapshot(
             )
 
     if last_missing and not snapshot.extras_ready:
+        from cursed_words_solver.f8_messages import gather_incomplete_message
+
+        snapshot.gather_missing = list(last_missing)
         snapshot.warnings = list(snapshot.warnings) + [
-            f"melmod export incomplete after wait: {', '.join(last_missing)}"
+            gather_incomplete_message(last_missing),
         ]
 
     if (
@@ -480,10 +492,20 @@ def gather_f8_snapshot(
             _notify_wait("waiting for melmod: is_crossed_out tile flags")
             time.sleep(poll_sec)
         else:
+            from cursed_words_solver.f8_messages import gather_incomplete_message
+
+            snapshot.gather_missing = ["is_crossed_out tile flags"]
             snapshot.warnings = list(snapshot.warnings) + [
-                "melmod export incomplete after wait: is_crossed_out tile flags"
+                gather_incomplete_message(snapshot.gather_missing),
             ]
             snapshot.extras_ready = False
+
+    if not snapshot.gather_missing and not snapshot.extras_ready:
+        extras = snapshot.loadout.extras if snapshot.loadout else {}
+        snapshot.gather_missing = _extras_missing_for_loadout(
+            snapshot.loadout, snapshot.board, extras or {}
+        )
+    snapshot.f8_export_acked = f8_export_acked
 
     if isinstance(snapshot.run_state, dict):
         snapshot.run_state = copy.deepcopy(snapshot.run_state)

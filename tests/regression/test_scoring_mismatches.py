@@ -1957,64 +1957,10 @@ def _bank_money_for_replay(
     return bank
 
 
-# Known scoring gaps; remove a stem when `pytest tests/regression/ -k <id>` passes.
-_KNOWN_FAILING = frozenset({
-    "20260524_162313_cachacas",
-    "20260524_165821",
-    "20260524_165906",
-    "20260524_173451_handed",
-    "20260524_173613_breed",
-    "20260524_180144",
-    "20260524_183454",
-    "20260524_183554",
-    "20260524_184839",
-    "20260524_184934",
-    "20260524_185016",
-    "20260524_185048",
-    "20260524_192526",
-    "20260524_192613",
-    "20260524_200301",
-    "20260524_200341",
-    "20260524_200415",
-    "20260524_200457",
-    "20260524_202824",
-    "20260524_202859",
-    "20260524_202926",
-    "20260524_203024",
-    "20260524_204405",
-    "20260524_204438",
-    "20260528_003129",
-    "20260528_003203",
-    "20260528_174943",
-    "20260528_183732",
-    # Yellow Glasses double-letter on wildcard path is fixed (see
-    # test_yellow_glasses_two_adjacent_wildcards_double); residual replay
-    # gap is consumable-rack count (Hi Vis x1.8 vs x2) + Mahjong consumable-tile
-    # target on the placed wildcard, which the snapshot replay does not model.
-    "20260605_173757",
-    # Wildcard suggestion fixtures: the captured `word` is the pre-fix max-overlap
-    # reading (akees/drappie), which the game cannot reproduce because the played
-    # assignment used different wildcard letters (e.g. "skies"=102 via Ham Sandwich,
-    # not "akees"=27). The fix makes the solver recommend the max-scoring word
-    # (validated by test_yellow_glasses_* and the suggestion repro); this literal
-    # replay stays mismatched by construction.
-    "20260605_175940",
-    "20260605_180028",
-    # Consumable-placement captures (Sandy/Mahjong). The over-prediction is fixed:
-    # Ham Sandwich no longer fires on a wildcard endpoint (decompiled HamSandwich
-    # reads a blank tile as "?"; see test_ham_sandwich_no_bonus_when_endpoint_is_blank)
-    # and Hi Vis uses the post-placement consumable count
-    # (test_hi_vis_uses_post_placement_consumable_count). These submit-time snapshots
-    # still under-replay because the snapshot board does not reconstruct the placed
-    # consumable's Mahjong x3 tile + Yellow Glasses double; that path is only built by
-    # the live placement search, not this literal replay.
-    "20260605_182934",
-    "20260605_183024",
-    "20260605_183119",
-    # penill f8#637: stale F8 historic (missing CYLIX on same grid); +1 pt workflow drift.
-    # Full replay still under-models under_construction×hi_vis finalize on this capture.
-    "20260607_145101",
-})
+# Known scoring gaps; remove a stem from tests/fixtures/known_failing.json when replay passes.
+from cursed_words_solver.known_failing import known_failing_stems
+
+_KNOWN_FAILING = known_failing_stems()
 
 
 def _first_trace_rule_tile_scores(

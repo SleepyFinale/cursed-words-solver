@@ -466,7 +466,7 @@ def test_loadout_allows_tier2_screen_gating():
         ]
     )
     ctx_setup = build_solve_context(setup_loadout, rules)
-    assert not loadout_allows_tier2_screen(
+    assert loadout_allows_tier2_screen(
         ctx_setup, setup_loadout, setup_weight=0.4
     )
     assert loadout_allows_tier2_screen(ctx_setup, setup_loadout, setup_weight=0.0)

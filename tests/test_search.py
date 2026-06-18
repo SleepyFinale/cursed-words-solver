@@ -797,6 +797,130 @@ def test_solve_extension_picks_eelskin_over_aahs():
     assert best_sc >= data["expected_score"] - 5
 
 
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_extension_from_bazz_prefix_finds_buzzsaw():
+    """Regression: +3 tiles from bazz wildcard prefix finds buzzsaw (20260618 path_extension)."""
+    import json
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from cursed_words_solver.search import _CandidateHeap
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260618_120547_snazzier.json"
+    )
+    if not fixture.exists():
+        pytest.skip("20260618_120547_snazzier.json fixture required")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data["run_state_snapshot"])
+    loadout = parse_run_state(data["run_state_snapshot"])
+    assert board is not None
+
+    short_path = data["short_path"]
+    expected_path = data["expected_path"]
+    pipeline = ScoringPipeline()
+    short_score = pipeline.score_total_only(
+        board, short_path, data["short_word"], loadout
+    )
+
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=25,
+        time_budget=10.0,
+    )
+    candidates = _CandidateHeap(200)
+    sc = searcher._rank_score_for_candidate(
+        board, short_path, data["short_word"], loadout
+    )
+    candidates.consider(sc or 0, data["short_word"], short_path)
+    # Decoy paths outrank bazz but share no extendable prefix.
+    for decoy_score, decoy_word, decoy_path in (
+        (105, "x", [2, 1, 3, 7, 11, 22, 23]),
+        (84, "y", [2, 1, 3, 7, 11, 0]),
+    ):
+        candidates.consider(decoy_score, decoy_word, decoy_path)
+    resolve_seeds = searcher._dictionary_resolve_extension_seeds(
+        board, loadout, candidates
+    )
+    assert any(list(entry[2]) == short_path for entry in resolve_seeds)
+    searcher._extend_top_candidates(
+        board,
+        loadout,
+        candidates,
+        top_paths=30,
+        max_rounds=16,
+        extra_seeds=resolve_seeds,
+    )
+    extended = [
+        (rank_sc, word, list(path))
+        for rank_sc, word, path in candidates.best_sorted()
+        if list(path) == expected_path
+    ]
+    assert extended
+    assert extended[0][0] > short_score
+    assert extended[0][0] >= data["expected_score"] - 5
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_find_best_words_buzzsaw_beats_bazz(_parallel_pool_cleanup):
+    """Integration: find_best_words reaches buzzsaw on fraction/chess board."""
+    import json
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260618_120547_snazzier.json"
+    )
+    if not fixture.exists():
+        pytest.skip("20260618_120547_snazzier.json fixture required")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data["run_state_snapshot"])
+    loadout = parse_run_state(data["run_state_snapshot"])
+    assert board is not None
+
+    pipeline = ScoringPipeline()
+    short_score = pipeline.score_total_only(
+        board, data["short_path"], data["short_word"], loadout
+    )
+    expected_score = pipeline.score_total_only(
+        board, data["expected_path"], data["expected_word"], loadout
+    )
+
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=25,
+        time_budget=45.0,
+        search_workers=8,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=10)
+    assert results
+    from cursed_words_solver.suggestion import game_word_for_path
+
+    actual_scores: list[int] = []
+    dictionary = WordDictionary(GAME_WORDLIST_PATH)
+    for r in results:
+        gw = game_word_for_path(board, r.path, r.word, loadout, dictionary)
+        actual_scores.append(
+            int(pipeline.score_total_only(board, r.path, gw, loadout))
+        )
+    best_actual = max(actual_scores)
+    assert best_actual > short_score
+    assert best_actual >= expected_score - 5
+
+
 def _tile(
     ch: str,
     row: int,
@@ -961,9 +1085,10 @@ def test_iter_expansion_neighbors_not_corrupted_by_recursion():
 
 @pytest.fixture
 def _parallel_pool_cleanup():
-    yield
     from cursed_words_solver.search_parallel import shutdown_search_pool
 
+    shutdown_search_pool(wait=True)
+    yield
     shutdown_search_pool(wait=True)
 
 

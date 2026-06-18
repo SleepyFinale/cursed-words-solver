@@ -395,11 +395,13 @@ namespace CursedWordsSolverCompanion
             };
         }
 
-        private static List<Dictionary<string, object>> BuildPathTiles(RoundCaptureContext ctx)
+        public static List<Dictionary<string, object>> BuildPathTiles(
+            List<int> submittedPath,
+            BoardSnapshot board
+        )
         {
             var result = new List<Dictionary<string, object>>();
-            var board = ctx.SubmitBoardSnapshot ?? ctx.BoardAtSubmit;
-            if (board?.tiles == null || ctx.SubmittedPath == null)
+            if (board?.tiles == null || submittedPath == null)
                 return result;
 
             var cols = board.cols > 0 ? board.cols : 5;
@@ -408,12 +410,11 @@ namespace CursedWordsSolverCompanion
             {
                 if (t == null || !t.active)
                     continue;
-                // Path indices match melmod export row (0 = top) per loadout.py.
                 var idx = t.row * cols + t.col;
                 byIndex[idx] = t;
             }
 
-            foreach (var idx in ctx.SubmittedPath)
+            foreach (var idx in submittedPath)
             {
                 if (!byIndex.TryGetValue(idx, out var tile) || tile == null)
                 {
@@ -449,6 +450,12 @@ namespace CursedWordsSolverCompanion
             }
 
             return result;
+        }
+
+        private static List<Dictionary<string, object>> BuildPathTiles(RoundCaptureContext ctx)
+        {
+            var board = ctx.SubmitBoardSnapshot ?? ctx.BoardAtSubmit;
+            return BuildPathTiles(ctx.SubmittedPath, board);
         }
 
         private static Dictionary<string, object> SerializeRunState(RunStateSnapshot snapshot)

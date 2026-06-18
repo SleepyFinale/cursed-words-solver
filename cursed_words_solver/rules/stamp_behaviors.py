@@ -255,3 +255,54 @@ def stamp_search_flags_mask(loadout: Loadout | None) -> SearchFlagsMask:
 
 def stamp_search_flags(loadout: Loadout | None) -> StampSearchFlags:
     return flags_from_mask(stamp_search_flags_mask(loadout))
+
+
+def search_flags_mask_for_item_slug(
+    slug: str,
+    rules: dict | None = None,
+) -> SearchFlagsMask:
+    """Search flags from a single stamp/sticker slug (equipped or scattered)."""
+    slug = slugify_name(slug)
+    if not slug:
+        return 0
+    rules = rules if rules is not None else _catalog()
+    merged: dict[str, bool] = {}
+    for bucket in ("stamps", "stickers"):
+        _key, rule = get_rule(rules, bucket, slug, slug)
+        if rule:
+            for k, v in _flags_from_rule(slug, rule).items():
+                if v:
+                    merged[k] = True
+    if not merged:
+        for k, v in _LEGACY_STAMP_FLAGS.get(slug, {}).items():
+            if v:
+                merged[k] = True
+    mask = 0
+    for key, bit in _FLAG_KEY_BITS.items():
+        if merged.get(key):
+            mask |= bit
+    return mask
+
+
+def path_scattered_search_flags_mask(
+    board,
+    path: list[int],
+    base_flags: SearchFlagsMask,
+    rules: dict | None = None,
+) -> SearchFlagsMask:
+    """Equipped flags OR flags from scattered stamps/stickers picked up on ``path``."""
+    from cursed_words_solver.models import CurseType
+
+    mask = coerce_search_flags(base_flags)
+    rules = rules if rules is not None else _catalog()
+    seen: set[str] = set()
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.curse != CurseType.ITEM:
+            continue
+        slug = slugify_name(str(tile.metadata.get("scattered_item_id") or ""))
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        mask |= search_flags_mask_for_item_slug(slug, rules)
+    return mask

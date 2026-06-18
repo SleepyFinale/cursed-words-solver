@@ -292,10 +292,12 @@ def melmod_board_available(data: dict[str, Any] | None) -> bool:
 
 
 def melmod_install_hint() -> str:
-    """User-facing steps when the companion mod or F7 export is missing."""
+    """User-facing steps when the companion mod export is missing."""
+    from cursed_words_solver.f8_messages import F8_RETRY_HINT
+
     return (
         "Install the MelonLoader companion mod (see melmod/README.md in the repo), "
-        "start a run in-game, then press F7 to export the board to run_state.json."
+        f"start a run in-game, then {F8_RETRY_HINT}."
     )
 
 
@@ -954,7 +956,7 @@ def validate_run_state_for_scoring(
             warnings.append("RAM pin: pin_memory unreadable (ItemsInMemory)")
         elif memory in (None, "", "[]"):
             if note not in ("empty_valid", "no_pin"):
-                warnings.append("RAM pin: pin_memory empty (press F7 after boss picks)")
+                warnings.append("RAM pin: pin_memory empty (rebuild melmod if missing after boss picks)")
 
     if any("lucky" in sid and "dice" in sid for sid in sticker_ids):
         if extras.get("target_number") in (None, ""):
@@ -977,7 +979,7 @@ def validate_run_state_for_scoring(
         if extras.get("twinkle_toes_swap_available") in (None, ""):
             warnings.append(
                 "twinkle_toes equipped but swap state not exported — "
-                "rebuild melmod and press F7"
+                "rebuild melmod and press F8 again"
             )
 
     if board is None and extras.get("encounter_mode") == "encounter":
@@ -985,7 +987,7 @@ def validate_run_state_for_scoring(
 
     if encounter_missing_boss_should_warn(loadout):
         warnings.append(
-            "boss fight active but boss_id/boss_name missing (press F7 in-game)"
+            "boss fight active but boss_id/boss_name missing (press F8 again)"
         )
 
     if board is not None:
@@ -2182,7 +2184,7 @@ def loadout_fingerprint_stale_warning(
         return None
     return (
         "run_state loadout_fingerprint disagrees with sticker levels "
-        f"({exported} vs {computed}) — press F7 in-game, then F8 again."
+        f"({exported} vs {computed}) — press F8 again."
     )
 
 
@@ -2196,7 +2198,7 @@ def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:
     if bonus_raw is None and cards_raw is None:
         return (
             "Bicycle pin: bicycle_word_score_bonus missing from run_state — "
-            "press F7 in-game or rebuild melmod before trusting Bicycle scores."
+            "press F8 again or rebuild melmod before trusting Bicycle scores."
         )
     try:
         bonus = int(bonus_raw) if bonus_raw is not None else -1
@@ -2209,12 +2211,12 @@ def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:
     if bonus_raw is None and cards > 0:
         return (
             f"Bicycle pin: bicycle_word_score_bonus missing but cards_submitted={cards} — "
-            "press F7 in-game or wait for melmod refresh."
+            "press F8 again or wait for melmod refresh."
         )
     if bonus == 0 and cards > 0:
         return (
             f"Bicycle pin: bicycle_word_score_bonus is 0 but cards_submitted={cards} — "
-            "press F7 in-game or wait for melmod refresh."
+            "press F8 again or wait for melmod refresh."
         )
     from cursed_words_solver.rules.scoring_conditions import (
         bicycle_pin_accumulator_from_fingerprint,
@@ -2226,7 +2228,7 @@ def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:
     if pin_acc is not None and acc >= 0 and pin_acc != acc:
         return (
             f"Bicycle pin: run_state bonus={acc} but loadout fingerprint has {pin_acc} — "
-            "press F7 in-game or wait for melmod refresh."
+            "press F8 again or wait for melmod refresh."
         )
     return None
 
@@ -2253,7 +2255,7 @@ def steak_extras_stale_warning(loadout: Loadout | None) -> str | None:
         return None
     return (
         "Steak: steak_word_bonus_percent and rare_item_count missing from run_state — "
-        "press F7 in-game or submit a word so melmod can export Steak scoring."
+        "press F8 again or submit a word so melmod can export Steak scoring."
     )
 
 
@@ -2282,11 +2284,11 @@ def neapolitan_extras_stale_warning(loadout: Loadout | None) -> str | None:
     if source == "cached":
         return (
             "Neapolitan: using cached baseline "
-            f"{base_percent}% (live neapolitan_percent missing) — press F7 in-game if stale."
+            f"{base_percent}% (live neapolitan_percent missing) — press F8 again if stale."
         )
     return (
         "Neapolitan: live/cached baseline missing, defaulting to 100% — "
-        "press F7 in-game after a qualifying submit to capture current value."
+        "press F8 again after a qualifying submit to capture current value."
     )
 
 
@@ -2355,7 +2357,7 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
         if bday is not None and int(bday) > 0:
             parts.append(f"Birthday={int(bday)}")
         else:
-            parts.append("Birthday=? (F7 in-game; rebuild melmod if stuck at 0)")
+            parts.append("Birthday=? (press F8 again; rebuild melmod if stuck at 0)")
     has_movie_camera = any(
         (s.id or "").lower() == "movie_camera"
         for s in loadout.stickers
@@ -2365,7 +2367,7 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
         if mc is not None and int(mc) > 0:
             parts.append(f"Movie Camera={int(mc)}")
         else:
-            parts.append("Movie Camera=? (F7 in-game; rebuild melmod if stuck at 0)")
+            parts.append("Movie Camera=? (press F8 again; rebuild melmod if stuck at 0)")
     if loadout.money:
         parts.append(f"${loadout.money}")
     return "loadout: " + (", ".join(parts) if parts else "empty")

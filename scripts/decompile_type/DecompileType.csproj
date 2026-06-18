@@ -8,4 +8,11 @@
   <ItemGroup>
     <PackageReference Include="ICSharpCode.Decompiler" Version="8.2.0.7535" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="out/**" />
+    <Compile Remove="out2/**" />
+    <Compile Remove="out_quests/**" />
+    <Compile Remove="out_shop/**" />
+    <Compile Remove="out_stamps/**" />
+  </ItemGroup>
 </Project>

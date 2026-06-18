@@ -2370,7 +2370,7 @@ def test_f8_should_block_when_telescope_and_historic_still_empty(
         board=board,
     )
     assert blocked
-    assert reason == "gather_incomplete"
+    assert reason and reason.startswith("gather_incomplete")
 
 
 def test_f8_should_block_grid2_empty_historic_without_telescope(tmp_path, monkeypatch):

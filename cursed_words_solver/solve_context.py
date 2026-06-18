@@ -52,6 +52,8 @@ _SETUP_STAMP_IDS = frozenset({"tile_ninja"})
 _SAFE_BOSS_EFFECTS = frozenset(EARLY_BOSS_TYPES) | frozenset(
     {
         "boss_steal_money",
+        "hyena_blocked",
+        "boss_word_min_length",
         "",
     }
 )

@@ -344,9 +344,14 @@ public class ShopController : MonoBehaviour
 			_shopkeepCanvasCG.blocksRaycasts = true;
 		}
 		int indexForCharacterStarterItem = -1;
+		int indexForCharacterItem = -1;
 		if (isFirstShop && !isReroll && SaveManager.GetHighestCompletedAscension(player.GetCharacter()) == -1)
 		{
 			indexForCharacterStarterItem = UnityEngine.Random.Range(0, _stickersInStock.Length);
+		}
+		if (_player.CurrentRunProgress.GetCurrentNodeType() == NodeType.ShopOne && _player.CurrentRunProgress.GetStage() == 1 && indexForCharacterStarterItem == -1 && !isReroll)
+		{
+			indexForCharacterItem = UnityEngine.Random.Range(0, _stickersInStock.Length);
 		}
 		if (isReroll && player.GetUnpackedItemsOfType(typeof(Eraser)).Count > 0)
 		{
@@ -397,7 +402,7 @@ public class ShopController : MonoBehaviour
 					}
 					if (charaterStarterItem == null)
 					{
-						GenerateStickerInStock(k, isFirstShop, freeItem);
+						GenerateStickerInStock(k, isFirstShop, freeItem, biasForBuild: true);
 					}
 					else
 					{
@@ -405,6 +410,10 @@ public class ShopController : MonoBehaviour
 						ItemInStock itemInStock2 = new ItemInStock(charaterStarterItem);
 						PopulateStickerInStock(itemInStock2, k, isFirstShop: true);
 					}
+				}
+				else if (k == indexForCharacterItem)
+				{
+					GenerateStickerInStock(k, isFirstShop, freeItem, biasForBuild: true);
 				}
 				else
 				{
@@ -492,9 +501,10 @@ public class ShopController : MonoBehaviour
 		}
 	}
 
-	private void GenerateStickerInStock(int index, bool isFirstShop, bool freeItem)
+	private void GenerateStickerInStock(int index, bool isFirstShop, bool freeItem, bool biasForBuild = false)
 	{
 		Debug.Log($"Generating sticker at index {index}. Is first shop? {isFirstShop}");
+		Debug.Log($"Bias for build? {biasForBuild}. Index = {index}.");
 		if (_player.CurrentRunProgress.Challenge is Masochist || _player.CurrentRunProgress.Challenge is InTheBeginning || (_stickersInStock[index] != null && _stickersInStock[index].IsFrozen))
 		{
 			return;
@@ -530,7 +540,7 @@ public class ShopController : MonoBehaviour
 		list.RemoveAll((Type itemType) => itemType == typeof(Frankenstein));
 		if (isFirstShop)
 		{
-			Item randomBuildBiasedSticker = ItemPools.GetRandomBuildBiasedSticker(ItemRarity.Common, list);
+			Item randomBuildBiasedSticker = ItemPools.GetRandomBuildBiasedSticker(ItemRarity.Common, list, biasForBuild);
 			if (_player.CurrentRunProgress.Challenge is ColourSwap || _player.GetUnpackedItemsOfType(typeof(CanOfBeans)).Count > 0)
 			{
 				randomBuildBiasedSticker.RandomiseRelevantColours();
@@ -539,7 +549,7 @@ public class ShopController : MonoBehaviour
 			PopulateStickerInStock(itemInStock, index, isFirstShop: true);
 			return;
 		}
-		Item randomBuildBiasedSticker2 = ItemPools.GetRandomBuildBiasedSticker(list);
+		Item randomBuildBiasedSticker2 = ItemPools.GetRandomBuildBiasedSticker(list, biasForBuild);
 		if (_player.CurrentRunProgress.Challenge is ColourSwap || _player.GetUnpackedItemsOfType(typeof(CanOfBeans)).Count > 0)
 		{
 			randomBuildBiasedSticker2.RandomiseRelevantColours();

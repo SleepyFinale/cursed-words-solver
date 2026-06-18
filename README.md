@@ -16,7 +16,9 @@ Requires the [MelonLoader companion mod](melmod/README.md), which reads the live
 
 ### Python solver
 
-From the **repository root** (the folder that contains `pyproject.toml` and `requirements.txt`):
+From the **repository root** (the folder that contains `pyproject.toml` and `requirements.txt`).
+
+Use **Python 3.11 or 3.12** (3.14 is not supported yet — native deps like NumPy lack compatible wheels). On Windows with multiple Pythons installed: `py -3.11 -m venv .venv`.
 
 ```bash
 python -m venv .venv

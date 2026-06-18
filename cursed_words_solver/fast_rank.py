@@ -40,7 +40,7 @@ from cursed_words_solver.rules.scoring_conditions import (
 
 from cursed_words_solver.setup_value import _has_setup_mechanics
 
-from cursed_words_solver.solve_context import SolveContext, tier2_setup_blocks_screen
+from cursed_words_solver.solve_context import SolveContext
 
 
 
@@ -356,8 +356,13 @@ def tier2_rank_upper_bound(
     hanafuda_level: int = 0,
     graph_ctx: BoardGraphContext | None = None,
     board_scoring_ctx=None,
+    setup_weight: float = 0.0,
+    setup_discount: float = 0.85,
+    rules: dict | None = None,
 ) -> float:
     """Optimistic upper bound on heap rank_score for tier-2 screening."""
+    from cursed_words_solver.setup_value import rank_score_for_word
+
     immediate_ub = tier2_immediate_upper_bound(
         board,
         path,
@@ -369,11 +374,23 @@ def tier2_rank_upper_bound(
         board_scoring_ctx=board_scoring_ctx,
     )
     mult_ub = optimistic_mult_upper_bound(mult_rules, loadout, path)
+    setup_bonus = 0.0
+    if setup_weight > 0:
+        _, setup_bonus = rank_score_for_word(
+            board,
+            path,
+            word,
+            loadout,
+            immediate_ub,
+            setup_weight=setup_weight,
+            setup_discount=setup_discount,
+            rules=rules,
+        )
     rank_ub = search_rank_score(
         immediate_ub,
         mult_ub,
         mult_weight=mult_weight,
-        setup_bonus=0.0,
+        setup_bonus=setup_bonus,
     )
     if hanafuda_level > 0 and hanafuda_hand_satisfied(board, path, hanafuda_level):
         rank_ub += 800.0
@@ -420,10 +437,6 @@ def loadout_allows_tier2_screen(
         return False
 
     if not ctx.tier2_screen_enabled:
-
-        return False
-
-    if setup_weight > 0 and tier2_setup_blocks_screen(loadout):
 
         return False
 
@@ -655,8 +668,13 @@ def prefix_rank_upper_bound(
     max_len: int,
     prefix_red_count: int,
     hanafuda_level: int = 0,
+    setup_weight: float = 0.0,
+    setup_discount: float = 0.85,
+    rules: dict | None = None,
 ) -> float:
     """Optimistic upper bound on heap rank_score for a DFS prefix."""
+    from cursed_words_solver.setup_value import rank_score_for_word
+
     immediate_ub = prefix_immediate_upper_bound(
         prefix_base,
         board,
@@ -673,11 +691,24 @@ def prefix_rank_upper_bound(
         prefix_red_count=prefix_red_count,
     )
     mult = optimistic_mult_upper_bound(mult_rules, loadout, path)
+    setup_bonus = 0.0
+    if setup_weight > 0:
+        word = "".join(chars).lower()
+        _, setup_bonus = rank_score_for_word(
+            board,
+            path,
+            word,
+            loadout,
+            immediate_ub,
+            setup_weight=setup_weight,
+            setup_discount=setup_discount,
+            rules=rules,
+        )
     rank_ub = search_rank_score(
         immediate_ub,
         mult,
         mult_weight=mult_weight,
-        setup_bonus=0.0,
+        setup_bonus=setup_bonus,
     )
     if hanafuda_level > 0 and hanafuda_hand_satisfied(board, path, hanafuda_level):
         rank_ub += 800.0

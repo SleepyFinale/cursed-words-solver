@@ -4,6 +4,14 @@ Notes derived from the installed game DLL (`Cursed Words_Data/Managed/Assembly-C
 
 ## Regenerate
 
+One-shot (recommended):
+
+```powershell
+.\scripts\decompile_all.ps1
+```
+
+Manual batches (same tool as `decompile_all.ps1`):
+
 ```powershell
 $dll = "C:\Program Files (x86)\Steam\steamapps\common\Cursed Words\Cursed Words_Data\Managed\Assembly-CSharp.dll"
 $out = "docs\game-research\_decompiled"

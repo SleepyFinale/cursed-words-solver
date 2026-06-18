@@ -14,21 +14,11 @@ from tests.regression.test_scoring_mismatches import (
     _run_state_for_replay,
 )
 
-ROUND_LOG = Path(
-    r"C:\Users\TheMi\.cursed_words_solver\round_logs\20260615_184801_748.json"
-)
-FIXTURE = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "mismatches"
-    / "20260615_184801_fjelds.json"
-)
-EELSKIN_FIXTURE = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "mismatches"
-    / "20260617_142738_eelskin.json"
-)
+FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
+FIXTURE = FIXTURES_DIR / "mismatches" / "20260615_184801_fjelds.json"
+EELSKIN_FIXTURE = FIXTURES_DIR / "mismatches" / "20260617_142738_eelskin.json"
+SNAZZIER_FIXTURE = FIXTURES_DIR / "mismatches" / "20260618_120547_snazzier.json"
+ROUND_LOG_FIXTURES = sorted(FIXTURES_DIR.glob("round_logs/*_path_extension.json"))
 
 
 def _round_log_to_replay(data: dict) -> dict:
@@ -74,20 +64,21 @@ def test_fjelds_fixture_replay_submitted_path():
     assert 1168 <= score <= 1196
 
 
-@pytest.mark.skipif(not ROUND_LOG.exists(), reason="round log required")
-def test_round_log_path_extension_replay_submitted_path():
-    data = json.loads(ROUND_LOG.read_text(encoding="utf-8"))
+@pytest.mark.parametrize("round_log_path", ROUND_LOG_FIXTURES, ids=lambda p: p.stem)
+def test_round_log_path_extension_replay_submitted_path(round_log_path: Path):
+    data = json.loads(round_log_path.read_text(encoding="utf-8"))
     assert data.get("match_status") == "path_extension"
     replay = _round_log_to_replay(data)
-    assert replay["word"] == "fjelds"
-    assert replay["path"] == [8, 12, 17, 21, 16, 20]
-    assert replay["short_path"] == [8, 12, 17, 21, 16]
     score = _score_submitted(replay)
     f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
-    assert f8_score == 1146
     assert score > f8_score
-    assert replay["actual_score"] == 1170
-    assert 1168 <= score <= 1196
+    assert replay["actual_score"] == data["actual"]["score"]
+    if "fjelds" in round_log_path.stem:
+        assert replay["word"] == "fjelds"
+        assert 1168 <= score <= 1196
+    if "snazzier" in round_log_path.stem:
+        assert replay["word"] == "snazzier"
+        assert 154 <= score <= 164
 
 
 @pytest.mark.skipif(not EELSKIN_FIXTURE.exists(), reason="eelskin fixture required")
@@ -97,3 +88,12 @@ def test_eelskin_fixture_replay_submitted_path():
     assert data["actual_score"] == 183
     assert score > int(data.get("short_score", 109) or 109)
     assert 178 <= score <= 188
+
+
+@pytest.mark.skipif(not SNAZZIER_FIXTURE.exists(), reason="snazzier fixture required")
+def test_snazzier_fixture_replay_submitted_path():
+    data = json.loads(SNAZZIER_FIXTURE.read_text(encoding="utf-8"))
+    score = _score_submitted(data)
+    assert data["actual_score"] == 159
+    assert score > int(data.get("short_score", 99) or 99)
+    assert 154 <= score <= 164

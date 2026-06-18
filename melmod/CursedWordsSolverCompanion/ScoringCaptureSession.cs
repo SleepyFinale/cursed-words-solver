@@ -1143,6 +1143,8 @@ namespace CursedWordsSolverCompanion
                 var rackAfter = ConsumableRackExporter.Export(submitPlayer);
 
                 var extras = BuildExportExtras();
+                if (rackAfter != null)
+                    extras["consumable_rack_count_at_submit"] = rackAfter.Count.ToString();
 
                 var ctx = new RoundCaptureContext
                 {

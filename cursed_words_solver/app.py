@@ -54,6 +54,7 @@ from cursed_words_solver.suggestion import (
     format_suggestion_word,
     format_result_score_display,
     poll_invalidate_last_suggestion,
+    run_state_historic_stale_warnings,
     save_last_suggestion,
 )
 from cursed_words_solver.dictionary import WordDictionary
@@ -823,6 +824,22 @@ class SolverApp:
             for warn in snapshot.warnings:
                 if not warn.startswith("waiting for melmod"):
                     print(f"  Warning: {warn}", flush=True)
+
+            if not gather_succeeded:
+                from cursed_words_solver.f8_messages import gather_incomplete_message
+
+                print(
+                    f"  {gather_incomplete_message(snapshot.gather_missing)}",
+                    flush=True,
+                )
+
+            workflow_warnings: list[str] = []
+            if isinstance(run_state_data, dict):
+                run_extras = run_state_data.get("extras")
+                if isinstance(run_extras, dict):
+                    workflow_warnings = run_state_historic_stale_warnings(run_extras)
+            for warn in workflow_warnings:
+                print(f"  Workflow: {warn}", flush=True)
 
             if board is None:
                 shop = parse_shop_from_run_state(run_state_data)
@@ -1607,11 +1624,17 @@ class SolverApp:
                 )
                 block_f8_save, block_f8_reason = f8_should_block_save(
                     gather_succeeded=gather_succeeded,
+                    gather_missing=snapshot.gather_missing or None,
                     mid_solve_grid_advanced=False,
                     loadout=f8_loadout,
                     board=search_board,
                     path=top.path,
                 )
+                gather_status = {
+                    "f8_export_acked": snapshot.f8_export_acked,
+                    "extras_ready": snapshot.extras_ready,
+                    "gather_missing": list(snapshot.gather_missing),
+                }
                 if not block_f8_save:
                     save_last_suggestion(
                         board=search_board,
@@ -1624,6 +1647,8 @@ class SolverApp:
                         scoring_word=score_word,
                         export_diagnostics=export_diag,
                         export_warnings=export_warnings,
+                        workflow_warnings=workflow_warnings,
+                        gather_status=gather_status,
                         solver_session_extras=session_extras,
                         consumable_placements=placement_records or None,
                         twinkle_toes_swap=twinkle_swap_record,
@@ -1670,6 +1695,14 @@ class SolverApp:
                 loadout=loadout,
                 run_state_data=run_state_data,
                 export_warnings=export_warnings if results else None,
+                workflow_warnings=workflow_warnings if results else None,
+                gather_status={
+                    "f8_export_acked": snapshot.f8_export_acked,
+                    "extras_ready": snapshot.extras_ready,
+                    "gather_missing": list(snapshot.gather_missing),
+                }
+                if results
+                else None,
             )
             print(f"Board source: {board_source}", flush=True)
 
@@ -1861,6 +1894,8 @@ class SolverApp:
         loadout: Loadout | None = None,
         run_state_data: dict | None = None,
         export_warnings: list[str] | None = None,
+        workflow_warnings: list[str] | None = None,
+        gather_status: dict | None = None,
     ) -> None:
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1879,6 +1914,8 @@ class SolverApp:
             "loadout_fingerprint": loadout_fp,
             "export_diagnostics": export_diagnostics_from_run_state(run_state_data),
             "export_warnings": list(export_warnings or []),
+            "workflow_warnings": list(workflow_warnings or []),
+            "gather_status": dict(gather_status or {}),
             "extras": dict(loadout.extras) if loadout is not None else {},
             "solver_session_extras": solver_session_extras_from_loadout(loadout),
             "grid": format_board_grid(board).split("\n"),
@@ -1935,10 +1972,20 @@ class SolverApp:
 
 
 def main() -> None:
-    if len(sys.argv) > 1 and sys.argv[1] == "validate-path":
-        from cursed_words_solver.debug_path import cli_validate_path
+    if len(sys.argv) > 1:
+        cmd = sys.argv[1]
+        if cmd == "validate-path":
+            from cursed_words_solver.debug_path import cli_validate_path
 
-        sys.exit(cli_validate_path(sys.argv[2:]))
+            sys.exit(cli_validate_path(sys.argv[2:]))
+        if cmd == "explain":
+            from cursed_words_solver.debug_path import cli_explain
+
+            sys.exit(cli_explain(sys.argv[2:]))
+        if cmd == "diagnose":
+            from cursed_words_solver.diagnose import cli_diagnose
+
+            sys.exit(cli_diagnose(sys.argv[2:]))
     parser = argparse.ArgumentParser(
         description="Cursed Words solver (requires MelonLoader companion mod)"
     )

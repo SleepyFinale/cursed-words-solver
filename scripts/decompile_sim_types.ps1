@@ -20,6 +20,9 @@ $types = @(
     "GridLayoutController"
 )
 
-dotnet run --project "$repo\scripts\decompile_type" -- --dll $GameDll --out $OutDir @types
+$project = Join-Path $repo "scripts\decompile_type"
+dotnet build $project -v q | Out-Null
+$decompExe = Join-Path $project "bin\Debug\net10.0\DecompileType.exe"
+& $decompExe --dll $GameDll --out $OutDir @types
 
 Write-Host "Decompiled sim types -> $OutDir"

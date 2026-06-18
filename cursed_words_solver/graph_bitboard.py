@@ -274,6 +274,13 @@ class BoardGraphContext:
     king_step_mask_wrap: tuple[tuple[tuple[int, ...], ...], ...] = field(
         default_factory=lambda: (((), ()), ((), ()))
     )
+    arrow_mask: int = 0
+    arrow_target_masks: tuple[int, ...] = field(
+        default_factory=lambda: (0,) * CELL_COUNT
+    )
+    arrow_target_masks_wrap: tuple[int, ...] = field(
+        default_factory=lambda: (0,) * CELL_COUNT
+    )
 
     def is_active(self, idx: int) -> bool:
         return bool(self.active_mask & (1 << idx))
@@ -477,6 +484,12 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
         white_piece_mask=white_piece_mask,
     )
 
+    from cursed_words_solver.arrow_tiles import build_arrow_target_masks
+
+    arrow_mask, arrow_target_masks, arrow_target_masks_wrap = build_arrow_target_masks(
+        board, active_mask
+    )
+
     return BoardGraphContext(
         board=board,
         active_mask=active_mask,
@@ -501,4 +514,7 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
         knight_land_mask=knight_land_mask,
         king_step_mask=king_step_mask,
         king_step_mask_wrap=king_step_mask_wrap,
+        arrow_mask=arrow_mask,
+        arrow_target_masks=arrow_target_masks,
+        arrow_target_masks_wrap=arrow_target_masks_wrap,
     )

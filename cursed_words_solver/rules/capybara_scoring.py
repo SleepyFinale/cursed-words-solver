@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from cursed_words_solver.solve_context import SolveContext
 
 MAX_EXHAUSTIVE_PERMS = 720
+MAX_EXHAUSTIVE_ITEM_COUNT = 6
 SAMPLED_PERM_COUNT = 256
 
 
@@ -83,10 +84,28 @@ def capybara_perm_count(loadout: Loadout, scope: CapybaraScope) -> int:
     return sticker_n * stamp_n
 
 
+def _capybara_exhaustive(perm_total: int, loadout: Loadout) -> bool:
+    if perm_total <= MAX_EXHAUSTIVE_PERMS:
+        return True
+    item_count = len(loadout.stickers) + len(loadout.stamps)
+    return item_count <= MAX_EXHAUSTIVE_ITEM_COUNT and perm_total <= MAX_EXHAUSTIVE_PERMS
+
+
 def _sample_seed(path: list[int], loadout: Loadout) -> int:
+    extras = loadout.extras or {}
+    raw = extras.get("capybara_shuffle_seed")
+    if raw is not None and str(raw).strip() != "":
+        try:
+            return int(raw) & 0xFFFFFFFF
+        except (TypeError, ValueError):
+            pass
     material = ",".join(str(i) for i in path)
-    material += f"|{loadout.extras.get('run_seed', '')}|{loadout.boss_id}"
+    material += f"|{extras.get('run_seed', '')}|{loadout.boss_id}"
     return hash(material) & 0xFFFFFFFF
+
+
+def _capybara_rng(path: list[int], loadout: Loadout) -> random.Random:
+    return random.Random(_sample_seed(path, loadout))
 
 
 def _sticker_permutation_lists(
@@ -114,7 +133,7 @@ def _sample_permutation_pairs(
     *,
     sample_count: int,
 ) -> list[tuple[list, list]]:
-    rng = random.Random(_sample_seed(path, loadout))
+    rng = _capybara_rng(path, loadout)
     stickers = list(loadout.stickers)
     stamps = list(loadout.stamps)
     seen: set[tuple[tuple[str, ...], tuple[str, ...]]] = set()
@@ -150,7 +169,7 @@ def iter_capybara_loadout_permutations(
     use_exhaustive = (
         exhaustive
         if exhaustive is not None
-        else total <= MAX_EXHAUSTIVE_PERMS
+        else _capybara_exhaustive(total, loadout)
     )
     if use_exhaustive:
         for s_perm in sticker_lists:
@@ -204,7 +223,7 @@ def score_capybara_distribution(
     scope = capybara_shuffle_scope(loadout, rules)
     ctx = solve_context or build_solve_context(loadout, rules)
     perm_total = capybara_perm_count(loadout, scope)
-    exhaustive = perm_total <= MAX_EXHAUSTIVE_PERMS
+    exhaustive = _capybara_exhaustive(perm_total, loadout)
     scores: list[float] = []
     best_loadout: Loadout | None = None
     best_score: float | None = None

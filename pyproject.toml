@@ -3,7 +3,7 @@ name = "cursed-words-solver"
 version = "0.1.0"
 description = "MelonLoader-assisted solver for Cursed Words: The Word Game That Isn't"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "mss>=9.0.0",
     "opencv-python>=4.8.0",

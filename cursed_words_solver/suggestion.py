@@ -15,6 +15,7 @@ from typing import Any
 
 
 from cursed_words_solver.config import LAST_SUGGESTION_BLOCKED_PATH, LAST_SUGGESTION_PATH
+from cursed_words_solver.f8_messages import F8_RETRY_HINT
 
 from cursed_words_solver.dictionary import WordDictionary
 
@@ -327,8 +328,7 @@ def empty_historic_on_later_grid_warning(
     if hist and hist != "[]":
         return None
     msg = (
-        f"run_state has no encounter historic on grid {grid} — "
-        "press F7 in-game before trusting F8 scores."
+        f"run_state has no encounter historic on grid {grid} — {F8_RETRY_HINT}."
     )
     try:
         red_enc = int(str(extras.get("red_tiles_used_encounter") or "0"))
@@ -360,7 +360,7 @@ def grid_advanced_since_last_f8_warning(
     if grid_cur > grid_f8 >= 1:
         return (
             f"Grid advanced ({grid_f8}→{grid_cur}) since last F8 — "
-            "press F7 in-game, then F8 before trusting scores."
+            "press F8 again before trusting scores."
         )
     return None
 
@@ -522,7 +522,7 @@ def grid_one_historic_cache_mismatch_warning(
         return (
             f"Grid 1 has {hist_count} encounter historic word(s) but scoring cache is "
             f"empty (spc={scoring_count}) — Telescope scores may be wrong; "
-            "press F7 in-game, then F8."
+            f"{F8_RETRY_HINT}."
         )
     return None
 
@@ -547,20 +547,20 @@ def grid_transition_workflow_bleed_warning(
     if grid == 1 and hist_count > 0 and scoring_count == 0:
         return (
             f"Grid 1 encounter historic ({hist_count} words) with empty scoring cache — "
-            "press F7 in-game, then F8 before trusting Telescope scores."
+            f"press F8 again before trusting Telescope scores."
         )
 
     if grid >= 2 and hist_count > 0 and scoring_count == 0:
         return (
             f"Grid {grid} has prior-grid encounter historic ({hist_count} words) but "
-            "scoring cache is empty — press F7 in-game, then F8."
+            f"scoring cache is empty — {F8_RETRY_HINT}."
         )
 
     if source in ("grid_advanced", "grid_advanced_disk") and hist_count > 0:
         if scoring_count < hist_count:
             return (
                 f"Encounter historic may be from prior grid ({hist_count} exported words, "
-                f"scoring cache {scoring_count}) — press F7 in-game, then F8."
+                f"scoring cache {scoring_count}) — {F8_RETRY_HINT}."
             )
     scattered = str(extras.get("grid_scattered_items", "") or "").strip()
     if (
@@ -570,7 +570,7 @@ def grid_transition_workflow_bleed_warning(
     ):
         return (
             "grid_scattered_items may be stale after grid advance — "
-            "press F7 in-game, then F8."
+            f"{F8_RETRY_HINT}."
         )
     return None
 
@@ -1096,13 +1096,16 @@ def f8_should_block_save(
     board: Board | None = None,
     f8_extras: dict[str, Any] | None = None,
     gather_succeeded: bool = True,
+    gather_missing: list[str] | None = None,
     mid_solve_grid_advanced: bool = False,
     path: list[int] | None = None,
 ) -> tuple[bool, str | None]:
     """Whether F8 must skip trusted last_suggestion.json (melmod capture)."""
     del grid_adv_warn, grid_bleed_warn, grid_one_hist_warn
     if not gather_succeeded:
-        return True, "gather_incomplete"
+        from cursed_words_solver.f8_messages import gather_block_reason
+
+        return True, gather_block_reason(gather_missing)
     if mid_solve_grid_advanced:
         return True, "grid_advanced_during_solve"
     if f8_path_uses_crossed_out_tiles(board, path):
@@ -1296,6 +1299,8 @@ def save_last_suggestion(
     scoring_word: str | None = None,
     export_diagnostics: dict[str, Any] | None = None,
     export_warnings: list[str] | None = None,
+    workflow_warnings: list[str] | None = None,
+    gather_status: dict[str, Any] | None = None,
     solver_session_extras: dict[str, Any] | None = None,
     consumable_placements: list[Any] | None = None,
     twinkle_toes_swap: TwinkleToesSwap | None = None,
@@ -1385,6 +1390,12 @@ def save_last_suggestion(
 
     if export_warnings:
         payload["export_warnings"] = list(export_warnings)
+
+    if workflow_warnings:
+        payload["workflow_warnings"] = list(workflow_warnings)
+
+    if gather_status:
+        payload["gather_status"] = dict(gather_status)
 
     if solver_session_extras:
         payload["solver_session_extras"] = dict(solver_session_extras)

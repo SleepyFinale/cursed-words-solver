@@ -241,9 +241,6 @@ def blocks_split_pipeline(
 
     if snapshot_phased_word_scoring(loadout):
         return True
-    pin_effect = str((loadout.extras or {}).get("pin_effect", "") or "").strip().lower()
-    if pin_effect in ("random_access_memory", "random_access_mem"):
-        return True
     from cursed_words_solver.rules.rule_lookup import get_rule
 
     for sticker in loadout.stickers:

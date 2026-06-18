@@ -107,6 +107,7 @@ from cursed_words_solver.rules.stamp_behaviors import (
     coerce_search_flags,
     flag_clear,
     flag_test,
+    path_scattered_search_flags_mask,
 )
 from cursed_words_solver.solve_context import (
     SolveContext,
@@ -396,6 +397,15 @@ def resolve_letter(
         return tile.letter
     if tile.curse == CurseType.FRACTION:
         return "?"
+    if tile.curse == CurseType.ARROW:
+        from cursed_words_solver.arrow_tiles import arrow_glyph_from_tile
+
+        if arrow_glyph_from_tile(tile) is not None:
+            return "?"
+        ch = (tile.letter or "").strip()
+        if len(ch) == 1 and ch.isalpha():
+            return ch.upper()
+        return "?"
     if flag_test(flags, FLAG_CARD_SUIT_FIRST_LETTER) and is_card_tile(tile):
         suit = card_suit(tile)
         if suit and suit in CARD_SUIT_FIRST_LETTER:
@@ -499,7 +509,12 @@ def resolve_letter_options(
     if base in ("?", "qu") or len(base) != 1:
         return [base.lower() if base != "?" else "?"]
     ch = base.lower()
-    if flag_test(flags, FLAG_J_AS_H_OR_Y) and ch == "j":
+    physical = (tile.letter or "").strip().lower()
+    if len(physical) == 1 and physical.isalpha() and physical != ch:
+        alts = {ch, physical}
+    else:
+        alts = {ch}
+    if flag_test(flags, FLAG_J_AS_H_OR_Y) and (ch == "j" or physical == "j"):
         return ["h", "y"]
     if (
         flag_test(flags, FLAG_RED_LETTER_PLUS_MINUS_ONE)
@@ -507,14 +522,25 @@ def resolve_letter_options(
         and tile.curse == CurseType.LETTER
         and ch.isalpha()
     ):
-        alts: list[str] = []
-        if ch > "a":
-            alts.append(chr(ord(ch) - 1))
-        alts.append(ch)
-        if ch < "z":
-            alts.append(chr(ord(ch) + 1))
-        return alts
-    return [ch]
+        expanded: set[str] = set()
+        for letter in alts:
+            if not letter.isalpha() or len(letter) != 1:
+                continue
+            expanded.add(letter)
+            if letter > "a":
+                expanded.add(chr(ord(letter) - 1))
+            if letter < "z":
+                expanded.add(chr(ord(letter) + 1))
+        alts = expanded
+    if tile.metadata.get("is_wobbly") and physical and physical.isalpha():
+        alts.add(physical)
+        if flag_test(flags, FLAG_RED_AS_E) and tile.color == TileColor.RED:
+            alts.add("e")
+        if flag_test(flags, FLAG_RED_AS_S) and tile.color == TileColor.RED:
+            alts.add("s")
+        if flag_test(flags, FLAG_Z_AS_S) and physical == "z":
+            alts.add("s")
+    return sorted(alts)
 
 
 def _wildcard_branch_letters(
@@ -1233,6 +1259,95 @@ def _legal_word_start_indices(board: Board) -> list[int]:
     return out
 
 
+def _probe_fraction_chess_prefixes(
+    board: Board,
+    loadout: Loadout,
+    *,
+    max_depth: int = 6,
+    max_paths: int = 80,
+    max_visited: int = 1200,
+) -> list[list[int]]:
+    """BFS from fraction starts preferring chess tiles (captures knight branches)."""
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+    from cursed_words_solver.suggestion import path_tiles_need_dictionary_resolve
+
+    if _chess_tile_count(board) < 3:
+        return []
+    flags = stamp_search_flags(loadout)
+    graph_ctx = build_board_graph_context(board)
+    fraction_starts = [
+        i
+        for i in _legal_word_start_indices(board)
+        if is_fraction_tile(board.get_by_index(i))
+    ]
+    if not fraction_starts:
+        return []
+    out: list[list[int]] = []
+    seen: set[tuple[int, ...]] = set()
+    for start in fraction_starts:
+        queue: list[tuple[list[int], int]] = [([start], 1 << start)]
+        head = 0
+        while head < len(queue):
+            if len(seen) >= max_visited or len(out) >= max_paths:
+                break
+            path, visited_mask = queue[head]
+            head += 1
+            key = tuple(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            if (
+                len(path) >= 3
+                and path_tiles_need_dictionary_resolve(board, path, flags=flags)
+                and path_movement_ok(board, path, flags=flags)
+            ):
+                out.append(list(path))
+                if len(out) >= max_paths:
+                    break
+            if len(path) >= max_depth:
+                continue
+            nbr_mask = neighbors_mask(
+                board,
+                visited_mask,
+                cell_id=path[-1],
+                flags=flags,
+                graph_ctx=graph_ctx,
+            )
+            nbrs = list(
+                _iter_expansion_neighbors(
+                    board,
+                    visited_mask,
+                    cell_id=path[-1],
+                    path=path,
+                    path_length=len(path),
+                    flags=flags,
+                    graph_ctx=graph_ctx,
+                    nbr_mask=nbr_mask,
+                )
+            )
+            nbrs.sort(
+                key=lambda idx: (
+                    0 if board.get_by_index(idx).curse in CHESS_CURSES else 1,
+                    -float(board.get_by_index(idx).base_score),
+                    idx,
+                )
+            )
+            for idx in nbrs[:10]:
+                if visited_mask & (1 << idx):
+                    continue
+                tile = board.get_by_index(idx)
+                if not tile_playable_for_path(tile):
+                    continue
+                if is_fraction_tile(tile) and not fraction_position_valid(
+                    tile, len(path), relaxed=False
+                ):
+                    continue
+                queue.append((path + [idx], visited_mask | (1 << idx)))
+        if len(out) >= max_paths:
+            break
+    return out
+
+
 def neighbors_standard_mask(
     board: Board,
     cell_id: int,
@@ -1361,6 +1476,32 @@ def neighbors_mask(
     last_tile = board.get_by_index(cell_id)
     active_mask = graph_ctx.active_mask if graph_ctx else None
     item_mask = graph_ctx.item_mask if graph_ctx else 0
+
+    if last_tile.curse == CurseType.ARROW:
+        if graph_ctx is not None and graph_ctx.arrow_mask & (1 << cell_id):
+            table = (
+                graph_ctx.arrow_target_masks_wrap
+                if flag_test(flags, FLAG_HORIZONTAL_WRAP)
+                else graph_ctx.arrow_target_masks
+            )
+            return get_valid_extensions(table[cell_id], visited_mask)
+        from cursed_words_solver.arrow_tiles import (
+            arrow_direction_delta,
+            arrow_ray_target_mask,
+        )
+
+        delta = arrow_direction_delta(last_tile)
+        if delta is None:
+            return 0
+        if active_mask is None:
+            active_mask = sum(1 << i for i in _active_indices(board))
+        ray = arrow_ray_target_mask(
+            cell_id,
+            delta,
+            active_mask,
+            horizontal_wrap=flag_test(flags, FLAG_HORIZONTAL_WRAP),
+        )
+        return get_valid_extensions(ray, visited_mask)
 
     if last_tile.color == TileColor.WHITE:
         if active_mask is None:
@@ -2894,12 +3035,15 @@ class WordSearcher:
             prefix_cursor: TrieCursor | None,
             pattern_cursor: TrieCursor | None = None,
         ) -> tuple[bool, str]:
+            path_flags = path_scattered_search_flags_mask(
+                board, path, stamp_flags, self.scoring.rules
+            )
             return self._accept_path_for_search(
                 board,
                 path,
                 search_word,
                 loadout,
-                stamp_flags,
+                path_flags,
                 trie_compatible=trie_compatible,
                 prefix_cursor=prefix_cursor,
                 pattern_cursor=pattern_cursor,
@@ -3022,11 +3166,18 @@ class WordSearcher:
             if (
                 steps_left > 0
                 and path_tiles_need_dictionary_resolve(
-                    board, path, flags=stamp_flags
+                    board, path, flags=path_scattered_search_flags_mask(
+                        board, path, stamp_flags, self.scoring.rules
+                    )
                 )
             ):
                 return True
             return False
+
+        def _path_flags_for(path: list[int]) -> SearchFlagsMask:
+            return path_scattered_search_flags_mask(
+                board, path, stamp_flags, self.scoring.rules
+            )
 
         def _step_pattern_cursor(
             cursor: TrieCursor | None, token: str, *, active: bool
@@ -3108,7 +3259,7 @@ class WordSearcher:
                             candidates,
                             path,
                             score_word,
-                            stamp_flags,
+                            _path_flags_for(path),
                             score_path,
                             resolved_word=resolved_word,
                         )
@@ -3214,6 +3365,9 @@ class WordSearcher:
                         max_len=max_len,
                         prefix_red_count=prefix_red_count,
                         hanafuda_level=hanafuda_level,
+                        setup_weight=self.setup_weight,
+                        setup_discount=self.setup_discount,
+                        rules=self.scoring.rules,
                     )
                     pruned = False
                     if no_reachable_wild and best_imm is not None and imm_ub <= best_imm:
@@ -3228,11 +3382,12 @@ class WordSearcher:
                         return
 
             cell_id = path[-1]
+            path_flags = _path_flags_for(path)
             nbr_mask = neighbors_mask(
                 board,
                 visited_mask,
                 cell_id=cell_id,
-                flags=stamp_flags,
+                flags=path_flags,
                 graph_ctx=graph_ctx,
             )
             for idx in _iter_expansion_neighbors(
@@ -3241,7 +3396,7 @@ class WordSearcher:
                 cell_id=cell_id,
                 path=path,
                 path_length=len(path),
-                flags=stamp_flags,
+                flags=path_flags,
                 hints=mult_hints,
                 graph_ctx=graph_ctx,
                 nbr_mask=nbr_mask,
@@ -3266,15 +3421,22 @@ class WordSearcher:
                             idx,
                             must_include_index,
                             visited_mask | (1 << idx),
-                            flags=stamp_flags,
+                            flags=path_flags,
                             graph_ctx=graph_ctx,
                         )
                         if need is None or need > remaining_after:
                             continue
-                token = resolve_letter(tile, prefix_len, flags=stamp_flags)
+                token = resolve_letter(tile, prefix_len, flags=path_flags)
                 next_has_digit = has_digit or any(c.isdigit() for c in token)
+                letter_options = resolve_letter_options(tile, prefix_len, flags=path_flags)
+                multi_letter = (
+                    len(letter_options) > 1
+                    and all(len(o) == 1 and o.isalpha() for o in letter_options)
+                )
                 branch_letters = (
-                    _wildcard_branch_letters(tile, prefix_len, flags=stamp_flags)
+                    tuple(letter_options)
+                    if multi_letter
+                    else _wildcard_branch_letters(tile, prefix_len, flags=path_flags)
                     if "?" in token and not next_has_digit
                     else ()
                 )
@@ -3900,6 +4062,297 @@ class WordSearcher:
             )
         return mini.best_sorted()
 
+    def _dictionary_resolve_extension_seeds(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        *,
+        cap: int = 40,
+    ) -> list[tuple[float, str, tuple[int, ...]]]:
+        """Valid dictionary-resolve word paths that may extend to longer words."""
+        if self.max_len <= self.min_len:
+            return []
+        from cursed_words_solver.suggestion import path_tiles_need_dictionary_resolve
+
+        stamp_flags = self._search_ctx(loadout).search_flags
+        seeds: list[tuple[float, str, tuple[int, ...]]] = []
+        seen: set[tuple[int, ...]] = set()
+        for rank_sc, word, path_tuple in candidates.best_sorted():
+            path = list(path_tuple)
+            key = tuple(path)
+            if key in seen:
+                continue
+            plen = len(path)
+            if plen < self.min_len or plen >= self.max_len:
+                continue
+            if not path_tiles_need_dictionary_resolve(
+                board, path, flags=stamp_flags
+            ):
+                continue
+            search_word = search_word_from_path(board, path, flags=stamp_flags)
+            accepted, _ = self._accept_path_for_search(
+                board,
+                path,
+                search_word,
+                loadout,
+                stamp_flags,
+            )
+            if not accepted:
+                continue
+            seen.add(key)
+            seeds.append((rank_sc, word, key))
+            if len(seeds) >= cap:
+                break
+        return seeds
+
+    def _supplement_fraction_chess_word_boundaries(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        *,
+        deadline: float | None = None,
+    ) -> None:
+        """Probe fraction→chess branches and seed word-boundary paths into the heap."""
+        if self.max_len <= self.min_len:
+            return
+        if deadline is not None and time.monotonic() >= deadline:
+            return
+        if not any(is_fraction_tile(t) for t in board.flat):
+            return
+        if _chess_tile_count(board) < 3:
+            return
+        stamp_flags = self._search_ctx(loadout).search_flags
+        probe_depth = min(8, self.max_len)
+        probe_paths = _probe_fraction_chess_prefixes(
+            board, loadout, max_depth=probe_depth
+        )
+        probe_paths.sort(key=len, reverse=True)
+        added = 0
+        for path in probe_paths:
+            if added >= 20:
+                break
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            if len(path) >= self.max_len:
+                continue
+            search_word = search_word_from_path(board, path, flags=stamp_flags)
+            accepted, scoring_word = self._accept_path_for_search(
+                board,
+                path,
+                search_word,
+                loadout,
+                stamp_flags,
+            )
+            if not accepted:
+                continue
+            rank_sc = self._rank_score_for_candidate(
+                board, path, scoring_word, loadout
+            )
+            if rank_sc is not None:
+                candidates.consider(rank_sc, scoring_word, path)
+                added += 1
+
+    def _extend_dictionary_resolve_boundaries(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        *,
+        deadline: float | None = None,
+    ) -> None:
+        """Extend wildcard/chess word boundaries in isolation, then merge into heap."""
+        seeds = self._dictionary_resolve_extension_seeds(
+            board, loadout, candidates
+        )
+        if not seeds:
+            return
+        if deadline is not None and time.monotonic() >= deadline:
+            return
+        long_seeds = [entry for entry in seeds if len(entry[2]) >= 4]
+        if long_seeds:
+            seeds = long_seeds
+        use_per_seed = any(
+            is_fraction_tile(t) for t in board.flat
+        ) and _chess_tile_count(board) >= 3
+        if use_per_seed:
+            # Shortest resolve boundaries extend furthest; prefer them over
+            # longer heap leaders that cannot reach buzzsaw-length paths.
+            seeds = sorted(
+                seeds,
+                key=lambda entry: (len(entry[2]), -entry[0]),
+            )
+            probe_mandatory: list[tuple[float, str, tuple[int, ...]]] = []
+            stamp_flags = self._search_ctx(loadout).search_flags
+            probe_depth = min(8, self.max_len)
+            for path in _probe_fraction_chess_prefixes(
+                board, loadout, max_depth=probe_depth
+            ):
+                if len(path) < self.min_len or len(path) >= self.max_len:
+                    continue
+                key = tuple(path)
+                if any(key == entry[2] for entry in seeds):
+                    continue
+                search_word = search_word_from_path(
+                    board, path, flags=stamp_flags
+                )
+                accepted, scoring_word = self._accept_path_for_search(
+                    board,
+                    path,
+                    search_word,
+                    loadout,
+                    stamp_flags,
+                )
+                if not accepted:
+                    continue
+                rank_sc = self._rank_score_for_candidate(
+                    board, path, scoring_word, loadout
+                )
+                if rank_sc is not None:
+                    probe_mandatory.append((rank_sc, scoring_word, key))
+            probe_mandatory.sort(key=lambda entry: (len(entry[2]), -entry[0]))
+            seen_seed: set[tuple[int, ...]] = set()
+            merged: list[tuple[float, str, tuple[int, ...]]] = []
+            for entry in probe_mandatory + seeds:
+                if entry[2] in seen_seed:
+                    continue
+                seen_seed.add(entry[2])
+                merged.append(entry)
+            seeds = merged
+        else:
+            seeds = sorted(seeds, key=lambda entry: len(entry[2]), reverse=True)
+        if use_per_seed:
+            seed_cap = 12 if self.time_budget >= 30.0 else 8
+            seeds = seeds[:seed_cap]
+            per_seed_rounds = min(self.max_len - self.min_len, 16)
+            boundaries_budget = min(
+                10.0 if self.time_budget >= 30.0 else 6.0,
+                self.time_budget * 0.18,
+            )
+            boundaries_end = time.monotonic() + boundaries_budget
+            if deadline is not None and deadline > time.monotonic():
+                boundaries_end = min(boundaries_end, deadline)
+            for rank_sc, word, path_tuple in seeds:
+                if time.monotonic() >= boundaries_end:
+                    break
+                if len(path_tuple) >= self.max_len:
+                    continue
+                mini = _CandidateHeap(200)
+                mini.consider(rank_sc, word, list(path_tuple))
+                resolve_seeds = self._dictionary_resolve_extension_seeds(
+                    board, loadout, mini
+                )
+                self._extend_top_candidates(
+                    board,
+                    loadout,
+                    mini,
+                    top_paths=30,
+                    max_rounds=min(
+                        per_seed_rounds, self.max_len - len(path_tuple)
+                    ),
+                    extra_seeds=resolve_seeds or None,
+                    deadline=boundaries_end,
+                )
+                for ext_sc, ext_word, ext_path in mini.best_sorted():
+                    candidates.consider(ext_sc, ext_word, list(ext_path))
+            return
+        seeds = seeds[:20]
+        mini = _CandidateHeap(max(len(seeds) + 50, 80))
+        for rank_sc, word, path_tuple in seeds:
+            mini.consider(rank_sc, word, list(path_tuple))
+        self._extend_top_candidates(
+            board,
+            loadout,
+            mini,
+            top_paths=len(seeds),
+            max_rounds=min(self.max_len - self.min_len, 8),
+            deadline=deadline,
+        )
+        for rank_sc, word, path_tuple in mini.best_sorted():
+            candidates.consider(rank_sc, word, list(path_tuple))
+
+    def _guarantee_fraction_chess_probe_extensions(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        *,
+        deadline: float | None = None,
+    ) -> None:
+        """Extend shortest fraction→chess probe paths in isolation (bazz→buzzsaw)."""
+        if self.max_len <= self.min_len:
+            return
+        if not any(is_fraction_tile(t) for t in board.flat):
+            return
+        if _chess_tile_count(board) < 3:
+            return
+        budget = min(
+            15.0 if self.time_budget >= 30.0 else 7.0,
+            self.time_budget * 0.25,
+        )
+        guarantee_end = time.monotonic() + budget
+        prev_deadline = self._active_deadline
+        self._active_deadline = guarantee_end
+        try:
+            stamp_flags = self._search_ctx(loadout).search_flags
+            probe_depth = min(8, self.max_len)
+            probe_paths = sorted(
+                _probe_fraction_chess_prefixes(
+                    board, loadout, max_depth=probe_depth
+                ),
+                key=len,
+            )
+            per_seed_rounds = min(self.max_len - self.min_len, 16)
+            seeds: list[tuple[float, str, list[int]]] = []
+            for path in probe_paths:
+                if len(path) < 4 or len(path) >= self.max_len:
+                    continue
+                search_word = search_word_from_path(
+                    board, path, flags=stamp_flags
+                )
+                accepted, scoring_word = self._accept_path_for_search(
+                    board,
+                    path,
+                    search_word,
+                    loadout,
+                    stamp_flags,
+                )
+                if not accepted:
+                    continue
+                rank_sc = self._rank_score_for_candidate(
+                    board, path, scoring_word, loadout
+                )
+                if rank_sc is None:
+                    continue
+                seeds.append((rank_sc, scoring_word, list(path)))
+            if not seeds:
+                return
+            # Extend the shortest boundary with the full guarantee budget.
+            rank_sc, scoring_word, path = min(
+                seeds, key=lambda s: (len(s[2]), -s[0])
+            )
+            seed_end = guarantee_end
+            self._active_deadline = seed_end
+            mini = _CandidateHeap(200)
+            mini.consider(rank_sc, scoring_word, path)
+            resolve_seeds = self._dictionary_resolve_extension_seeds(
+                board, loadout, mini
+            )
+            self._extend_top_candidates(
+                board,
+                loadout,
+                mini,
+                top_paths=30,
+                max_rounds=per_seed_rounds,
+                extra_seeds=resolve_seeds or None,
+                deadline=seed_end,
+            )
+            for ext_sc, ext_word, ext_path in mini.best_sorted():
+                candidates.consider(ext_sc, ext_word, list(ext_path))
+        finally:
+            self._active_deadline = prev_deadline
+
     def _extend_top_candidates(
         self,
         board: Board,
@@ -4141,6 +4594,16 @@ class WordSearcher:
         for score, word, path in main_entries:
             candidates.consider(score, word, list(path))
 
+    def _score_cache_key(
+        self,
+        path: list[int],
+        word: str,
+        *,
+        resolved_word: str | None = None,
+    ) -> tuple[tuple[int, ...], str]:
+        canonical = (resolved_word or word).lower()
+        return (tuple(path), canonical)
+
     def _consider_path_candidate(
         self,
         board: Board,
@@ -4155,9 +4618,12 @@ class WordSearcher:
     ) -> bool:
         """Push path to heap; also index item-aware search_word when it differs."""
         added = False
+        cache_key = self._score_cache_key(
+            path, score_word, resolved_word=resolved_word
+        )
         sc = score_path(path, score_word, resolved_word=resolved_word)
         if sc is not None:
-            cached = self._score_cache.get((tuple(path), score_word))
+            cached = self._score_cache.get(cache_key)
             candidates.consider(
                 sc,
                 score_word,
@@ -4166,10 +4632,18 @@ class WordSearcher:
             )
             added = True
         alt_sw = search_word_from_path(board, path, flags=stamp_flags)
-        if alt_sw != score_word.lower():
+        alt_norm = alt_sw.lower()
+        word_norm = score_word.lower()
+        canonical = (resolved_word or score_word).lower()
+        if alt_norm != word_norm and alt_norm != canonical:
+            alt_key = self._score_cache_key(
+                path, alt_sw, resolved_word=resolved_word
+            )
+            if alt_key == cache_key:
+                return added
             sc_alt = score_path(path, alt_sw, resolved_word=resolved_word)
             if sc_alt is not None:
-                cached_alt = self._score_cache.get((tuple(path), alt_sw))
+                cached_alt = self._score_cache.get(alt_key)
                 candidates.consider(
                     sc_alt,
                     alt_sw,
@@ -4224,7 +4698,7 @@ class WordSearcher:
         if self._time_expired():
             return None
         timing = self._active_timing
-        key = (tuple(path), word)
+        key = self._score_cache_key(path, word, resolved_word=resolved_word)
         cached = self._score_cache.get(key)
         if cached is not None:
             if timing is not None:
@@ -4289,6 +4763,9 @@ class WordSearcher:
                         hanafuda_level=hanafuda_level,
                         graph_ctx=self._graph_ctx,
                         board_scoring_ctx=self._board_scoring_ctx,
+                        setup_weight=self.setup_weight,
+                        setup_discount=self.setup_discount,
+                        rules=self.scoring.rules,
                     )
                     if min_rank is not None
                     else None
@@ -4379,7 +4856,9 @@ class WordSearcher:
                 board, path, hanafuda_level
             ):
                 rank += 800.0
-        cache_key = (tuple(path), score_word)
+        cache_key = self._score_cache_key(
+            path, score_word, resolved_word=resolved_word
+        )
         self._score_cache[cache_key] = (immediate, setup_bonus, rank)
         if cache_key != key:
             self._score_cache[key] = (immediate, setup_bonus, rank)
@@ -4389,7 +4868,7 @@ class WordSearcher:
         self, board: Board, path: list[int], word: str, loadout: Loadout
     ) -> tuple[float, float]:
         timing = self._active_timing
-        key = (tuple(path), word)
+        key = self._score_cache_key(path, word)
         cached = self._score_cache.get(key)
         if cached is not None:
             if timing is not None:
@@ -4837,6 +5316,12 @@ class WordSearcher:
                 and self.max_len > 8
             ):
                 caps = [8, self.max_len]
+            elif (
+                has_fraction_tiles
+                and _chess_tile_count(board) >= 3
+                and self.max_len > 8
+            ):
+                caps = [8, self.max_len]
             else:
                 caps = [self.max_len]
         elif chess_reserve > 0.0 and self.max_len > self.min_len:
@@ -4913,6 +5398,30 @@ class WordSearcher:
             )
         heap_before_letter = len(candidates)
         try:
+            if (
+                has_fraction_tiles
+                and _chess_tile_count(board) >= 3
+                and self.max_len >= 8
+                and time.monotonic() < main_deadline
+            ):
+                fraction_starts = [
+                    i
+                    for i in _legal_word_start_indices(board)
+                    if is_fraction_tile(board.get_by_index(i))
+                ]
+                if fraction_starts:
+                    frac_slice = min(3.0, self.time_budget * 0.08)
+                    frac_deadline = min(
+                        main_deadline, time.monotonic() + frac_slice
+                    )
+                    self._collect_words_fair_starts(
+                        board,
+                        loadout,
+                        candidates,
+                        frac_deadline,
+                        min(8, self.max_len),
+                        fraction_starts,
+                    )
             if center_idx is not None and up_and_up_reserve > 0.0:
                 up_deadline = min(main_deadline, search_begin + up_and_up_reserve)
                 if up_deadline > time.monotonic():
@@ -5255,14 +5764,32 @@ class WordSearcher:
 
         heap_k = self.candidate_heap_size or _candidate_heap_size(top_n, mult_count)
         chess_seeds: list[tuple[float, str, tuple[int, ...]]] = []
-        if len(candidates) > 0 and time.monotonic() < deadline:
+        post_extend_slack = min(8.0, max(extension_reserve, 5.0))
+        resolve_grace = min(20.0, extension_reserve + post_extend_slack + 8.0)
+        resolve_phase_deadline = deadline + resolve_grace
+        if len(candidates) > 0 and time.monotonic() < resolve_phase_deadline:
+            self._active_deadline = resolve_phase_deadline
             chess_start = time.monotonic()
+            chess_max_cap = (
+                8
+                if has_fraction_tiles and _chess_tile_count(board) >= 3
+                else 5
+            )
             chess_seeds = self._chess_prefix_candidates(
-                board, loadout, solve_deadline=pre_extend_deadline
+                board,
+                loadout,
+                solve_deadline=pre_extend_deadline,
+                max_cap=chess_max_cap,
             )
             timing.chess_sec = time.monotonic() - chess_start
             extend_start = time.monotonic()
-            extend_deadline = deadline
+            extend_deadline = resolve_phase_deadline
+            leader_imm = candidates.max_immediate_score()
+            if leader_imm is not None and leader_imm >= 400:
+                extend_cap = min(3.0, extension_reserve or 3.0)
+                extend_deadline = min(
+                    extend_deadline, time.monotonic() + extend_cap
+                )
             top_paths = (
                 min(120, len(candidates), heap_k)
                 if chess_seeds
@@ -5293,19 +5820,53 @@ class WordSearcher:
                 (sc, word, path)
                 for sc, word, path in candidates.best_sorted()[:5]
             ]
+            resolve_extra_seeds = self._dictionary_resolve_extension_seeds(
+                board, loadout, candidates
+            )
             combined_extra_seeds: list[tuple[float, str, tuple[int, ...]]] = []
             if chess_seeds:
                 combined_extra_seeds.extend(chess_seeds)
             combined_extra_seeds.extend(leader_extra_seeds)
+            seen_seed_paths: set[tuple[int, ...]] = set()
+            deduped_extra: list[tuple[float, str, tuple[int, ...]]] = []
+            for entry in combined_extra_seeds + resolve_extra_seeds:
+                path_key = entry[2]
+                if path_key in seen_seed_paths:
+                    continue
+                seen_seed_paths.add(path_key)
+                deduped_extra.append(entry)
+            if time.monotonic() < extend_deadline:
+                self._supplement_fraction_chess_word_boundaries(
+                    board,
+                    loadout,
+                    candidates,
+                    deadline=extend_deadline,
+                )
             self._extend_top_candidates(
                 board,
                 loadout,
                 candidates,
                 top_paths=top_paths,
                 max_rounds=max_extend_rounds,
-                extra_seeds=combined_extra_seeds or None,
+                extra_seeds=deduped_extra or None,
                 deadline=extend_deadline if extension_reserve > 0 else deadline,
             )
+            if time.monotonic() < extend_deadline:
+                resolve_deadline = extend_deadline
+                if extension_reserve > 0 and not (
+                    has_fraction_tiles and _chess_tile_count(board) >= 3
+                ):
+                    resolve_deadline = min(
+                        extend_deadline,
+                        time.monotonic()
+                        + max(4.0, extension_reserve * 0.55),
+                    )
+                self._extend_dictionary_resolve_boundaries(
+                    board,
+                    loadout,
+                    candidates,
+                    deadline=resolve_deadline,
+                )
             timing.extend_sec = time.monotonic() - extend_start
 
         refine_start = time.monotonic()
@@ -5353,18 +5914,52 @@ class WordSearcher:
         ):
             post_extend_start = time.monotonic()
             post_extend_reserve = min(8.0, max(extension_reserve, 5.0))
-            post_extend_deadline = deadline + post_extend_reserve
+            post_extend_deadline = resolve_phase_deadline
             post_top_paths = min(heap_k, 60, len(candidates))
-            post_max_rounds = min(3, self.max_len - self.min_len)
+            post_resolve_seeds = self._dictionary_resolve_extension_seeds(
+                board, loadout, candidates
+            )
+            post_max_rounds = (
+                min(self.max_len - self.min_len, 16)
+                if post_resolve_seeds
+                else min(3, self.max_len - self.min_len)
+            )
             self._extend_top_candidates(
                 board,
                 loadout,
                 candidates,
                 top_paths=post_top_paths,
                 max_rounds=post_max_rounds,
+                extra_seeds=post_resolve_seeds or None,
                 deadline=post_extend_deadline,
             )
+            if time.monotonic() < post_extend_deadline:
+                self._extend_dictionary_resolve_boundaries(
+                    board,
+                    loadout,
+                    candidates,
+                    deadline=post_extend_deadline,
+                )
             timing.extend_sec += time.monotonic() - post_extend_start
+
+        if self.max_len > self.min_len and len(candidates) > 0:
+            if any(is_fraction_tile(t) for t in board.flat) and _chess_tile_count(
+                board
+            ) >= 3:
+                final_resolve_deadline = resolve_phase_deadline
+                self._active_deadline = final_resolve_deadline
+                self._extend_dictionary_resolve_boundaries(
+                    board,
+                    loadout,
+                    candidates,
+                    deadline=final_resolve_deadline,
+                )
+                self._guarantee_fraction_chess_probe_extensions(
+                    board,
+                    loadout,
+                    candidates,
+                    deadline=final_resolve_deadline,
+                )
 
         best_by_word: dict[
             str, tuple[float, float, float, str, tuple[int, ...]]
