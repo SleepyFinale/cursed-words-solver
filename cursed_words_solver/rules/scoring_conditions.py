@@ -2605,7 +2605,8 @@ def game_curse_types_for_tile(tile: Tile, *, is_wobbly: bool = False) -> set[str
     elif tile.curse in (CurseType.NUMBER, CurseType.FRACTION):
         types.add("number")
     elif tile.curse in (CurseType.WILDCARD, CurseType.BLANK):
-        if "card" not in types:
+        # Blank glyph + CardSuit adds both Card and Blank (Tile.GetCurseTypes); joker is BespokeCard only.
+        if not is_joker_tile(tile):
             types.add("blank")
     elif tile.curse == CurseType.ITEM:
         types.add("scattereditem")

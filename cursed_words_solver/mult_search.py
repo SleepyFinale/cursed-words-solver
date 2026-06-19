@@ -13,7 +13,9 @@ from cursed_words_solver.rules.scoring_conditions import (
     evaluate_sticker_condition,
     first_letter_on_path,
     is_card_tile,
+    is_consumable_tile,
     is_joker_tile,
+    is_placed_consumable_tile,
     is_vowel_letter,
     scaled_word_multiplier,
     tile_counts_as_color,
@@ -136,6 +138,10 @@ def _partial_mult_credit(
         start = board.get_by_index(path[0])
         end = board.get_by_index(path[-1])
         return start.curse == CurseType.NUMBER and end.curse == CurseType.NUMBER
+    if condition == "word_starts_ends_consumable" and len(path) >= 1:
+        start = board.get_by_index(path[0])
+        if is_consumable_tile(start) or is_placed_consumable_tile(start):
+            return True
     return False
 
 

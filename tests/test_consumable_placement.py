@@ -19,6 +19,8 @@ from cursed_words_solver.consumable_placement import (
     has_mahjong_pin,
     iter_placement_variants_fewest_first,
     loadout_after_consumable_placements,
+    consumables_placed_for_scoring,
+    count_new_path_consumables,
     mahjong_rack_placement_active,
     rack_placement_search_active,
     placement_variants_fewest_first,
@@ -32,6 +34,13 @@ from cursed_words_solver.consumable_placement import (
     search_consumable_placement_fallback,
     search_target_rescue,
     search_with_consumable_placements,
+    under_construction_active,
+    multi_consumable_placement_beneficial,
+    _endpoint_pair_bonus,
+    _run_tiered_placement_search,
+    _screened_entry_rank,
+    _finalize_placement_search,
+    _result_rank_score,
     _placement_screen_floor,
     _screen_variant_limit,
     _placement_hard_from_loadout,
@@ -369,9 +378,95 @@ def test_placement_variants_fewest_first_orders_by_tile_count():
     two_tile = [v for v in variants if len(v) == 2]
     assert one_tile
     assert two_tile
+    one_tile_letters = {
+        (tile.letter or "").upper() for variant in one_tile for _, tile in variant
+    }
+    assert one_tile_letters == {"A", "B"}
     first_two_idx = variants.index(two_tile[0])
     last_one_idx = max(variants.index(v) for v in one_tile)
     assert last_one_idx < first_two_idx
+
+
+def test_k1_placement_variants_include_all_rack_tiles():
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    rack = [
+        Tile(-1, -1, "Z", "Z", 1, metadata={"rack_index": 0}),
+        Tile(-1, -1, "T", "T", 5, metadata={"rack_index": 1}),
+    ]
+    variants = placement_variants_fewest_first(board, rack, max_variants=50)
+    one_tile = [v for v in variants if len(v) == 1]
+    rack_indices = {
+        tile.metadata.get("rack_index") for variant in one_tile for _, tile in variant
+    }
+    assert rack_indices == {0, 1}
+
+
+def test_search_consumable_score_boost_uses_non_first_rack_tile(tmp_path):
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    tiles = [[_tile("x", r, c) for c in range(5)] for r in range(5)]
+    tiles[0][0] = _tile("c", 0, 0)
+    tiles[0][1] = _tile("a", 0, 1)
+    board = Board(tiles=tiles)
+    rack = [
+        Tile(
+            -1,
+            -1,
+            "Z",
+            "Z",
+            1,
+            color=TileColor.RED,
+            curse=CurseType.LETTER,
+            metadata={"rack_index": 0},
+        ),
+        Tile(
+            -1,
+            -1,
+            "T",
+            "T",
+            5,
+            color=TileColor.RED,
+            curse=CurseType.LETTER,
+            metadata={"rack_index": 1},
+        ),
+    ]
+    loadout = _mahjong_loadout_with_red_rack()
+    loadout.extras["consumable_rack"] = [
+        {
+            "rack_index": 0,
+            "letter": "Z",
+            "color": "red",
+            "curse": "letter",
+            "base_score": 1,
+        },
+        {
+            "rack_index": 1,
+            "letter": "T",
+            "color": "red",
+            "curse": "letter",
+            "base_score": 5,
+        },
+    ]
+    rules = ScoringPipeline().rules
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
+    baseline_score = 10.0
+    sim_board, records, results = search_consumable_score_boost(
+        searcher,
+        board,
+        loadout,
+        rack,
+        baseline_score=baseline_score,
+        time_budget=4.0,
+        top_n=3,
+        rules=rules,
+    )
+    assert results
+    assert results[0].score > baseline_score
+    assert results[0].word == "cat"
+    assert len(records) == 1
+    assert records[0].rack_index == 1
+    assert placed_consumable_indices(sim_board) == frozenset({rec.index for rec in records})
 
 
 def test_search_target_rescue_adopts_only_when_score_meets_target(tmp_path, monkeypatch):
@@ -998,7 +1093,66 @@ def test_loadout_after_consumable_placements_advances_tile_ninja():
     after = loadout_after_consumable_placements(loadout, 1)
     assert after.extras["tile_ninja_consumables_used"] == "11"
     assert float(after.extras["tile_ninja_bonus"]) == pytest.approx(0.22)
+    assert after.extras["tile_ninja_word_bonus_percent"] == "142"
     assert after.extras["consumable_rack_count"] == 4
+
+
+def test_consumables_placed_for_scoring_uses_placement_records():
+    """Mismatch 20260619_011718: rack placements must bump Tile Ninja at F8 rescore."""
+    import json
+    from copy import deepcopy
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260619_011718.json"
+    )
+    if not fixture.is_file():
+        pytest.skip("fixture 20260619_011718 not installed")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    rs_f8 = deepcopy(data["run_state_snapshot"])
+    for key, entry in (data.get("extras_diff") or {}).items():
+        if isinstance(entry, dict) and entry.get("f8") not in (None, ""):
+            if key in (
+                "consumable_rack",
+                "tile_ninja_consumables_used",
+                "tile_ninja_word_bonus_percent",
+                "tile_ninja_bonus",
+                "tile_ninja_bonus_last_known",
+            ):
+                rs_f8["extras"][key] = entry["f8"]
+    rs_f8["extras"]["consumable_rack_count"] = "5"
+    board_submit = parse_board_from_run_state(data["run_state_snapshot"])
+    board = parse_board_from_run_state(data["run_state_snapshot"])
+    from cursed_words_solver.rules.grid_effects import _clone_board
+
+    base = _clone_board(board_submit)
+    for idx in (6, 7):
+        r, c = divmod(idx, 5)
+        meta = dict(base.tiles[r][c].metadata or {})
+        meta.pop("was_consumable", None)
+        meta.pop("consumable", None)
+        base.tiles[r][c].metadata = meta
+    base._rebuild_flat_cache()
+    rack = json.loads(rs_f8["extras"]["consumable_rack"])
+    d_tile = rack_tile_from_entry(rack[0])
+    knight_tile = rack_tile_from_entry(rack[2])
+    search_board = apply_consumable_placements(
+        base, [(7, d_tile), (6, knight_tile)]
+    )
+    path = data["path"]
+    records = placements_to_records([(7, d_tile), (6, knight_tile)])
+    assert count_new_path_consumables(base, search_board, path) == 2
+    assert consumables_placed_for_scoring(base, search_board, path, records) == 2
+    loadout = hydrate_tile_ninja_loadout_extras(parse_run_state(rs_f8), rs_f8)
+    score_loadout = loadout_after_consumable_placements(loadout, 2)
+    assert score_loadout.extras["tile_ninja_consumables_used"] == "23"
+    assert score_loadout.extras["tile_ninja_word_bonus_percent"] == "166"
+    score, _ = ScoringPipeline().score(
+        search_board, path, data["word"], score_loadout
+    )
+    assert int(score) == int(data["actual_score"]) == 1430
 
 
 def test_deviative_placement_simulation_scores_203():
@@ -1265,6 +1419,339 @@ def test_westernisations_placement_candidates_regression() -> None:
     assert _placement_rank(
         board, target_placements, loadout=loadout, rules=rules
     ) > 0.0
+
+
+def test_under_construction_active_detected():
+    plain = Loadout()
+    assert not under_construction_active(plain)
+    assert not multi_consumable_placement_beneficial(plain)
+    uc = Loadout(
+        stickers=[
+            LoadoutItem(id="under_construction", name="Under Construction", level=1)
+        ]
+    )
+    assert under_construction_active(uc)
+    assert multi_consumable_placement_beneficial(uc)
+
+
+def test_endpoint_pair_bonus_under_construction():
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    board.tiles[0][0] = _tile("c", 0, 0)
+    board.tiles[0][1] = _tile("a", 0, 1)
+    board.tiles[0][2] = _tile("t", 0, 2)
+    rack_c = Tile(-1, -1, "C", "C", 2, metadata={"rack_index": 0})
+    rack_t = Tile(-1, -1, "T", "T", 2, metadata={"rack_index": 1})
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="under_construction", name="Under Construction", level=1)
+        ]
+    )
+    pair = [(0, rack_c), (2, rack_t)]
+    solo = [(1, rack_c)]
+    assert _endpoint_pair_bonus(board, pair, loadout=loadout) > 0.0
+    assert _endpoint_pair_bonus(board, solo, loadout=loadout) == 0.0
+
+
+def test_tiered_search_does_not_break_after_k1_with_under_construction(
+    tmp_path, monkeypatch
+):
+    from cursed_words_solver.models import WordResult
+
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    rack = [
+        Tile(-1, -1, "C", "C", 2, metadata={"rack_index": 0}),
+        Tile(-1, -1, "T", "T", 2, metadata={"rack_index": 1}),
+    ]
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="under_construction", name="Under Construction", level=1)
+        ]
+    )
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
+
+    def qualify_by_placement_count(sim_board, loadout=None, top_n=1, **kwargs):
+        placed = sum(
+            1
+            for i in range(25)
+            if sim_board.get_by_index(i).metadata.get("was_consumable")
+        )
+        if placed == 1:
+            return [WordResult(word="one", path=[0, 1, 2], score=100.0, breakdown={})]
+        if placed == 2:
+            return [WordResult(word="two", path=[0, 1, 2], score=200.0, breakdown={})]
+        return []
+
+    monkeypatch.setattr(searcher, "find_best_words", qualify_by_placement_count)
+
+    k_values_called: list[int] = []
+    real_top_variants = cp._top_variants_for_tier
+
+    def tracking_top_variants(board_arg, rack_arg, cells_arg, k, **kwargs):
+        k_values_called.append(k)
+        return real_top_variants(board_arg, rack_arg, cells_arg, k, **kwargs)
+
+    monkeypatch.setattr(cp, "_top_variants_for_tier", tracking_top_variants)
+
+    _, records, results = search_consumable_score_boost(
+        searcher,
+        board,
+        loadout,
+        rack,
+        baseline_score=50.0,
+        time_budget=4.0,
+        top_n=1,
+    )
+    assert results
+    assert len(records) == 2
+    assert results[0].score == 200.0
+    assert 1 in k_values_called
+    assert 2 in k_values_called
+
+
+def test_search_consumable_score_boost_places_two_with_under_construction(tmp_path):
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    tiles = [[_tile("x", r, c) for c in range(5)] for r in range(5)]
+    tiles[0][1] = _tile("a", 0, 1)
+    board = Board(tiles=tiles)
+    rack = [
+        Tile(
+            -1,
+            -1,
+            "C",
+            "C",
+            2,
+            color=TileColor.RED,
+            curse=CurseType.LETTER,
+            metadata={"rack_index": 0},
+        ),
+        Tile(
+            -1,
+            -1,
+            "T",
+            "T",
+            2,
+            color=TileColor.RED,
+            curse=CurseType.LETTER,
+            metadata={"rack_index": 1},
+        ),
+    ]
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="under_construction", name="Under Construction", level=1)
+        ]
+    )
+    rules = ScoringPipeline().rules
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
+    baseline = searcher.find_best_words(board, loadout=loadout, top_n=1)
+    baseline_score = baseline[0].score if baseline else 0.0
+
+    sim_board, records, results = search_consumable_score_boost(
+        searcher,
+        board,
+        loadout,
+        rack,
+        baseline_score=baseline_score,
+        time_budget=4.0,
+        top_n=1,
+        rules=rules,
+    )
+    assert results
+    assert len(records) == 2
+    assert results[0].word == "cat"
+    assert results[0].path[0] in {rec.index for rec in records}
+    assert results[0].path[-1] in {rec.index for rec in records}
+    pipeline = (results[0].breakdown or {}).get("pipeline", {})
+    effects = pipeline.get("effects", [])
+    finalize = pipeline.get("pending_word_finalize_steps", [])
+    assert any(
+        "word_starts_ends_consumable" in str(e) for e in effects
+    ) or any("under_construction" in str(step).lower() for step in finalize)
+
+
+def test_variant_gen_budget_does_not_skip_k2_with_under_construction(
+    tmp_path, monkeypatch
+):
+    import time as time_mod
+
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    rack = [
+        Tile(-1, -1, "C", "C", 2, metadata={"rack_index": 0}),
+        Tile(-1, -1, "T", "T", 2, metadata={"rack_index": 1}),
+    ]
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="under_construction", name="Under Construction", level=1)
+        ]
+    )
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
+    k_values_called: list[int] = []
+    real_top_variants = cp._top_variants_for_tier
+
+    def tracking_top_variants(board_arg, rack_arg, cells_arg, k, **kwargs):
+        k_values_called.append(k)
+        return real_top_variants(board_arg, rack_arg, cells_arg, k, **kwargs)
+
+    monkeypatch.setattr(cp, "_top_variants_for_tier", tracking_top_variants)
+
+    started = time_mod.monotonic()
+
+    def fake_monotonic():
+        return started + 5.0
+
+    monkeypatch.setattr(cp.time, "monotonic", fake_monotonic)
+
+    _run_tiered_placement_search(
+        searcher,
+        board,
+        loadout,
+        rack,
+        time_budget=4.0,
+        top_n=1,
+        min_rank_score=0.0,
+        prefer_fewest_tiles=False,
+        variant_gen_budget=0.001,
+        rules=ScoringPipeline().rules,
+    )
+    assert 1 in k_values_called
+    assert 2 in k_values_called
+
+
+def test_finalize_prefers_two_tiles_on_tie_with_under_construction(
+    tmp_path, monkeypatch
+):
+    from cursed_words_solver.models import WordResult
+
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    rack_one = Tile(-1, -1, "A", "A", 1, metadata={"rack_index": 0})
+    rack_two = Tile(-1, -1, "B", "B", 1, metadata={"rack_index": 1})
+    placements_one = [(6, rack_one)]
+    placements_two = [(6, rack_one), (8, rack_two)]
+    sim_one = apply_consumable_placements(board, placements_one)
+    sim_two = apply_consumable_placements(board, placements_two)
+    result_one = WordResult(word="one", path=[6, 7], score=50.0, breakdown={})
+    result_two = WordResult(word="two", path=[6, 7, 8], score=50.0, breakdown={})
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="under_construction", name="Under Construction", level=1)
+        ]
+    )
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
+    calls: list[int] = []
+
+    def fake_find(sim_board, loadout=None, top_n=1, **kwargs):
+        placed = sum(
+            1
+            for i in range(25)
+            if sim_board.get_by_index(i).metadata.get("was_consumable")
+        )
+        calls.append(placed)
+        if placed == 1:
+            return [result_one]
+        return [result_two]
+
+    monkeypatch.setattr(searcher, "find_best_words", fake_find)
+
+    screened = [
+        (100.0, 1, placements_one, sim_one, result_one),
+        (100.0, 2, placements_two, sim_two, result_two),
+    ]
+    _, records, results = _finalize_placement_search(
+        searcher,
+        board,
+        loadout,
+        screened,
+        time_budget=4.0,
+        top_n=1,
+        min_score=None,
+        min_rank_score=0.0,
+        prefer_fewest_tiles=False,
+        base_required=frozenset(),
+        variant_gen_sec=0.0,
+        variants_screened=2,
+    )
+    assert results
+    assert len(records) == 2
+
+
+def test_screened_entry_rank_bumps_under_construction_endpoints():
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    board.tiles[0][0] = _tile("c", 0, 0)
+    board.tiles[0][1] = _tile("a", 0, 1)
+    board.tiles[0][2] = _tile("t", 0, 2)
+    rack_c = Tile(-1, -1, "C", "C", 2, metadata={"rack_index": 0})
+    rack_t = Tile(-1, -1, "T", "T", 2, metadata={"rack_index": 1})
+    sim = apply_consumable_placements(board, [(0, rack_c), (2, rack_t)])
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="under_construction", name="Under Construction", level=1)
+        ]
+    )
+    from cursed_words_solver.models import WordResult
+
+    result = WordResult(word="cat", path=[0, 1, 2], score=10.0, breakdown={})
+    plain = _screened_entry_rank(50.0, sim, result, loadout)
+    assert plain > 50.0 + 500_000
+
+
+@pytest.mark.slow
+def test_run_state_under_construction_two_placements_with_gen_budget():
+    """Regression: app-like 2s gen cap must still reach k=2 for UC loadouts."""
+    import json
+    import time as time_mod
+
+    from cursed_words_solver.config import resolve_wordlist
+
+    rs_path = Path.home() / ".cursed_words_solver" / "run_state.json"
+    if not rs_path.is_file():
+        pytest.skip("live run_state.json not available")
+    rs = json.loads(rs_path.read_text(encoding="utf-8"))
+    if not any(
+        (s.get("id") or "").lower() == "under_construction"
+        for s in rs.get("stickers", [])
+    ):
+        pytest.skip("run_state missing under_construction")
+    loadout = parse_run_state(rs)
+    board = parse_board_from_run_state(rs)
+    rack = consumable_rack_tiles(loadout)
+    rules = ScoringPipeline().rules
+    searcher = WordSearcher(
+        WordDictionary(resolve_wordlist(None)),
+        min_len=1,
+        max_len=25,
+        time_budget=5.0,
+        search_workers=8,
+    )
+    baseline = searcher.find_best_words(board, loadout=loadout, top_n=1)
+    br = baseline[0].score if baseline else 0.0
+    rank = _result_rank_score(baseline[0]) if baseline else br
+    sim, recs, boost = search_consumable_score_boost(
+        searcher,
+        board,
+        loadout,
+        rack,
+        baseline_score=br,
+        baseline_rank_score=rank,
+        time_budget=20.0,
+        top_n=1,
+        rules=rules,
+        variant_gen_budget=2.0,
+        solve_deadline=time_mod.monotonic() + 45.0,
+    )
+    assert boost
+    assert len(recs) == 2
+    effects = (boost[0].breakdown or {}).get("pipeline", {}).get("effects", [])
+    assert any("word_starts_ends_consumable" in str(e) for e in effects)
 
 
 @pytest.mark.slow

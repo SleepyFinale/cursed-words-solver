@@ -638,6 +638,73 @@ def test_extension_from_aahed_prefix_finds_fjelds():
     not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
     reason="game wordlist required",
 )
+def test_extension_from_lanugos_prefix_finds_latigoes():
+    """Regression: +1 tile from lanugos prefix finds latigoes (20260618 path_extension)."""
+    import json
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from cursed_words_solver.search import (
+        _CandidateHeap,
+        search_word_from_path,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "round_logs"
+        / "20260618_230147_latigoes_path_extension.json"
+    )
+    if not fixture.exists():
+        pytest.skip("20260618_230147_latigoes_path_extension.json fixture required")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data["run_state"])
+    loadout = parse_run_state(data["run_state"])
+    assert board is not None
+
+    solver = data["solver"]
+    actual = data["actual"]
+    short_path = solver["path"]
+    expected_path = actual["path"]
+    short_word = solver["word"]
+    pipeline = ScoringPipeline()
+    short_score = pipeline.score_total_only(board, short_path, short_word, loadout)
+
+    flags = stamp_search_flags(loadout)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=15,
+        time_budget=10.0,
+    )
+    candidates = _CandidateHeap(200)
+    sw = search_word_from_path(board, short_path, flags=flags)
+    sc = searcher._rank_score_for_candidate(board, short_path, sw, loadout)
+    candidates.consider(sc or 0, sw, short_path)
+    resolve_seeds = searcher._dictionary_resolve_extension_seeds(
+        board, loadout, candidates
+    )
+    searcher._extend_top_candidates(
+        board,
+        loadout,
+        candidates,
+        top_paths=30,
+        max_rounds=3,
+        extra_seeds=resolve_seeds,
+    )
+    extended = [
+        (rank_sc, word, list(path))
+        for rank_sc, word, path in candidates.best_sorted()
+        if list(path) == expected_path
+    ]
+    assert extended
+    assert extended[0][0] > short_score
+    assert extended[0][0] >= int(actual["score"]) - 5
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
 def test_find_best_words_fjelds_beats_aahed():
     """Integration: post-refine extension picks 6-tile fjelds over 5-tile aahed."""
     import json

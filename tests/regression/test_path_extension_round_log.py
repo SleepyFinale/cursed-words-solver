@@ -79,6 +79,9 @@ def test_round_log_path_extension_replay_submitted_path(round_log_path: Path):
     if "snazzier" in round_log_path.stem:
         assert replay["word"] == "snazzier"
         assert 154 <= score <= 164
+    if "latigoes" in round_log_path.stem:
+        assert replay["word"] == "latigoes"
+        assert score == 128
 
 
 @pytest.mark.skipif(not EELSKIN_FIXTURE.exists(), reason="eelskin fixture required")

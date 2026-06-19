@@ -30,12 +30,15 @@ from cursed_words_solver.rules.scoring_conditions import (
     card_suit,
     hanafuda_hand_satisfied,
     is_card_tile,
+    is_consumable_tile,
     is_joker_tile,
     is_fraction_tile,
     is_number_like_tile,
+    is_placed_consumable_tile,
     number_digits_ascending,
     tile_counts_as_color,
     tile_number_value,
+    word_starts_ends_consumable,
     word_starts_ends_different_suit,
 )
 from cursed_words_solver.rules.fraction_tiles import (
@@ -1862,6 +1865,16 @@ def _suit_endpoint_indices(board: Board) -> list[int]:
     for i in _active_indices(board):
         tile = board.get_by_index(i)
         if card_suit(tile) or is_joker_tile(tile):
+            out.append(i)
+    return out
+
+
+def _consumable_endpoint_indices(board: Board) -> list[int]:
+    """Board cells that count as consumable path endpoints (placed rack or native)."""
+    out: list[int] = []
+    for i in _active_indices(board):
+        tile = board.get_by_index(i)
+        if is_consumable_tile(tile) or is_placed_consumable_tile(tile):
             out.append(i)
     return out
 
@@ -3912,12 +3925,15 @@ class WordSearcher:
         try:
             end_colors: set[str] = set()
             need_suit_endpoints = False
+            need_consumable_endpoints = False
             need_length = False
             for mr in self._mult_rules:
                 if mr.condition.startswith("ends_with_color:"):
                     end_colors.add(mr.condition.split(":", 1)[1].lower())
                 if mr.condition == "word_starts_ends_different_suit":
                     need_suit_endpoints = True
+                if mr.condition == "word_starts_ends_consumable":
+                    need_consumable_endpoints = True
                 if mr.condition.startswith(
                     ("path_length_gte:", "word_length_gte:")
                 ):
@@ -3985,6 +4001,71 @@ class WordSearcher:
                             if len(path) < self.min_len:
                                 continue
                             if not word_starts_ends_different_suit(board, path):
+                                continue
+                            word = "".join(
+                                resolve_letter(
+                                    board.get_by_index(ix), j, flags=stamp_flags
+                                )
+                                for j, ix in enumerate(path)
+                            ).lower()
+                            if not self.validator.word_ok(
+                                board, path, word, stamp_flags
+                            ):
+                                continue
+                            sc = self._rank_score_for_candidate(
+                                board, path, word, loadout
+                            )
+                            if sc is not None:
+                                cached = self._score_cache.get((tuple(path), word))
+                                candidates.consider(
+                                    sc,
+                                    word,
+                                    path,
+                                    immediate=cached[0] if cached is not None else None,
+                                )
+
+            if need_consumable_endpoints:
+                consumable_ends = _consumable_endpoint_indices(board)
+                for i, a in enumerate(consumable_ends[:8]):
+                    if time.monotonic() >= deadline:
+                        break
+                    for b in consumable_ends[i + 1 : i + 9]:
+                        if a == b:
+                            continue
+                        for path in _paths_between_indices(
+                            board, a, b, cap, flags=stamp_flags
+                        ):
+                            if len(path) < self.min_len:
+                                continue
+                            if not word_starts_ends_consumable(board, path):
+                                continue
+                            word = "".join(
+                                resolve_letter(
+                                    board.get_by_index(ix), j, flags=stamp_flags
+                                )
+                                for j, ix in enumerate(path)
+                            ).lower()
+                            if not self.validator.word_ok(
+                                board, path, word, stamp_flags
+                            ):
+                                continue
+                            sc = self._rank_score_for_candidate(
+                                board, path, word, loadout
+                            )
+                            if sc is not None:
+                                cached = self._score_cache.get((tuple(path), word))
+                                candidates.consider(
+                                    sc,
+                                    word,
+                                    path,
+                                    immediate=cached[0] if cached is not None else None,
+                                )
+                        for path in _paths_between_indices(
+                            board, b, a, cap, flags=stamp_flags
+                        ):
+                            if len(path) < self.min_len:
+                                continue
+                            if not word_starts_ends_consumable(board, path):
                                 continue
                             word = "".join(
                                 resolve_letter(

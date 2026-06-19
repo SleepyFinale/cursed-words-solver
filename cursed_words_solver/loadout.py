@@ -97,6 +97,84 @@ def merge_extras_diff_submit(extras: dict[str, Any], data: dict[str, Any]) -> No
         extras[key] = submit_val
 
 
+BOSS_RECONCILE_EXTRA_KEYS = (
+    "boss_modifiers",
+    "boss_modifier_floor_mods",
+    "boss_cursed",
+    "boss_area_number",
+    "boss_floor_modification",
+)
+
+
+def _boss_modifiers_active(raw: Any) -> bool:
+    if raw is None:
+        return False
+    if isinstance(raw, list):
+        return len(raw) > 0
+    text = str(raw).strip()
+    return bool(text) and text not in ("[]", "")
+
+
+def reconcile_boss_extras_from_extras_diff(
+    extras: dict[str, Any],
+    data: dict[str, Any],
+    *,
+    run_state: dict[str, Any] | None = None,
+) -> None:
+    """Drop stale F8 boss fields when submit-time scoring used no boss modifiers."""
+    diff = data.get("extras_diff")
+    if not isinstance(diff, dict):
+        return
+    for key in ("boss_modifiers", "boss_modifier_floor_mods"):
+        entry = diff.get(key)
+        if not isinstance(entry, dict):
+            continue
+        f8_val = str(entry.get("f8") or "").strip()
+        submit_val = str(entry.get("submit") or "").strip()
+        if not f8_val or submit_val:
+            continue
+        for boss_key in BOSS_RECONCILE_EXTRA_KEYS:
+            extras.pop(boss_key, None)
+        if isinstance(run_state, dict):
+            run_state["boss_id"] = ""
+            run_state["boss_name"] = ""
+            run_state["boss_effect"] = ""
+        return
+
+
+def reconcile_boss_extras_for_f8_embed(run_state: dict[str, Any]) -> None:
+    """Prefer live boss projection when F8 embed carries stale boss from a prior fight."""
+    if not isinstance(run_state, dict):
+        return
+    extras = run_state.get("extras")
+    if not isinstance(extras, dict):
+        return
+    fresh = load_run_state_raw()
+    if not isinstance(fresh, dict):
+        return
+    fresh_extras = fresh.get("extras")
+    if not isinstance(fresh_extras, dict):
+        fresh_extras = {}
+    node_type = str(
+        fresh_extras.get("run_node_type") or extras.get("run_node_type") or ""
+    ).strip()
+    if node_type != "EncounterFirst":
+        return
+    embed_has = _boss_modifiers_active(extras.get("boss_modifiers")) or bool(
+        str(run_state.get("boss_id") or "").strip()
+    )
+    fresh_has = _boss_modifiers_active(fresh_extras.get("boss_modifiers")) or bool(
+        str(fresh.get("boss_id") or "").strip()
+    )
+    if not embed_has or fresh_has:
+        return
+    for key in BOSS_RECONCILE_EXTRA_KEYS:
+        extras.pop(key, None)
+    run_state["boss_id"] = ""
+    run_state["boss_name"] = ""
+    run_state["boss_effect"] = ""
+
+
 def merge_extras_snapshot_into(extras: dict[str, Any], snapshot: dict[str, Any]) -> None:
     """Merge submit-time extras_snapshot (skip Bicycle post-submit counters)."""
     if not isinstance(snapshot, dict):
@@ -178,6 +256,7 @@ def prepare_run_state_dict_for_scoring(data: dict[str, Any]) -> dict[str, Any]:
     extras = dict(run_state.get("extras") or {})
     merge_extras_snapshot_into(extras, data.get("extras_snapshot") or {})
     merge_extras_diff_submit(extras, data)
+    reconcile_boss_extras_from_extras_diff(extras, data, run_state=run_state)
     if extras:
         run_state["extras"] = extras
     merge_submit_board_tile_state(run_state, data)
@@ -1376,6 +1455,8 @@ def prune_historic_incompatible_with_board(
         return False
     if str(extras.get("encounter_historic_source", "") or "").strip() == "green_poison_only":
         return False
+    if str(extras.get("encounter_historic_source", "") or "").strip() == "historic_metadata_only":
+        return False
     if (
         _grid_number_from_extras(extras) == 1
         and _scoring_previous_words_count_from_extras(extras) == 0
@@ -1419,6 +1500,27 @@ def prune_historic_incompatible_with_board(
         extras["historic_words"] = json.dumps(poison_rows, ensure_ascii=False)
         extras["encounter_historic_source"] = "green_poison_only"
         return True
+    if grid >= 2:
+        metadata_rows: list[dict[str, Any]] = []
+        for row in arr:
+            if not isinstance(row, dict):
+                continue
+            meta: dict[str, Any] = {}
+            for key in (
+                "word",
+                "score",
+                "red_tile_count",
+                "green_tile_count",
+                "chess_take_value",
+            ):
+                if key in row and row[key] is not None:
+                    meta[key] = row[key]
+            if meta:
+                metadata_rows.append(meta)
+        if metadata_rows:
+            extras["historic_words"] = json.dumps(metadata_rows, ensure_ascii=False)
+            extras["encounter_historic_source"] = "historic_metadata_only"
+            return True
     extras.pop("historic_words", None)
     extras.pop("red_tiles_used_encounter", None)
     grid = _grid_number_from_extras(extras)
@@ -2164,6 +2266,7 @@ def sanitize_run_state_snapshot_for_f8(
     from cursed_words_solver.fingerprints import loadout_fingerprint as _loadout_fp
 
     extras["loadout_fingerprint"] = _loadout_fp(loadout)
+    reconcile_boss_extras_for_f8_embed(snapshot)
     snapshot["extras"] = extras
     return snapshot
 

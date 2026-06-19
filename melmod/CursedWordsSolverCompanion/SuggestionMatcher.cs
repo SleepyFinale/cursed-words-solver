@@ -376,7 +376,7 @@ namespace CursedWordsSolverCompanion
                 }
 
                 var changed = false;
-        foreach (var key in new[]
+                foreach (var key in new[]
                 {
                     "historic_words",
                     "previous_word_first_letter",
@@ -386,6 +386,8 @@ namespace CursedWordsSolverCompanion
                     "encounter_historic_source",
                     "birthday_cake_bonus",
                     "tile_ninja_bonus",
+                    "tile_ninja_consumables_used",
+                    "tile_ninja_word_bonus_percent",
                     "pin_memory",
                     "pin_memory_count",
                     "consumable_rack_count",
@@ -399,6 +401,57 @@ namespace CursedWordsSolverCompanion
                     {
                         extras[key] = val;
                         changed = true;
+                    }
+                }
+
+                foreach (var key in new[]
+                {
+                    "boss_modifiers",
+                    "boss_modifier_floor_mods",
+                    "boss_cursed",
+                    "boss_area_number",
+                    "boss_floor_modification",
+                })
+                {
+                    string val;
+                    projectedExtras.TryGetValue(key, out val);
+                    val = val ?? "";
+                    var cur = extras[key]?.ToString() ?? "";
+                    if (string.Equals(cur, val, StringComparison.Ordinal))
+                        continue;
+                    if (string.IsNullOrEmpty(val))
+                    {
+                        if (extras.Remove(key))
+                            changed = true;
+                        else if (!string.IsNullOrEmpty(cur))
+                        {
+                            extras.Remove(key);
+                            changed = true;
+                        }
+                    }
+                    else
+                    {
+                        extras[key] = val;
+                        changed = true;
+                    }
+                }
+
+                string projectedBossMods;
+                projectedExtras.TryGetValue("boss_modifiers", out projectedBossMods);
+                projectedBossMods = (projectedBossMods ?? "").Trim();
+                if (string.IsNullOrEmpty(projectedBossMods) || projectedBossMods == "[]")
+                {
+                    var snap = suggestion.run_state_snapshot as JObject;
+                    if (snap != null)
+                    {
+                        var bossId = snap["boss_id"]?.ToString() ?? "";
+                        if (!string.IsNullOrEmpty(bossId))
+                        {
+                            snap["boss_id"] = "";
+                            snap["boss_name"] = "";
+                            snap["boss_effect"] = "";
+                            changed = true;
+                        }
                     }
                 }
 

@@ -149,6 +149,7 @@ namespace CursedWordsSolverCompanion
             "michael_puzzle_grid",
             "encounter_min_word_length",
             "boss_modifier_floor_mods",
+            "boss_modifiers",
         };
 
         public static void ClearBossExtras(Dictionary<string, string> extras)
@@ -479,7 +480,11 @@ namespace CursedWordsSolverCompanion
 
             var nodeType = TryGetCurrentNodeType(player);
             if (!string.IsNullOrEmpty(nodeType))
+            {
                 snapshot.extras["run_node_type"] = nodeType;
+                if (string.Equals(nodeType, "EncounterFirst", StringComparison.Ordinal))
+                    BossResolver.ClearScoringCache();
+            }
         }
 
         private static string TryGetCurrentNodeType(Player player)
@@ -561,7 +566,7 @@ namespace CursedWordsSolverCompanion
             var built = BuildBestHistoricExtras(player, fallbackExtras, liveOnly);
             if (built == null || built.Count == 0)
             {
-                if (!liveOnly && TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
+                if (TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
                 {
                     ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
                     return;
@@ -615,7 +620,7 @@ namespace CursedWordsSolverCompanion
                 || liveHistoric == "[]"
             )
             {
-                if (!liveOnly && TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
+                if (TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
                 {
                     ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
                     return;

@@ -37,10 +37,16 @@ from cursed_words_solver.config import (
     resolve_wordlist,
 )
 from cursed_words_solver.f8_snapshot import (
+    F8_GATHER_POLL_SEC,
+    F8_HISTORIC_CATCHUP_REEXPORT_POLL_SEC,
     F8SuggestionSession,
+    catchup_historic_gather_after_search,
     embed_f8_snapshot,
     gather_f8_snapshot,
+    historic_words_gather_pending,
     session_from_snapshot,
+    sole_gather_miss_is_historic,
+    try_refresh_historic_extras_from_disk,
     write_f8_export_request,
 )
 from cursed_words_solver.suggestion import (
@@ -95,11 +101,13 @@ from cursed_words_solver.rules.quest_scoring import target_met
 from cursed_words_solver.rules.rule_lookup import boss_display_name, resolve_rule_id
 from cursed_words_solver.consumable_placement import (
     consumable_investment_active,
-    consumable_placement_count_on_board,
+    consumables_placed_for_scoring,
     consumable_rack_tiles,
     format_placement_instructions,
     last_placement_search_stats,
     loadout_after_consumable_placements,
+    multi_consumable_placement_beneficial,
+    under_construction_active,
     rack_placement_search_active,
     mandatory_consumable_indices,
     remaining_rack_tiles,
@@ -937,7 +945,12 @@ class SolverApp:
                 return min(share, solve_remaining())
 
             def variant_gen_budget() -> float:
-                return min(2.0, solve_remaining() * 0.05)
+                base = min(2.0, solve_remaining() * 0.05)
+                if under_construction_active(loadout):
+                    return min(10.0, max(base, solve_remaining() * 0.15))
+                if multi_consumable_placement_beneficial(loadout):
+                    return min(6.0, max(base, solve_remaining() * 0.10))
+                return base
             from cursed_words_solver.rules.scoring_conditions import rewind_setup_extras
 
             rewind_notes = rewind_setup_extras(loadout, board)
@@ -1107,6 +1120,22 @@ class SolverApp:
                 elif q.two_wrongs:
                     search_msg += " (inverted target)"
             print(search_msg + "...", flush=True)
+            historic_poll_stop: threading.Event | None = None
+            historic_poll_thread: threading.Thread | None = None
+            if sole_gather_miss_is_historic(snapshot):
+                historic_poll_stop = threading.Event()
+
+                def _historic_poll_worker() -> None:
+                    assert loadout is not None and board is not None
+                    while not historic_poll_stop.wait(F8_GATHER_POLL_SEC):
+                        try_refresh_historic_extras_from_disk(loadout, board)
+
+                historic_poll_thread = threading.Thread(
+                    target=_historic_poll_worker,
+                    name="historic-extras-poll",
+                    daemon=True,
+                )
+                historic_poll_thread.start()
             if constraints.blocked and constraints.block_reason:
                 print(f"  Boss: {constraints.block_reason}", flush=True)
             if self._searcher.search_workers > 1:
@@ -1118,7 +1147,9 @@ class SolverApp:
             search_board = board
             results: list = []
             rescue_budget = search_budget * 0.4
-            rack_boost_share = 0.45 if consumable_investment_active(loadout) else 0.3
+            rack_boost_share = (
+                0.45 if multi_consumable_placement_beneficial(loadout) else 0.3
+            )
             rack_boost_budget = search_budget * rack_boost_share
             if sandy_auto_place and rack_tiles and solve_remaining() >= 1.0:
                 search_board, placement_records, results = (
@@ -1269,6 +1300,11 @@ class SolverApp:
                         "— simulating placements…",
                         flush=True,
                     )
+                    boost_gen_budget = (
+                        None
+                        if under_construction_active(loadout)
+                        else variant_gen_budget()
+                    )
                     boost_board, boost_records, boost_results = (
                         search_consumable_score_boost(
                             self._searcher,
@@ -1280,7 +1316,7 @@ class SolverApp:
                             time_budget=phase_budget(rack_boost_budget),
                             top_n=self.config.top_n_results,
                             rules=rules,
-                            variant_gen_budget=variant_gen_budget(),
+                            variant_gen_budget=boost_gen_budget,
                             solve_deadline=solve_deadline,
                         )
                     )
@@ -1321,9 +1357,15 @@ class SolverApp:
                             else f"{int(baseline_rank)}"
                         )
                         if boost_stats.variants_screened > 0 and best >= 0:
+                            rack_slots = (
+                                f" across {boost_stats.rack_slots_screened} rack tile(s)"
+                                if boost_stats.rack_slots_screened > 0
+                                else ""
+                            )
                             print(
                                 f"  Consumable boost: screened "
-                                f"{boost_stats.variants_screened} variants, "
+                                f"{boost_stats.variants_screened} variants"
+                                f"{rack_slots}, "
                                 f"best rank {int(best)} ≤ baseline {thresh_label} "
                                 "— no placement adopted",
                                 flush=True,
@@ -1535,6 +1577,11 @@ class SolverApp:
                 for err in drain_parallel_worker_errors():
                     print(f"  Parallel worker error: {err}", flush=True)
 
+            if historic_poll_stop is not None:
+                historic_poll_stop.set()
+            if historic_poll_thread is not None:
+                historic_poll_thread.join(timeout=0.5)
+
             pred_trace: list | None = None
             export_warnings: list[str] = []
             capybara_stats = None
@@ -1547,9 +1594,12 @@ class SolverApp:
                     run_state_data if isinstance(run_state_data, dict) else None
                 )
                 f8_loadout = loadout
-                num_placed = consumable_placement_count_on_board(
-                    search_board
-                ) - consumable_placement_count_on_board(board)
+                num_placed = consumables_placed_for_scoring(
+                    board,
+                    search_board,
+                    top.path,
+                    placement_records or None,
+                )
                 score_loadout = loadout_after_consumable_placements(
                     f8_loadout, num_placed
                 )
@@ -1618,13 +1668,45 @@ class SolverApp:
                         if sample_warn:
                             export_warnings.append(sample_warn)
                 session_extras = solver_session_extras_from_loadout(f8_loadout)
+                historic_catchup_stale_note: str | None = None
+                behind_disk_warn: str | None = None
+                if not gather_succeeded or historic_words_gather_pending(snapshot):
+                    catchup_budget = min(2.0, max(1.0, solve_remaining() * 0.05))
+                    reexport_poll = min(
+                        F8_HISTORIC_CATCHUP_REEXPORT_POLL_SEC,
+                        max(1.0, solve_remaining() * 0.1),
+                    )
+                    snapshot, catchup_note, historic_catchup_stale_note, behind_disk_warn = (
+                        catchup_historic_gather_after_search(
+                            snapshot,
+                            rules=self._scoring.rules,
+                            catchup_timeout_sec=catchup_budget,
+                            reexport_poll_sec=reexport_poll,
+                        )
+                    )
+                    if catchup_note:
+                        print(f"  {catchup_note}", flush=True)
+                    run_state_data = snapshot.run_state
+                    score_run_state = (
+                        run_state_data if isinstance(run_state_data, dict) else None
+                    )
+                    if snapshot.loadout is not None:
+                        f8_loadout = snapshot.loadout
+                        loadout = snapshot.loadout
+                    gather_succeeded = (
+                        snapshot.board_available
+                        and snapshot.loadout is not None
+                        and snapshot.extras_ready
+                    )
                 embed_state = embed_f8_snapshot(
                     snapshot,
-                    scoring_loadout=f8_loadout,
+                    scoring_loadout=score_loadout,
                 )
                 block_f8_save, block_f8_reason = f8_should_block_save(
                     gather_succeeded=gather_succeeded,
                     gather_missing=snapshot.gather_missing or None,
+                    historic_catchup_stale_note=historic_catchup_stale_note,
+                    behind_disk_warn=behind_disk_warn,
                     mid_solve_grid_advanced=False,
                     loadout=f8_loadout,
                     board=search_board,
@@ -1638,7 +1720,7 @@ class SolverApp:
                 if not block_f8_save:
                     save_last_suggestion(
                         board=search_board,
-                        loadout=f8_loadout,
+                        loadout=score_loadout,
                         result=top,
                         predicted_trace=pred_trace,
                         run_state_snapshot=embed_state,

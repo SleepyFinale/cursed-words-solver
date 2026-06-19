@@ -25,6 +25,8 @@ namespace CursedWordsSolverCompanion
         private static List<ConsumablePlacementRecord> _consumablePlacements;
         private static Dictionary<string, string> _originalF8ExtrasForDiff =
             new Dictionary<string, string>();
+        private static Dictionary<string, string> _preSyncF8ExtrasForDiff =
+            new Dictionary<string, string>();
         private static Dictionary<string, string> _preWordScoringExtrasForDiff =
             new Dictionary<string, string>();
         private static string _f8PredictionHistoricStaleNote = "";
@@ -53,6 +55,7 @@ namespace CursedWordsSolverCompanion
             _submitBoardSnapshot = null;
             _scoringContextExtras = new Dictionary<string, string>();
             _originalF8ExtrasForDiff = new Dictionary<string, string>();
+            _preSyncF8ExtrasForDiff = new Dictionary<string, string>();
             _preWordScoringExtrasForDiff = new Dictionary<string, string>();
             _f8PredictionHistoricStaleNote = "";
             _suggestion = SuggestionMatcher.Load();
@@ -196,6 +199,9 @@ namespace CursedWordsSolverCompanion
             _originalF8ExtrasForDiff = ExtrasDiffHelper.ExtrasFromRunStateObject(
                 _suggestion?.run_state_snapshot
             );
+            _preSyncF8ExtrasForDiff = _originalF8ExtrasForDiff != null
+                ? new Dictionary<string, string>(_originalF8ExtrasForDiff)
+                : new Dictionary<string, string>();
             _preWordScoringExtrasForDiff = authoritativeExtras != null
                 ? new Dictionary<string, string>(authoritativeExtras)
                 : new Dictionary<string, string>();
@@ -234,6 +240,13 @@ namespace CursedWordsSolverCompanion
                 SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
                 _active = false;
                 return;
+            }
+
+            if (ExtrasDiffHelper.HasBossExtrasDrift(preSyncDiff))
+            {
+                MelonLogger.Warning(
+                    "F8 boss stale — press F8 again before submitting the overlay suggestion."
+                );
             }
 
             SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
@@ -301,9 +314,18 @@ namespace CursedWordsSolverCompanion
 
         public static Dictionary<string, string> GetOriginalF8ExtrasForMismatchDiff()
         {
+            if (_preSyncF8ExtrasForDiff != null && _preSyncF8ExtrasForDiff.Count > 0)
+                return new Dictionary<string, string>(_preSyncF8ExtrasForDiff);
             if (_originalF8ExtrasForDiff == null || _originalF8ExtrasForDiff.Count == 0)
                 return null;
             return new Dictionary<string, string>(_originalF8ExtrasForDiff);
+        }
+
+        public static Dictionary<string, string> GetPreSyncF8ExtrasForStaleCheck()
+        {
+            if (_preSyncF8ExtrasForDiff == null || _preSyncF8ExtrasForDiff.Count == 0)
+                return null;
+            return new Dictionary<string, string>(_preSyncF8ExtrasForDiff);
         }
 
         public static string GetF8PredictionHistoricStaleNote()
@@ -1209,6 +1231,7 @@ namespace CursedWordsSolverCompanion
                 _submitInFlight = false;
                 _submitBoardSnapshot = null;
                 _originalF8ExtrasForDiff = new Dictionary<string, string>();
+            _preSyncF8ExtrasForDiff = new Dictionary<string, string>();
                 _preWordScoringExtrasForDiff = new Dictionary<string, string>();
                 _f8PredictionHistoricStaleNote = "";
                 CalculateOverallScorePatch.LastCalculatedSteps = null;

@@ -2628,6 +2628,23 @@ def test_reink_replay_matches_actual_score() -> None:
     assert int(score) == int(data["actual_score"]) == 48
 
 
+def test_ay_encounter_first_stale_boss_replay() -> None:
+    """Mismatch 20260618_233718: stale Salamander on EncounterFirst (predicted -9, actual 5)."""
+    case_path = FIXTURES / "20260618_233718.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260618_233718 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    loadout = parse_run_state(run_state)
+    assert loadout.extras.get("boss_modifiers") in (None, [], "")
+    assert not str(run_state.get("boss_id") or "").strip()
+    board = parse_board_from_run_state(run_state)
+    score, breakdown = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    effects = breakdown.get("pipeline", {}).get("effects", [])
+    assert not any("per tile (boss)" in e for e in effects)
+    assert int(score) == int(data["actual_score"]) == 5
+
+
 @pytest.mark.parametrize(
     "capture_name",
     ["20260527_233050.json", "20260527_233232.json"],

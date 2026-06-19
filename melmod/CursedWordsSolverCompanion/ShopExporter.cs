@@ -74,6 +74,9 @@ namespace CursedWordsSolverCompanion
         /// <summary>Encounter total used to invalidate stale remaining cache.</summary>
         private static int _lastKnownEncounterTotal = -1;
 
+        /// <summary>Last good encounter score earned when remaining reads fail.</summary>
+        private static int _lastKnownEncounterScoreEarned = -1;
+
         public static void FillShopState(RunStateSnapshot snapshot, Player player)
         {
             if (snapshot == null || player == null)
@@ -364,7 +367,11 @@ namespace CursedWordsSolverCompanion
             if (total >= 0)
             {
                 if (_lastKnownEncounterTotal >= 0 && total != _lastKnownEncounterTotal)
+                {
                     _lastKnownRemainingTarget = -1;
+                    _lastKnownEncounterScoreEarned = -1;
+                    BossResolver.ClearScoringCache();
+                }
                 _lastKnownEncounterTotal = (int)total;
                 snapshot.extras["encounter_total_target"] = total.ToString();
             }
@@ -379,13 +386,43 @@ namespace CursedWordsSolverCompanion
                 remaining = _lastKnownRemainingTarget;
                 snapshot.extras["encounter_remaining_target"] = remaining.ToString();
             }
+            else if (total >= 0 && ShouldAssumeFreshEncounterStart(snapshot))
+            {
+                remaining = total;
+                _lastKnownRemainingTarget = (int)remaining;
+                snapshot.extras["encounter_remaining_target"] = remaining.ToString();
+            }
 
             if (total >= 0 && remaining >= 0)
             {
                 var earned = total - remaining;
                 if (earned >= 0)
+                {
                     snapshot.extras["encounter_score_earned"] = earned.ToString();
+                    _lastKnownEncounterScoreEarned = (int)earned;
+                }
             }
+            else if (total >= 0 && _lastKnownEncounterScoreEarned >= 0)
+            {
+                snapshot.extras["encounter_score_earned"] =
+                    _lastKnownEncounterScoreEarned.ToString();
+            }
+        }
+
+        private static bool ShouldAssumeFreshEncounterStart(RunStateSnapshot snapshot)
+        {
+            if (snapshot?.extras == null)
+                return false;
+
+            string gridRaw;
+            string spcRaw;
+            snapshot.extras.TryGetValue("grid_number", out gridRaw);
+            snapshot.extras.TryGetValue("scoring_previous_words_count", out spcRaw);
+            int gridNum;
+            int spc;
+            int.TryParse((gridRaw ?? "").Trim(), out gridNum);
+            int.TryParse((spcRaw ?? "").Trim(), out spc);
+            return gridNum <= 1 && spc <= 0;
         }
 
         private static long ReadScorePacketField(object target, string fieldName)

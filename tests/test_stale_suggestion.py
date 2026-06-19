@@ -103,6 +103,24 @@ def _stale_f8_extras_note(
                 ):
                     notes.append(f"{key} f8={f8_val} submit={submit_val}")
 
+    for key in ("tile_ninja_consumables_used", "tile_ninja_word_bonus_percent"):
+        entry = extras_diff.get(key)
+        if not entry:
+            continue
+        f8_raw = str(entry.get("f8", "") or "")
+        submit_raw = str(entry.get("submit", "") or "")
+        try:
+            f8_val = int(f8_raw)
+            submit_val = int(submit_raw)
+        except ValueError:
+            if not f8_raw and submit_raw:
+                notes.append(f"{key} f8=(empty) submit={submit_raw}")
+            elif f8_raw and not submit_raw:
+                notes.append(f"{key} f8={f8_raw} submit=(empty)")
+            continue
+        if submit_val > f8_val:
+            notes.append(f"{key} f8={f8_val} submit={submit_val}")
+
     if entry := extras_diff.get("historic_words"):
         f8_raw = str(entry.get("f8", "") or "").strip()
         submit_raw = str(entry.get("submit", "") or "").strip()
@@ -127,6 +145,18 @@ def _stale_f8_extras_note(
     if not notes:
         return None
     return "F8 snapshot stale — " + "; ".join(notes)
+
+
+def test_tile_ninja_extras_drift_is_stale_f8():
+    """Mismatch 20260619_011718: consumables_used 21→23 is workflow stale, not solver bug."""
+    extras_diff = {
+        "tile_ninja_consumables_used": {"f8": "21", "submit": "23"},
+        "tile_ninja_word_bonus_percent": {"f8": "162", "submit": "166"},
+    }
+    note = _stale_f8_extras_note(extras_diff, has_bicycle_pin=False)
+    assert note is not None
+    assert "tile_ninja_consumables_used f8=21 submit=23" in note
+    assert "tile_ninja_word_bonus_percent f8=162 submit=166" in note
 
 
 def _patch_suggestion_path(tmp_path: Path, monkeypatch) -> Path:

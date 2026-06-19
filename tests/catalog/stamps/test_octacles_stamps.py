@@ -128,6 +128,17 @@ def test_oden_game_curse_types_match_tile_get_curse_types():
     assert game_curse_types_for_tile(_tile(0, 0, "?", 0, curse=CurseType.WILDCARD)) == {
         "blank"
     }
+    suited_wild = Tile(
+        0,
+        0,
+        "?",
+        "?",
+        0,
+        TileColor.COLORLESS,
+        CurseType.WILDCARD,
+        metadata={"card_suit": "hearts"},
+    )
+    assert game_curse_types_for_tile(suited_wild) == {"card", "blank"}
 
 
 def test_oden_joker_wildcard_with_chess_doubles_not_triples():
@@ -1368,6 +1379,31 @@ def test_oden_stache_path_two_categories():
     loadout = parse_run_state(run_state)
     score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
     assert int(score) == 50
+
+
+def test_oden_smeeked_suited_wildcard_three_categories():
+    """Mismatch 20260618_230034: suited wildcard adds card+blank → Oden ×3."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+    from cursed_words_solver.rules.scoring_conditions import unique_curse_type_count_on_path
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "mismatches"
+        / "20260618_230034.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    path = data["path"]
+    assert unique_curse_type_count_on_path(board, path) == 3
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert int(score) == 124
 
 
 def test_oden_adorner_path_two_categories():

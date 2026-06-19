@@ -473,6 +473,41 @@ def _salamander_defer_multiply_for_mutating(loadout: Loadout) -> bool:
     return 0 < prior < 8
 
 
+def _inventory_order_slugs(loadout: Loadout | None) -> list[str]:
+    """Sticker order then stamp order (game inventory apply sequence)."""
+    if loadout is None:
+        return []
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    combined: list[str] = []
+    for key in ("sticker_order", "stamp_order"):
+        raw = extras.get(key)
+        parsed: list[str] = []
+        if isinstance(raw, list):
+            parsed = [slugify_name(str(x)) for x in raw]
+        elif isinstance(raw, str) and raw.strip():
+            try:
+                data = json.loads(raw)
+                if isinstance(data, list):
+                    parsed = [slugify_name(str(x)) for x in data]
+            except json.JSONDecodeError:
+                pass
+        combined.extend(parsed)
+    if not combined:
+        combined = [slugify_name(s.id or s.name) for s in (loadout.stickers or [])]
+        combined.extend(slugify_name(s.id or s.name) for s in (loadout.stamps or []))
+    return combined
+
+
+def _inventory_order_index(loadout: Loadout | None, rule_id: str) -> int:
+    """Index in melmod sticker_order + stamp_order for finalize sort."""
+    order = _inventory_order_slugs(loadout)
+    slug = slugify_name(rule_id)
+    try:
+        return order.index(slug)
+    except ValueError:
+        return 999
+
+
 def _sticker_order_index(loadout: Loadout | None, rule_id: str) -> int:
     """Index in melmod sticker_order for finalize sort (unknown rules sort last)."""
     if loadout is None:
@@ -498,19 +533,28 @@ def _sticker_order_index(loadout: Loadout | None, rule_id: str) -> int:
         return 999
 
 
+def _equipped_inventory_slugs(loadout: Loadout | None) -> set[str]:
+    if loadout is None:
+        return set()
+    slugs: set[str] = set()
+    for item in (loadout.stickers or []) + (loadout.stamps or []):
+        slugs.add(slugify_name(str(item.id or item.name)))
+    return slugs
+
+
 def _sort_finalize_steps_by_sticker_order(
     steps: list[tuple], loadout: Loadout | None
 ) -> list[tuple]:
     if len(steps) < 2 or loadout is None:
         return steps
-    equipped = {slugify_name(str(s.id or s.name)) for s in (loadout.stickers or [])}
+    equipped = _equipped_inventory_slugs(loadout)
     for step in steps:
         rid = slugify_name(str(step[2]) if len(step) > 2 else "")
         if rid not in equipped:
             return steps
     return sorted(
         steps,
-        key=lambda step: _sticker_order_index(
+        key=lambda step: _inventory_order_index(
             loadout, str(step[2]) if len(step) > 2 else ""
         ),
     )

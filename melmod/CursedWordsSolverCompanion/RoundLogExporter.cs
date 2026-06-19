@@ -190,9 +190,12 @@ namespace CursedWordsSolverCompanion
                 return "path_mismatch";
             }
 
-            var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
-                ctx.Suggestion.run_state_snapshot
-            );
+            var preSyncF8 = ScoringCaptureSession.GetPreSyncF8ExtrasForStaleCheck();
+            var f8Extras = preSyncF8 != null
+                ? preSyncF8
+                : ExtrasDiffHelper.ExtrasFromRunStateObject(
+                    ctx.Suggestion.run_state_snapshot
+                );
             var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, ctx.ScoringExtras);
             var staleCtx = RunStateExporter.BuildStaleF8Context(
                 RunStateExporter.GetPlayerForUpdate()

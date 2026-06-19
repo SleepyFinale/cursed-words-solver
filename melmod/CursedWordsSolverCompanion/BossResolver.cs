@@ -13,6 +13,7 @@ namespace CursedWordsSolverCompanion
     public static class BossResolver
     {
         private static List<BossModifier> _cachedFromScoring;
+        private static int _cachedFromScoringGridNumber = -1;
 
         public static void CacheFromScoring(List<BossModifier> bossModifiers)
         {
@@ -31,12 +32,16 @@ namespace CursedWordsSolverCompanion
                 if (b != null)
                     _cachedFromScoring.Add(b);
             }
+
+            var grid = RunStateExportFill.CachedGridNumber;
+            _cachedFromScoringGridNumber = grid >= 1 ? grid : _cachedFromScoringGridNumber;
         }
 
         public static void ClearScoringCache()
         {
             if (_cachedFromScoring != null)
                 _cachedFromScoring.Clear();
+            _cachedFromScoringGridNumber = -1;
         }
 
         /// <summary>
@@ -52,8 +57,14 @@ namespace CursedWordsSolverCompanion
                 if (fromEncounter != null && fromEncounter.Count > 0)
                     return fromEncounter;
 
-                // Encounter API can lag one frame; scoring cache is still authoritative mid-fight.
-                if (_cachedFromScoring != null && _cachedFromScoring.Count > 0)
+                if (fromEncounter != null && fromEncounter.Count == 0)
+                {
+                    ClearScoringCache();
+                    return null;
+                }
+
+                // Encounter API unreadable; scoring cache only mid-fight on same grid.
+                if (CanUseScoringCacheFallback(encounter, player))
                     return _cachedFromScoring;
 
                 ClearScoringCache();
@@ -77,8 +88,12 @@ namespace CursedWordsSolverCompanion
             try
             {
                 var list = encounter.GetBossModifiers();
-                if (list != null && list.Count > 0)
+                if (list != null)
+                {
+                    if (list.Count == 0)
+                        return new List<BossModifier>();
                     return list;
+                }
             }
             catch
             {
@@ -101,6 +116,36 @@ namespace CursedWordsSolverCompanion
             catch
             {
                 return null;
+            }
+        }
+
+        private static bool CanUseScoringCacheFallback(
+            EncounterController encounter,
+            Player player
+        )
+        {
+            if (_cachedFromScoring == null || _cachedFromScoring.Count == 0)
+                return false;
+            if (!IsWaitingForWordSubmission(encounter))
+                return false;
+            if (_cachedFromScoringGridNumber < 1)
+                return false;
+            var currentGrid = RunStateExportFill.ResolveGridNumber(player);
+            return currentGrid >= 1 && currentGrid == _cachedFromScoringGridNumber;
+        }
+
+        private static bool IsWaitingForWordSubmission(EncounterController encounter)
+        {
+            if (encounter == null)
+                return false;
+            try
+            {
+                return encounter.GetEncounterThreadStage()
+                    == EncounterThreadStage.WaitingForWordSubmission;
+            }
+            catch
+            {
+                return false;
             }
         }
 

@@ -28,13 +28,22 @@ from cursed_words_solver.rules.rule_lookup import get_pin_scoring_rule, resolve_
 from cursed_words_solver.rules.scoring_conditions import (
     mahjong_consumable_factor,
     placed_consumable_indices,
+    word_starts_ends_consumable,
 )
 from cursed_words_solver.rules.fraction_tiles import (
     attach_fraction_metadata,
     format_fraction_text,
     format_fraction_tile,
 )
-from cursed_words_solver.search import WordSearcher, neighbors_from_tile
+from cursed_words_solver.search import (
+    WordSearcher,
+    _paths_between_indices,
+    neighbors_from_tile,
+)
+
+_ENDPOINT_PATH_MAX_LEN = 10
+_ENDPOINT_PAIR_MIN = 8
+_UC_SCREEN_RANK_BUMP = 1_000_000.0
 
 _COLOR_MAP: dict[str, TileColor] = {
     "colorless": TileColor.COLORLESS,
@@ -69,6 +78,7 @@ class PlacementSearchStats:
 
     variant_gen_sec: float = 0.0
     variants_screened: int = 0
+    rack_slots_screened: int = 0
     best_screened_rank: float = -1.0
     threshold_rank: float | None = None
     adopted: bool = False
@@ -286,6 +296,7 @@ def _sync_tile_ninja_bonus_from_used(extras: dict[str, Any], used: int) -> None:
     extras["tile_ninja_consumables_used"] = str(used)
     extras["tile_ninja_bonus"] = serialized
     extras["tile_ninja_bonus_last_known"] = serialized
+    extras["tile_ninja_word_bonus_percent"] = str(120 + used * 2)
 
 
 def loadout_after_consumable_placements(loadout: Loadout, num_placed: int) -> Loadout:
@@ -327,6 +338,43 @@ def consumable_placement_count_on_board(board: Board) -> int:
         if bool((tile.metadata or {}).get("was_consumable")):
             count += 1
     return count
+
+
+def count_new_path_consumables(
+    base_board: Board,
+    scoring_board: Board,
+    path: list[int],
+) -> int:
+    """Path tiles newly marked ``was_consumable`` on ``scoring_board`` vs ``base_board``."""
+    count = 0
+    for idx in path:
+        if not scoring_board.is_active_index(idx):
+            continue
+        scoring_tile = scoring_board.get_by_index(idx)
+        if not bool((scoring_tile.metadata or {}).get("was_consumable")):
+            continue
+        if not base_board.is_active_index(idx):
+            count += 1
+            continue
+        base_tile = base_board.get_by_index(idx)
+        if not bool((base_tile.metadata or {}).get("was_consumable")):
+            count += 1
+    return count
+
+
+def consumables_placed_for_scoring(
+    base_board: Board,
+    scoring_board: Board,
+    path: list[int],
+    placement_records: list[ConsumablePlacement] | None,
+) -> int:
+    """Rack consumables placed for F8 rescore (max of board diff, records, path)."""
+    from_board = consumable_placement_count_on_board(
+        scoring_board
+    ) - consumable_placement_count_on_board(base_board)
+    from_records = len(placement_records or [])
+    from_path = count_new_path_consumables(base_board, scoring_board, path)
+    return max(from_board, from_records, from_path)
 
 
 def has_exported_consumable_rack(loadout: Loadout) -> bool:
@@ -492,6 +540,21 @@ def consumable_investment_active(loadout: Loadout) -> bool:
     return False
 
 
+def under_construction_active(loadout: Loadout) -> bool:
+    """True when Under Construction rewards words starting and ending on consumables."""
+    for item in loadout.stickers:
+        if (item.id or "").lower() == "under_construction":
+            return True
+    return False
+
+
+def multi_consumable_placement_beneficial(loadout: Loadout) -> bool:
+    """True when placing multiple consumables is worth exploring (investment or endpoints)."""
+    return consumable_investment_active(loadout) or under_construction_active(
+        loadout
+    )
+
+
 def _result_rank_score(result: WordResult) -> float:
     """Search ranking score for a placement candidate (includes setup bonus)."""
     if result.rank_score > 0:
@@ -574,6 +637,30 @@ def _screen_variant_limit(
     return min(screen_cap, by_budget)
 
 
+def _rack_index_sort_key(tile: Tile) -> int:
+    raw = tile.metadata.get("rack_index")
+    try:
+        return int(raw) if raw is not None else 999
+    except (TypeError, ValueError):
+        return 999
+
+
+def _distinct_rack_slots_screened(
+    screened: list[tuple[float, int, list[tuple[int, Tile]], Board, WordResult]],
+) -> int:
+    slots: set[int] = set()
+    for _, _, placements, _, _ in screened:
+        for _, tile in placements:
+            raw = tile.metadata.get("rack_index")
+            if raw is None:
+                continue
+            try:
+                slots.add(int(raw))
+            except (TypeError, ValueError):
+                pass
+    return len(slots)
+
+
 def format_placement_search_stats_line() -> str:
     """One-line summary of the last placement search for terminal logging."""
     stats = last_placement_search_stats()
@@ -585,9 +672,14 @@ def format_placement_search_stats_line() -> str:
         else ""
     )
     adopted = " — adopted" if stats.adopted else ""
+    rack_slots = (
+        f" across {stats.rack_slots_screened} rack tile(s)"
+        if stats.rack_slots_screened > 0
+        else ""
+    )
     return (
         f"Consumable placement: screened {stats.variants_screened} variants"
-        f"{best}{adopted}"
+        f"{rack_slots}{best}{adopted}"
     )
 
 
@@ -619,6 +711,106 @@ def _consumable_investment_cell_bonus(
     return bonus
 
 
+def _cell_letter_connectivity(board: Board, idx: int, rack_tile: Tile) -> float:
+    letter = (rack_tile.letter or "").strip().lower()
+    connectivity = 0.0
+    for nbr in neighbors_from_tile(board, [idx], {idx}):
+        ntile = board.get_by_index(nbr)
+        nl = (ntile.letter or ntile.char or "").strip().lower()
+        if letter and nl and len(nl) == 1 and nl.isalpha():
+            connectivity += 1.0
+    return connectivity
+
+
+def _cells_have_path_between(board: Board, start: int, end: int) -> bool:
+    if start == end:
+        return False
+    cap = _ENDPOINT_PATH_MAX_LEN
+    if _paths_between_indices(board, start, end, cap, path_cap=1):
+        return True
+    return bool(_paths_between_indices(board, end, start, cap, path_cap=1))
+
+
+def _screened_entry_rank(
+    rank: float,
+    sim_board: Board,
+    result: WordResult,
+    loadout: Loadout,
+) -> float:
+    """Boost screened ordering when Under Construction endpoints are satisfied."""
+    if (
+        under_construction_active(loadout)
+        and result.path
+        and word_starts_ends_consumable(sim_board, result.path)
+    ):
+        return rank + _UC_SCREEN_RANK_BUMP
+    return rank
+
+
+def _endpoint_placement_variants_for_tier(
+    board: Board,
+    rack_tiles: list[Tile],
+    cells: list[int],
+    *,
+    tier_cap: int,
+    loadout: Loadout | None = None,
+    rules: dict[str, Any] | None = None,
+) -> list[list[tuple[int, Tile]]]:
+    """k=2 variants where both cells can serve as path endpoints (Under Construction)."""
+    directed_pairs: list[tuple[int, int]] = []
+    seen: set[tuple[int, int]] = set()
+    for i, start in enumerate(cells):
+        for end in cells[i + 1 :]:
+            if _cells_have_path_between(board, start, end):
+                for pair in ((start, end), (end, start)):
+                    if pair not in seen:
+                        seen.add(pair)
+                        directed_pairs.append(pair)
+    if len(directed_pairs) < _ENDPOINT_PAIR_MIN:
+        return []
+
+    heap: list[tuple[float, tuple[int, ...], int, list[tuple[int, Tile]]]] = []
+    seq = count()
+    for tile_combo in combinations(rack_tiles, 2):
+        for start, end in directed_pairs:
+            for placements in (
+                [(start, tile_combo[0]), (end, tile_combo[1])],
+                [(start, tile_combo[1]), (end, tile_combo[0])],
+            ):
+                rank = _placement_rank(
+                    board, placements, loadout=loadout, rules=rules
+                )
+                tie = (start, end)
+                entry = (-rank, tie, next(seq), placements)
+                if len(heap) < tier_cap:
+                    heapq.heappush(heap, entry)
+                elif rank > -heap[0][0]:
+                    heapq.heapreplace(heap, entry)
+    heap.sort(key=lambda row: (row[0], row[1]))
+    return [placements for _, _, _, placements in heap]
+
+
+def _endpoint_pair_bonus(
+    board: Board,
+    placements: list[tuple[int, Tile]],
+    *,
+    loadout: Loadout | None = None,
+) -> float:
+    """Bias k=2 variants toward viable Under Construction endpoint pairs."""
+    if loadout is None or not under_construction_active(loadout):
+        return 0.0
+    if len(placements) != 2:
+        return 0.0
+    (idx_a, tile_a), (idx_b, tile_b) = placements
+    if idx_a == idx_b:
+        return 0.0
+    conn_a = _cell_letter_connectivity(board, idx_a, tile_a)
+    conn_b = _cell_letter_connectivity(board, idx_b, tile_b)
+    if conn_a < 1.0 or conn_b < 1.0:
+        return 0.0
+    return 15.0 + conn_a + conn_b
+
+
 def _placement_cell_score(
     board: Board,
     idx: int,
@@ -627,13 +819,7 @@ def _placement_cell_score(
     loadout: Loadout | None = None,
     rules: dict[str, Any] | None = None,
 ) -> float:
-    letter = (rack_tile.letter or "").strip().lower()
-    connectivity = 0.0
-    for nbr in neighbors_from_tile(board, [idx], {idx}):
-        ntile = board.get_by_index(nbr)
-        nl = (ntile.letter or ntile.char or "").strip().lower()
-        if letter and nl and len(nl) == 1 and nl.isalpha():
-            connectivity += 1.0
+    connectivity = _cell_letter_connectivity(board, idx, rack_tile)
     tile_value = _mahjong_tile_value(rack_tile, loadout, rules)
     investment = _consumable_investment_cell_bonus(rack_tile, loadout)
     return connectivity * 10.0 + tile_value + investment
@@ -665,10 +851,11 @@ def _placement_rank(
     loadout: Loadout | None = None,
     rules: dict[str, Any] | None = None,
 ) -> float:
-    return sum(
+    base = sum(
         _placement_cell_score(board, idx, tile, loadout=loadout, rules=rules)
         for idx, tile in placements
     )
+    return base + _endpoint_pair_bonus(board, placements, loadout=loadout)
 
 
 def _rank_placement_indices(
@@ -726,15 +913,33 @@ def _top_variants_for_tier(
         ranked = [
             (
                 _placement_cell_score(
-                    board, idx, rack_tiles[0], loadout=loadout, rules=rules
+                    board, idx, rack_tile, loadout=loadout, rules=rules
                 ),
-                [idx],
-                [(idx, rack_tiles[0])],
+                _rack_index_sort_key(rack_tile),
+                idx,
+                [(idx, rack_tile)],
             )
+            for rack_tile in rack_tiles
             for idx in cells
         ]
-        ranked.sort(key=lambda row: (-row[0], row[1]))
-        return [placements for _, _, placements in ranked[:tier_cap]]
+        ranked.sort(key=lambda row: (-row[0], row[1], row[2]))
+        return [placements for _, _, _, placements in ranked[:tier_cap]]
+
+    if (
+        k == 2
+        and loadout is not None
+        and under_construction_active(loadout)
+    ):
+        endpoint_variants = _endpoint_placement_variants_for_tier(
+            board,
+            rack_tiles,
+            cells,
+            tier_cap=tier_cap,
+            loadout=loadout,
+            rules=rules,
+        )
+        if endpoint_variants:
+            return endpoint_variants
 
     heap: list[tuple[float, tuple[int, ...], int, list[tuple[int, Tile]]]] = []
     seq = count()
@@ -768,8 +973,6 @@ def _placement_variants(
     cells = _rank_placement_indices(
         board, rack_tiles, loadout=loadout, rules=rules
     )
-    if k == 1:
-        return [[(idx, rack_tiles[0])] for idx in cells]
     tier_cap = _tier_heap_cap(max_variants) if k >= 4 else max_variants
     return _top_variants_for_tier(
         board,
@@ -1026,6 +1229,7 @@ def _finalize_placement_search(
     _last_placement_search_stats = PlacementSearchStats(
         variant_gen_sec=variant_gen_sec,
         variants_screened=variants_screened,
+        rack_slots_screened=_distinct_rack_slots_screened(screened),
         best_screened_rank=_best_screened_rank(screened),
         threshold_rank=float(threshold) if threshold is not None else None,
         adopted=False,
@@ -1034,12 +1238,16 @@ def _finalize_placement_search(
     if not screened:
         return board, [], []
 
-    investment = consumable_investment_active(loadout)
-    if prefer_fewest_tiles and min_score is not None and not investment:
+    multi_consumable = multi_consumable_placement_beneficial(loadout)
+    uc_active = under_construction_active(loadout)
+    if prefer_fewest_tiles and min_score is not None and not multi_consumable:
         min_tiles = min(row[1] for row in screened)
         screened = [row for row in screened if row[1] == min_tiles]
 
-    screened.sort(key=lambda row: (-row[0], row[1]))
+    if uc_active:
+        screened.sort(key=lambda row: (-row[0], -row[1]))
+    else:
+        screened.sort(key=lambda row: (-row[0], row[1]))
     finalists = screened[: min(12, len(screened))]
 
     total_budget = max(2.0, float(time_budget))
@@ -1049,7 +1257,7 @@ def _finalize_placement_search(
     per_refine = max(refine_floor, refine_share / len(finalists))
 
     best_rank = -1.0
-    best_tile_count = 999
+    best_tile_count = 0 if uc_active else 999
     best_board = board
     best_records: list[ConsumablePlacement] = []
     best_results: list[WordResult] = []
@@ -1078,11 +1286,16 @@ def _finalize_placement_search(
                 results[0], min_score=min_score, min_rank_score=min_rank_score
             ):
                 continue
-            better = rank > best_rank or (
-                prefer_fewest_tiles
-                and rank == best_rank
-                and tile_count < best_tile_count
-            )
+            better = rank > best_rank
+            if not better and rank == best_rank:
+                if uc_active and tile_count > best_tile_count:
+                    better = True
+                elif (
+                    prefer_fewest_tiles
+                    and not uc_active
+                    and tile_count < best_tile_count
+                ):
+                    better = True
             if better:
                 best_rank = rank
                 best_tile_count = tile_count
@@ -1125,7 +1338,7 @@ def _screen_placement_variants(
     tier_qualifying = False
     prev_budget = searcher.time_budget
     variants_screened = 0
-    investment = consumable_investment_active(loadout)
+    multi_consumable = multi_consumable_placement_beneficial(loadout)
     prev_workers = searcher.search_workers
     use_serial = _placement_search_use_serial(
         searcher,
@@ -1163,13 +1376,19 @@ def _screen_placement_variants(
                 continue
             rank = _result_rank_score(result)
             screened.append(
-                (rank, len(placements), placements, sim_board, result)
+                (
+                    _screened_entry_rank(rank, sim_board, result, loadout),
+                    len(placements),
+                    placements,
+                    sim_board,
+                    result,
+                )
             )
             tier_qualifying = True
             if (
                 not screen_full_tier
                 and prefer_fewest_tiles
-                and not investment
+                and not multi_consumable
                 and min_score is not None
                 and result.score >= min_score
             ):
@@ -1206,13 +1425,13 @@ def _run_placement_search(
             deadline=solve_deadline,
         )
 
-    investment = consumable_investment_active(loadout)
+    multi_consumable = multi_consumable_placement_beneficial(loadout)
     hard = _placement_search_hard(searcher, loadout)
-    screen_floor = _placement_screen_floor(investment=investment, hard=hard)
+    screen_floor = _placement_screen_floor(investment=multi_consumable, hard=hard)
     total_budget = max(2.0, float(time_budget))
-    screen_share = _placement_screen_share(total_budget, investment=investment)
+    screen_share = _placement_screen_share(total_budget, investment=multi_consumable)
     screen_cap = (
-        _SCREEN_VARIANT_CAP_INVESTMENT if investment else _SCREEN_VARIANT_CAP_DEFAULT
+        _SCREEN_VARIANT_CAP_INVESTMENT if multi_consumable else _SCREEN_VARIANT_CAP_DEFAULT
     )
     screen_limit = _screen_variant_limit(screen_share, screen_floor, screen_cap)
     screen_variants = _cap_variants_for_screening(
@@ -1225,7 +1444,7 @@ def _run_placement_search(
     per_screen = _placement_per_screen(
         screen_share,
         len(screen_variants),
-        investment=investment,
+        investment=multi_consumable,
         hard=hard,
     )
     base_required = searcher.validator.required_consumable_indices
@@ -1284,22 +1503,26 @@ def _run_tiered_placement_search(
         return board, [], []
 
     rules = rules or {}
-    investment = consumable_investment_active(loadout)
+    multi_consumable = multi_consumable_placement_beneficial(loadout)
+    uc_active = under_construction_active(loadout)
+    uc_only = uc_active and not consumable_investment_active(loadout)
+    min_tier = 2 if uc_active else 1
+    n = len(rack_tiles)
+    max_tier = min(n, 2) if uc_only else n
     hard = _placement_search_hard(searcher, loadout)
-    screen_floor = _placement_screen_floor(investment=investment, hard=hard)
+    screen_floor = _placement_screen_floor(investment=multi_consumable, hard=hard)
     cells = _rank_placement_indices(
         board, rack_tiles, loadout=loadout, rules=rules
     )
-    n = len(rack_tiles)
     tier_cap = _tier_heap_cap(max_variants)
-    if investment and n >= 4:
+    if multi_consumable and n >= 4:
         tier_cap = max(tier_cap, _tier_heap_cap(max_variants + 32))
 
     total_budget = max(2.0, float(time_budget))
-    screen_share = _placement_screen_share(total_budget, investment=investment)
+    screen_share = _placement_screen_share(total_budget, investment=multi_consumable)
     remaining_screen = screen_share
     screen_cap = (
-        _SCREEN_VARIANT_CAP_INVESTMENT if investment else _SCREEN_VARIANT_CAP_DEFAULT
+        _SCREEN_VARIANT_CAP_INVESTMENT if multi_consumable else _SCREEN_VARIANT_CAP_DEFAULT
     )
     screen_limit = _screen_variant_limit(screen_share, screen_floor, screen_cap)
 
@@ -1309,7 +1532,7 @@ def _run_tiered_placement_search(
     variant_gen_started = time.monotonic()
     base_required = searcher.validator.required_consumable_indices
 
-    for k in range(1, n + 1):
+    for k in range(1, max_tier + 1):
         tier_started = time.monotonic()
         tier_variants = _top_variants_for_tier(
             board,
@@ -1334,7 +1557,7 @@ def _run_tiered_placement_search(
         per_screen = _placement_per_screen(
             remaining_screen,
             len(tier_screen_batch),
-            investment=investment,
+            investment=multi_consumable,
             hard=hard,
         )
         tier_screened, tier_count, tier_qualifying = _screen_placement_variants(
@@ -1359,13 +1582,16 @@ def _run_tiered_placement_search(
 
         if (
             prefer_fewest_tiles
-            and not investment
+            and not multi_consumable
             and min_score is not None
             and tier_qualifying
         ):
             break
         if variant_gen_budget is not None:
-            if time.monotonic() - variant_gen_started >= variant_gen_budget:
+            if (
+                k >= min_tier
+                and time.monotonic() - variant_gen_started >= variant_gen_budget
+            ):
                 break
 
     return _finalize_placement_search(
@@ -1507,7 +1733,15 @@ def search_consumable_score_boost(
         else baseline_score
     )
     min_rank = float(baseline_rank) + 1e-9
-    max_variants = 128 if consumable_investment_active(loadout) and len(rack_tiles) >= 4 else 96
+    rack_n = len(rack_tiles)
+    max_variants = 96
+    if multi_consumable_placement_beneficial(loadout) and rack_n >= 4:
+        max_variants = 128
+    elif under_construction_active(loadout) and rack_n >= 2:
+        max_variants = 128
+    prefer_fewest = not under_construction_active(loadout)
+    if under_construction_active(loadout):
+        variant_gen_budget = None
     sim_board, records, results = _run_tiered_placement_search(
         searcher,
         board,
@@ -1516,7 +1750,7 @@ def search_consumable_score_boost(
         time_budget=time_budget,
         top_n=top_n,
         min_rank_score=min_rank,
-        prefer_fewest_tiles=True,
+        prefer_fewest_tiles=prefer_fewest,
         require_placements_in_path=True,
         rules=rules,
         variant_gen_budget=variant_gen_budget,

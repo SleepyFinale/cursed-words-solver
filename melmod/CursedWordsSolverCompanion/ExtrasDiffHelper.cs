@@ -52,6 +52,18 @@ namespace CursedWordsSolverCompanion
 
 
 
+        private static readonly string[] StaleF8TileNinjaIntKeys =
+
+        {
+
+            "tile_ninja_consumables_used",
+
+            "tile_ninja_word_bonus_percent",
+
+        };
+
+
+
         private static readonly string[] StaleF8StringKeys =
 
         {
@@ -63,6 +75,40 @@ namespace CursedWordsSolverCompanion
             "birthday_cake_bonus",
 
         };
+
+
+
+        private static readonly string[] StaleF8BossKeys =
+
+        {
+
+            "boss_modifiers",
+
+            "boss_modifier_floor_mods",
+
+            "boss_cursed",
+
+            "boss_area_number",
+
+            "boss_floor_modification",
+
+        };
+
+
+
+        /// <summary>
+
+        /// True when F8 embed had boss extras that submit-time scoring did not use.
+
+        /// </summary>
+
+        public static bool HasBossExtrasDrift(Dictionary<string, object> extrasDiff)
+
+        {
+
+            return CollectBossDriftNotes(extrasDiff).Count > 0;
+
+        }
 
 
 
@@ -128,7 +174,11 @@ namespace CursedWordsSolverCompanion
 
             var bicycle = CollectBicycleDriftNotes(extrasDiff, ctx);
 
-            if (workflow.Count == 0 && bicycle.Count == 0)
+            var tileNinja = CollectTileNinjaDriftNotes(extrasDiff);
+
+            var boss = CollectBossDriftNotes(extrasDiff);
+
+            if (workflow.Count == 0 && bicycle.Count == 0 && tileNinja.Count == 0 && boss.Count == 0)
 
                 return null;
 
@@ -139,6 +189,10 @@ namespace CursedWordsSolverCompanion
             notes.AddRange(workflow);
 
             notes.AddRange(bicycle);
+
+            notes.AddRange(tileNinja);
+
+            notes.AddRange(boss);
 
 
 
@@ -1075,6 +1129,128 @@ namespace CursedWordsSolverCompanion
                 }
 
             }
+
+
+
+            return notes;
+
+        }
+
+
+
+        private static List<string> CollectBossDriftNotes(Dictionary<string, object> extrasDiff)
+
+        {
+
+            var notes = new List<string>();
+
+            if (extrasDiff == null || extrasDiff.Count == 0)
+
+                return notes;
+
+
+
+            foreach (var key in StaleF8BossKeys)
+
+            {
+
+                if (!extrasDiff.TryGetValue(key, out var raw))
+
+                    continue;
+
+                var entry = raw as Dictionary<string, string>;
+
+                if (entry == null)
+
+                    continue;
+
+
+
+                string f8Val;
+
+                string submitVal;
+
+                entry.TryGetValue("f8", out f8Val);
+
+                entry.TryGetValue("submit", out submitVal);
+
+                f8Val = (f8Val ?? "").Trim();
+
+                submitVal = (submitVal ?? "").Trim();
+
+                if (string.IsNullOrEmpty(f8Val))
+
+                    continue;
+
+                if (string.Equals(f8Val, submitVal, StringComparison.Ordinal))
+
+                    continue;
+
+
+
+                notes.Add(
+
+                    key
+
+                        + " f8='"
+
+                        + TruncateBossDriftValue(f8Val)
+
+                        + "' submit='"
+
+                        + TruncateBossDriftValue(submitVal)
+
+                        + "'"
+
+                );
+
+            }
+
+
+
+            return notes;
+
+        }
+
+
+
+        private static string TruncateBossDriftValue(string value)
+
+        {
+
+            if (string.IsNullOrEmpty(value))
+
+                return "(empty)";
+
+            if (value.Length <= 48)
+
+                return value;
+
+            return value.Substring(0, 45) + "...";
+
+        }
+
+
+
+        private static List<string> CollectTileNinjaDriftNotes(
+
+            Dictionary<string, object> extrasDiff
+
+        )
+
+        {
+
+            var notes = new List<string>();
+
+            if (extrasDiff == null || extrasDiff.Count == 0)
+
+                return notes;
+
+
+
+            foreach (var key in StaleF8TileNinjaIntKeys)
+
+                TryAddStaleIntDriftNote(extrasDiff, key, notes, requireSubmitHigher: true);
 
 
 
