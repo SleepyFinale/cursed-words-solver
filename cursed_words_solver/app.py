@@ -539,13 +539,15 @@ class SolverApp:
 
         if LAST_SUGGESTION_PATH.exists():
             from cursed_words_solver.suggestion import (
-                fingerprint_invalidate_suppressed_for_consumable_placement,
+                fingerprint_invalidate_suppressed_for_suggested_board_change,
             )
 
-            placement_in_progress = fingerprint_invalidate_suppressed_for_consumable_placement(
-                board_fp
+            suggested_board_change = (
+                fingerprint_invalidate_suppressed_for_suggested_board_change(
+                    board_fp
+                )
             )
-            if placement_in_progress:
+            if suggested_board_change:
                 self._last_invalidation_reason = None
             reason = poll_invalidate_last_suggestion(
                 extras if isinstance(extras, dict) else None,
@@ -554,7 +556,7 @@ class SolverApp:
                 active_session=self._active_suggestion_session,
             )
             if reason and reason != self._last_invalidation_reason:
-                if not placement_in_progress:
+                if not suggested_board_change:
                     self._last_invalidation_reason = reason
                     self._active_suggestion_session = None
                     self._clear_highlight_state()
@@ -598,10 +600,10 @@ class SolverApp:
         current_tiles = tiles_fp_fn(current_board_fp)
         if saved_tiles and current_tiles and saved_tiles != current_tiles:
             from cursed_words_solver.suggestion import (
-                fingerprint_invalidate_suppressed_for_consumable_placement,
+                fingerprint_invalidate_suppressed_for_suggested_board_change,
             )
 
-            if not fingerprint_invalidate_suppressed_for_consumable_placement(
+            if not fingerprint_invalidate_suppressed_for_suggested_board_change(
                 current_board_fp
             ):
                 self._clear_highlight_state()

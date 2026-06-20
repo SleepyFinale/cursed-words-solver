@@ -27,6 +27,7 @@ namespace CursedWordsSolverCompanion
         public string solver_version;
         public string created_at;
         public List<SuggestedConsumablePlacement> consumable_placements;
+        public JObject twinkle_toes_swap;
     }
 
     public static class SuggestionMatcher

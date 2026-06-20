@@ -143,32 +143,92 @@ def _placement_cells_from_records(
     return placement_cells
 
 
+def _twinkle_swap_coords_from_record(
+    swap: Any,
+) -> tuple[tuple[int, int], tuple[int, int]] | None:
+    if swap is None:
+        return None
+    if isinstance(swap, dict):
+        row_a = swap.get("row_a")
+        col_a = swap.get("col_a")
+        row_b = swap.get("row_b")
+        col_b = swap.get("col_b")
+    else:
+        row_a = getattr(swap, "row_a", None)
+        col_a = getattr(swap, "col_a", None)
+        row_b = getattr(swap, "row_b", None)
+        col_b = getattr(swap, "col_b", None)
+    try:
+        return (int(row_a), int(col_a)), (int(row_b), int(col_b))
+    except (TypeError, ValueError):
+        return None
+
+
+def fingerprint_change_is_suggested_board_progress(
+    saved_board_fp: str,
+    current_board_fp: str,
+    *,
+    placements: list[Any] | None = None,
+    swap: Any | None = None,
+) -> bool:
+    """True when board drift matches suggested consumable placements and/or Twinkle Toes swap."""
+    placement_cells = _placement_cells_from_records(placements or [])
+    swap_coords = _twinkle_swap_coords_from_record(swap)
+    swap_keys: set[tuple[int, int]] = set()
+    if swap_coords is not None:
+        swap_keys = {swap_coords[0], swap_coords[1]}
+
+    if not placement_cells and not swap_keys:
+        return False
+
+    saved = _parse_board_fp_tiles(saved_board_fp)
+    current = _parse_board_fp_tiles(current_board_fp)
+    if not saved or not current:
+        return False
+
+    if swap_coords is not None:
+        key_a, key_b = swap_coords
+        if key_a not in saved or key_b not in saved:
+            return False
+
+    all_keys = set(saved) | set(current)
+    changed_keys = {key for key in all_keys if saved.get(key) != current.get(key)}
+    if not changed_keys:
+        return False
+
+    allowed_keys = set(placement_cells.keys()) | swap_keys
+    if not changed_keys.issubset(allowed_keys):
+        return False
+
+    for key in changed_keys:
+        if key in placement_cells:
+            if not _fp_tile_matches_placement(placement_cells[key], current.get(key, "")):
+                return False
+
+    if swap_coords is not None:
+        key_a, key_b = swap_coords
+        if key_a not in placement_cells and key_a in changed_keys:
+            if saved.get(key_b) != current.get(key_a):
+                return False
+        if key_b not in placement_cells and key_b in changed_keys:
+            if saved.get(key_a) != current.get(key_b):
+                return False
+
+    return True
+
+
 def fingerprint_change_is_consumable_placement_progress(
     saved_board_fp: str,
     current_board_fp: str,
     placements: list[Any],
 ) -> bool:
     """True when board drift is only rack consumables placed at suggested cells (partial OK)."""
-    if not placements:
-        return False
-    saved = _parse_board_fp_tiles(saved_board_fp)
-    current = _parse_board_fp_tiles(current_board_fp)
-    if not saved or not current:
-        return False
-    placement_cells = _placement_cells_from_records(placements)
-    if not placement_cells:
-        return False
-    all_keys = set(saved) | set(current)
-    changed_keys = {key for key in all_keys if saved.get(key) != current.get(key)}
-    if not changed_keys:
-        return False
-    for key in changed_keys:
-        if key not in placement_cells:
-            return False
-        cur_tile = current.get(key, "")
-        if not _fp_tile_matches_placement(placement_cells[key], cur_tile):
-            return False
-    return True
+    return fingerprint_change_is_suggested_board_progress(
+        saved_board_fp,
+        current_board_fp,
+        placements=placements,
+        swap=None,
+    )
 
 
 def fingerprint_change_is_suggested_consumable_placement_only(
@@ -198,10 +258,74 @@ def fingerprint_invalidate_suppressed_for_consumable_placement(
     cur_board = (current_board_fp or "").strip()
     if not saved_board or not cur_board or saved_board == cur_board:
         return False
-    return fingerprint_change_is_suggested_consumable_placement_only(
+    return fingerprint_change_is_suggested_board_progress(
         saved_board,
         cur_board,
-        placements,
+        placements=placements,
+        swap=None,
+    )
+
+
+def fingerprint_change_is_twinkle_toes_swap_progress(
+    saved_board_fp: str,
+    current_board_fp: str,
+    swap: Any,
+) -> bool:
+    """True when board drift is only the suggested Twinkle Toes tile swap."""
+    return fingerprint_change_is_suggested_board_progress(
+        saved_board_fp,
+        current_board_fp,
+        placements=None,
+        swap=swap,
+    )
+
+
+def fingerprint_invalidate_suppressed_for_twinkle_toes_swap(
+    current_board_fp: str,
+) -> bool:
+    """Keep F8 suggestion/highlight when user performed the suggested Twinkle Toes swap."""
+    data = _last_suggestion_fingerprint_data()
+    if data is None:
+        return False
+    swap = data.get("twinkle_toes_swap")
+    if not isinstance(swap, dict) or not swap:
+        return False
+    saved_board = str(data.get("board_fingerprint") or "").strip()
+    cur_board = (current_board_fp or "").strip()
+    if not saved_board or not cur_board or saved_board == cur_board:
+        return False
+    return fingerprint_change_is_suggested_board_progress(
+        saved_board,
+        cur_board,
+        placements=None,
+        swap=swap,
+    )
+
+
+def fingerprint_invalidate_suppressed_for_suggested_board_change(
+    current_board_fp: str,
+) -> bool:
+    """Keep F8 suggestion when board drift matches suggested consumables and/or swap."""
+    data = _last_suggestion_fingerprint_data()
+    if data is None:
+        return False
+    saved_board = str(data.get("board_fingerprint") or "").strip()
+    cur_board = (current_board_fp or "").strip()
+    if not saved_board or not cur_board or saved_board == cur_board:
+        return False
+    placements = data.get("consumable_placements")
+    if not isinstance(placements, list):
+        placements = None
+    swap = data.get("twinkle_toes_swap")
+    if not isinstance(swap, dict) or not swap:
+        swap = None
+    if not placements and swap is None:
+        return False
+    return fingerprint_change_is_suggested_board_progress(
+        saved_board,
+        cur_board,
+        placements=placements,
+        swap=swap,
     )
 
 
@@ -236,6 +360,8 @@ def stale_suggestion_warning(
             "Note: last F8 was for a different run — "
             "press F8 to refresh before submitting."
         )
+    if fingerprint_invalidate_suppressed_for_suggested_board_change(current):
+        return None
     return (
         "Note: board changed since last F8 — "
         "press F8 again before submitting."
@@ -743,7 +869,7 @@ def poll_invalidate_last_suggestion(
     if not LAST_SUGGESTION_PATH.exists():
         return None
 
-    if fingerprint_invalidate_suppressed_for_consumable_placement(
+    if fingerprint_invalidate_suppressed_for_suggested_board_change(
         current_board_fp
     ):
         return None

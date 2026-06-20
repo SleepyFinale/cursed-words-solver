@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Newtonsoft.Json.Linq;
 
 namespace CursedWordsSolverCompanion
 {
@@ -16,7 +17,7 @@ namespace CursedWordsSolverCompanion
     }
 
     /// <summary>
-    /// Board fingerprint drift tolerance when the player places suggested rack consumables.
+    /// Board fingerprint drift tolerance for suggested consumables and/or Twinkle Toes swap.
     /// Parity contract: tests/test_suggestion_placement.py (Python solver).
     /// </summary>
     public static class ConsumablePlacementHelper
@@ -49,20 +50,47 @@ namespace CursedWordsSolverCompanion
             var current = currentBoardFingerprint ?? "";
             if (string.Equals(saved, current, StringComparison.Ordinal))
                 return true;
-            return IsConsumablePlacementProgress(
+            return IsSuggestedBoardProgress(
                 saved,
                 current,
-                suggestion.consumable_placements
+                suggestion.consumable_placements,
+                suggestion.twinkle_toes_swap
             );
         }
 
-        public static bool IsConsumablePlacementProgress(
+        public static bool IsSuggestedBoardProgress(
             string savedBoardFingerprint,
             string currentBoardFingerprint,
-            List<SuggestedConsumablePlacement> placements
+            List<SuggestedConsumablePlacement> placements,
+            JObject swap
         )
         {
-            if (placements == null || placements.Count == 0)
+            var placementCells = PlacementCellsFromRecords(placements);
+            string keyA = null;
+            string keyB = null;
+            var swapKeys = new HashSet<string>(StringComparer.Ordinal);
+
+            if (swap != null)
+            {
+                int rowA;
+                int colA;
+                int rowB;
+                int colB;
+                if (
+                    TryReadSwapCoord(swap, "row_a", out rowA)
+                    && TryReadSwapCoord(swap, "col_a", out colA)
+                    && TryReadSwapCoord(swap, "row_b", out rowB)
+                    && TryReadSwapCoord(swap, "col_b", out colB)
+                )
+                {
+                    keyA = rowA + "," + colA;
+                    keyB = rowB + "," + colB;
+                    swapKeys.Add(keyA);
+                    swapKeys.Add(keyB);
+                }
+            }
+
+            if (placementCells.Count == 0 && swapKeys.Count == 0)
                 return false;
 
             var saved = ParseBoardFpTiles(savedBoardFingerprint);
@@ -70,9 +98,11 @@ namespace CursedWordsSolverCompanion
             if (saved.Count == 0 || current.Count == 0)
                 return false;
 
-            var placementCells = PlacementCellsFromRecords(placements);
-            if (placementCells.Count == 0)
-                return false;
+            if (keyA != null && keyB != null)
+            {
+                if (!saved.ContainsKey(keyA) || !saved.ContainsKey(keyB))
+                    return false;
+            }
 
             var allKeys = new HashSet<string>();
             foreach (var key in saved.Keys)
@@ -96,11 +126,23 @@ namespace CursedWordsSolverCompanion
             if (changedKeys.Count == 0)
                 return false;
 
+            var allowedKeys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var key in placementCells.Keys)
+                allowedKeys.Add(key);
+            foreach (var key in swapKeys)
+                allowedKeys.Add(key);
+
+            foreach (var key in changedKeys)
+            {
+                if (!allowedKeys.Contains(key))
+                    return false;
+            }
+
             foreach (var key in changedKeys)
             {
                 string placementLetter;
                 if (!placementCells.TryGetValue(key, out placementLetter))
-                    return false;
+                    continue;
 
                 string curTile;
                 if (!current.TryGetValue(key, out curTile) || string.IsNullOrEmpty(curTile))
@@ -110,7 +152,76 @@ namespace CursedWordsSolverCompanion
                     return false;
             }
 
+            if (keyA == null || keyB == null)
+                return true;
+
+            string savedTileA;
+            string savedTileB;
+            saved.TryGetValue(keyA, out savedTileA);
+            saved.TryGetValue(keyB, out savedTileB);
+            savedTileA = savedTileA ?? "";
+            savedTileB = savedTileB ?? "";
+
+            var changedSet = new HashSet<string>(changedKeys, StringComparer.Ordinal);
+
+            if (!placementCells.ContainsKey(keyA) && changedSet.Contains(keyA))
+            {
+                string currentTileA;
+                current.TryGetValue(keyA, out currentTileA);
+                currentTileA = currentTileA ?? "";
+                if (!string.Equals(savedTileB, currentTileA, StringComparison.Ordinal))
+                    return false;
+            }
+
+            if (!placementCells.ContainsKey(keyB) && changedSet.Contains(keyB))
+            {
+                string currentTileB;
+                current.TryGetValue(keyB, out currentTileB);
+                currentTileB = currentTileB ?? "";
+                if (!string.Equals(savedTileA, currentTileB, StringComparison.Ordinal))
+                    return false;
+            }
+
             return true;
+        }
+
+        public static bool IsTwinkleToesSwapProgress(
+            string savedBoardFingerprint,
+            string currentBoardFingerprint,
+            JObject swap
+        )
+        {
+            return IsSuggestedBoardProgress(
+                savedBoardFingerprint,
+                currentBoardFingerprint,
+                null,
+                swap
+            );
+        }
+
+        private static bool TryReadSwapCoord(JObject swap, string key, out int value)
+        {
+            value = 0;
+            if (swap == null)
+                return false;
+            var token = swap[key];
+            if (token == null || token.Type == JTokenType.Null)
+                return false;
+            return int.TryParse(token.ToString(), out value);
+        }
+
+        public static bool IsConsumablePlacementProgress(
+            string savedBoardFingerprint,
+            string currentBoardFingerprint,
+            List<SuggestedConsumablePlacement> placements
+        )
+        {
+            return IsSuggestedBoardProgress(
+                savedBoardFingerprint,
+                currentBoardFingerprint,
+                placements,
+                null
+            );
         }
 
         private static string FpTileLetterPrefix(string fpTileSegment)
