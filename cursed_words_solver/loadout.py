@@ -1083,6 +1083,66 @@ def validate_run_state_for_scoring(
     return warnings
 
 
+def _parse_inventory_order_ids(raw: object) -> list[str] | None:
+    if raw in (None, ""):
+        return None
+    if isinstance(raw, list):
+        order = [str(x).strip() for x in raw if str(x).strip()]
+        return order or None
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(parsed, list):
+            order = [str(x).strip() for x in parsed if str(x).strip()]
+            return order or None
+    return None
+
+
+def _reorder_items_by_id_order(
+    items: list[LoadoutItem],
+    order_ids: list[str],
+) -> list[LoadoutItem]:
+    if not order_ids or not items:
+        return items
+    pools: dict[str, list[LoadoutItem]] = {}
+    for item in items:
+        key = slugify_name(item.id or item.name)
+        pools.setdefault(key, []).append(item)
+    ordered: list[LoadoutItem] = []
+    for raw_id in order_ids:
+        key = slugify_name(raw_id)
+        pool = pools.get(key)
+        if pool:
+            ordered.append(pool.pop(0))
+    if len(ordered) != len(items):
+        return items
+    return ordered
+
+
+def reorder_inventory_from_extras(loadout: Loadout) -> Loadout:
+    """Reorder stickers/stamps to melmod sticker_order / stamp_order extras."""
+    extras = loadout.extras or {}
+    stickers = list(loadout.stickers)
+    stamps = list(loadout.stamps)
+    sticker_order = _parse_inventory_order_ids(extras.get("sticker_order"))
+    stamp_order = _parse_inventory_order_ids(extras.get("stamp_order"))
+    new_stickers = (
+        _reorder_items_by_id_order(stickers, sticker_order)
+        if sticker_order
+        else stickers
+    )
+    new_stamps = (
+        _reorder_items_by_id_order(stamps, stamp_order) if stamp_order else stamps
+    )
+    if new_stickers == stickers and new_stamps == stamps:
+        return loadout
+    from dataclasses import replace
+
+    return replace(loadout, stickers=new_stickers, stamps=new_stamps)
+
+
 def parse_run_state(data: dict[str, Any]) -> Loadout:
     stickers = [
         LoadoutItem(
@@ -1137,7 +1197,8 @@ def parse_run_state(data: dict[str, Any]) -> Loadout:
                 fav_stickers.append(sid)
     if fav_stickers and not extras.get("favourite_sticker_ids"):
         extras["favourite_sticker_ids"] = ",".join(fav_stickers)
-    return Loadout(
+    return reorder_inventory_from_extras(
+        Loadout(
         character=data.get("character", ""),
         pin_branch=data.get("pin_branch", ""),
         stickers=stickers,
@@ -1147,6 +1208,7 @@ def parse_run_state(data: dict[str, Any]) -> Loadout:
         boss_effect=data.get("boss_effect", ""),
         money=int(data.get("money", 0)),
         extras=extras,
+    )
     )
 
 

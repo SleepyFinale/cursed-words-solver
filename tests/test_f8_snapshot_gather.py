@@ -149,6 +149,11 @@ def test_f8_prediction_workflow_stale_warning_does_not_block_save():
 
 
 def _board_run_state(*, prev_letter: str, count: str = "1") -> dict:
+    historic = (
+        '[{"word":"MOX","score":1}]'
+        if count not in ("", "0")
+        else "[]"
+    )
     return {
         "board": {
             "tiles": [
@@ -174,7 +179,7 @@ def _board_run_state(*, prev_letter: str, count: str = "1") -> dict:
             "grid_number": "2",
             "previous_word_first_letter": prev_letter,
             "scoring_previous_words_count": count,
-            "historic_words": "[]",
+            "historic_words": historic,
         },
     }
 

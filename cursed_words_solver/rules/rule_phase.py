@@ -233,7 +233,7 @@ def blocks_split_pipeline(
     rules: dict[str, Any],
 ) -> bool:
     """True when orchestration prevents safe static/dynamic interleaving."""
-    if ctx.capybara_shuffles:
+    if ctx.capybara_shuffles or ctx.interleaved_sticker_order:
         return True
     if ctx.compound_percents or ctx.compound_finalize_at_cocktail:
         return True

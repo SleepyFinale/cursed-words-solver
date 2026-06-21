@@ -1633,7 +1633,9 @@ class ScoringPipeline:
             )
             return True
 
-        def _apply_sticker_pass(*, multiply_only: bool) -> None:
+        def _apply_sticker_pass(
+            *, multiply_only: bool, interleaved: bool = False
+        ) -> None:
             nonlocal state
             for slot in ctx.sticker_slot_order:
                 sticker = loadout.stickers[slot]
@@ -1642,7 +1644,11 @@ class ScoringPipeline:
                 if slug != "snapshot" and (not rule or rule.get("type") in _skip_types):
                     continue
                 is_multiply = rule.get("type") == "multiply_word_scaled"
-                if slug != "snapshot" and multiply_only != is_multiply:
+                if (
+                    not interleaved
+                    and slug != "snapshot"
+                    and multiply_only != is_multiply
+                ):
                     continue
                 if state.get("_defer_word_mults_for_compound"):
                     if multiply_only:
@@ -1652,8 +1658,12 @@ class ScoringPipeline:
                         continue
                 if state.get("_compound_word_percents_applied") and multiply_only:
                     continue
+                slot_multiply_only = is_multiply if interleaved else multiply_only
+                apply_additive_pass = interleaved and not is_multiply or (
+                    not interleaved and not multiply_only
+                )
                 if (
-                    not multiply_only
+                    not apply_additive_pass
                     and slug == "cocktail"
                     and state.get("pending_word_finalize_steps")
                 ):
@@ -1678,7 +1688,7 @@ class ScoringPipeline:
                     ):
                         _flush_pending_word_mults(state)
                 pre_compound, post_compound = _compound_pre_post_percents(loadout)
-                if not multiply_only and slug == "cocktail" and pre_compound:
+                if apply_additive_pass and slug == "cocktail" and pre_compound:
                     _apply_compound_word_percents_on_tile_sum(
                         state,
                         pre_compound,
@@ -1691,7 +1701,7 @@ class ScoringPipeline:
                     sticker,
                     slug,
                     rule,
-                    multiply_only=multiply_only,
+                    multiply_only=slot_multiply_only,
                 ):
                     state = apply_sticker_with_orchestration(
                         rules=self.rules,
@@ -1702,9 +1712,9 @@ class ScoringPipeline:
                         sticker=sticker,
                         slot=slot,
                         apply_rule=self._apply_rule,
-                        multiply_only=multiply_only,
+                        multiply_only=slot_multiply_only,
                     )
-                if not multiply_only and slug == "cocktail":
+                if apply_additive_pass and slug == "cocktail":
                     from cursed_words_solver.rules.scoring_conditions import (
                         compound_word_finalize_at_cocktail,
                     )
@@ -1798,6 +1808,10 @@ class ScoringPipeline:
                     hourglass_reversed=True,
                 )
                 _trace_step(state, "pin", rule_id=pin_effect, detail="pin applied")
+        elif ctx.interleaved_sticker_order:
+            state["_immediate_word_percent"] = True
+            _apply_sticker_pass(multiply_only=False, interleaved=True)
+            state["_immediate_word_percent"] = False
         elif defer_multiply_stickers:
             _apply_sticker_pass(multiply_only=False)
         else:

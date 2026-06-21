@@ -1896,6 +1896,14 @@ TUNED_BOSSES: dict[str, dict] = {
             "Gives 2 CACTUS consumable tiles; must be used in submitted words"
         ),
     },
+    "human_boy_boss": {
+        "name": "Human Boy",
+        "type": "custom",
+        "effect_class": "meta",
+        "game_class": "HumanBoyBoss",
+        "wiki_page": "Human_Boy",
+        "wiki_effect": "Steals a sticker or stamp before the first grid",
+    },
     "capybara": {
         "name": "Capybara",
         "type": "shuffle_loadout_order",
@@ -2224,6 +2232,9 @@ ALIASES: dict[str, dict[str, str]] = {
         "extravoids": "mole",
         "bosscactus": "sandy_saguaro",
         "sandysaguaroboss": "sandy_saguaro",
+        "bosshumanboy": "human_boy_boss",
+        "humanboyboss": "human_boy_boss",
+        "human_boy": "human_boy_boss",
     },
     "pins": {
         "abacus": "abacus",

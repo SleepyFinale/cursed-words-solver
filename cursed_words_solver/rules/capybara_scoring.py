@@ -194,6 +194,7 @@ def _perm_scoring_context(
     return replace(
         ctx,
         capybara_shuffles=False,
+        interleaved_sticker_order=True,
         inventory_refs=tuple(_inventory_item_refs(perm_loadout, rules)),
         sticker_slot_order=_slot_order(
             len(perm_loadout.stickers), hourglass=ctx.hourglass_reversed

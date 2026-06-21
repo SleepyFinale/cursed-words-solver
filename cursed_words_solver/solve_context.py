@@ -235,6 +235,7 @@ class SolveContext:
     boss_ctx: BossContext
     inventory_refs: tuple[ScoringItemRef, ...]
     capybara_shuffles: bool
+    interleaved_sticker_order: bool = False
     sticker_slot_order: tuple[int, ...] = ()
     stamp_slot_order: tuple[int, ...] = ()
     grid_tile_multiply_first: bool = False
@@ -273,6 +274,7 @@ def build_solve_context(loadout: Loadout, rules: dict) -> SolveContext:
         boss_ctx=boss_context(loadout, rules),
         inventory_refs=tuple(_inventory_item_refs(loadout, rules)),
         capybara_shuffles=capybara_shuffles_loadout(loadout, rules),
+        interleaved_sticker_order=capybara_shuffles_loadout(loadout, rules),
         sticker_slot_order=_slot_order(len(loadout.stickers), hourglass=hourglass),
         stamp_slot_order=_slot_order(len(loadout.stamps), hourglass=hourglass),
         grid_tile_multiply_first=_grid_tile_multiply_first(extras),

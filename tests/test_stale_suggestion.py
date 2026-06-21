@@ -1,4 +1,4 @@
-"""Stale last_suggestion.json board fingerprint warnings."""
+﻿"""Stale last_suggestion.json board fingerprint warnings."""
 
 from __future__ import annotations
 
@@ -144,11 +144,11 @@ def _stale_f8_extras_note(
 
     if not notes:
         return None
-    return "F8 snapshot stale — " + "; ".join(notes)
+    return "F8 snapshot stale â€” " + "; ".join(notes)
 
 
 def test_tile_ninja_extras_drift_is_stale_f8():
-    """Mismatch 20260619_011718: consumables_used 21→23 is workflow stale, not solver bug."""
+    """Mismatch 20260619_011718: consumables_used 21â†’23 is workflow stale, not solver bug."""
     extras_diff = {
         "tile_ninja_consumables_used": {"f8": "21", "submit": "23"},
         "tile_ninja_word_bonus_percent": {"f8": "162", "submit": "166"},
@@ -814,8 +814,8 @@ def test_workflow_stale_reason_string():
         {"previous_word_first_letter": "s", "historic_words": "[]"},
     )
     assert reason is not None
-    assert "previous word letter s→f" in reason
-    assert "historic words changed (0→1)" in reason
+    assert "previous word letter sâ†’f" in reason
+    assert "historic words changed (0â†’1)" in reason
 
 
 def test_workflow_stale_when_historic_count_increases():
@@ -826,7 +826,7 @@ def test_workflow_stale_when_historic_count_increases():
         {"historic_words": hist_f8},
     )
     assert reason is not None
-    assert "historic words changed (2→3)" in reason
+    assert "historic words changed (2â†’3)" in reason
 
 
 def test_workflow_stale_when_historic_same_count_content_differs():
@@ -838,7 +838,7 @@ def test_workflow_stale_when_historic_same_count_content_differs():
     )
     assert reason is not None
     assert "historic words changed" in reason
-    assert "(2→3)" not in reason
+    assert "(2â†’3)" not in reason
 
 
 def test_grid2_empty_historic_not_blocked_when_stale_pruned_no_telescope(
@@ -1059,7 +1059,7 @@ def test_clear_when_historic_count_increases_reason(tmp_path, monkeypatch):
         {"historic_words": hist_cur}
     )
     assert reason is not None
-    assert "historic words changed (2→3)" in reason
+    assert "historic words changed (2â†’3)" in reason
     assert not suggestion_path.exists()
 
 
@@ -1086,7 +1086,7 @@ def test_clear_when_historic_words_grows(tmp_path, monkeypatch):
         }
     )
     assert reason is not None
-    assert "historic words changed (3→4)" in reason
+    assert "historic words changed (3â†’4)" in reason
     assert not suggestion_path.exists()
 
 
@@ -1107,7 +1107,7 @@ def test_clear_when_prev_letter_changes(tmp_path, monkeypatch):
         {"previous_word_first_letter": "f"}
     )
     assert reason is not None
-    assert "previous word letter s→f" in reason
+    assert "previous word letter sâ†’f" in reason
     assert not suggestion_path.exists()
 
 
@@ -1156,7 +1156,7 @@ def test_f8_prior_suggestion_stale_note_when_workflow_drifted(tmp_path, monkeypa
     note = f8_prior_suggestion_stale_note({"previous_word_first_letter": "f"})
     assert note is not None
     assert "Played a word since last F8" in note
-    assert "j→f" in note
+    assert "jâ†’f" in note
 
 
 def test_f8_prior_suggestion_stale_note_none_when_aligned(tmp_path, monkeypatch):
@@ -1227,7 +1227,7 @@ def test_grid_advanced_since_last_f8_warning(tmp_path, monkeypatch):
     )
     note = grid_advanced_since_last_f8_warning({"grid_number": "2"})
     assert note is not None
-    assert "1→2" in note
+    assert "1â†’2" in note
 
 
 def test_run_state_historic_stale_warnings_collects_both(tmp_path, monkeypatch):
@@ -1678,7 +1678,7 @@ def test_gownmen_round_log_workflow_stale_matches_python():
     assert reason is not None
     assert "historic words changed" in reason
     assert "e" in reason and "f" in reason
-    # Same historic count but different words — true stale, not export catch-up.
+    # Same historic count but different words â€” true stale, not export catch-up.
     assert not is_export_catchup_drift(f8_extras, submit_extras)
 
 
@@ -1834,8 +1834,8 @@ def test_rich_historic_word_previous_letter_not_from_font_tag():
     from cursed_words_solver.loadout import _previous_letter_from_historic_words
 
     norias_rich = (
-        '[{"word":"JO<font=InterBold SDF>€</font>","score":38},'
-        '{"word":"<font=InterBold SDF>₦</font>ORI<font=NotoEmoji-Regular SDF>🃏︎</font>",'
+        '[{"word":"JO<font=InterBold SDF>â‚¬</font>","score":38},'
+        '{"word":"<font=InterBold SDF>â‚¦</font>ORI<font=NotoEmoji-Regular SDF>ðŸƒï¸Ž</font>",'
         '"score":21,"path":[0,5,11,16,17,18]}]'
     )
     assert _previous_letter_from_historic_words(norias_rich) == "o"
@@ -1869,7 +1869,7 @@ def test_word_starts_after_previous_skips_grid_one():
 
 
 def test_glaived_grid4_first_word_limnophila_off():
-    """First word on grid 4: stale previous f must not ×1.5 when scoring cache empty."""
+    """First word on grid 4: stale previous f must not Ã—1.5 when scoring cache empty."""
     from cursed_words_solver.loadout import (
         parse_board_from_run_state,
         parse_run_state,
@@ -2532,7 +2532,7 @@ def _collect_workflow_drift_notes_for_capture(
     *,
     has_mutating_dna_stamp: bool = True,
 ) -> list[str]:
-    """Workflow keys only — mirror melmod CollectWorkflowDriftNotes."""
+    """Workflow keys only â€” mirror melmod CollectWorkflowDriftNotes."""
     notes: list[str] = []
     if entry := extras_diff.get("historic_words"):
         f8_raw = str(entry.get("f8", "") or "").strip()
@@ -2582,7 +2582,7 @@ def _describe_stale_f8_workflow_drift_capture_block(
     if not notes:
         return None
     return (
-        "F8 snapshot stale — played word(s) since F8 — press F8 again "
+        "F8 snapshot stale â€” played word(s) since F8 â€” press F8 again "
         "before submitting the overlay suggestion (" + "; ".join(notes) + ")"
     )
 
@@ -3031,7 +3031,7 @@ def test_sanitize_run_state_snapshot_for_f8_projects_workflow_extras(
 
 
 def test_benign_shrink_presync_workflow_cleared_after_projection():
-    """C# parity: benign shrink syncs before block — projected diff has no workflow drift."""
+    """C# parity: benign shrink syncs before block â€” projected diff has no workflow drift."""
     diff = {
         "historic_words": {
             "f8": '[{"word":"A"},{"word":"B"},{"word":"C"}]',
@@ -3055,56 +3055,129 @@ def test_benign_shrink_presync_workflow_cleared_after_projection():
     ) is None
 
 
-def _is_benign_workflow_shrink_drift(
-    extras_diff: dict[str, dict[str, str]],
-    *,
-    has_mutating_dna_stamp: bool = True,
-) -> bool:
-    """Mirror melmod ExtrasDiffHelper.IsBenignWorkflowShrinkDrift."""
-    if not extras_diff:
-        return False
+def test_bento_err_historic_shrink_letter_drift_not_benign():
+    """Rodman grid-2 err: stale F8 historic shrink must not be benign with Bento."""
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260621_085505.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    diff = data["extras_diff"]
+    assert not _is_benign_workflow_shrink_drift(diff, has_mutating_dna_stamp=False)
+    note = _stale_f8_extras_note(diff, has_mutating_dna_stamp=False)
+    assert note is not None
+    assert "previous_word_first_letter f8='e' submit='r'" in note
 
-    if entry := extras_diff.get("previous_word_first_letter"):
-        f8_raw = str(entry.get("f8", "") or "").strip()
-        submit_raw = str(entry.get("submit", "") or "").strip()
-        if f8_raw and submit_raw and f8_raw.lower() != submit_raw.lower():
-            return False
 
-    if has_mutating_dna_stamp:
-        if entry := extras_diff.get("mutating_dna_letter_counts"):
-            f8_raw = str(entry.get("f8", "") or "")
-            submit_raw = str(entry.get("submit", "") or "")
-            if not _mutating_dna_letter_counts_equal(f8_raw, submit_raw):
-                return False
+def test_bento_jitter_historic_shrink_letter_drift_not_benign():
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260621_085720.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    diff = data["extras_diff"]
+    assert not _is_benign_workflow_shrink_drift(diff, has_mutating_dna_stamp=False)
+    note = _stale_f8_extras_note(diff, has_mutating_dna_stamp=False)
+    assert note is not None
+    assert "previous_word_first_letter f8='j' submit='h'" in note
 
-    has_shrink = False
 
-    if entry := extras_diff.get("historic_words"):
-        from cursed_words_solver.loadout import _historic_words_count
+def test_bento_err_stale_prev_letter_overpredicts():
+    """Stale previous_word_first_letter applies Bento; submit projection scores 813."""
+    from dataclasses import replace
 
-        f8_raw = str(entry.get("f8", "") or "").strip()
-        submit_raw = str(entry.get("submit", "") or "").strip()
-        f8_count = _historic_words_count(f8_raw)
-        submit_count = _historic_words_count(submit_raw)
-        if submit_count > f8_count:
-            return False
-        if f8_count > submit_count:
-            has_shrink = True
-        elif f8_raw != submit_raw and (f8_count > 0 or submit_count > 0):
-            has_shrink = True
+    from cursed_words_solver.models import LoadoutItem
+    from cursed_words_solver.rules.pipeline import ScoringPipeline
+    from cursed_words_solver.loadout import parse_run_state
+    from tests.regression.test_scoring_mismatches import _run_state_for_replay
 
-    if entry := extras_diff.get("scoring_previous_words_count"):
-        try:
-            f8_count = int(str(entry.get("f8", "") or "0"))
-            submit_count = int(str(entry.get("submit", "") or "0"))
-        except ValueError:
-            f8_count = submit_count = 0
-        if submit_count > f8_count:
-            return False
-        if f8_count > submit_count:
-            has_shrink = True
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260621_085505.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    has_bento = any(
+        (s.id or "").lower() in ("bento_box", "bento") for s in (loadout.stamps or [])
+    )
+    if not has_bento:
+        loadout.stamps = list(loadout.stamps or []) + [
+            LoadoutItem(id="bento_box", name="Bento Box", kind="stamp", level=1),
+        ]
+    pipeline = ScoringPipeline()
+    score, _, trace = pipeline.score_with_trace(
+        board, data["path"], data["word"], loadout
+    )
+    assert int(score) == int(data["actual_score"])
+    bento_steps = [
+        s for s in trace if str(s.get("rule_id", "")).lower() == "bento_box"
+    ]
+    assert not any(s.get("applied") for s in bento_steps)
 
-    return has_shrink
+    stale_extras = dict(loadout.extras or {})
+    stale_extras["previous_word_first_letter"] = "e"
+    stale_loadout = replace(loadout, extras=stale_extras)
+    stale_score, _, stale_trace = pipeline.score_with_trace(
+        board, data["path"], data["word"], stale_loadout
+    )
+    assert int(stale_score) == int(data["predicted_score"])
+    stale_bento = [
+        s for s in stale_trace if str(s.get("rule_id", "")).lower() == "bento_box"
+    ]
+    assert any(s.get("applied") for s in stale_bento)
+
+
+def test_merge_encounter_historic_fixes_bento_prev_letter(tmp_path, monkeypatch):
+    """Disk catch-up replaces stale grid-1 historic before Bento scoring."""
+    from cursed_words_solver.loadout import (
+        merge_encounter_historic_for_f8_snapshot,
+        parse_run_state,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260621_085505.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    stale_embed = copy.deepcopy(data["run_state_snapshot"])
+    stale_extras = stale_embed.setdefault("extras", {})
+    stale_extras["historic_words"] = data["extras_diff"]["historic_words"]["f8"]
+    stale_extras["previous_word_first_letter"] = "e"
+    stale_extras["scoring_previous_words_count"] = "3"
+
+    fresh = copy.deepcopy(data["run_state_snapshot"])
+    fresh_extras = fresh.setdefault("extras", {})
+    fresh_extras["historic_words"] = data["extras_diff"]["historic_words"]["submit"]
+    fresh_extras["previous_word_first_letter"] = "r"
+    fresh_extras["scoring_previous_words_count"] = "1"
+
+    run_state_path = tmp_path / "run_state.json"
+    run_state_path.write_text(json.dumps(fresh), encoding="utf-8")
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    monkeypatch.setattr(
+        "cursed_words_solver.f8_snapshot.load_run_state_raw",
+        lambda: json.loads(run_state_path.read_text(encoding="utf-8")),
+    )
+
+    merged = merge_encounter_historic_for_f8_snapshot(stale_embed)
+    assert merged is not None
+    merged_extras = merged.get("extras") or {}
+    assert merged_extras.get("previous_word_first_letter") == "r"
+    assert _historic_words_count(str(merged_extras.get("historic_words", ""))) == 1
+
+    loadout = parse_run_state(merged)
+    assert str((loadout.extras or {}).get("previous_word_first_letter")) == "r"
 
 
 def test_poll_round_log_submits_tails_index(tmp_path, monkeypatch):
@@ -3218,15 +3291,13 @@ def test_project_workflow_extras_for_f8_embed_joey(tmp_path, monkeypatch):
     )
 
 
-def test_sanitize_run_state_snapshot_for_f8_projects_workflow_extras(
-    tmp_path, monkeypatch
-):
+def test_embed_f8_snapshot_projects_workflow_extras(tmp_path, monkeypatch):
+    from cursed_words_solver.f8_snapshot import F8Snapshot, embed_f8_snapshot
     from cursed_words_solver.loadout import (
         RUN_STATE_PATH,
-        sanitize_run_state_snapshot_for_f8,
         _scoring_previous_words_count_from_extras,
+        parse_run_state,
     )
-    from cursed_words_solver.models import Loadout
 
     fixture = (
         Path(__file__).resolve().parent / "fixtures" / "stale_f8_joey_shorter_submit.json"
@@ -3251,7 +3322,7 @@ def test_sanitize_run_state_snapshot_for_f8_projects_workflow_extras(
         encoding="utf-8",
     )
 
-    embed = {
+    run_state = {
         "extras": {
             "historic_words": f8_hist,
             "grid_number": data["grid_number"],
@@ -3259,32 +3330,17 @@ def test_sanitize_run_state_snapshot_for_f8_projects_workflow_extras(
             "previous_word_first_letter": "c",
         }
     }
-    sanitized = sanitize_run_state_snapshot_for_f8(embed, Loadout())
-    assert sanitized is not None
-    assert sanitized["extras"]["historic_words"] == f8_hist
-    assert _scoring_previous_words_count_from_extras(sanitized["extras"]) == 3
+    loadout = parse_run_state(run_state)
+    embedded = embed_f8_snapshot(
+        F8Snapshot(
+            run_state=run_state,
+            board=None,
+            loadout=loadout,
+            board_available=False,
+        ),
+        scoring_loadout=loadout,
+    )
+    assert embedded is not None
+    assert embedded["extras"]["historic_words"] == submit_hist
+    assert _scoring_previous_words_count_from_extras(embedded["extras"]) == 1
 
-
-def test_benign_shrink_presync_workflow_cleared_after_projection():
-    """C# parity: benign shrink syncs before block — projected diff has no workflow drift."""
-    diff = {
-        "historic_words": {
-            "f8": '[{"word":"A"},{"word":"B"},{"word":"C"}]',
-            "submit": '[{"word":"TIFFANY"}]',
-        },
-        "scoring_previous_words_count": {"f8": "3", "submit": "1"},
-        "previous_word_first_letter": {"f8": "t", "submit": "t"},
-    }
-    assert _is_benign_workflow_shrink_drift(diff, has_mutating_dna_stamp=False)
-    projected_diff = {
-        "historic_words": {
-            "f8": diff["historic_words"]["submit"],
-            "submit": diff["historic_words"]["submit"],
-        },
-        "scoring_previous_words_count": {"f8": "1", "submit": "1"},
-        "previous_word_first_letter": {"f8": "t", "submit": "t"},
-    }
-    assert _describe_stale_f8_workflow_drift_capture_block(
-        projected_diff,
-        has_mutating_dna_stamp=False,
-    ) is None

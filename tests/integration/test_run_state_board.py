@@ -651,6 +651,32 @@ def test_parse_run_state_bossdino_alias_is_cretaceous_meg():
     assert constraints.min_len == 3
 
 
+def test_parse_run_state_bosshumanboy_alias_is_human_boy_boss():
+    """In-game Human Boy prefab slug is bosshumanboy; meta boss (item steal on grid 1)."""
+    data = {
+        "character": "Human Boy",
+        "boss_id": "bosshumanboy",
+        "boss_name": "Human Boy",
+        "extras": {"boss_area_number": "4"},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        boss_display_name,
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "human_boy_boss"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+    assert boss_display_name(loadout, rules) == "Human Boy"
+
+
 def test_parse_run_state_nested_boss_object():
     data = {
         "character": "Test",

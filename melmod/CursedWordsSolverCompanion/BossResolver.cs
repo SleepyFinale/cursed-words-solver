@@ -191,6 +191,8 @@ namespace CursedWordsSolverCompanion
                     return "cretaceous_meg";
                 case "SandySaguaroBoss":
                     return "sandy_saguaro";
+                case "HumanBoyBoss":
+                    return "human_boy_boss";
                 default:
                     return "";
             }

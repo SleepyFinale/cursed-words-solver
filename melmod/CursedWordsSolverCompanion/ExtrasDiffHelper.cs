@@ -22,6 +22,8 @@ namespace CursedWordsSolverCompanion
 
         public bool HasMutatingDnaStamp { get; set; }
 
+        public bool HasBentoStamp { get; set; }
+
 
 
         public static StaleF8Context Default()
@@ -170,7 +172,13 @@ namespace CursedWordsSolverCompanion
 
         {
 
-            var workflow = CollectWorkflowDriftNotes(extrasDiff, ctx);
+            var benignShrink = IsBenignWorkflowShrinkDrift(extrasDiff, ctx);
+
+            var workflow = benignShrink
+
+                ? new List<string>()
+
+                : CollectWorkflowDriftNotes(extrasDiff, ctx);
 
             var bicycle = CollectBicycleDriftNotes(extrasDiff, ctx);
 
@@ -234,13 +242,87 @@ namespace CursedWordsSolverCompanion
 
             if (authCount <= f8Count)
 
+            {
+
+                if (
+
+                    f8Count > authCount
+
+                    && originalF8Extras != null
+
+                    && authoritativeExtras != null
+
+                    && HasPreviousWordLetterDrift(originalF8Extras, authoritativeExtras)
+
+                )
+
+                    return (
+
+                        "F8 prediction used "
+
+                            + f8Count
+
+                            + "-word historic, score used "
+
+                            + authCount
+
+                            + "-word historic (previous word letter drift)"
+
+                    );
+
                 return null;
+
+            }
 
             if (string.IsNullOrEmpty(f8Raw) && authCount > 0)
 
                 return "F8 prediction used empty historic, score used " + authCount + "-word historic";
 
             return "F8 prediction used " + f8Count + "-word historic, score used " + authCount + "-word historic";
+
+        }
+
+
+
+        private static bool HasPreviousWordLetterDrift(
+
+            Dictionary<string, string> f8Extras,
+
+            Dictionary<string, string> submitExtras
+
+        )
+
+        {
+
+            if (f8Extras == null || submitExtras == null)
+
+                return false;
+
+            string f8Letter;
+
+            string submitLetter;
+
+            f8Extras.TryGetValue("previous_word_first_letter", out f8Letter);
+
+            submitExtras.TryGetValue("previous_word_first_letter", out submitLetter);
+
+            f8Letter = (f8Letter ?? "").Trim();
+
+            submitLetter = (submitLetter ?? "").Trim();
+
+            if (string.IsNullOrEmpty(f8Letter) || string.IsNullOrEmpty(submitLetter))
+
+                return false;
+
+            return !string.Equals(
+
+                f8Letter,
+
+                submitLetter,
+
+                StringComparison.OrdinalIgnoreCase
+
+            );
 
         }
 
@@ -705,6 +787,10 @@ namespace CursedWordsSolverCompanion
                     )
 
                     {
+
+                        if (ctx != null && ctx.HasBentoStamp)
+
+                            return false;
 
                         if (!IsStaleExportAheadDrift(extrasDiff))
 

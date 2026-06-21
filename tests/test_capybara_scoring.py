@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.rules.boss_effects import load_rules_catalog
 from cursed_words_solver.rules.capybara_scoring import (
@@ -116,3 +120,37 @@ def test_capybara_permutation_iterator_covers_both_orders() -> None:
         )
     }
     assert orders == {("brain", "chips"), ("chips", "brain")}
+
+
+def test_capybara_yellow_glasses_hungry_hippo_order_range() -> None:
+    """Live jiggling capture: ×WORD before +WORD SCORE yields 200 vs 220."""
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260621_082526.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = dict(data["run_state_snapshot"])
+    extras = dict(run_state.get("extras") or {})
+    submit_order = data["extras_diff"]["sticker_order"]["submit"]
+    extras["sticker_order"] = submit_order
+    run_state["extras"] = extras
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    rules = load_rules_catalog()
+    path = data["path"]
+    word = data["word"]
+    pipe = ScoringPipeline()
+    stats = score_capybara_distribution(pipe, board, path, word, loadout, rules)
+    assert stats.max_score == 220
+    assert stats.min_score == 128
+    assert int(stats.min_score) <= int(data["actual_score"]) <= int(stats.max_score)
+    assert stats.perm_count == 6
+    assert stats.exhaustive is True
+    from cursed_words_solver.solve_context import build_solve_context
+
+    submit_loadout = parse_run_state(run_state)
+    ctx = build_solve_context(submit_loadout, rules)
+    score, _ = pipe.score(board, path, word, submit_loadout, solve_context=ctx)
+    assert int(score) == int(data["actual_score"])

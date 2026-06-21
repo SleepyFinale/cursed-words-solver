@@ -1314,11 +1314,17 @@ namespace CursedWordsSolverCompanion
 
             if (liveOnly)
             {
+                if (cachedCount > playerCount)
+                {
+                    if (playerCount == 0 && grid < 2)
+                        return null;
+                    return fromCached;
+                }
                 if (playerCount > 0)
                     return fromPlayer;
-                if (grid >= 2 && cachedCount > 0 && playerCount == 0)
+                if (grid >= 2 && cachedCount > 0)
                     return fromCached;
-                return cachedCount > 0 && playerCount == 0 ? fromCached : null;
+                return cachedCount > 0 ? fromCached : null;
             }
 
             if (grid >= 2 && cachedCount > 0 && playerCount == 0)
@@ -1398,6 +1404,8 @@ namespace CursedWordsSolverCompanion
                 || wikiId == "sandy_saguaro"
                 || wikiId == "prismatic_bean"
                 || wikiId == "human_boy"
+                || wikiId == "human_boy_boss"
+                || wikiId == "bosshumanboy"
                 || wikiId == "cretaceous_meg";
         }
 

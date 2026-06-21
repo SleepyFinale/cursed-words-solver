@@ -61,7 +61,10 @@
       "extra_voids": "mole",
       "extravoids": "mole",
       "bosscactus": "sandy_saguaro",
-      "sandysaguaroboss": "sandy_saguaro"
+      "sandysaguaroboss": "sandy_saguaro",
+      "bosshumanboy": "human_boy_boss",
+      "humanboyboss": "human_boy_boss",
+      "human_boy": "human_boy_boss"
     },
     "pins": {
       "abacus": "abacus",
@@ -110,7 +113,7 @@
       "condition": "word_base_negative",
       "base": 1.5,
       "upgrade": 1,
-      "wiki_effect": "If submitted word BASE SCORE was negative, get ×WORD SCORE",
+      "wiki_effect": "If submitted word BASE SCORE was negative, get \u00d7WORD SCORE",
       "wiki_page": "Ambulance"
     },
     "amphora": {
@@ -137,7 +140,7 @@
       "condition": "requires_sticker_slot:first",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "First sticker slot: ×WORD SCORE",
+      "wiki_effect": "First sticker slot: \u00d7WORD SCORE",
       "wiki_page": "Arrivals"
     },
     "artist_s_palette": {
@@ -155,7 +158,7 @@
       "condition": "path_length_lte:3",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "Words with 3 or fewer tiles get ×WORD SCORE",
+      "wiki_effect": "Words with 3 or fewer tiles get \u00d7WORD SCORE",
       "wiki_page": "Axe"
     },
     "baby_bottle": {
@@ -164,7 +167,7 @@
       "condition": "wildcard_count_eq:2",
       "base": 2,
       "upgrade": 0.5,
-      "wiki_effect": "Exactly 2 ? tiles in word get ×WORD SCORE",
+      "wiki_effect": "Exactly 2 ? tiles in word get \u00d7WORD SCORE",
       "wiki_page": "Baby_Bottle"
     },
     "backpack": {
@@ -182,7 +185,7 @@
       "word_mode": "grid_total_base_times_level",
       "base": 1,
       "upgrade": 1,
-      "wiki_effect": "Get WORD SCORE equal to total BASE SCORE on grid ×N",
+      "wiki_effect": "Get WORD SCORE equal to total BASE SCORE on grid \u00d7N",
       "wiki_page": "Base_Camp"
     },
     "birthday_cake": {
@@ -191,7 +194,7 @@
       "word_mode": "birthday_cake_bonus",
       "base": 1,
       "upgrade": 1,
-      "wiki_effect": "Get +X WORD SCORE (accumulated); improved by highest number in word × level",
+      "wiki_effect": "Get +X WORD SCORE (accumulated); improved by highest number in word \u00d7 level",
       "wiki_page": "Birthday_Cake"
     },
     "blueberries": {
@@ -200,7 +203,7 @@
       "condition": "ends_with_color:blue",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "If your word ends with a BLUE tile, get ×WORD SCORE",
+      "wiki_effect": "If your word ends with a BLUE tile, get \u00d7WORD SCORE",
       "wiki_page": "Blueberries"
     },
     "bone": {
@@ -209,7 +212,7 @@
       "condition": "always",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "Get ×WORD SCORE",
+      "wiki_effect": "Get \u00d7WORD SCORE",
       "wiki_page": "Bone"
     },
     "boomerang": {
@@ -218,7 +221,7 @@
       "condition": "word_starts_ends_number",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "Word starts and ends on a number tile → ×WORD SCORE",
+      "wiki_effect": "Word starts and ends on a number tile \u2192 \u00d7WORD SCORE",
       "wiki_page": "Boomerang"
     },
     "brain": {
@@ -227,7 +230,7 @@
       "min_sum": 7,
       "factor_base": 1.0,
       "factor_per_level": 0.5,
-      "wiki_effect": "If the numbers in your word add to 7 or more get ×WORD SCORE",
+      "wiki_effect": "If the numbers in your word add to 7 or more get \u00d7WORD SCORE",
       "wiki_page": "Brain"
     },
     "brick": {
@@ -243,7 +246,7 @@
       "condition": "word_starts_ends_different_curse_type",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "Word starts and ends on different curse types: ×WORD SCORE",
+      "wiki_effect": "Word starts and ends on different curse types: \u00d7WORD SCORE",
       "wiki_page": "Broom"
     },
     "burrito": {
@@ -251,7 +254,7 @@
       "type": "multiply_word_other_sticker_levels",
       "base": 0.05,
       "upgrade": 0.05,
-      "wiki_effect": "×WORD; +0.05 per level of other stickers (per Burrito level)",
+      "wiki_effect": "\u00d7WORD; +0.05 per level of other stickers (per Burrito level)",
       "wiki_page": "Burrito"
     },
     "candle": {
@@ -267,8 +270,8 @@
       "name": "Carousel Horse",
       "type": "scatter_start_grid",
       "effect_class": "scatter",
-      "grid_effect": "START OF GRID: Scatters checkpoints; destination tiles get ×2 BASE SCORE",
-      "wiki_effect": "START OF GRID: Scatters checkpoints; destination tiles get ×2 BASE SCORE",
+      "grid_effect": "START OF GRID: Scatters checkpoints; destination tiles get \u00d72 BASE SCORE",
+      "wiki_effect": "START OF GRID: Scatters checkpoints; destination tiles get \u00d72 BASE SCORE",
       "wiki_page": "Carousel_Horse",
       "game_class": "CarouselHorse"
     },
@@ -305,7 +308,7 @@
       "condition": "first_grid_of_encounter",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "First grid of each encounter gets ×WORD SCORE",
+      "wiki_effect": "First grid of each encounter gets \u00d7WORD SCORE",
       "wiki_page": "Chequered_Flag"
     },
     "cherries": {
@@ -323,7 +326,7 @@
       "condition": "red_count_gte:3",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "If your word contains 3 or more RED tiles, get ×WORD SCORE",
+      "wiki_effect": "If your word contains 3 or more RED tiles, get \u00d7WORD SCORE",
       "wiki_page": "Cherry_Pie"
     },
     "chips": {
@@ -332,7 +335,7 @@
       "condition": "word_starts_after_previous",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "Word starts later in alphabet than previous word, ×WORD SCORE",
+      "wiki_effect": "Word starts later in alphabet than previous word, \u00d7WORD SCORE",
       "wiki_page": "Chips"
     },
     "circus_tent": {
@@ -341,7 +344,7 @@
       "condition": "has_blue_red_and_colourless",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "Word with BLUE, RED and COLOURLESS tiles gets ×WORD SCORE",
+      "wiki_effect": "Word with BLUE, RED and COLOURLESS tiles gets \u00d7WORD SCORE",
       "wiki_page": "Circus_Tent"
     },
     "clapper_board": {
@@ -350,7 +353,7 @@
       "condition": "chess_takes_gte:2",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "Words with 2 or more takes in get ×WORD SCORE",
+      "wiki_effect": "Words with 2 or more takes in get \u00d7WORD SCORE",
       "wiki_page": "Clapper_Board"
     },
     "cocktail": {
@@ -359,7 +362,7 @@
       "target": "first_of_each_colour",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "First tile of each colour on path gets ×N TILE SCORE",
+      "wiki_effect": "First tile of each colour on path gets \u00d7N TILE SCORE",
       "wiki_page": "Cocktail"
     },
     "coin_purse": {
@@ -377,7 +380,7 @@
       "condition": "unique_colours_eq:5",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "Words with 5 different colours get ×WORD SCORE",
+      "wiki_effect": "Words with 5 different colours get \u00d7WORD SCORE",
       "wiki_page": "Confetti"
     },
     "creaky_chair": {
@@ -386,7 +389,7 @@
       "condition": "curse_types_gte:3",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "Words with 3+ curse types get ×WORD SCORE",
+      "wiki_effect": "Words with 3+ curse types get \u00d7WORD SCORE",
       "wiki_page": "Creaky_Chair"
     },
     "credit_card": {
@@ -483,7 +486,7 @@
       "target": "all",
       "base": -3,
       "upgrade": -2,
-      "wiki_effect": "All tiles on path get ×N TILE SCORE (negative)",
+      "wiki_effect": "All tiles on path get \u00d7N TILE SCORE (negative)",
       "wiki_page": "Down_Under"
     },
     "dusty_coffin": {
@@ -501,7 +504,7 @@
       "condition": "word_starts_vowel",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "If your word starts with a vowel, get ×WORD SCORE",
+      "wiki_effect": "If your word starts with a vowel, get \u00d7WORD SCORE",
       "wiki_page": "Egg"
     },
     "electric_guitar": {
@@ -519,7 +522,7 @@
       "condition": "word_starts_ends_different_color",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "Word starts/ends on different coloured tiles, ×WORD SCORE",
+      "wiki_effect": "Word starts/ends on different coloured tiles, \u00d7WORD SCORE",
       "wiki_page": "Ferris_Wheel"
     },
     "fire_extinguisher": {
@@ -547,7 +550,7 @@
       "target": "shiny",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "SHINY tiles get ×2 TILE SCORE",
+      "wiki_effect": "SHINY tiles get \u00d72 TILE SCORE",
       "wiki_page": "Fish_Cake"
     },
     "footprints": {
@@ -556,7 +559,7 @@
       "condition": "non_adjacent_steps_gte:3",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "3+ non-adjacent moves in word get ×WORD SCORE",
+      "wiki_effect": "3+ non-adjacent moves in word get \u00d7WORD SCORE",
       "wiki_page": "Footprints"
     },
     "fountain": {
@@ -654,7 +657,7 @@
       "type": "multiply_consumable_rack",
       "base": 0.2,
       "upgrade": 0.2,
-      "wiki_effect": "×WORD SCORE (0.2 larger per consumable on rack); loses consumable on submit",
+      "wiki_effect": "\u00d7WORD SCORE (0.2 larger per consumable on rack); loses consumable on submit",
       "wiki_page": "Hi_Vis_Jacket"
     },
     "hungry_hippo": {
@@ -718,7 +721,7 @@
       "per_level_factor": true,
       "factor_base": 1.0,
       "factor_per_level": 1.0,
-      "wiki_effect": "Numbers get ×N TILE SCORE (N = level + 1)",
+      "wiki_effect": "Numbers get \u00d7N TILE SCORE (N = level + 1)",
       "wiki_page": "Lab_Coat"
     },
     "ladybird": {
@@ -736,7 +739,7 @@
       "condition": "distinct_card_suits_gte:2",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "Words with 2+ card suits get ×WORD SCORE",
+      "wiki_effect": "Words with 2+ card suits get \u00d7WORD SCORE",
       "wiki_page": "Las_Vegas"
     },
     "left_hand": {
@@ -770,7 +773,7 @@
       "word_mode": "if_contains_target_number",
       "base": 50,
       "upgrade": 50,
-      "wiki_effect": "Word contains target number → +50 WORD SCORE",
+      "wiki_effect": "Word contains target number \u2192 +50 WORD SCORE",
       "wiki_page": "Lucky_Dice"
     },
     "lucky_scarf": {
@@ -779,7 +782,7 @@
       "condition": "word_starts_ends_red",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "If your word starts and ends with a RED tile, get ×WORD SCORE",
+      "wiki_effect": "If your word starts and ends with a RED tile, get \u00d7WORD SCORE",
       "wiki_page": "Lucky_Scarf"
     },
     "luffing_jib_crane": {
@@ -814,7 +817,7 @@
       "factor": 3,
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "Your first N RED tiles get ×3 TILE SCORE",
+      "wiki_effect": "Your first N RED tiles get \u00d73 TILE SCORE",
       "wiki_page": "Maple_Leaf"
     },
     "maracas": {
@@ -839,7 +842,7 @@
       "condition": "word_all_cursed",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "Words containing only cursed tiles get ×WORD SCORE",
+      "wiki_effect": "Words containing only cursed tiles get \u00d7WORD SCORE",
       "wiki_page": "Mischievous_Imp"
     },
     "moai": {
@@ -892,7 +895,7 @@
       "condition": "word_all_colourless",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "COLOURLESS words get ×WORD SCORE",
+      "wiki_effect": "COLOURLESS words get \u00d7WORD SCORE",
       "wiki_page": "Newspaper"
     },
     "onigiri": {
@@ -910,7 +913,7 @@
       "condition": "no_colorless_on_path",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "If your word does not contain COLOURLESS tiles, ×WORD SCORE",
+      "wiki_effect": "If your word does not contain COLOURLESS tiles, \u00d7WORD SCORE",
       "wiki_page": "Ornate_Key"
     },
     "overhand": {
@@ -936,7 +939,7 @@
       "condition": "blue_count_eq:2",
       "base": 2,
       "upgrade": 0.5,
-      "wiki_effect": "If your word contains exactly 2 BLUE tiles, get ×WORD SCORE",
+      "wiki_effect": "If your word contains exactly 2 BLUE tiles, get \u00d7WORD SCORE",
       "wiki_page": "Pair_Of_Socks"
     },
     "parrot": {
@@ -954,7 +957,7 @@
       "condition": "card_hand:flush",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "Flush (5 matching suits): ×WORD SCORE",
+      "wiki_effect": "Flush (5 matching suits): \u00d7WORD SCORE",
       "wiki_page": "Peacock"
     },
     "pear": {
@@ -972,7 +975,7 @@
       "condition": "card_hand:four_of_a_kind",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "Four of a kind: ×WORD SCORE",
+      "wiki_effect": "Four of a kind: \u00d7WORD SCORE",
       "wiki_page": "Peas_Of_A_Pod"
     },
     "petri_dish": {
@@ -999,7 +1002,7 @@
       "condition": "word_starts_face_card",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "Word starts with suited face card: ×WORD SCORE",
+      "wiki_effect": "Word starts with suited face card: \u00d7WORD SCORE",
       "wiki_page": "Poker_Face"
     },
     "postal_horn": {
@@ -1017,7 +1020,7 @@
       "condition": "word_all_uncursed",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "Uncursed words get ×WORD SCORE",
+      "wiki_effect": "Uncursed words get \u00d7WORD SCORE",
       "wiki_page": "Postbox"
     },
     "printer": {
@@ -1097,7 +1100,7 @@
       "type": "multiply_word_per_distinct_pair",
       "base": 1.25,
       "upgrade": 0.25,
-      "wiki_effect": "×WORD SCORE per distinct pair in word",
+      "wiki_effect": "\u00d7WORD SCORE per distinct pair in word",
       "wiki_page": "Scissors"
     },
     "sequoia_sapling": {
@@ -1140,7 +1143,7 @@
       "per_level_factor": true,
       "factor_base": 1.0,
       "factor_per_level": 1.0,
-      "wiki_effect": "Consonants get ×2 TILE SCORE",
+      "wiki_effect": "Consonants get \u00d72 TILE SCORE",
       "wiki_page": "Sly_Spy"
     },
     "snapshot": {
@@ -1218,7 +1221,7 @@
       "type": "multiply_money_bonus",
       "base": 0.01,
       "upgrade": 0.01,
-      "wiki_effect": "Get ×1 WORD SCORE (Extra 0.01 for each $ you have)",
+      "wiki_effect": "Get \u00d71 WORD SCORE (Extra 0.01 for each $ you have)",
       "wiki_page": "Sunflower"
     },
     "sushi": {
@@ -1227,7 +1230,7 @@
       "target": "colourless_adjacent_two_colours",
       "base": 3,
       "upgrade": 1,
-      "wiki_effect": "COLOURLESS tiles get ×N TILE SCORE if next to 2 uniquely coloured tiles",
+      "wiki_effect": "COLOURLESS tiles get \u00d7N TILE SCORE if next to 2 uniquely coloured tiles",
       "wiki_page": "Sushi"
     },
     "telescope": {
@@ -1278,7 +1281,7 @@
       "condition": "word_starts_ends_consumable",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "Words starting and ending on consumable tiles get ×WORD SCORE",
+      "wiki_effect": "Words starting and ending on consumable tiles get \u00d7WORD SCORE",
       "wiki_page": "Under_Construction"
     },
     "wheezy_vixen": {
@@ -1287,7 +1290,7 @@
       "condition": "word_starts_vwxyz",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "If your word starts with V, W, X, Y or Z, get ×WORD SCORE",
+      "wiki_effect": "If your word starts with V, W, X, Y or Z, get \u00d7WORD SCORE",
       "wiki_page": "Wheezy_Vixen"
     },
     "wind_chime": {
@@ -1296,7 +1299,7 @@
       "condition": "card_count_eq:5",
       "base": 2,
       "upgrade": 1,
-      "wiki_effect": "If word contains exactly 5 cards, get ×WORD SCORE",
+      "wiki_effect": "If word contains exactly 5 cards, get \u00d7WORD SCORE",
       "wiki_page": "Wind_Chime"
     },
     "worn_out_jeans": {
@@ -1314,7 +1317,7 @@
       "condition": "word_starts_ends_different_suit",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "Word starts and ends on different card suits: ×WORD SCORE",
+      "wiki_effect": "Word starts and ends on different card suits: \u00d7WORD SCORE",
       "wiki_page": "Wrestlers"
     },
     "wriggly_worm": {
@@ -1323,7 +1326,7 @@
       "condition": "path_length_gte:10",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "Words with 10+ tiles get ×WORD SCORE",
+      "wiki_effect": "Words with 10+ tiles get \u00d7WORD SCORE",
       "wiki_page": "Wriggly_Worm"
     },
     "yellow_glasses": {
@@ -1332,7 +1335,7 @@
       "condition": "has_double_letter",
       "base": 1.5,
       "upgrade": 0.5,
-      "wiki_effect": "If your word contains a double letter, ×WORD SCORE",
+      "wiki_effect": "If your word contains a double letter, \u00d7WORD SCORE",
       "wiki_page": "Yellow_Glasses"
     },
     "zebra": {
@@ -1343,7 +1346,7 @@
       "factor_base": 1.0,
       "factor_per_level": 2.0,
       "strict_takes": true,
-      "wiki_effect": "Chess pieces get ×N TILE SCORE if they take another piece",
+      "wiki_effect": "Chess pieces get \u00d7N TILE SCORE if they take another piece",
       "wiki_page": "Zebra"
     },
     "red_rider": {
@@ -1397,7 +1400,7 @@
       "name": "Avocado",
       "type": "multiply",
       "factor": 2.0,
-      "wiki_effect": "×2 WORD SCORE. Shop prices are doubled. Best served fresh",
+      "wiki_effect": "\u00d72 WORD SCORE. Shop prices are doubled. Best served fresh",
       "wiki_page": "Avocado",
       "shop_price": 20,
       "effect_class": "shop",
@@ -1407,7 +1410,7 @@
       "name": "Banana",
       "type": "multiply_word_by_high_letter_count",
       "min_letter_count": 3,
-      "wiki_effect": "For letters which occur at least 3 times, get WORD SCORE × half that letter's count",
+      "wiki_effect": "For letters which occur at least 3 times, get WORD SCORE \u00d7 half that letter's count",
       "wiki_page": "Banana",
       "shop_price": 16,
       "game_class": "Banana"
@@ -1429,35 +1432,7 @@
       "wiki_effect": "Do nothing (Submit a number's name to improve this)",
       "wiki_page": "Bar_Chart",
       "shop_price": 10,
-      "game_class": "BarChart",
-      "setup_stamp": true,
-      "improve_words": [
-        "one",
-        "two",
-        "three",
-        "four",
-        "five",
-        "six",
-        "seven",
-        "eight",
-        "nine",
-        "ten",
-        "eleven",
-        "twelve",
-        "thirteen",
-        "fourteen",
-        "fifteen",
-        "sixteen",
-        "seventeen",
-        "eighteen",
-        "nineteen",
-        "twenty",
-        "twentyone",
-        "twentytwo",
-        "twentythree",
-        "twentyfour",
-        "twentyfive"
-      ]
+      "game_class": "BarChart"
     },
     "bar_of_soap": {
       "name": "Bar Of Soap",
@@ -1494,7 +1469,7 @@
       "condition": "word_starts_same_as_previous",
       "base": 1.5,
       "upgrade": 0,
-      "wiki_effect": "If your word starts with the same letter as your previous word, get ×1.5 WORD SCORE",
+      "wiki_effect": "If your word starts with the same letter as your previous word, get \u00d71.5 WORD SCORE",
       "wiki_page": "Bento_Box",
       "shop_price": 16,
       "game_class": "BentoBox"
@@ -1528,7 +1503,7 @@
       "upgrade": 0,
       "scale_from_extras": "fairy_count",
       "scale_per_extra": 0.5,
-      "wiki_effect": "Get ×1 WORD SCORE (0.5 extra for each fairy)",
+      "wiki_effect": "Get \u00d71 WORD SCORE (0.5 extra for each fairy)",
       "wiki_page": "Blessing_of_the_Fairies",
       "shop_price": 20,
       "game_class": "BlessingOfTheFairies"
@@ -1559,16 +1534,7 @@
       "wiki_effect": "Do nothing (Submit a chess piece name to improve this)",
       "wiki_page": "Book_Of_Openings",
       "shop_price": 12,
-      "game_class": "BookOfOpenings",
-      "setup_stamp": true,
-      "improve_words": [
-        "pawn",
-        "knight",
-        "bishop",
-        "rook",
-        "queen",
-        "king"
-      ]
+      "game_class": "BookOfOpenings"
     },
     "briefcase": {
       "name": "Briefcase",
@@ -1583,7 +1549,7 @@
     "bubble_tea": {
       "name": "Bubble Tea",
       "type": "tile_multiply_by_letter_count",
-      "wiki_effect": "Tiles get TILE SCORE × same letter count",
+      "wiki_effect": "Tiles get TILE SCORE \u00d7 same letter count",
       "wiki_page": "Bubble_Tea",
       "shop_price": 18,
       "game_class": "BubbleTea"
@@ -1593,7 +1559,7 @@
       "type": "tile_multiply",
       "target": "consumable",
       "scale_by_consumable_count_on_path": true,
-      "wiki_effect": "Consumable tiles get TILE SCORE × number of consumable tiles in the word",
+      "wiki_effect": "Consumable tiles get TILE SCORE \u00d7 number of consumable tiles in the word",
       "wiki_page": "Builder",
       "shop_price": 16,
       "game_class": "Builder"
@@ -1657,7 +1623,7 @@
       "name": "Cartwheeler",
       "type": "multiply_word_per_path_tile",
       "factor": -1.1,
-      "wiki_effect": "For each tile in your word get ×-1.1 WORD SCORE",
+      "wiki_effect": "For each tile in your word get \u00d7-1.1 WORD SCORE",
       "wiki_page": "Cartwheeler",
       "shop_price": 15,
       "game_class": "Cartwheeler"
@@ -1679,7 +1645,7 @@
       "base": 1,
       "upgrade": 0,
       "scale_from_extras": "level_one_sticker_count",
-      "wiki_effect": "Get ×1 WORD SCORE (Increased by your level 1 Stickers)",
+      "wiki_effect": "Get \u00d71 WORD SCORE (Increased by your level 1 Stickers)",
       "wiki_page": "Chick",
       "shop_price": 15,
       "game_class": "Chick"
@@ -1717,7 +1683,7 @@
     "dango": {
       "name": "Dango",
       "type": "multiply_word_by_unique_colour_count",
-      "wiki_effect": "Get WORD SCORE × unique tile colours used",
+      "wiki_effect": "Get WORD SCORE \u00d7 unique tile colours used",
       "wiki_page": "Dango",
       "shop_price": 18,
       "game_class": "Dango"
@@ -1802,7 +1768,7 @@
       "condition": "money_eq:0",
       "base": 2,
       "upgrade": 0,
-      "wiki_effect": "If you have $0, get ×2 WORD SCORE",
+      "wiki_effect": "If you have $0, get \u00d72 WORD SCORE",
       "wiki_page": "Empty_Jar",
       "shop_price": 12,
       "game_class": "EmptyJar"
@@ -1820,7 +1786,7 @@
       "name": "Error",
       "type": "multiply",
       "factor": 1,
-      "wiki_effect": "Get ×1 WORD SCORE. Using a GLITCH tile improves this by 1 but has a 10% chance to break the item",
+      "wiki_effect": "Get \u00d71 WORD SCORE. Using a GLITCH tile improves this by 1 but has a 10% chance to break the item",
       "wiki_page": "Error",
       "shop_price": 14,
       "game_class": "Error"
@@ -1829,7 +1795,7 @@
       "name": "Erupting Volcano",
       "type": "multiply",
       "factor": 1.5,
-      "wiki_effect": "Get ×1.5 WORD SCORE. Items cannot be frozen",
+      "wiki_effect": "Get \u00d71.5 WORD SCORE. Items cannot be frozen",
       "wiki_page": "Erupting_Volcano",
       "shop_price": 18,
       "items_cannot_freeze": true,
@@ -1894,21 +1860,7 @@
       "wiki_effect": "Do nothing (Submit a tile colour name to improve this)",
       "wiki_page": "Flashy_Fountain_Pen",
       "shop_price": 10,
-      "game_class": "FlashyFountainPen",
-      "setup_stamp": true,
-      "improve_words": [
-        "red",
-        "blue",
-        "void",
-        "shiny",
-        "purple",
-        "gold",
-        "white",
-        "green",
-        "pink",
-        "glitch",
-        "cactus"
-      ]
+      "game_class": "FlashyFountainPen"
     },
     "fleur_de_lis": {
       "name": "Fleur De Lis",
@@ -1934,7 +1886,7 @@
       "name": "Fortune Cookie",
       "type": "custom",
       "effect_class": "shop",
-      "wiki_effect": "Foil Stickers show up 5× more often",
+      "wiki_effect": "Foil Stickers show up 5\u00d7 more often",
       "wiki_page": "Fortune_Cookie",
       "shop_price": 16,
       "game_class": "FortuneCookie"
@@ -1971,7 +1923,7 @@
     "full_battery": {
       "name": "Full Battery",
       "type": "multiply_word_by_number_count",
-      "wiki_effect": "Words containing only numbers get WORD SCORE × number of numbers",
+      "wiki_effect": "Words containing only numbers get WORD SCORE \u00d7 number of numbers",
       "wiki_page": "Full_Battery",
       "shop_price": 18,
       "game_class": "FullBattery"
@@ -1992,7 +1944,7 @@
       "name": "Genie",
       "type": "custom",
       "effect_class": "shop",
-      "wiki_effect": "Rare and Legendary items are 3× as likely to appear in the shop",
+      "wiki_effect": "Rare and Legendary items are 3\u00d7 as likely to appear in the shop",
       "wiki_page": "Genie",
       "shop_price": 25,
       "game_class": "Genie"
@@ -2002,7 +1954,7 @@
       "type": "tile_multiply",
       "target": "number",
       "scale_by_path_position": true,
-      "wiki_effect": "Numbers get TILE SCORE × position in word",
+      "wiki_effect": "Numbers get TILE SCORE \u00d7 position in word",
       "wiki_page": "Giraffe",
       "shop_price": 16,
       "game_class": "Giraffe"
@@ -2071,7 +2023,7 @@
       "condition": "path_all_non_adjacent",
       "base": 1.5,
       "upgrade": 0,
-      "wiki_effect": "START OF GRID: Scatters 2 WHITE tiles. Get ×1.5 WORD SCORE if your word contains no adjacent moves",
+      "wiki_effect": "START OF GRID: Scatters 2 WHITE tiles. Get \u00d71.5 WORD SCORE if your word contains no adjacent moves",
       "wiki_page": "Head_In_The_Clouds",
       "grid_effect": "START OF GRID: Scatters 2 WHITE tiles",
       "shop_price": 16,
@@ -2090,7 +2042,7 @@
     "heart_on_fire": {
       "name": "Heart On Fire",
       "type": "multiply_word_by_longest_red_run",
-      "wiki_effect": "Get WORD SCORE × longest consecutive run of RED tiles",
+      "wiki_effect": "Get WORD SCORE \u00d7 longest consecutive run of RED tiles",
       "wiki_page": "Heart_On_Fire",
       "shop_price": 18,
       "game_class": "HeartOnFire"
@@ -2210,7 +2162,7 @@
       "condition": "word_starts_after_previous",
       "base": 1.5,
       "upgrade": 0,
-      "wiki_effect": "If your word starts with a letter one later in the alphabet than the previous word, ×1.5 WORD SCORE",
+      "wiki_effect": "If your word starts with a letter one later in the alphabet than the previous word, \u00d71.5 WORD SCORE",
       "wiki_page": "Limnophila",
       "shop_price": 8,
       "game_class": "Limnophila"
@@ -2286,7 +2238,7 @@
       "condition": "unique_colours_gte:3",
       "base": 1,
       "upgrade": 0,
-      "wiki_effect": "Get ×1 WORD SCORE (Submit a word with 3 or more unique colours to improve)",
+      "wiki_effect": "Get \u00d71 WORD SCORE (Submit a word with 3 or more unique colours to improve)",
       "wiki_page": "Neapolitan",
       "shop_price": 14,
       "game_class": "Neapolitan"
@@ -2326,7 +2278,7 @@
     "oden": {
       "name": "Oden",
       "type": "multiply_word_by_unique_curse_type_count",
-      "wiki_effect": "Get WORD SCORE × number of unique curse types",
+      "wiki_effect": "Get WORD SCORE \u00d7 number of unique curse types",
       "wiki_page": "Oden",
       "shop_price": 18,
       "game_class": "Oden"
@@ -2388,7 +2340,7 @@
       "upgrade": 0,
       "scale_from_extras": "money_lost_encounter",
       "scale_per_extra": 0.01,
-      "wiki_effect": "START OF GRID: Scatters 2 PINK tiles. Get ×1 WORD SCORE. Improved by 0.01 each time you lose $",
+      "wiki_effect": "START OF GRID: Scatters 2 PINK tiles. Get \u00d71 WORD SCORE. Improved by 0.01 each time you lose $",
       "wiki_page": "Piggy_Bank",
       "grid_effect": "START OF GRID: Scatters 2 PINK tiles",
       "shop_price": 16,
@@ -2405,13 +2357,13 @@
       "game_class": "PizzaSlice"
     },
     "pi_ata": {
-      "name": "Piñata",
+      "name": "Pi\u00f1ata",
       "type": "scatter_start_grid",
       "effect_class": "scatter",
       "grid_effect": "Words containing 7 or more tiles scatter a SHINY tile onto the next grid",
       "wiki_effect": "Words containing 7 or more tiles scatter a SHINY tile onto the next grid",
       "wiki_page": "Pinata",
-      "game_class": "Piñata",
+      "game_class": "Pi\u00f1ata",
       "grid_timing": "on_submit",
       "shop_price": 10
     },
@@ -2439,7 +2391,7 @@
       "type": "tile_multiply",
       "target": "letter:q",
       "factor": 5.0,
-      "wiki_effect": "Qs can behave as a QU. Qs get ×5 TILE SCORE",
+      "wiki_effect": "Qs can behave as a QU. Qs get \u00d75 TILE SCORE",
       "wiki_page": "Queenie",
       "shop_price": 10,
       "game_class": "Queenie",
@@ -2515,7 +2467,7 @@
       "upgrade": 0,
       "scale_from_path": "non_adjacent_steps",
       "path_scale": 0.02,
-      "wiki_effect": "Get ×1 WORD SCORE. Improved by 0.02 for each non-adjacent move",
+      "wiki_effect": "Get \u00d71 WORD SCORE. Improved by 0.02 for each non-adjacent move",
       "wiki_page": "Ruler",
       "shop_price": 15,
       "game_class": "Ruler"
@@ -2554,7 +2506,7 @@
       "type": "multiply",
       "factor": 1,
       "condition": "frozen_in_shop",
-      "wiki_effect": "Get ×1 WORD SCORE. Improves while frozen in the shop",
+      "wiki_effect": "Get \u00d71 WORD SCORE. Improves while frozen in the shop",
       "wiki_page": "Shaved_Ice",
       "shop_price": 12,
       "game_class": "ShavedIce"
@@ -2566,7 +2518,7 @@
       "base": 1,
       "upgrade": 0,
       "scale_from_extras": "animal_stamp_count",
-      "wiki_effect": "Get ×1 WORD SCORE (Increased by your other animals)",
+      "wiki_effect": "Get \u00d71 WORD SCORE (Increased by your other animals)",
       "wiki_page": "Silly_Puppy",
       "shop_price": 14,
       "game_class": "SillyPuppy"
@@ -2609,7 +2561,7 @@
       "name": "Snail",
       "type": "custom",
       "effect_class": "shop",
-      "wiki_effect": "Rare and Legendary items are ×1 as likely to appear in the shop. Improved each time you restock the shop",
+      "wiki_effect": "Rare and Legendary items are \u00d71 as likely to appear in the shop. Improved each time you restock the shop",
       "wiki_page": "Snail",
       "shop_price": 14,
       "game_class": "Snail"
@@ -2673,7 +2625,7 @@
       "upgrade": 0,
       "scale_from_extras": "rare_item_count",
       "scale_per_extra": 0.25,
-      "wiki_effect": "Get ×1 WORD SCORE (Increased by your RARE items; +0.25 per rare item)",
+      "wiki_effect": "Get \u00d71 WORD SCORE (Increased by your RARE items; +0.25 per rare item)",
       "wiki_page": "Steak",
       "shop_price": 15,
       "game_class": "Steak"
@@ -2693,7 +2645,7 @@
       "type": "tile_multiply",
       "target": "red",
       "scale_from_extras": "grid_number_half",
-      "wiki_effect": "RED tiles get TILE SCORE × half of grid number",
+      "wiki_effect": "RED tiles get TILE SCORE \u00d7 half of grid number",
       "wiki_page": "Stiletto",
       "shop_price": 16,
       "game_class": "Stiletto"
@@ -2781,7 +2733,7 @@
       "base": 1.2,
       "upgrade": 0,
       "scale_from_extras": "tile_ninja_bonus",
-      "wiki_effect": "Get ×1.2 WORD SCORE (Place a consumable tile to improve)",
+      "wiki_effect": "Get \u00d71.2 WORD SCORE (Place a consumable tile to improve)",
       "wiki_page": "Tile_Ninja",
       "shop_price": 18,
       "game_class": "TileNinja"
@@ -2936,7 +2888,7 @@
       "game_class": "Moai"
     },
     "pinata": {
-      "name": "Piñata",
+      "name": "Pi\u00f1ata",
       "type": "custom",
       "effect_class": "scatter",
       "grid_effect": "Words containing 7 or more tiles scatter a SHINY tile onto the next grid",
@@ -2948,47 +2900,10 @@
     }
   },
   "bosses": {
-    "mole": {
-      "name": "Mole",
-      "type": "custom",
-      "effect_class": "grid_start",
-      "game_class": "ExtraVoids",
-      "wiki_page": "Mole",
-      "wiki_effect": "Scatter void tiles (count scales by area)",
-      "scaling": [
-        {
-          "area": 1,
-          "value": 3,
-          "cursed": 5
-        },
-        {
-          "area": 2,
-          "value": 4,
-          "cursed": 6
-        },
-        {
-          "area": 3,
-          "value": 5,
-          "cursed": 8
-        },
-        {
-          "area": 4,
-          "value": 5,
-          "cursed": 8
-        },
-        {
-          "area": 5,
-          "value": 6,
-          "cursed": 10
-        }
-      ],
-      "grid_handler": "mole_void",
-      "boss_effect_type": "custom"
-    },
     "axolotl": {
       "name": "Axolotl",
       "type": "custom",
-      "effect_class": "grid_start",
+      "effect_class": "grid",
       "game_class": "ExtraQs",
       "wiki_page": "Axolotl",
       "wiki_effect": "Scatter Q tiles",
@@ -3018,128 +2933,50 @@
           "value": 6,
           "cursed": 10
         }
-      ],
-      "grid_handler": "axolotl_q",
-      "boss_effect_type": "custom"
+      ]
     },
-    "bison": {
-      "name": "Bison",
+    "badger": {
+      "name": "Badger",
       "type": "custom",
-      "effect_class": "grid_start",
-      "game_class": "AddNumbers",
-      "wiki_page": "Bison",
-      "wiki_effect": "Scatters high number tiles (range scales by area)",
+      "effect_class": "encounter",
+      "game_class": "FewerGrids",
+      "wiki_page": "Badger",
+      "wiki_effect": "Fewer grids per encounter",
       "scaling": [
         {
           "area": 1,
-          "value": 9,
-          "cursed": 11
+          "value": 1,
+          "cursed": 2
         },
         {
           "area": 2,
-          "value": 10,
-          "cursed": 12
+          "value": 1,
+          "cursed": 2
         },
         {
           "area": 3,
-          "value": 11,
-          "cursed": 14
+          "value": 1,
+          "cursed": 2
         },
         {
           "area": 4,
-          "value": 12,
-          "cursed": 15
+          "value": 1,
+          "cursed": 2
         },
         {
           "area": 5,
-          "value": 13,
-          "cursed": 17
+          "value": 1,
+          "cursed": 2
         }
-      ],
-      "grid_handler": "bison_numbers",
-      "boss_effect_type": "custom"
-    },
-    "yeti_crab": {
-      "name": "Yeti Crab",
-      "type": "custom",
-      "effect_class": "grid_start",
-      "game_class": "DiscolourTiles",
-      "wiki_page": "Yeti_Crab",
-      "wiki_effect": "Makes colored tiles colorless",
-      "scaling": [
-        {
-          "area": 1,
-          "value": 2,
-          "cursed": 3
-        },
-        {
-          "area": 2,
-          "value": 3,
-          "cursed": 4
-        },
-        {
-          "area": 3,
-          "value": 4,
-          "cursed": 6
-        },
-        {
-          "area": 4,
-          "value": 4,
-          "cursed": 7
-        },
-        {
-          "area": 5,
-          "value": 5,
-          "cursed": 8
-        }
-      ],
-      "grid_handler": "yeti_colorless",
-      "boss_effect_type": "custom"
-    },
-    "robo_eel": {
-      "name": "Robo-Eel",
-      "type": "custom",
-      "effect_class": "grid_start",
-      "game_class": "DestroyGrid",
-      "wiki_page": "Robo-Eel",
-      "wiki_effect": "Eats tiles each grid (board reflects eaten tiles)",
-      "scaling": [
-        {
-          "area": 1,
-          "value": 2,
-          "cursed": 3
-        },
-        {
-          "area": 2,
-          "value": 2,
-          "cursed": 3
-        },
-        {
-          "area": 3,
-          "value": 2,
-          "cursed": 3
-        },
-        {
-          "area": 4,
-          "value": 3,
-          "cursed": 4
-        },
-        {
-          "area": 5,
-          "value": 3,
-          "cursed": 5
-        }
-      ],
-      "grid_handler": "robo_eel_eat",
-      "boss_effect_type": "custom"
+      ]
     },
     "bat": {
       "name": "Bat",
       "type": "custom",
-      "effect_class": "grid_start",
+      "effect_class": "grid",
       "game_class": "SmallGrid",
       "wiki_page": "Bat",
-      "wiki_effect": "Shrinks playable grid (rows×cols)",
+      "wiki_effect": "Shrinks playable grid (rows\u00d7cols)",
       "scaling": [
         {
           "area": 1,
@@ -3176,113 +3013,48 @@
           "cursed_rows": 3,
           "cursed_cols": 2
         }
-      ],
-      "grid_handler": "bat_shrink",
-      "boss_effect_type": "custom"
+      ]
     },
-    "badger": {
-      "name": "Badger",
+    "bison": {
+      "name": "Bison",
       "type": "custom",
-      "effect_class": "encounter",
-      "game_class": "FewerGrids",
-      "wiki_page": "Badger",
-      "wiki_effect": "Fewer grids per encounter",
+      "effect_class": "grid",
+      "game_class": "AddNumbers",
+      "wiki_page": "Bison",
+      "wiki_effect": "Scatters high number tiles (range scales by area)",
       "scaling": [
         {
           "area": 1,
-          "value": 1,
-          "cursed": 2
+          "value": 9,
+          "cursed": 11
         },
         {
           "area": 2,
-          "value": 1,
-          "cursed": 2
+          "value": 10,
+          "cursed": 12
         },
         {
           "area": 3,
-          "value": 1,
-          "cursed": 2
+          "value": 11,
+          "cursed": 14
         },
         {
           "area": 4,
-          "value": 1,
-          "cursed": 2
+          "value": 12,
+          "cursed": 15
         },
         {
           "area": 5,
-          "value": 1,
-          "cursed": 2
+          "value": 13,
+          "cursed": 17
         }
-      ],
-      "boss_effect_type": "custom"
-    },
-    "fox": {
-      "name": "Fox",
-      "type": "custom",
-      "effect_class": "scoring_early",
-      "game_class": "StealsMoney",
-      "wiki_page": "Fox",
-      "wiki_effect": "Steals money each grid",
-      "scaling": [
-        {
-          "area": 1,
-          "value": 2,
-          "cursed": 3
-        },
-        {
-          "area": 2,
-          "value": 3,
-          "cursed": 5
-        },
-        {
-          "area": 3,
-          "value": 4,
-          "cursed": 6
-        },
-        {
-          "area": 4,
-          "value": 5,
-          "cursed": 8
-        },
-        {
-          "area": 5,
-          "na": true
-        }
-      ],
-      "grid_handler": "fox_grid_steal",
-      "boss_effect_type": "boss_steal_money"
-    },
-    "hyena": {
-      "name": "Hyena",
-      "type": "custom",
-      "effect_class": "encounter",
-      "game_class": "ForcedSell",
-      "wiki_page": "Hyena",
-      "wiki_effect": "Blocks submissions until a sticker or stamp is sold",
-      "boss_effect_type": "hyena_blocked"
-    },
-    "cretaceous_meg": {
-      "name": "Cretaceous Meg",
-      "type": "custom",
-      "effect_class": "meta",
-      "game_class": "CretaceousMegBoss",
-      "wiki_page": "Cretaceous_Meg_(boss)",
-      "wiki_effect": "Strips loadout to special shop ($120/$160/$200 by stage); rebuild before challenge grids",
-      "boss_effect_type": "custom"
-    },
-    "sandy_saguaro": {
-      "name": "Sandy Saguaro",
-      "type": "custom",
-      "effect_class": "encounter",
-      "game_class": "SandySaguaroBoss",
-      "wiki_page": "Sandy_Saguaro_(boss)",
-      "wiki_effect": "Gives 2 CACTUS consumable tiles; must be used in submitted words"
+      ]
     },
     "capybara": {
       "name": "Capybara",
       "type": "shuffle_loadout_order",
       "effect_class": "encounter",
-      "game_class": "RandomiseItemOrder",
+      "game_class": "Capybara",
       "wiki_page": "Capybara",
       "wiki_effect": "Randomizes sticker/stamp order on submit",
       "scaling": [
@@ -3347,37 +3119,148 @@
         }
       ]
     },
-    "wolf": {
-      "name": "Wolf",
-      "type": "boss_word_max_length",
-      "game_class": "MaxWordLength",
-      "effect_class": "search_only",
-      "wiki_page": "Wolf",
+    "fox": {
+      "name": "Fox",
+      "type": "custom",
+      "effect_class": "encounter",
+      "game_class": "StealsMoney",
+      "wiki_page": "Fox",
+      "wiki_effect": "Steals money each grid",
       "scaling": [
         {
           "area": 1,
-          "max_length": 5,
-          "cursed_max_length": 4
+          "value": 2,
+          "cursed": 3
         },
         {
           "area": 2,
-          "max_length": 5,
-          "cursed_max_length": 4
+          "value": 3,
+          "cursed": 5
         },
         {
           "area": 3,
-          "max_length": 4,
-          "cursed_max_length": 3
+          "value": 4,
+          "cursed": 6
         },
         {
           "area": 4,
-          "max_length": 4,
-          "cursed_max_length": 3
+          "value": 5,
+          "cursed": 8
         },
         {
           "area": 5,
-          "max_length": 4,
-          "cursed_max_length": 3
+          "na": true
+        }
+      ]
+    },
+    "hyena": {
+      "name": "Hyena",
+      "type": "custom",
+      "effect_class": "encounter",
+      "game_class": "ForcedSell",
+      "wiki_page": "Hyena",
+      "wiki_effect": "Blocks submissions until a sticker or stamp is sold"
+    },
+    "mole": {
+      "name": "Mole",
+      "type": "custom",
+      "effect_class": "grid",
+      "game_class": "ExtraVoids",
+      "wiki_page": "Mole",
+      "wiki_effect": "Scatter void tiles (count scales by area)",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 3,
+          "cursed": 5
+        },
+        {
+          "area": 2,
+          "value": 4,
+          "cursed": 6
+        },
+        {
+          "area": 3,
+          "value": 5,
+          "cursed": 8
+        },
+        {
+          "area": 4,
+          "value": 5,
+          "cursed": 8
+        },
+        {
+          "area": 5,
+          "value": 6,
+          "cursed": 10
+        }
+      ]
+    },
+    "robo_eel": {
+      "name": "Robo-Eel",
+      "type": "custom",
+      "effect_class": "grid",
+      "game_class": "DestroyGrid",
+      "wiki_page": "Robo-Eel",
+      "wiki_effect": "Eats tiles each grid (board reflects eaten tiles)",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 2,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 3,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 4,
+          "value": 3,
+          "cursed": 4
+        },
+        {
+          "area": 5,
+          "value": 3,
+          "cursed": 5
+        }
+      ]
+    },
+    "robo_monkey": {
+      "name": "Robo-Monkey",
+      "type": "boss_subtract_word_score_money",
+      "game_class": "NegativeMoney",
+      "effect_class": "scoring_early",
+      "wiki_page": "Robo-Monkey",
+      "scaling": [
+        {
+          "area": 1,
+          "multiplier": 1,
+          "cursed_multiplier": 2
+        },
+        {
+          "area": 2,
+          "multiplier": 5,
+          "cursed_multiplier": 7
+        },
+        {
+          "area": 3,
+          "multiplier": 9,
+          "cursed_multiplier": 12
+        },
+        {
+          "area": 4,
+          "multiplier": 15,
+          "cursed_multiplier": 20
+        },
+        {
+          "area": 5,
+          "na": true
         }
       ]
     },
@@ -3415,39 +3298,6 @@
         }
       ]
     },
-    "robo_monkey": {
-      "name": "Robo-Monkey",
-      "type": "boss_subtract_word_score_money",
-      "game_class": "NegativeMoney",
-      "effect_class": "scoring_early",
-      "wiki_page": "Robo-Monkey",
-      "scaling": [
-        {
-          "area": 1,
-          "multiplier": 1,
-          "cursed_multiplier": 2
-        },
-        {
-          "area": 2,
-          "multiplier": 5,
-          "cursed_multiplier": 7
-        },
-        {
-          "area": 3,
-          "multiplier": 9,
-          "cursed_multiplier": 12
-        },
-        {
-          "area": 4,
-          "multiplier": 15,
-          "cursed_multiplier": 20
-        },
-        {
-          "area": 5,
-          "na": true
-        }
-      ]
-    },
     "toothed_whale": {
       "name": "Toothed Whale",
       "type": "boss_target_score_multiplier",
@@ -3481,6 +3331,99 @@
           "cursed_multiplier": 2.25
         }
       ]
+    },
+    "wolf": {
+      "name": "Wolf",
+      "type": "boss_word_max_length",
+      "game_class": "MaxWordLength",
+      "effect_class": "search_only",
+      "wiki_page": "Wolf",
+      "scaling": [
+        {
+          "area": 1,
+          "max_length": 5,
+          "cursed_max_length": 4
+        },
+        {
+          "area": 2,
+          "max_length": 5,
+          "cursed_max_length": 4
+        },
+        {
+          "area": 3,
+          "max_length": 4,
+          "cursed_max_length": 3
+        },
+        {
+          "area": 4,
+          "max_length": 4,
+          "cursed_max_length": 3
+        },
+        {
+          "area": 5,
+          "max_length": 4,
+          "cursed_max_length": 3
+        }
+      ]
+    },
+    "yeti_crab": {
+      "name": "Yeti Crab",
+      "type": "custom",
+      "effect_class": "grid",
+      "game_class": "DiscolourTiles",
+      "wiki_page": "Yeti_Crab",
+      "wiki_effect": "Makes colored tiles colorless",
+      "scaling": [
+        {
+          "area": 1,
+          "value": 2,
+          "cursed": 3
+        },
+        {
+          "area": 2,
+          "value": 3,
+          "cursed": 4
+        },
+        {
+          "area": 3,
+          "value": 4,
+          "cursed": 6
+        },
+        {
+          "area": 4,
+          "value": 4,
+          "cursed": 7
+        },
+        {
+          "area": 5,
+          "value": 5,
+          "cursed": 8
+        }
+      ]
+    },
+    "cretaceous_meg": {
+      "name": "Cretaceous Meg",
+      "type": "custom",
+      "effect_class": "encounter",
+      "game_class": "CretaceousMegBoss",
+      "wiki_page": "Cretaceous_Meg_(boss)",
+      "wiki_effect": "Strips loadout to special shop ($120/$160/$200 by stage); rebuild before challenge grids"
+    },
+    "sandy_saguaro": {
+      "name": "Sandy Saguaro",
+      "type": "custom",
+      "effect_class": "encounter",
+      "game_class": "SandySaguaroBoss",
+      "wiki_page": "Sandy_Saguaro_(boss)",
+      "wiki_effect": "Gives 2 CACTUS consumable tiles; must be used in submitted words"
+    },
+    "human_boy_boss": {
+      "name": "Human Boy",
+      "type": "custom",
+      "effect_class": "meta",
+      "game_class": "HumanBoyBoss",
+      "wiki_page": "Human_Boy",
+      "wiki_effect": "Steals a sticker or stamp before the first grid"
     }
   },
   "pins": {
@@ -3547,7 +3490,7 @@
       "character": "sandy_saguaro",
       "game_class": "MahjongRedDragon",
       "wiki_page": "Mahjong_Red_Dragon",
-      "wiki_effect": "Consumable tiles get ×N TILE SCORE (N = 2 + right upgrades)",
+      "wiki_effect": "Consumable tiles get \u00d7N TILE SCORE (N = 2 + right upgrades)",
       "left": {
         "type": "scatter_start_encounter",
         "effect_class": "scatter",
@@ -3665,15 +3608,11 @@
       "right": {
         "type": "add_tile_score",
         "target": "currency",
-        "value": 10,
-        "value_per_right_upgrade": 10,
-        "value_from_component": 1
+        "value": 10
       },
       "type": "add_tile_score",
       "target": "currency",
-      "value": 10,
-      "value_per_right_upgrade": 10,
-      "value_from_component": 1
+      "value": 10
     },
     "human_boy": {
       "name": "Human Hands",

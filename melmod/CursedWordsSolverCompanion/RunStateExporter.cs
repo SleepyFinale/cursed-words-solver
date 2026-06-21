@@ -1644,7 +1644,26 @@ namespace CursedWordsSolverCompanion
 
             var mutatingDna = MutatingDnaLetterCounts.TryReadFromPlayer(player);
             ctx.HasMutatingDnaStamp = MutatingDnaLetterCounts.PlayerHasMutatingDnaStamp(player);
+            ctx.HasBentoStamp = PlayerHasBentoStamp(player);
             return ctx;
+        }
+
+        private static bool PlayerHasBentoStamp(Player player)
+        {
+            if (player?.Stamps == null)
+                return false;
+            foreach (var stamp in player.Stamps)
+            {
+                if (stamp == null)
+                    continue;
+                var slug = Slugify(stamp.ArtFileName, stamp.Name);
+                if (
+                    string.Equals(slug, "bento_box", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(slug, "bento", StringComparison.OrdinalIgnoreCase)
+                )
+                    return true;
+            }
+            return false;
         }
 
         private static void WriteSnapshot(RunStateSnapshot snapshot)

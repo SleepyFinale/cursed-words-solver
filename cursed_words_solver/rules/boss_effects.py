@@ -25,6 +25,7 @@ _META_BOSS_SLUGS = frozenset(
         "prismatic_bean",
         "human_boy",
         "human_boy_boss",
+        "bosshumanboy",
     }
 )
 

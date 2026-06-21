@@ -528,6 +528,53 @@ def historic_words_gather_pending(snapshot: F8Snapshot) -> bool:
     return "historic_words" in (snapshot.gather_missing or [])
 
 
+def _last_historic_word_key(raw: str) -> str:
+    """Normalized last word in historic_words JSON for drift detection."""
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    try:
+        rows = json.loads(text)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(rows, list):
+        return ""
+    for row in reversed(rows):
+        if not isinstance(row, dict):
+            continue
+        word = str(row.get("word") or "").strip().upper()
+        if word:
+            return word
+    return ""
+
+
+def historic_workflow_catchup_needed(snapshot: F8Snapshot) -> bool:
+    """True when embed historic may lag fresh melmod export (midday/mutt class)."""
+    if historic_words_gather_pending(snapshot):
+        return True
+    embed_hist = ""
+    if snapshot.loadout is not None and isinstance(snapshot.loadout.extras, dict):
+        embed_hist = str(
+            snapshot.loadout.extras.get("historic_words", "") or ""
+        ).strip()
+    fresh = load_run_state_raw()
+    if not isinstance(fresh, dict):
+        return False
+    fresh_extras = fresh.get("extras")
+    if not isinstance(fresh_extras, dict):
+        return False
+    if _grid_number_from_extras(snapshot.loadout.extras if snapshot.loadout else {}) != _grid_number_from_extras(
+        fresh_extras
+    ):
+        return False
+    fresh_hist = str(fresh_extras.get("historic_words", "") or "").strip()
+    if not fresh_hist:
+        return False
+    if not embed_hist:
+        return True
+    return _last_historic_word_key(embed_hist) != _last_historic_word_key(fresh_hist)
+
+
 def sole_gather_miss_is_historic(snapshot: F8Snapshot) -> bool:
     """True when board/loadout are ready but only historic_words is missing."""
     missing = snapshot.gather_missing or []
@@ -588,7 +635,7 @@ def catchup_historic_gather_after_search(
 
     Returns (snapshot, catchup_log_note, historic_catchup_stale_note, behind_disk_warn).
     """
-    if not historic_words_gather_pending(snapshot):
+    if not historic_workflow_catchup_needed(snapshot):
         return snapshot, None, None, None
 
     from cursed_words_solver.loadout import (
@@ -741,6 +788,13 @@ def embed_f8_snapshot(
     sanitized = sanitize_run_state_snapshot_for_f8(run_state, loadout)
     if not isinstance(sanitized, dict):
         return copy.deepcopy(source)
+    extras = sanitized.get("extras")
+    if isinstance(extras, dict):
+        from cursed_words_solver.loadout import project_workflow_extras_for_f8_embed
+
+        board = snapshot.board
+        project_workflow_extras_for_f8_embed(extras, board=board)
+        sanitized["extras"] = extras
     return sanitized
 
 

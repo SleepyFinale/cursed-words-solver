@@ -44,6 +44,7 @@ from cursed_words_solver.f8_snapshot import (
     embed_f8_snapshot,
     gather_f8_snapshot,
     historic_words_gather_pending,
+    historic_workflow_catchup_needed,
     session_from_snapshot,
     sole_gather_miss_is_historic,
     try_refresh_historic_extras_from_disk,
@@ -56,6 +57,7 @@ from cursed_words_solver.suggestion import (
     clear_stale_last_suggestion_if_loadout_changed,
     dictionary_word_for_path,
     effective_scoring_word,
+    empty_historic_on_later_grid_warning,
     f8_should_block_save,
     format_suggestion_word,
     format_result_score_display,
@@ -78,6 +80,7 @@ from cursed_words_solver.loadout import (
     neapolitan_extras_stale_warning,
     mod_money_from_run_state,
     export_diagnostics_from_run_state,
+    f8_historic_stale_after_merge_warning,
     parse_board_from_run_state,
     parse_encounter_grid_reroll,
     parse_run_state,
@@ -1614,6 +1617,36 @@ class SolverApp:
                     run_state_data if isinstance(run_state_data, dict) else None
                 )
                 f8_loadout = loadout
+                historic_catchup_stale_note: str | None = None
+                behind_disk_warn: str | None = None
+                if not gather_succeeded or historic_workflow_catchup_needed(snapshot):
+                    catchup_budget = min(2.0, max(1.0, solve_remaining() * 0.05))
+                    reexport_poll = min(
+                        F8_HISTORIC_CATCHUP_REEXPORT_POLL_SEC,
+                        max(1.0, solve_remaining() * 0.1),
+                    )
+                    snapshot, catchup_note, historic_catchup_stale_note, behind_disk_warn = (
+                        catchup_historic_gather_after_search(
+                            snapshot,
+                            rules=self._scoring.rules,
+                            catchup_timeout_sec=catchup_budget,
+                            reexport_poll_sec=reexport_poll,
+                        )
+                    )
+                    if catchup_note:
+                        print(f"  {catchup_note}", flush=True)
+                    run_state_data = snapshot.run_state
+                    score_run_state = (
+                        run_state_data if isinstance(run_state_data, dict) else None
+                    )
+                    if snapshot.loadout is not None:
+                        f8_loadout = snapshot.loadout
+                        loadout = snapshot.loadout
+                    gather_succeeded = (
+                        snapshot.board_available
+                        and snapshot.loadout is not None
+                        and snapshot.extras_ready
+                    )
                 num_placed = consumables_placed_for_scoring(
                     board,
                     search_board,
@@ -1640,6 +1673,17 @@ class SolverApp:
                         score_loadout,
                     )
                 )
+                if (
+                    capybara_stats is not None
+                    and int(capybara_stats.min_score) != int(capybara_stats.max_score)
+                ):
+                    print(
+                        f"  Capybara score range: "
+                        f"{int(capybara_stats.min_score)}–"
+                        f"{int(capybara_stats.max_score)} "
+                        f"(EV {int(round(capybara_stats.ev))})",
+                        flush=True,
+                    )
                 top.score = pred_score
                 top.breakdown = pred_bd
                 ms_uses = microscope_position_uses(
@@ -1688,36 +1732,6 @@ class SolverApp:
                         if sample_warn:
                             export_warnings.append(sample_warn)
                 session_extras = solver_session_extras_from_loadout(f8_loadout)
-                historic_catchup_stale_note: str | None = None
-                behind_disk_warn: str | None = None
-                if not gather_succeeded or historic_words_gather_pending(snapshot):
-                    catchup_budget = min(2.0, max(1.0, solve_remaining() * 0.05))
-                    reexport_poll = min(
-                        F8_HISTORIC_CATCHUP_REEXPORT_POLL_SEC,
-                        max(1.0, solve_remaining() * 0.1),
-                    )
-                    snapshot, catchup_note, historic_catchup_stale_note, behind_disk_warn = (
-                        catchup_historic_gather_after_search(
-                            snapshot,
-                            rules=self._scoring.rules,
-                            catchup_timeout_sec=catchup_budget,
-                            reexport_poll_sec=reexport_poll,
-                        )
-                    )
-                    if catchup_note:
-                        print(f"  {catchup_note}", flush=True)
-                    run_state_data = snapshot.run_state
-                    score_run_state = (
-                        run_state_data if isinstance(run_state_data, dict) else None
-                    )
-                    if snapshot.loadout is not None:
-                        f8_loadout = snapshot.loadout
-                        loadout = snapshot.loadout
-                    gather_succeeded = (
-                        snapshot.board_available
-                        and snapshot.loadout is not None
-                        and snapshot.extras_ready
-                    )
                 fresh_run_state = load_run_state_raw()
                 embed_state = embed_f8_snapshot(
                     snapshot,
@@ -1726,15 +1740,45 @@ class SolverApp:
                         fresh_run_state if isinstance(fresh_run_state, dict) else None
                     ),
                 )
+                f8_extras = (
+                    embed_state.get("extras")
+                    if isinstance(embed_state, dict)
+                    and isinstance(embed_state.get("extras"), dict)
+                    else (f8_loadout.extras if f8_loadout is not None else None)
+                )
+                post_catchup_workflow_warns = run_state_historic_stale_warnings(
+                    f8_loadout.extras
+                    if f8_loadout is not None
+                    and isinstance(f8_loadout.extras, dict)
+                    else None
+                )
                 block_f8_save, block_f8_reason = f8_should_block_save(
                     gather_succeeded=gather_succeeded,
                     gather_missing=snapshot.gather_missing or None,
                     historic_catchup_stale_note=historic_catchup_stale_note,
                     behind_disk_warn=behind_disk_warn,
+                    hist_stale_note=f8_historic_stale_after_merge_warning(
+                        f8_loadout.extras
+                        if f8_loadout is not None
+                        and isinstance(f8_loadout.extras, dict)
+                        else None
+                    ),
+                    empty_hist_warn=empty_historic_on_later_grid_warning(
+                        f8_loadout.extras
+                        if f8_loadout is not None
+                        and isinstance(f8_loadout.extras, dict)
+                        else None
+                    ),
+                    workflow_stale_warn=(
+                        post_catchup_workflow_warns[0]
+                        if post_catchup_workflow_warns
+                        else None
+                    ),
                     mid_solve_grid_advanced=False,
                     loadout=f8_loadout,
                     board=search_board,
                     path=top.path,
+                    f8_extras=f8_extras if isinstance(f8_extras, dict) else None,
                 )
                 gather_status = {
                     "f8_export_acked": snapshot.f8_export_acked,
