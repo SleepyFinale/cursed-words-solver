@@ -3665,11 +3665,15 @@
       "right": {
         "type": "add_tile_score",
         "target": "currency",
-        "value": 10
+        "value": 10,
+        "value_per_right_upgrade": 10,
+        "value_from_component": 1
       },
       "type": "add_tile_score",
       "target": "currency",
-      "value": 10
+      "value": 10,
+      "value_per_right_upgrade": 10,
+      "value_from_component": 1
     },
     "human_boy": {
       "name": "Human Hands",

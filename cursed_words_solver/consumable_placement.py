@@ -77,6 +77,8 @@ class PlacementSearchStats:
     """Timing and counts from the last placement search."""
 
     variant_gen_sec: float = 0.0
+    variant_screen_sec: float = 0.0
+    variant_refine_sec: float = 0.0
     variants_screened: int = 0
     rack_slots_screened: int = 0
     best_screened_rank: float = -1.0
@@ -755,6 +757,7 @@ def _endpoint_placement_variants_for_tier(
     tier_cap: int,
     loadout: Loadout | None = None,
     rules: dict[str, Any] | None = None,
+    gen_deadline: float | None = None,
 ) -> list[list[tuple[int, Tile]]]:
     """k=2 variants where both cells can serve as path endpoints (Under Construction)."""
     directed_pairs: list[tuple[int, int]] = []
@@ -771,12 +774,21 @@ def _endpoint_placement_variants_for_tier(
 
     heap: list[tuple[float, tuple[int, ...], int, list[tuple[int, Tile]]]] = []
     seq = count()
+    loop_steps = 0
     for tile_combo in combinations(rack_tiles, 2):
+        if _variant_gen_past_deadline(gen_deadline):
+            break
         for start, end in directed_pairs:
+            if _variant_gen_past_deadline(gen_deadline):
+                break
             for placements in (
                 [(start, tile_combo[0]), (end, tile_combo[1])],
                 [(start, tile_combo[1]), (end, tile_combo[0])],
             ):
+                loop_steps += 1
+                if loop_steps % _VARIANT_GEN_DEADLINE_CHECK_EVERY == 0:
+                    if _variant_gen_past_deadline(gen_deadline):
+                        break
                 rank = _placement_rank(
                     board, placements, loadout=loadout, rules=rules
                 )
@@ -829,15 +841,34 @@ def _max_cells_for_rack_count(
     n: int,
     *,
     max_cells: int = 14,
-    hard: bool = False,
 ) -> int:
-    if hard:
-        return 25
     if n >= 5:
         return min(max_cells, 10)
     if n >= 4:
         return min(max_cells, 12)
     return max_cells
+
+
+_VARIANT_GEN_DEADLINE_CHECK_EVERY = 256
+
+
+def _variant_gen_past_deadline(deadline: float | None) -> bool:
+    return deadline is not None and time.monotonic() >= deadline
+
+
+def _effective_variant_gen_deadline(
+    solve_deadline: float | None,
+    variant_gen_started: float,
+    variant_gen_budget: float | None,
+) -> float | None:
+    deadlines: list[float] = []
+    if solve_deadline is not None:
+        deadlines.append(solve_deadline)
+    if variant_gen_budget is not None:
+        deadlines.append(variant_gen_started + variant_gen_budget)
+    if not deadlines:
+        return None
+    return min(deadlines)
 
 
 def _tier_heap_cap(max_variants: int) -> int:
@@ -858,20 +889,10 @@ def _placement_rank(
     return base + _endpoint_pair_bonus(board, placements, loadout=loadout)
 
 
-def _rank_placement_indices(
+def _active_placement_indices(
     board: Board,
-    rack_tiles: list[Tile],
-    *,
-    max_cells: int = 14,
     loadout: Loadout | None = None,
-    rules: dict[str, Any] | None = None,
-    hard: bool = False,
 ) -> list[int]:
-    if not hard:
-        hard = _placement_hard_from_loadout(loadout)
-    max_cells = _max_cells_for_rack_count(
-        len(rack_tiles), max_cells=max_cells, hard=hard
-    )
     active = _active_indices(board)
     if loadout is not None:
         from cursed_words_solver.rules.quest_effects import quest_constraints
@@ -879,6 +900,19 @@ def _rank_placement_indices(
         center = quest_constraints(loadout).require_center_index
         if center is not None:
             active = [i for i in active if i != center]
+    return active
+
+
+def _rank_placement_indices(
+    board: Board,
+    rack_tiles: list[Tile],
+    *,
+    max_cells: int = 14,
+    loadout: Loadout | None = None,
+    rules: dict[str, Any] | None = None,
+) -> list[int]:
+    max_cells = _max_cells_for_rack_count(len(rack_tiles), max_cells=max_cells)
+    active = _active_placement_indices(board, loadout)
     if len(active) <= max_cells:
         return active
     scored: list[tuple[float, int]] = []
@@ -906,6 +940,7 @@ def _top_variants_for_tier(
     tier_cap: int,
     loadout: Loadout | None = None,
     rules: dict[str, Any] | None = None,
+    gen_deadline: float | None = None,
 ) -> list[list[tuple[int, Tile]]]:
     if k <= 0:
         return []
@@ -937,14 +972,22 @@ def _top_variants_for_tier(
             tier_cap=tier_cap,
             loadout=loadout,
             rules=rules,
+            gen_deadline=gen_deadline,
         )
         if endpoint_variants:
             return endpoint_variants
 
     heap: list[tuple[float, tuple[int, ...], int, list[tuple[int, Tile]]]] = []
     seq = count()
+    loop_steps = 0
     for tile_combo in combinations(rack_tiles, k):
+        if _variant_gen_past_deadline(gen_deadline):
+            break
         for indices in permutations(cells, k):
+            loop_steps += 1
+            if loop_steps % _VARIANT_GEN_DEADLINE_CHECK_EVERY == 0:
+                if _variant_gen_past_deadline(gen_deadline):
+                    break
             placements = list(zip(indices, tile_combo, strict=True))
             rank = _placement_rank(
                 board, placements, loadout=loadout, rules=rules
@@ -1220,22 +1263,24 @@ def _finalize_placement_search(
     require_placements_in_path: bool = False,
     base_required: frozenset[int],
     variant_gen_sec: float,
+    variant_screen_sec: float,
     variants_screened: int,
     solve_deadline: float | None = None,
     hard: bool = False,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
     global _last_placement_search_stats
     threshold = min_rank_score if min_rank_score is not None else min_score
-    _last_placement_search_stats = PlacementSearchStats(
-        variant_gen_sec=variant_gen_sec,
-        variants_screened=variants_screened,
-        rack_slots_screened=_distinct_rack_slots_screened(screened),
-        best_screened_rank=_best_screened_rank(screened),
-        threshold_rank=float(threshold) if threshold is not None else None,
-        adopted=False,
-    )
 
     if not screened:
+        _last_placement_search_stats = PlacementSearchStats(
+            variant_gen_sec=variant_gen_sec,
+            variant_screen_sec=variant_screen_sec,
+            variants_screened=variants_screened,
+            rack_slots_screened=_distinct_rack_slots_screened(screened),
+            best_screened_rank=_best_screened_rank(screened),
+            threshold_rank=float(threshold) if threshold is not None else None,
+            adopted=False,
+        )
         return board, [], []
 
     multi_consumable = multi_consumable_placement_beneficial(loadout)
@@ -1262,6 +1307,7 @@ def _finalize_placement_search(
     best_records: list[ConsumablePlacement] = []
     best_results: list[WordResult] = []
     prev_budget = searcher.time_budget
+    refine_started = time.monotonic()
     try:
         searcher.time_budget = per_refine
         for _score_hint, tile_count, placements, sim_board, _ in finalists:
@@ -1306,12 +1352,34 @@ def _finalize_placement_search(
         searcher.time_budget = prev_budget
         searcher.validator.required_consumable_indices = base_required
 
+    variant_refine_sec = time.monotonic() - refine_started
+    adopted = False
     if threshold is not None and best_rank < threshold:
+        _last_placement_search_stats = PlacementSearchStats(
+            variant_gen_sec=variant_gen_sec,
+            variant_screen_sec=variant_screen_sec,
+            variant_refine_sec=variant_refine_sec,
+            variants_screened=variants_screened,
+            rack_slots_screened=_distinct_rack_slots_screened(screened),
+            best_screened_rank=_best_screened_rank(screened),
+            threshold_rank=float(threshold) if threshold is not None else None,
+            adopted=False,
+        )
         return board, [], []
 
     if best_results:
         _attach_placement_breakdown(best_results, best_records)
-        _last_placement_search_stats.adopted = True
+        adopted = True
+    _last_placement_search_stats = PlacementSearchStats(
+        variant_gen_sec=variant_gen_sec,
+        variant_screen_sec=variant_screen_sec,
+        variant_refine_sec=variant_refine_sec,
+        variants_screened=variants_screened,
+        rack_slots_screened=_distinct_rack_slots_screened(screened),
+        best_screened_rank=_best_screened_rank(screened),
+        threshold_rank=float(threshold) if threshold is not None else None,
+        adopted=adopted,
+    )
     return best_board, best_records, best_results
 
 
@@ -1448,6 +1516,7 @@ def _run_placement_search(
         hard=hard,
     )
     base_required = searcher.validator.required_consumable_indices
+    screen_started = time.monotonic()
     screened, variants_screened, _ = _screen_placement_variants(
         searcher,
         board,
@@ -1461,6 +1530,7 @@ def _run_placement_search(
         base_required=base_required,
         solve_deadline=solve_deadline,
     )
+    variant_screen_sec = time.monotonic() - screen_started
     return _finalize_placement_search(
         searcher,
         board,
@@ -1474,6 +1544,7 @@ def _run_placement_search(
         require_placements_in_path=require_placements_in_path,
         base_required=base_required,
         variant_gen_sec=0.0,
+        variant_screen_sec=variant_screen_sec,
         variants_screened=variants_screened,
         solve_deadline=solve_deadline,
         hard=hard,
@@ -1496,6 +1567,7 @@ def _run_tiered_placement_search(
     rules: dict[str, Any] | None = None,
     variant_gen_budget: float | None = None,
     solve_deadline: float | None = None,
+    max_tier_override: int | None = None,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
     if not rack_tiles:
         global _last_placement_search_stats
@@ -1509,11 +1581,15 @@ def _run_tiered_placement_search(
     min_tier = 2 if uc_active else 1
     n = len(rack_tiles)
     max_tier = min(n, 2) if uc_only else n
+    if max_tier_override is not None:
+        max_tier = min(max_tier, max_tier_override)
     hard = _placement_search_hard(searcher, loadout)
     screen_floor = _placement_screen_floor(investment=multi_consumable, hard=hard)
     cells = _rank_placement_indices(
         board, rack_tiles, loadout=loadout, rules=rules
     )
+    active_full = _active_placement_indices(board, loadout)
+    cells_full = active_full if hard and len(active_full) > len(cells) else cells
     tier_cap = _tier_heap_cap(max_variants)
     if multi_consumable and n >= 4:
         tier_cap = max(tier_cap, _tier_heap_cap(max_variants + 32))
@@ -1529,19 +1605,24 @@ def _run_tiered_placement_search(
     screened: list[tuple[float, int, list[tuple[int, Tile]], Board, WordResult]] = []
     variants_screened = 0
     variant_gen_sec = 0.0
+    variant_screen_sec = 0.0
     variant_gen_started = time.monotonic()
     base_required = searcher.validator.required_consumable_indices
 
     for k in range(1, max_tier + 1):
+        if solve_deadline is not None and time.monotonic() >= solve_deadline:
+            break
+        tier_cells = cells_full if hard and k <= 2 else cells
         tier_started = time.monotonic()
         tier_variants = _top_variants_for_tier(
             board,
             rack_tiles,
-            cells,
+            tier_cells,
             k,
             tier_cap=tier_cap,
             loadout=loadout,
             rules=rules,
+            gen_deadline=solve_deadline,
         )
         variant_gen_sec += time.monotonic() - tier_started
         if not tier_variants:
@@ -1560,6 +1641,7 @@ def _run_tiered_placement_search(
             investment=multi_consumable,
             hard=hard,
         )
+        screen_started = time.monotonic()
         tier_screened, tier_count, tier_qualifying = _screen_placement_variants(
             searcher,
             board,
@@ -1574,6 +1656,7 @@ def _run_tiered_placement_search(
             screen_full_tier=True,
             solve_deadline=solve_deadline,
         )
+        variant_screen_sec += time.monotonic() - screen_started
         screened.extend(tier_screened)
         variants_screened += tier_count
         remaining_screen = max(
@@ -1607,6 +1690,7 @@ def _run_tiered_placement_search(
         require_placements_in_path=require_placements_in_path,
         base_required=base_required,
         variant_gen_sec=variant_gen_sec,
+        variant_screen_sec=variant_screen_sec,
         variants_screened=variants_screened,
         solve_deadline=solve_deadline,
         hard=hard,
@@ -1742,6 +1826,11 @@ def search_consumable_score_boost(
     prefer_fewest = not under_construction_active(loadout)
     if under_construction_active(loadout):
         variant_gen_budget = None
+    boost_max_tier: int | None = None
+    if prefer_fewest:
+        boost_max_tier = (
+            3 if multi_consumable_placement_beneficial(loadout) else 2
+        )
     sim_board, records, results = _run_tiered_placement_search(
         searcher,
         board,
@@ -1756,6 +1845,7 @@ def search_consumable_score_boost(
         variant_gen_budget=variant_gen_budget,
         max_variants=max_variants,
         solve_deadline=solve_deadline,
+        max_tier_override=boost_max_tier,
     )
     if not results or _result_rank_score(results[0]) <= baseline_rank:
         return board, [], []

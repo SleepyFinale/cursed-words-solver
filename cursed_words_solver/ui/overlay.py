@@ -230,7 +230,10 @@ class ResultOverlay(QWidget):
                         )
                         parts.append(f"{letter} (row {row + 1}, col {col + 1})")
                     if parts:
-                        hint = f"Place {'; '.join(parts)} first"
+                        prefix = "Then place" if twinkle_toes_swap else "Place"
+                        hint = f"{prefix} {'; '.join(parts)}"
+                        if not twinkle_toes_swap:
+                            hint += " first"
                 if hint:
                     placement_line = (
                         "<br><span style='font-size:11px;color:#fa0'>"
@@ -275,8 +278,8 @@ class ResultOverlay(QWidget):
                 f"<span style='font-size:18px;font-weight:bold;color:#0f8'>"
                 f"{score_html}</span>"
                 f"{setup_line}"
-                f"{placement_line}"
                 f"{swap_line}"
+                f"{placement_line}"
                 f"{microscope_line}"
             )
             self.hero_result.show()

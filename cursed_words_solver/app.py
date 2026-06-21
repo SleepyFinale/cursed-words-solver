@@ -560,7 +560,17 @@ class SolverApp:
                     self._last_invalidation_reason = reason
                     self._active_suggestion_session = None
                     self._clear_highlight_state()
-                    self.overlay.show_idle()
+                    from cursed_words_solver.suggestion import (
+                        poll_invalidation_is_workflow_stale,
+                    )
+
+                    if poll_invalidation_is_workflow_stale(reason):
+                        detail = reason.removeprefix("workflow drift (").removesuffix(")")
+                        self.overlay.show_stale_notice(
+                            f"F8 prediction may be wrong ({detail}) — press F8 again."
+                        )
+                    else:
+                        self.overlay.show_idle()
                     print(f"  Suggestion cleared — {reason}", flush=True)
             elif reason is None and self._active_suggestion_session is not None:
                 self._last_invalidation_reason = None
@@ -938,7 +948,16 @@ class SolverApp:
             search_budget = self.config.search_time_budget_sec
             search_started = time.monotonic()
             solve_deadline = search_started + search_budget
-            placement_variant_sec = 0.0
+            placement_gen_sec = 0.0
+            placement_screen_sec = 0.0
+            placement_refine_sec = 0.0
+
+            def _accumulate_placement_timing() -> None:
+                nonlocal placement_gen_sec, placement_screen_sec, placement_refine_sec
+                stats = last_placement_search_stats()
+                placement_gen_sec += stats.variant_gen_sec
+                placement_screen_sec += stats.variant_screen_sec
+                placement_refine_sec += stats.variant_refine_sec
 
             def solve_remaining() -> float:
                 return max(0.0, solve_deadline - time.monotonic())
@@ -1166,7 +1185,7 @@ class SolverApp:
                         solve_deadline=solve_deadline,
                     )
                 )
-                placement_variant_sec += last_placement_search_stats().variant_gen_sec
+                _accumulate_placement_timing()
                 self._searcher.validator.required_consumable_indices = (
                     mandatory_consumable_indices(
                         loadout, search_board, self._scoring.rules
@@ -1260,9 +1279,7 @@ class SolverApp:
                             solve_deadline=solve_deadline,
                         )
                     )
-                    placement_variant_sec += (
-                        last_placement_search_stats().variant_gen_sec
-                    )
+                    _accumulate_placement_timing()
                     print(
                         f"  {format_placement_search_stats_line()}",
                         flush=True,
@@ -1310,7 +1327,7 @@ class SolverApp:
                     boost_board, boost_records, boost_results = (
                         search_consumable_score_boost(
                             self._searcher,
-                            board,
+                            search_board,
                             loadout,
                             boost_rack,
                             baseline_score=baseline_score,
@@ -1322,9 +1339,7 @@ class SolverApp:
                             solve_deadline=solve_deadline,
                         )
                     )
-                    placement_variant_sec += (
-                        last_placement_search_stats().variant_gen_sec
-                    )
+                    _accumulate_placement_timing()
                     if (
                         boost_results
                         and _result_rank_score(boost_results[0]) > baseline_rank
@@ -1398,7 +1413,7 @@ class SolverApp:
                     rescue_board, rescue_records, rescue_results = (
                         search_target_rescue(
                             self._searcher,
-                            board,
+                            search_board,
                             loadout,
                             rescue_rack,
                             target=grid_target,
@@ -1409,9 +1424,7 @@ class SolverApp:
                             solve_deadline=solve_deadline,
                         )
                     )
-                    placement_variant_sec += (
-                        last_placement_search_stats().variant_gen_sec
-                    )
+                    _accumulate_placement_timing()
                     if rescue_results and target_met(
                         float(rescue_results[0].score), float(grid_target), loadout
                     ):
@@ -1458,7 +1471,7 @@ class SolverApp:
                     rescue_board, rescue_records, rescue_results = (
                         search_target_rescue(
                             self._searcher,
-                            board,
+                            search_board,
                             loadout,
                             rescue_rack,
                             target=grid_target,
@@ -1469,9 +1482,7 @@ class SolverApp:
                             solve_deadline=solve_deadline,
                         )
                     )
-                    placement_variant_sec += (
-                        last_placement_search_stats().variant_gen_sec
-                    )
+                    _accumulate_placement_timing()
                     if rescue_results and target_met(
                         float(rescue_results[0].score), float(grid_target), loadout
                     ):
@@ -1529,9 +1540,16 @@ class SolverApp:
                     if timing.parallel_serial_fallback
                     else ""
                 )
+                placement_parts: list[str] = []
+                if placement_gen_sec > 0.001:
+                    placement_parts.append(f"gen {placement_gen_sec:.1f}s")
+                if placement_screen_sec > 0.001:
+                    placement_parts.append(f"screen {placement_screen_sec:.1f}s")
+                if placement_refine_sec > 0.001:
+                    placement_parts.append(f"refine {placement_refine_sec:.1f}s")
                 variant_note = (
-                    f"variants {placement_variant_sec:.1f}s, "
-                    if placement_variant_sec > 0.001
+                    f"placement {', '.join(placement_parts)}, "
+                    if placement_parts
                     else ""
                 )
                 if timing.reserve_scaling_applied and timing.main_dfs_slice_sec > 0:
@@ -1700,9 +1718,13 @@ class SolverApp:
                         and snapshot.loadout is not None
                         and snapshot.extras_ready
                     )
+                fresh_run_state = load_run_state_raw()
                 embed_state = embed_f8_snapshot(
                     snapshot,
                     scoring_loadout=score_loadout,
+                    fresh_run_state=(
+                        fresh_run_state if isinstance(fresh_run_state, dict) else None
+                    ),
                 )
                 block_f8_save, block_f8_reason = f8_should_block_save(
                     gather_succeeded=gather_succeeded,
@@ -1805,7 +1827,16 @@ class SolverApp:
                     f"Best: {format_suggestion_word(top)} "
                     f"({format_result_score_display(top)})"
                 )
-                if placement_records:
+                if twinkle_swap_record and placement_records:
+                    done_msg += (
+                        " — swap tiles first, place consumables, "
+                        "then trace the highlighted path"
+                    )
+                elif twinkle_swap_record:
+                    done_msg += (
+                        " — swap tiles first, then trace the highlighted path"
+                    )
+                elif placement_records:
                     done_msg += (
                         " — place consumables first, then trace the highlighted path"
                     )

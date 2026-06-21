@@ -3094,6 +3094,16 @@ def abacus_colored_number_bonus(loadout: Loadout, rule: dict) -> int:
     return base + per_upgrade * max(0, right - 1)
 
 
+def wad_of_cash_currency_bonus(loadout: Loadout, rule: dict) -> int:
+    """+N TILE SCORE per currency tile; N = right UpgradeableComponent.VariableValue."""
+    var = pin_right_variable(loadout)
+    if var is not None:
+        return var
+    base = int(rule.get("value", 10))
+    per_upgrade = int(rule.get("value_per_right_upgrade", 10))
+    return base + per_upgrade * max(0, pin_right_level(loadout) - 1)
+
+
 def rainbow_per_colour_bonus(loadout: Loadout, rule: dict) -> int:
     var = pin_right_variable(loadout)
     if var is not None:

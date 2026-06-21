@@ -28,7 +28,6 @@ from cursed_words_solver.loadout import (
     hydrate_tile_ninja_loadout_extras,
     load_run_state_raw,
     melmod_board_available,
-    merge_f8_workflow_extras_into,
     merge_loadout_with_board,
     mod_money_from_run_state,
     parse_board_from_run_state,
@@ -723,24 +722,25 @@ def embed_f8_snapshot(
     snapshot: F8Snapshot,
     *,
     scoring_loadout: Loadout | None = None,
+    fresh_run_state: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    """Embed for last_suggestion.json from the frozen F8 gather snapshot."""
-    if not isinstance(snapshot.run_state, dict):
+    """Embed for last_suggestion.json from melmod game export (not reconciled loadout)."""
+    source = (
+        fresh_run_state
+        if isinstance(fresh_run_state, dict)
+        else snapshot.run_state
+    )
+    if not isinstance(source, dict):
         return None
 
     loadout = scoring_loadout or snapshot.loadout
     if loadout is None:
-        return copy.deepcopy(snapshot.run_state)
+        return copy.deepcopy(source)
 
-    run_state = copy.deepcopy(snapshot.run_state)
+    run_state = copy.deepcopy(source)
     sanitized = sanitize_run_state_snapshot_for_f8(run_state, loadout)
     if not isinstance(sanitized, dict):
-        return copy.deepcopy(snapshot.run_state)
-
-    extras = sanitized.get("extras")
-    if isinstance(extras, dict) and isinstance(loadout.extras, dict):
-        merge_f8_workflow_extras_into(extras, loadout.extras)
-        sanitized["extras"] = extras
+        return copy.deepcopy(source)
     return sanitized
 
 

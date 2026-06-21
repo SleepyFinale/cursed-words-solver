@@ -64,6 +64,8 @@ from cursed_words_solver.rules.boss_scoring import (
 _EARLY_BOSS_EFFECT_TYPES = EARLY_BOSS_TYPES
 from cursed_words_solver.rules.scoring_conditions import (
     abacus_colored_number_bonus,
+    grid_path_word_mult_defer_for_pin,
+    wad_of_cash_currency_bonus,
     birthday_cake_accumulated,
     birthday_cake_improve_for_path,
     bicycle_word_bonus,
@@ -2294,6 +2296,12 @@ class ScoringPipeline:
         elif effect_type == "add_tile_score":
             target = rule.get("target", "all")
             bonus_each = sticker_rule_int(level, rule)
+            if (
+                target == "currency"
+                and not applying_sticker_id
+                and grid_path_word_mult_defer_for_pin(loadout)
+            ):
+                bonus_each = wad_of_cash_currency_bonus(loadout, rule)
             total_bonus = 0
             if target == "void_adjacent":
                 for i, idx in enumerate(path):

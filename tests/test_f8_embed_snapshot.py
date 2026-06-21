@@ -1,4 +1,4 @@
-"""Single F8 snapshot embed — workflow extras match scoring loadout."""
+"""Single F8 snapshot embed — workflow extras from melmod game export."""
 
 from __future__ import annotations
 
@@ -39,28 +39,31 @@ def _number_board_run_state(*, dna_json: str, cake: str = "25") -> dict:
     }
 
 
-def test_embed_f8_snapshot_writes_dna_from_scoring_loadout():
-    """Regression for 180752: embed must not stay {} when loadout has DNA counts."""
-    run_state = _number_board_run_state(
-        dna_json='{"1":10,"2":5,"3":5,"4":1,"5":1}',
-    )
+def test_embed_f8_snapshot_uses_fresh_game_export_not_reconciled_loadout():
+    """Embed must reflect melmod run_state, not Python-reconciled loadout.extras."""
+    dna = '{"1":10,"2":5,"3":5,"4":1,"5":1}'
+    run_state = _number_board_run_state(dna_json=dna)
     loadout = merge_loadout_with_board(parse_run_state(run_state), 10)
-    assert loadout.extras.get("mutating_dna_letter_counts") == (
-        '{"1":10,"2":5,"3":5,"4":1,"5":1}'
-    )
+    # Reconciled loadout diverges from game export (split-brain scenario).
+    loadout.extras["scoring_previous_words_count"] = "0"
+    loadout.extras["mutating_dna_letter_counts"] = "{}"
 
-    # Simulate stale run_state missing DNA (split-brain before fix).
-    run_state["extras"]["mutating_dna_letter_counts"] = "{}"
+    stale_snapshot = _number_board_run_state(dna_json="{}")
     snapshot = F8Snapshot(
-        run_state=run_state,
+        run_state=stale_snapshot,
         board=None,
         loadout=loadout,
         board_available=True,
     )
-    embed = embed_f8_snapshot(snapshot, scoring_loadout=loadout)
+    fresh = _number_board_run_state(dna_json=dna)
+    embed = embed_f8_snapshot(
+        snapshot,
+        scoring_loadout=loadout,
+        fresh_run_state=fresh,
+    )
     assert embed is not None
-    embed_dna = embed["extras"]["mutating_dna_letter_counts"]
-    assert embed_dna == '{"1":10,"2":5,"3":5,"4":1,"5":1}'
+    assert embed["extras"]["mutating_dna_letter_counts"] == dna
+    assert embed["extras"]["scoring_previous_words_count"] == "2"
     assert embed["extras"]["birthday_cake_bonus"] == "25"
 
 

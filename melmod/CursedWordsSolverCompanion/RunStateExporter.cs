@@ -199,6 +199,28 @@ namespace CursedWordsSolverCompanion
 
             int f8Grid;
             int liveGrid;
+            var sameGrid =
+                TryParseGridNumberFromExtras(f8Extras, out f8Grid)
+                && TryParseGridNumberFromExtras(snapshot.extras, out liveGrid)
+                && liveGrid == f8Grid
+                && f8Grid >= 1;
+            if (sameGrid)
+            {
+                var drift = ExtrasDiffHelper.DescribeStaleF8LoadoutDrift(
+                    f8Extras,
+                    snapshot.extras,
+                    ctx
+                );
+                if (!string.IsNullOrEmpty(drift))
+                {
+                    SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                    CompanionDiagnostics.LogVerbose(
+                        "Cleared stale F8 suggestion (" + drift + ")"
+                    );
+                    return;
+                }
+            }
+
             if (
                 TryParseGridNumberFromExtras(f8Extras, out f8Grid)
                 && TryParseGridNumberFromExtras(snapshot.extras, out liveGrid)

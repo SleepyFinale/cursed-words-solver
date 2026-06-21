@@ -5,6 +5,7 @@ import pytest
 from cursed_words_solver import consumable_placement as cp
 from cursed_words_solver.consumable_placement import (
     ConsumablePlacement,
+    _max_cells_for_rack_count,
     _placement_cell_score,
     _placement_per_screen,
     _rank_placement_indices,
@@ -1377,11 +1378,85 @@ def test_placement_screen_floor_hard_up_and_up():
     assert _screen_variant_limit(10.0, 2.0, 24) == 5
 
 
+def test_cobra_hard_mode_does_not_expand_placement_cell_pool(tmp_path):
+    """Hard mode (Cobra) must not enumerate all 25 cells for variant generation."""
+    import time as time_mod
+
+    from cursed_words_solver.consumable_placement import (
+        _effective_variant_gen_deadline,
+        _variant_gen_past_deadline,
+    )
+
+    assert _max_cells_for_rack_count(5) == 10
+    loadout = Loadout(boss_id="cobra", boss_name="Cobra")
+    assert _placement_hard_from_loadout(loadout)
+    board = Board(tiles=[[_tile("a", r, c) for c in range(5)] for r in range(5)])
+    rack = [
+        Tile(-1, -1, "A", "A", 2, metadata={"rack_index": i})
+        for i in range(5)
+    ]
+    cells = _rank_placement_indices(board, rack, loadout=loadout)
+    assert len(cells) <= 10
+
+    tier_cap = _tier_heap_cap(96)
+    gen_deadline = time_mod.monotonic() + 1.0
+    started = time_mod.monotonic()
+    tier4 = _top_variants_for_tier(
+        board,
+        rack,
+        cells,
+        4,
+        tier_cap=tier_cap,
+        loadout=loadout,
+        gen_deadline=gen_deadline,
+    )
+    elapsed = time_mod.monotonic() - started
+    assert elapsed < 3.0
+    assert tier4
+    assert _variant_gen_past_deadline(gen_deadline)
+
+    wl = tmp_path / "words.txt"
+    wl.write_text("aaaaaaa\n", encoding="utf-8")
+    searcher = WordSearcher(
+        WordDictionary(wl),
+        min_len=7,
+        max_len=25,
+        time_budget=2.0,
+        search_workers=1,
+    )
+    solve_deadline = time_mod.monotonic() + 2.0
+    gen_started = time_mod.monotonic()
+    gen_budget_deadline = _effective_variant_gen_deadline(
+        solve_deadline, gen_started, variant_gen_budget=1.0
+    )
+    assert gen_budget_deadline is not None
+    assert gen_budget_deadline <= solve_deadline
+    search_started = time_mod.monotonic()
+    _run_tiered_placement_search(
+        searcher,
+        board,
+        loadout,
+        rack,
+        time_budget=2.0,
+        top_n=1,
+        min_rank_score=100.0,
+        prefer_fewest_tiles=True,
+        require_placements_in_path=True,
+        variant_gen_budget=1.0,
+        solve_deadline=solve_deadline,
+        max_tier_override=2,
+    )
+    assert time_mod.monotonic() - search_started < 3.0
+    stats = cp.last_placement_search_stats()
+    assert stats.variant_gen_sec < 3.0
+
+
 def test_westernisations_placement_candidates_regression() -> None:
     """Round log 20260616_000741: placement pool must include winning consumable cells."""
     import json
 
     from cursed_words_solver.consumable_placement import (
+        _active_placement_indices,
         _placement_rank,
         _rank_placement_indices,
         _tier_heap_cap,
@@ -1401,12 +1476,17 @@ def test_westernisations_placement_candidates_regression() -> None:
 
     cells = _rank_placement_indices(board, rack, loadout=loadout, rules=rules)
     assert 12 not in cells, "Up and Up center must not be overwritten"
+    tier2_cells = (
+        _active_placement_indices(board, loadout)
+        if _placement_hard_from_loadout(loadout)
+        else cells
+    )
     for idx in data["expected_placement_indices"]:
-        assert idx in cells
+        assert idx in tier2_cells
 
     tier_cap = _tier_heap_cap(128)
     tier2 = _top_variants_for_tier(
-        board, rack, cells, 2, tier_cap=tier_cap, loadout=loadout, rules=rules
+        board, rack, tier2_cells, 2, tier_cap=tier_cap, loadout=loadout, rules=rules
     )
     pair_set = {tuple(sorted(i for i, _ in pl)) for pl in tier2}
     expected_pair = tuple(sorted(data["expected_placement_indices"]))
@@ -1678,6 +1758,7 @@ def test_finalize_prefers_two_tiles_on_tie_with_under_construction(
         prefer_fewest_tiles=False,
         base_required=frozenset(),
         variant_gen_sec=0.0,
+        variant_screen_sec=0.0,
         variants_screened=2,
     )
     assert results

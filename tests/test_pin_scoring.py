@@ -65,6 +65,61 @@ def test_all_pin_aliases_resolve():
         assert resolve_rule_id(pipeline.rules, "pins", alias, "") == canonical
 
 
+def test_wad_of_cash_pin_right_variable_per_currency_tile():
+    """Regression: melmod pin_right_variable=20 → +20 per currency tile, not catalog +10."""
+    pipeline = ScoringPipeline()
+    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
+    grid[2][1] = _tile(2, 1, "₲", 0, curse=CurseType.CURRENCY)
+    grid[2][2] = _tile(2, 2, "M", 3, curse=CurseType.LETTER)
+    grid[2][3] = _tile(2, 3, "₱", 0, curse=CurseType.CURRENCY)
+    grid[1][2] = _tile(1, 2, "E", 1, curse=CurseType.LETTER)
+    board = Board(tiles=grid, money=8)
+    path = [11, 12, 13, 7]
+    lo = Loadout(
+        extras={
+            "pin_effect": "wad_of_cash",
+            "pin_left_level": "3",
+            "pin_right_level": "2",
+            "pin_right_variable": "20",
+        }
+    )
+    score, bd = pipeline.score(board, path, "game", lo)
+    assert any("+40 currency tile score (2)" in e for e in bd["pipeline"]["effects"])
+    assert int(score) == 44
+
+
+def test_wad_of_cash_game_mismatch_replay_scores_344():
+    """Regression 20260620_224601: upgraded Wad of Cash + sticker mult stack."""
+    import json
+    from pathlib import Path
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from tests.regression.test_scoring_mismatches import (
+        _bank_money_for_replay,
+        _run_state_for_replay,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parents[0]
+        / "fixtures"
+        / "mismatches"
+        / "20260620_224601.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = data["path"]
+    word = data["word"]
+    replay_money = _bank_money_for_replay(data, board, path, loadout)
+    if replay_money is not None:
+        board.money = max(board.money, replay_money)
+        loadout.money = max(loadout.money, replay_money)
+
+    score, _bd = ScoringPipeline().score(board, path, word, loadout)
+    assert int(score) == data["actual_score"]
+
+
 def test_abacus_pin_left_scatter_numbers_on_manual_board():
     from cursed_words_solver.encounter_board import effective_board_for_loadout
 

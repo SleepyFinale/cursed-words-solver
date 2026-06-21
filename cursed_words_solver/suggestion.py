@@ -728,6 +728,40 @@ def _f8_snapshot_extras(data: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def has_played_word_since_f8_embed(
+    live_extras: dict[str, Any] | None,
+    embed_extras: dict[str, Any] | None,
+) -> bool:
+    """True when melmod workflow advanced since F8 (mirrors HasPlayedWordSinceF8)."""
+    live = live_extras if isinstance(live_extras, dict) else {}
+    embed = embed_extras if isinstance(embed_extras, dict) else {}
+
+    try:
+        spc_embed = int(
+            str(embed.get("scoring_previous_words_count", "") or "").strip()
+        )
+    except ValueError:
+        spc_embed = None
+    try:
+        spc_live = int(
+            str(live.get("scoring_previous_words_count", "") or "").strip()
+        )
+    except ValueError:
+        spc_live = None
+    if spc_embed is not None and spc_live is not None and spc_live > spc_embed:
+        return True
+
+    hist_embed = str(embed.get("historic_words", "") or "").strip()
+    hist_live = str(live.get("historic_words", "") or "").strip()
+    if hist_embed != hist_live and (hist_embed or hist_live):
+        count_embed = _historic_words_count(hist_embed)
+        count_live = _historic_words_count(hist_live)
+        if count_live > count_embed:
+            return True
+
+    return False
+
+
 def workflow_stale_vs_f8_snapshot(
     run_state_extras: dict[str, Any] | None,
     f8_snapshot_extras: dict[str, Any] | None,
@@ -766,6 +800,17 @@ def workflow_stale_vs_f8_snapshot(
         and not _mutating_dna_letter_counts_equal(prev_dna, cur_dna)
     ):
         notes.append("mutating DNA counts changed")
+
+    try:
+        spc_f8 = int(str(f8_extras.get("scoring_previous_words_count", "") or "").strip())
+    except ValueError:
+        spc_f8 = None
+    try:
+        spc_cur = int(str(extras.get("scoring_previous_words_count", "") or "").strip())
+    except ValueError:
+        spc_cur = None
+    if spc_f8 is not None and spc_cur is not None and spc_cur > spc_f8:
+        notes.append(f"scoring previous words count {spc_f8}→{spc_cur}")
 
     if not notes:
         return None
@@ -864,8 +909,7 @@ def poll_invalidate_last_suggestion(
     search_budget_sec: float | None = None,
     active_session: Any = None,
 ) -> str | None:
-    """Clear last_suggestion.json when board tiles or loadout genuinely change."""
-    del run_state_extras, search_budget_sec, active_session
+    """Clear last_suggestion.json when board tiles, loadout, or workflow extras change."""
     if not LAST_SUGGESTION_PATH.exists():
         return None
 
@@ -893,7 +937,32 @@ def poll_invalidate_last_suggestion(
         ):
             return "loadout changed"
 
+    if data is not None and saved_board and _board_tiles_match(saved_board, current_board_fp):
+        extras = run_state_extras if isinstance(run_state_extras, dict) else {}
+        embed_extras = _f8_snapshot_extras(data)
+        if _active_session_same_board_tiles(active_session, current_board_fp):
+            return None
+        if workflow_invalidate_suppressed_for_export_catchup(
+            extras,
+            current_board_fp=current_board_fp,
+            search_budget_sec=search_budget_sec,
+        ):
+            return None
+        if not has_played_word_since_f8_embed(extras, embed_extras):
+            return None
+        workflow_reason = workflow_stale_vs_f8_snapshot(
+            extras,
+            embed_extras,
+        )
+        if workflow_reason and clear_last_suggestion():
+            return f"workflow drift ({workflow_reason})"
+
     return None
+
+
+def poll_invalidation_is_workflow_stale(reason: str | None) -> bool:
+    """True when poll cleared the suggestion due to workflow extras drift."""
+    return bool(reason and reason.startswith("workflow drift ("))
 
 
 def clear_stale_last_suggestion_if_context_changed(
