@@ -1,5 +1,7 @@
 import time
 
+import pytest
+
 from cursed_words_solver.consumable_placement import (
     apply_consumable_placements,
     search_consumable_score_boost,
@@ -235,6 +237,49 @@ def test_twinkle_toes_screen_uses_meaningful_search_budget(tmp_path):
     assert getattr(searcher, "_placement_screen_pass", False) is False
 
 
+def test_twinkle_toes_grid5_nanas_round_log_regression():
+    """Regression: grid 5 / cherries board must not return empty after swap screening."""
+    import json
+    from pathlib import Path
+
+    from cursed_words_solver.config import GAME_WORDLIST_PATH
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+
+    fixture = Path(__file__).resolve().parent / "fixtures/boards/20260621_grid5_twinkle_nanas.json"
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data)
+    loadout = parse_run_state(data)
+    assert board is not None
+    loadout.extras["twinkle_toes_swap_available"] = "true"
+
+    nanas_path = [17, 18, 12, 16, 11]
+    flags = stamp_search_flags(loadout)
+    d = WordDictionary(GAME_WORDLIST_PATH)
+    searcher = WordSearcher(
+        dictionary=d, min_len=1, max_len=25, time_budget=45.0, search_workers=8
+    )
+    searcher.scoring = ScoringPipeline()
+    searcher.validator.quest_loadout = loadout
+    assert searcher.validator.word_ok(board, nanas_path, "nanas", flags)
+
+    deadline = time.monotonic() + 45.0
+    swapped_board, swap_record, results = search_with_twinkle_toes_swap(
+        searcher,
+        board,
+        loadout,
+        time_budget=45.0,
+        top_n=3,
+        solve_deadline=deadline,
+    )
+    assert swap_record is not None
+    assert results
+    assert results[0].word
+
+
 def _result_rank_score(result) -> float:
     if result.rank_score > 0:
         return result.rank_score
@@ -335,3 +380,85 @@ def test_consumable_boost_after_twinkle_uses_swapped_board(tmp_path):
         user_board = apply_consumable_placements(swapped_board, wrong_records)
         wrong_path_word = physical_word_for_path(user_board, wrong_results[0].path)
         assert wrong_path_word != "cat"
+
+
+def test_twinkle_swap_time_budget_caps_when_rack_placement_pending():
+    from cursed_words_solver.app import RACK_RESERVE_FRAC, twinkle_swap_time_budget
+
+    assert twinkle_swap_time_budget(
+        search_budget=45.0,
+        rack_placement_pending=True,
+        solve_remaining_sec=44.0,
+    ) == pytest.approx(45.0 * (1.0 - RACK_RESERVE_FRAC))
+
+
+def test_twinkle_swap_time_budget_uses_remaining_without_rack():
+    from cursed_words_solver.app import twinkle_swap_time_budget
+
+    assert twinkle_swap_time_budget(
+        search_budget=45.0,
+        rack_placement_pending=False,
+        solve_remaining_sec=44.0,
+    ) == pytest.approx(44.0)
+
+
+def test_twinkle_swap_deadline_reserves_rack_budget():
+    from cursed_words_solver.app import twinkle_swap_deadline
+
+    started = 1000.0
+    solve_deadline = started + 45.0
+    twinkle_budget = 29.25
+    assert twinkle_swap_deadline(
+        search_started=started,
+        solve_deadline=solve_deadline,
+        twinkle_budget=twinkle_budget,
+    ) == pytest.approx(started + twinkle_budget)
+
+
+def test_twinkle_plus_rack_orchestration_leaves_consumable_boost_time():
+    """App solve path must cap Twinkle and leave rack budget for score boost."""
+    from cursed_words_solver.app import (
+        RACK_RESERVE_FRAC,
+        twinkle_swap_deadline,
+        twinkle_swap_time_budget,
+    )
+    from cursed_words_solver.consumable_placement import (
+        rack_placement_search_active,
+        remaining_rack_tiles,
+    )
+
+    search_budget = 45.0
+    search_started = time.monotonic()
+    solve_deadline = search_started + search_budget
+
+    board = Board(tiles=[[_tile("a", r, c) for c in range(5)] for r in range(5)])
+    loadout = _mahjong_loadout_with_red_rack()
+    loadout.stamps = [
+        LoadoutItem(id="twinkle_toes", name="Twinkle Toes", kind="stamp"),
+    ]
+    loadout.extras["twinkle_toes_swap_available"] = "true"
+    rules = ScoringPipeline().rules
+
+    rack_pending = rack_placement_search_active(loadout, board, rules)
+    assert rack_pending
+    assert twinkle_toes_swap_pending(loadout)
+
+    twinkle_budget = twinkle_swap_time_budget(
+        search_budget=search_budget,
+        rack_placement_pending=rack_pending,
+        solve_remaining_sec=search_budget,
+    )
+    twinkle_deadline = twinkle_swap_deadline(
+        search_started=search_started,
+        solve_deadline=solve_deadline,
+        twinkle_budget=twinkle_budget,
+    )
+    remaining_after_twinkle = solve_deadline - twinkle_deadline
+    assert remaining_after_twinkle >= search_budget * RACK_RESERVE_FRAC - 0.01
+
+    # Mirrors app.py consumable boost gate after capped Twinkle search.
+    assert remaining_after_twinkle >= 1.0
+    assert (
+        rack_placement_search_active(loadout, board, rules)
+        and remaining_rack_tiles(loadout, board)
+    )

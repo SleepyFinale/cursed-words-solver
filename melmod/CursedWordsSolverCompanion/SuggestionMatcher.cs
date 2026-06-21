@@ -459,6 +459,29 @@ namespace CursedWordsSolverCompanion
                 if (!changed)
                     return false;
 
+                var syncedExtras = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                    suggestion.run_state_snapshot
+                );
+                if (syncedExtras != null)
+                {
+                    RunStateExportFill.ApplyScoringCachedPreviousWordLetter(syncedExtras);
+                    var extrasObj = suggestion.run_state_snapshot["extras"] as JObject;
+                    if (extrasObj != null)
+                    {
+                        foreach (var kv in syncedExtras)
+                        {
+                            if (string.Equals(kv.Key, "scoring_previous_words_count", StringComparison.Ordinal)
+                                || string.Equals(kv.Key, "previous_word_first_letter", StringComparison.Ordinal))
+                            {
+                                if (string.IsNullOrEmpty(kv.Value))
+                                    extrasObj.Remove(kv.Key);
+                                else
+                                    extrasObj[kv.Key] = kv.Value;
+                            }
+                        }
+                    }
+                }
+
                 File.WriteAllText(
                     SuggestionFilePath,
                     JsonConvert.SerializeObject(suggestion, Formatting.Indented)

@@ -60,6 +60,10 @@ namespace CursedWordsSolverCompanion
                 if (fromEncounter != null && fromEncounter.Count == 0)
                 {
                     ClearScoringCache();
+                    // Michael finale: encounter _bossModifiers empty; Michael on player.
+                    var fromPlayer = ResolveFromPlayer(player);
+                    if (fromPlayer != null && fromPlayer.Count > 0)
+                        return fromPlayer;
                     return null;
                 }
 
@@ -68,16 +72,26 @@ namespace CursedWordsSolverCompanion
                     return _cachedFromScoring;
 
                 ClearScoringCache();
+                var fallbackPlayer = ResolveFromPlayer(player);
+                if (fallbackPlayer != null && fallbackPlayer.Count > 0)
+                    return fallbackPlayer;
                 return null;
             }
 
             ClearScoringCache();
 
-            if (player != null && player.ActiveBossModifiers != null
-                && player.ActiveBossModifiers.Count > 0)
-                return player.ActiveBossModifiers;
+            return ResolveFromPlayer(player);
+        }
 
-            return null;
+        /// <summary>
+        /// Michael lives on Player.ActiveBossModifiers[0], not always in encounter boss list.
+        /// </summary>
+        public static List<BossModifier> ResolveFromPlayer(Player player)
+        {
+            if (player?.ActiveBossModifiers == null || player.ActiveBossModifiers.Count == 0)
+                return null;
+
+            return player.ActiveBossModifiers;
         }
 
         public static List<BossModifier> ResolveFromEncounter(EncounterController encounter)

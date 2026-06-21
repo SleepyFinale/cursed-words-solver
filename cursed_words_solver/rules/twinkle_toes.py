@@ -156,6 +156,26 @@ def _min_swap_refine_sec(
     )
 
 
+def _swap_phase_deadline(solve_deadline: float, phase_sec: float) -> float:
+    """Per-call deadline capped by the overall F8 solve deadline."""
+    return min(time.monotonic() + phase_sec, solve_deadline)
+
+
+def _swap_budget_shares(total_budget: float) -> tuple[float, float]:
+    """Split budget between screening and refinement; reserve refine time."""
+    min_refine = (
+        _MIN_SWAP_REFINE_SEC
+        if total_budget >= 4.0
+        else min(_MIN_SWAP_REFINE_SEC, max(0.5, total_budget * 0.25))
+    )
+    screen_share = min(12.0, total_budget * 0.35)
+    refine_share = total_budget - screen_share
+    if refine_share < min_refine and total_budget > min_refine + 0.5:
+        refine_share = min_refine
+        screen_share = total_budget - refine_share
+    return screen_share, refine_share
+
+
 def search_with_twinkle_toes_swap(
     searcher: WordSearcher,
     board: Board,
@@ -184,8 +204,7 @@ def search_with_twinkle_toes_swap(
         if solve_deadline is not None
         else time.monotonic() + total_budget
     )
-    screen_share = min(12.0, total_budget * 0.35)
-    refine_share = total_budget - screen_share
+    screen_share, refine_share = _swap_budget_shares(total_budget)
     min_screen = _min_swap_screen_sec(total_budget, screen_share)
     budget_limited_pairs = max(1, int(screen_share / min_screen))
     max_screen_pairs = min(_SCREEN_VARIANT_CAP, len(pairs), budget_limited_pairs)
@@ -199,9 +218,7 @@ def search_with_twinkle_toes_swap(
 
     screened: list[tuple[float, tuple[int, int], Board, WordResult]] = []
     prev_budget = searcher.time_budget
-    prev_workers = searcher.search_workers
     try:
-        searcher.search_workers = 1
         searcher.time_budget = per_screen
         for idx_a, idx_b in screen_pairs:
             if time.monotonic() >= deadline:
@@ -211,7 +228,7 @@ def search_with_twinkle_toes_swap(
                 swapped,
                 loadout=loadout,
                 top_n=1,
-                deadline=deadline,
+                deadline=_swap_phase_deadline(deadline, per_screen),
             )
             if not results:
                 continue
@@ -221,36 +238,38 @@ def search_with_twinkle_toes_swap(
             )
     finally:
         searcher.time_budget = prev_budget
-        searcher.search_workers = prev_workers
 
     if not screened:
         return board, None, []
 
     screened.sort(key=lambda row: -row[0])
+    best_rank, best_pair, best_board, best_result = screened[0]
+    best_swap = swap_to_record(best_pair[0], best_pair[1])
+    best_results: list[WordResult] = [best_result]
+
+    if time.monotonic() >= deadline:
+        return best_board, best_swap, best_results
+
     finalists = screened[: min(_FINALIST_CAP, len(screened))]
     min_refine = _min_swap_refine_sec(total_budget, refine_share, len(finalists))
     per_refine = max(min_refine, refine_share / len(finalists))
 
-    best_rank = -1.0
-    best_board = board
-    best_swap: TwinkleToesSwap | None = None
-    best_results: list[WordResult] = []
     try:
         searcher.time_budget = per_refine
-        for _rank, pair, swapped, _screen_result in finalists:
+        for rank, pair, swapped, _screen_result in finalists:
             if time.monotonic() >= deadline:
                 break
             results = searcher.find_best_words(
                 swapped,
                 loadout=loadout,
                 top_n=top_n,
-                deadline=deadline,
+                deadline=_swap_phase_deadline(deadline, per_refine),
             )
             if not results:
                 continue
-            rank = _result_rank_score(results[0])
-            if rank > best_rank:
-                best_rank = rank
+            refine_rank = _result_rank_score(results[0])
+            if refine_rank > best_rank:
+                best_rank = refine_rank
                 best_board = swapped
                 best_swap = swap_to_record(pair[0], pair[1])
                 best_results = results

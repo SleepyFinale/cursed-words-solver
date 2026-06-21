@@ -6,6 +6,9 @@ from typing import Any, Callable
 
 from cursed_words_solver.models import Board, Loadout, LoadoutItem
 from cursed_words_solver.rules.rule_lookup import get_rule, resolve_rule_id, slugify_name
+from cursed_words_solver.rules.scoring_conditions import (
+    human_hands_favourite_sticker_effective_level,
+)
 
 ORCHESTRATION_STICKER_TYPES = frozenset({"frankenstein_stitch", "overhand_replay"})
 SKIP_APPLY_TYPES = frozenset(
@@ -262,13 +265,19 @@ def apply_sticker_with_orchestration(
         return state
     if rule.get("type") in PIPELINE_SKIP_TYPES:
         return state
+    eff_level = human_hands_favourite_sticker_effective_level(
+        sticker.level,
+        sticker.id,
+        sticker.name,
+        loadout,
+    )
     state = apply_rule(
         rule,
         state,
         board,
         path,
         loadout,
-        sticker.level,
+        eff_level,
         applying_sticker_id=sticker.id or sticker.name,
     )
     return apply_overhand_replays_for_slot(
@@ -281,7 +290,7 @@ def apply_sticker_with_orchestration(
         apply_rule=apply_rule,
         bucket="stickers",
         item=sticker,
-        level=sticker.level,
+        level=eff_level,
     )
 
 

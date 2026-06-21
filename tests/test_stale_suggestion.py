@@ -2427,6 +2427,76 @@ def test_f8_should_block_grid2_empty_historic_without_telescope(tmp_path, monkey
     assert reason is None
 
 
+def test_describe_f8_prediction_historic_stale_equal_count_prev_letter_drift():
+    """Jouncy-shaped: same historic count, prev letter r→l (rewildings vs lacerating)."""
+    from cursed_words_solver.suggestion import describe_f8_prediction_historic_stale_note
+
+    f8 = {
+        "historic_words": '[{"word":"REWiLDINGS","score":16}]',
+        "previous_word_first_letter": "r",
+        "scoring_previous_words_count": "1",
+    }
+    auth = {
+        "historic_words": '[{"word":"LACERATING","score":13}]',
+        "previous_word_first_letter": "l",
+        "scoring_previous_words_count": "1",
+    }
+    note = describe_f8_prediction_historic_stale_note(f8, auth)
+    assert note is not None
+    assert "previous word letter drift" in note
+
+
+def test_f8_should_block_grid2_submit_projection_mismatch(tmp_path, monkeypatch):
+    """Rodman grid 2: block save when embed historic overshoots projected run_state."""
+    from cursed_words_solver.models import Board, Loadout
+
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    one_word = json.dumps([{"word": "LACERATING", "score": 13}])
+    run_state_path.write_text(
+        json.dumps(
+            {
+                "board": {"tiles": [], "money": 0},
+                "extras": {
+                    "grid_number": "2",
+                    "scoring_previous_words_count": "1",
+                    "historic_words": one_word,
+                    "previous_word_first_letter": "l",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    two_words = json.dumps(
+        [
+            {"word": "REWiLDINGS", "score": 16},
+            {"word": "LACERATING", "score": 13},
+        ]
+    )
+    embed_extras = {
+        "grid_number": "2",
+        "scoring_previous_words_count": "2",
+        "historic_words": two_words,
+        "previous_word_first_letter": "r",
+    }
+    loadout = Loadout(extras=embed_extras)
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    blocked, reason = f8_should_block_save(
+        gather_succeeded=True,
+        loadout=loadout,
+        board=board,
+        f8_extras=embed_extras,
+        submit_projected_extras={
+            "grid_number": "2",
+            "scoring_previous_words_count": "1",
+            "historic_words": one_word,
+            "previous_word_first_letter": "l",
+        },
+    )
+    assert blocked
+    assert reason == "submit_projection_mismatch"
+
+
 def test_loadout_needs_previous_word_letter_grid1_bento_off():
     from cursed_words_solver.models import Loadout, LoadoutItem
 
@@ -2983,6 +3053,78 @@ def test_project_workflow_extras_for_f8_embed_joey(tmp_path, monkeypatch):
     )
 
 
+def test_embed_f8_snapshot_merges_scoring_loadout_workflow_extras(
+    tmp_path, monkeypatch
+):
+    from cursed_words_solver.f8_snapshot import F8Snapshot, embed_f8_snapshot
+    from cursed_words_solver.loadout import (
+        RUN_STATE_PATH,
+        _scoring_previous_words_count_from_extras,
+    )
+    from cursed_words_solver.models import Loadout
+
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+    run_state_path.write_text(
+        json.dumps(
+            {
+                "extras": {
+                    "grid_number": "5",
+                    "historic_words": "",
+                    "encounter_historic_source": "live",
+                    "scoring_previous_words_count": "0",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    scoring_loadout = Loadout(
+        extras={
+            "grid_number": "5",
+            "historic_words": "",
+            "encounter_historic_source": "live",
+            "scoring_previous_words_count": "4",
+            "previous_word_first_letter": "z",
+        }
+    )
+    snapshot = F8Snapshot(
+        run_state={
+            "extras": {
+                "grid_number": "5",
+                "historic_words": "",
+                "encounter_historic_source": "live",
+                "scoring_previous_words_count": "0",
+            }
+        },
+        board=None,
+        loadout=scoring_loadout,
+        board_available=True,
+    )
+    embedded = embed_f8_snapshot(snapshot, scoring_loadout=scoring_loadout)
+    assert embedded is not None
+    assert _scoring_previous_words_count_from_extras(embedded["extras"]) == 4
+    assert embedded["extras"].get("previous_word_first_letter") == "z"
+
+
+def test_reconcile_clamps_stale_spc_after_grid_advance(tmp_path, monkeypatch):
+    from cursed_words_solver.loadout import (
+        reconcile_encounter_historic_for_scoring,
+        _scoring_previous_words_count_from_extras,
+    )
+
+    extras = {
+        "grid_number": "5",
+        "historic_words": "",
+        "encounter_historic_source": "grid_advanced",
+        "scoring_previous_words_count": "4",
+        "previous_word_first_letter": "z",
+    }
+    reconcile_encounter_historic_for_scoring(extras, board=None)
+    assert _scoring_previous_words_count_from_extras(extras) == 0
+    assert "previous_word_first_letter" not in extras
+
+
 def test_sanitize_run_state_snapshot_for_f8_projects_workflow_extras(
     tmp_path, monkeypatch
 ):
@@ -3129,11 +3271,44 @@ def test_bento_err_stale_prev_letter_overpredicts():
     stale_score, _, stale_trace = pipeline.score_with_trace(
         board, data["path"], data["word"], stale_loadout
     )
-    assert int(stale_score) == int(data["predicted_score"])
+    assert int(stale_score) == int(data["actual_score"])
     stale_bento = [
         s for s in stale_trace if str(s.get("rule_id", "")).lower() == "bento_box"
     ]
-    assert any(s.get("applied") for s in stale_bento)
+    assert not any(s.get("applied") for s in stale_bento)
+
+
+def test_jitter_bento_stale_f8_historic_replay():
+    """Regression 20260621_085720: stale F8 historic must not apply Bento to jitter."""
+    from cursed_words_solver.rules.pipeline import ScoringPipeline
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260621_085720.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(
+        dict(data.get("run_state_snapshot") or {})
+    )
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    pipeline = ScoringPipeline()
+    score, _, trace = pipeline.score_with_trace(
+        board, data["path"], data["word"], loadout
+    )
+    assert int(score) == int(data["actual_score"])
+    bento_steps = [
+        s for s in trace if str(s.get("rule_id", "")).lower() == "bento_box"
+    ]
+    assert not any(s.get("applied") for s in bento_steps)
 
 
 def test_merge_encounter_historic_fixes_bento_prev_letter(tmp_path, monkeypatch):

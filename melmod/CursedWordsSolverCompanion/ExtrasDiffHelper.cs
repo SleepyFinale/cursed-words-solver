@@ -270,6 +270,56 @@ namespace CursedWordsSolverCompanion
 
                     );
 
+                if (HasPreviousWordLetterDrift(originalF8Extras, authoritativeExtras))
+
+                    return (
+
+                        "F8 prediction used "
+
+                            + f8Count
+
+                            + "-word historic, score used "
+
+                            + authCount
+
+                            + "-word historic (previous word letter drift)"
+
+                    );
+
+                if (
+
+                    f8Count > 0
+
+                    && authCount == f8Count
+
+                    && !string.Equals(f8Raw, authRaw, StringComparison.Ordinal)
+
+                )
+
+                    return (
+
+                        "F8 prediction used "
+
+                            + f8Count
+
+                            + "-word historic, score used "
+
+                            + authCount
+
+                            + "-word historic (historic_words changed)"
+
+                    );
+
+                var equalCountDiff = DiffExtras(originalF8Extras, authoritativeExtras);
+
+                if (HasPlayedWordSinceF8(equalCountDiff))
+
+                    return (
+
+                        "F8 prediction historic lag (workflow advanced since F8)"
+
+                    );
+
                 return null;
 
             }
@@ -344,48 +394,6 @@ namespace CursedWordsSolverCompanion
 
 
 
-            if (extrasDiff.TryGetValue("scoring_previous_words_count", out var spcRaw))
-
-            {
-
-                var spcEntry = spcRaw as Dictionary<string, string>;
-
-                if (spcEntry != null)
-
-                {
-
-                    int f8Count;
-
-                    int submitCount;
-
-                    int.TryParse(
-
-                        (spcEntry.TryGetValue("f8", out var f8Spc) ? f8Spc : null) ?? "0",
-
-                        out f8Count
-
-                    );
-
-                    int.TryParse(
-
-                        (spcEntry.TryGetValue("submit", out var submitSpc) ? submitSpc : null)
-
-                            ?? "0",
-
-                        out submitCount
-
-                    );
-
-                    if (submitCount > f8Count)
-
-                        return true;
-
-                }
-
-            }
-
-
-
             if (extrasDiff.TryGetValue("historic_words", out var histRaw))
 
             {
@@ -417,6 +425,10 @@ namespace CursedWordsSolverCompanion
             }
 
 
+
+            // scoring_previous_words_count alone can lag in the F8 embed after historic sync;
+
+            // do not treat spc-only drift as "played since F8".
 
             return false;
 
@@ -788,13 +800,7 @@ namespace CursedWordsSolverCompanion
 
                     {
 
-                        if (ctx != null && ctx.HasBentoStamp)
-
-                            return false;
-
-                        if (!IsStaleExportAheadDrift(extrasDiff))
-
-                            return false;
+                        return false;
 
                     }
 

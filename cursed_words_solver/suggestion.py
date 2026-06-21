@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 
+import copy
+
 from datetime import datetime, timezone
 
 from typing import Any
@@ -551,6 +553,17 @@ def is_disk_catchup_drift(
     hist_f8 = str(f8.get("historic_words", "") or "").strip()
     hist_cur = str(cur.get("historic_words", "") or "").strip()
     if hist_f8 == hist_cur:
+        try:
+            spc_f8 = int(
+                str(f8.get("scoring_previous_words_count", "") or "0").strip()
+            )
+            spc_cur = int(
+                str(cur.get("scoring_previous_words_count", "") or "0").strip()
+            )
+            if spc_cur > spc_f8:
+                return True
+        except ValueError:
+            pass
         prev_f8 = str(f8.get("previous_word_first_letter", "") or "").strip().lower()
         prev_cur = str(cur.get("previous_word_first_letter", "") or "").strip().lower()
         return bool(prev_f8 and prev_cur and prev_f8 != prev_cur)
@@ -736,21 +749,6 @@ def has_played_word_since_f8_embed(
     live = live_extras if isinstance(live_extras, dict) else {}
     embed = embed_extras if isinstance(embed_extras, dict) else {}
 
-    try:
-        spc_embed = int(
-            str(embed.get("scoring_previous_words_count", "") or "").strip()
-        )
-    except ValueError:
-        spc_embed = None
-    try:
-        spc_live = int(
-            str(live.get("scoring_previous_words_count", "") or "").strip()
-        )
-    except ValueError:
-        spc_live = None
-    if spc_embed is not None and spc_live is not None and spc_live > spc_embed:
-        return True
-
     hist_embed = str(embed.get("historic_words", "") or "").strip()
     hist_live = str(live.get("historic_words", "") or "").strip()
     if hist_embed != hist_live and (hist_embed or hist_live):
@@ -759,7 +757,102 @@ def has_played_word_since_f8_embed(
         if count_live > count_embed:
             return True
 
+    # spc-only drift after historic sync in the F8 embed is not "played since F8".
     return False
+
+
+def describe_f8_prediction_historic_stale_note(
+    f8_extras: dict[str, Any] | None,
+    authoritative_extras: dict[str, Any] | None,
+) -> str | None:
+    """Mirror melmod ExtrasDiffHelper.DescribeF8PredictionHistoricStaleNote."""
+    f8 = f8_extras if isinstance(f8_extras, dict) else {}
+    auth = authoritative_extras if isinstance(authoritative_extras, dict) else {}
+    f8_raw = str(f8.get("historic_words", "") or "").strip()
+    auth_raw = str(auth.get("historic_words", "") or "").strip()
+    f8_count = _historic_words_count(f8_raw)
+    auth_count = _historic_words_count(auth_raw)
+
+    def _prev_letter_drift() -> bool:
+        f8_l = str(f8.get("previous_word_first_letter", "") or "").strip()
+        auth_l = str(auth.get("previous_word_first_letter", "") or "").strip()
+        if not f8_l or not auth_l:
+            return False
+        return f8_l.lower() != auth_l.lower()
+
+    if auth_count <= f8_count:
+        if f8_count > auth_count and _prev_letter_drift():
+            return (
+                f"F8 prediction used {f8_count}-word historic, score used "
+                f"{auth_count}-word historic (previous word letter drift)"
+            )
+        if _prev_letter_drift():
+            return (
+                f"F8 prediction used {f8_count}-word historic, score used "
+                f"{auth_count}-word historic (previous word letter drift)"
+            )
+        if f8_count > 0 and auth_count == f8_count and f8_raw != auth_raw:
+            return (
+                f"F8 prediction used {f8_count}-word historic, score used "
+                f"{auth_count}-word historic (historic_words changed)"
+            )
+        if has_played_word_since_f8_embed(auth, f8):
+            return "F8 prediction historic lag (workflow advanced since F8)"
+        return None
+
+    if not f8_raw and auth_count > 0:
+        return (
+            f"F8 prediction used empty historic, score used "
+            f"{auth_count}-word historic"
+        )
+    return (
+        f"F8 prediction used {f8_count}-word historic, score used "
+        f"{auth_count}-word historic"
+    )
+
+
+def f8_historic_would_fail_submit_projection(
+    embed_extras: dict[str, Any] | None,
+    *,
+    board: Board | None = None,
+    projected_extras: dict[str, Any] | None = None,
+) -> str | None:
+    """True when melmod would block capture for historic lag at submit."""
+    from cursed_words_solver.loadout import (
+        load_run_state_raw,
+        project_workflow_extras_for_f8_embed,
+    )
+
+    if projected_extras is not None:
+        source_extras = copy.deepcopy(projected_extras)
+    else:
+        fresh = load_run_state_raw()
+        if not isinstance(fresh, dict):
+            return None
+        fresh_extras = fresh.get("extras")
+        if not isinstance(fresh_extras, dict):
+            return None
+        source_extras = copy.deepcopy(fresh_extras)
+
+    project_workflow_extras_for_f8_embed(source_extras, board=board)
+    embed = embed_extras if isinstance(embed_extras, dict) else {}
+    embed_hist = str(embed.get("historic_words", "") or "").strip()
+    proj_hist = str(source_extras.get("historic_words", "") or "").strip()
+    embed_count = _historic_words_count(embed_hist)
+    proj_count = _historic_words_count(proj_hist)
+
+    if embed_count == 0:
+        return None
+    if proj_count > embed_count:
+        return None
+
+    if embed_count > proj_count:
+        return (
+            f"F8 embed historic ({embed_count} words) ahead of submit projection "
+            f"({proj_count} words)"
+        )
+
+    return describe_f8_prediction_historic_stale_note(embed, source_extras)
 
 
 def workflow_stale_vs_f8_snapshot(
@@ -810,6 +903,8 @@ def workflow_stale_vs_f8_snapshot(
     except ValueError:
         spc_cur = None
     if spc_f8 is not None and spc_cur is not None and spc_cur > spc_f8:
+        notes.append(f"scoring previous words count {spc_f8}→{spc_cur}")
+    if spc_f8 is not None and spc_cur is not None and spc_f8 > spc_cur:
         notes.append(f"scoring previous words count {spc_f8}→{spc_cur}")
 
     if not notes:
@@ -1290,6 +1385,7 @@ def f8_should_block_save(
     loadout: Loadout | None = None,
     board: Board | None = None,
     f8_extras: dict[str, Any] | None = None,
+    submit_projected_extras: dict[str, Any] | None = None,
     gather_succeeded: bool = True,
     gather_missing: list[str] | None = None,
     mid_solve_grid_advanced: bool = False,
@@ -1327,6 +1423,21 @@ def f8_should_block_save(
         return True, "historic_catchup_stale"
     if behind_disk_warn:
         return True, "behind_disk"
+    if isinstance(f8_extras, dict) and loadout is not None and isinstance(
+        submit_projected_extras, dict
+    ):
+        try:
+            grid = int(str((loadout.extras or {}).get("grid_number") or "0"))
+        except (TypeError, ValueError):
+            grid = 0
+        embed_hist = str(f8_extras.get("historic_words", "") or "").strip()
+        if grid >= 2 and embed_hist and embed_hist != "[]":
+            if f8_historic_would_fail_submit_projection(
+                f8_extras,
+                board=board,
+                projected_extras=submit_projected_extras,
+            ):
+                return True, "submit_projection_mismatch"
     return False, None
 
 

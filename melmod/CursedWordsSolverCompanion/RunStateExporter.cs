@@ -22,10 +22,17 @@ namespace CursedWordsSolverCompanion
         private static bool _exportLiveOnlyHistoric;
         private static bool _exportSkipWorkflowDiskMerge;
         private static string _f8ExportRequestId = "";
+        private static DateTime _lastF8ExportCompletedUtc = DateTime.MinValue;
+        private const double F8SuggestionClearGraceSec = 8.0;
 
         internal static bool ExportLiveOnlyHistoric
         {
             get { return _exportLiveOnlyHistoric; }
+        }
+
+        internal static DateTime LastF8ExportCompletedUtc
+        {
+            get { return _lastF8ExportCompletedUtc; }
         }
 
         internal static bool ExportSkipWorkflowDiskMerge
@@ -40,7 +47,10 @@ namespace CursedWordsSolverCompanion
             _f8ExportRequestId = requestId ?? "";
             try
             {
-                return TryExport(false, "f8");
+                var ok = TryExport(false, "f8");
+                if (ok)
+                    _lastF8ExportCompletedUtc = DateTime.UtcNow;
+                return ok;
             }
             finally
             {
@@ -178,6 +188,13 @@ namespace CursedWordsSolverCompanion
             if (snapshot?.extras == null)
                 return;
 
+            if (
+                _lastF8ExportCompletedUtc != DateTime.MinValue
+                && (DateTime.UtcNow - _lastF8ExportCompletedUtc).TotalSeconds
+                    < F8SuggestionClearGraceSec
+            )
+                return;
+
             var suggestion = SuggestionMatcher.Load();
             if (suggestion?.run_state_snapshot == null)
                 return;
@@ -187,6 +204,8 @@ namespace CursedWordsSolverCompanion
             );
             var diff = ExtrasDiffHelper.DiffExtras(f8Extras, snapshot.extras);
             var ctx = BuildStaleF8Context(player);
+            if (ExtrasDiffHelper.IsBenignWorkflowShrinkDrift(diff, ctx))
+                return;
             if (ExtrasDiffHelper.HasPlayedWordSinceF8(diff))
             {
                 var workflow = ExtrasDiffHelper.DescribePlayedWordSinceF8Drift(diff, ctx);
@@ -883,11 +902,17 @@ namespace CursedWordsSolverCompanion
                 character = GetCharacterName(player.MyCharacter),
                 money = player.Money,
                 pin_branch = GetPinBranch(player.MyCharacter),
-                stickers = MapItems(player.Stickers, false),
-                stamps = MapItems(player.Stamps, true),
+                stickers = MapItems(player.Stickers, false, player),
+                stamps = MapItems(player.Stamps, true, player),
             };
 
             var bosses = BossResolver.Resolve(player);
+            if (bosses == null || bosses.Count == 0)
+            {
+                var michael = RunStateExportFill.TryFindMichaelBossFromPlayer(player);
+                if (michael != null)
+                    bosses = new List<BossModifier> { michael };
+            }
             if (bosses == null || bosses.Count == 0)
                 ClearBossState(snapshot);
             else
@@ -895,7 +920,7 @@ namespace CursedWordsSolverCompanion
                 FillBoss(snapshot, player, bosses);
                 FillBossExtras(snapshot, player, bosses);
             }
-            FillPinExtras(snapshot, player.MyCharacter);
+            FillPinExtras(snapshot, player);
             FillStickerStampOrchestration(snapshot, player);
             FillRunContextExtras(snapshot, player);
             QuestExporter.FillChallenge(snapshot, player);
@@ -1722,7 +1747,7 @@ namespace CursedWordsSolverCompanion
                 throw lastError;
         }
 
-        private static List<RunStateItem> MapItems(Item[] items, bool stampsOnly)
+        private static List<RunStateItem> MapItems(Item[] items, bool stampsOnly, Player player = null)
         {
             var result = new List<RunStateItem>();
             if (items == null)
@@ -1754,6 +1779,10 @@ namespace CursedWordsSolverCompanion
                     {
                         // optional
                     }
+                }
+                else if (player != null && IsHumanBoyFavouriteStamp(player, item))
+                {
+                    mapped.is_human_boy_favourite = true;
                 }
                 result.Add(mapped);
             }
@@ -1938,8 +1967,9 @@ namespace CursedWordsSolverCompanion
                 snapshot.extras["grids_remaining"] = gridsRemaining.ToString();
         }
 
-        private static void FillPinExtras(RunStateSnapshot snapshot, Character character)
+        private static void FillPinExtras(RunStateSnapshot snapshot, Player player)
         {
+            var character = player?.MyCharacter;
             if (character == null || character.CharacterItem == null)
             {
                 snapshot.extras["pin_effect"] = "";
@@ -1968,7 +1998,7 @@ namespace CursedWordsSolverCompanion
             FillPinMemory(snapshot, pin);
             ReconcileBirthdayCakeExtrasFromPinMemory(snapshot);
             FillBicycleExtras(snapshot, pin);
-            FillFavourites(snapshot, character);
+            FillFavourites(snapshot, player, character);
         }
 
         private static void FillPinMemory(RunStateSnapshot snapshot, Item pin)
@@ -4008,25 +4038,135 @@ namespace CursedWordsSolverCompanion
             return "";
         }
 
-        private static void FillFavourites(RunStateSnapshot snapshot, Character character)
+        private static void FillFavourites(
+            RunStateSnapshot snapshot,
+            Player player,
+            Character character
+        )
         {
-            var favSticker = TryGetItemProperty(character, "FavouriteSticker", "FavoriteSticker");
-            if (favSticker != null)
+            var stickerIds = new List<string>();
+            if (player?.Stickers != null)
             {
-                snapshot.extras["favourite_sticker_id"] = Slugify(
-                    favSticker.ArtFileName,
-                    favSticker.Name
-                );
+                foreach (var item in player.Stickers)
+                {
+                    if (item == null)
+                        continue;
+                    try
+                    {
+                        if (item.IsHumanBoyFavouriteSticker)
+                        {
+                            var slug = Slugify(item.ArtFileName, item.Name);
+                            if (!string.IsNullOrEmpty(slug) && !stickerIds.Contains(slug))
+                                stickerIds.Add(slug);
+                        }
+                    }
+                    catch
+                    {
+                        // optional
+                    }
+                }
             }
 
-            var favStamp = TryGetItemProperty(character, "FavouriteStamp", "FavoriteStamp");
+            if (stickerIds.Count == 0 && character != null)
+            {
+                var favSticker = TryGetItemProperty(
+                    character,
+                    "FavouriteSticker",
+                    "FavoriteSticker"
+                );
+                if (favSticker != null)
+                {
+                    var slug = Slugify(favSticker.ArtFileName, favSticker.Name);
+                    if (!string.IsNullOrEmpty(slug))
+                        stickerIds.Add(slug);
+                }
+            }
+
+            var stampIds = new List<string>();
+            var favStamp = TryGetHBFavouriteStamp(player);
             if (favStamp != null)
             {
-                snapshot.extras["favourite_stamp_id"] = Slugify(
-                    favStamp.ArtFileName,
-                    favStamp.Name
-                );
+                var slug = Slugify(favStamp.ArtFileName, favStamp.Name);
+                if (!string.IsNullOrEmpty(slug))
+                    stampIds.Add(slug);
             }
+            else if (character != null)
+            {
+                var legacyStamp = TryGetItemProperty(
+                    character,
+                    "FavouriteStamp",
+                    "FavoriteStamp"
+                );
+                if (legacyStamp != null)
+                {
+                    var slug = Slugify(legacyStamp.ArtFileName, legacyStamp.Name);
+                    if (!string.IsNullOrEmpty(slug))
+                        stampIds.Add(slug);
+                }
+            }
+
+            if (stickerIds.Count > 0)
+            {
+                snapshot.extras["favourite_sticker_ids"] = string.Join(",", stickerIds);
+                snapshot.extras["favourite_sticker_id"] = stickerIds[0];
+            }
+
+            if (stampIds.Count > 0)
+            {
+                snapshot.extras["favourite_stamp_ids"] = string.Join(",", stampIds);
+                snapshot.extras["favourite_stamp_id"] = stampIds[0];
+            }
+        }
+
+        private static Item TryGetHBFavouriteStamp(Player player)
+        {
+            if (player == null)
+                return null;
+
+            try
+            {
+                var method = player.GetType().GetMethod("GetHBFavouriteStamp", MemberFlags);
+                if (method != null)
+                    return method.Invoke(player, null) as Item;
+            }
+            catch
+            {
+                // optional
+            }
+
+            if (player.Stamps == null)
+                return null;
+
+            foreach (var item in player.Stamps)
+            {
+                if (item != null && IsHumanBoyFavouriteStamp(player, item))
+                    return item;
+            }
+
+            return null;
+        }
+
+        private static bool IsHumanBoyFavouriteStamp(Player player, Item item)
+        {
+            if (player == null || item == null)
+                return false;
+
+            try
+            {
+                var method = player.GetType().GetMethod("IsHumanBoyFavouriteStamp", MemberFlags);
+                if (method != null)
+                {
+                    var result = method.Invoke(player, new object[] { item });
+                    if (result is bool flag)
+                        return flag;
+                }
+            }
+            catch
+            {
+                // optional
+            }
+
+            return false;
         }
 
         private static Item TryGetItemProperty(object target, params string[] names)
@@ -4196,7 +4336,7 @@ namespace CursedWordsSolverCompanion
             return -1;
         }
 
-        private static string GetPinBranch(Character character)
+        public static string GetPinBranch(Character character)
         {
             if (character == null || character.CharacterItem == null)
                 return "";

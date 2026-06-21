@@ -1,5 +1,7 @@
 """Pin scoring for all 11 character pins."""
 
+import pytest
+
 from cursed_words_solver.models import (
     Board,
     CurseType,
@@ -543,6 +545,36 @@ def test_ram_replays_memory_items():
     assert any("RAM" in e for e in bd["pipeline"]["effects"])
 
 
+def test_human_hands_favourite_sticker_left_variable_boost():
+    """Favourite sticker uses pin_left_variable as level boost during sticker pass."""
+    pipeline = ScoringPipeline()
+    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
+    grid[0][0] = _tile(0, 0, "B", 3)
+    grid[0][1] = _tile(0, 1, "R", 1)
+    grid[0][2] = _tile(0, 2, "R", 1)
+    grid[0][3] = _tile(0, 3, "E", 1)
+    grid[0][4] = _tile(0, 4, "E", 1)
+    board = Board(tiles=grid, money=0)
+    path = [0, 1, 2, 3, 4]
+    boosted = Loadout(
+        stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=2)],
+        extras={
+            "pin_effect": "human_hands",
+            "pin_left_variable": "1",
+            "favourite_sticker_id": "yellow_glasses",
+        },
+    )
+    plain = Loadout(
+        stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=2)],
+        extras={"pin_effect": ""},
+    )
+    score_boost, _ = pipeline.score(board, path, "bree", boosted)
+    score_plain, _ = pipeline.score(board, path, "bree", plain)
+    assert score_boost > score_plain
+    assert int(score_boost) == 17
+    assert int(score_plain) == 14
+
+
 def test_human_hands_favourite_boost():
     pipeline = ScoringPipeline()
     board = Board(
@@ -570,6 +602,60 @@ def test_human_hands_favourite_boost():
     )
     score, bd = pipeline.score(board, [0, 1, 2], "456", lo)
     assert bd["pipeline"]["word_score"] >= 8
+    assert any("Human Hands" in e for e in bd["pipeline"]["effects"])
+
+
+def test_human_hands_favourite_stamp_inferred_from_stamp_order():
+    from cursed_words_solver.loadout import parse_run_state
+    from cursed_words_solver.rules.scoring_conditions import human_hands_favourite_stamp_slug
+
+    loadout = parse_run_state(
+        {
+            "character": "Human Boy",
+            "stickers": [],
+            "stamps": [
+                {"id": "right_hand", "name": "Right Hand", "level": 1},
+                {"id": "dango", "name": "Dango", "level": 1},
+            ],
+            "extras": {
+                "pin_effect": "human_hands",
+                "stamp_order": '["right_hand","dango"]',
+            },
+        }
+    )
+    assert human_hands_favourite_stamp_slug(loadout) == "dango"
+    assert loadout.extras.get("favourite_stamp_id") == "dango"
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "expected_score"),
+    [
+        ("20260621_114547.json", 22590),
+        ("20260621_114839.json", 25803),
+    ],
+)
+def test_human_hands_dango_mismatch_replay(fixture_name, expected_score):
+    """Human Hands replays favourite stamp (dango) once when pin_right_variable=2."""
+    import json
+    from pathlib import Path
+
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+    )
+    from tests.regression.test_scoring_mismatches import _run_state_for_replay
+
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "mismatches" / fixture_name
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    loadout = parse_run_state(run_state)
+    assert loadout.extras.get("favourite_stamp_id") == "dango"
+    board = parse_board_from_run_state(run_state)
+    pipeline = ScoringPipeline()
+    score, bd = pipeline.score(board, data["path"], data["word"], loadout)
+    assert score == data["actual_score"] == expected_score
     assert any("Human Hands" in e for e in bd["pipeline"]["effects"])
 
 

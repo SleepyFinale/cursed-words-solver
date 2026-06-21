@@ -7,6 +7,8 @@ from pathlib import Path
 
 from cursed_words_solver.suggestion import (
     has_played_word_since_f8_embed,
+    is_disk_catchup_drift,
+    is_export_catchup_drift,
     poll_invalidate_last_suggestion,
     poll_invalidation_is_workflow_stale,
     workflow_stale_vs_f8_snapshot,
@@ -44,8 +46,28 @@ def test_workflow_stale_spc_forward_advance_only():
 def test_has_played_word_since_f8_embed_mirrors_melmod():
     embed = {"scoring_previous_words_count": "0", "historic_words": "[]"}
     live = {"scoring_previous_words_count": "1", "historic_words": "[]"}
-    assert has_played_word_since_f8_embed(live, embed)
-    assert not has_played_word_since_f8_embed(embed, live)
+    assert not has_played_word_since_f8_embed(live, embed)
+    live_with_hist = {
+        "scoring_previous_words_count": "1",
+        "historic_words": '[{"word":"RED","score":120}]',
+    }
+    assert has_played_word_since_f8_embed(live_with_hist, embed)
+    assert not has_played_word_since_f8_embed(embed, live_with_hist)
+
+
+def test_describe_f8_prediction_historic_stale_spc_only_same_historic():
+    from cursed_words_solver.suggestion import describe_f8_prediction_historic_stale_note
+
+    hist = '[{"word":"RED","score":120},{"word":"LIAC","score":149}]'
+    f8 = {
+        "historic_words": hist,
+        "scoring_previous_words_count": "0",
+    }
+    auth = {
+        "historic_words": hist,
+        "scoring_previous_words_count": "2",
+    }
+    assert describe_f8_prediction_historic_stale_note(f8, auth) is None
 
 
 def test_workflow_stale_ignores_matching_extras():
@@ -63,9 +85,17 @@ def test_poll_invalidation_is_workflow_stale_prefix():
     assert not poll_invalidation_is_workflow_stale(None)
 
 
-def test_poll_invalidate_clears_on_workflow_forward_advance_same_board(
+def test_is_disk_catchup_drift_spc_only_when_historic_unchanged():
+    f8 = {"scoring_previous_words_count": "0", "historic_words": "[]"}
+    live = {"scoring_previous_words_count": "4", "historic_words": "[]"}
+    assert is_disk_catchup_drift(f8, live)
+    assert is_export_catchup_drift(f8, live)
+
+
+def test_poll_invalidate_no_clear_on_spc_only_forward_drift_same_board(
     tmp_path, monkeypatch
 ):
+    """Same board tiles + higher spc without historic change is melmod export lag."""
     board_fp = (
         "8|4,0:₲/currency/colorless;4,1:¥/currency/colorless;"
         "4,2:N/letter/colorless;4,3:A/letter/colorless;4,4:฿/currency/colorless;"
@@ -98,7 +128,7 @@ def test_poll_invalidate_clears_on_workflow_forward_advance_same_board(
     suggestion_path.write_text(json.dumps(payload), encoding="utf-8")
 
     live_extras = {
-        "scoring_previous_words_count": "1",
+        "scoring_previous_words_count": "4",
         "historic_words": "[]",
     }
     reason = poll_invalidate_last_suggestion(
@@ -106,9 +136,8 @@ def test_poll_invalidate_clears_on_workflow_forward_advance_same_board(
         current_board_fp=board_fp,
         current_loadout_fp="test-loadout",
     )
-    assert reason is not None
-    assert poll_invalidation_is_workflow_stale(reason)
-    assert not suggestion_path.exists()
+    assert reason is None
+    assert suggestion_path.exists()
 
 
 def test_poll_invalidate_no_clear_when_embed_matches_live_game_export(

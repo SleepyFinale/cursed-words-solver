@@ -1115,3 +1115,54 @@ def test_count_scoring_vs_grid_only():
     assert scoring >= 2
     assert total == 3
     assert grid_only >= 0
+
+
+def _rodman_wheeps_board() -> Board:
+    """Grid 5 wheeps path from 20260621 session (consumable ₱ on path)."""
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    grid[3][4] = _tile(3, 4, "w", 5, color=TileColor.BLUE)
+    grid[2][4] = _tile(2, 4, "h", 4)
+    grid[1][3] = _tile(1, 3, "e", 1)
+    grid[1][1] = _tile(1, 1, "e", 2, color=TileColor.BLUE)
+    grid[2][2] = Tile(
+        2,
+        2,
+        "₱",
+        "₱",
+        50.0,
+        color=TileColor.SHINY,
+        curse=CurseType.CURRENCY,
+        metadata={"source": "melmod", "was_consumable": True},
+    )
+    grid[3][3] = _tile(3, 3, "s", 1)
+    return Board(tiles=grid, money=3)
+
+
+def _rodman_parrot_socks_hippo_loadout() -> Loadout:
+    return Loadout(
+        stickers=[
+            LoadoutItem(id="parrot", name="Parrot", level=2, kind="sticker"),
+            LoadoutItem(id="pair_of_socks", name="Pair Of Socks", level=1, kind="sticker"),
+            LoadoutItem(id="hungry_hippo", name="Hungry Hippo", level=1, kind="sticker"),
+            LoadoutItem(id="gold_fish", name="Gold Fish", level=1, kind="sticker"),
+            LoadoutItem(id="amphora", name="Amphora", level=1, kind="sticker"),
+        ],
+        extras={
+            "pin_effect": "carp_streamers",
+            "pin_left_level": "3",
+            "pin_right_level": "2",
+        },
+        money=3,
+    )
+
+
+def test_rodman_wheeps_socks_multiply_tile_sum_before_hippo():
+    """Pair Of Socks ×2 applies to tile sum before Hungry Hippo +20 (146 not 166)."""
+    board = _rodman_wheeps_board()
+    path = [19, 14, 8, 6, 12, 18]
+    loadout = _rodman_parrot_socks_hippo_loadout()
+    score, bd = ScoringPipeline().score(board, path, "wheeps", loadout)
+    assert score == 146.0
+    effects = " ".join(bd["pipeline"]["effects"])
+    assert "blue_count_eq:2" in effects
+    assert "scaled_flat" in effects

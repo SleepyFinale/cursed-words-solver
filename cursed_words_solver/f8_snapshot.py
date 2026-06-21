@@ -227,6 +227,79 @@ def _encounter_historic_export_ready(extras: dict[str, Any], hist: str) -> bool:
     )
 
 
+def _int_extra(extras: dict[str, Any], key: str, default: int = 0) -> int:
+    try:
+        return int(extras.get(key) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _boss_extras_missing(
+    loadout: Loadout,
+    board: Board,
+    extras: dict[str, Any],
+) -> list[str]:
+    """Boss/Michael fields required before F8 solve on boss encounters."""
+    from cursed_words_solver.loadout import encounter_implies_active_boss
+
+    if not encounter_implies_active_boss(loadout):
+        return []
+
+    missing: list[str] = []
+    boss_id = str(loadout.boss_id or "").strip()
+    boss_name = str(loadout.boss_name or "").strip()
+    board_active = max(1, sum(board.active)) if board is not None else 25
+
+    michael_phase = _int_extra(extras, "michael_phase")
+    michael_defeated = extras.get("michael_summoned_bosses_defeated") in (
+        True,
+        "true",
+        "True",
+        "1",
+        1,
+    )
+    michael_min = max(
+        _int_extra(extras, "michael_min_word_length"),
+        _int_extra(extras, "encounter_min_word_length"),
+    )
+
+    probe = str(extras.get("michael_finale_probe") or "")
+    probe_defeated: bool | None = None
+    if "summoned_defeated=1" in probe:
+        probe_defeated = True
+    elif "summoned_defeated=0" in probe:
+        probe_defeated = False
+
+    finale_expected = (
+        michael_defeated
+        or probe_defeated is True
+        or michael_phase >= 4
+        or (str(boss_id).lower() == "michael" and michael_min >= board_active)
+    )
+
+    if not boss_id and not boss_name:
+        if finale_expected:
+            if michael_min < board_active:
+                missing.append("michael_min_word_length/encounter_min_word_length")
+        else:
+            missing.append("boss_id/boss_name")
+    elif finale_expected and michael_min < board_active:
+        missing.append("michael_min_word_length/encounter_min_word_length")
+
+    run_stage = _int_extra(extras, "run_stage")
+    node = str(extras.get("run_node_type") or "").strip().lower()
+    if (
+        run_stage >= 6
+        and "boss" in node
+        and (michael_phase >= 4 or michael_defeated or probe_defeated is True)
+        and michael_min < board_active
+        and "michael_min_word_length/encounter_min_word_length" not in missing
+    ):
+        missing.append("michael_min_word_length/encounter_min_word_length")
+
+    return missing
+
+
 def _extras_missing_for_loadout(
     loadout: Loadout,
     board: Board,
@@ -286,6 +359,7 @@ def _extras_missing_for_loadout(
     slug = active_quest_slug(loadout)
     if slug in ("chromaphobia", "chromaphilia", "cursophobia") and not game_class:
         missing.append("challenge_game_class")
+    missing.extend(_boss_extras_missing(loadout, board, extras))
     return missing
 
 
@@ -790,10 +864,15 @@ def embed_f8_snapshot(
         return copy.deepcopy(source)
     extras = sanitized.get("extras")
     if isinstance(extras, dict):
-        from cursed_words_solver.loadout import project_workflow_extras_for_f8_embed
+        from cursed_words_solver.loadout import (
+            align_embed_with_scoring_loadout,
+            project_workflow_extras_for_f8_embed,
+        )
 
         board = snapshot.board
         project_workflow_extras_for_f8_embed(extras, board=board)
+        if isinstance(loadout.extras, dict):
+            align_embed_with_scoring_loadout(extras, loadout.extras, board=board)
         sanitized["extras"] = extras
     return sanitized
 

@@ -255,6 +255,18 @@ def test_gather_first_word_without_round_log_submit(tmp_path, monkeypatch):
     run_state_path.write_text(json.dumps(state), encoding="utf-8")
     monkeypatch.setattr(config_mod, "RUN_STATE_PATH", run_state_path)
 
+    def fake_load():
+        return json.loads(run_state_path.read_text(encoding="utf-8"))
+
+    monkeypatch.setattr(
+        "cursed_words_solver.f8_snapshot.load_run_state_raw",
+        fake_load,
+    )
+    monkeypatch.setattr(
+        "cursed_words_solver.loadout.load_run_state_raw",
+        fake_load,
+    )
+
     index_path = tmp_path / "index.jsonl"
     index_path.write_text("", encoding="utf-8")
     monkeypatch.setattr(round_log_mod, "ROUND_LOG_INDEX_PATH", index_path)
@@ -596,23 +608,35 @@ def test_grid2_spc_positive_requires_historic_without_telescope():
     assert "historic_words" not in missing
 
 
-def test_grid2_spc_positive_requires_historic_without_telescope():
-    """Queen Bee poison: grid 2+ with prior words must wait for historic_words."""
-    from cursed_words_solver.models import Board, Loadout
+def test_boss_node_missing_boss_id_blocks_f8_gather():
+    run_state = _board_run_state(prev_letter="a")
+    run_state["boss_id"] = ""
+    run_state["boss_name"] = ""
+    run_state["extras"]["run_node_type"] = "Boss"
+    run_state["extras"]["run_stage"] = "6"
+    snapshot = _build_snapshot_from_run_state(run_state, rules={})
+    assert not snapshot.extras_ready
+    assert "boss_id/boss_name" in snapshot.gather_missing
 
-    board = Board(tiles=[[None] * 5 for _ in range(5)])
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="queen_bee", name="Queen Bee", kind="sticker")],
+
+def test_michael_phase_four_export_ready_when_min_length_present():
+    run_state = _board_run_state(prev_letter="a")
+    run_state["boss_id"] = "michael"
+    run_state["boss_name"] = "Michael"
+    run_state["extras"].update(
+        {
+            "run_node_type": "Boss",
+            "run_stage": "6",
+            "michael_phase": "4",
+            "michael_summoned_bosses_defeated": "true",
+            "michael_min_word_length": "25",
+            "encounter_min_word_length": "25",
+            "boss_modifiers": "[]",
+        }
     )
-    extras = {
-        "grid_number": "2",
-        "scoring_previous_words_count": "1",
-        "historic_words": "",
-    }
-    missing = _extras_missing_for_loadout(loadout, board, extras)
-    assert "historic_words" in missing
-    extras["historic_words"] = json.dumps(
-        [{"word": "jWwwqD", "score": 72, "green_tile_count": 1}]
+    snapshot = _build_snapshot_from_run_state(run_state, rules={})
+    assert snapshot.extras_ready
+    assert "boss_id/boss_name" not in (snapshot.gather_missing or [])
+    assert "michael_min_word_length/encounter_min_word_length" not in (
+        snapshot.gather_missing or []
     )
-    missing = _extras_missing_for_loadout(loadout, board, extras)
-    assert "historic_words" not in missing

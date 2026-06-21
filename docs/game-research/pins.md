@@ -41,7 +41,7 @@ Pin scoring hooks:
 
 ### Human Hands
 
-Character item `HumanHands` adds `LeftHumanHand` / `RightHumanHand` stickers. Favourite sticker before left hand gets `IsHumanBoyFavouriteSticker`; favourite stamp is slot before `RightHumanHand`. Extra stamp applications: `right.VariableValue - 1` times in game loop.
+Favourite stamp is the stamp **after** `right_hand` in inventory (`Stamps[i-1] is RightHumanHand`). Extra stamp applications: `right.VariableValue - 1` times in game loop.
 
 ### Bicycle
 

@@ -21,7 +21,13 @@ namespace CursedWordsSolverCompanion
             sb.Append('|');
             RunStateExporter.AppendBossFingerprint(sb, BossResolver.Resolve(player));
             sb.Append('|');
+            var beforePin = sb.Length;
             RunStateExporter.AppendPinFingerprint(sb, player.MyCharacter);
+            if (sb.Length == beforePin)
+            {
+                sb.Append(':');
+                sb.Append(RunStateExporter.GetPinBranch(player.MyCharacter));
+            }
             return sb.ToString();
         }
 

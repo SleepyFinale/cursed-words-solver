@@ -127,8 +127,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     number_tile_count_on_path,
     word_all_numbers_on_path,
     human_hands_stamp_extra_apps,
-    pin_left_level,
-    pin_right_level,
+    human_hands_favourite_stamp_slug,
     rainbow_per_colour_bonus,
     red_tiles_used_encounter,
     letter_counts_on_path,
@@ -542,6 +541,28 @@ def _equipped_inventory_slugs(loadout: Loadout | None) -> set[str]:
     for item in (loadout.stickers or []) + (loadout.stamps or []):
         slugs.add(slugify_name(str(item.id or item.name)))
     return slugs
+
+
+def _multiply_sticker_before_additive_word_sticker(
+    rules: dict[str, Any],
+    loadout: Loadout,
+    sticker_slot_order: list[int],
+) -> bool:
+    """True when a ×WORD sticker sits left of a later +WORD SCORE sticker (game order)."""
+    seen_multiply = False
+    for slot in sticker_slot_order:
+        if slot < 0 or slot >= len(loadout.stickers):
+            continue
+        sticker = loadout.stickers[slot]
+        _key, rule = get_rule(rules, "stickers", sticker.id, sticker.name)
+        if not rule:
+            continue
+        effect_type = rule.get("type")
+        if effect_type == "multiply_word_scaled":
+            seen_multiply = True
+        elif seen_multiply and effect_type == "add_word_score":
+            return True
+    return False
 
 
 def _sort_finalize_steps_by_sticker_order(
@@ -1814,6 +1835,10 @@ class ScoringPipeline:
             state["_immediate_word_percent"] = False
         elif defer_multiply_stickers:
             _apply_sticker_pass(multiply_only=False)
+        elif _multiply_sticker_before_additive_word_sticker(
+            self.rules, loadout, ctx.sticker_slot_order
+        ):
+            _apply_sticker_pass(multiply_only=False, interleaved=True)
         else:
             _apply_sticker_pass(multiply_only=False)
             _apply_sticker_pass(multiply_only=True)
@@ -2083,43 +2108,26 @@ class ScoringPipeline:
         board: Board,
         path: list[int],
     ) -> dict:
-        left = pin_left_level(loadout)
-        right = pin_right_level(loadout)
-        fav_sticker = str(
-            (loadout.extras or {}).get("favourite_sticker_id", "") or ""
-        ).strip()
-        fav_stamp = str(
-            (loadout.extras or {}).get("favourite_stamp_id", "") or ""
-        ).strip()
-        if fav_sticker:
-            for sticker in loadout.stickers:
-                if sticker.id == fav_sticker or sticker.name == fav_sticker:
-                    _key, rule = get_rule(
-                        self.rules, "stickers", sticker.id, sticker.name
-                    )
-                    if rule and rule.get("type") not in ("unmodeled", "custom"):
-                        eff_level = sticker.level + left
-                        state = self._apply_rule(
-                            rule, state, board, path, loadout, eff_level
-                        )
-                        state["effects"].append(
-                            f"Human Hands: favourite sticker +{left} level(s)"
-                        )
-                    break
+        fav_stamp = human_hands_favourite_stamp_slug(loadout)
         stamp_extra = human_hands_stamp_extra_apps(loadout)
         if fav_stamp and stamp_extra > 0:
+            from cursed_words_solver.rules.rule_lookup import slugify_name
+
+            fav_slug = slugify_name(fav_stamp)
             for stamp in loadout.stamps:
-                if stamp.id == fav_stamp or stamp.name == fav_stamp:
-                    _key, rule = get_rule(self.rules, "stamps", stamp.id, stamp.name)
-                    if rule and rule.get("type") not in ("unmodeled", "custom"):
-                        for _ in range(stamp_extra):
-                            state = self._apply_rule(
-                                rule, state, board, path, loadout, 1
-                            )
-                        state["effects"].append(
-                            f"Human Hands: favourite stamp ×{stamp_extra} extra"
+                stamp_slug = slugify_name(stamp.id or stamp.name)
+                if stamp_slug != fav_slug and stamp.id != fav_stamp and stamp.name != fav_stamp:
+                    continue
+                _key, rule = get_rule(self.rules, "stamps", stamp.id, stamp.name)
+                if rule and rule.get("type") not in ("unmodeled", "custom"):
+                    for _ in range(stamp_extra):
+                        state = self._apply_rule(
+                            rule, state, board, path, loadout, 1
                         )
-                    break
+                    state["effects"].append(
+                        f"Human Hands: favourite stamp ×{stamp_extra} extra"
+                    )
+                break
         return state
 
     def _apply_named_effect(

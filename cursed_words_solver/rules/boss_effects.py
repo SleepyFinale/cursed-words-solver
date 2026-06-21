@@ -120,6 +120,22 @@ def _encounter_min_word_length_value(loadout: Loadout) -> int:
     return _extra_int(loadout, "encounter_min_word_length", 0)
 
 
+def _encounter_finale_length_pin(
+    loadout: Loadout, default_max_len: int
+) -> BossConstraints | None:
+    """Pin exact board length when encounter exports live min but finale flags lag."""
+    encounter_min = _encounter_min_word_length_value(loadout)
+    if encounter_min <= 0 or encounter_min < default_max_len:
+        return None
+    if not _michael_context(loadout):
+        return None
+    if _michael_probe_summoned_defeated(loadout) is False:
+        return None
+    if _michael_phase_value(loadout) >= 4 or michael_summoned_bosses_defeated(loadout):
+        return BossConstraints(min_len=encounter_min, max_len=encounter_min)
+    return None
+
+
 def _michael_probe_summoned_defeated(loadout: Loadout) -> bool | None:
     """Parse companion probe: summoned_defeated=0 means draft bosses still active."""
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
@@ -406,15 +422,25 @@ def boss_word_constraints(
 ) -> BossConstraints:
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
     michael_min = _michael_min_word_length_value(loadout)
+    encounter_min = _encounter_min_word_length_value(loadout)
+    if encounter_min > 0:
+        michael_min = max(michael_min, encounter_min)
 
     if michael_finale_active(loadout, default_max_len=default_max_len):
-        fin_len = (
-            max(michael_min, default_max_len) if michael_min > 0 else default_max_len
-        )
+        candidates = [
+            v
+            for v in (michael_min, encounter_min, default_max_len)
+            if v > 0
+        ]
+        fin_len = max(candidates) if candidates else default_max_len
         return BossConstraints(
             min_len=fin_len,
             max_len=fin_len,
         )
+
+    pinned = _encounter_finale_length_pin(loadout, default_max_len)
+    if pinned is not None:
+        return pinned
 
     if _extra_bool(loadout, "hyena_blocked"):
         return BossConstraints(

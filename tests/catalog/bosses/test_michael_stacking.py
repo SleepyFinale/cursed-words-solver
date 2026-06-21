@@ -164,6 +164,22 @@ def test_michael_encounter_finale_fallback_encounter_min_word_length() -> None:
     assert c.max_len == 25
 
 
+def test_encounter_min_word_length_pins_phase_four_without_summoned_flag() -> None:
+    """Live encounter_min_word_length alone pins 25-tile search when phase 4 is exported."""
+    loadout = Loadout(
+        extras={
+            "boss_area_number": 6,
+            "encounter_min_word_length": 25,
+            "michael_phase": 4,
+            "run_stage": "6",
+            "run_node_type": "Boss",
+        },
+    )
+    c = boss_word_constraints(loadout, RULES, default_max_len=25)
+    assert c.min_len == 25
+    assert c.max_len == 25
+
+
 def test_michael_phase_two_probe_vetoes_false_finale() -> None:
     """Phase 2 wordsmith: probe says draft bosses still active despite stomped finale extras."""
     loadout = Loadout(

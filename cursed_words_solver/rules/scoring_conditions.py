@@ -126,6 +126,112 @@ def human_hands_stamp_extra_apps(loadout: Loadout) -> int:
     return max(0, pin_right_level(loadout))
 
 
+def human_hands_pin_active(loadout: Loadout) -> bool:
+    pin_effect = str((loadout.extras or {}).get("pin_effect", "") or "").strip().lower()
+    return pin_effect in ("human_boy", "human_hands")
+
+
+def _parse_favourite_sticker_id_list(raw: Any) -> list[str]:
+    if isinstance(raw, list):
+        return [str(x).strip().lower() for x in raw if str(x).strip()]
+    text = str(raw or "").strip()
+    if not text:
+        return []
+    if "," in text:
+        return [s.strip().lower() for s in text.split(",") if s.strip()]
+    return [text.lower()]
+
+
+def human_boy_favourite_sticker_ids(loadout: Loadout) -> frozenset[str]:
+    extras = loadout.extras or {}
+    ids: set[str] = set()
+    ids.update(_parse_favourite_sticker_id_list(extras.get("favourite_sticker_id")))
+    ids.update(_parse_favourite_sticker_id_list(extras.get("favourite_sticker_ids")))
+    return frozenset(ids)
+
+
+def _parse_favourite_stamp_id_list(raw: Any) -> list[str]:
+    if isinstance(raw, list):
+        return [str(x).strip().lower() for x in raw if str(x).strip()]
+    text = str(raw or "").strip()
+    if not text:
+        return []
+    if "," in text:
+        return [s.strip().lower() for s in text.split(",") if s.strip()]
+    return [text.lower()]
+
+
+def human_boy_favourite_stamp_ids(loadout: Loadout) -> frozenset[str]:
+    extras = loadout.extras or {}
+    ids: set[str] = set()
+    ids.update(_parse_favourite_stamp_id_list(extras.get("favourite_stamp_id")))
+    ids.update(_parse_favourite_stamp_id_list(extras.get("favourite_stamp_ids")))
+    return frozenset(ids)
+
+
+def human_hands_favourite_stamp_slug(loadout: Loadout) -> str:
+    """Resolve Human Hands favourite stamp slug for pin replay."""
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    fav_ids = human_boy_favourite_stamp_ids(loadout)
+    if fav_ids:
+        return sorted(fav_ids)[0]
+    if not human_hands_pin_active(loadout):
+        return ""
+
+    extras = loadout.extras or {}
+    order: list[str] = []
+    raw = extras.get("stamp_order")
+    if isinstance(raw, list):
+        order = [slugify_name(str(x)) for x in raw if str(x).strip()]
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                order = [slugify_name(str(x)) for x in data if str(x).strip()]
+        except json.JSONDecodeError:
+            pass
+    if not order:
+        order = [slugify_name(s.id or s.name) for s in (loadout.stamps or [])]
+
+    for i, slug in enumerate(order):
+        if slug == "right_hand" and i + 1 < len(order):
+            return order[i + 1]
+    return ""
+
+
+def human_hands_left_boost(loadout: Loadout) -> int:
+    """Left Hand VariableValue added to favourite sticker level during scoring."""
+    var = pin_left_variable(loadout)
+    if var is not None:
+        return max(0, var)
+    return 0
+
+
+def is_human_boy_favourite_sticker(sticker_id: str, sticker_name: str, loadout: Loadout) -> bool:
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    if not human_hands_pin_active(loadout):
+        return False
+    slug = slugify_name(sticker_id or sticker_name)
+    fav_ids = human_boy_favourite_sticker_ids(loadout)
+    if fav_ids:
+        return slug in fav_ids
+    return False
+
+
+def human_hands_favourite_sticker_effective_level(
+    sticker_level: int,
+    sticker_id: str,
+    sticker_name: str,
+    loadout: Loadout,
+) -> int:
+    level = max(1, int(sticker_level))
+    if not is_human_boy_favourite_sticker(sticker_id, sticker_name, loadout):
+        return level
+    return level + human_hands_left_boost(loadout)
+
+
 def scaled_pin_value(base: int, per_upgrade: int, upgrade_level: int) -> int:
     return int(base) + int(per_upgrade) * max(upgrade_level, 0)
 
@@ -4167,9 +4273,20 @@ def _bento_matches_previous_word_start(
         return False, "skipped: no previous word on first grid"
     if grid_number(loadout) == 1:
         return False, "skipped: no previous word on first grid"
+    extras = loadout.extras or {}
+    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
+    if source in ("historic_metadata_only", "historic_paths_stale"):
+        return False, "skipped: prior words not on this board"
     if not _limnophila_previous_word_available(loadout):
         return False, "skipped: no previous word on this grid"
     prev = _extra_letter(loadout, "previous_word_first_letter")
+    from cursed_words_solver.loadout import _previous_letter_from_historic_words
+
+    last_from_hist = _previous_letter_from_historic_words(
+        extras.get("historic_words", "")
+    )
+    if last_from_hist and prev and prev != last_from_hist:
+        prev = last_from_hist
     word_first = word_first_letter(word)
     if not prev or not word_first:
         return False, f"skipped: missing previous or word first letter (prev={prev!r}, word={word_first!r})"

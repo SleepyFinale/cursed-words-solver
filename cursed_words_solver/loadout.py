@@ -1197,6 +1197,45 @@ def parse_run_state(data: dict[str, Any]) -> Loadout:
                 fav_stickers.append(sid)
     if fav_stickers and not extras.get("favourite_sticker_ids"):
         extras["favourite_sticker_ids"] = ",".join(fav_stickers)
+    if fav_stickers and not extras.get("favourite_sticker_id"):
+        extras["favourite_sticker_id"] = fav_stickers[0]
+    fav_stamps: list[str] = []
+    for stamp in data.get("stamps", []):
+        if not isinstance(stamp, dict):
+            continue
+        if stamp.get("is_human_boy_favourite") in (True, "true", "True", "1", 1):
+            sid = str(stamp.get("id") or stamp.get("name") or "").strip().lower()
+            if sid:
+                fav_stamps.append(sid)
+    if fav_stamps and not extras.get("favourite_stamp_ids"):
+        extras["favourite_stamp_ids"] = ",".join(fav_stamps)
+    if fav_stamps and not extras.get("favourite_stamp_id"):
+        extras["favourite_stamp_id"] = fav_stamps[0]
+    pin_effect = str(extras.get("pin_effect", "") or "").strip().lower()
+    if pin_effect in ("human_boy", "human_hands") and not extras.get("favourite_stamp_id"):
+        order: list[str] = []
+        raw_order = extras.get("stamp_order")
+        if isinstance(raw_order, list):
+            order = [slugify_name(str(x)) for x in raw_order if str(x).strip()]
+        elif isinstance(raw_order, str) and raw_order.strip():
+            try:
+                parsed = json.loads(raw_order)
+                if isinstance(parsed, list):
+                    order = [slugify_name(str(x)) for x in parsed if str(x).strip()]
+            except json.JSONDecodeError:
+                pass
+        if not order:
+            order = [
+                slugify_name(str(s.get("id") or s.get("name") or ""))
+                for s in data.get("stamps", [])
+                if isinstance(s, dict)
+            ]
+        for i, slug in enumerate(order):
+            if slug == "right_hand" and i + 1 < len(order):
+                extras["favourite_stamp_id"] = order[i + 1]
+                if not extras.get("favourite_stamp_ids"):
+                    extras["favourite_stamp_ids"] = order[i + 1]
+                break
     return reorder_inventory_from_extras(
         Loadout(
         character=data.get("character", ""),
@@ -1477,6 +1516,17 @@ def reconcile_historic_after_grid_advance(extras: dict[str, Any]) -> bool:
         extras.pop("historic_words", None)
         extras.pop("red_tiles_used_encounter", None)
         extras["encounter_historic_source"] = "grid_advanced_disk"
+        return True
+
+    if (
+        grid >= 2
+        and hist_count == 0
+        and spc > 0
+        and source
+        in ("grid_advanced", "grid_advanced_disk", "grid_start_cleared")
+    ):
+        extras["scoring_previous_words_count"] = "0"
+        extras.pop("previous_word_first_letter", None)
         return True
 
     return False
@@ -2080,7 +2130,7 @@ def project_workflow_extras_for_f8_embed(
 
     embed_spc = _scoring_previous_words_count_from_extras(extras)
     proj_spc = _scoring_previous_words_count_from_extras(projected)
-    if embed_spc > proj_spc:
+    if embed_spc != proj_spc:
         extras["scoring_previous_words_count"] = str(proj_spc)
 
     reconcile_scoring_previous_words_count(extras)
@@ -2132,6 +2182,63 @@ def merge_f8_workflow_extras_into(
         if val is None or str(val).strip() == "":
             continue
         dest[key] = str(val) if not isinstance(val, str) else val
+
+
+def align_embed_with_scoring_loadout(
+    extras: dict[str, Any],
+    scoring_extras: dict[str, Any] | None,
+    *,
+    board: Board | None = None,
+) -> None:
+    """Overlay scoring-truth workflow fields when melmod export lagged behind gather."""
+    if not isinstance(extras, dict) or not isinstance(scoring_extras, dict):
+        return
+
+    reconciled = copy.deepcopy(scoring_extras)
+    reconcile_encounter_historic_for_scoring(reconciled, board=board)
+
+    embed_hist = str(extras.get("historic_words", "") or "").strip()
+    rec_hist = str(reconciled.get("historic_words", "") or "").strip()
+    embed_count = _historic_words_count(embed_hist)
+    rec_count = _historic_words_count(rec_hist)
+
+    if rec_count > embed_count and embed_count == 0 and rec_hist:
+        extras["historic_words"] = rec_hist
+        for key in ("encounter_historic_source", "red_tiles_used_encounter"):
+            val = reconciled.get(key)
+            if val is not None and str(val).strip() != "":
+                extras[key] = str(val) if not isinstance(val, str) else val
+        embed_hist = rec_hist
+        embed_count = rec_count
+
+    if embed_hist == rec_hist:
+        embed_spc = _scoring_previous_words_count_from_extras(extras)
+        rec_spc = _scoring_previous_words_count_from_extras(reconciled)
+        if rec_spc > embed_spc:
+            extras["scoring_previous_words_count"] = str(rec_spc)
+        rec_letter = str(reconciled.get("previous_word_first_letter", "") or "").strip()
+        spc = _scoring_previous_words_count_from_extras(extras)
+        if rec_letter and spc > 0:
+            extras["previous_word_first_letter"] = rec_letter
+        elif spc == 0:
+            extras.pop("previous_word_first_letter", None)
+
+    skip = frozenset(
+        {
+            "historic_words",
+            "previous_word_first_letter",
+            "scoring_previous_words_count",
+            "encounter_historic_source",
+            "red_tiles_used_encounter",
+        }
+    )
+    for key in F8_EMBED_WORKFLOW_EXTRA_KEYS:
+        if key in skip:
+            continue
+        val = reconciled.get(key)
+        if val is None or str(val).strip() == "":
+            continue
+        extras[key] = str(val) if not isinstance(val, str) else val
 
 
 def merge_tile_ninja_extras_into(

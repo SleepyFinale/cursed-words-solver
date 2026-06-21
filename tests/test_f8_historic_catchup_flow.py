@@ -322,3 +322,54 @@ def test_try_refresh_historic_extras_from_disk(tmp_path, monkeypatch):
     )
     assert try_refresh_historic_extras_from_disk(loadout, board)
     assert loadout.extras["historic_words"] == disk_hist
+
+
+def test_catchup_then_embed_projects_to_submit_extras(tmp_path, monkeypatch):
+    """Post-search catchup merges disk historic; embed must match projected run_state."""
+    from cursed_words_solver.f8_snapshot import embed_f8_snapshot
+    from cursed_words_solver.loadout import RUN_STATE_PATH
+
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+
+    one_word = json.dumps([{"word": "LACERATING", "score": 13}])
+    run_state = _board_run_state(
+        extras={
+            "grid_number": "2",
+            "scoring_previous_words_count": "1",
+            "historic_words": one_word,
+            "previous_word_first_letter": "l",
+            "encounter_historic_source": "live",
+        }
+    )
+    run_state_path.write_text(json.dumps(run_state), encoding="utf-8")
+
+    stale_two = json.dumps(
+        [
+            {"word": "REWiLDINGS", "score": 16},
+            {"word": "LACERATING", "score": 13},
+        ]
+    )
+    snap = _build_snapshot_from_run_state(
+        _board_run_state(
+            extras={
+                "grid_number": "2",
+                "scoring_previous_words_count": "2",
+                "historic_words": stale_two,
+                "previous_word_first_letter": "r",
+            }
+        ),
+        rules={},
+    )
+    updated, _, _, _ = catchup_historic_gather_after_search(
+        snap,
+        rules={},
+        catchup_timeout_sec=0.2,
+        reexport_poll_sec=0,
+    )
+    embed = embed_f8_snapshot(updated, scoring_loadout=updated.loadout)
+    assert isinstance(embed, dict)
+    extras = embed.get("extras")
+    assert isinstance(extras, dict)
+    assert extras.get("historic_words") == one_word
+    assert extras.get("previous_word_first_letter") == "l"

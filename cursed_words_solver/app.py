@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import copy
 import json
 import signal
 import sys
@@ -64,6 +65,7 @@ from cursed_words_solver.suggestion import (
     poll_invalidate_last_suggestion,
     run_state_historic_stale_warnings,
     save_last_suggestion,
+    save_blocked_suggestion,
 )
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor, WordResult
@@ -153,6 +155,30 @@ from cursed_words_solver.ui.layout import (
 from cursed_words_solver.ui.calibrate import run_calibration_wizard
 from cursed_words_solver.ui.loadout_dialog import LoadoutDialog
 from cursed_words_solver.ui.overlay import ResultOverlay
+
+RACK_RESERVE_FRAC = 0.35
+
+
+def twinkle_swap_time_budget(
+    *,
+    search_budget: float,
+    rack_placement_pending: bool,
+    rack_reserve_frac: float = RACK_RESERVE_FRAC,
+    solve_remaining_sec: float,
+) -> float:
+    """Cap Twinkle Toes search when rack placement still needs F8 budget."""
+    if rack_placement_pending:
+        return search_budget * (1.0 - rack_reserve_frac)
+    return solve_remaining_sec
+
+
+def twinkle_swap_deadline(
+    *,
+    search_started: float,
+    solve_deadline: float,
+    twinkle_budget: float,
+) -> float:
+    return min(solve_deadline, search_started + twinkle_budget)
 
 
 @dataclass(frozen=True)
@@ -1106,12 +1132,52 @@ class SolverApp:
             effective_max = min(board_max_len, constraints.max_len)
             if effective_max < effective_min:
                 effective_max = effective_min
+            from cursed_words_solver.loadout import encounter_missing_boss_should_warn
+            from cursed_words_solver.rules.boss_effects import (
+                michael_finale_active,
+            )
+
+            if encounter_missing_boss_should_warn(loadout):
+                print(
+                    "  Boss fight detected but boss export missing — press F8 again.",
+                    flush=True,
+                )
+                return
+            _run_extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+            _run_stage = 0
+            try:
+                _run_stage = int(_run_extras.get("run_stage") or 0)
+            except (TypeError, ValueError):
+                _run_stage = 0
+            _node = str(_run_extras.get("run_node_type") or "").strip().lower()
+            if (
+                board_max_len >= 25
+                and _run_stage >= 6
+                and "boss" in _node
+                and effective_min < 25
+                and not michael_finale_active(loadout, default_max_len=board_max_len)
+            ):
+                _cobra_raw = _run_extras.get("cobra_min_length")
+                _has_stacked_min = False
+                if _cobra_raw not in (None, ""):
+                    try:
+                        _has_stacked_min = int(_cobra_raw) > 1
+                    except (TypeError, ValueError):
+                        _has_stacked_min = False
+                if not _has_stacked_min:
+                    print(
+                        "  Michael finale expected but 25-tile word rules not loaded "
+                        "— press F8 again.",
+                        flush=True,
+                    )
+                    return
             rules = self._scoring.rules
             rack_placement_pending = (
                 not sandy_auto_place
                 and rack_placement_search_active(loadout, board, rules)
             )
-            rack_reserve_frac = 0.35
+            rack_reserve_frac = RACK_RESERVE_FRAC
+            twinkle_pending = twinkle_toes_swap_pending(loadout)
             primary_search_budget = (
                 search_budget * (1.0 - rack_reserve_frac)
                 if rack_placement_pending
@@ -1209,19 +1275,30 @@ class SolverApp:
                         f"  Target: {grid_target} pts (best {int(results[0].score)})",
                         flush=True,
                     )
-            elif twinkle_toes_swap_pending(loadout) and solve_remaining() >= 1.0:
+            elif twinkle_pending and solve_remaining() >= 1.0:
                 print(
                     "  Twinkle Toes: swap pending — simulating tile pairs…",
                     flush=True,
+                )
+                twinkle_budget = twinkle_swap_time_budget(
+                    search_budget=search_budget,
+                    rack_placement_pending=rack_placement_pending,
+                    rack_reserve_frac=rack_reserve_frac,
+                    solve_remaining_sec=solve_remaining(),
+                )
+                twinkle_deadline = twinkle_swap_deadline(
+                    search_started=search_started,
+                    solve_deadline=solve_deadline,
+                    twinkle_budget=twinkle_budget,
                 )
                 search_board, twinkle_swap_record, results = (
                     search_with_twinkle_toes_swap(
                         self._searcher,
                         board,
                         loadout,
-                        time_budget=solve_remaining(),
+                        time_budget=phase_budget(twinkle_budget),
                         top_n=self.config.top_n_results,
-                        solve_deadline=solve_deadline,
+                        solve_deadline=twinkle_deadline,
                     )
                 )
                 if twinkle_swap_record:
@@ -1397,6 +1474,19 @@ class SolverApp:
                                 f"baseline rank {thresh_label})",
                                 flush=True,
                             )
+            elif (
+                not sandy_auto_place
+                and rack_placement_search_active(loadout, board, rules)
+                and results
+                and twinkle_swap_record is not None
+                and solve_remaining() < 1.0
+                and remaining_rack_tiles(loadout, board)
+            ):
+                print(
+                    "  Consumable placement skipped — F8 budget exhausted "
+                    "after Twinkle Toes",
+                    flush=True,
+                )
             if (
                 has_target
                 and grid_target > 0
@@ -1752,6 +1842,11 @@ class SolverApp:
                     and isinstance(f8_loadout.extras, dict)
                     else None
                 )
+                submit_projected_extras = None
+                if isinstance(fresh_run_state, dict):
+                    raw_proj = fresh_run_state.get("extras")
+                    if isinstance(raw_proj, dict):
+                        submit_projected_extras = copy.deepcopy(raw_proj)
                 block_f8_save, block_f8_reason = f8_should_block_save(
                     gather_succeeded=gather_succeeded,
                     gather_missing=snapshot.gather_missing or None,
@@ -1779,6 +1874,7 @@ class SolverApp:
                     board=search_board,
                     path=top.path,
                     f8_extras=f8_extras if isinstance(f8_extras, dict) else None,
+                    submit_projected_extras=submit_projected_extras,
                 )
                 gather_status = {
                     "f8_export_acked": snapshot.f8_export_acked,
@@ -1818,6 +1914,33 @@ class SolverApp:
                     )
                     saved_suggestion = True
                     self._last_invalidation_reason = None
+                    self._active_suggestion_session = session_from_snapshot(snapshot)
+                    if self._active_suggestion_session is None and isinstance(
+                        score_run_state, dict
+                    ):
+                        from cursed_words_solver.f8_snapshot import F8Snapshot
+
+                        self._active_suggestion_session = session_from_snapshot(
+                            F8Snapshot(
+                                run_state=score_run_state,
+                                board=search_board,
+                                loadout=f8_loadout,
+                                board_available=True,
+                            )
+                        )
+                else:
+                    save_blocked_suggestion(
+                        board=search_board,
+                        loadout=score_loadout,
+                        result=top,
+                        predicted_trace=pred_trace,
+                        run_state_snapshot=embed_state,
+                        scoring_word=score_word,
+                        block_reason=block_f8_reason or "unknown",
+                        export_diagnostics=export_diag,
+                        consumable_placements=placement_records or None,
+                        twinkle_toes_swap=twinkle_swap_record,
+                    )
                     self._active_suggestion_session = session_from_snapshot(snapshot)
                     if self._active_suggestion_session is None and isinstance(
                         score_run_state, dict

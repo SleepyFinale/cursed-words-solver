@@ -103,6 +103,7 @@ namespace CursedWordsSolverCompanion
                 keys["encounter_historic_source"] = "grid_advanced";
             }
 
+            RunStateExporter.ClearCachedPreviousWordsForExport();
             ApplyScoringCachedPreviousWordLetter(keys);
             if (RunStateExporter.PlayerHasStampSlug(player, "tile_ninja"))
             {
@@ -563,7 +564,9 @@ namespace CursedWordsSolverCompanion
                 return;
 
             var fallbackExtras = BuildEncounterHistoricFallbackExtras(snapshot, player);
-            var built = BuildBestHistoricExtras(player, fallbackExtras, liveOnly);
+            var built = liveOnly
+                ? BuildF8HistoricExtras(player, fallbackExtras)
+                : BuildBestHistoricExtras(player, fallbackExtras, liveOnly);
             if (built == null || built.Count == 0)
             {
                 if (TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
@@ -595,7 +598,15 @@ namespace CursedWordsSolverCompanion
                     fallbackExtras.TryGetValue("historic_words", out fallbackHistoric);
                 var longestExisting = PreferHistoricJson(existingHistoric, fallbackHistoric);
                 var grid = ResolveGridNumber(player);
-                if (HistoricWouldShrinkOnSameGrid(longestExisting, builtHistoric, grid, snapshot))
+                if (
+                    !liveOnly
+                    && HistoricWouldShrinkOnSameGrid(
+                        longestExisting,
+                        builtHistoric,
+                        grid,
+                        snapshot
+                    )
+                )
                 {
                     built.Remove("historic_words");
                     if (longestExisting != null && longestExisting != "[]")
@@ -792,6 +803,25 @@ namespace CursedWordsSolverCompanion
                 return;
 
             extras.Remove("previous_word_first_letter");
+
+            string historicRaw;
+            extras.TryGetValue("historic_words", out historicRaw);
+            var histEmpty =
+                string.IsNullOrEmpty(historicRaw) || historicRaw.Trim() == "[]";
+            string sourceRaw;
+            extras.TryGetValue("encounter_historic_source", out sourceRaw);
+            var source = (sourceRaw ?? "").Trim().ToLowerInvariant();
+            var freshGridSource =
+                source == "grid_advanced"
+                || source == "grid_advanced_disk"
+                || source == "grid_start_cleared"
+                || source == "grid1_no_scoring_cache";
+            if (histEmpty && freshGridSource)
+            {
+                extras["scoring_previous_words_count"] = "0";
+                return;
+            }
+
             var scoringPrevious = RunStateExporter.GetCachedPreviousWords();
             var cacheCount = scoringPrevious != null ? scoringPrevious.Count : 0;
             extras["scoring_previous_words_count"] = cacheCount.ToString();
@@ -1240,6 +1270,20 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
+        /// F8 live export: historic and prev-letter aligned with submit-time scoring projection.
+        /// </summary>
+        public static Dictionary<string, string> BuildF8HistoricExtras(
+            Player player,
+            Dictionary<string, string> fallbackExtras
+        )
+        {
+            var live = fallbackExtras != null
+                ? new Dictionary<string, string>(fallbackExtras)
+                : new Dictionary<string, string>();
+            return BuildSubmitWorkflowExtras(player, live);
+        }
+
+        /// <summary>
         /// Workflow extras as they will be at score time (live player historic, not debounced run_state).
         /// </summary>
         public static Dictionary<string, string> BuildSubmitWorkflowExtras(
@@ -1320,6 +1364,9 @@ namespace CursedWordsSolverCompanion
                         return null;
                     return fromCached;
                 }
+                // Grid 2+: scoring cache is authoritative when player reflection over-counts.
+                if (grid >= 2 && cachedCount > 0 && playerCount > cachedCount)
+                    return fromCached;
                 if (playerCount > 0)
                     return fromPlayer;
                 if (grid >= 2 && cachedCount > 0)
@@ -1341,6 +1388,9 @@ namespace CursedWordsSolverCompanion
             }
 
             if (cachedCount >= playerCount && cachedCount > 0)
+                return fromCached;
+            // Grid 2+: scoring cache is authoritative when player reflection over-counts.
+            if (grid >= 2 && cachedCount > 0 && playerCount > cachedCount)
                 return fromCached;
             if (playerCount > 0)
                 return fromPlayer;
@@ -1422,9 +1472,25 @@ namespace CursedWordsSolverCompanion
             return RunStateExporter.Slugify(b.PrefabFileName, b.Name);
         }
 
-        private static void FillBossParams(RunStateSnapshot snapshot, Player player)
+        /// <summary>
+        /// Boss list for export: encounter drafts, or player ActiveBossModifiers (Michael finale).
+        /// </summary>
+        private static List<BossModifier> ResolveBossesForExport(Player player)
         {
             var bosses = BossResolver.Resolve(player);
+            if (bosses != null && bosses.Count > 0)
+                return bosses;
+
+            var michael = TryFindMichaelBossFromPlayer(player);
+            if (michael != null)
+                return new List<BossModifier> { michael };
+
+            return bosses;
+        }
+
+        private static void FillBossParams(RunStateSnapshot snapshot, Player player)
+        {
+            var bosses = ResolveBossesForExport(player);
             if (bosses == null || bosses.Count == 0)
                 return;
 
@@ -2201,7 +2267,11 @@ namespace CursedWordsSolverCompanion
                 if (tile != null && tile.active)
                     count++;
             }
-            return count;
+            if (count > 0)
+                return count;
+            // Board may not have active flags yet; treat full 25-tile export as active.
+            var total = snapshot.board.tiles.Count;
+            return total >= 25 ? 25 : total;
         }
 
         public static List<BossModifier> TryGetBossListMember(
