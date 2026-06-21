@@ -9,7 +9,7 @@ Requires the [MelonLoader companion mod](melmod/README.md), which reads the live
 - Time-budgeted word search with curse-aware paths (teleports, rook/queen lines, wildcards, number tiles)
 - Scoring that follows the official [wiki order](https://cursedwords.wiki.gg/wiki/Scoring) (tiles → boss tile/word penalties → grid → pin → stickers → stamps), driven by `[data/wiki/stickers.json](data/wiki/stickers.json)`
 - Always-on-top result overlay plus numbered, click-through path highlights on the game board
-- Scoring mismatch capture (melmod v1.1.6+) and regression fixtures from real in-game submits
+- Scoring mismatch capture (melmod v1.1.6+) and per-submit round logs (v1.2+), with regression fixtures from real in-game submits
 - Shop advice (melmod shop export + F8 in Ej?A56): build-synergy recommendations ported from the in-game Advice button, plus encounter grid reroll hints
 
 ## Quick start
@@ -24,6 +24,7 @@ Use **Python 3.11 or 3.12** (3.14 is not supported yet — native deps like NumP
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+pip install -e ".[dev]"   # pytest — only needed for running tests
 pip install -e .
 ```
 
@@ -32,9 +33,11 @@ Do not `cd` into the inner `cursed_words_solver/` package folder for setup — t
 Run the app:
 
 ```bash
+cursed-solver
+# or:
 python -m cursed_words_solver.app
 # or, after install:
-cursed-solver
+cursed-solver [--calibrate] [--hotkey f8]
 ```
 
 ### MelonLoader + companion mod (required)
@@ -57,7 +60,7 @@ flowchart LR
   subgraph game [CursedWords + MelonLoader]
     GridData[GridData / Player]
     WordTrie[WordTrie]
-    Companion[CompanionMod v1.1.6]
+    Companion[CompanionMod v1.2.0]
   end
   subgraph files ["~/.cursed_words_solver/"]
     RS[run_state.json]
@@ -96,9 +99,9 @@ flowchart LR
 `[CompanionMod.cs](melmod/CursedWordsSolverCompanion/CompanionMod.cs)` runs inside the game via MelonLoader.
 
 - **Auto-export:** When loadout or board changes, `[RunStateExporter.cs](melmod/CursedWordsSolverCompanion/RunStateExporter.cs)` computes a fingerprint and writes `run_state.json` (debounced ~0.5s).
-- **Manual refresh:** Press **F7** in-game to force an immediate export and refresh `game_words.txt` via `[DictionaryExporter.cs](melmod/CursedWordsSolverCompanion/DictionaryExporter.cs)`. Melmod also auto-exports when the board or loadout fingerprint changes (~0.5s). **F8** alone is usually enough; F7 is a force refresh if export lags (e.g. right after receiving Sandy consumables).
+- **Manual refresh:** Press **F7** in-game to force an immediate export and refresh `game_words.txt` via `[DictionaryExporter.cs](melmod/CursedWordsSolverCompanion/DictionaryExporter.cs)`. Melmod also auto-exports when the board or loadout fingerprint changes (~0.5s). A single **F8** in the solver polls `run_state.json` until the board and required extras are ready; **F7** is only needed to force export when auto-export has not caught up yet (e.g. right after receiving Sandy consumables).
 - **Exported data:** Character, stickers, stamps, boss, pin, money, and `extras.*` (pin levels, boss area, hyena block, sticker-specific counters, etc.). The live board comes from `GridData` — up to 25 tiles with `char`, `base_score`, `color`, `curse`, `active`, plus `rows`/`cols` for Bat shrunk grids. The full vocabulary comes from the game `WordTrie`.
-- **Scoring feedback:** After you press **F8** in the solver, `[suggestion.py](cursed_words_solver/suggestion.py)` writes `last_suggestion.json` (scoring word, path, board/loadout fingerprints, `predicted_trace`). When you submit that word on the same path, Harmony hooks compare the game’s score to the prediction; mismatches land in `scoring_mismatches/`. See [melmod README — scoring mismatch capture](melmod/README.md#scoring-mismatch-capture-v116). `last_suggestion.json` persists across solver restarts; on startup the solver clears it when the loadout changed (new character/run) and otherwise prints a note if the board differs from the last F8. Press **F8** to refresh before submitting — melmod also warns at submit time if the board changed mid-round.
+- **Scoring feedback:** After you press **F8** in the solver, `[suggestion.py](cursed_words_solver/suggestion.py)` writes `last_suggestion.json` (scoring word, path, board/loadout fingerprints, `predicted_trace`, embedded F8 extras via `embed_f8_snapshot` for melmod comparison). When you submit that word on the same path, Harmony hooks compare the game’s score to the prediction; mismatches land in `scoring_mismatches/`. See [melmod README — scoring mismatch capture](melmod/README.md#scoring-mismatch-capture-v116). `last_suggestion.json` persists across solver restarts; on startup the solver clears it when the loadout changed (new character/run) and otherwise prints a note if the board differs from the last F8. A background poll invalidates stale suggestions when workflow extras drift (`previous_word_first_letter`, historic words, scoring counters). Press **F8** to refresh before submitting — melmod also warns at submit time if the board changed mid-round.
 
 Field-by-field JSON documentation: `[melmod/README.md](melmod/README.md)`. Do not bind **F8** in the mod — that hotkey belongs to the solver.
 
@@ -106,11 +109,12 @@ Field-by-field JSON documentation: `[melmod/README.md](melmod/README.md)`. Do no
 
 Pressing **F8** once starts `_solve_worker` in `[app.py](cursed_words_solver/app.py)` on a background thread (UI updates are posted back to the Qt main thread via `_HotkeyBridge` signals).
 
-1. **Gather snapshot** — `[f8_snapshot.py](cursed_words_solver/f8_snapshot.py)` polls melmod `run_state.json` until the board and required extras (historic, rack, stamp counters, etc.) are exported. Game export is the source of truth; there is no in-memory loadout cache between F8 presses.
-2. **Search** — Baseline word search via `[search.py](cursed_words_solver/search.py)`, then optional consumable placement simulation (score boost, then target rescue if below `target_score`). Sandy Saguaro uses placement-first search. Amber board circles and orange rack numbers mark consumable steps before the green path.
+1. **Export request** — Solver writes `f8_export_request.json`; melmod [`F8ExportRequestPoller.cs`](melmod/CursedWordsSolverCompanion/F8ExportRequestPoller.cs) forces a live export and acks via `export_diagnostics.f8_request_id`.
+2. **Gather snapshot** — `[f8_snapshot.py](cursed_words_solver/f8_snapshot.py)` polls melmod `run_state.json` until the board and required extras (historic, rack, stamp counters, etc.) are exported. Game export is the source of truth; there is no in-memory loadout cache between F8 presses.
 3. **Dictionary** — `[dictionary.py](cursed_words_solver/dictionary.py)` loads `game_words.txt` when present (from melmod), else ENABLE1 (`[config.py](cursed_words_solver/config.py)` `resolve_wordlist`).
-4. **Score** — Each surviving candidate is scored by `[ScoringPipeline](cursed_words_solver/rules/pipeline.py)` using rules from `[data/wiki/stickers.json](data/wiki/stickers.json)`.
-5. **Output** — The best word is re-scored with a full trace, written to `last_suggestion.json`, and shown in the overlay. After you submit the word in-game, the overlay clears to **Press F8 to solve** — press F8 again on the next grid when ready.
+4. **Search** — Baseline word search via `[search.py](cursed_words_solver/search.py)`, then optional consumable placement via `[consumable_placement.py](cursed_words_solver/consumable_placement.py)` (score boost, target rescue if below `target_score`; Sandy Saguaro uses placement-first search). Optional Twinkle Toes pre-path tile swap via `[rules/twinkle_toes.py](cursed_words_solver/rules/twinkle_toes.py)`. Amber board circles and orange rack numbers mark consumable steps before the green path.
+5. **Score** — Each surviving candidate is scored by `[ScoringPipeline](cursed_words_solver/rules/pipeline.py)` using rules from `[data/wiki/stickers.json](data/wiki/stickers.json)`.
+6. **Output** — The best word is re-scored with a full trace, written to `last_suggestion.json` (with embedded F8 extras), and shown in the overlay. After you submit the word in-game, the overlay clears to **Press F8 to solve** — press F8 again on the next grid when ready.
 
 ### Display layer (overlays)
 
@@ -152,9 +156,12 @@ All paths under `%USERPROFILE%\.cursed_words_solver\`:
 | ---------------------------------------- | ---------------- | ------------------------------------------------------------- |
 | `config.json`                            | Solver           | Solver                                                        |
 | `run_state.json`                         | Melmod           | Solver                                                        |
+| `f8_export_request.json`                 | Solver (each F8) | Melmod                                                        |
 | `game_words.txt`, `game_words_meta.json` | Melmod           | Solver                                                        |
 | `last_suggestion.json`                   | Solver (each F8) | Melmod (scoring capture)                                      |
+| `last_suggestion_blocked.json`           | Melmod           | Melmod                                                        |
 | `scoring_mismatches/`                    | Melmod           | You → `scripts/mismatch_to_test.py`                           |
+| `round_logs/*.json`, `index.jsonl`       | Melmod (v1.2+)   | Solver diagnostics, `cursed-solver explain`                   |
 | `debug/`                                 | Solver           | You (parse traces, board captures, export warnings)           |
 | `export_audit.jsonl`                     | Melmod (verbose) | Per-export audit trail                                        |
 
@@ -165,6 +172,8 @@ cursed_words_solver/   # Python package
   app.py               # Hotkeys, solve orchestration, Qt bridge
   search.py            # Word search (DFS, time budget, boss limits, tier-2 screening)
   search_parallel.py   # Parallel DFS workers (mirrors per-solve context stack)
+  consumable_placement.py  # Rack→grid placement simulation (Sandy, Mahjong, target rescue)
+  f8_snapshot.py       # Live melmod gather for each F8
   solve_context.py     # Per-solve loadout snapshot (flags, slot order, tier-2 bonuses)
   board_scoring_context.py  # Per-solve static rule precompute
   graph_bitboard.py    # Per-solve board masks (chess, Hanafuda, letters)
@@ -172,17 +181,25 @@ cursed_words_solver/   # Python package
   mult_search.py       # Inventory mult rule enumeration
   loadout.py           # run_state.json → Board / Loadout
   dictionary.py        # game_words.txt / ENABLE1
-  suggestion.py        # last_suggestion.json for melmod
+  suggestion.py        # last_suggestion.json, workflow stale detection
+  shop_advisor.py      # Shop advice (Ej?A56 encounter)
+  grid_reroll_advisor.py  # Encounter grid reroll hints
+  diagnose.py          # cursed-solver diagnose
+  debug_path.py        # cursed-solver explain / validate-path
+  round_log.py         # Round log index polling
+  known_failing.py     # Quarantined mismatch fixture registry
   fingerprints.py      # Board/loadout change detection
   rules/               # Scoring pipeline, bosses, rule lookup
     rule_phase.py      # Static vs dynamic rule classification
+  game_shop/           # Shop advice engine types and scoring
+  sim/                 # Experimental encounter simulator (see docs/game-research/sim-traceability.md)
   board_display.py     # ASCII grid formatting for logs
   ui/                  # Result overlay, board highlights, calibration, loadout dialog
 docs/                  # SEARCH_ARCHITECTURE.md, DATA_STRUCTURE_ANALYSIS.md, game-research/
 melmod/                # MelonLoader companion (C#) + install/build scripts
 data/wiki/             # stickers.json catalog + wiki scrape inputs
 scripts/               # build_stickers_json, mismatch_to_test — see scripts/README.md
-tests/                 # catalog/, integration/, regression/, unit tests
+tests/                 # catalog/, integration/, regression/, sim/, unit tests
 .github/workflows/     # CI (pytest on push/PR)
 ```
 
@@ -196,16 +213,28 @@ Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 | `rack_region`            | —        | Manual fallback consumable rack row (five equal slots)                                     |
 | `show_board_highlight`   | `true`   | Numbered circles on the game board and consumable rack                                     |
 | `hotkey`                 | `f8`     | Solve hotkey (one press per grid — gathers live game export, solves, shows result)         |
-| `search_time_budget_sec` | `45`     | Seconds per solve for word search. Legacy values `2` / `15` / `30` auto-upgrade on startup |
+| `search_time_budget_sec` | `60`     | Seconds per solve for word search. Legacy values `2` / `15` / `30` auto-upgrade on startup |
 | `top_n_results`          | `3`      | Alternate words shown in the overlay                                                       |
 | `wordlist`               | `game`   | `game` → `game_words.txt`; `enable1` → offline fallback                                    |
 | `setup_weight`           | `0.4`    | Weight for future-round setup value in search ranking                                      |
+| `setup_discount`         | `0.85`   | Discount factor for future-round setup value in search ranking                             |
+| `mult_search_weight`     | `0.4`    | Weight for inventory-mult enumeration in search ranking                                    |
+| `mult_search_passes`     | `true`   | Enable mult-rule search passes during word search                                          |
 | `search_workers`         | `"auto"` | Parallel DFS processes: `"auto"` (up to 8 cores), `1` to disable, or integer `2`–`16`      |
 | `grid_reroll_gap_ratio`  | `0.3`    | Show "Reroll Grid" when best score is below this fraction of estimated grid target         |
 
 On startup the terminal prints the loaded word list, e.g. `Word list: game (120000 words)`. After each solve it prints the grid and `Board source: melmod`.
 
 Word length is derived automatically per solve: minimum is 1, maximum is the active board size (up to 25), then boss effects (for example Cobra/Wolf) clamp that range.
+
+**Optional performance extras** (parallel search trie backends):
+
+```bash
+pip install -e ".[fast]"    # marisa-trie
+pip install -e ".[native]"  # marisa-trie + datrie
+```
+
+Set `CWS_TRIE_BACKEND` to `auto` (default), `array`, `marisa`, or `datrie` — used by [`search_parallel.py`](cursed_words_solver/search_parallel.py).
 
 ### Search performance
 
@@ -276,24 +305,40 @@ pytest tests/ -m slow            # search benchmarks only
 pytest tests/regression/         # scoring mismatch fixtures
 ```
 
+### Diagnostics CLI
+
+After a play session, inspect captures under `%USERPROFILE%\.cursed_words_solver\`:
+
+```bash
+cursed-solver diagnose
+cursed-solver explain --round-log %USERPROFILE%\.cursed_words_solver\round_logs\<file>.json
+cursed-solver validate-path --round-log <file>
+```
+
+See [`scripts/README.md`](scripts/README.md) for profiling and mismatch triage scripts.
+
+**Simulator (experimental):** `python -m cursed_words_solver.sim` replays `tests/fixtures/round_logs/` — see [`docs/game-research/sim-traceability.md`](docs/game-research/sim-traceability.md).
+
 GitHub Actions runs `pytest tests/` on push and pull request to `main` / `master` (`[.github/workflows/test.yml](.github/workflows/test.yml)`).
 
 | Test area   | Location                                                                                                     | Purpose                                                     |
 | ----------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
 | Catalog     | `tests/catalog/`                                                                                             | Per-character sticker/stamp scoring rules                   |
-| Integration | `tests/integration/`                                                                                         | Melmod fingerprints, score traces, loadout scoring          |
-| Regression  | `tests/regression/`                                                                                          | Real mismatch captures under `tests/fixtures/mismatches/`   |
-| Unit        | `tests/test_*.py`                                                                                            | Search, bosses, dictionary, path geometry, etc.             |
+| Integration | `tests/integration/`                                                                                         | Melmod fingerprints, score traces, loadout scoring, round logs |
+| Regression  | `tests/regression/`                                                                                          | Mismatch captures (`tests/fixtures/mismatches/`) and round-log path replays |
+| Sim         | `tests/sim/`                                                                                                 | Encounter simulator replay                                  |
+| Unit        | `tests/test_*.py`                                                                                            | Search, bosses, dictionary, F8 snapshot, consumable placement, suggestion stale workflow |
 | Performance | `tests/test_static_dynamic_pipeline.py`, `tests/test_tier2_two_phase.py`, `tests/test_search_performance.py` | Static/dynamic scoring parity, tier-2 bounds, search gating |
 
-**Contributing a scoring fix:** F7 → F8 → play the highlighted word → collect mismatch JSON → `python scripts/mismatch_to_test.py …` → fix pipeline → `pytest tests/regression/ -k <fixture_id>` until green → remove that id from `_KNOWN_FAILING` in `[tests/regression/test_scoring_mismatches.py](tests/regression/test_scoring_mismatches.py)`.
+**Contributing a scoring fix:** F7 → F8 → play the highlighted word → collect mismatch JSON → `python scripts/mismatch_to_test.py …` → fix pipeline → `pytest tests/regression/ -k <fixture_id>` until green → remove that stem from [`tests/fixtures/known_failing.json`](tests/fixtures/known_failing.json) if it was quarantined. For path misses, promote round logs with `python scripts/round_log_to_test.py <round_log.json>` (see [melmod README — Round logs](melmod/README.md#round-logs-v12)).
 
-New mismatch fixtures are **not** added to `_KNOWN_FAILING` by default, so CI fails until the replay passes (or you deliberately quarantine a case). Passing regressions (~54) still run on every `pytest tests/`.
+New mismatch fixtures are **not** added to `known_failing.json` by default, so CI fails until the replay passes (or you deliberately quarantine a case). All non-quarantined regression fixtures run on every `pytest tests/`.
 
 ## Related documentation
 
 - `[docs/SEARCH_ARCHITECTURE.md](docs/SEARCH_ARCHITECTURE.md)` — Per-solve context stack, tier-2 screening, static/dynamic scoring
 - `[docs/DATA_STRUCTURE_ANALYSIS.md](docs/DATA_STRUCTURE_ANALYSIS.md)` — Profiling results, cache hit rates, hot-path analysis
-- `[melmod/README.md](melmod/README.md)` — MelonLoader install, `run_state.json` schema, boss/pin extras
+- `[docs/game-research/sim-traceability.md](docs/game-research/sim-traceability.md)` — Encounter simulator traceability
+- `[melmod/README.md](melmod/README.md)` — MelonLoader install, `run_state.json` schema, boss/pin extras, round logs
 - `[melmod/SCORING_HOOKS.md](melmod/SCORING_HOOKS.md)` — Harmony hook points for score capture
 - `[scripts/README.md](scripts/README.md)` — Maintenance scripts (`build_stickers_json`, `mismatch_to_test`, profiling)
