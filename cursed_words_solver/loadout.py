@@ -14,6 +14,8 @@ from cursed_words_solver.rules.rule_lookup import slugify_name
 from cursed_words_solver.rules.fraction_tiles import attach_fraction_metadata
 from cursed_words_solver.models import (
     CURRENCY_MAP,
+    DEFAULT_GRID_SIZE,
+    MAX_GRID_SIZE,
     Board,
     CurseType,
     EncounterGridRerollState,
@@ -401,30 +403,34 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
     if not isinstance(board_data, dict):
         return None
     tiles_raw = board_data.get("tiles")
-    if not isinstance(tiles_raw, list) or len(tiles_raw) != 25:
+    if not isinstance(tiles_raw, list) or len(tiles_raw) not in (25, 36):
         return None
 
+    storage = 6 if len(tiles_raw) == 36 else DEFAULT_GRID_SIZE
+    max_row = storage - 1
+    max_col = storage - 1
+
     money = mod_money_from_run_state(data)
-    grid: list[list[Tile | None]] = [[None] * 5 for _ in range(5)]
-    active = [False] * 25
+    grid: list[list[Tile | None]] = [[None] * storage for _ in range(storage)]
+    active = [False] * (storage * storage)
 
     try:
-        board_rows = int(board_data.get("rows", 5))
-        board_cols = int(board_data.get("cols", 5))
+        board_rows = int(board_data.get("rows", storage))
+        board_cols = int(board_data.get("cols", storage))
     except (TypeError, ValueError):
-        board_rows, board_cols = 5, 5
-    board_rows = max(1, min(5, board_rows))
-    board_cols = max(1, min(5, board_cols))
+        board_rows, board_cols = storage, storage
+    board_rows = max(1, min(storage, board_rows))
+    board_cols = max(1, min(storage, board_cols))
 
     for entry in tiles_raw:
         if not isinstance(entry, dict):
             return None
         game_row = int(entry.get("row", -1))
         col = int(entry.get("col", -1))
-        if game_row < 0 or game_row > 4 or col < 0 or col > 4:
+        if game_row < 0 or game_row > max_row or col < 0 or col > max_col:
             return None
         row = _melmod_row_to_solver(board_data, game_row)
-        idx = row * 5 + col
+        idx = row * storage + col
 
         curse_key = str(entry.get("curse", "letter") or "letter").lower()
         is_active = entry.get("active", True)
@@ -580,26 +586,26 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
             attach_fraction_metadata(tile_obj)
         grid[row][col] = tile_obj
 
-    if any(grid[r][c] is None for r in range(5) for c in range(5)):
+    if any(grid[r][c] is None for r in range(storage) for c in range(storage)):
         return None
 
-    tiles = [[grid[r][c] for c in range(5)] for r in range(5)]
+    tiles = [[grid[r][c] for c in range(storage)] for r in range(storage)]
 
     playable_origin = str(board_data.get("playable_origin") or "").strip().lower()
     has_bounds = "playable_min_row" in board_data
     try:
         pmin_r = int(board_data.get("playable_min_row", 0))
-        pmax_r = int(board_data.get("playable_max_row", 4))
+        pmax_r = int(board_data.get("playable_max_row", max_row))
         pmin_c = int(board_data.get("playable_min_col", 0))
-        pmax_c = int(board_data.get("playable_max_col", 4))
+        pmax_c = int(board_data.get("playable_max_col", max_col))
     except (TypeError, ValueError):
-        pmin_r, pmax_r, pmin_c, pmax_c = 0, 4, 0, 4
+        pmin_r, pmax_r, pmin_c, pmax_c = 0, max_row, 0, max_col
 
-    if not has_bounds and (board_rows < 5 or board_cols < 5):
-        min_r, max_r, min_c, max_c = 5, -1, 5, -1
-        for r in range(5):
-            for c in range(5):
-                if active[r * 5 + c]:
+    if not has_bounds and (board_rows < storage or board_cols < storage):
+        min_r, max_r, min_c, max_c = storage, -1, storage, -1
+        for r in range(storage):
+            for c in range(storage):
+                if active[r * storage + c]:
                     min_r = min(min_r, r)
                     max_r = max(max_r, r)
                     min_c = min(min_c, c)
@@ -609,7 +615,7 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
             if not playable_origin:
                 if min_r == 0:
                     playable_origin = "top_left"
-                elif max_r == 4:
+                elif max_r == max_row:
                     playable_origin = "bottom_left"
                 else:
                     playable_origin = "bottom_left"
@@ -669,6 +675,20 @@ def _encounter_score_earned_from_extras(extras: dict[str, Any]) -> float:
         return 0.0
 
 
+def _fresh_encounter_grid_one(extras: dict[str, Any]) -> bool:
+    """Grid 1 with no points scored yet (remaining still equals total target)."""
+    if _grid_number_from_extras(extras) != 1:
+        return False
+    if _encounter_score_earned_from_extras(extras) > 0:
+        return False
+    try:
+        total = float(extras.get("encounter_total_target") or 0)
+        remaining = float(extras.get("encounter_remaining_target") or 0)
+    except (TypeError, ValueError):
+        return False
+    return total > 0 and remaining == total
+
+
 def _encounter_historic_trusted_for_poison(extras: dict[str, Any]) -> bool:
     """True when historic_words is from the live encounter (not stale cross-encounter bleed)."""
     hist = str(extras.get("historic_words", "") or "").strip()
@@ -711,6 +731,8 @@ def green_poison_from_historic_words(extras: dict[str, Any] | None) -> float:
     raw = extras.get("historic_words")
     rows = _parse_historic_words_rows(raw)
     if not rows:
+        return 0.0
+    if _fresh_encounter_grid_one(extras):
         return 0.0
     if _encounter_historic_trusted_for_poison(extras):
         return sum(_green_poison_row_contribution(row) for row in rows if isinstance(row, dict))
@@ -2822,7 +2844,7 @@ def _has_valid_board_export(data: dict[str, Any]) -> bool:
     if not isinstance(board_data, dict):
         return False
     tiles_raw = board_data.get("tiles")
-    return isinstance(tiles_raw, list) and len(tiles_raw) == 25
+    return isinstance(tiles_raw, list) and len(tiles_raw) in (25, 36)
 
 
 def _has_shop_offers(data: dict[str, Any]) -> bool:

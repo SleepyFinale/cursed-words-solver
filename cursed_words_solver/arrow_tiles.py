@@ -46,27 +46,29 @@ def arrow_ray_target_mask(
     direction: tuple[int, int],
     active_mask: int,
     *,
+    rows: int,
+    cols: int,
     horizontal_wrap: bool,
 ) -> int:
     """All active cells along the arrow ray from ``start_idx`` (exclusive)."""
-    row, col = divmod(start_idx, GRID_SIZE)
+    row, col = divmod(start_idx, cols)
     dc, dr = direction
     cc, cr = col + dc, row + dr
     mask = 0
-    max_steps = GRID_SIZE
+    max_steps = max(rows, cols)
     for _ in range(max_steps):
         hit = False
-        if 0 <= cc < GRID_SIZE and 0 <= cr < GRID_SIZE:
-            idx = index_of(cr, cc)
+        if 0 <= cc < cols and 0 <= cr < rows:
+            idx = cr * cols + cc
             if active_mask & (1 << idx):
                 mask |= 1 << idx
                 hit = True
-        if not hit and horizontal_wrap and 0 <= cr < GRID_SIZE:
-            wcc = (cc + GRID_SIZE) % GRID_SIZE
-            widx = index_of(cr, wcc)
+        if not hit and horizontal_wrap and 0 <= cr < rows:
+            wcc = (cc + cols) % cols
+            widx = cr * cols + wcc
             if active_mask & (1 << widx):
                 mask |= 1 << widx
-        if cr < 0 or cr >= GRID_SIZE:
+        if cr < 0 or cr >= rows:
             break
         cc += dc
         cr += dr
@@ -78,10 +80,13 @@ def build_arrow_target_masks(
     active_mask: int,
 ) -> tuple[int, tuple[int, ...], tuple[int, ...]]:
     """``arrow_mask``, per-cell ray targets, per-cell ray targets with hungry-snake wrap."""
+    cols = board.storage_cols
+    rows = board.storage_rows
+    cell_count = board.cell_count
     arrow_mask = 0
-    base: list[int] = [0] * (GRID_SIZE * GRID_SIZE)
-    wrap: list[int] = [0] * (GRID_SIZE * GRID_SIZE)
-    for idx in range(GRID_SIZE * GRID_SIZE):
+    base: list[int] = [0] * cell_count
+    wrap: list[int] = [0] * cell_count
+    for idx in range(cell_count):
         if not (active_mask & (1 << idx)):
             continue
         tile = board.get_by_index(idx)
@@ -91,6 +96,10 @@ def build_arrow_target_masks(
         if delta is None:
             continue
         arrow_mask |= 1 << idx
-        base[idx] = arrow_ray_target_mask(idx, delta, active_mask, horizontal_wrap=False)
-        wrap[idx] = arrow_ray_target_mask(idx, delta, active_mask, horizontal_wrap=True)
+        base[idx] = arrow_ray_target_mask(
+            idx, delta, active_mask, rows=rows, cols=cols, horizontal_wrap=False
+        )
+        wrap[idx] = arrow_ray_target_mask(
+            idx, delta, active_mask, rows=rows, cols=cols, horizontal_wrap=True
+        )
     return arrow_mask, tuple(base), tuple(wrap)

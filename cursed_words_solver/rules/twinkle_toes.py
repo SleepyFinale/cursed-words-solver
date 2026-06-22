@@ -26,13 +26,11 @@ class TwinkleToesSwap:
     row_b: int
     col_b: int
 
-    @property
-    def index_a(self) -> int:
-        return self.row_a * 5 + self.col_a
+    def index_a_at(self, cols: int) -> int:
+        return self.row_a * cols + self.col_a
 
-    @property
-    def index_b(self) -> int:
-        return self.row_b * 5 + self.col_b
+    def index_b_at(self, cols: int) -> int:
+        return self.row_b * cols + self.col_b
 
 
 def twinkle_toes_equipped(loadout: Loadout | None) -> bool:
@@ -48,7 +46,7 @@ def twinkle_toes_swap_pending(loadout: Loadout | None) -> bool:
 
 def twinkle_swap_eligible_indices(board: Board) -> list[int]:
     indices: list[int] = []
-    for idx in range(25):
+    for idx in range(board.cell_count):
         if not board.is_active_index(idx):
             continue
         tile = board.get_by_index(idx)
@@ -81,8 +79,9 @@ def swap_tile_contents(board: Board, idx_a: int, idx_b: int) -> Board:
     if idx_a == idx_b:
         return _clone_board(board)
     out = _clone_board(board)
-    row_a, col_a = divmod(idx_a, 5)
-    row_b, col_b = divmod(idx_b, 5)
+    cols = board.storage_cols
+    row_a, col_a = divmod(idx_a, cols)
+    row_b, col_b = divmod(idx_b, cols)
     tile_a = board.tiles[row_a][col_a]
     tile_b = board.tiles[row_b][col_b]
     out.tiles[row_a][col_a] = _tile_with_content(tile_b, row_a, col_a)
@@ -96,18 +95,29 @@ def iter_swap_pairs(board: Board) -> Iterator[tuple[int, int]]:
     yield from combinations(eligible, 2)
 
 
-def swap_to_record(idx_a: int, idx_b: int) -> TwinkleToesSwap:
-    row_a, col_a = divmod(idx_a, 5)
-    row_b, col_b = divmod(idx_b, 5)
+def swap_to_record(idx_a: int, idx_b: int, *, cols: int = 5) -> TwinkleToesSwap:
+    row_a, col_a = divmod(idx_a, cols)
+    row_b, col_b = divmod(idx_b, cols)
     return TwinkleToesSwap(row_a=row_a, col_a=col_a, row_b=row_b, col_b=col_b)
 
 
-def format_swap_instructions(swap: TwinkleToesSwap | None) -> str:
+def format_swap_instructions(
+    swap: TwinkleToesSwap | None,
+    board: Board | None = None,
+) -> str:
     if swap is None:
         return ""
+    suffix_a = suffix_b = ""
+    if board is not None:
+        tile_a = board.get(swap.row_a, swap.col_a)
+        tile_b = board.get(swap.row_b, swap.col_b)
+        if tile_a is not None and tile_a.letter:
+            suffix_a = f" {tile_a.letter.upper()}"
+        if tile_b is not None and tile_b.letter:
+            suffix_b = f" {tile_b.letter.upper()}"
     return (
-        f"Twinkle Toes: swap ({swap.row_a},{swap.col_a}) "
-        f"\u2194 ({swap.row_b},{swap.col_b})"
+        f"Twinkle Toes: swap ({swap.row_a},{swap.col_a}){suffix_a} "
+        f"\u2194 ({swap.row_b},{swap.col_b}){suffix_b}"
     )
 
 
@@ -244,7 +254,7 @@ def search_with_twinkle_toes_swap(
 
     screened.sort(key=lambda row: -row[0])
     best_rank, best_pair, best_board, best_result = screened[0]
-    best_swap = swap_to_record(best_pair[0], best_pair[1])
+    best_swap = swap_to_record(best_pair[0], best_pair[1], cols=board.storage_cols)
     best_results: list[WordResult] = [best_result]
 
     if time.monotonic() >= deadline:
@@ -271,7 +281,7 @@ def search_with_twinkle_toes_swap(
             if refine_rank > best_rank:
                 best_rank = refine_rank
                 best_board = swapped
-                best_swap = swap_to_record(pair[0], pair[1])
+                best_swap = swap_to_record(pair[0], pair[1], cols=board.storage_cols)
                 best_results = results
     finally:
         searcher.time_budget = prev_budget

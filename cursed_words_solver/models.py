@@ -131,6 +131,10 @@ def normalize_glyph_curse(curse: CurseType) -> CurseType:
     return curse
 
 
+DEFAULT_GRID_SIZE = 5
+MAX_GRID_SIZE = 6
+
+
 @dataclass
 class Tile:
     row: int
@@ -155,12 +159,12 @@ class Tile:
 
 @dataclass
 class Board:
-    tiles: list[list[Tile]]  # 5x5 storage; inactive cells may be placeholders
+    tiles: list[list[Tile]]  # rows×cols; inactive cells may be placeholders
     money: int = 0
     rows: int = 5
     cols: int = 5
     active: list[bool] = field(default_factory=lambda: [True] * 25)
-    # Shrunk-grid layout from melmod (top_first row/col); empty origin = full 5×5 slots.
+    # Shrunk-grid layout from melmod (top_first row/col); empty origin = full grid slots.
     playable_origin: str = ""
     playable_min_row: int = 0
     playable_max_row: int = 4
@@ -168,9 +172,28 @@ class Board:
     playable_max_col: int = 4
     _flat_cache: list[Tile] | None = field(default=None, repr=False, compare=False)
 
+    @property
+    def storage_rows(self) -> int:
+        return len(self.tiles)
+
+    @property
+    def storage_cols(self) -> int:
+        return len(self.tiles[0]) if self.tiles else 0
+
+    @property
+    def cell_count(self) -> int:
+        return self.storage_rows * self.storage_cols
+
+    def index_at(self, row: int, col: int) -> int:
+        return row * self.storage_cols + col
+
+    def coords_at(self, idx: int) -> tuple[int, int]:
+        return divmod(idx, self.storage_cols)
+
     def __post_init__(self) -> None:
-        if len(self.active) != 25:
-            self.active = [True] * 25
+        expected = self.cell_count
+        if len(self.active) != expected:
+            self.active = [True] * expected
         self._rebuild_flat_cache()
 
     def _rebuild_flat_cache(self) -> None:
@@ -178,10 +201,10 @@ class Board:
 
     def _flat_cache_valid(self) -> bool:
         cache = self._flat_cache
-        if cache is None:
+        if cache is None or len(cache) != self.cell_count:
             return False
-        for i in range(25):
-            r, c = divmod(i, 5)
+        for i in range(self.cell_count):
+            r, c = divmod(i, self.storage_cols)
             if cache[i] is not self.tiles[r][c]:
                 return False
         return True
@@ -195,24 +218,24 @@ class Board:
         return self._flat_cache
 
     def is_active_index(self, idx: int) -> bool:
-        if not (0 <= idx < 25):
+        if not (0 <= idx < self.cell_count):
             return False
         return self.active[idx]
 
     def is_active_cell(self, row: int, col: int) -> bool:
-        if not (0 <= row < 5 and 0 <= col < 5):
+        if not (0 <= row < self.storage_rows and 0 <= col < self.storage_cols):
             return False
-        return self.is_active_index(row * 5 + col)
+        return self.is_active_index(self.index_at(row, col))
 
     def get(self, row: int, col: int) -> Tile | None:
-        if 0 <= row < 5 and 0 <= col < 5:
+        if 0 <= row < self.storage_rows and 0 <= col < self.storage_cols:
             return self.tiles[row][col]
         return None
 
     def get_by_index(self, idx: int) -> Tile:
         if not self.is_active_index(idx):
             raise IndexError(f"inactive board index {idx}")
-        row, col = divmod(idx, 5)
+        row, col = self.coords_at(idx)
         return self.tiles[row][col]
 
 

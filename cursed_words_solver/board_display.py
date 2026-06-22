@@ -35,9 +35,9 @@ def _format_tile_char(tile: Tile) -> str:
 
 def _active_cell_bounds(board: Board) -> tuple[int, int, int, int] | None:
     """Return (min_row, max_row, min_col, max_col) for active cells, or None."""
-    min_r, max_r, min_c, max_c = 5, -1, 5, -1
-    for r in range(5):
-        for c in range(5):
+    min_r, max_r, min_c, max_c = board.storage_rows, -1, board.storage_cols, -1
+    for r in range(board.storage_rows):
+        for c in range(board.storage_cols):
             if board.is_active_cell(r, c):
                 min_r = min(min_r, r)
                 max_r = max(max_r, r)
@@ -83,6 +83,11 @@ def format_board_grid(board: Board, *, compact: bool = False) -> str:
 
     lines = []
     for row in board.tiles:
-        cells = [_format_tile_char(t) for t in row]
+        cells = []
+        for t in row:
+            if not board.is_active_cell(t.row, t.col):
+                cells.append(".")
+            else:
+                cells.append(_format_tile_char(t))
         lines.append(" ".join(cells))
     return "\n".join(lines)

@@ -24,7 +24,18 @@ def test_placement_geometry_maps_indices():
     assert path[0].y == markers[0].y
 
 
-def test_swap_geometry_maps_two_indices():
+def test_swap_geometry_6x6_uses_storage_cols():
+    region = Region(x=0, y=0, width=600, height=600)
+    board = Board(tiles=[[_tile("x", r, c) for c in range(6)] for r in range(6)], rows=6, cols=6)
+    swap = TwinkleToesSwap(row_a=0, col_a=0, row_b=5, col_b=1)
+    markers = swap_geometry(region, swap, board)
+    assert len(markers) == 2
+    assert markers[0].x == pytest.approx(50.0)
+    assert markers[0].y == pytest.approx(50.0)
+    assert markers[1].x == pytest.approx(150.0)
+    assert markers[1].y == pytest.approx(550.0)
+
+
     region = Region(x=0, y=0, width=500, height=500)
     board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
     swap = TwinkleToesSwap(row_a=0, col_a=1, row_b=3, col_b=0)

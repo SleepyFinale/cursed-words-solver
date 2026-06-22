@@ -100,7 +100,7 @@ flowchart LR
 
 - **Auto-export:** When loadout or board changes, `[RunStateExporter.cs](melmod/CursedWordsSolverCompanion/RunStateExporter.cs)` computes a fingerprint and writes `run_state.json` (debounced ~0.5s).
 - **Manual refresh:** Press **F7** in-game to force an immediate export and refresh `game_words.txt` via `[DictionaryExporter.cs](melmod/CursedWordsSolverCompanion/DictionaryExporter.cs)`. Melmod also auto-exports when the board or loadout fingerprint changes (~0.5s). A single **F8** in the solver polls `run_state.json` until the board and required extras are ready; **F7** is only needed to force export when auto-export has not caught up yet (e.g. right after receiving Sandy consumables).
-- **Exported data:** Character, stickers, stamps, boss, pin, money, and `extras.*` (pin levels, boss area, hyena block, sticker-specific counters, etc.). The live board comes from `GridData` — up to 25 tiles with `char`, `base_score`, `color`, `curse`, `active`, plus `rows`/`cols` for Bat shrunk grids. The full vocabulary comes from the game `WordTrie`.
+- **Exported data:** Character, stickers, stamps, boss, pin, money, and `extras.*` (pin levels, boss area, hyena block, sticker-specific counters, etc.). The live board comes from `GridData` — **25** tiles (5×5) by default, or **36** tiles (6×6) for Call Of The Void, with `char`, `base_score`, `color`, `curse`, `active`, plus `rows`/`cols` for Bat shrunk grids. The full vocabulary comes from the game `WordTrie`.
 - **Scoring feedback:** After you press **F8** in the solver, `[suggestion.py](cursed_words_solver/suggestion.py)` writes `last_suggestion.json` (scoring word, path, board/loadout fingerprints, `predicted_trace`, embedded F8 extras via `embed_f8_snapshot` for melmod comparison). When you submit that word on the same path, Harmony hooks compare the game’s score to the prediction; mismatches land in `scoring_mismatches/`. See [melmod README — scoring mismatch capture](melmod/README.md#scoring-mismatch-capture-v116). `last_suggestion.json` persists across solver restarts; on startup the solver clears it when the loadout changed (new character/run) and otherwise prints a note if the board differs from the last F8. A background poll invalidates stale suggestions when workflow extras drift (`previous_word_first_letter`, historic words, scoring counters). Press **F8** to refresh before submitting — melmod also warns at submit time if the board changed mid-round.
 
 Field-by-field JSON documentation: `[melmod/README.md](melmod/README.md)`. Do not bind **F8** in the mod — that hotkey belongs to the solver.
@@ -249,7 +249,7 @@ Set `CWS_TRIE_BACKEND` to `auto` (default), `array`, `marisa`, or `datrie` — u
 ### Troubleshooting
 
 - **After submitting a word** — The overlay clears to **Press F8 to solve**. Press **F8** once on the next grid when you are ready (melmod auto-export usually catches up within a second).
-- **Wrong words with melmod** — **F7** in-game, then **F8** again; check `run_state.json` has a `board` with 25 tiles.
+- **Wrong words with melmod** — **F7** in-game, then **F8** again; check `run_state.json` has a `board` with 25 tiles (36 for Call Of The Void).
 - **F8 does nothing** — Install/rebuild melmod, start a run, press **F7**, then **F8** again.
 - **Overlay stuck on “Press F8 to solve”** — Restart the solver; check the terminal for `Done in … Best: WORD` after **F8**.
 - **No on-board highlights** — `show_board_highlight` true and **F10** region matches the live grid; melmod does not position highlights without calibration.

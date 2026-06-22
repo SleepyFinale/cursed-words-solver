@@ -30,6 +30,76 @@ from cursed_words_solver.models import (
 
 GRID_SIZE = 5
 CELL_COUNT = 25
+MAX_GRID_SIZE = 6
+
+_ADJACENCY_CACHE: dict[tuple[int, int, bool, str], tuple[tuple[int, ...], ...]] = {}
+
+
+def _adjacency_cache_key(
+    rows: int, cols: int, *, horizontal_wrap: bool, kind: str
+) -> tuple[int, int, bool, str]:
+    return (rows, cols, horizontal_wrap, kind)
+
+
+def _build_neighbors_8_for(rows: int, cols: int, *, horizontal_wrap: bool) -> tuple[int, ...]:
+    key = _adjacency_cache_key(rows, cols, horizontal_wrap=horizontal_wrap, kind="n8")
+    cached = _ADJACENCY_CACHE.get(key)
+    if cached is not None:
+        return cached  # type: ignore[return-value]
+    out: list[int] = []
+    for idx in range(rows * cols):
+        row, col = divmod(idx, cols)
+        mask = 0
+        for dr, dc in DIRS_8:
+            nr, nc = row + dr, col + dc
+            if 0 <= nr < rows and 0 <= nc < cols:
+                mask |= 1 << index_of_rows_cols(nr, nc, cols)
+            elif horizontal_wrap and 0 <= nr < rows:
+                wnc = (nc + cols) % cols
+                mask |= 1 << index_of_rows_cols(nr, wnc, cols)
+        out.append(mask)
+    result = tuple(out)
+    _ADJACENCY_CACHE[key] = result  # type: ignore[assignment]
+    return result
+
+
+def _build_knight_targets_for(rows: int, cols: int) -> tuple[int, ...]:
+    key = _adjacency_cache_key(rows, cols, horizontal_wrap=False, kind="knight")
+    cached = _ADJACENCY_CACHE.get(key)
+    if cached is not None:
+        return cached  # type: ignore[return-value]
+    out: list[int] = []
+    for idx in range(rows * cols):
+        row, col = divmod(idx, cols)
+        mask = 0
+        for dr, dc in KNIGHT_DIRS:
+            nr, nc = row + dr, col + dc
+            if 0 <= nr < rows and 0 <= nc < cols:
+                mask |= 1 << index_of_rows_cols(nr, nc, cols)
+        out.append(mask)
+    result = tuple(out)
+    _ADJACENCY_CACHE[key] = result  # type: ignore[assignment]
+    return result
+
+
+def index_of_rows_cols(row: int, col: int, cols: int) -> int:
+    return row * cols + col
+
+
+def adjacency_for_board(
+    board: Board, *, horizontal_wrap: bool = False
+) -> tuple[int, ...]:
+    rows, cols = board.storage_rows, board.storage_cols
+    if rows == GRID_SIZE and cols == GRID_SIZE:
+        return NEIGHBORS_8_WRAP if horizontal_wrap else NEIGHBORS_8
+    return _build_neighbors_8_for(rows, cols, horizontal_wrap=horizontal_wrap)
+
+
+def knight_adjacency_for_board(board: Board) -> tuple[int, ...]:
+    rows, cols = board.storage_rows, board.storage_cols
+    if rows == GRID_SIZE and cols == GRID_SIZE:
+        return KNIGHT_TARGETS
+    return _build_knight_targets_for(rows, cols)
 DIR_COUNT = 8
 
 DIRS_8 = [
@@ -202,7 +272,7 @@ def mask_from_indices(indices: list[int] | tuple[int, ...]) -> int:
 
 def mask_from_active(board: Board) -> int:
     m = 0
-    for i in range(CELL_COUNT):
+    for i in range(board.cell_count):
         if board.is_active_index(i):
             m |= 1 << i
     return m
@@ -242,9 +312,13 @@ def _physical_letter(tile: Tile) -> str:
 
 @dataclass(frozen=True)
 class BoardGraphContext:
-    """Precomputed per-solve masks and tile metadata indexed 0–24."""
+    """Precomputed per-solve masks and tile metadata indexed by board cell."""
 
     board: Board
+    cell_count: int
+    neighbors_8: tuple[int, ...]
+    neighbors_8_wrap: tuple[int, ...]
+    knight_targets: tuple[int, ...]
     active_mask: int
     chess_piece_mask: int
     item_mask: int
@@ -322,17 +396,18 @@ class BoardGraphContext:
 
 
 def _build_piece_land_masks(
-    step_masks: list[int],
+    step_masks: tuple[int, ...] | list[int],
     *,
     active_mask: int,
     chess_piece_mask: int,
     chess_side_code: tuple[int, ...],
     moving_side_code: int,
     allies_can_take: bool,
+    cell_count: int,
 ) -> tuple[int, ...]:
     """Precompute landable targets per start cell for one moving side."""
     out: list[int] = []
-    for start_idx in range(CELL_COUNT):
+    for start_idx in range(cell_count):
         land = 0
         for idx in iter_mask(step_masks[start_idx] & active_mask):
             if chess_piece_mask & (1 << idx):
@@ -357,6 +432,10 @@ def _build_chess_neighbor_masks(
     chess_side_code: tuple[int, ...],
     black_piece_mask: int,
     white_piece_mask: int,
+    neighbors_8: tuple[int, ...],
+    knight_targets: tuple[int, ...],
+    neighbors_8_wrap: tuple[int, ...],
+    cell_count: int,
 ) -> tuple[
     tuple[tuple[tuple[int, ...], ...], ...],
     tuple[tuple[tuple[int, ...], ...], ...],
@@ -369,32 +448,35 @@ def _build_chess_neighbor_masks(
         for side_code, _side_mask in ((1, black_piece_mask), (2, white_piece_mask)):
             knight_tables[allies_i].append(
                 _build_piece_land_masks(
-                    KNIGHT_TARGETS,
+                    knight_targets,
                     active_mask=active_mask,
                     chess_piece_mask=chess_piece_mask,
                     chess_side_code=chess_side_code,
                     moving_side_code=side_code,
                     allies_can_take=allies,
+                    cell_count=cell_count,
                 )
             )
             king_tables[allies_i].append(
                 _build_piece_land_masks(
-                    NEIGHBORS_8,
+                    neighbors_8,
                     active_mask=active_mask,
                     chess_piece_mask=chess_piece_mask,
                     chess_side_code=chess_side_code,
                     moving_side_code=side_code,
                     allies_can_take=allies,
+                    cell_count=cell_count,
                 )
             )
             king_wrap_tables[allies_i].append(
                 _build_piece_land_masks(
-                    NEIGHBORS_8_WRAP,
+                    neighbors_8_wrap,
                     active_mask=active_mask,
                     chess_piece_mask=chess_piece_mask,
                     chess_side_code=chess_side_code,
                     moving_side_code=side_code,
                     allies_can_take=allies,
+                    cell_count=cell_count,
                 )
             )
     return (
@@ -412,26 +494,30 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
     )
 
     active_mask = mask_from_active(board)
+    cell_count = board.cell_count
+    neighbors_8 = adjacency_for_board(board, horizontal_wrap=False)
+    neighbors_8_wrap = adjacency_for_board(board, horizontal_wrap=True)
+    knight_targets = knight_adjacency_for_board(board)
     chess_piece_mask = 0
     black_piece_mask = 0
     white_piece_mask = 0
     item_mask = 0
     wildcard_mask = 0
-    item_tile_base = [0.0] * CELL_COUNT
-    chess_curse: list[int] = [0] * CELL_COUNT
-    chess_side_code: list[int] = [0] * CELL_COUNT
+    item_tile_base = [0.0] * cell_count
+    chess_curse: list[int] = [0] * cell_count
+    chess_side_code: list[int] = [0] * cell_count
     letter_masks: dict[str, int] = defaultdict(int)
     identical_chess: dict[tuple[str, str], int] = defaultdict(int)
     hanafuda_suit_mask = 0
     grid_base_score = 0
     coloured_tile_count = 0
-    tile_base: list[float] = [0.0] * CELL_COUNT
-    curse_code: list[int] = [0] * CELL_COUNT
-    tile_color_code: list[int] = [0] * CELL_COUNT
-    is_fraction: list[bool] = [False] * CELL_COUNT
-    number_like: list[bool] = [False] * CELL_COUNT
+    tile_base: list[float] = [0.0] * cell_count
+    curse_code: list[int] = [0] * cell_count
+    tile_color_code: list[int] = [0] * cell_count
+    is_fraction: list[bool] = [False] * cell_count
+    number_like: list[bool] = [False] * cell_count
 
-    for idx in range(CELL_COUNT):
+    for idx in range(cell_count):
         if not board.is_active_index(idx):
             continue
         tile = board.get_by_index(idx)
@@ -470,10 +556,10 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
         if tile.color not in NON_COLOUR_FOR_NUMBER_BONUS:
             coloured_tile_count += 1
 
-    for idx in range(CELL_COUNT):
+    for idx in range(cell_count):
         if board.is_active_index(idx):
             continue
-        row, col = divmod(idx, 5)
+        row, col = board.coords_at(idx)
         tile = board.get(row, col)
         if tile is None:
             continue
@@ -487,6 +573,10 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
         chess_side_code=chess_side_tuple,
         black_piece_mask=black_piece_mask,
         white_piece_mask=white_piece_mask,
+        neighbors_8=neighbors_8,
+        knight_targets=knight_targets,
+        neighbors_8_wrap=neighbors_8_wrap,
+        cell_count=cell_count,
     )
 
     from cursed_words_solver.arrow_tiles import build_arrow_target_masks
@@ -497,6 +587,10 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
 
     return BoardGraphContext(
         board=board,
+        cell_count=cell_count,
+        neighbors_8=neighbors_8,
+        neighbors_8_wrap=neighbors_8_wrap,
+        knight_targets=knight_targets,
         active_mask=active_mask,
         chess_piece_mask=chess_piece_mask,
         item_mask=item_mask,

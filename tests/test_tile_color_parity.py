@@ -123,12 +123,33 @@ def test_green_poison_explicit_zero_enc_earned_stays_zero() -> None:
     assert green_poison_from_historic_words(extras) == 0.0
 
 
+def test_green_poison_fresh_call_of_void_grid1_stale_live_historic() -> None:
+    """Fresh grid 1 must not poison from stale cross-encounter historic_words."""
+    extras = {
+        "grid_number": "1",
+        "encounter_score_earned": "0",
+        "encounter_total_target": "12",
+        "encounter_remaining_target": "12",
+        "encounter_historic_source": "live",
+        "scoring_previous_words_count": "9",
+        "historic_words": json.dumps(
+            [
+                {"word": "attractor", "score": 10255, "green_tile_count": 1},
+                {"word": "entireties", "score": 18546, "green_tile_count": 1},
+            ]
+        ),
+    }
+    assert green_poison_from_historic_words(extras) == 0.0
+
+
 def test_green_poison_robo_eel_grid_reset_live_historic() -> None:
     """Robo-Eel resets grid_number to 1; live encounter historic still poisons."""
     extras = {
         "grid_number": "1",
         "scoring_previous_words_count": "3",
         "encounter_score_earned": "0",
+        "encounter_total_target": "12",
+        "encounter_remaining_target": "8",
         "encounter_historic_source": "live",
         "historic_words": json.dumps(
             [

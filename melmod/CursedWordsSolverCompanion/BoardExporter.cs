@@ -12,6 +12,7 @@ namespace CursedWordsSolverCompanion
     public static class BoardExporter
     {
         private const int DefaultGridSize = 5;
+        private const int MaxGridSize = 6;
 
         private static readonly BindingFlags MemberFlags =
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
@@ -65,14 +66,19 @@ namespace CursedWordsSolverCompanion
                 // keep defaults
             }
 
-            if (gridRows < 1 || gridRows > DefaultGridSize)
+            if (gridRows < 1)
                 gridRows = DefaultGridSize;
-            if (gridCols < 1 || gridCols > DefaultGridSize)
+            if (gridCols < 1)
                 gridCols = DefaultGridSize;
+            if (gridRows > MaxGridSize)
+                gridRows = MaxGridSize;
+            if (gridCols > MaxGridSize)
+                gridCols = MaxGridSize;
 
-            var origin = DetectPlayableOrigin(grid, gridRows, gridCols);
-            var tiles = ExportTiles(grid, gridRows, gridCols, origin);
-            if (tiles == null || tiles.Count != DefaultGridSize * DefaultGridSize)
+            var storageSize = StorageGridSize(gridRows, gridCols);
+            var origin = DetectPlayableOrigin(grid, gridRows, gridCols, storageSize);
+            var tiles = ExportTiles(grid, gridRows, gridCols, origin, storageSize);
+            if (tiles == null || tiles.Count != storageSize * storageSize)
                 return null;
 
             ApplyToolboxScatterLevels(player, tiles);
@@ -712,23 +718,36 @@ namespace CursedWordsSolverCompanion
             return grid.GridTiles != null && grid.GridTiles.Length > 0;
         }
 
-        private static string DetectPlayableOrigin(GridData grid, int gridRows, int gridCols)
+        private static int StorageGridSize(int gridRows, int gridCols)
         {
-            if (gridRows >= DefaultGridSize && gridCols >= DefaultGridSize)
+            var maxDim = Math.Max(gridRows, gridCols);
+            if (maxDim > DefaultGridSize)
+                return MaxGridSize;
+            return DefaultGridSize;
+        }
+
+        private static string DetectPlayableOrigin(
+            GridData grid,
+            int gridRows,
+            int gridCols,
+            int storageSize
+        )
+        {
+            if (gridRows >= storageSize && gridCols >= storageSize)
                 return "full";
 
             var bottomCount = 0;
             var topCount = 0;
-            for (var row = 0; row < DefaultGridSize; row++)
+            for (var row = 0; row < storageSize; row++)
             {
-                for (var col = 0; col < DefaultGridSize; col++)
+                for (var col = 0; col < storageSize; col++)
                 {
-                    var tile = TryGetTileAt(grid, col, row);
+                    var tile = TryGetTileAt(grid, col, row, storageSize);
                     if (tile == null || IsSkippedTile(tile))
                         continue;
                     if (IsPlayableBottomLeft(row, col, gridRows, gridCols))
                         bottomCount++;
-                    if (IsPlayableTopLeft(row, col, gridRows, gridCols))
+                    if (IsPlayableTopLeft(row, col, gridRows, gridCols, storageSize))
                         topCount++;
                 }
             }
@@ -745,9 +764,15 @@ namespace CursedWordsSolverCompanion
             return row < gridRows && col < gridCols;
         }
 
-        private static bool IsPlayableTopLeft(int row, int col, int gridRows, int gridCols)
+        private static bool IsPlayableTopLeft(
+            int row,
+            int col,
+            int gridRows,
+            int gridCols,
+            int storageSize
+        )
         {
-            return row >= DefaultGridSize - gridRows && col < gridCols;
+            return row >= storageSize - gridRows && col < gridCols;
         }
 
         private static bool IsPlayableSlot(
@@ -755,32 +780,33 @@ namespace CursedWordsSolverCompanion
             int col,
             int gridRows,
             int gridCols,
-            string origin
+            string origin,
+            int storageSize
         )
         {
-            if (gridRows >= DefaultGridSize && gridCols >= DefaultGridSize)
-                return true;
+            if (gridRows >= storageSize && gridCols >= storageSize)
+                return row < gridRows && col < gridCols;
             switch (origin)
             {
                 case "top_left":
-                    return IsPlayableTopLeft(row, col, gridRows, gridCols);
+                    return IsPlayableTopLeft(row, col, gridRows, gridCols, storageSize);
                 case "center":
                 {
-                    var rowStart = (DefaultGridSize - gridRows) / 2;
-                    var colStart = (DefaultGridSize - gridCols) / 2;
+                    var rowStart = (storageSize - gridRows) / 2;
+                    var colStart = (storageSize - gridCols) / 2;
                     return row >= rowStart
                         && row < rowStart + gridRows
                         && col >= colStart
                         && col < colStart + gridCols;
                 }
                 case "full":
-                    return true;
+                    return row < gridRows && col < gridCols;
                 default:
                     return IsPlayableBottomLeft(row, col, gridRows, gridCols);
             }
         }
 
-        private static Tile TryGetTileAt(GridData grid, int col, int row)
+        private static Tile TryGetTileAt(GridData grid, int col, int row, int storageSize)
         {
             if (grid == null)
                 return null;
@@ -803,7 +829,7 @@ namespace CursedWordsSolverCompanion
 
             if (tile == null && grid.GridTiles != null)
             {
-                var idx = row * DefaultGridSize + col;
+                var idx = row * storageSize + col;
                 if (idx >= 0 && idx < grid.GridTiles.Length)
                     tile = grid.GridTiles[idx];
             }
@@ -813,9 +839,10 @@ namespace CursedWordsSolverCompanion
 
         private static void FillPlayableBounds(BoardSnapshot snapshot)
         {
-            var minR = DefaultGridSize;
+            var storageSize = StorageGridSize(snapshot.rows, snapshot.cols);
+            var minR = storageSize;
             var maxR = -1;
-            var minC = DefaultGridSize;
+            var minC = storageSize;
             var maxC = -1;
             if (snapshot.tiles == null)
                 return;
@@ -847,17 +874,25 @@ namespace CursedWordsSolverCompanion
             GridData grid,
             int gridRows,
             int gridCols,
-            string origin
+            string origin,
+            int storageSize
         )
         {
-            var result = new List<BoardTileSnapshot>(DefaultGridSize * DefaultGridSize);
+            var result = new List<BoardTileSnapshot>(storageSize * storageSize);
 
-            for (var row = 0; row < DefaultGridSize; row++)
+            for (var row = 0; row < storageSize; row++)
             {
-                for (var col = 0; col < DefaultGridSize; col++)
+                for (var col = 0; col < storageSize; col++)
                 {
-                    var displayRow = DefaultGridSize - 1 - row;
-                    var inPlayable = IsPlayableSlot(row, col, gridRows, gridCols, origin);
+                    var displayRow = storageSize - 1 - row;
+                    var inPlayable = IsPlayableSlot(
+                        row,
+                        col,
+                        gridRows,
+                        gridCols,
+                        origin,
+                        storageSize
+                    );
 
                     if (!inPlayable)
                     {
@@ -865,7 +900,7 @@ namespace CursedWordsSolverCompanion
                         continue;
                     }
 
-                    var tile = TryGetTileAt(grid, col, row);
+                    var tile = TryGetTileAt(grid, col, row, storageSize);
 
                     if (tile == null || IsSkippedTile(tile))
                     {

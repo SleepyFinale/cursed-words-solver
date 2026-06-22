@@ -1310,7 +1310,7 @@ class SolverApp:
                 )
                 if twinkle_swap_record:
                     print(
-                        f"  {format_swap_instructions(twinkle_swap_record)}",
+                        f"  {format_swap_instructions(twinkle_swap_record, board)}",
                         flush=True,
                     )
                 elif not results:

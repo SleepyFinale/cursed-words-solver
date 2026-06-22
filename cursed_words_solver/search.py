@@ -1342,7 +1342,7 @@ class PathValidator:
 
 
 def _active_indices(board: Board) -> list[int]:
-    return [i for i in range(25) if board.is_active_index(i)]
+    return [i for i in range(board.cell_count) if board.is_active_index(i)]
 
 
 def tile_playable_for_path(tile: Tile) -> bool:
@@ -1461,13 +1461,22 @@ def neighbors_standard_mask(
     *,
     flags: SearchFlagsMask = 0,
     active_mask: int | None = None,
+    graph_ctx: BoardGraphContext | None = None,
 ) -> int:
     flags = coerce_search_flags(flags)
-    base = (
-        NEIGHBORS_8_WRAP[cell_id]
-        if flag_test(flags, FLAG_HORIZONTAL_WRAP)
-        else NEIGHBORS_8[cell_id]
-    )
+    if graph_ctx is not None:
+        base = (
+            graph_ctx.neighbors_8_wrap[cell_id]
+            if flag_test(flags, FLAG_HORIZONTAL_WRAP)
+            else graph_ctx.neighbors_8[cell_id]
+        )
+    else:
+        from cursed_words_solver.graph_bitboard import adjacency_for_board
+
+        adj = adjacency_for_board(
+            board, horizontal_wrap=flag_test(flags, FLAG_HORIZONTAL_WRAP)
+        )
+        base = adj[cell_id]
     if active_mask is None:
         active_mask = sum(1 << i for i in _active_indices(board))
     return get_valid_extensions(base & active_mask, visited_mask)
@@ -1631,6 +1640,7 @@ def neighbors_mask(
             visited_mask,
             flags=flags,
             active_mask=active_mask,
+            graph_ctx=graph_ctx,
         )
 
     if flag_test(flags, FLAG_DOUBLE_LETTER_TELEPORT):

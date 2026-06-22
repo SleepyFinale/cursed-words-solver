@@ -62,6 +62,7 @@ namespace CursedWordsSolverCompanion
     public static class UiLayoutExporter
     {
         private const int DefaultGridSize = 5;
+        private const int MaxGridSize = 6;
         private const int FirstRowConsumableSlots = 5;
 
         private static readonly BindingFlags MemberFlags =
@@ -245,9 +246,13 @@ namespace CursedWordsSolverCompanion
                 var coords = tileObject.GridCoordinate;
                 var internalRow = coords.y;
                 var col = coords.x;
+                var layoutRows = board.rows > 0 ? board.rows : DefaultGridSize;
+                var layoutCols = board.cols > 0 ? board.cols : DefaultGridSize;
                 // Match BoardExporter: solver row 0 = top, Unity grid y = bottom.
-                var displayRow = DefaultGridSize - 1 - internalRow;
-                var index = displayRow * DefaultGridSize + col;
+                var displayRow = layoutRows - 1 - internalRow;
+                if (displayRow < 0 || displayRow >= layoutRows || col < 0 || col >= layoutCols)
+                    continue;
+                var index = displayRow * layoutCols + col;
 
                 if (!TryProjectTileCenter(
                     tileObject,
@@ -307,8 +312,12 @@ namespace CursedWordsSolverCompanion
 
             if (cells.Count >= 2)
             {
-                var pitchX = (maxX - minX) / 4f;
-                var pitchY = (maxY - minY) / 4f;
+                var layoutRows = board.rows > 0 ? board.rows : DefaultGridSize;
+                var layoutCols = board.cols > 0 ? board.cols : DefaultGridSize;
+                var spanX = Math.Max(1, layoutCols - 1);
+                var spanY = Math.Max(1, layoutRows - 1);
+                var pitchX = (maxX - minX) / spanX;
+                var pitchY = (maxY - minY) / spanY;
                 if (pitchX > 1f)
                 {
                     minX -= pitchX * 0.5f;

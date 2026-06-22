@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from collections.abc import Callable
 from typing import Any
 
-from cursed_words_solver.graph_bitboard import CELL_COUNT, BoardGraphContext
+from cursed_words_solver.graph_bitboard import BoardGraphContext
 from cursed_words_solver.models import Board, Loadout
 from cursed_words_solver.rules.rule_lookup import slugify_name
 from cursed_words_solver.rules.rule_phase import (
@@ -33,7 +33,7 @@ def build_cell_masks(board: Board, graph_ctx: BoardGraphContext) -> dict[str, in
         colored_number
     ) = colored = 0
 
-    for idx in range(CELL_COUNT):
+    for idx in range(graph_ctx.cell_count):
         if not graph_ctx.is_active(idx):
             continue
         tile = board.get_by_index(idx)
@@ -152,10 +152,10 @@ def build_board_scoring_context(
 
     use_split = bool(static_sticker_specs or static_stamp_specs)
 
-    sticker_add = [0.0] * CELL_COUNT
+    sticker_add = [0.0] * graph_ctx.cell_count
     for spec in static_sticker_specs.values():
         if spec.kind == StaticRuleKind.TILE_ADD and spec.value:
-            for idx in range(CELL_COUNT):
+            for idx in range(graph_ctx.cell_count):
                 if spec.target_mask & (1 << idx):
                     sticker_add[idx] += spec.value
 

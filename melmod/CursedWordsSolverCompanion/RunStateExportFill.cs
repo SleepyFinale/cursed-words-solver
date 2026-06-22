@@ -639,7 +639,16 @@ namespace CursedWordsSolverCompanion
             }
 
             ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
-            snapshot.extras["encounter_historic_source"] = "live";
+            string sourceAfter;
+            if (
+                !snapshot.extras.TryGetValue("encounter_historic_source", out sourceAfter)
+                || !string.Equals(
+                    sourceAfter,
+                    "grid1_no_scoring_cache",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+                snapshot.extras["encounter_historic_source"] = "live";
         }
 
         private static bool TryApplyCachedEncounterHistoricToSnapshot(
@@ -824,40 +833,34 @@ namespace CursedWordsSolverCompanion
 
             var scoringPrevious = RunStateExporter.GetCachedPreviousWords();
             var cacheCount = scoringPrevious != null ? scoringPrevious.Count : 0;
-            if (cacheCount == 0 && !histEmpty && source == "live")
-                cacheCount = CountHistoricWordsInJson(historicRaw);
-            extras["scoring_previous_words_count"] = cacheCount.ToString();
+            var gridNum = TryParseGridNumber(
+                extras.TryGetValue("grid_number", out var gridRaw) ? gridRaw : null
+            );
             if (scoringPrevious == null || scoringPrevious.Count == 0)
             {
-                if (!histEmpty && source == "live" && cacheCount > 0)
-                {
-                    var prevFromLiveHist = FirstLetterFromHistoricJson(historicRaw);
-                    if (!string.IsNullOrEmpty(prevFromLiveHist))
-                        extras["previous_word_first_letter"] = prevFromLiveHist;
-                    return;
-                }
+                if (gridNum == 1)
+                    ClearGridOneStaleEncounterHistoric(extras);
 
-                ClearGridOneStaleEncounterHistoric(extras);
-                var gridNum = TryParseGridNumber(
-                    extras.TryGetValue("grid_number", out var gridRaw) ? gridRaw : null
-                );
+                extras["scoring_previous_words_count"] = "0";
+
                 // Grid 2+: no scoring-cache prior means no Bento prev on this grid —
                 // do not fall back to encounter-wide historic (grid-1 bleed).
                 if (gridNum >= 2)
                     return;
-                string histJson;
-                if (
-                    extras.TryGetValue("historic_words", out histJson)
-                    && !string.IsNullOrEmpty(histJson)
-                    && histJson != "[]"
-                )
+
+                extras.TryGetValue("historic_words", out historicRaw);
+                histEmpty =
+                    string.IsNullOrEmpty(historicRaw) || historicRaw.Trim() == "[]";
+                if (!histEmpty)
                 {
-                    var prevFromHist = FirstLetterFromHistoricJson(histJson);
+                    var prevFromHist = FirstLetterFromHistoricJson(historicRaw);
                     if (!string.IsNullOrEmpty(prevFromHist))
                         extras["previous_word_first_letter"] = prevFromHist;
                 }
                 return;
             }
+
+            extras["scoring_previous_words_count"] = cacheCount.ToString();
 
             var prev = ScoringContextCapture.FirstLetterFromHistoricWords(scoringPrevious);
             if (!string.IsNullOrEmpty(prev))
@@ -1177,6 +1180,39 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
+        /// Grid 1 encounter not started: earned 0 and remaining equals total target.
+        /// </summary>
+        internal static bool IsFreshEncounterGridOne(Dictionary<string, string> extras)
+        {
+            if (extras == null)
+                return false;
+
+            var grid = TryParseGridNumber(
+                extras.TryGetValue("grid_number", out var gridRaw) ? gridRaw : null
+            );
+            if (grid != 1)
+                return false;
+
+            if (!extras.TryGetValue("encounter_score_earned", out var earnedRaw)
+                || string.IsNullOrWhiteSpace(earnedRaw))
+                return false;
+            if (!int.TryParse(earnedRaw.Trim(), out var earned) || earned != 0)
+                return false;
+
+            if (!extras.TryGetValue("encounter_total_target", out var totalRaw)
+                || string.IsNullOrWhiteSpace(totalRaw))
+                return false;
+            if (!extras.TryGetValue("encounter_remaining_target", out var remainRaw)
+                || string.IsNullOrWhiteSpace(remainRaw))
+                return false;
+            if (!int.TryParse(totalRaw.Trim(), out var total) || total <= 0)
+                return false;
+            if (!int.TryParse(remainRaw.Trim(), out var remaining))
+                return false;
+            return remaining == total;
+        }
+
+        /// <summary>
         /// Best encounter historic extras: max(live reflection, cached score hook, fallback JSON).
         /// </summary>
         public static Dictionary<string, string> BuildBestHistoricExtras(
@@ -1190,6 +1226,11 @@ namespace CursedWordsSolverCompanion
                 return result;
 
             var historic = PickBestHistoricWordList(player, liveOnly);
+            if (
+                (historic == null || historic.Count == 0)
+                && IsFreshEncounterGridOne(fallbackExtras)
+            )
+                return result;
             string serialized = null;
             if (historic != null && historic.Count > 0)
                 serialized = SerializeHistoricWords(historic, player);
@@ -1200,6 +1241,11 @@ namespace CursedWordsSolverCompanion
                 fallbackHistoric = fallbackHistoric ?? "";
 
             var bestHistoric = PreferHistoricJson(serialized, fallbackHistoric);
+            if (
+                IsFreshEncounterGridOne(fallbackExtras)
+                && (string.IsNullOrEmpty(serialized) || serialized == "[]")
+            )
+                return result;
             if (
                 !string.IsNullOrEmpty(serialized)
                 && serialized != "[]"

@@ -18,9 +18,9 @@ RACK_MARKER_PEN_WIDTH = 2.0
 
 def playable_bounds(board: Board) -> tuple[int, int, int, int] | None:
     """Return (min_row, max_row, min_col, max_col) for active playable cells."""
-    min_r, max_r, min_c, max_c = _GRID_SLOTS, -1, _GRID_SLOTS, -1
-    for r in range(_GRID_SLOTS):
-        for c in range(_GRID_SLOTS):
+    min_r, max_r, min_c, max_c = board.storage_rows, -1, board.storage_cols, -1
+    for r in range(board.storage_rows):
+        for c in range(board.storage_cols):
             if board.is_active_cell(r, c):
                 min_r = min(min_r, r)
                 max_r = max(max_r, r)
@@ -32,7 +32,8 @@ def playable_bounds(board: Board) -> tuple[int, int, int, int] | None:
 
 
 def _is_shrunk_grid(board: Board) -> bool:
-    return board.rows < _GRID_SLOTS or board.cols < _GRID_SLOTS
+    storage = max(board.rows, board.cols)
+    return board.rows < storage or board.cols < storage
 
 
 @dataclass(frozen=True)
@@ -60,15 +61,17 @@ def _index_center(
     slot_h: float,
     board: Board | None,
 ) -> tuple[float, float]:
-    row, col = idx // _GRID_SLOTS, idx % _GRID_SLOTS
+    cols = board.storage_cols if board else _GRID_SLOTS
+    rows = board.storage_rows if board else _GRID_SLOTS
+    row, col = divmod(idx, cols)
     bounds = playable_bounds(board) if board else None
     shrunk = board is not None and _is_shrunk_grid(board) and bounds is not None
     if shrunk:
         min_r, max_r, min_c, max_c = bounds
         playable_h = max_r - min_r + 1
         playable_w = max_c - min_c + 1
-        row_margin = (_GRID_SLOTS - playable_h) / 2.0
-        col_margin = (_GRID_SLOTS - playable_w) / 2.0
+        row_margin = (rows - playable_h) / 2.0
+        col_margin = (cols - playable_w) / 2.0
         slot_row = row - min_r + row_margin
         slot_col = col - min_c + col_margin
     else:
@@ -319,7 +322,7 @@ def placement_geometry(
     return markers
 
 
-def _swap_indices(swap: Any) -> tuple[int, int] | None:
+def _swap_indices(swap: Any, *, cols: int) -> tuple[int, int] | None:
     if swap is None:
         return None
     row_a = getattr(swap, "row_a", None)
@@ -333,7 +336,7 @@ def _swap_indices(swap: Any) -> tuple[int, int] | None:
         col_b = swap.get("col_b", col_b)
     if row_a is None or col_a is None or row_b is None or col_b is None:
         return None
-    return int(row_a) * _GRID_SLOTS + int(col_a), int(row_b) * _GRID_SLOTS + int(col_b)
+    return int(row_a) * cols + int(col_a), int(row_b) * cols + int(col_b)
 
 
 def swap_geometry(
@@ -346,12 +349,14 @@ def swap_geometry(
     """Map Twinkle Toes swap cells to overlay-local centers."""
     if not region.is_valid():
         return []
-    indices = _swap_indices(swap)
+    cols = board.storage_cols if board is not None else _GRID_SLOTS
+    rows = board.storage_rows if board is not None else _GRID_SLOTS
+    indices = _swap_indices(swap, cols=cols)
     if indices is None:
         return []
     w, h = float(region.width), float(region.height)
-    slot_w = w / float(_GRID_SLOTS)
-    slot_h = h / float(_GRID_SLOTS)
+    slot_w = w / float(max(1, cols))
+    slot_h = h / float(max(1, rows))
     markers: list[PlacementMarker] = []
     for idx in indices:
         if cell_centers and int(idx) in cell_centers:

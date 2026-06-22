@@ -9,7 +9,6 @@ from __future__ import annotations
 from cursed_words_solver.graph_bitboard import (
     RED_COLOR_CODE,
     BoardGraphContext,
-    CELL_COUNT,
 )
 from cursed_words_solver.models import Board, CurseType, Loadout, TileColor
 
@@ -484,8 +483,9 @@ def build_search_tile_base(
     graph_ctx: BoardGraphContext,
 ) -> tuple[float, ...]:
     """Per-cell base scores for DFS prefix tracking (SolveContext overrides)."""
-    out = [0.0] * CELL_COUNT
-    for idx in range(CELL_COUNT):
+    cell_count = graph_ctx.cell_count
+    out = [0.0] * cell_count
+    for idx in range(cell_count):
         if not (graph_ctx.active_mask & (1 << idx)):
             continue
         if graph_ctx.item_mask & (1 << idx):
