@@ -31,7 +31,7 @@ def build_cell_masks(board: Board, graph_ctx: BoardGraphContext) -> dict[str, in
     masks: dict[str, int] = {"all": graph_ctx.active_mask}
     vowel = consonant = red = red_plain = blue = void = shiny = red_note = number = (
         colored_number
-    ) = 0
+    ) = colored = 0
 
     for idx in range(CELL_COUNT):
         if not graph_ctx.is_active(idx):
@@ -57,6 +57,8 @@ def build_cell_masks(board: Board, graph_ctx: BoardGraphContext) -> dict[str, in
             number |= 1 << idx
         if is_colored_number_tile(tile):
             colored_number |= 1 << idx
+        if tile_matches_target(tile, "colored"):
+            colored |= 1 << idx
 
     masks["vowel"] = vowel
     masks["consonant"] = consonant
@@ -68,6 +70,7 @@ def build_cell_masks(board: Board, graph_ctx: BoardGraphContext) -> dict[str, in
     masks["red_note"] = red_note
     masks["number"] = number
     masks["colored_number"] = colored_number
+    masks["colored"] = colored
     masks["wildcard"] = graph_ctx.wildcard_mask & graph_ctx.active_mask
 
     for letter, mask in graph_ctx.letter_masks.items():

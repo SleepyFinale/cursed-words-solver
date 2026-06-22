@@ -8,6 +8,7 @@ from cursed_words_solver.rules.tile_scoring import (
     apply_tile_init,
     currency_money_from_path,
     initial_tile_scores,
+    path_needs_scoring_board_copy,
     pink_store_money,
     settle_glitch_tiles,
 )
@@ -25,6 +26,13 @@ def _board_with(*specs: tuple[int, TileColor, CurseType]) -> Board:
         r, c = divmod(idx, 5)
         tiles[r][c] = Tile(r, c, "A", "A", 1, color, curse)
     return Board(tiles=tiles, money=5)
+
+
+def test_path_needs_scoring_board_copy_only_for_glitch() -> None:
+    plain = _board_with((0, TileColor.COLORLESS, CurseType.LETTER))
+    assert not path_needs_scoring_board_copy(plain, [0])
+    glitch = _board_with((0, TileColor.GLITCH, CurseType.LETTER))
+    assert path_needs_scoring_board_copy(glitch, [0])
 
 
 def test_glitch_settle_deterministic() -> None:
@@ -46,7 +54,7 @@ def test_currency_adds_money() -> None:
 
 
 def test_initial_tile_scores_void_cedilla_grid1_not_zero() -> None:
-    """narcissist: grid-1 void ₡ on path (row≥3, i>0) must not be waived to 0 at init."""
+    """narcissist: grid-1 void currency on path uses melmod init (not ITEM skip)."""
     board = _board_with()
     r, c = divmod(17, 5)
     board.tiles[r][c] = Tile(
@@ -61,9 +69,9 @@ def test_initial_tile_scores_void_cedilla_grid1_not_zero() -> None:
     )
     loadout = Loadout(extras={"grid_number": "1"})
     scores, _ = initial_tile_scores(
-        board, [0, 1, 2, 17], money=0, loadout=loadout
+        board, [0, 1, 2, 17], money=0, loadout=loadout, word="aaaa"
     )
-    assert scores[3] == -15
+    assert scores[3] == 0.0
 
 
 def test_pink_spends_money() -> None:

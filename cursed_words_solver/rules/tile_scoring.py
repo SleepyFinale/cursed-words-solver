@@ -125,6 +125,15 @@ def settle_glitch_tiles(
     return settled
 
 
+def path_needs_scoring_board_copy(board: Board, path: list[int]) -> bool:
+    """True when tile-init must mutate glitch tiles (requires a board copy)."""
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.color == TileColor.GLITCH and not tile.metadata.get("glitch_settled"):
+            return True
+    return False
+
+
 def scoring_board_copy(board: Board) -> Board:
     """Shallow board copy for tile-init mutations (glitch settle)."""
     tiles = [[deepcopy(board.tiles[r][c]) for c in range(5)] for r in range(5)]
@@ -323,8 +332,12 @@ def apply_tile_init(
     Run pre-item tile pipeline on a scoring board copy.
     Mutates state tile_scores / money_bonus / word_score.
     """
-    work = scoring_board_copy(board)
-    settled = settle_glitch_tiles(work, path, loadout)
+    if path_needs_scoring_board_copy(board, path):
+        work = scoring_board_copy(board)
+        settled = settle_glitch_tiles(work, path, loadout)
+    else:
+        work = board
+        settled = []
     if settled and trace_step:
         trace_step(
             state,

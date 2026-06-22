@@ -193,20 +193,22 @@ def _init_state(
     loadout: Loadout | None = None,
     blue_base_override: int | None = None,
     microscope_base: bool = False,
+    populate_tile_scores: bool = True,
 ) -> dict[str, Any]:
     tile_scores: list[float] = []
     base_total = 0.0
-    for idx in path:
-        tile = board.get_by_index(idx)
-        contrib = _init_tile_contribution(
-            tile,
-            board.money,
-            loadout=loadout,
-            microscope_base=microscope_base,
-            blue_base_override=blue_base_override,
-        )
-        tile_scores.append(contrib)
-        base_total += contrib
+    if populate_tile_scores:
+        for idx in path:
+            tile = board.get_by_index(idx)
+            contrib = _init_tile_contribution(
+                tile,
+                board.money,
+                loadout=loadout,
+                microscope_base=microscope_base,
+                blue_base_override=blue_base_override,
+            )
+            tile_scores.append(contrib)
+            base_total += contrib
     return {
         "word": word,
         "path": path,
@@ -1201,7 +1203,9 @@ def _apply_green_poison_finalize(
     """ApplyPoisonEffect: additive word bonus after queued ×WORD steps."""
     from cursed_words_solver.rules.tile_scoring import poison_from_previous_words
 
-    poison = poison_from_previous_words(loadout)
+    poison = state.pop("_green_poison_cached", None)
+    if poison is None:
+        poison = poison_from_previous_words(loadout)
     if poison <= 0:
         return float(total)
     state.setdefault("effects", []).append(f"+{poison:g} green poison")
@@ -1446,18 +1450,13 @@ class ScoringPipeline:
             if solve_context is not None
             else build_solve_context(loadout, self.rules)
         )
-        state = _init_state(
-            board,
-            path,
-            word,
-            loadout=loadout,
-            blue_base_override=ctx.shield_blue_base,
-            microscope_base=ctx.microscope_base,
-        )
+        state = _init_state(board, path, word, populate_tile_scores=False)
         if trace is not None:
             state["_trace"] = trace
         state["_search_flags"] = ctx.search_flags
         state["_graph_ctx"] = graph_ctx
+        if ctx.green_poison_total > 0:
+            state["_green_poison_cached"] = ctx.green_poison_total
         apply_tile_init(
             board,
             path,

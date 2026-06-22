@@ -165,6 +165,28 @@ def mult_aware_lower_bound(
     return base * guaranteed_mult_factor(mult_rules, loadout, path)
 
 
+def number_aware_lower_bound(
+    board: Board,
+    path: list[int],
+    loadout: Loadout,
+    rules: dict,
+    graph_ctx: BoardGraphContext | None = None,
+) -> float:
+    """Tile-base lower bound using precomputed graph bases (number/fraction safe)."""
+    if graph_ctx is None:
+        base = fast_rank_lower_bound(board, path)
+    else:
+        base = 0.0
+        for idx in path:
+            tile = board.get_by_index(idx)
+            if tile.curse == CurseType.ITEM:
+                base += graph_ctx.item_tile_base[idx]
+            else:
+                base += graph_ctx.tile_base[idx]
+    mult_rules = loadout_mult_rules(loadout, rules, board=board, path=path)
+    return base * guaranteed_mult_factor(mult_rules, loadout, path)
+
+
 
 
 

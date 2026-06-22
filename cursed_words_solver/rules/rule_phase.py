@@ -23,6 +23,7 @@ STATIC_TILE_TARGETS = frozenset(
         "all",
         "number",
         "red_note",
+        "colored",
     }
 )
 

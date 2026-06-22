@@ -314,3 +314,129 @@ def parallel_collect_fair_starts(
                 candidates.consider(score, word, list(path))
     for fut in pending:
         fut.cancel()
+
+
+def _mp_extend_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[int, ...]]]:
+    from cursed_words_solver.search import WordSearcher, _CandidateHeap, set_quest_movement_loadout
+    from cursed_words_solver.solve_context import build_solve_context
+
+    if _mp_dictionary is None:
+        raise RuntimeError("parallel extend worker: dictionary not initialized")
+    board: Board = payload["board"]
+    loadout: Loadout = payload["loadout"]
+    seeds: list[tuple[float, str, tuple[int, ...]]] = payload["seeds"]
+    budget_sec: float = float(payload["budget_sec"])
+    pass_deadline: float = float(payload["pass_deadline"])
+    max_len: int = payload["max_len"]
+    min_len: int = payload["min_len"]
+    top_paths: int = int(payload.get("top_paths", 30))
+    max_rounds: int = int(payload.get("max_rounds", 8))
+    setup_weight: float = payload["setup_weight"]
+    setup_discount: float = payload["setup_discount"]
+
+    now = time.monotonic()
+    local_deadline = min(pass_deadline, now + budget_sec) if pass_deadline else now + budget_sec
+    if local_deadline <= now or not seeds:
+        return []
+
+    searcher = WordSearcher(
+        dictionary=_mp_dictionary,
+        min_len=min_len,
+        max_len=max_len,
+        time_budget=max(0.0, local_deadline - now),
+        setup_weight=setup_weight,
+        setup_discount=setup_discount,
+        search_workers=1,
+        wordlist_path=Path(payload["wordlist_path"]) if payload.get("wordlist_path") else None,
+    )
+    if _mp_pipeline is not None:
+        searcher.scoring = _mp_pipeline
+    set_quest_movement_loadout(loadout)
+    searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
+    mini = _CandidateHeap(max(len(seeds) + 50, 80))
+    for rank_sc, word, path_tuple in seeds:
+        mini.consider(rank_sc, word, list(path_tuple))
+    try:
+        searcher._extend_top_candidates(
+            board,
+            loadout,
+            mini,
+            top_paths=top_paths,
+            max_rounds=max_rounds,
+            deadline=local_deadline,
+        )
+        return [(sc, w, tuple(p)) for sc, w, p in mini.best_sorted()]
+    finally:
+        set_quest_movement_loadout(None)
+
+
+def parallel_extend_seeds(
+    *,
+    executor: ProcessPoolExecutor,
+    workers: int,
+    board: Board,
+    loadout: Loadout,
+    seeds: list[tuple[float, str, tuple[int, ...]]],
+    deadline: float | None,
+    min_len: int,
+    max_len: int,
+    top_paths: int,
+    max_rounds: int,
+    setup_weight: float,
+    setup_discount: float,
+    wordlist_path: Path | None,
+) -> list[tuple[float, str, tuple[int, ...]]]:
+    """Partition dictionary-resolve extension seeds across worker processes."""
+    if workers <= 1 or len(seeds) < 4 or deadline is None:
+        return []
+    if time.monotonic() >= deadline:
+        return []
+
+    n = min(workers, len(seeds))
+    chunk_size = (len(seeds) + n - 1) // n
+    chunks = [seeds[i : i + chunk_size] for i in range(0, len(seeds), chunk_size)]
+    remaining = max(0.0, deadline - time.monotonic())
+    if remaining <= 0:
+        return []
+
+    base_payload = {
+        "board": board,
+        "loadout": loadout,
+        "min_len": min_len,
+        "max_len": max_len,
+        "top_paths": top_paths,
+        "max_rounds": max_rounds,
+        "setup_weight": setup_weight,
+        "setup_discount": setup_discount,
+        "wordlist_path": str(wordlist_path) if wordlist_path else None,
+        "pass_deadline": deadline,
+    }
+    per_chunk_budget = remaining / max(len(chunks), 1)
+    futures = [
+        executor.submit(
+            _mp_extend_chunk,
+            {
+                **base_payload,
+                "seeds": chunk,
+                "budget_sec": per_chunk_budget,
+            },
+        )
+        for chunk in chunks
+    ]
+    merged: list[tuple[float, str, tuple[int, ...]]] = []
+    collect_end = min(deadline, time.monotonic() + remaining)
+    pending = set(futures)
+    while pending and time.monotonic() < collect_end:
+        wait_sec = max(0.01, collect_end - time.monotonic())
+        done, pending = wait(pending, timeout=wait_sec, return_when=FIRST_COMPLETED)
+        for fut in done:
+            try:
+                merged.extend(fut.result())
+            except Exception as exc:
+                global _worker_errors
+                if len(_worker_errors) < 3:
+                    _worker_errors.append(f"{type(exc).__name__}: {exc}")
+                    traceback.print_exc(file=sys.stderr)
+    for fut in pending:
+        fut.cancel()
+    return merged

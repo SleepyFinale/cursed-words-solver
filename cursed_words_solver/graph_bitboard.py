@@ -256,6 +256,9 @@ class BoardGraphContext:
     grid_base_score: int = 0
     coloured_tile_count: int = 0
     tile_base: tuple[float, ...] = field(default_factory=lambda: (0.0,) * CELL_COUNT)
+    item_tile_base: tuple[float, ...] = field(
+        default_factory=lambda: (0.0,) * CELL_COUNT
+    )
     curse_code: tuple[int, ...] = field(default_factory=lambda: (0,) * CELL_COUNT)
     tile_color_code: tuple[int, ...] = field(default_factory=lambda: (0,) * CELL_COUNT)
     is_fraction: tuple[bool, ...] = field(default_factory=lambda: (False,) * CELL_COUNT)
@@ -414,6 +417,7 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
     white_piece_mask = 0
     item_mask = 0
     wildcard_mask = 0
+    item_tile_base = [0.0] * CELL_COUNT
     chess_curse: list[int] = [0] * CELL_COUNT
     chess_side_code: list[int] = [0] * CELL_COUNT
     letter_masks: dict[str, int] = defaultdict(int)
@@ -437,6 +441,7 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
         number_like[idx] = tile.curse in (CurseType.NUMBER, CurseType.FRACTION)
         if tile.curse == CurseType.ITEM:
             item_mask |= 1 << idx
+            item_tile_base[idx] = float(tile_base_contribution(tile, board.money))
         elif tile.curse == CurseType.WILDCARD:
             wildcard_mask |= 1 << idx
         else:
@@ -496,6 +501,7 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
         chess_piece_mask=chess_piece_mask,
         item_mask=item_mask,
         wildcard_mask=wildcard_mask,
+        item_tile_base=tuple(item_tile_base),
         chess_curse=tuple(chess_curse),
         chess_side_code=chess_side_tuple,
         has_chess_pieces=bool(chess_piece_mask),

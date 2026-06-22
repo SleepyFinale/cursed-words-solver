@@ -251,6 +251,7 @@ class SolveContext:
     hanafuda_per_unused: int = 0
     tier2_screen_enabled: bool = False
     quest_ctx: QuestConstraints = QuestConstraints()
+    green_poison_total: float = 0.0
 
 
 def build_solve_context(loadout: Loadout, rules: dict) -> SolveContext:
@@ -264,6 +265,8 @@ def build_solve_context(loadout: Loadout, rules: dict) -> SolveContext:
         active_boss_rules = (
             ((boss_key or "", _boss_rule),) if _boss_rule is not None else ()
         )
+    from cursed_words_solver.rules.tile_scoring import poison_from_previous_words
+
     return SolveContext(
         hourglass_reversed=hourglass,
         shield_blue_base=shield_blue_base_from_loadout(loadout, rules),
@@ -293,6 +296,7 @@ def build_solve_context(loadout: Loadout, rules: dict) -> SolveContext:
         hanafuda_per_unused=_hanafuda_per_unused(loadout, rules),
         tier2_screen_enabled=_tier2_screen_enabled(loadout, rules, hourglass=hourglass),
         quest_ctx=quest_constraints(loadout),
+        green_poison_total=poison_from_previous_words(loadout),
     )
 
 

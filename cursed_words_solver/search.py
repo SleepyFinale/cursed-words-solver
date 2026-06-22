@@ -54,6 +54,7 @@ from cursed_words_solver.fast_rank import (
     loadout_allows_tier2_screen,
     loadout_allows_tier2_two_phase,
     mult_aware_lower_bound,
+    number_aware_lower_bound,
     path_has_scattered_grid_items,
     prefix_immediate_upper_bound,
     prefix_rank_upper_bound,
@@ -140,6 +141,9 @@ _NEIGHBOR_SCRATCH: list[int] = [0] * CELL_COUNT
 MAIN_DFS_FLOOR_FRAC = 0.30
 MAX_TOTAL_RESERVE_FRAC = 0.55
 REFINE_OVERRUN_SEC = 10.0
+TIER2_ADAPTIVE_SAMPLE_SEC = 2.0
+TIER2_DEFER_CAP_NORMAL = 500
+TIER2_DEFER_CAP_DEEP = 2000
 
 
 @dataclass
@@ -215,6 +219,16 @@ class SearchTiming:
         return "unlikely (DFS/expansion dominates; optimize search coverage first)"
 
 
+def _prefix_tile_base(
+    graph_ctx: BoardGraphContext,
+    search_tile_base: tuple[float, ...],
+    idx: int,
+) -> float:
+    if graph_ctx.item_mask & (1 << idx):
+        return graph_ctx.item_tile_base[idx]
+    return search_tile_base[idx]
+
+
 def index_of(row: int, col: int) -> int:
     return row * 5 + col
 
@@ -225,10 +239,24 @@ def _visited_has(visited: int | set[int], idx: int) -> bool:
     return bool(visited & (1 << idx))
 
 
-def _candidate_heap_size(top_n: int, mult_rule_count: int = 0) -> int:
+def _candidate_heap_size(
+    top_n: int,
+    mult_rule_count: int = 0,
+    graph_ctx: BoardGraphContext | None = None,
+) -> int:
     base = max(top_n * 20, DEFAULT_CANDIDATE_HEAP_SIZE)
     if mult_rule_count >= 2:
         base = int(base * (1 + 0.25 * mult_rule_count))
+    if graph_ctx is not None:
+        branch = (
+            graph_ctx.wildcard_mask.bit_count()
+            + graph_ctx.chess_piece_mask.bit_count() * 2
+            + graph_ctx.item_mask.bit_count()
+        )
+        if branch >= 6:
+            base = int(base * 1.5)
+        elif branch <= 2:
+            base = max(int(base * 0.85), max(top_n * 10, DEFAULT_CANDIDATE_HEAP_SIZE // 2))
     return base
 
 
@@ -2688,6 +2716,65 @@ class WordSearcher:
         self._graph_ctx: BoardGraphContext | None = None
         self._board_scoring_ctx = None
         self._placement_screen_pass = False
+        self._tier2_adaptive_mode: str | None = None
+        self._solve_start_mono: float | None = None
+
+    def _elapsed_wall_sec(self) -> float:
+        if self._solve_start_mono is None:
+            return 0.0
+        return time.monotonic() - self._solve_start_mono
+
+    def _update_tier2_adaptive_mode(self) -> None:
+        """After a short sample window, tune tier-2 screening depth from score share."""
+        if self._tier2_adaptive_mode is not None:
+            return
+        elapsed = self._elapsed_wall_sec()
+        if elapsed < TIER2_ADAPTIVE_SAMPLE_SEC:
+            return
+        timing = self._active_timing
+        if timing is None:
+            return
+        if timing.dfs_expansions < 100 and timing.score_calls < 5:
+            return
+        score_pct = 100.0 * timing.score_sec / elapsed if elapsed > 0 else 0.0
+        if score_pct < 40.0:
+            self._tier2_adaptive_mode = "light"
+        elif score_pct >= 55.0:
+            self._tier2_adaptive_mode = "deep"
+        else:
+            self._tier2_adaptive_mode = "normal"
+
+    def _tier2_screen_active(self) -> bool:
+        mode = self._tier2_adaptive_mode
+        if mode == "light":
+            return False
+        return True
+
+    def _tier2_two_phase_active(self, loadout: Loadout) -> bool:
+        if not self._use_tier2_two_phase_for(loadout):
+            return False
+        mode = self._tier2_adaptive_mode
+        if mode == "light":
+            return False
+        return True
+
+    def _tier2_defer_cap(self, heap: _CandidateHeap | None) -> int:
+        mode = self._tier2_adaptive_mode
+        if mode == "light":
+            return 0
+        k = heap._k if heap is not None else DEFAULT_CANDIDATE_HEAP_SIZE
+        if mode == "deep":
+            return max(TIER2_DEFER_CAP_DEEP, k * 4)
+        return max(TIER2_DEFER_CAP_NORMAL, k * 2)
+
+    def _tier2_refine_cap(self, candidates: _CandidateHeap) -> int:
+        mode = self._tier2_adaptive_mode
+        k = candidates._k
+        if mode == "deep":
+            return max(k * 4, 1)
+        if mode == "light":
+            return max(k, 1)
+        return max(k * 2, 1)
 
     def _board_graph(self, board: Board) -> BoardGraphContext:
         if self._graph_ctx is not None and self._graph_ctx.board is board:
@@ -2750,6 +2837,8 @@ class WordSearcher:
     def _use_tier2_screen_for(self, loadout: Loadout) -> bool:
         if self._use_tier2_screen_override is not None:
             return self._use_tier2_screen_override
+        if not self._tier2_screen_active():
+            return False
         ctx = self._search_ctx(loadout)
         return loadout_allows_tier2_screen(
             ctx,
@@ -2780,14 +2869,6 @@ class WordSearcher:
     ) -> bool:
         if self._use_dfs_bb_override is not None:
             return self._use_dfs_bb_override
-        if (
-            self._graph_ctx is not None
-            and self._graph_ctx.item_mask.bit_count() >= 2
-            and not getattr(self, "_full_board_exact", False)
-        ):
-            # Prefix bounds ignore scattered grid-item scoring; DFS BB prunes
-            # routes that must pass through multiple grid items (e.g. pie + extinguisher).
-            return False
         ctx = self._search_ctx(loadout)
         return loadout_allows_dfs_bb(
             ctx,
@@ -2868,7 +2949,7 @@ class WordSearcher:
         )
         if pending is None:
             self._provisional_candidates.clear()
-        refine_cap = refine_cap_override or max(candidates._k * 2, 1)
+        refine_cap = refine_cap_override or self._tier2_refine_cap(candidates)
         refined_this_pass = 0
         for (path_tuple, word), _rank_ub in pending_sorted:
             if path_prefixes is not None and not _path_shares_leader_prefix(
@@ -3219,8 +3300,6 @@ class WordSearcher:
         has_number_tiles = any(
             is_number_like_tile(board.get_by_index(i)) for i in _active_indices(board)
         )
-        if has_number_tiles:
-            use_prune = False
         use_tier2 = self._use_tier2_screen_for(loadout)
         use_heap = use_prune or use_tier2
         prev_heap = self._prune_heap
@@ -3432,6 +3511,8 @@ class WordSearcher:
             if expansions % check_interval == 0 and time.monotonic() > deadline:
                 timed_out = True
                 return
+            if expansions % check_interval == 0:
+                self._update_tier2_adaptive_mode()
 
             letter_trie = not has_digit
             is_alpha_path = not has_wildcard and not has_digit
@@ -3780,7 +3861,9 @@ class WordSearcher:
                     next_prefix_base = prefix_base
                     next_prefix_red = prefix_red_count
                     if use_dfs_bb:
-                        next_prefix_base += search_tile_base[idx]
+                        next_prefix_base += _prefix_tile_base(
+                            graph_ctx, search_tile_base, idx
+                        )
                         if graph_ctx.tile_color_code[idx] == RED_COLOR_CODE:
                             next_prefix_red += 1
                     dfs(
@@ -3847,7 +3930,11 @@ class WordSearcher:
                         has_wildcard=False,
                         has_digit=False,
                         prefix_len=1,
-                        prefix_base=search_tile_base[start] if use_dfs_bb else 0.0,
+                        prefix_base=(
+                            _prefix_tile_base(graph_ctx, search_tile_base, start)
+                            if use_dfs_bb
+                            else 0.0
+                        ),
                         prefix_red_count=(
                             1
                             if use_dfs_bb
@@ -3898,7 +3985,11 @@ class WordSearcher:
                     has_wildcard=has_wildcard,
                     has_digit=has_digit,
                     prefix_len=prefix_len,
-                    prefix_base=search_tile_base[start] if use_dfs_bb else 0.0,
+                    prefix_base=(
+                        _prefix_tile_base(graph_ctx, search_tile_base, start)
+                        if use_dfs_bb
+                        else 0.0
+                    ),
                     prefix_red_count=(
                         1
                         if use_dfs_bb
@@ -4550,6 +4641,38 @@ class WordSearcher:
                     candidates.consider(ext_sc, ext_word, list(ext_path))
             return
         seeds = seeds[:20]
+        top_paths = len(seeds)
+        max_rounds = min(self.max_len - self.min_len, 8)
+        if (
+            self.search_workers > 1
+            and len(seeds) >= 4
+            and self._wordlist_path is not None
+        ):
+            from cursed_words_solver.search_parallel import (
+                get_search_pool,
+                parallel_extend_seeds,
+            )
+
+            pool = get_search_pool(Path(self._wordlist_path), self.search_workers)
+            if pool is not None:
+                extended = parallel_extend_seeds(
+                    executor=pool,
+                    workers=self.search_workers,
+                    board=board,
+                    loadout=loadout,
+                    seeds=seeds,
+                    deadline=deadline,
+                    min_len=self.min_len,
+                    max_len=self.max_len,
+                    top_paths=top_paths,
+                    max_rounds=max_rounds,
+                    setup_weight=self.setup_weight,
+                    setup_discount=self.setup_discount,
+                    wordlist_path=Path(self._wordlist_path),
+                )
+                for rank_sc, word, path_tuple in extended:
+                    candidates.consider(rank_sc, word, list(path_tuple))
+                return
         mini = _CandidateHeap(max(len(seeds) + 50, 80))
         for rank_sc, word, path_tuple in seeds:
             mini.consider(rank_sc, word, list(path_tuple))
@@ -4557,8 +4680,8 @@ class WordSearcher:
             board,
             loadout,
             mini,
-            top_paths=len(seeds),
-            max_rounds=min(self.max_len - self.min_len, 8),
+            top_paths=top_paths,
+            max_rounds=max_rounds,
             deadline=deadline,
         )
         for rank_sc, word, path_tuple in mini.best_sorted():
@@ -4987,6 +5110,7 @@ class WordSearcher:
         prune_heap: _CandidateHeap | None = None,
         resolved_word: str | None = None,
     ) -> float | None:
+        self._update_tier2_adaptive_mode()
         if self._time_expired():
             return None
         timing = self._active_timing
@@ -5025,9 +5149,18 @@ class WordSearcher:
                 and self._use_mult_prune_for(loadout)
                 and not path_has_scattered_grid_items(board, path)
             ):
-                lb = mult_aware_lower_bound(
-                    board, path, loadout, self.scoring.rules
-                )
+                if getattr(self, "_board_has_number_tiles", False):
+                    lb = number_aware_lower_bound(
+                        board,
+                        path,
+                        loadout,
+                        self.scoring.rules,
+                        graph_ctx=self._graph_ctx,
+                    )
+                else:
+                    lb = mult_aware_lower_bound(
+                        board, path, loadout, self.scoring.rules
+                    )
                 if lb <= min_sc:
                     return None
         if heap is not None and self._use_tier2_screen_for(loadout):
@@ -5077,7 +5210,7 @@ class WordSearcher:
                         timing.tier2_rank_screen_skips += 1
                     return None
                 if (
-                    self._use_tier2_two_phase_for(loadout)
+                    self._tier2_two_phase_active(loadout)
                     and min_rank is not None
                     and rank_ub is not None
                 ):
@@ -5094,13 +5227,17 @@ class WordSearcher:
                         board_scoring_ctx=self._board_scoring_ctx,
                     )
                     if rank_lb < min_rank:
-                        if timing is not None:
-                            timing.tier2_phase1_calls += 1
-                            timing.tier2_phase2_deferred += 1
-                        prev_ub = self._provisional_candidates.get(key)
-                        if prev_ub is None or rank_ub > prev_ub:
-                            self._provisional_candidates[key] = rank_ub
-                        return rank_ub
+                        defer_cap = self._tier2_defer_cap(heap)
+                        if defer_cap <= 0 or len(self._provisional_candidates) >= defer_cap:
+                            pass
+                        else:
+                            if timing is not None:
+                                timing.tier2_phase1_calls += 1
+                                timing.tier2_phase2_deferred += 1
+                            prev_ub = self._provisional_candidates.get(key)
+                            if prev_ub is None or rank_ub > prev_ub:
+                                self._provisional_candidates[key] = rank_ub
+                            return rank_ub
         setup_bonus = 0.0
         timing = self._active_timing
         if self.score_fn:
@@ -5111,7 +5248,7 @@ class WordSearcher:
             immediate = self._score_total_for_path(
                 board, path, score_word, loadout, ctx
             )
-            if timing is not None and self._use_tier2_two_phase_for(loadout):
+            if timing is not None and self._tier2_two_phase_active(loadout):
                 timing.tier2_phase2_calls += 1
             if timing is not None:
                 timing.score_sec += time.perf_counter() - t0
@@ -5556,6 +5693,8 @@ class WordSearcher:
         self._number_extend_cache.clear()
         self._grid_refs_cache.clear()
         self._provisional_candidates.clear()
+        self._tier2_adaptive_mode = None
+        self._solve_start_mono = None
         reset_board_flat_call_count()
         loadout = loadout or Loadout(money=board.money)
         board = effective_board_for_loadout(board, loadout, self.scoring.rules)
@@ -5602,10 +5741,11 @@ class WordSearcher:
         )
         mult_count = len(self._mult_rules)
         heap_k = self.candidate_heap_size or _candidate_heap_size(
-            top_n, mult_count
+            top_n, mult_count, self._graph_ctx
         )
         candidates = _CandidateHeap(heap_k)
         solve_start = time.monotonic()
+        self._solve_start_mono = solve_start
         timing = SearchTiming(parallel_workers=self.search_workers)
         self._active_timing = timing
         has_number_tiles = any(is_number_like_tile(t) for t in board.flat)
@@ -5686,6 +5826,15 @@ class WordSearcher:
         extension_reserve = 0.0
         if self.max_len > self.min_len:
             extension_reserve = min(5.0, self.time_budget * 0.12)
+            branch = (
+                self._graph_ctx.wildcard_mask.bit_count()
+                + self._graph_ctx.chess_piece_mask.bit_count()
+                + self._graph_ctx.item_mask.bit_count()
+            )
+            if branch >= 5:
+                extension_reserve = min(8.0, extension_reserve * 1.4)
+            if branch <= 2:
+                extension_reserve *= 0.85
 
         (
             number_reserve,

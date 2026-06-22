@@ -17,6 +17,7 @@ from cursed_words_solver.fast_rank import (
     loadout_allows_fast_rank,
     loadout_allows_tier2_screen,
     loadout_allows_tier2_two_phase,
+    number_aware_lower_bound,
     prefix_immediate_upper_bound,
     prefix_rank_upper_bound,
     tier2_immediate_upper_bound,
@@ -369,6 +370,20 @@ def _sticker_board_and_loadout():
     loadout = parse_run_state(run_state)
     assert board is not None
     return board, loadout
+
+
+def test_number_aware_lower_bound_le_full_score():
+    board = _board_cat_horizontal()
+    loadout = Loadout()
+    pipeline = ScoringPipeline()
+    rules = pipeline.rules
+    graph_ctx = build_board_graph_context(board)
+    path = [0, 1, 2]
+    full = pipeline.score_total_only(board, path, "cat", loadout)
+    lb = number_aware_lower_bound(
+        board, path, loadout, rules, graph_ctx=graph_ctx
+    )
+    assert lb <= full + 1e-6
 
 
 def test_tier2_upper_bound_ge_full_score():
