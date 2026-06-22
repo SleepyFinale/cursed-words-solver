@@ -47,6 +47,14 @@ NON_COLOUR_FOR_NUMBER_BONUS = frozenset(
     }
 )
 
+# Rainbow, Dango, Artist's Palette, etc.: WHITE is a distinct tile colour.
+NON_COLOUR_FOR_UNIQUE_COUNT = frozenset(
+    {
+        TileColor.COLORLESS,
+        TileColor.UNKNOWN,
+    }
+)
+
 NON_COLOUR_FOR_NEAPOLITAN = frozenset(
     {
         TileColor.COLORLESS,
@@ -1556,7 +1564,7 @@ def unique_colours_on_path(board: Board, path: list[int]) -> set[str]:
     colours: set[str] = set()
     for idx in path:
         color = board.get_by_index(idx).color
-        if color not in NON_COLOUR_FOR_NUMBER_BONUS:
+        if color not in NON_COLOUR_FOR_UNIQUE_COUNT:
             colours.add(color.value)
     return colours
 
@@ -3100,7 +3108,7 @@ def tile_matches_target(tile: Tile, target: str) -> bool:
     if target == "blue":
         return tile_counts_as_color(tile, TileColor.BLUE)
     if target == "colored":
-        return tile.color not in NON_COLOUR_FOR_NUMBER_BONUS
+        return tile.color not in NON_COLOUR_FOR_UNIQUE_COUNT
     if target == "wildcard":
         return tile.curse == CurseType.WILDCARD or tile.letter == "?"
     if target == "vowel":

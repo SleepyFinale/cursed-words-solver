@@ -79,3 +79,39 @@ def test_cactus_was_consumable_uses_packet_only() -> None:
 def test_gold_uses_money() -> None:
     board = Board(tiles=[[_tile(TileColor.GOLD)]], money=7)
     assert tile_base_contribution(board.tiles[0][0], board.money) == 7
+
+
+def test_unique_colours_on_path_includes_white() -> None:
+    from cursed_words_solver.rules.scoring_conditions import (
+        unique_colour_count_on_path,
+        unique_colours_on_path,
+    )
+
+    board = Board(
+        tiles=[
+            [
+                Tile(
+                    row=0,
+                    col=0,
+                    char="a",
+                    letter="A",
+                    base_score=1,
+                    color=TileColor.WHITE,
+                    curse=CurseType.LETTER,
+                ),
+                Tile(
+                    row=0,
+                    col=1,
+                    char="b",
+                    letter="B",
+                    base_score=2,
+                    color=TileColor.RED,
+                    curse=CurseType.LETTER,
+                ),
+            ]
+        ],
+        money=0,
+    )
+    path = [0, 1]
+    assert unique_colour_count_on_path(board, path) == 2
+    assert unique_colours_on_path(board, path) == {"white", "red"}

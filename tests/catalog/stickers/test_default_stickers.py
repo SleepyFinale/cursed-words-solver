@@ -132,6 +132,31 @@ def test_artists_palette_colored_tile_bonus():
     assert score == base + 6
 
 
+def test_artists_palette_applies_to_white_tile():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 1, color=TileColor.WHITE)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="artist_s_palette", name="Artist's Palette", level=1)
+        ]
+    )
+    score, _ = pipeline.score(board, [0], "a", loadout)
+    base, _ = pipeline.score(board, [0], "a", Loadout())
+    assert score == base + 6
+
+
+def test_dango_counts_white_as_unique_colour():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 2, color=TileColor.WHITE)
+    board.tiles[0][1] = _tile(0, 1, "B", 2, color=TileColor.RED)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stamps=[LoadoutItem(id="dango", name="Dango", level=1)])
+    score, _ = pipeline.score(board, [0, 1], "ab", loadout)
+    base, _ = pipeline.score(board, [0, 1], "ab", Loadout())
+    assert score == base * 2
+
+
 def test_blueberries_ends_blue_multiplier():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "C", 2)
