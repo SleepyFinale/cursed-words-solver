@@ -983,7 +983,7 @@ def test_find_best_words_buzzsaw_beats_bazz(_parallel_pool_cleanup):
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
         min_len=3,
         max_len=25,
-        time_budget=45.0,
+        time_budget=60.0,
         search_workers=8,
     )
     results = searcher.find_best_words(board, loadout, top_n=10)

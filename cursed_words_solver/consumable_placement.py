@@ -597,7 +597,9 @@ def _placement_hard_from_loadout(loadout: Loadout | None) -> bool:
 
     if quest_constraints(loadout).require_center_index is not None:
         return True
-    if (loadout.boss_id or "").strip().lower() == "cobra":
+    from cursed_words_solver.rules.boss_effects import boss_modifier_active
+
+    if boss_modifier_active(loadout, "cobra"):
         return True
     for key in ("cobra_min_length", "encounter_min_word_length"):
         try:

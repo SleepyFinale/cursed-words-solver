@@ -82,6 +82,7 @@ def boss_display_name(loadout: Loadout, rules: dict[str, Any]) -> str:
     from cursed_words_solver.rules.boss_effects import (
         active_boss_ids,
         get_active_boss_rules,
+        michael_encounter_active,
         michael_finale_active,
     )
 
@@ -92,6 +93,12 @@ def boss_display_name(loadout: Loadout, rules: dict[str, Any]) -> str:
         if str(loadout.boss_id or "").strip().lower() == "michael":
             return (loadout.boss_name or "Michael").strip()
         return "Michael"
+
+    if michael_encounter_active(loadout):
+        _, rule = get_rule(rules, "bosses", "michael", "Michael")
+        if rule and rule.get("name"):
+            return str(rule["name"])
+        return (loadout.boss_name or "Michael").strip()
 
     ids = active_boss_ids(loadout)
     if len(ids) > 1:
@@ -283,6 +290,52 @@ def _pin_in_catalog(rules: dict[str, Any], pin_effect: str) -> bool:
     return canonical in pins or pin_key in pins
 
 
+def _catalog_boss_slugs(loadout: Loadout) -> list[str]:
+    """Boss ids used for catalog coverage (Michael drafts → stacked modifiers)."""
+    from cursed_words_solver.rules.boss_effects import (
+        active_boss_ids,
+        michael_encounter_active,
+    )
+
+    mods = active_boss_ids(loadout)
+    if michael_encounter_active(loadout):
+        if mods:
+            return mods
+        bid = (loadout.boss_id or "").strip().lower()
+        return [bid] if bid else []
+    if mods:
+        return mods
+    bid = (loadout.boss_id or "").strip().lower()
+    if bid:
+        return [bid]
+    return []
+
+
+def _count_boss_catalog(
+    rules: dict[str, Any], loadout: Loadout
+) -> tuple[int, int, int]:
+    """Return (mapped, scoring, grid_only) for catalog boss slot(s)."""
+    slugs = _catalog_boss_slugs(loadout)
+    if not slugs:
+        return 0, 0, 0
+    mapped = 0
+    scoring = 0
+    grid_only = 0
+    for slug in slugs:
+        key = resolve_rule_id(rules, "bosses", slug, slug)
+        if key is None:
+            continue
+        mapped += 1
+        _key, boss = get_rule(rules, "bosses", slug, slug)
+        if not boss:
+            continue
+        if boss.get("type") == "custom":
+            grid_only += 1
+        elif is_scoring_rule(boss):
+            scoring += 1
+    return mapped, scoring, grid_only
+
+
 def collect_unmapped_items(
     rules: dict[str, Any],
     loadout: Loadout,
@@ -298,9 +351,9 @@ def collect_unmapped_items(
         if resolve_rule_id(rules, "stamps", stamp.id, stamp.name) is None:
             missing.append(f"stamp:{stamp.id or stamp.name}")
 
-    if loadout.boss_id or loadout.boss_name:
-        if resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name) is None:
-            missing.append(f"boss:{loadout.boss_id or loadout.boss_name}")
+    for slug in _catalog_boss_slugs(loadout):
+        if resolve_rule_id(rules, "bosses", slug, slug) is None:
+            missing.append(f"boss:{slug}")
 
     pin_effect = loadout.extras.get("pin_effect", "")
     if pin_effect and not _pin_in_catalog(rules, str(pin_effect)):
@@ -311,9 +364,8 @@ def collect_unmapped_items(
 
 def count_catalog_items(rules: dict[str, Any], loadout: Loadout) -> tuple[int, int]:
     """Return (catalog_count, total_count) — item has a wiki key."""
-    total = len(loadout.stickers) + len(loadout.stamps)
-    if loadout.boss_id or loadout.boss_name:
-        total += 1
+    boss_slugs = _catalog_boss_slugs(loadout)
+    total = len(loadout.stickers) + len(loadout.stamps) + len(boss_slugs)
     pin_effect = loadout.extras.get("pin_effect", "")
     if pin_effect:
         total += 1
@@ -326,9 +378,8 @@ def count_catalog_items(rules: dict[str, Any], loadout: Loadout) -> tuple[int, i
     mapped += sum(
         1 for s in loadout.stamps if resolve_rule_id(rules, "stamps", s.id, s.name)
     )
-    if loadout.boss_id or loadout.boss_name:
-        if resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name):
-            mapped += 1
+    boss_mapped, _, _ = _count_boss_catalog(rules, loadout)
+    mapped += boss_mapped
     if pin_effect and _pin_in_catalog(rules, str(pin_effect)):
         mapped += 1
 
@@ -337,9 +388,8 @@ def count_catalog_items(rules: dict[str, Any], loadout: Loadout) -> tuple[int, i
 
 def count_scoring_items(rules: dict[str, Any], loadout: Loadout) -> tuple[int, int, int]:
     """Return (scoring_active, total, grid_only)."""
-    total = len(loadout.stickers) + len(loadout.stamps)
-    if loadout.boss_id or loadout.boss_name:
-        total += 1
+    boss_slugs = _catalog_boss_slugs(loadout)
+    total = len(loadout.stickers) + len(loadout.stamps) + len(boss_slugs)
     pin_effect = loadout.extras.get("pin_effect", "")
     if pin_effect:
         total += 1
@@ -370,15 +420,9 @@ def count_scoring_items(rules: dict[str, Any], loadout: Loadout) -> tuple[int, i
             if rule.get("effect_class") != "movement" and not rule.get("search_flags"):
                 grid_only += 1
 
-    if loadout.boss_id or loadout.boss_name:
-        _key, boss = get_rule(
-            rules, "bosses", loadout.boss_id, loadout.boss_name
-        )
-        if boss:
-            if boss.get("type") == "custom":
-                grid_only += 1
-            elif is_scoring_rule(boss):
-                scoring += 1
+    _mapped, boss_scoring, boss_grid_only = _count_boss_catalog(rules, loadout)
+    scoring += boss_scoring
+    grid_only += boss_grid_only
 
     if pin_effect:
         _key, pin_rule = get_rule(rules, "pins", str(pin_effect), str(pin_effect))

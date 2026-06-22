@@ -48,6 +48,31 @@ def test_bosscrystal_alias_resolves_to_prismatic_bean():
     assert collect_unmapped_items(rules, loadout) == []
 
 
+def test_michael_finale_boss_is_catalog_mapped():
+    rules = load_rules_catalog()
+    loadout = parse_run_state(
+        {
+            "character": "Beans",
+            "boss_id": "michael",
+            "boss_name": "Michael",
+            "extras": {
+                "michael_phase": "4",
+                "michael_summoned_bosses_defeated": "true",
+                "michael_min_word_length": "25",
+                "encounter_min_word_length": "25",
+                "boss_modifiers": "[]",
+            },
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "michael"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+
+
 def test_resolve_rule_id_with_alias():
     rules = {
         "aliases": {"stickers": {"stickyplaster": "sticky_plaster"}},

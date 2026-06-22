@@ -207,21 +207,21 @@ tests/                 # catalog/, integration/, regression/, sim/, unit tests
 
 Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 
-| Key                      | Default  | Purpose                                                                                    |
-| ------------------------ | -------- | ------------------------------------------------------------------------------------------ |
-| `board_region`           | —        | Manual fallback `{x, y, width, height}` when melmod `ui_layout` is absent                  |
-| `rack_region`            | —        | Manual fallback consumable rack row (five equal slots)                                     |
-| `show_board_highlight`   | `true`   | Numbered circles on the game board and consumable rack                                     |
-| `hotkey`                 | `f8`     | Solve hotkey (one press per grid — gathers live game export, solves, shows result)         |
-| `search_time_budget_sec` | `60`     | Seconds per solve for word search. Legacy values `2` / `15` / `30` auto-upgrade on startup |
-| `top_n_results`          | `3`      | Alternate words shown in the overlay                                                       |
-| `wordlist`               | `game`   | `game` → `game_words.txt`; `enable1` → offline fallback                                    |
-| `setup_weight`           | `0.4`    | Weight for future-round setup value in search ranking                                      |
-| `setup_discount`         | `0.85`   | Discount factor for future-round setup value in search ranking                             |
-| `mult_search_weight`     | `0.4`    | Weight for inventory-mult enumeration in search ranking                                    |
-| `mult_search_passes`     | `true`   | Enable mult-rule search passes during word search                                          |
-| `search_workers`         | `"auto"` | Parallel DFS processes: `"auto"` (up to 8 cores), `1` to disable, or integer `2`–`16`      |
-| `grid_reroll_gap_ratio`  | `0.3`    | Show "Reroll Grid" when best score is below this fraction of estimated grid target         |
+| Key                      | Default  | Purpose                                                                                           |
+| ------------------------ | -------- | ------------------------------------------------------------------------------------------------- |
+| `board_region`           | —        | Manual fallback `{x, y, width, height}` when melmod `ui_layout` is absent                         |
+| `rack_region`            | —        | Manual fallback consumable rack row (five equal slots)                                            |
+| `show_board_highlight`   | `true`   | Numbered circles on the game board and consumable rack                                            |
+| `hotkey`                 | `f8`     | Solve hotkey (one press per grid — gathers live game export, solves, shows result)                |
+| `search_time_budget_sec` | `60`     | Seconds per solve for word search. Legacy values `2` / `15` / `30` / `45` auto-upgrade on startup |
+| `top_n_results`          | `3`      | Alternate words shown in the overlay                                                              |
+| `wordlist`               | `game`   | `game` → `game_words.txt`; `enable1` → offline fallback                                           |
+| `setup_weight`           | `0.4`    | Weight for future-round setup value in search ranking                                             |
+| `setup_discount`         | `0.85`   | Discount factor for future-round setup value in search ranking                                    |
+| `mult_search_weight`     | `0.4`    | Weight for inventory-mult enumeration in search ranking                                           |
+| `mult_search_passes`     | `true`   | Enable mult-rule search passes during word search                                                 |
+| `search_workers`         | `"auto"` | Parallel DFS processes: `"auto"` (up to 8 cores), `1` to disable, or integer `2`–`16`             |
+| `grid_reroll_gap_ratio`  | `0.3`    | Show "Reroll Grid" when best score is below this fraction of estimated grid target                |
 
 On startup the terminal prints the loaded word list, e.g. `Word list: game (120000 words)`. After each solve it prints the grid and `Board source: melmod`.
 
@@ -321,14 +321,14 @@ See [`scripts/README.md`](scripts/README.md) for profiling and mismatch triage s
 
 GitHub Actions runs `pytest tests/` on push and pull request to `main` / `master` (`[.github/workflows/test.yml](.github/workflows/test.yml)`).
 
-| Test area   | Location                                                                                                     | Purpose                                                     |
-| ----------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| Catalog     | `tests/catalog/`                                                                                             | Per-character sticker/stamp scoring rules                   |
-| Integration | `tests/integration/`                                                                                         | Melmod fingerprints, score traces, loadout scoring, round logs |
-| Regression  | `tests/regression/`                                                                                          | Mismatch captures (`tests/fixtures/mismatches/`) and round-log path replays |
-| Sim         | `tests/sim/`                                                                                                 | Encounter simulator replay                                  |
+| Test area   | Location                                                                                                     | Purpose                                                                                  |
+| ----------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Catalog     | `tests/catalog/`                                                                                             | Per-character sticker/stamp scoring rules                                                |
+| Integration | `tests/integration/`                                                                                         | Melmod fingerprints, score traces, loadout scoring, round logs                           |
+| Regression  | `tests/regression/`                                                                                          | Mismatch captures (`tests/fixtures/mismatches/`) and round-log path replays              |
+| Sim         | `tests/sim/`                                                                                                 | Encounter simulator replay                                                               |
 | Unit        | `tests/test_*.py`                                                                                            | Search, bosses, dictionary, F8 snapshot, consumable placement, suggestion stale workflow |
-| Performance | `tests/test_static_dynamic_pipeline.py`, `tests/test_tier2_two_phase.py`, `tests/test_search_performance.py` | Static/dynamic scoring parity, tier-2 bounds, search gating |
+| Performance | `tests/test_static_dynamic_pipeline.py`, `tests/test_tier2_two_phase.py`, `tests/test_search_performance.py` | Static/dynamic scoring parity, tier-2 bounds, search gating                              |
 
 **Contributing a scoring fix:** F7 → F8 → play the highlighted word → collect mismatch JSON → `python scripts/mismatch_to_test.py …` → fix pipeline → `pytest tests/regression/ -k <fixture_id>` until green → remove that stem from [`tests/fixtures/known_failing.json`](tests/fixtures/known_failing.json) if it was quarantined. For path misses, promote round logs with `python scripts/round_log_to_test.py <round_log.json>` (see [melmod README — Round logs](melmod/README.md#round-logs-v12)).
 

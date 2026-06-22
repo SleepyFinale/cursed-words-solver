@@ -123,6 +123,49 @@ def test_green_poison_explicit_zero_enc_earned_stays_zero() -> None:
     assert green_poison_from_historic_words(extras) == 0.0
 
 
+def test_green_poison_robo_eel_grid_reset_live_historic() -> None:
+    """Robo-Eel resets grid_number to 1; live encounter historic still poisons."""
+    extras = {
+        "grid_number": "1",
+        "scoring_previous_words_count": "3",
+        "encounter_score_earned": "0",
+        "encounter_historic_source": "live",
+        "historic_words": json.dumps(
+            [
+                {
+                    "word": "attractor",
+                    "score": 10255,
+                    "green_tile_count": 1,
+                },
+                {
+                    "word": "entireties",
+                    "score": 18546,
+                    "green_tile_count": 1,
+                },
+            ]
+        ),
+    }
+    assert green_poison_from_historic_words(extras) == 2881.0
+
+
+def test_green_poison_grid2_live_historic_all_prior_words() -> None:
+    """Grid 2+ sums poison from all live encounter historic rows (not enc_earned cap)."""
+    extras = {
+        "grid_number": "2",
+        "scoring_previous_words_count": "4",
+        "encounter_score_earned": "13021",
+        "encounter_historic_source": "live",
+        "historic_words": json.dumps(
+            [
+                {"word": "attractor", "score": 10255, "green_tile_count": 1},
+                {"word": "entireties", "score": 18546, "green_tile_count": 1},
+                {"word": "saurians", "score": 13021, "green_tile_count": 1},
+            ]
+        ),
+    }
+    assert green_poison_from_historic_words(extras) == 4183.0
+
+
 def test_purple_counts_as_red_and_blue() -> None:
     t = _letter(TileColor.PURPLE)
     assert tile_counts_as_color(t, TileColor.RED)

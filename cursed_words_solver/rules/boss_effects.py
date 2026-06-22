@@ -71,6 +71,21 @@ def boss_area_number(loadout: Loadout) -> int:
     return max(1, min(5, area))
 
 
+def boss_run_stage(loadout: Loadout) -> int:
+    """Run stage from export (1–6). Prefers run_stage, then unclamped boss_area_number."""
+    stage = _extra_int(loadout, "run_stage", 0)
+    if stage <= 0:
+        stage = _extra_int(loadout, "boss_area_number", 1)
+    return max(1, stage)
+
+
+def boss_stage_display_suffix(loadout: Loadout) -> str:
+    """Console label: Stage 1–6 for boss encounters."""
+    if _michael_context(loadout):
+        return f"Stage {max(6, boss_run_stage(loadout))}"
+    return f"Stage {min(5, boss_run_stage(loadout))}"
+
+
 def boss_is_cursed(loadout: Loadout) -> bool:
     return _extra_bool(loadout, "boss_cursed")
 
@@ -152,6 +167,58 @@ def _michael_probe_summoned_defeated(loadout: Loadout) -> bool | None:
         if value == "0":
             return False
     return None
+
+
+def _michael_probe_finale_flag(loadout: Loadout) -> bool | None:
+    """Parse companion probe: finale=1 means Michael finale grid."""
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    probe = str(extras.get("michael_finale_probe") or "").strip()
+    if not probe:
+        return None
+    for part in probe.split(","):
+        piece = part.strip()
+        if not piece.startswith("finale="):
+            continue
+        value = piece.split("=", 1)[1].strip()
+        if value == "1":
+            return True
+        if value == "0":
+            return False
+    return None
+
+
+def michael_finale_export_expected(loadout: Loadout, *, default_max_len: int = 0) -> bool:
+    """True when game/companion expect Michael finale (25-tile) export rules."""
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    probe_defeated = _michael_probe_summoned_defeated(loadout)
+    if probe_defeated is False:
+        return False
+
+    phase = _michael_phase_value(loadout)
+    if 1 <= phase <= 3 and _parse_boss_modifier_ids(loadout):
+        return False
+
+    if michael_puzzle_grid_active(loadout):
+        return True
+    if str(extras.get("encounter_mode") or "").strip().lower() == "puzzle":
+        return True
+
+    if michael_summoned_bosses_defeated(loadout):
+        return True
+    if probe_defeated is True:
+        return True
+    if _michael_probe_finale_flag(loadout) is True:
+        return True
+
+    encounter_min = _encounter_min_word_length_value(loadout)
+    if (
+        default_max_len > 0
+        and encounter_min >= default_max_len
+        and _michael_context(loadout)
+    ):
+        return True
+
+    return False
 
 
 def michael_finale_active(loadout: Loadout, *, default_max_len: int = 0) -> bool:
@@ -323,6 +390,19 @@ def active_boss_ids(loadout: Loadout) -> list[str]:
     if primary and primary not in _META_BOSS_SLUGS:
         return [primary]
     return []
+
+
+def michael_encounter_active(loadout: Loadout) -> bool:
+    """True during Michael draft/finale/puzzle (display + catalog routing)."""
+    return _michael_context(loadout)
+
+
+def boss_modifier_active(loadout: Loadout, slug: str) -> bool:
+    """True when a draft boss modifier is active (Michael stacking or solo boss)."""
+    target = str(slug or "").strip().lower()
+    if not target:
+        return False
+    return target in active_boss_ids(loadout)
 
 
 def get_active_boss_rules(

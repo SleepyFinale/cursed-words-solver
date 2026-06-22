@@ -130,7 +130,7 @@ def test_spoofery_search_finds_best_path():
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
         search_workers=8,
-        time_budget=45.0,
+        time_budget=60.0,
     )
     results = searcher.find_best_words(board, loadout, top_n=5)
     assert results
@@ -229,7 +229,7 @@ def test_voteless_search_finds_words():
         min_len=constraints.min_len,
         max_len=constraints.max_len,
         search_workers=8,
-        time_budget=45.0,
+        time_budget=60.0,
     )
     results = searcher.find_best_words(board, loadout, top_n=5)
     assert results, "search must find at least one valid word on Cobra grid-2 board"
@@ -302,7 +302,7 @@ def test_aardvark_search_finds_valid_words():
         min_len=constraints.min_len,
         max_len=constraints.max_len,
         search_workers=8,
-        time_budget=45.0,
+        time_budget=60.0,
     )
     results = searcher.find_best_words(board, loadout, top_n=10)
     assert results, "search must find valid words on TFUR chess board"
@@ -324,7 +324,7 @@ def test_aardvark_search_does_not_suggest_invalid_path():
         min_len=constraints.min_len,
         max_len=constraints.max_len,
         search_workers=8,
-        time_budget=45.0,
+        time_budget=60.0,
     )
     results = searcher.find_best_words(board, loadout, top_n=10)
     for result in results:

@@ -65,7 +65,7 @@ def test_search_finds_high_scoring_joker_bookend_word(yince_board_loadout):
         pytest.skip("game wordlist not installed")
     ws = WordSearcher(
         wordlist_path=GAME_WORDLIST_PATH,
-        time_budget=45.0,
+        time_budget=60.0,
         search_workers=1,
     )
     results = ws.find_best_words(board, loadout, top_n=3)

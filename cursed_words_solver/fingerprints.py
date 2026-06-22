@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from cursed_words_solver.models import Board, Loadout, LoadoutItem
 
 
@@ -16,6 +18,50 @@ def _tile_crossed_out_from_metadata(tile: object) -> bool:
 def boss_fingerprint_id(boss_id: str) -> str:
     """Match melmod AppendBossFingerprint (empty boss → '-')."""
     return boss_id if boss_id else "-"
+
+
+_META_BOSS_FINGERPRINT_SLUGS = frozenset(
+    {
+        "michael",
+        "ogre",
+        "sandy_saguaro",
+        "prismatic_bean",
+        "human_boy",
+        "human_boy_boss",
+        "bosshumanboy",
+        "cretaceous_meg",
+        "cretaceous_megasaur",
+    }
+)
+
+
+def boss_fingerprint_from_loadout(loadout: Loadout) -> str:
+    """Boss segment of loadout fingerprint (sorted stacked modifiers, melmod parity)."""
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    raw = extras.get("boss_modifiers")
+    ids: list[str] = []
+    if isinstance(raw, list):
+        rows = raw
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            rows = parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            rows = [s.strip() for s in raw.split(",") if s.strip()]
+    else:
+        rows = []
+    meta = frozenset({"michael", "cretaceous_meg", "cretaceous_megasaur"})
+    for entry in rows:
+        item = str(entry or "").strip().lower()
+        if not item or item in meta or item in ids:
+            continue
+        ids.append(item)
+    if ids:
+        return "+".join(sorted(ids))
+    bid = (loadout.boss_id or "").strip().lower()
+    if bid in _META_BOSS_FINGERPRINT_SLUGS:
+        return "-"
+    return boss_fingerprint_id(loadout.boss_id)
 
 
 def slugify(art_or_name: str, fallback: str = "") -> str:
@@ -97,7 +143,7 @@ def loadout_fingerprint(loadout: Loadout) -> str:
     parts.append("|")
     _append_items(parts, loadout.stamps)
     parts.append("|")
-    parts.append(boss_fingerprint_id(loadout.boss_id))
+    parts.append(boss_fingerprint_from_loadout(loadout))
     parts.append("|")
     pin_effect = str(loadout.extras.get("pin_effect", "") or "")
     parts.append(pin_effect)

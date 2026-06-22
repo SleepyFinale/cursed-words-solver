@@ -283,6 +283,7 @@ def poison_from_previous_words(loadout: Loadout | None) -> float:
         return 0.0
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
     from cursed_words_solver.loadout import (
+        _encounter_historic_trusted_for_poison,
         _grid_number_from_extras,
         _scoring_previous_words_count_from_extras,
         green_poison_from_historic_words,
@@ -291,6 +292,7 @@ def poison_from_previous_words(loadout: Loadout | None) -> float:
     if (
         _grid_number_from_extras(extras) == 1
         and _scoring_previous_words_count_from_extras(extras) == 0
+        and not _encounter_historic_trusted_for_poison(extras)
     ):
         return 0.0
 

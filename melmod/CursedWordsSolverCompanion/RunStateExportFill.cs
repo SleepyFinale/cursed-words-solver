@@ -824,9 +824,19 @@ namespace CursedWordsSolverCompanion
 
             var scoringPrevious = RunStateExporter.GetCachedPreviousWords();
             var cacheCount = scoringPrevious != null ? scoringPrevious.Count : 0;
+            if (cacheCount == 0 && !histEmpty && source == "live")
+                cacheCount = CountHistoricWordsInJson(historicRaw);
             extras["scoring_previous_words_count"] = cacheCount.ToString();
             if (scoringPrevious == null || scoringPrevious.Count == 0)
             {
+                if (!histEmpty && source == "live" && cacheCount > 0)
+                {
+                    var prevFromLiveHist = FirstLetterFromHistoricJson(historicRaw);
+                    if (!string.IsNullOrEmpty(prevFromLiveHist))
+                        extras["previous_word_first_letter"] = prevFromLiveHist;
+                    return;
+                }
+
                 ClearGridOneStaleEncounterHistoric(extras);
                 var gridNum = TryParseGridNumber(
                     extras.TryGetValue("grid_number", out var gridRaw) ? gridRaw : null
@@ -1528,6 +1538,12 @@ namespace CursedWordsSolverCompanion
             var boss = bosses[0];
             var michaelMin = ResolveMichaelMinWordLength(boss, michaelBoss, player);
             var liveMin = ResolveLiveEncounterMinWordLength(player, michaelBoss, snapshot);
+            if (michaelMin <= 0 && liveMin > 0)
+                michaelMin = liveMin;
+            var drafted = ResolveMichaelDraftedCount(michaelBoss);
+            if (michaelMin <= 0 && drafted >= 3
+                && IsMichaelSummonedBossesDefeated(player, michaelBoss))
+                michaelMin = 25;
             if (michaelMin > 0)
                 snapshot.extras["michael_min_word_length"] = michaelMin.ToString();
             if (liveMin > 0)
@@ -1541,7 +1557,6 @@ namespace CursedWordsSolverCompanion
                 return;
             }
 
-            var drafted = ResolveMichaelDraftedCount(michaelBoss);
             if (michaelBoss != null)
             {
                 if (drafted >= 1 && drafted <= 3)
@@ -2196,6 +2211,7 @@ namespace CursedWordsSolverCompanion
                 "_michaelBoss",
                 "ActiveMichaelBoss",
                 "WordsmithController",
+                "WordsmithManager",
                 "TileSelectionManager",
             })
             {
@@ -2212,7 +2228,10 @@ namespace CursedWordsSolverCompanion
                     "RequiredWordLength",
                     "WordLengthRequirement",
                     "TargetWordLength",
-                    "WordLengthGoal"
+                    "WordLengthGoal",
+                    "WordsmithMinLength",
+                    "CurrentWordLength",
+                    "MinWordsmithLength"
                 );
                 if (min > 0)
                     return min;

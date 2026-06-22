@@ -11,6 +11,7 @@ from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColo
 from cursed_words_solver.rules.boss_effects import (
     active_boss_ids,
     boss_context,
+    boss_stage_display_suffix,
     boss_word_constraints,
     effective_target_score_multiplier,
     load_rules_catalog,
@@ -161,6 +162,26 @@ def test_michael_min_word_length_constraint_from_extras():
     )
     c = boss_word_constraints(loadout, RULES)
     assert c.min_len == 25
+
+
+def test_michael_stage_display_suffix():
+    loadout = _loadout(
+        boss_id="michael",
+        extras={
+            "run_stage": 6,
+            "boss_area_number": 6,
+            "michael_phase": 4,
+        },
+    )
+    assert boss_stage_display_suffix(loadout) == "Stage 6"
+
+
+def test_regular_boss_stage_display_suffix():
+    loadout = _loadout(
+        boss_id="salamander",
+        extras={"boss_area_number": 3},
+    )
+    assert boss_stage_display_suffix(loadout) == "Stage 3"
 
 
 def test_michael_finale_fallback_boss_area_six_and_encounter_min_length():

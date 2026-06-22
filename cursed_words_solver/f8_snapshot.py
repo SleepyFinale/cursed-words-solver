@@ -250,31 +250,15 @@ def _boss_extras_missing(
     boss_name = str(loadout.boss_name or "").strip()
     board_active = max(1, sum(board.active)) if board is not None else 25
 
-    michael_phase = _int_extra(extras, "michael_phase")
-    michael_defeated = extras.get("michael_summoned_bosses_defeated") in (
-        True,
-        "true",
-        "True",
-        "1",
-        1,
-    )
+    from cursed_words_solver.rules.boss_effects import michael_finale_export_expected
+
     michael_min = max(
         _int_extra(extras, "michael_min_word_length"),
         _int_extra(extras, "encounter_min_word_length"),
     )
 
-    probe = str(extras.get("michael_finale_probe") or "")
-    probe_defeated: bool | None = None
-    if "summoned_defeated=1" in probe:
-        probe_defeated = True
-    elif "summoned_defeated=0" in probe:
-        probe_defeated = False
-
-    finale_expected = (
-        michael_defeated
-        or probe_defeated is True
-        or michael_phase >= 4
-        or (str(boss_id).lower() == "michael" and michael_min >= board_active)
+    finale_expected = michael_finale_export_expected(
+        loadout, default_max_len=board_active
     )
 
     if not boss_id and not boss_name:
@@ -291,7 +275,7 @@ def _boss_extras_missing(
     if (
         run_stage >= 6
         and "boss" in node
-        and (michael_phase >= 4 or michael_defeated or probe_defeated is True)
+        and finale_expected
         and michael_min < board_active
         and "michael_min_word_length/encounter_min_word_length" not in missing
     ):

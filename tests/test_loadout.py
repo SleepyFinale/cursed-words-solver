@@ -127,6 +127,37 @@ def test_format_loadout_summary_boss_id_only_when_name_matches_slug():
     assert "(wolf)" not in format_loadout_summary(lo)
 
 
+def test_format_loadout_summary_michael_with_modifiers():
+    single = Loadout(
+        character="Beans",
+        boss_id="michael",
+        boss_name="Michael",
+        extras={
+            "michael_phase": 1,
+            "boss_area_number": 6,
+            "boss_modifiers": ["badger"],
+        },
+    )
+    summary = format_loadout_summary(single)
+    assert "boss=Michael" in summary
+    assert "modifiers=[badger]" in summary
+    assert "boss=badger" not in summary
+
+    stacked = Loadout(
+        character="Beans",
+        boss_id="michael",
+        boss_name="Michael",
+        extras={
+            "michael_phase": 3,
+            "boss_area_number": 6,
+            "boss_modifiers": ["badger", "robo_eel"],
+        },
+    )
+    stacked_summary = format_loadout_summary(stacked)
+    assert "boss=Michael" in stacked_summary
+    assert "modifiers=[badger, robo_eel]" in stacked_summary
+
+
 def test_format_loadout_summary_wad_of_cash_raw_pin_levels():
     """pin_*_level = upgrade picks; pin_*_variable = runtime scatter/bonus (not L/R display)."""
     lo = parse_run_state(
@@ -357,3 +388,35 @@ def test_f8_historic_still_behind_disk_warning(tmp_path, monkeypatch):
     assert note is not None
     assert "ahead of" in note
     assert "F8 again" in note
+
+
+def test_loadout_fingerprint_stacked_boss_modifiers():
+    from cursed_words_solver.fingerprints import loadout_fingerprint
+
+    loadout = Loadout(
+        character="Beans",
+        money=15,
+        boss_id="badger",
+        pin_branch="left",
+        extras={
+            "boss_modifiers": ["badger", "robo_eel"],
+            "pin_effect": "rainbow",
+        },
+    )
+    fp = loadout_fingerprint(loadout)
+    assert fp.endswith("|badger+robo_eel|rainbow:left")
+    assert "badger+robo_eel" in fp
+
+
+def test_reconcile_spc_from_live_historic_when_cache_empty():
+    from cursed_words_solver.loadout import reconcile_scoring_previous_words_count
+
+    extras = {
+        "encounter_historic_source": "live",
+        "historic_words": json.dumps(
+            [{"word": "attractor", "score": 100, "green_tile_count": 1}]
+        ),
+        "scoring_previous_words_count": "0",
+    }
+    reconcile_scoring_previous_words_count(extras)
+    assert extras["scoring_previous_words_count"] == "1"

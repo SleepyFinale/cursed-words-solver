@@ -1912,6 +1912,14 @@ TUNED_BOSSES: dict[str, dict] = {
         "wiki_page": "Human_Boy",
         "wiki_effect": "Steals a sticker or stamp before the first grid",
     },
+    "michael": {
+        "name": "Michael",
+        "type": "custom",
+        "effect_class": "meta",
+        "game_class": "MichaelBoss",
+        "wiki_page": "Michael_(boss)",
+        "wiki_effect": "Draft encounter; finale requires a 25-tile word using every tile.",
+    },
     "capybara": {
         "name": "Capybara",
         "type": "shuffle_loadout_order",
@@ -2247,6 +2255,7 @@ ALIASES: dict[str, dict[str, str]] = {
         "bosshumanboy": "human_boy_boss",
         "humanboyboss": "human_boy_boss",
         "human_boy": "human_boy_boss",
+        "michaelboss": "michael",
     },
     "pins": {
         "abacus": "abacus",

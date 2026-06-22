@@ -669,6 +669,41 @@ def _encounter_score_earned_from_extras(extras: dict[str, Any]) -> float:
         return 0.0
 
 
+def _encounter_historic_trusted_for_poison(extras: dict[str, Any]) -> bool:
+    """True when historic_words is from the live encounter (not stale cross-encounter bleed)."""
+    hist = str(extras.get("historic_words", "") or "").strip()
+    if not hist or hist == "[]":
+        return False
+    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
+    if source in ("live", "green_poison_only"):
+        return True
+    if source in (
+        "grid1_no_scoring_cache",
+        "historic_paths_stale",
+        "grid_advanced",
+        "grid_advanced_disk",
+        "grid_start_cleared",
+    ):
+        return False
+    return False
+
+
+def _green_poison_row_contribution(row: dict[str, Any]) -> float:
+    try:
+        green_count = int(row.get("green_tile_count") or 0)
+    except (TypeError, ValueError):
+        green_count = 0
+    if green_count <= 0:
+        return 0.0
+    try:
+        word_score = float(row.get("score") or 0)
+    except (TypeError, ValueError):
+        word_score = 0.0
+    if word_score <= 0:
+        return 0.0
+    return green_count * round(word_score * 0.1)
+
+
 def green_poison_from_historic_words(extras: dict[str, Any] | None) -> float:
     """ApplyPoisonEffect parity: sum green_tile_count × 10% of each prior word score."""
     if not isinstance(extras, dict):
@@ -677,6 +712,9 @@ def green_poison_from_historic_words(extras: dict[str, Any] | None) -> float:
     rows = _parse_historic_words_rows(raw)
     if not rows:
         return 0.0
+    if _encounter_historic_trusted_for_poison(extras):
+        return sum(_green_poison_row_contribution(row) for row in rows if isinstance(row, dict))
+
     enc_earned = _encounter_score_earned_from_extras(extras)
     if enc_earned <= 0:
         raw_enc = extras.get("encounter_score_earned")
@@ -694,6 +732,8 @@ def green_poison_from_historic_words(extras: dict[str, Any] | None) -> float:
     total = 0.0
     score_used = 0.0
     for row in reversed(rows):
+        if not isinstance(row, dict):
+            continue
         try:
             green_count = int(row.get("green_tile_count") or 0)
         except (TypeError, ValueError):
@@ -709,8 +749,7 @@ def green_poison_from_historic_words(extras: dict[str, Any] | None) -> float:
         if score_used + word_score > enc_earned + 1e-6:
             continue
         score_used += word_score
-        scaled = round(word_score * 0.1)
-        total += green_count * scaled
+        total += _green_poison_row_contribution(row)
     return total
 
 
@@ -1481,12 +1520,17 @@ def clear_grid_one_stale_encounter_historic(extras: dict[str, Any]) -> bool:
 
 
 def reconcile_scoring_previous_words_count(extras: dict[str, Any]) -> None:
-    """Cap scoring_previous_words_count when historic JSON is present and trusted."""
+    """Cap or infer scoring_previous_words_count when historic JSON is present."""
     hist = str(extras.get("historic_words", "") or "").strip()
     hist_count = _historic_words_count(hist)
     spc = _scoring_previous_words_count_from_extras(extras)
     if hist_count > 0 and spc > hist_count:
         extras["scoring_previous_words_count"] = str(hist_count)
+        return
+    if hist_count > 0 and spc == 0:
+        source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
+        if source == "live":
+            extras["scoring_previous_words_count"] = str(hist_count)
 
 
 def reconcile_historic_after_grid_advance(extras: dict[str, Any]) -> bool:
@@ -1588,11 +1632,12 @@ def prune_historic_incompatible_with_board(
         if isinstance(row, dict) and _historic_entry_matches_board(board, row):
             return False
     grid = _grid_number_from_extras(extras)
+    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
     try:
         enc_earned = int(extras.get("encounter_score_earned") or 0)
     except (TypeError, ValueError):
         enc_earned = 0
-    if grid == 1 and enc_earned == 0:
+    if grid == 1 and enc_earned == 0 and source != "live":
         extras.pop("historic_words", None)
         extras.pop("red_tiles_used_encounter", None)
         extras["scoring_previous_words_count"] = "0"
@@ -2444,7 +2489,7 @@ def loadout_fingerprint_stale_warning(
     loadout: Loadout | None,
     run_state_extras: dict[str, Any] | None = None,
 ) -> str | None:
-    """Warn when melmod extras.loadout_fingerprint disagrees with parsed sticker levels."""
+    """Warn when melmod extras.loadout_fingerprint disagrees with parsed loadout."""
     if loadout is None:
         return None
     from cursed_words_solver.fingerprints import loadout_fingerprint
@@ -2455,7 +2500,7 @@ def loadout_fingerprint_stale_warning(
     if not exported or exported == computed:
         return None
     return (
-        "run_state loadout_fingerprint disagrees with sticker levels "
+        "run_state loadout_fingerprint disagrees with parsed loadout "
         f"({exported} vs {computed}) — press F8 again."
     )
 
@@ -2578,7 +2623,17 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
         parts.append(f"{len(loadout.stickers)} sticker(s)")
     if loadout.stamps:
         parts.append(f"{len(loadout.stamps)} stamp(s)")
-    if loadout.boss_id or loadout.boss_name:
+    from cursed_words_solver.rules.boss_effects import (
+        active_boss_ids,
+        michael_encounter_active,
+    )
+
+    if michael_encounter_active(loadout):
+        parts.append("boss=Michael")
+        mods = active_boss_ids(loadout)
+        if mods:
+            parts.append(f"modifiers=[{', '.join(mods)}]")
+    elif loadout.boss_id or loadout.boss_name:
         bid = (loadout.boss_id or "").strip()
         bname = (loadout.boss_name or "").strip()
         if bid:
@@ -2588,9 +2643,9 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
                 parts.append(f"boss={bid}")
         elif bname:
             parts.append(f"boss={bname}")
-    mods = loadout.extras.get("boss_modifiers")
-    if isinstance(mods, list) and len(mods) > 1:
-        parts.append(f"modifiers=[{', '.join(str(m) for m in mods)}]")
+        mods = loadout.extras.get("boss_modifiers")
+        if isinstance(mods, list) and len(mods) > 1:
+            parts.append(f"modifiers=[{', '.join(str(m) for m in mods)}]")
     pin = loadout.extras.get("pin_effect")
     if pin:
         branch = f" ({loadout.pin_branch})" if loadout.pin_branch else ""

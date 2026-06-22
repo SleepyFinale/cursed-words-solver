@@ -213,7 +213,7 @@ def test_twinkle_toes_screen_uses_meaningful_search_budget(tmp_path):
     loadout = Loadout(
         stamps=[LoadoutItem(id="twinkle_toes", name="Twinkle Toes", kind="stamp")],
     )
-    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=45.0)
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=60.0)
     captured_budgets: list[float] = []
     original_find = searcher.find_best_words
 
@@ -260,18 +260,18 @@ def test_twinkle_toes_grid5_nanas_round_log_regression():
     flags = stamp_search_flags(loadout)
     d = WordDictionary(GAME_WORDLIST_PATH)
     searcher = WordSearcher(
-        dictionary=d, min_len=1, max_len=25, time_budget=45.0, search_workers=8
+        dictionary=d, min_len=1, max_len=25, time_budget=60.0, search_workers=8
     )
     searcher.scoring = ScoringPipeline()
     searcher.validator.quest_loadout = loadout
     assert searcher.validator.word_ok(board, nanas_path, "nanas", flags)
 
-    deadline = time.monotonic() + 45.0
+    deadline = time.monotonic() + 60.0
     swapped_board, swap_record, results = search_with_twinkle_toes_swap(
         searcher,
         board,
         loadout,
-        time_budget=45.0,
+        time_budget=60.0,
         top_n=3,
         solve_deadline=deadline,
     )
@@ -386,17 +386,17 @@ def test_twinkle_swap_time_budget_caps_when_rack_placement_pending():
     from cursed_words_solver.app import RACK_RESERVE_FRAC, twinkle_swap_time_budget
 
     assert twinkle_swap_time_budget(
-        search_budget=45.0,
+        search_budget=60.0,
         rack_placement_pending=True,
         solve_remaining_sec=44.0,
-    ) == pytest.approx(45.0 * (1.0 - RACK_RESERVE_FRAC))
+    ) == pytest.approx(60.0 * (1.0 - RACK_RESERVE_FRAC))
 
 
 def test_twinkle_swap_time_budget_uses_remaining_without_rack():
     from cursed_words_solver.app import twinkle_swap_time_budget
 
     assert twinkle_swap_time_budget(
-        search_budget=45.0,
+        search_budget=60.0,
         rack_placement_pending=False,
         solve_remaining_sec=44.0,
     ) == pytest.approx(44.0)
@@ -406,7 +406,7 @@ def test_twinkle_swap_deadline_reserves_rack_budget():
     from cursed_words_solver.app import twinkle_swap_deadline
 
     started = 1000.0
-    solve_deadline = started + 45.0
+    solve_deadline = started + 60.0
     twinkle_budget = 29.25
     assert twinkle_swap_deadline(
         search_started=started,
@@ -427,7 +427,7 @@ def test_twinkle_plus_rack_orchestration_leaves_consumable_boost_time():
         remaining_rack_tiles,
     )
 
-    search_budget = 45.0
+    search_budget = 60.0
     search_started = time.monotonic()
     solve_deadline = search_started + search_budget
 

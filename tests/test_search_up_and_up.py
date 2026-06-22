@@ -332,7 +332,7 @@ def test_find_best_words_poetcraft_includes_center() -> None:
         dictionary=dictionary,
         min_len=1,
         max_len=25,
-        time_budget=45.0,
+        time_budget=60.0,
         search_workers=1,
         wordlist_path=wl,
     )

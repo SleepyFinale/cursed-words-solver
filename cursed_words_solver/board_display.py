@@ -15,6 +15,10 @@ from cursed_words_solver.rules.fraction_tiles import format_fraction_tile
 def _format_tile_char(tile: Tile) -> str:
     if tile.curse == CurseType.FRACTION:
         return format_fraction_tile(tile)
+    if tile.curse == CurseType.NUMBER:
+        face = (tile.letter or tile.char or "").strip()
+        if face.isdigit():
+            return face
     if tile.curse == CurseType.CURRENCY:
         sym = normalize_tile_glyph(tile.char or tile.letter or "")
         if sym in CURRENCY_MAP:

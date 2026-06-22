@@ -477,8 +477,10 @@ def _trace_rule_step(
 
 
 def _boss_is_salamander(loadout: Loadout) -> bool:
+    from cursed_words_solver.rules.boss_effects import boss_modifier_active
+
     bid = (loadout.boss_id or "").strip().lower()
-    return bid == "salamander" or "bosslesspoints" in bid
+    return boss_modifier_active(loadout, "salamander") or "bosslesspoints" in bid
 
 
 def _has_mutating_dna_stamp(loadout: Loadout) -> bool:

@@ -1823,6 +1823,15 @@ namespace CursedWordsSolverCompanion
                 return;
             }
 
+            var michaelBossDraft = RunStateExportFill.TryFindMichaelBossExtended(player, bosses);
+            if (michaelBossDraft != null)
+            {
+                snapshot.boss_id = "michael";
+                snapshot.boss_name = "Michael";
+                snapshot.boss_effect = "";
+                return;
+            }
+
             BossModifier displayBoss = null;
             foreach (var b in bosses)
             {

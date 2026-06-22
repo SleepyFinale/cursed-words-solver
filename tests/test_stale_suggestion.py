@@ -1462,7 +1462,7 @@ def test_poll_suppresses_disk_catchup_after_search_budget_grace(
     board_fp = "2|4,0:A/letter/colorless;"
     old = (
         datetime.now(timezone.utc)
-        - timedelta(seconds=f8_export_catchup_grace_sec(45.0) + 1)
+        - timedelta(seconds=f8_export_catchup_grace_sec(60.0) + 1)
     ).isoformat()
     suggestion_path.write_text(
         json.dumps(
@@ -1486,7 +1486,7 @@ def test_poll_suppresses_disk_catchup_after_search_budget_grace(
     assert poll_invalidate_last_suggestion(
         poll_extras,
         current_board_fp=board_fp,
-        search_budget_sec=45.0,
+        search_budget_sec=60.0,
     ) is None
     assert suggestion_path.exists()
 
@@ -1541,12 +1541,12 @@ def test_poll_suppresses_historic_catchup_with_money_only_board_fp_drift(
     assert workflow_invalidate_suppressed_for_export_catchup(
         poll_extras,
         current_board_fp=board_fp_current,
-        search_budget_sec=45.0,
+        search_budget_sec=60.0,
     )
     assert poll_invalidate_last_suggestion(
         poll_extras,
         current_board_fp=board_fp_current,
-        search_budget_sec=45.0,
+        search_budget_sec=60.0,
     ) is None
     assert suggestion_path.exists()
 
@@ -1576,11 +1576,11 @@ def test_poll_suppresses_historic_catchup_within_search_budget_grace(
         "historic_words": '[{"word":"penne"},{"word":"zooty"}]',
         "previous_word_first_letter": "f",
     }
-    assert f8_export_catchup_grace_sec(45.0) >= 50.0
+    assert f8_export_catchup_grace_sec(60.0) >= 65.0
     assert poll_invalidate_last_suggestion(
         poll_extras,
         current_board_fp=board_fp,
-        search_budget_sec=45.0,
+        search_budget_sec=60.0,
     ) is None
     assert suggestion_path.exists()
 

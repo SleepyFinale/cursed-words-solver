@@ -3524,8 +3524,15 @@ def celestial_body_tile_eligible(
         return False
     rank = card_rank(tile)
     path_end = len(path) - 1
-    boss_id = (loadout.boss_id or "").strip().lower() if loadout else ""
-    salamander = boss_id == "salamander" or "bosslesspoints" in boss_id
+    from cursed_words_solver.rules.boss_effects import boss_modifier_active
+
+    salamander = (
+        loadout is not None
+        and (
+            boss_modifier_active(loadout, "salamander")
+            or "bosslesspoints" in str(loadout.boss_id or "").strip().lower()
+        )
+    )
 
     if rank and rank.upper() in POKER_RANKS:
         return is_last_card_rank_on_path(board, path, path_index)
@@ -4492,9 +4499,10 @@ def _scatter_tier_floor_mod(loadout: Loadout | None, grid: int) -> int:
     except (TypeError, ValueError):
         return max(0, grid - 1)
     boss_id = str(loadout.boss_id or "").strip().lower()
-    if boss_id in _SCATTER_TIER_IGNORE_FLOOR_BOSSES and (
-        not mods or all(slug in _SCATTER_TIER_IGNORE_FLOOR_BOSSES for slug in mods)
-    ):
+    slugs = list(mods) if mods else []
+    if not slugs and boss_id in _SCATTER_TIER_IGNORE_FLOOR_BOSSES:
+        slugs = [boss_id]
+    if slugs and all(slug in _SCATTER_TIER_IGNORE_FLOOR_BOSSES for slug in slugs):
         return 0
     return total
 
@@ -5065,6 +5073,7 @@ def grid_path_sticker_level(
     When Snapshot copies Down Under at a higher level than the grid scatter tier, the
     grid path keeps the exported scattered level (copy uses max separately).
     """
+    from cursed_words_solver.rules.boss_effects import boss_modifier_active
     from cursed_words_solver.rules.rule_lookup import slugify_name
 
     slug_norm = slugify_name(slug)
@@ -5165,7 +5174,7 @@ def grid_path_sticker_level(
         return max(2, grid_path_encounter_level(loadout))
     if (
         loadout is not None
-        and str(loadout.boss_id or "").strip().lower() == "badger"
+        and boss_modifier_active(loadout, "badger")
         and not tile_level_known
     ):
         level = max(level, grid_number(loadout))

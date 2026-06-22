@@ -890,7 +890,7 @@ def test_reserve_scaling_leaves_positive_main_slice():
     board, _loadout = _yicker_board_and_loadout()
     from cursed_words_solver.search import is_fraction_tile, is_number_like_tile
 
-    tb = 45.0
+    tb = 60.0
     has_num = any(is_number_like_tile(t) for t in board.flat)
     has_frac = any(is_fraction_tile(t) for t in board.flat)
     nr = min(10.0, tb * 0.45) if has_num else 0.0
@@ -918,7 +918,7 @@ def test_serial_workers_finds_candidates_on_yicker_board():
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
         min_len=1,
         max_len=25,
-        time_budget=45.0,
+        time_budget=60.0,
         wordlist_path=GAME_WORDLIST_PATH,
         search_workers=1,
     )
@@ -926,7 +926,7 @@ def test_serial_workers_finds_candidates_on_yicker_board():
     assert results
     timing = searcher.last_search_timing
     assert timing is not None
-    assert timing.main_dfs_slice_sec >= 45.0 * 0.30
+    assert timing.main_dfs_slice_sec >= 60.0 * 0.30
 
 
 @pytest.mark.slow
@@ -939,7 +939,7 @@ def test_yicker_board_finds_high_scoring_word():
     from cursed_words_solver.search_parallel import warmup_search_pool
 
     board, loadout = _yicker_board_and_loadout()
-    budget = 45.0
+    budget = 60.0
     warmup_search_pool(GAME_WORDLIST_PATH, 2)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -1011,7 +1011,7 @@ def test_xylometers_board_finds_high_scoring_word():
     from cursed_words_solver.search_parallel import warmup_search_pool
 
     board, loadout = _xylometers_board_and_loadout()
-    budget = 45.0
+    budget = 60.0
     warmup_search_pool(GAME_WORDLIST_PATH, 2)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),

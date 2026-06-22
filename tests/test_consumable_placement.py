@@ -1037,7 +1037,7 @@ def test_lazy_n5_variant_count_bounded():
 
 
 def test_global_solve_deadline_skips_mahjong_when_expired():
-    search_budget = 45.0
+    search_budget = 60.0
     search_started = 1000.0
     solve_deadline = search_started + search_budget
 
@@ -1827,7 +1827,7 @@ def test_run_state_under_construction_two_placements_with_gen_budget():
         top_n=1,
         rules=rules,
         variant_gen_budget=2.0,
-        solve_deadline=time_mod.monotonic() + 45.0,
+        solve_deadline=time_mod.monotonic() + 60.0,
     )
     assert boost
     assert len(recs) == 2
@@ -1859,7 +1859,7 @@ def test_westernisations_consumable_fallback_finds_center_word() -> None:
         dictionary=WordDictionary(wl_path),
         min_len=max(7, constraints.min_len),
         max_len=min(25, constraints.max_len or 25),
-        time_budget=45.0,
+        time_budget=60.0,
         search_workers=1,
     )
     board_only = searcher.find_best_words(board, loadout=loadout, top_n=1)
@@ -1870,7 +1870,7 @@ def test_westernisations_consumable_fallback_finds_center_word() -> None:
         board,
         loadout,
         rack,
-        time_budget=45.0,
+        time_budget=60.0,
         top_n=1,
         rules=rules,
     )

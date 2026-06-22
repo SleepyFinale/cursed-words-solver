@@ -95,7 +95,7 @@ from cursed_words_solver.loadout import (
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.boss_effects import (
-    boss_area_number,
+    boss_stage_display_suffix,
     boss_word_constraints,
 )
 from cursed_words_solver.rules.quest_effects import (
@@ -1135,6 +1135,7 @@ class SolverApp:
             from cursed_words_solver.loadout import encounter_missing_boss_should_warn
             from cursed_words_solver.rules.boss_effects import (
                 michael_finale_active,
+                michael_finale_export_expected,
             )
 
             if encounter_missing_boss_should_warn(loadout):
@@ -1156,6 +1157,9 @@ class SolverApp:
                 and "boss" in _node
                 and effective_min < 25
                 and not michael_finale_active(loadout, default_max_len=board_max_len)
+                and michael_finale_export_expected(
+                    loadout, default_max_len=board_max_len
+                )
             ):
                 _cobra_raw = _run_extras.get("cobra_min_length")
                 _has_stacked_min = False
@@ -1171,6 +1175,10 @@ class SolverApp:
                         flush=True,
                     )
                     return
+            michael_finale_guaranteed = (
+                michael_finale_active(loadout, default_max_len=board_max_len)
+                and effective_min == effective_max == board_max_len
+            )
             rules = self._scoring.rules
             rack_placement_pending = (
                 not sandy_auto_place
@@ -1197,8 +1205,7 @@ class SolverApp:
             )
             if loadout.boss_id or loadout.boss_name:
                 boss_label = boss_display_name(loadout, self._scoring.rules)
-                area = boss_area_number(loadout)
-                search_msg += f", Boss: {boss_label} (Area {area})"
+                search_msg += f", Boss: {boss_label} ({boss_stage_display_suffix(loadout)})"
                 if loadout.extras.get("boss_cursed"):
                     search_msg += " (cursed)"
             quest_label = active_quest_name(loadout)
@@ -1381,6 +1388,27 @@ class SolverApp:
                             "placements.",
                             flush=True,
                         )
+
+            if not results and michael_finale_guaranteed:
+                print(
+                    f"  Michael finale: no word in {search_budget:.0f}s "
+                    "— continuing until solution found…",
+                    flush=True,
+                )
+                completion_start = time.monotonic()
+                completion_results = self._searcher.find_best_words(
+                    search_board,
+                    loadout=loadout,
+                    top_n=self.config.top_n_results,
+                    run_until_found=True,
+                )
+                if completion_results:
+                    results = completion_results
+                    print(
+                        f"  Found in {time.monotonic() - completion_start:.1f}s "
+                        "additional search",
+                        flush=True,
+                    )
 
             baseline_score = results[0].score if results else 0.0
             baseline_rank = (

@@ -14,6 +14,7 @@ from cursed_words_solver.rules.boss_effects import (
     floor_mod_for_rule,
     load_rules_catalog,
     michael_finale_active,
+    michael_finale_export_expected,
     resolve_boss_scaling_for_rule,
 )
 from cursed_words_solver.rules.boss_grid_effects import apply_boss_grid_mutations
@@ -90,6 +91,35 @@ def test_boss_display_name_stacked() -> None:
     name = boss_display_name(loadout, RULES)
     assert "Yeti Crab" in name
     assert "Salamander" in name
+
+
+def test_boss_display_name_michael_draft_phase() -> None:
+    loadout = Loadout(
+        boss_id="michael",
+        boss_name="Michael",
+        extras={
+            "michael_phase": 1,
+            "boss_area_number": 6,
+            "boss_modifiers": ["badger"],
+        },
+    )
+    assert boss_display_name(loadout, RULES) == "Michael"
+
+
+def test_badger_grid_level_when_boss_id_is_michael() -> None:
+    from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
+
+    loadout = Loadout(
+        boss_id="michael",
+        extras={
+            "michael_phase": 1,
+            "boss_area_number": 6,
+            "boss_modifiers": ["badger"],
+            "grid_number": 4,
+        },
+    )
+    level = grid_path_sticker_level(loadout, "lucky_scarf")
+    assert level >= 4
 
 
 def test_michael_finale_requires_all_active_tiles() -> None:
@@ -202,6 +232,73 @@ def test_michael_phase_two_probe_vetoes_false_finale() -> None:
     c = boss_word_constraints(loadout, RULES, default_max_len=25)
     assert c.min_len == 7
     assert c.max_len == 25
+
+
+def test_michael_phase_one_badger_not_finale_expected() -> None:
+    """Michael phase 1 wordsmith (badger): not finale; search 1–25."""
+    loadout = Loadout(
+        boss_id="badger",
+        boss_name="FewerGrids",
+        extras={
+            "boss_area_number": 6,
+            "run_stage": "6",
+            "run_node_type": "Boss",
+            "michael_phase": 1,
+            "boss_modifiers": ["badger"],
+            "boss_modifier_floor_mods": {"badger": 1},
+            "michael_finale_probe": (
+                "finale=0,michael_boss=1,summoned_defeated=0,live_min=-,active_tiles=25"
+            ),
+            "encounter_mode": "encounter",
+        },
+    )
+    assert not michael_finale_export_expected(loadout, default_max_len=25)
+    assert not michael_finale_active(loadout, default_max_len=25)
+    c = boss_word_constraints(loadout, RULES, default_max_len=25)
+    assert c.min_len == 1
+    assert c.max_len == 25
+
+
+def test_michael_finale_export_expected_true_when_defeated() -> None:
+    loadout = Loadout(
+        extras={
+            "michael_summoned_bosses_defeated": True,
+            "michael_min_word_length": 25,
+            "encounter_min_word_length": 25,
+            "michael_finale_probe": (
+                "finale=1,michael_boss=1,summoned_defeated=1,live_min=25,active_tiles=25"
+            ),
+        },
+    )
+    assert michael_finale_export_expected(loadout, default_max_len=25)
+
+    puzzle = Loadout(
+        extras={
+            "michael_puzzle_grid": True,
+            "encounter_mode": "puzzle",
+        },
+    )
+    assert michael_finale_export_expected(puzzle, default_max_len=25)
+
+
+def test_michael_phase_two_probe_vetoes_export_expected() -> None:
+    """Stale finale extras with probe summoned_defeated=0 must not expect finale export."""
+    loadout = Loadout(
+        boss_id="michael",
+        extras={
+            "boss_modifiers": ["capybara", "cobra"],
+            "boss_area_number": 6,
+            "michael_phase": 4,
+            "michael_summoned_bosses_defeated": True,
+            "michael_min_word_length": 25,
+            "encounter_min_word_length": 25,
+            "michael_finale_probe": (
+                "finale=1,michael_boss=1,summoned_defeated=0,live_min=25,active_tiles=25"
+            ),
+            "encounter_mode": "encounter",
+        },
+    )
+    assert not michael_finale_export_expected(loadout, default_max_len=25)
 
 
 def test_michael_phase_two_user_path_movement_and_word() -> None:

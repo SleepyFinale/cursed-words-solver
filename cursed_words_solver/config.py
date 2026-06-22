@@ -9,9 +9,11 @@ from typing import Any
 
 CONFIG_DIR = Path.home() / ".cursed_words_solver"
 CONFIG_PATH = CONFIG_DIR / "config.json"
+DEFAULT_SEARCH_TIME_BUDGET_SEC = 60.0
 LEGACY_SEARCH_TIME_BUDGET_SEC = 2.0
 PREVIOUS_SEARCH_TIME_BUDGET_SEC = 15.0
 PREVIOUS_DEFAULT_SEARCH_TIME_BUDGET_SEC = 30.0
+PREVIOUS_SEARCH_TIME_BUDGET_SEC_45 = 45.0
 LEGACY_MAX_WORD_LENGTH = 12
 PREVIOUS_GRID_REROLL_GAP_RATIO = 0.6
 RUN_STATE_PATH = CONFIG_DIR / "run_state.json"
@@ -59,7 +61,7 @@ class AppConfig:
     board_region: Region = field(default_factory=Region)
     rack_region: Region = field(default_factory=Region)
     hotkey: str = "f8"
-    search_time_budget_sec: float = 60.0
+    search_time_budget_sec: float = DEFAULT_SEARCH_TIME_BUDGET_SEC
     top_n_results: int = 3
     wordlist: str = "game"
     show_board_highlight: bool = True
@@ -94,7 +96,9 @@ class AppConfig:
         if not CONFIG_PATH.exists():
             return cls()
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        search_time_budget_sec = float(data.get("search_time_budget_sec", 60.0))
+        search_time_budget_sec = float(
+            data.get("search_time_budget_sec", DEFAULT_SEARCH_TIME_BUDGET_SEC)
+        )
         migrated = False
         if "min_word_length" in data or "max_word_length" in data:
             migrated = True
@@ -102,8 +106,9 @@ class AppConfig:
             LEGACY_SEARCH_TIME_BUDGET_SEC,
             PREVIOUS_SEARCH_TIME_BUDGET_SEC,
             PREVIOUS_DEFAULT_SEARCH_TIME_BUDGET_SEC,
+            PREVIOUS_SEARCH_TIME_BUDGET_SEC_45,
         ):
-            search_time_budget_sec = 60.0
+            search_time_budget_sec = DEFAULT_SEARCH_TIME_BUDGET_SEC
             migrated = True
         if int(data.get("max_word_length", 15)) == LEGACY_MAX_WORD_LENGTH:
             migrated = True

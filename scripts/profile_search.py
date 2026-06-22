@@ -24,7 +24,7 @@ Examples (from repo root):
 
   python scripts/profile_search.py --latest 8 --budget 15
 
-  python scripts/profile_search.py --round-logs --budget 45
+  python scripts/profile_search.py --round-logs --budget 60
 
   python scripts/profile_search.py --round-logs --mismatches-only
 

@@ -10,6 +10,7 @@ from typing import Any, Callable, Iterator
 
 from concurrent.futures import ProcessPoolExecutor
 
+from cursed_words_solver.config import DEFAULT_SEARCH_TIME_BUDGET_SEC
 from cursed_words_solver.dictionary import TrieCursor, WordDictionary
 from cursed_words_solver.models import (
     CHESS_CURSES,
@@ -604,6 +605,40 @@ def path_letter_tiles_match_word(
             return False
         char_pos += 1
     return char_pos == len(word)
+
+
+def _tile_accepts_word_letter(
+    tile: Tile,
+    path_index: int,
+    letter: str,
+    word: str,
+    *,
+    flags: SearchFlagsMask = 0,
+) -> bool:
+    """Whether dictionary letter may sit on tile at path_index (full-board word placement)."""
+    flags = coerce_search_flags(flags)
+    ch = letter.lower()
+    if not ch.isalpha():
+        return False
+    if not number_position_valid(tile, path_index, segment=word, flags=flags):
+        return False
+    if not fraction_position_valid(tile, path_index, relaxed=False):
+        return False
+    if tile.curse == CurseType.LETTER:
+        options = resolve_letter_options(tile, path_index, flags=flags)
+        allowed = {o.lower() for o in options if len(o) == 1 and o.isalpha()}
+        return not allowed or ch in allowed
+    if tile.curse in CHESS_CURSES:
+        face = (tile.letter or "").strip()
+        if face not in ("", "?"):
+            options = resolve_letter_options(tile, path_index, flags=flags)
+            allowed = {o.lower() for o in options if len(o) == 1 and o.isalpha()}
+            if allowed and ch not in allowed:
+                return False
+        return True
+    if tile.curse == CurseType.NUMBER:
+        return is_numeric_wildcard(tile, path_index, flags=flags, segment=word)
+    return True
 
 
 def word_assignable_on_path(
@@ -2598,7 +2633,7 @@ class WordSearcher:
         dictionary: WordDictionary | None = None,
         min_len: int = 3,
         max_len: int = 15,
-        time_budget: float = 45.0,
+        time_budget: float = DEFAULT_SEARCH_TIME_BUDGET_SEC,
         score_fn: Callable | None = None,
         candidate_heap_size: int | None = None,
         blocked: bool = False,
@@ -2745,7 +2780,11 @@ class WordSearcher:
     ) -> bool:
         if self._use_dfs_bb_override is not None:
             return self._use_dfs_bb_override
-        if self._graph_ctx is not None and self._graph_ctx.item_mask.bit_count() >= 2:
+        if (
+            self._graph_ctx is not None
+            and self._graph_ctx.item_mask.bit_count() >= 2
+            and not getattr(self, "_full_board_exact", False)
+        ):
             # Prefix bounds ignore scattered grid-item scoring; DFS BB prunes
             # routes that must pass through multiple grid items (e.g. pie + extinguisher).
             return False
@@ -5388,6 +5427,115 @@ class WordSearcher:
         finally:
             self._parallel_executor = saved_pool
 
+    def _collect_full_board_hamiltonian_candidates(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        deadline: float,
+    ) -> None:
+        """Full-board exact length: try each dictionary word of matching length."""
+        active = _active_indices(board)
+        n = len(active)
+        if n < 1 or self.min_len != n or self.max_len != n:
+            return
+
+        words = self.dictionary.words_by_length.get(n, ())
+        if not words:
+            return
+
+        ctx = self._search_ctx(loadout)
+        stamp_flags = ctx.search_flags
+        graph_ctx = self._board_graph(board)
+        found = False
+
+        def score_path(
+            path: list[int],
+            word: str,
+            *,
+            resolved_word: str | None = None,
+        ) -> float | None:
+            return self._rank_score_for_candidate(
+                board,
+                path,
+                word,
+                loadout,
+                prune_heap=candidates,
+                resolved_word=resolved_word,
+            )
+
+        def find_path_for_word(target: str) -> list[int] | None:
+            target = target.lower()
+            if len(target) != n:
+                return None
+
+            def dfs(path: list[int], visited_mask: int) -> list[int] | None:
+                if self._time_expired():
+                    return None
+                if deadline != float("inf") and time.monotonic() >= deadline:
+                    return None
+                k = len(path)
+                if k == n:
+                    if self.validator.word_ok(board, path, target, stamp_flags):
+                        return path
+                    return None
+                cell = path[-1]
+                nbr_mask = neighbors_mask(
+                    board,
+                    visited_mask,
+                    cell_id=cell,
+                    flags=stamp_flags,
+                    graph_ctx=graph_ctx,
+                )
+                next_ch = target[k]
+                for nbr in _iter_expansion_neighbors(
+                    board,
+                    visited_mask,
+                    cell_id=cell,
+                    path=path,
+                    path_length=k,
+                    flags=stamp_flags,
+                    nbr_mask=nbr_mask,
+                ):
+                    tile = board.get_by_index(nbr)
+                    if not _tile_accepts_word_letter(
+                        tile, k, next_ch, target, flags=stamp_flags
+                    ):
+                        continue
+                    hit = dfs(path + [nbr], visited_mask | (1 << nbr))
+                    if hit is not None:
+                        return hit
+                return None
+
+            for start in _legal_word_start_indices(board):
+                tile = board.get_by_index(start)
+                if not _tile_accepts_word_letter(
+                    tile, 0, target[0], target, flags=stamp_flags
+                ):
+                    continue
+                hit = dfs([start], 1 << start)
+                if hit is not None:
+                    return hit
+            return None
+
+        for target in words:
+            if found:
+                break
+            path = find_path_for_word(target)
+            if path is None:
+                continue
+            found = True
+            self._consider_path_candidate(
+                board,
+                loadout,
+                candidates,
+                path,
+                target,
+                stamp_flags,
+                score_path,
+                resolved_word=target,
+            )
+
     def find_best_words(
         self,
         board: Board,
@@ -5395,11 +5543,13 @@ class WordSearcher:
         top_n: int = 3,
         *,
         deadline: float | None = None,
+        run_until_found: bool = False,
     ) -> list[WordResult]:
         if self.blocked:
             return []
         from cursed_words_solver.models import reset_board_flat_call_count
 
+        self._run_until_found = run_until_found
         self._score_cache.clear()
         self._dict_path_cache.clear()
         self._dict_valid_words_cache.clear()
@@ -5410,6 +5560,12 @@ class WordSearcher:
         loadout = loadout or Loadout(money=board.money)
         board = effective_board_for_loadout(board, loadout, self.scoring.rules)
         _active = _active_indices(board)
+        active_count = len(_active)
+        self._full_board_exact = (
+            self.min_len == self.max_len
+            and self.min_len == active_count
+            and self.min_len >= 20
+        )
         self.validator.quest_loadout = loadout
         self.validator.extra_valid_words = equipped_improve_words(loadout)
         set_quest_movement_loadout(loadout)
@@ -5482,7 +5638,11 @@ class WordSearcher:
                     )
         placement_screen = bool(getattr(self, "_placement_screen_pass", False))
         required_placement = bool(self.validator.required_consumable_indices)
-        if has_number_tiles:
+        if self._full_board_exact:
+            number_reserve = 0.0
+            void_reserve = 0.0
+            fraction_cluster_reserve = 0.0
+        elif has_number_tiles:
             # Tight budgets need more time reserved for digit passes; otherwise
             # the cap progression (7 -> 8) can time out before reaching cap=8.
             if self.time_budget < 2.0 and (placement_screen or required_placement):
@@ -5511,7 +5671,7 @@ class WordSearcher:
             fraction_cluster_reserve = 0.0
 
         chess_reserve = 0.0
-        if _chess_tile_count(board) >= 3:
+        if not self._full_board_exact and _chess_tile_count(board) >= 3:
             # DFS cap progression can consume the whole budget on chess-heavy
             # boards. Reserve some time so the chess prefix extension phase
             # still runs.
@@ -5567,7 +5727,7 @@ class WordSearcher:
         use_parallel = (
             self.search_workers > 1
             and self._wordlist_path is not None
-            and item_count < 2
+            and (item_count < 2 or self._full_board_exact)
         )
         # Short budgets: one pass at max_len. Longer budgets: deepen so DFS does not
         # exhaust the first high-base-score branch to max_len before shorter words.
@@ -5607,11 +5767,15 @@ class WordSearcher:
         )
         # Budget starts after pool handle exists (workers should already be warm).
         search_begin = time.monotonic()
-        local_deadline = search_begin + self.time_budget
-        if deadline is not None:
-            local_deadline = min(local_deadline, deadline)
-        deadline = local_deadline
-        self._active_deadline = deadline
+        if run_until_found:
+            deadline = float("inf")
+            self._active_deadline = None
+        else:
+            local_deadline = search_begin + self.time_budget
+            if deadline is not None:
+                local_deadline = min(local_deadline, deadline)
+            deadline = local_deadline
+            self._active_deadline = deadline
         post_dfs_reserve = (
             number_reserve
             + void_reserve
@@ -5659,9 +5823,20 @@ class WordSearcher:
                 self.max_len,
             )
         heap_before_letter = len(candidates)
+        if self._full_board_exact:
+            ham_deadline = float("inf") if run_until_found else main_deadline
+            self._collect_full_board_hamiltonian_candidates(
+                board,
+                loadout,
+                candidates,
+                ham_deadline,
+            )
         try:
+            standard_search = len(candidates) == 0
             if (
-                has_fraction_tiles
+                standard_search
+                and not self._full_board_exact
+                and has_fraction_tiles
                 and _chess_tile_count(board) >= 3
                 and self.max_len >= 8
                 and time.monotonic() < main_deadline
@@ -5684,7 +5859,7 @@ class WordSearcher:
                         min(8, self.max_len),
                         fraction_starts,
                     )
-            if center_idx is not None and up_and_up_reserve > 0.0:
+            if standard_search and center_idx is not None and up_and_up_reserve > 0.0:
                 up_deadline = min(main_deadline, search_begin + up_and_up_reserve)
                 if up_deadline > time.monotonic():
                     self._collect_up_and_up_center_words(
@@ -5697,7 +5872,7 @@ class WordSearcher:
                         has_fraction_tiles=has_fraction_tiles,
                         has_number_tiles=has_number_tiles,
                     )
-            if parallel_dfs_viable:
+            if standard_search and parallel_dfs_viable:
                 for pass_idx, cap in enumerate(caps):
                     if time.monotonic() >= main_deadline:
                         break
@@ -5733,7 +5908,7 @@ class WordSearcher:
                         min_slice_override=min_slice,
                         start_productivity=start_productivity if starts_for_cap is letter_starts else None,
                     )
-            elif not use_parallel:
+            elif standard_search and not use_parallel:
                 center_still_needed = (
                     center_idx is not None
                     and not _candidate_heap_includes_index(candidates, center_idx)
@@ -5791,7 +5966,7 @@ class WordSearcher:
                 or candidates.all_paths_max_len(1)
                 or center_missing
             )
-            if needs_serial_fallback:
+            if standard_search and needs_serial_fallback:
                 timing.parallel_serial_fallback = True
                 self._parallel_executor = None
                 saved_workers = self.search_workers
@@ -5866,18 +6041,22 @@ class WordSearcher:
                     self.search_workers = saved_workers
                     self._parallel_executor = pool
 
-            if has_number_tiles:
+            if standard_search and has_number_tiles:
                 self._seed_single_number_tile_words(board, loadout, candidates)
 
             improve_words = equipped_improve_words(loadout)
-            if improve_words:
+            if standard_search and improve_words:
                 self._seed_stamp_improve_words(
                     board, loadout, candidates, improve_words
                 )
 
-            if has_number_tiles:
+            if standard_search and has_number_tiles:
                 self._parallel_executor = None
-                if fraction_cluster_reserve > 0 and time.monotonic() < pre_extend_deadline:
+                if (
+                    not self._full_board_exact
+                    and fraction_cluster_reserve > 0
+                    and time.monotonic() < pre_extend_deadline
+                ):
                     cluster_starts = _fraction_cluster_number_starts(board)
                     if cluster_starts:
                         cluster_deadline = min(
@@ -6038,9 +6217,13 @@ class WordSearcher:
             self._active_deadline = resolve_phase_deadline
             chess_start = time.monotonic()
             chess_max_cap = (
-                8
-                if has_fraction_tiles and _chess_tile_count(board) >= 3
-                else 5
+                self.max_len
+                if self._full_board_exact
+                else (
+                    8
+                    if has_fraction_tiles and _chess_tile_count(board) >= 3
+                    else 5
+                )
             )
             chess_seeds = self._chess_prefix_candidates(
                 board,
