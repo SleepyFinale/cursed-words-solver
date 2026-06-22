@@ -343,6 +343,31 @@ def test_parse_run_state_bosscactus_alias_is_sandy_saguaro():
     assert boss_display_name(loadout, rules) == "Sandy Saguaro"
 
 
+def test_parse_run_state_bosscrystal_alias_is_prismatic_bean():
+    data = {
+        "character": "Rodman",
+        "boss_id": "bosscrystal",
+        "boss_name": "Prismatic Bean",
+        "extras": {"boss_area_number": 5},
+        "stickers": [],
+        "stamps": [],
+    }
+    loadout = parse_run_state(data)
+    rules = load_rules_catalog()
+    from cursed_words_solver.rules.rule_lookup import (
+        boss_display_name,
+        collect_unmapped_items,
+        resolve_rule_id,
+    )
+
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "prismatic_bean"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+    assert boss_display_name(loadout, rules) == "Beans"
+
+
 def test_parse_run_state_bossqs_alias_is_axolotl():
     """In-game Axolotl prefab/display name is Extra Qs / bossqs."""
     data = {

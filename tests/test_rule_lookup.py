@@ -29,6 +29,25 @@ def test_bosscactus_alias_resolves_to_sandy_saguaro():
     assert collect_unmapped_items(rules, loadout) == []
 
 
+def test_bosscrystal_alias_resolves_to_prismatic_bean():
+    rules = load_rules_catalog()
+    loadout = parse_run_state(
+        {
+            "character": "Rodman",
+            "boss_id": "bosscrystal",
+            "boss_name": "Prismatic Bean",
+            "extras": {"boss_area_number": 5},
+            "stickers": [],
+            "stamps": [],
+        }
+    )
+    assert (
+        resolve_rule_id(rules, "bosses", loadout.boss_id, loadout.boss_name)
+        == "prismatic_bean"
+    )
+    assert collect_unmapped_items(rules, loadout) == []
+
+
 def test_resolve_rule_id_with_alias():
     rules = {
         "aliases": {"stickers": {"stickyplaster": "sticky_plaster"}},

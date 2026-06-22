@@ -37,9 +37,16 @@ Source: `BossModifier` subclasses in `Assembly-CSharp.dll` (`data/game/boss_subc
 
 ## Hidden / meta bosses
 
+| Game class | Wiki slug | In-game name | Prefab alias |
+| --- | --- | --- | --- |
+| `SandySaguaroBoss` | `sandy_saguaro` | Sandy Saguaro | `bosscactus` |
+| `PrismaticBeanBoss` | `prismatic_bean` | Prismatic Bean | `bosscrystal` ([Beans (boss)](https://cursedwords.wiki.gg/wiki/Beans_(boss))) |
+| `HumanBoyBoss` | `human_boy_boss` | Human Boy | `bosshumanboy` |
+
+Also:
+
 - **Michael** (`MichaelBoss`) — unlock after 5 cursed bosses
 - **Ogre** — dual-cursed draft (map meta)
-- Sandy / Prismatic Bean / Human Boy boss classes — challenge-specific
 
 ### Michael draft fight (implemented)
 

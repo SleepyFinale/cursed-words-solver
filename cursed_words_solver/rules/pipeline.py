@@ -400,7 +400,7 @@ def _add_word_score(state: dict[str, Any], bonus: float) -> None:
     if not bonus:
         return
     if state.get("pending_word_finalize_steps"):
-        state["_additive_word_after_pending_percent"] = True
+        _flush_pending_word_mults(state)
     _flush_word_multipliers_to_tiles(state)
     state["word_score"] += bonus
 
@@ -1264,16 +1264,10 @@ def _finalize(
     )
 
     word_only = golden_record_multiplies_word_score_only(loadout, board, path, state)
-    tile_only = bool(
-        state.get("_additive_word_after_pending_percent")
-        and state.get("pending_word_finalize_steps")
-        and not word_only
-    )
     return _apply_green_poison_finalize(
         _apply_pending_word_finalize_steps(
             state,
             subtotal,
-            multiply_tile_sum_only=tile_only,
             multiply_word_score_only=word_only,
             loadout=loadout,
         ),
@@ -1341,16 +1335,10 @@ def _finalize_with_trace(
     )
 
     word_only = golden_record_multiplies_word_score_only(loadout, board, path, state)
-    tile_only = bool(
-        state.get("_additive_word_after_pending_percent")
-        and state.get("pending_word_finalize_steps")
-        and not word_only
-    )
     total = _apply_pending_word_finalize_steps(
         state,
         subtotal,
         trace=trace,
-        multiply_tile_sum_only=tile_only,
         multiply_word_score_only=word_only,
         loadout=loadout,
     )

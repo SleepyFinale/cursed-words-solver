@@ -1896,6 +1896,14 @@ TUNED_BOSSES: dict[str, dict] = {
             "Gives 2 CACTUS consumable tiles; must be used in submitted words"
         ),
     },
+    "prismatic_bean": {
+        "name": "Beans",
+        "type": "custom",
+        "effect_class": "meta",
+        "game_class": "PrismaticBeanBoss",
+        "wiki_page": "Beans_(boss)",
+        "wiki_effect": "Recolours every tile on the grid randomly.",
+    },
     "human_boy_boss": {
         "name": "Human Boy",
         "type": "custom",
@@ -2232,6 +2240,10 @@ ALIASES: dict[str, dict[str, str]] = {
         "extravoids": "mole",
         "bosscactus": "sandy_saguaro",
         "sandysaguaroboss": "sandy_saguaro",
+        "bosscrystal": "prismatic_bean",
+        "prismaticbeanboss": "prismatic_bean",
+        "prismatic_bean": "prismatic_bean",
+        "beans": "prismatic_bean",
         "bosshumanboy": "human_boy_boss",
         "humanboyboss": "human_boy_boss",
         "human_boy": "human_boy_boss",
