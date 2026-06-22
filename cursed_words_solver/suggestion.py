@@ -47,6 +47,7 @@ from cursed_words_solver.search import (
     physical_word_for_path,
     resolve_letter,
     search_word_from_path,
+    word_assignable_on_path,
 )
 
 
@@ -1156,6 +1157,29 @@ def _fixed_letters_align(scoring_word: str, candidate: str) -> bool:
     return True
 
 
+def _alignment_pattern_for_path(
+    board: Board,
+    path: list[int],
+    flags: SearchFlagsMask,
+) -> str:
+    """Wildcard pattern for dictionary resolve (face letters fixed; true wildcards '?')."""
+    parts: list[str] = []
+    char_pos = 0
+    for idx in path:
+        tile = board.get_by_index(idx)
+        token = resolve_letter(tile, char_pos, flags=flags)
+        if token == "?":
+            parts.append("?")
+        elif token == "qu":
+            parts.append("?")
+        elif len(token) == 1 and token.isalpha():
+            parts.append(token.lower())
+        else:
+            parts.append("?")
+        char_pos += 2 if token == "qu" else max(1, len(token))
+    return "".join(parts)
+
+
 def dictionary_word_length_for_path(
     board: Board, path: list[int], scoring_word: str
 ) -> int:
@@ -1220,6 +1244,31 @@ def path_tiles_need_dictionary_resolve(
     return path_needs_dictionary_resolve(board, path, search_word)
 
 
+def path_requires_tile_dictionary_resolve(
+    board: Board,
+    path: list[int],
+    *,
+    flags: SearchFlagsMask = 0,
+) -> bool:
+    """True when tile types on the path need dictionary spelling resolve (not plain wildcards)."""
+    from cursed_words_solver.search import resolve_letter, resolve_letter_options
+
+    char_pos = 0
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.curse == CurseType.ITEM or tile.curse in CHESS_CURSES:
+            return True
+        if tile.curse == CurseType.FRACTION:
+            return True
+        options = resolve_letter_options(tile, char_pos, flags=flags)
+        alpha_opts = [o for o in options if len(o) == 1 and o.isalpha()]
+        if len(alpha_opts) > 1:
+            return True
+        token = resolve_letter(tile, char_pos, flags=flags)
+        char_pos += 2 if token == "qu" else max(1, len(token))
+    return False
+
+
 def _validator_for_loadout(
     dictionary: WordDictionary,
     loadout: Loadout,
@@ -1242,6 +1291,38 @@ def _physical_letter_overlap(board: Board, path: list[int], candidate: str) -> i
         if len(ph) == 1 and ph.isalpha() and ph == candidate[i]:
             score += 1
     return score
+
+
+def _pick_best_dictionary_word(
+    board: Board,
+    path: list[int],
+    valid: list[str],
+    loadout: Loadout,
+    *,
+    pipeline: ScoringPipeline | None = None,
+) -> str:
+    """Choose best dictionary spelling from assignable candidates on this path."""
+    pool = valid
+    if pipeline is not None and loadout is not None:
+        if len(pool) > 64:
+            pool = sorted(
+                pool,
+                key=lambda c: -_physical_letter_overlap(board, path, c),
+            )[:64]
+
+        scored = [
+            (c, pipeline.score_total_only(board, path, c, loadout)) for c in pool
+        ]
+        best_score = max(sc for _, sc in scored)
+        top = [c for c, sc in scored if sc >= best_score - 1e-6]
+        myrrh_family = [c for c in top if "myrrh" in c]
+        pick_from = myrrh_family or top
+        return max(
+            pick_from,
+            key=lambda c: (_physical_letter_overlap(board, path, c), c),
+        )
+
+    return max(pool, key=lambda c: (_physical_letter_overlap(board, path, c), c))
 
 
 def dictionary_word_for_path(
@@ -1276,14 +1357,22 @@ def dictionary_word_for_path(
 
         return word
 
+    if validator.word_ok(board, path, word, flags) and not path_requires_tile_dictionary_resolve(
+        board, path, flags=flags
+    ):
+        return word
 
 
-    word_len = dictionary_word_length_for_path(board, path, word)
+
+    pattern = _alignment_pattern_for_path(board, path, flags)
+    word_len = len(pattern)
 
     valid: list[str] = []
 
     for candidate in dictionary.words_of_length(word_len):
-        if not _candidate_aligns_scoring_word(word, candidate, word_len=word_len):
+        if not _fixed_letters_align(pattern, candidate):
+            continue
+        if not word_assignable_on_path(board, path, candidate, flags=flags):
             continue
         if not validator.word_ok(board, path, candidate, flags):
             continue
@@ -1293,28 +1382,9 @@ def dictionary_word_for_path(
 
         return None
 
-    pool = valid
-
-    if pipeline is not None and loadout is not None:
-        if len(pool) > 64:
-            pool = sorted(
-                pool,
-                key=lambda c: -_physical_letter_overlap(board, path, c),
-            )[:64]
-
-        scored = [
-            (c, pipeline.score_total_only(board, path, c, loadout)) for c in pool
-        ]
-        best_score = max(sc for _, sc in scored)
-        top = [c for c, sc in scored if sc >= best_score - 1e-6]
-        myrrh_family = [c for c in top if "myrrh" in c]
-        pick_from = myrrh_family or top
-        return max(
-            pick_from,
-            key=lambda c: (_physical_letter_overlap(board, path, c), c),
-        )
-
-    return max(pool, key=lambda c: (_physical_letter_overlap(board, path, c), c))
+    return _pick_best_dictionary_word(
+        board, path, valid, loadout, pipeline=pipeline
+    )
 
 
 def loadout_needs_encounter_historic(loadout: Loadout | None, board: Board | None) -> bool:
@@ -1508,18 +1578,25 @@ def _valid_dictionary_words_for_path(
     dictionary: WordDictionary,
     *,
     min_len: int = 3,
+    limit: int | None = None,
 ) -> list[str]:
-    word = scoring_word.lower()
     flags = stamp_search_flags(loadout)
     validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
-    word_len = dictionary_word_length_for_path(board, path, word)
+    pattern = _alignment_pattern_for_path(board, path, flags)
+    word_len = len(pattern)
+    if word_len < min_len:
+        return []
     valid: list[str] = []
     for candidate in dictionary.words_of_length(word_len):
-        if not _candidate_aligns_scoring_word(word, candidate, word_len=word_len):
+        if not _fixed_letters_align(pattern, candidate):
+            continue
+        if not word_assignable_on_path(board, path, candidate, flags=flags):
             continue
         if not validator.word_ok(board, path, candidate, flags):
             continue
         valid.append(candidate)
+        if limit is not None and len(valid) >= limit:
+            break
     return valid
 
 
@@ -1531,6 +1608,7 @@ def game_word_for_path(
     dictionary: WordDictionary | None,
     *,
     min_len: int = 3,
+    pipeline: ScoringPipeline | None = None,
 ) -> str:
     """Dictionary word the game submits when tracing this path (not max-score search pick)."""
     lowered = scoring_word.lower()
@@ -1545,19 +1623,16 @@ def game_word_for_path(
     if trace.isalpha() and validator.word_ok(board, path, trace, flags):
         return trace
 
-    valid = _valid_dictionary_words_for_path(
+    resolved = dictionary_word_for_path(
         board,
         path,
         lowered,
         loadout,
         dictionary,
         min_len=min_len,
+        pipeline=pipeline,
     )
-    if not valid:
-        return lowered
-    if len(valid) == 1:
-        return valid[0]
-    return min(valid)
+    return resolved if resolved else lowered
 
 
 def effective_scoring_word(
@@ -1581,6 +1656,7 @@ def effective_scoring_word(
         loadout,
         dictionary,
         min_len=min_len,
+        pipeline=pipeline,
     )
 
 

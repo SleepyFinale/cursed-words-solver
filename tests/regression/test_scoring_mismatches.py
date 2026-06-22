@@ -2269,6 +2269,73 @@ def test_inquirendo_electric_guitar_red_note_mismatch() -> None:
     )
 
 
+def test_upwells_cobra_electric_guitar_scatter_tier() -> None:
+    """Cobra min-length floor mod must not cap grid Electric Guitar tier; game 1708."""
+    case_path = FIXTURES / "20260621_222004_upwells.json"
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    word = data["word"]
+    path = data["path"]
+    expected = int(data["actual_score"])
+
+    _adjust_previous_word_letter_extras(run_state, data)
+    _adjust_bento_previous_word_extras(run_state, data)
+    _adjust_neapolitan_percent_extras(run_state, data)
+    _adjust_rare_item_count_extras(run_state, data)
+    _adjust_steak_percent_extras(run_state, data)
+    _adjust_tile_ninja_bonus_from_trace(run_state, data)
+
+    board_for_lucky = parse_board_from_run_state(run_state)
+    if board_for_lucky is not None:
+        _adjust_lucky_dice_target_extras(run_state, data, board_for_lucky, path)
+
+    board = parse_board_from_run_state(run_state)
+    _adjust_movie_camera_telescope_extras(run_state, data, board, path)
+    board = parse_board_from_run_state(run_state)
+    _adjust_void_penalty_from_trace(run_state, data, board, path)
+    _adjust_scattered_item_level_from_trace(run_state, data, board, path)
+    loadout = parse_run_state(run_state)
+    from cursed_words_solver.rules.scoring_conditions import (
+        apply_snapshot_phased_session_extras,
+        grid_path_sticker_level,
+    )
+
+    apply_snapshot_phased_session_extras(loadout, board)
+    _adjust_birthday_cake_pre_word_extras(run_state, data, board, path, loadout)
+    loadout = parse_run_state(run_state)
+    _adjust_mutating_dna_extras(run_state, data, board, path)
+    loadout = parse_run_state(run_state)
+
+    guitar_idx = next(
+        i
+        for i, idx in enumerate(path)
+        if str((board.get_by_index(idx).metadata or {}).get("scattered_item_id") or "")
+        == "electric_guitar"
+    )
+    assert (
+        grid_path_sticker_level(
+            loadout,
+            "electric_guitar",
+            board=board,
+            path=path,
+            path_tile_index=guitar_idx,
+        )
+        == 2
+    )
+
+    score, _, trace = ScoringPipeline().score_with_trace(board, path, word, loadout)
+    assert int(score) == expected
+    guitar_steps = [
+        step
+        for step in (trace or [])
+        if isinstance(step, dict)
+        and step.get("rule_id") == "electric_guitar"
+        and step.get("effect_type") == "add_tile_score"
+        and step.get("applied")
+    ]
+    assert any("+30 red_note" in str(step.get("detail", "")) for step in guitar_steps)
+
+
 @pytest.mark.parametrize(
     ("stem", "checkpoints"),
     [

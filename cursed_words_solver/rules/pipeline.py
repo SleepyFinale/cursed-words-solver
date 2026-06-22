@@ -313,6 +313,30 @@ def _apply_immediate_word_percent(
         state["multiplier"] *= factor
 
 
+def _finalize_step_rule_id(step: tuple) -> str:
+    return str(step[2] if len(step) > 2 else "")
+
+
+def _finalize_step_source(step: tuple) -> str:
+    if len(step) > 3:
+        return str(step[3] or "equipped")
+    return "equipped"
+
+
+def _append_pending_word_finalize_step(
+    state: dict[str, Any],
+    kind: str,
+    value: float | int,
+    rule_id: str = "",
+) -> None:
+    source = (
+        "grid"
+        if state.get("_applying_grid_path_scatter")
+        else "equipped"
+    )
+    state["pending_word_finalize_steps"].append((kind, value, rule_id, source))
+
+
 def _queue_word_multiplier(
     state: dict[str, Any],
     factor: float,
@@ -331,7 +355,7 @@ def _queue_word_multiplier(
         _apply_immediate_word_multiplier(state, factor, rule_id)
         return
     state["pending_word_multipliers"].append((factor, rule_id))
-    state["pending_word_finalize_steps"].append(("mult", factor, rule_id))
+    _append_pending_word_finalize_step(state, "mult", factor, rule_id)
     state["multiplier"] *= factor
 
 
@@ -357,7 +381,7 @@ def _queue_word_percent_bonus(
         _apply_immediate_word_percent(state, int(percent), rule_id)
         return
     state["pending_word_percent_bonuses"].append((int(percent), rule_id))
-    state["pending_word_finalize_steps"].append(("percent", int(percent), rule_id))
+    _append_pending_word_finalize_step(state, "percent", int(percent), rule_id)
     if wiki_factor is not None and wiki_factor != 1.0:
         state["multiplier"] *= wiki_factor
 
@@ -572,13 +596,25 @@ def _sort_finalize_steps_by_sticker_order(
         return steps
     equipped = _equipped_inventory_slugs(loadout)
     for step in steps:
-        rid = slugify_name(str(step[2]) if len(step) > 2 else "")
+        rid = slugify_name(_finalize_step_rule_id(step))
         if rid not in equipped:
             return steps
+    grid_steps = [step for step in steps if _finalize_step_source(step) == "grid"]
+    if grid_steps:
+        equipped_steps = [
+            step for step in steps if _finalize_step_source(step) != "grid"
+        ]
+        equipped_steps = sorted(
+            equipped_steps,
+            key=lambda step: _inventory_order_index(
+                loadout, _finalize_step_rule_id(step)
+            ),
+        )
+        return grid_steps + equipped_steps
     return sorted(
         steps,
         key=lambda step: _inventory_order_index(
-            loadout, str(step[2]) if len(step) > 2 else ""
+            loadout, _finalize_step_rule_id(step)
         ),
     )
 
@@ -602,7 +638,8 @@ def _apply_pending_word_finalize_steps(
         return subtotal
     if state.get("_wad_deferred_grid_word_mult"):
         total = float(subtotal)
-        for kind, value, rule_id in entries:
+        for step in entries:
+            kind, value, rule_id = step[0], step[1], step[2]
             if kind == "percent":
                 percent = int(value)
                 factor = float(percent) / 100.0
@@ -646,7 +683,8 @@ def _apply_pending_word_finalize_steps(
         total = float(state["word_score"])
     else:
         total = float(subtotal)
-    for kind, value, rule_id in entries:
+    for step in entries:
+        kind, value, rule_id = step[0], step[1], step[2]
         if kind == "percent":
             percent = int(value)
             factor = float(percent) / 100.0
@@ -1508,15 +1546,19 @@ class ScoringPipeline:
                 and not defer_grid_mult
             ):
                 state["_immediate_word_percent"] = True
-            state = self._apply_rule(
-                rule,
-                state,
-                board,
-                path,
-                loadout,
-                ref.level,
-                applying_sticker_id=ref.rule_id,
-            )
+            state["_applying_grid_path_scatter"] = True
+            try:
+                state = self._apply_rule(
+                    rule,
+                    state,
+                    board,
+                    path,
+                    loadout,
+                    ref.level,
+                    applying_sticker_id=ref.rule_id,
+                )
+            finally:
+                state["_applying_grid_path_scatter"] = False
             if ref.rule_id == "tombstone" and rule.get("type") == "add_tile_score":
                 state["_grid_path_tombstone_applied"] = True
             if (

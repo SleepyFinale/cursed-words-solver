@@ -15,6 +15,7 @@ from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.rule_lookup import count_scoring_items, slugify_name
 from cursed_words_solver.rules.scoring_conditions import (
     currency_letter_value,
+    grid_path_sticker_level,
     money_for_scoring,
     unique_vowels_in_word,
     unique_vowels_on_path,
@@ -1016,3 +1017,102 @@ def test_cherry_pie_grid_path_word_mult_before_additive_bonuses():
     score, _bd = pipeline.score(board, path, "rrra", loadout)
     # tile sum 35; ×2 cherry on tiles → 70; +8 Super 8 (one melmod take)
     assert int(score) == 78
+
+
+def test_ornate_key_grid_path_uses_scatter_tier_when_export_matches_equipped():
+    """guenon: scattered export L3 + equipped L3 → grid scores at encounter L1 (150%)."""
+    board = _empty_board()
+    board.tiles[4][2] = Tile(
+        row=4,
+        col=2,
+        char="j",
+        letter="J",
+        base_score=0,
+        color=TileColor.VOID,
+        curse=CurseType.ITEM,
+        metadata={
+            "source": "melmod",
+            "scattered_item_id": "ornate_key",
+            "scattered_item_level": 3,
+        },
+    )
+    board.tiles[1][3] = _tile(1, 3, "g", 3, color=TileColor.RED)
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="ornate_key", name="Ornate Key", level=3)],
+        extras={"grid_number": "1", "scoring_previous_words_count": "0"},
+    )
+    path = [8, 22]
+    level = grid_path_sticker_level(
+        loadout,
+        "ornate_key",
+        board=board,
+        path=path,
+        path_tile_index=1,
+    )
+    assert level == 1
+
+
+def test_artist_s_palette_grid_path_uses_scatter_tier_when_export_matches_equipped():
+    """trinkum/jazzbos: scattered export L3 + equipped L3 → grid scores at encounter L1 (+42)."""
+    board = _empty_board()
+    board.tiles[1][2] = Tile(
+        row=1,
+        col=2,
+        char="p",
+        letter="P",
+        base_score=0,
+        color=TileColor.RED,
+        curse=CurseType.ITEM,
+        metadata={
+            "source": "melmod",
+            "scattered_item_id": "artist_s_palette",
+            "scattered_item_level": 3,
+        },
+    )
+    board.tiles[1][3] = _tile(1, 3, "a", 2, color=TileColor.RED)
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="artist_s_palette", name="Artist's Palette", level=3)],
+        extras={"grid_number": "1", "scoring_previous_words_count": "0"},
+    )
+    path = [7, 8]
+    level = grid_path_sticker_level(
+        loadout,
+        "artist_s_palette",
+        board=board,
+        path=path,
+        path_tile_index=0,
+    )
+    assert level == 1
+
+
+def test_artist_s_palette_grid_path_uses_scatter_tier_when_export_matches_equipped():
+    """trinkum/jazzbos: scattered export L3 + equipped L3 → grid scores at encounter L1 (+42)."""
+    board = _empty_board()
+    board.tiles[1][2] = Tile(
+        row=1,
+        col=2,
+        char="p",
+        letter="P",
+        base_score=0,
+        color=TileColor.RED,
+        curse=CurseType.ITEM,
+        metadata={
+            "source": "melmod",
+            "scattered_item_id": "artist_s_palette",
+            "scattered_item_level": 3,
+        },
+    )
+    board.tiles[1][3] = _tile(1, 3, "a", 2, color=TileColor.RED)
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="artist_s_palette", name="Artist's Palette", level=3)],
+        extras={"grid_number": "1", "scoring_previous_words_count": "0"},
+    )
+    path = [7, 8]
+    level = grid_path_sticker_level(
+        loadout,
+        "artist_s_palette",
+        board=board,
+        path=path,
+        path_tile_index=0,
+    )
+    assert level == 1

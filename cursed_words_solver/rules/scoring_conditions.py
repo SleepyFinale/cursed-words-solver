@@ -2612,8 +2612,6 @@ def word_starts_ends_different_color(board: Board, path: list[int]) -> bool:
         return False
     start_tile = board.get_by_index(path[0])
     end_tile = board.get_by_index(path[-1])
-    if start_tile.curse == CurseType.ITEM or end_tile.curse == CurseType.ITEM:
-        return False
     start = start_tile.color
     end = end_tile.color
     if start in NON_COLOUR_FOR_NUMBER_BONUS or end in NON_COLOUR_FOR_NUMBER_BONUS:
@@ -4429,8 +4427,9 @@ _BURRITO_LEVEL_EXCLUDE = frozenset(
     {"burrito", "left_hand", "padlock_sticker", "snapshot"}
 )
 
-# Bosses whose FloorAdjustedModification counts voids/Qs/etc., not scatter sticker tier.
-_SCATTER_TIER_IGNORE_FLOOR_BOSSES = frozenset({"mole"})
+# Bosses whose FloorAdjustedModification is not scatter sticker tier (voids/Qs,
+# min/max word length, etc.).
+_SCATTER_TIER_IGNORE_FLOOR_BOSSES = frozenset({"mole", "cobra", "wolf"})
 
 
 def _active_boss_modifier_slugs(loadout: Loadout | None) -> list[str]:
@@ -5031,6 +5030,11 @@ def _grid_scattered_level_from_extras(
     return None
 
 
+_GRID_PATH_INVENTORY_BLEEDTHROUGH_EXCLUDE = frozenset(
+    {"tombstone", "down_under", "dusty_coffin", "deep_sea_horror"}
+)
+
+
 def grid_path_sticker_level(
     loadout: Loadout | None,
     slug: str,
@@ -5045,6 +5049,10 @@ def grid_path_sticker_level(
     Tombstone on grid ≥2 uses encounter level when path void letters have deep penalty;
     otherwise scattered_grid_item_level (not equipped inventory level).
 
+    When export tier equals equipped inventory tier on a grid-path tile, treat export
+    as component bleed-through: score at encounter scatter tier; equipped sticker still
+    fires separately in inventory order.
+
     Down Under on grid 1 often matches max equipped sticker level when export is missing.
     When Snapshot copies Down Under at a higher level than the grid scatter tier, the
     grid path keeps the exported scattered level (copy uses max separately).
@@ -5055,11 +5063,21 @@ def grid_path_sticker_level(
     encounter_level = scattered_grid_item_level(loadout)
     level = encounter_level
     tile_level_known = False
+    exported_tile_level: int | None = None
     is_grid_path_tile = False
     floor_mod_capped = False
     if loadout is not None:
         extras = loadout.extras if isinstance(loadout.extras, dict) else {}
-        floor_mod_capped = extras.get("boss_floor_modification") not in (None, "")
+        grid = grid_number(loadout) or 1
+        floor_mod_capped = (
+            extras.get("boss_floor_modification") not in (None, "")
+            and _scatter_tier_floor_mod(loadout, grid) > 0
+        )
+        if not floor_mod_capped and not _active_boss_modifier_slugs(loadout):
+            grid = grid_number(loadout)
+            if grid > 0:
+                encounter_level = max(encounter_level, max(1, grid - 1))
+                level = encounter_level
 
     if board is not None and path is not None and path_tile_index is not None:
         if 0 <= path_tile_index < len(path):
@@ -5072,6 +5090,7 @@ def grid_path_sticker_level(
                 try:
                     tile_lv = max(1, int(raw))
                     tile_level_known = True
+                    exported_tile_level = tile_lv
                     if floor_mod_capped and is_grid_path_tile:
                         # Floor mod caps grid scatter scoring tier; export may be component level.
                         level = encounter_level
@@ -5091,6 +5110,7 @@ def grid_path_sticker_level(
         )
         if extras_level is not None:
             tile_level_known = True
+            exported_tile_level = extras_level
             if floor_mod_capped and is_grid_path_tile:
                 level = encounter_level
             else:
@@ -5158,6 +5178,29 @@ def grid_path_sticker_level(
         ):
             level = max(level, _equipped_toolbox_level(loadout))
     skip_equipped_merge = floor_mod_capped and is_grid_path_tile and slug_norm != "tombstone"
+    equipped_level: int | None = None
+    if loadout is not None and loadout.stickers:
+        for sticker in loadout.stickers:
+            if slugify_name(str(sticker.id or "")) != slug_norm:
+                continue
+            try:
+                equipped_level = max(1, int(sticker.level))
+            except (TypeError, ValueError):
+                equipped_level = 1
+            break
+    if (
+        not skip_equipped_merge
+        and is_grid_path_tile
+        and tile_level_known
+        and exported_tile_level is not None
+        and equipped_level is not None
+        and exported_tile_level >= equipped_level
+        and slug_norm not in _GRID_PATH_INVENTORY_BLEEDTHROUGH_EXCLUDE
+    ):
+        # Export matches inventory tier (component bleed-through); grid scores at
+        # encounter scatter tier while equipped sticker still fires separately.
+        level = encounter_level
+        skip_equipped_merge = True
     if loadout is not None and loadout.stickers and not skip_equipped_merge:
         for sticker in loadout.stickers:
             if slugify_name(str(sticker.id or "")) != slug_norm:

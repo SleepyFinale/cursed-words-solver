@@ -45,6 +45,20 @@ def test_neighbors_standard():
     assert 5 in nbrs  # down-left from (0,0) is (1,0) idx 5
 
 
+def test_resolve_letter_scattered_item_is_wildcard():
+    tile = Tile(
+        1,
+        1,
+        "🥧",
+        "Z",
+        0.0,
+        TileColor.RED,
+        CurseType.ITEM,
+        metadata={"scattered_item_id": "cherry_pie"},
+    )
+    assert resolve_letter(tile, 0) == "?"
+
+
 def test_finds_cat(tmp_path):
     wl = _make_wordlist(tmp_path)
     d = WordDictionary(wl)

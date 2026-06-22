@@ -490,6 +490,11 @@ def test_badger_velveteened_mismatch_electric_guitar_tile_level():
     _score_mismatch_fixture("20260608_232304.json", 4479)
 
 
+def test_upwells_cobra_electric_guitar_scatter_tier():
+    """Mismatch 20260621_222004: cobra min-length floor mod must not cap grid scatter tier; game 1708."""
+    _score_mismatch_fixture("20260621_222004_upwells.json", 1708)
+
+
 def test_melmod_void_non_dollar_currency_top_row_path_start_penalty():
     """Void ₲ on row 0 at word start gets -10 init; void $ at word start stays 0."""
     from cursed_words_solver.models import Board, CurseType, Tile, TileColor

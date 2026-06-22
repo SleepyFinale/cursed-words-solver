@@ -53,6 +53,7 @@ from cursed_words_solver.fast_rank import (
     loadout_allows_tier2_screen,
     loadout_allows_tier2_two_phase,
     mult_aware_lower_bound,
+    path_has_scattered_grid_items,
     prefix_immediate_upper_bound,
     prefix_rank_upper_bound,
     tier2_immediate_lower_bound,
@@ -400,6 +401,8 @@ def resolve_letter(
         return tile.letter
     if tile.curse == CurseType.FRACTION:
         return "?"
+    if tile.curse == CurseType.ITEM:
+        return "?"
     if tile.curse == CurseType.ARROW:
         from cursed_words_solver.arrow_tiles import arrow_glyph_from_tile
 
@@ -601,6 +604,41 @@ def path_letter_tiles_match_word(
             return False
         char_pos += 1
     return char_pos == len(word)
+
+
+def word_assignable_on_path(
+    board: Board,
+    path: list[int],
+    word: str,
+    *,
+    flags: SearchFlagsMask = 0,
+) -> bool:
+    """True when each dictionary letter is allowed on its path tile (stamps, chess, wildcards)."""
+    flags = coerce_search_flags(flags)
+    if len(word) != len(path):
+        return False
+    lowered = word.lower()
+    for i, idx in enumerate(path):
+        tile = board.get_by_index(idx)
+        ch = lowered[i]
+        if not ch.isalpha():
+            return False
+        if tile.curse == CurseType.LETTER:
+            options = resolve_letter_options(tile, i, flags=flags)
+            allowed = {o.lower() for o in options if len(o) == 1 and o.isalpha()}
+            if allowed and ch not in allowed:
+                return False
+            continue
+        if tile.curse in CHESS_CURSES:
+            face = (tile.letter or "").strip()
+            if face not in ("", "?"):
+                options = resolve_letter_options(tile, i, flags=flags)
+                allowed = {o.lower() for o in options if len(o) == 1 and o.isalpha()}
+                if allowed and ch not in allowed:
+                    return False
+            continue
+        # Items, fractions, wildcards, and chess with letter "?" accept any alpha.
+    return True
 
 
 def _tile_digit_face_matches(
@@ -980,7 +1018,9 @@ class PathValidator:
             return self._number_word_valid(board, path, word, stamp_flags)
         if word.lower() in self.extra_valid_words:
             return len(word) >= self.min_len
-        return self.dictionary.is_valid_word(word, self.min_len)
+        if not self.dictionary.is_valid_word(word, self.min_len):
+            return False
+        return word_assignable_on_path(board, path, word, flags=stamp_flags)
 
     def _stitched_word_ok(
         self,
@@ -2436,6 +2476,52 @@ def _chess_start_indices(board: Board) -> list[int]:
     ]
 
 
+def _chess_cap_start_indices(chess_starts: list[int]) -> list[int]:
+    """Start tiles for short (cap<=8) chess DFS passes.
+
+    Slice to three starts on chess-heavy boards to preserve budget, but keep
+    every chess start when there are only a few (voteless regression: path
+    begins on the fourth pawn).
+    """
+    if len(chess_starts) <= 4:
+        return chess_starts
+    return chess_starts[:3]
+
+
+def _scattered_item_cap_sequence(min_len: int, max_len: int) -> list[int]:
+    """Cap progression when 2+ scattered grid items need short paths explored."""
+    mid = min(8, max_len)
+    caps = list(range(min_len, mid + 1))
+    if max_len > mid:
+        caps.append(max_len)
+    return caps
+
+
+def _chess_serial_cap_sequence(min_len: int, max_len: int) -> list[int]:
+    """Serial chess-heavy passes: boss min_len, then short capture-chain cap."""
+    first_cap = 8 if max_len >= 8 else max_len
+    caps: list[int] = []
+    if min_len < first_cap:
+        caps.append(min_len)
+    if first_cap not in caps:
+        caps.append(first_cap)
+    return caps
+
+
+def _dfs_starts_for_cap(
+    cap: int,
+    min_len: int,
+    letter_starts: list[int],
+    chess_starts: list[int],
+) -> list[int]:
+    """DFS start tiles for a cap pass (boss min_len uses letter starts)."""
+    if cap == min_len:
+        return letter_starts
+    if cap <= 8 and chess_starts:
+        return _chess_cap_start_indices(chess_starts)
+    return letter_starts
+
+
 def _chess_tile_count(board: Board) -> int:
     return sum(1 for t in board.flat if is_chess_piece(t))
 
@@ -2556,6 +2642,7 @@ class WordSearcher:
         self._grid_refs_cache: dict[tuple[int, ...], tuple] = {}
         self._provisional_candidates: dict[tuple[tuple[int, ...], str], float] = {}
         self._dict_path_cache: dict[tuple[int, ...], str] = {}
+        self._dict_valid_words_cache: dict[tuple[int, ...], str] = {}
         self._number_extend_cache: dict[tuple[frozenset[int], int], bool] = {}
         self._prune_heap: _CandidateHeap | None = None
         self._parallel_executor: ProcessPoolExecutor | None = None
@@ -2658,6 +2745,10 @@ class WordSearcher:
     ) -> bool:
         if self._use_dfs_bb_override is not None:
             return self._use_dfs_bb_override
+        if self._graph_ctx is not None and self._graph_ctx.item_mask.bit_count() >= 2:
+            # Prefix bounds ignore scattered grid-item scoring; DFS BB prunes
+            # routes that must pass through multiple grid items (e.g. pie + extinguisher).
+            return False
         ctx = self._search_ctx(loadout)
         return loadout_allows_dfs_bb(
             ctx,
@@ -2957,9 +3048,25 @@ class WordSearcher:
             timing = self._active_timing
             if timing is not None:
                 timing.trie_fast_accepts += 1
-            return True, scoring_word_for_path_local(search_word)
+            accepted = self._accepted_scoring_word(
+                board,
+                path,
+                search_word,
+                loadout,
+                stamp_flags,
+                use_hanafuda_physical=use_hanafuda_physical,
+            )
+            return True, accepted
         if self.validator.word_ok(board, path, search_word, stamp_flags):
-            return True, scoring_word_for_path_local(search_word)
+            accepted = self._accepted_scoring_word(
+                board,
+                path,
+                search_word,
+                loadout,
+                stamp_flags,
+                use_hanafuda_physical=use_hanafuda_physical,
+            )
+            return True, accepted
         if use_hanafuda_physical:
             phys = physical_word_for_path(board, path, flags=stamp_flags)
             if phys != search_word and self.validator.word_ok(
@@ -2981,24 +3088,82 @@ class WordSearcher:
                 timing = self._active_timing
                 if timing is not None:
                     timing.trie_fast_accepts += 1
-                return True, scoring_word_for_path_local(search_word)
+                accepted = self._accepted_scoring_word(
+                    board,
+                    path,
+                    search_word,
+                    loadout,
+                    stamp_flags,
+                    use_hanafuda_physical=use_hanafuda_physical,
+                )
+                return True, accepted
         if self._path_needs_dictionary_resolve(board, path, search_word):
             if not self.validator._path_constraints_ok(
                 board, path, search_word, stamp_flags
             ):
                 return False, search_word
-            from cursed_words_solver.suggestion import _valid_dictionary_words_for_path
-
-            if _valid_dictionary_words_for_path(
-                board,
-                path,
-                search_word,
-                loadout,
-                self.dictionary,
-                min_len=self.min_len,
-            ):
-                return True, scoring_word_for_path_local(search_word)
+            resolved = self._dictionary_scoring_word(
+                board, path, search_word, loadout, stamp_flags
+            )
+            if resolved:
+                return True, scoring_word_for_path_local(resolved)
         return False, search_word
+
+    def _dictionary_scoring_word(
+        self,
+        board: Board,
+        path: list[int],
+        search_word: str,
+        loadout: Loadout | None,
+        stamp_flags: SearchFlagsMask,
+    ) -> str | None:
+        """Resolved dictionary spelling for this path, or None when unresolved."""
+        if loadout is None:
+            return None
+        from cursed_words_solver.suggestion import (
+            dictionary_word_for_path,
+            path_requires_tile_dictionary_resolve,
+        )
+
+        if not path_requires_tile_dictionary_resolve(
+            board, path, flags=stamp_flags
+        ):
+            return None
+
+        path_key = tuple(path)
+        cached_valid = self._dict_valid_words_cache.get(path_key)
+        if cached_valid is None:
+            cached_valid = (
+                dictionary_word_for_path(
+                    board,
+                    path,
+                    search_word,
+                    loadout,
+                    self.dictionary,
+                    min_len=self.min_len,
+                    pipeline=self.scoring,
+                )
+                or ""
+            )
+            self._dict_valid_words_cache[path_key] = cached_valid
+        return cached_valid if cached_valid else None
+
+    def _accepted_scoring_word(
+        self,
+        board: Board,
+        path: list[int],
+        search_word: str,
+        loadout: Loadout | None,
+        stamp_flags: SearchFlagsMask,
+        *,
+        use_hanafuda_physical: bool = False,
+    ) -> str:
+        if use_hanafuda_physical:
+            return physical_word_for_path(board, path, flags=stamp_flags)
+        resolved = self._dictionary_scoring_word(
+            board, path, search_word, loadout, stamp_flags
+        )
+        return resolved if resolved else search_word
 
     def _collect_words(
         self,
@@ -3615,8 +3780,15 @@ class WordSearcher:
             has_wildcard = "?" in token
             has_digit = any(c.isdigit() for c in token)
             prefix_len = len(token)
+            start_options = resolve_letter_options(tile, 0, flags=stamp_flags)
+            multi_letter = (
+                len(start_options) > 1
+                and all(len(o) == 1 and o.isalpha() for o in start_options)
+            )
             branch_letters = (
-                _wildcard_branch_letters(tile, 0, flags=stamp_flags)
+                tuple(start_options)
+                if multi_letter
+                else _wildcard_branch_letters(tile, 0, flags=stamp_flags)
                 if "?" in token and not has_digit
                 else ()
             )
@@ -4809,7 +4981,11 @@ class WordSearcher:
             and hanafuda_hand_satisfied(board, path, hanafuda_level)
         ):
             min_sc = heap.min_rank_score()
-            if min_sc is not None and self._use_mult_prune_for(loadout):
+            if (
+                min_sc is not None
+                and self._use_mult_prune_for(loadout)
+                and not path_has_scattered_grid_items(board, path)
+            ):
                 lb = mult_aware_lower_bound(
                     board, path, loadout, self.scoring.rules
                 )
@@ -5226,6 +5402,7 @@ class WordSearcher:
 
         self._score_cache.clear()
         self._dict_path_cache.clear()
+        self._dict_valid_words_cache.clear()
         self._number_extend_cache.clear()
         self._grid_refs_cache.clear()
         self._provisional_candidates.clear()
@@ -5382,14 +5559,23 @@ class WordSearcher:
             # starve the specific chess start tiles needed for capture-chain
             # regressions under fair-start time slicing.
             chess_starts = sorted(chess_starts, key=lambda i: i, reverse=True)
+        item_count = (
+            self._graph_ctx.item_mask.bit_count()
+            if self._graph_ctx is not None
+            else 0
+        )
         use_parallel = (
             self.search_workers > 1
             and self._wordlist_path is not None
+            and item_count < 2
         )
         # Short budgets: one pass at max_len. Longer budgets: deepen so DFS does not
         # exhaust the first high-base-score branch to max_len before shorter words.
         # Parallel mode uses one pass at max_len to avoid repeated pool scheduling.
-        if use_parallel:
+        item_heavy_caps = item_count >= 2 and self.max_len > self.min_len
+        if item_heavy_caps:
+            caps = _scattered_item_cap_sequence(self.min_len, self.max_len)
+        elif use_parallel:
             # One pool round at max_len; add cap=8 when jokers need hub-bridge paths.
             if (
                 hanafuda_level >= 1
@@ -5406,12 +5592,7 @@ class WordSearcher:
             else:
                 caps = [self.max_len]
         elif chess_reserve > 0.0 and self.max_len > self.min_len:
-            # For chess-heavy boards, a full `cap=max_len` DFS can be too
-            # expensive to reach the specific capture-chain lengths in time.
-            # Run a targeted pass at cap=8 first (Markkaa regression) and then
-            # (only) probe cap=8.
-            first_cap = 8 if self.max_len >= 8 else self.max_len
-            caps = [first_cap]
+            caps = _chess_serial_cap_sequence(self.min_len, self.max_len)
         elif self.time_budget >= 6.0 and self.max_len > self.min_len:
             caps = range(self.min_len, self.max_len + 1)
         else:
@@ -5520,18 +5701,19 @@ class WordSearcher:
                 for pass_idx, cap in enumerate(caps):
                     if time.monotonic() >= main_deadline:
                         break
-                    if cap <= 8 and chess_starts:
-                        starts_for_cap = chess_starts[:3]
-                        min_slice = None
-                    else:
-                        # Reorder letter starts by productivity from previous pass.
+                    starts_for_cap = _dfs_starts_for_cap(
+                        cap, self.min_len, letter_starts, chess_starts
+                    )
+                    if starts_for_cap is letter_starts:
                         if pass_idx > 0 and start_productivity:
                             letter_starts = sorted(
                                 letter_starts,
                                 key=lambda s: (-start_productivity.get(s, 0), s),
                             )
-                        starts_for_cap = letter_starts
+                            starts_for_cap = letter_starts
                         min_slice = self._adaptive_min_slice(candidates, pass_idx)
+                    else:
+                        min_slice = None
                     letter_pass_deadline = main_deadline
                     if starts_for_cap is letter_starts:
                         now = time.monotonic()
@@ -5560,17 +5742,21 @@ class WordSearcher:
                     for pass_idx, cap in enumerate(caps):
                         if time.monotonic() >= main_deadline:
                             break
-                        if cap <= 8 and chess_starts:
-                            starts_for_cap = chess_starts[:3]
-                            min_slice = None
-                        else:
+                        starts_for_cap = _dfs_starts_for_cap(
+                            cap, self.min_len, letter_starts, chess_starts
+                        )
+                        if starts_for_cap is letter_starts:
                             if pass_idx > 0 and start_productivity:
                                 letter_starts = sorted(
                                     letter_starts,
                                     key=lambda s: (-start_productivity.get(s, 0), s),
                                 )
-                            starts_for_cap = letter_starts
-                            min_slice = self._adaptive_min_slice(candidates, pass_idx)
+                                starts_for_cap = letter_starts
+                            min_slice = self._adaptive_min_slice(
+                                candidates, pass_idx
+                            )
+                        else:
+                            min_slice = None
                         self._collect_words_fair_starts(
                             board,
                             loadout,

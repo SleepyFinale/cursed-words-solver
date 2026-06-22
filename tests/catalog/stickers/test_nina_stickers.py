@@ -117,6 +117,60 @@ def test_ferris_wheel_same_colour_ends_no_mult():
     assert score == base
 
 
+def test_ferris_wheel_item_endpoints_different_colours():
+    """speos shape: scattered item tiles at both ends with different colours."""
+    board = _empty_board()
+    board.tiles[0][2] = Tile(
+        row=0,
+        col=2,
+        char="p",
+        letter="P",
+        base_score=0,
+        color=TileColor.BLUE,
+        curse=CurseType.ITEM,
+        metadata={"source": "melmod", "scattered_item_id": "game_pad"},
+    )
+    board.tiles[0][3] = _tile(0, 3, "M", 4)
+    board.tiles[1][4] = Tile(
+        row=1,
+        col=4,
+        char="r",
+        letter="R",
+        base_score=0,
+        color=TileColor.RED,
+        curse=CurseType.ITEM,
+        metadata={"source": "melmod", "scattered_item_id": "maracas"},
+    )
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="ferris_wheel", name="Ferris Wheel", level=3)])
+    score, bd = pipeline.score(board, [2, 3, 9], "pmr", loadout)
+    base, _ = pipeline.score(board, [2, 3, 9], "pmr", Loadout())
+    assert bd["multiplier"] == 2.5
+    assert score == base * 2.5
+
+
+def test_ferris_wheel_letter_and_item_endpoints():
+    """ecrus shape: blue letter start, shiny scattered item end."""
+    board = _empty_board()
+    board.tiles[0][1] = _tile(0, 1, "E", 4, color=TileColor.BLUE)
+    board.tiles[0][2] = _tile(0, 2, "C", 4)
+    board.tiles[0][4] = Tile(
+        row=0,
+        col=4,
+        char="k",
+        letter="K",
+        base_score=0,
+        color=TileColor.SHINY,
+        curse=CurseType.ITEM,
+        metadata={"source": "melmod", "scattered_item_id": "ornate_key"},
+    )
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="ferris_wheel", name="Ferris Wheel", level=3)])
+    score, bd = pipeline.score(board, [1, 2, 4], "eck", loadout)
+    assert bd["multiplier"] == 2.5
+    assert score == 8 * 2.5
+
+
 def test_fish_cake_shiny_multiply():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "S", 10, color=TileColor.SHINY)

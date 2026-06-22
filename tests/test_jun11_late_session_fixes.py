@@ -12,6 +12,7 @@ from cursed_words_solver.loadout import (
     parse_run_state,
     prepare_run_state_dict_for_scoring,
 )
+from cursed_words_solver.models import Loadout
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.scoring_conditions import (
     dusty_coffin_void_units,
@@ -20,6 +21,14 @@ from cursed_words_solver.rules.scoring_conditions import (
 )
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "mismatches"
+
+
+def test_lucky_scarf_grid3_scatter_uses_encounter_tier_two():
+    """Grid 3 normal encounters: scattered Lucky Scarf scores at L2 (×3), not L1 (×2)."""
+    loadout = Loadout(extras={"grid_number": "3"})
+    assert grid_path_sticker_level(loadout, "lucky_scarf") == 2
+    loadout_g1 = Loadout(extras={"grid_number": "1"})
+    assert grid_path_sticker_level(loadout_g1, "lucky_scarf") == 1
 
 
 def test_deep_sea_horror_non_boss_uses_max_equipped_level():

@@ -168,6 +168,16 @@ def mult_aware_lower_bound(
 
 
 
+def path_has_scattered_grid_items(board: Board, path: list[int]) -> bool:
+    """True when the path crosses scattered sticker/stamp tiles (CurseType.ITEM)."""
+    return any(board.get_by_index(idx).curse == CurseType.ITEM for idx in path)
+
+
+# Tier-1 bounds skip item tiles in tile-base sums; without this guard they prune
+# high-scoring routes that pick up cherry pie / fire extinguisher etc. on path.
+_TIER2_SCATTERED_ITEM_UB_SENTINEL = 1e15
+
+
 def tier2_tile_base_sum(board: Board, path: list[int], ctx: SolveContext) -> float:
 
     """Per-tile init sum respecting SolveContext microscope/shield overrides."""
@@ -302,7 +312,10 @@ def tier2_immediate_upper_bound(
         base + word_bonus + path_bonus + red_bonus + hanafuda_bonus + static_tile_add
     )
     mult = optimistic_mult_upper_bound(mult_rules, loadout, path)
-    return subtotal * mult
+    result = subtotal * mult
+    if path_has_scattered_grid_items(board, path):
+        return max(result, _TIER2_SCATTERED_ITEM_UB_SENTINEL)
+    return result
 
 
 
