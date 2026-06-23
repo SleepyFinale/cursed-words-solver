@@ -32,8 +32,46 @@ def playable_bounds(board: Board) -> tuple[int, int, int, int] | None:
 
 
 def _is_shrunk_grid(board: Board) -> bool:
-    storage = max(board.rows, board.cols)
+    storage = max(board.storage_rows, board.storage_cols)
     return board.rows < storage or board.cols < storage
+
+
+def path_to_melmod_indices(board: Board, path: list[int]) -> list[int]:
+    """Convert storage-grid path indices to melmod submit / last_suggestion indices."""
+    if not _is_shrunk_grid(board):
+        return list(path)
+    bounds = playable_bounds(board)
+    if bounds is None:
+        return list(path)
+    min_r, max_r, min_c, _max_c = bounds
+    cols = board.cols
+    out: list[int] = []
+    for idx in path:
+        row, col = board.coords_at(idx)
+        display_row = max_r - row
+        display_col = col - min_c
+        out.append((cols - 1 - display_row) * cols + display_col)
+    return out
+
+
+def path_from_melmod_indices(board: Board, path: list[int]) -> list[int]:
+    """Convert melmod submit indices back to storage-grid path indices."""
+    if not _is_shrunk_grid(board):
+        return list(path)
+    bounds = playable_bounds(board)
+    if bounds is None:
+        return list(path)
+    min_r, max_r, min_c, _max_c = bounds
+    cols = board.cols
+    storage_cols = board.storage_cols
+    out: list[int] = []
+    for idx in path:
+        display_row = cols - 1 - (idx // cols)
+        display_col = idx % cols
+        row = max_r - display_row
+        col = min_c + display_col
+        out.append(row * storage_cols + col)
+    return out
 
 
 @dataclass(frozen=True)
@@ -268,8 +306,10 @@ def path_geometry(
     if not region.is_valid() or not path:
         return []
     w, h = float(region.width), float(region.height)
-    slot_w = w / float(_GRID_SLOTS)
-    slot_h = h / float(_GRID_SLOTS)
+    cols = board.storage_cols if board else _GRID_SLOTS
+    rows = board.storage_rows if board else _GRID_SLOTS
+    slot_w = w / float(cols)
+    slot_h = h / float(rows)
 
     steps: list[PathStep] = []
     for step, idx in enumerate(path, start=1):
@@ -292,8 +332,10 @@ def placement_geometry(
     if not region.is_valid() or not placements:
         return []
     w, h = float(region.width), float(region.height)
-    slot_w = w / float(_GRID_SLOTS)
-    slot_h = h / float(_GRID_SLOTS)
+    cols = board.storage_cols if board else _GRID_SLOTS
+    rows = board.storage_rows if board else _GRID_SLOTS
+    slot_w = w / float(cols)
+    slot_h = h / float(rows)
     markers: list[PlacementMarker] = []
     for placement in placements:
         idx = getattr(placement, "index", None)

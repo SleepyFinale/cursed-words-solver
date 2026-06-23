@@ -396,7 +396,10 @@ namespace CursedWordsSolverCompanion
             if (total >= 0 && remaining >= 0)
             {
                 var earned = total - remaining;
-                if (earned >= 0)
+                var twoWrongs = QuestExporter.IsTwoWrongsSnapshot(snapshot);
+                if (twoWrongs)
+                    snapshot.extras["encounter_target_display"] = (-remaining).ToString();
+                if (twoWrongs || earned >= 0)
                 {
                     snapshot.extras["encounter_score_earned"] = earned.ToString();
                     _lastKnownEncounterScoreEarned = (int)earned;

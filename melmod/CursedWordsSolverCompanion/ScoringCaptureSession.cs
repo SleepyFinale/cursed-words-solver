@@ -66,7 +66,6 @@ namespace CursedWordsSolverCompanion
                 );
             }
             _word = SuggestionMatcher.WordFromSubmit(selections, words);
-            _path = SuggestionMatcher.PathFromSelections(selections);
             _submitMethod = submitMethod;
 
             var player = RunStateExporter.GetPlayerForUpdate();
@@ -78,6 +77,10 @@ namespace CursedWordsSolverCompanion
             if (!string.IsNullOrEmpty(_loadoutFingerprint))
                 _scoringContextExtras["loadout_fingerprint"] = _loadoutFingerprint;
             _boardAtSubmit = BoardExporter.TryBuild(player);
+            var pathCols = _boardAtSubmit != null && _boardAtSubmit.cols > 0
+                ? _boardAtSubmit.cols
+                : 5;
+            _path = SuggestionMatcher.PathFromSelections(selections, pathCols);
             _rackBefore = ConsumableRackExporter.Export(player);
             _consumablePlacements = ConsumablePlacementTracker.DrainPlacementsSinceLastSubmit();
 
@@ -1248,7 +1251,10 @@ namespace CursedWordsSolverCompanion
                 var packet = ScoreCalculation.GetScoreFromScoreCalcInfo(
                     CalculateOverallScorePatch.LastCalculatedSteps
                 );
-                return (int)ScoringTraceCollector.ScorePacketToLong(packet);
+                var score = (int)ScoringTraceCollector.ScorePacketToLong(packet);
+                if (QuestExporter.IsTwoWrongs(RunStateExporter.GetPlayerForUpdate()))
+                    score *= -1;
+                return score;
             }
             catch
             {

@@ -93,6 +93,8 @@ MelonPreference **Round log enabled** (default on). Startup logs the round log d
 
 ## Export diagnostics (v1.2.0+)
 
+**v1.2.1** — submit path capture uses `board.cols` for coordinate→index conversion (fixes false `path_mismatch` on 6×6 Call of the Void grids).
+
 Every `run_state.json` write includes top-level **`export_diagnostics`**:
 
 | Field | Meaning |

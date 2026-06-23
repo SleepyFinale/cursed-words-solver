@@ -564,14 +564,26 @@ def _result_rank_score(result: WordResult) -> float:
     return result.score + result.setup_bonus
 
 
+def _quest_rank_score(result: WordResult, loadout: Loadout | None) -> float:
+    from cursed_words_solver.rules.quest_scoring import search_rank_for_quest
+
+    return search_rank_for_quest(_result_rank_score(result), loadout)
+
+
 def _variant_meets_threshold(
     result: WordResult,
     *,
     min_score: float | None,
     min_rank_score: float | None,
+    loadout: Loadout | None = None,
 ) -> bool:
     if min_rank_score is not None:
-        return _result_rank_score(result) >= min_rank_score
+        rank = _result_rank_score(result)
+        if loadout is not None:
+            from cursed_words_solver.rules.quest_scoring import search_rank_for_quest
+
+            return search_rank_for_quest(rank, loadout) >= min_rank_score
+        return rank >= min_rank_score
     if min_score is not None:
         return result.score >= min_score
     return True
@@ -1329,9 +1341,12 @@ def _finalize_placement_search(
             )
             if not results:
                 continue
-            rank = _result_rank_score(results[0])
+            rank = _quest_rank_score(results[0], loadout)
             if not _variant_meets_threshold(
-                results[0], min_score=min_score, min_rank_score=min_rank_score
+                results[0],
+                min_score=min_score,
+                min_rank_score=min_rank_score,
+                loadout=loadout,
             ):
                 continue
             better = rank > best_rank
@@ -1441,10 +1456,13 @@ def _screen_placement_variants(
                 continue
             result = results[0]
             if not _variant_meets_threshold(
-                result, min_score=min_score, min_rank_score=min_rank_score
+                result,
+                min_score=min_score,
+                min_rank_score=min_rank_score,
+                loadout=loadout,
             ):
                 continue
-            rank = _result_rank_score(result)
+            rank = _quest_rank_score(result, loadout)
             screened.append(
                 (
                     _screened_entry_rank(rank, sim_board, result, loadout),
@@ -1765,12 +1783,14 @@ def search_target_rescue(
     variant_gen_budget: float | None = None,
     solve_deadline: float | None = None,
 ) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
-    from cursed_words_solver.rules.quest_scoring import bullseye_active
+    from cursed_words_solver.rules.quest_scoring import bullseye_active, two_wrongs_active
 
     rules = rules or {}
     min_score = float(target)
     if bullseye_active(loadout):
         min_score = float(target) - 0.5
+    elif two_wrongs_active(loadout):
+        min_score = None
     board_out, records, results = _run_tiered_placement_search(
         searcher,
         board,
@@ -1785,6 +1805,14 @@ def search_target_rescue(
         solve_deadline=solve_deadline,
     )
     if bullseye_active(loadout) and results:
+        from cursed_words_solver.rules.quest_scoring import target_met
+
+        results = [
+            r for r in results if target_met(float(r.score), float(target), loadout)
+        ]
+        if not results:
+            return board, [], []
+    if two_wrongs_active(loadout) and results:
         from cursed_words_solver.rules.quest_scoring import target_met
 
         results = [
@@ -1813,12 +1841,21 @@ def search_consumable_score_boost(
     if not rack_tiles:
         return board, [], []
     rules = rules or {}
+    from cursed_words_solver.rules.quest_scoring import (
+        quest_inverts_search_rank,
+        quest_rank_beats_baseline,
+        search_rank_for_quest,
+    )
+
     baseline_rank = (
         baseline_rank_score
         if baseline_rank_score is not None
         else baseline_score
     )
-    min_rank = float(baseline_rank) + 1e-9
+    if quest_inverts_search_rank(loadout):
+        min_rank = search_rank_for_quest(float(baseline_rank), loadout) - 1e-9
+    else:
+        min_rank = float(baseline_rank) + 1e-9
     rack_n = len(rack_tiles)
     max_variants = 96
     if multi_consumable_placement_beneficial(loadout) and rack_n >= 4:
@@ -1849,6 +1886,8 @@ def search_consumable_score_boost(
         solve_deadline=solve_deadline,
         max_tier_override=boost_max_tier,
     )
-    if not results or _result_rank_score(results[0]) <= baseline_rank:
+    if not results or not quest_rank_beats_baseline(
+        _result_rank_score(results[0]), float(baseline_rank), loadout
+    ):
         return board, [], []
     return sim_board, records, results

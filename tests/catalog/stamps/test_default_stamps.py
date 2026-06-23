@@ -373,6 +373,32 @@ def test_limnophila_not_any_later_letter():
     assert "'o'" in detail
 
 
+def test_limnophila_rejects_owner_after_e():
+    """owner after e: o > e but Limnophila needs exactly f."""
+    from cursed_words_solver.rules.scoring_conditions import explain_sticker_condition
+
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "O", 1)
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="limnophila", name="Limnophila", kind="stamp")],
+        extras={
+            "grid_number": "2",
+            "scoring_previous_words_count": "2",
+            "previous_word_first_letter": "e",
+        },
+    )
+    met, detail = explain_sticker_condition(
+        "word_starts_after_previous",
+        board,
+        [0],
+        "owner",
+        loadout,
+        applying_sticker_id="limnophila",
+    )
+    assert met is False
+    assert "need 'f'" in detail
+
+
 def test_limnophila_exact_plus_one_titfers():
     from cursed_words_solver.rules.scoring_conditions import explain_sticker_condition
 

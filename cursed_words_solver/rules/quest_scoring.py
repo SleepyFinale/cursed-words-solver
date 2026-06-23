@@ -227,6 +227,125 @@ def effective_submit_score(raw_score: float, loadout: Loadout | None) -> float:
     return raw_score
 
 
+def quest_inverts_search_rank(loadout: Loadout | None) -> bool:
+    """True when search should minimize raw score (Two Wrongs)."""
+    return two_wrongs_active(loadout)
+
+
+_quest_search_target: float | None = None
+
+
+def set_quest_search_target(target: float | None) -> None:
+    global _quest_search_target
+    _quest_search_target = target
+
+
+def encounter_remaining_from_loadout(loadout: Loadout | None) -> int:
+    if loadout is None:
+        return 0
+    try:
+        return int((loadout.extras or {}).get("encounter_remaining_target") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _resolve_quest_target(
+    loadout: Loadout | None,
+    quest_target: float | None,
+) -> float | None:
+    if quest_target is not None:
+        return quest_target
+    if bullseye_active(loadout) and _quest_search_target is not None and _quest_search_target > 0:
+        return _quest_search_target
+    if bullseye_active(loadout):
+        remaining = encounter_remaining_from_loadout(loadout)
+        if remaining > 0:
+            return float(remaining)
+    return None
+
+
+def bullseye_heap_rank(score: float, target: float) -> float:
+    """Heap ordering for Bullseye: exact integer hit wins; else prefer closer scores."""
+    if target > 0 and int(round(score)) == int(target):
+        return 1e15 + float(score)
+    if target > 0:
+        return -abs(float(score) - float(target))
+    return float(score)
+
+
+def quest_skips_rank_ub_prune(loadout: Loadout | None) -> bool:
+    """True when rank upper-bound pruning is unsafe (non max-score quest ranking)."""
+    return quest_inverts_search_rank(loadout) or bullseye_active(loadout)
+
+
+def search_rank_for_quest(
+    raw_rank: float,
+    loadout: Loadout | None,
+    *,
+    quest_target: float | None = None,
+) -> float:
+    """Heap ordering key: higher is better. Quest-specific adjustments."""
+    target = _resolve_quest_target(loadout, quest_target)
+    if bullseye_active(loadout) and target is not None and target > 0:
+        return bullseye_heap_rank(float(raw_rank), float(target))
+    if quest_inverts_search_rank(loadout):
+        return -float(raw_rank)
+    return float(raw_rank)
+
+
+def quest_candidate_rank(
+    immediate: float,
+    search_rank: float,
+    loadout: Loadout | None,
+    *,
+    quest_target: float | None = None,
+) -> float:
+    """Ranking key for heap/finalists; Bullseye uses submit score not mult rank."""
+    if bullseye_active(loadout):
+        return search_rank_for_quest(immediate, loadout, quest_target=quest_target)
+    return search_rank_for_quest(search_rank, loadout, quest_target=quest_target)
+
+
+def display_score_for_quest(raw_score: float, loadout: Loadout | None) -> float:
+    """In-game displayed word score (negated on Two Wrongs)."""
+    return effective_submit_score(raw_score, loadout)
+
+
+def encounter_progress_after_submit(
+    remaining_before: float,
+    raw_score: float,
+    loadout: Loadout | None,
+) -> float:
+    """Internal remaining target after submit (EncounterController parity)."""
+    return remaining_target_after_submit(remaining_before, raw_score, loadout)
+
+
+def quest_rank_beats_baseline(
+    candidate_rank: float,
+    baseline_rank: float,
+    loadout: Loadout | None,
+    *,
+    quest_target: float | None = None,
+) -> bool:
+    """True when candidate beats baseline under quest-adjusted heap ordering."""
+    return search_rank_for_quest(
+        candidate_rank, loadout, quest_target=quest_target
+    ) > search_rank_for_quest(baseline_rank, loadout, quest_target=quest_target)
+
+
+def prune_cannot_beat_heap(
+    raw_bound: float,
+    min_heap_rank: float,
+    loadout: Loadout | None,
+    *,
+    quest_target: float | None = None,
+) -> bool:
+    """True when even this raw-score bound cannot beat the heap's weakest kept entry."""
+    return search_rank_for_quest(
+        raw_bound, loadout, quest_target=quest_target
+    ) <= min_heap_rank
+
+
 def remaining_target_after_submit(
     remaining_before: float,
     raw_score: float,
@@ -272,5 +391,5 @@ def target_rescue_worth_trying_quest(
     if bullseye_active(loadout):
         return baseline_score != target
     if two_wrongs_active(loadout):
-        return baseline_score < target
+        return baseline_score > 0
     return baseline_score < target

@@ -11,6 +11,7 @@ from cursed_words_solver.ui.board_geometry import (
     rack_slot_center,
 )
 from tests.integration.test_run_state_board import _bat_4x3_run_state
+from tests.test_ui_layout import _bat_3x3_ui_layout_run_state
 
 
 def test_path_geometry_cell_centers_within_region():
@@ -128,6 +129,32 @@ def test_rack_placement_geometry_skips_invalid_rack_index():
     path = [17, 18]
     placements = [{"index": 17, "rack_index": -1, "letter": "E"}]
     assert rack_placement_geometry(region, path, placements) == []
+
+
+def test_path_geometry_bat_3x3_uses_remapped_cell_centers():
+    """Shrunk 3×3 overlay aligns when cell centers use storage indices."""
+    from cursed_words_solver.ui.layout import parse_ui_layout
+
+    run_state = _bat_3x3_ui_layout_run_state()
+    regions = parse_ui_layout(run_state)
+    assert regions is not None
+    path = [20, 10, 22]
+    steps = path_geometry(
+        regions.board,
+        path,
+        cell_centers=regions.board_cell_centers,
+    )
+    assert len(steps) == 3
+    br = regions.board
+    expected = {
+        20: (823 - br.x, 590 - br.y),
+        10: (829 - br.x, 316 - br.y),
+        22: (1096 - br.x, 589 - br.y),
+    }
+    for step, idx in zip(steps, path, strict=True):
+        ex, ey = expected[idx]
+        assert abs(step.x - ex) < 1.0, f"idx {idx} x"
+        assert abs(step.y - ey) < 1.0, f"idx {idx} y"
 
 
 def test_path_geometry_uses_melmod_cell_centers():

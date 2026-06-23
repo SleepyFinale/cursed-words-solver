@@ -81,6 +81,72 @@ def _parse_cell_centers(block: Any) -> dict[int, tuple[float, float]] | None:
     return result or None
 
 
+def _storage_size_from_run_state(run_state: dict[str, Any] | None) -> int:
+    if not run_state:
+        return _RACK_SLOT_COUNT
+    board_data = run_state.get("board")
+    if not isinstance(board_data, dict):
+        return _RACK_SLOT_COUNT
+    tiles = board_data.get("tiles")
+    if isinstance(tiles, list) and len(tiles) == 36:
+        return 6
+    return _RACK_SLOT_COUNT
+
+
+def _remap_layout_cell_centers_to_storage(
+    board_block: Any,
+    centers: dict[int, tuple[float, float]] | None,
+    run_state: dict[str, Any] | None,
+) -> dict[int, tuple[float, float]] | None:
+    """Map ui_layout cell indices (layout rows×cols) to solver storage indices."""
+    if not centers or not isinstance(board_block, dict):
+        return centers
+    try:
+        layout_rows = int(board_block.get("rows", _RACK_SLOT_COUNT))
+        layout_cols = int(board_block.get("cols", _RACK_SLOT_COUNT))
+    except (TypeError, ValueError):
+        layout_rows = layout_cols = _RACK_SLOT_COUNT
+    storage = _storage_size_from_run_state(run_state)
+    if layout_rows >= storage and layout_cols >= storage:
+        return centers
+    if centers and max(centers) >= layout_rows * layout_cols:
+        return centers
+
+    board_data = run_state.get("board") if run_state else None
+    if not isinstance(board_data, dict):
+        return centers
+    try:
+        pmin_r = int(board_data.get("playable_min_row", 0))
+        pmin_c = int(board_data.get("playable_min_col", 0))
+    except (TypeError, ValueError):
+        pmin_r = pmin_c = 0
+
+    cells = board_block.get("cells")
+    if isinstance(cells, list) and cells:
+        remapped: dict[int, tuple[float, float]] = {}
+        for cell in cells:
+            if not isinstance(cell, dict):
+                continue
+            try:
+                cell_row = int(cell.get("row", 0))
+                cell_col = int(cell.get("col", 0))
+                x = float(cell["x"])
+                y = float(cell["y"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            storage_idx = (pmin_r + cell_row) * storage + (pmin_c + cell_col)
+            remapped[storage_idx] = (x, y)
+        return remapped or centers
+
+    remapped = {}
+    for idx, xy in centers.items():
+        ui_row = idx // layout_cols
+        ui_col = idx % layout_cols
+        storage_idx = (pmin_r + ui_row) * storage + (pmin_c + ui_col)
+        remapped[storage_idx] = xy
+    return remapped
+
+
 def _consumable_count_from_run_state(run_state: dict[str, Any] | None) -> int | None:
     if not run_state:
         return None
@@ -522,6 +588,9 @@ def parse_ui_layout(
     if rack_slot_centers:
         rack = _tight_rack_region(rack_slot_centers, rack)
     board_cell_centers = _parse_cell_centers(board_block)
+    board_cell_centers = _remap_layout_cell_centers_to_storage(
+        board_block, board_cell_centers, run_state
+    )
     board, board_region_repaired = _repair_board_region_from_cells(
         board, board_cell_centers
     )

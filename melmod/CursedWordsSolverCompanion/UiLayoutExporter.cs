@@ -166,6 +166,76 @@ namespace CursedWordsSolverCompanion
             }
         }
 
+        private static int StorageGridSize(int gridRows, int gridCols)
+        {
+            var maxDim = Math.Max(gridRows, gridCols);
+            if (maxDim > DefaultGridSize)
+                return MaxGridSize;
+            return DefaultGridSize;
+        }
+
+        private static string ResolvePlayableOrigin(
+            BoardSnapshot board,
+            int layoutRows,
+            int layoutCols,
+            int storageSize
+        )
+        {
+            var origin = board?.playable_origin ?? "";
+            if (!string.IsNullOrEmpty(origin) && !string.Equals(origin, "full", StringComparison.Ordinal))
+                return origin;
+            if (layoutRows >= storageSize && layoutCols >= storageSize)
+                return "full";
+            return "bottom_left";
+        }
+
+        private static bool IsPlayableBottomLeft(int row, int col, int gridRows, int gridCols)
+        {
+            return row < gridRows && col < gridCols;
+        }
+
+        private static bool IsPlayableTopLeft(
+            int row,
+            int col,
+            int gridRows,
+            int gridCols,
+            int storageSize
+        )
+        {
+            return row >= storageSize - gridRows && col < gridCols;
+        }
+
+        private static bool IsPlayableSlot(
+            int row,
+            int col,
+            int gridRows,
+            int gridCols,
+            string origin,
+            int storageSize
+        )
+        {
+            if (gridRows >= storageSize && gridCols >= storageSize)
+                return row < gridRows && col < gridCols;
+            switch (origin)
+            {
+                case "top_left":
+                    return IsPlayableTopLeft(row, col, gridRows, gridCols, storageSize);
+                case "center":
+                {
+                    var rowStart = (storageSize - gridRows) / 2;
+                    var colStart = (storageSize - gridCols) / 2;
+                    return row >= rowStart
+                        && row < rowStart + gridRows
+                        && col >= colStart
+                        && col < colStart + gridCols;
+                }
+                case "full":
+                    return row < gridRows && col < gridCols;
+                default:
+                    return IsPlayableBottomLeft(row, col, gridRows, gridCols);
+            }
+        }
+
         private static Camera ResolveCamera()
         {
             if (Camera.main != null)
@@ -248,11 +318,13 @@ namespace CursedWordsSolverCompanion
                 var col = coords.x;
                 var layoutRows = board.rows > 0 ? board.rows : DefaultGridSize;
                 var layoutCols = board.cols > 0 ? board.cols : DefaultGridSize;
-                // Match BoardExporter: solver row 0 = top, Unity grid y = bottom.
-                var displayRow = layoutRows - 1 - internalRow;
-                if (displayRow < 0 || displayRow >= layoutRows || col < 0 || col >= layoutCols)
+                var storageSize = StorageGridSize(layoutRows, layoutCols);
+                var origin = ResolvePlayableOrigin(board, layoutRows, layoutCols, storageSize);
+                if (!IsPlayableSlot(internalRow, col, layoutRows, layoutCols, origin, storageSize))
                     continue;
-                var index = displayRow * layoutCols + col;
+                // Match BoardExporter: solver row 0 = top, Unity grid y = bottom.
+                var solverRow = storageSize - 1 - internalRow;
+                var index = solverRow * storageSize + col;
 
                 if (!TryProjectTileCenter(
                     tileObject,
@@ -270,7 +342,7 @@ namespace CursedWordsSolverCompanion
                 cells.Add(
                     new UiCellSnapshot
                     {
-                        row = displayRow,
+                        row = solverRow,
                         col = col,
                         index = index,
                         x = Mathf.RoundToInt(centerX),

@@ -2501,9 +2501,29 @@ namespace CursedWordsSolverCompanion
 
         private static int CountGreenTilesInHistoric(HistoricWord hw)
         {
+            var count = 0;
+            if (hw?.TileSelections != null)
+            {
+                foreach (var sel in hw.TileSelections)
+                {
+                    if (sel == null)
+                        continue;
+                    try
+                    {
+                        var tile = sel.SelectedTile;
+                        if (tile != null && tile.IsTileType(TileType.Green))
+                            count++;
+                    }
+                    catch
+                    {
+                        // skip
+                    }
+                }
+            }
+            if (count > 0)
+                return count;
             if (hw?.Tiles == null)
                 return 0;
-            var count = 0;
             foreach (var tile in hw.Tiles)
             {
                 if (tile != null && tile.IsTileType(TileType.Green))

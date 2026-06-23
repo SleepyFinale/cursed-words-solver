@@ -325,6 +325,18 @@ def _finalize_step_source(step: tuple) -> str:
     return "equipped"
 
 
+def _defer_green_for_grid_word_mults(state: dict[str, Any]) -> bool:
+    """Grid ×WORD on tile sum (incl. GREEN) runs before green transfer when equipped mults follow."""
+    if state.get("_green_transferred"):
+        return False
+    pending = state.get("pending_word_finalize_steps", [])
+    if not pending:
+        return False
+    has_grid = any(_finalize_step_source(step) == "grid" for step in pending)
+    has_equipped = any(_finalize_step_source(step) != "grid" for step in pending)
+    return has_grid and has_equipped
+
+
 def _append_pending_word_finalize_step(
     state: dict[str, Any],
     kind: str,
@@ -376,7 +388,13 @@ def _queue_word_percent_bonus(
     if percent == 0:
         return
     if (
-        state.get("_immediate_word_percent")
+        (
+            state.get("_immediate_word_percent")
+            or (
+                state.get("_ferris_interleaved_immediate")
+                and slugify_name(rule_id) == "ferris_wheel"
+            )
+        )
         and not defer_finalize
         and not state.get("_defer_word_mults_for_compound")
     ):
@@ -401,8 +419,6 @@ def _flush_word_multipliers_to_tiles(state: dict[str, Any]) -> None:
 def _add_word_score(state: dict[str, Any], bonus: float) -> None:
     if not bonus:
         return
-    if state.get("pending_word_finalize_steps"):
-        _flush_pending_word_mults(state)
     _flush_word_multipliers_to_tiles(state)
     state["word_score"] += bonus
 
@@ -623,6 +639,43 @@ def _sort_finalize_steps_by_sticker_order(
     )
 
 
+def _apply_one_finalize_mult_step(
+    total: float,
+    step: tuple,
+    state: dict[str, Any],
+    *,
+    trace: list[dict[str, Any]] | None = None,
+) -> float:
+    kind, value, rule_id = step[0], step[1], step[2]
+    if kind == "percent":
+        percent = int(value)
+        factor = float(percent) / 100.0
+        total = math.floor(float(total) * percent / 100.0)
+        if trace is not None:
+            fields: dict[str, Any] = {
+                "factor": factor,
+                "percent": percent,
+                "detail": f"×{factor:g} word (word_bonus:{percent})",
+            }
+            if rule_id:
+                fields["rule_id"] = rule_id
+            _trace_step(state, "multiply", **fields)
+        return total
+    factor = float(value)
+    if factor == 1.0:
+        return total
+    total = math.floor(total * factor)
+    if trace is not None:
+        fields = {
+            "factor": factor,
+            "detail": f"×{factor} word (floor)",
+        }
+        if rule_id:
+            fields["rule_id"] = rule_id
+        _trace_step(state, "multiply", **fields)
+    return total
+
+
 def _apply_pending_word_finalize_steps(
     state: dict[str, Any],
     subtotal: float,
@@ -632,6 +685,8 @@ def _apply_pending_word_finalize_steps(
     multiply_tile_sum_only: bool = False,
     multiply_word_score_only: bool = False,
     loadout: Loadout | None = None,
+    board: Board | None = None,
+    path: list[int] | None = None,
 ) -> float:
     """GetScoreFromScoreCalcInfo: apply queued WordBonus steps in sticker order."""
     entries = (
@@ -640,36 +695,56 @@ def _apply_pending_word_finalize_steps(
     entries = _sort_finalize_steps_by_sticker_order(list(entries), loadout)
     if not entries:
         return subtotal
+    if (
+        not multiply_word_score_only
+        and not multiply_tile_sum_only
+        and not state.get("_wad_deferred_grid_word_mult")
+    ):
+        grid_entries = [e for e in entries if _finalize_step_source(e) == "grid"]
+        other_entries = [e for e in entries if _finalize_step_source(e) != "grid"]
+        word_part = float(state.get("word_score", 0))
+        if (
+            grid_entries
+            and other_entries
+            and not state.get("_green_transferred")
+            and board is not None
+            and path is not None
+        ):
+            total = float(sum(state["tile_scores"]))
+            for step in grid_entries:
+                total = _apply_one_finalize_mult_step(
+                    total, step, state, trace=trace
+                )
+            if word_part:
+                total += word_part
+            apply_green_tile_word_transfer(
+                board,
+                path,
+                state,
+                trace_step=_trace_step if trace is not None else None,
+            )
+            for step in other_entries:
+                total = _apply_one_finalize_mult_step(
+                    total, step, state, trace=trace
+                )
+            return total
+        if grid_entries or word_part != 0:
+            total = float(sum(state["tile_scores"]))
+            for step in grid_entries:
+                total = _apply_one_finalize_mult_step(
+                    total, step, state, trace=trace
+                )
+            if word_part:
+                total += word_part
+            for step in other_entries:
+                total = _apply_one_finalize_mult_step(
+                    total, step, state, trace=trace
+                )
+            return total
     if state.get("_wad_deferred_grid_word_mult"):
         total = float(subtotal)
         for step in entries:
-            kind, value, rule_id = step[0], step[1], step[2]
-            if kind == "percent":
-                percent = int(value)
-                factor = float(percent) / 100.0
-                total = math.floor(float(total) * percent / 100.0)
-                if trace is not None:
-                    fields: dict[str, Any] = {
-                        "factor": factor,
-                        "percent": percent,
-                        "detail": f"×{factor:g} word (word_bonus:{percent})",
-                    }
-                    if rule_id:
-                        fields["rule_id"] = rule_id
-                    _trace_step(state, "multiply", **fields)
-            else:
-                factor = float(value)
-                if factor == 1.0:
-                    continue
-                total = math.floor(total * factor)
-                if trace is not None:
-                    fields = {
-                        "factor": factor,
-                        "detail": f"×{factor} word (floor)",
-                    }
-                    if rule_id:
-                        fields["rule_id"] = rule_id
-                    _trace_step(state, "multiply", **fields)
+            total = _apply_one_finalize_mult_step(total, step, state, trace=trace)
         return total
     green_word_track = bool(state.get("_green_transferred"))
     if multiply_tile_sum_only:
@@ -688,33 +763,7 @@ def _apply_pending_word_finalize_steps(
     else:
         total = float(subtotal)
     for step in entries:
-        kind, value, rule_id = step[0], step[1], step[2]
-        if kind == "percent":
-            percent = int(value)
-            factor = float(percent) / 100.0
-            total = math.floor(float(total) * percent / 100.0)
-            if trace is not None:
-                fields: dict[str, Any] = {
-                    "factor": float(factor),
-                    "percent": percent,
-                    "detail": f"×{factor:g} word (word_bonus:{percent})",
-                }
-                if rule_id:
-                    fields["rule_id"] = rule_id
-                _trace_step(state, "multiply", **fields)
-        else:
-            factor = float(value)
-            if factor == 1.0:
-                continue
-            total = math.floor(total * factor)
-            if trace is not None:
-                fields: dict[str, Any] = {
-                    "factor": factor,
-                    "detail": f"×{factor} word (floor)",
-                }
-                if rule_id:
-                    fields["rule_id"] = rule_id
-                _trace_step(state, "multiply", **fields)
+        total = _apply_one_finalize_mult_step(total, step, state, trace=trace)
     if multiply_tile_sum_only:
         if word_part is not None:
             return total + word_part
@@ -1236,7 +1285,9 @@ def _finalize(
     if state.get("_compound_word_percents_applied") and not has_compound_post:
         base = float(sum(state["tile_scores"]) + state["word_score"])
         return _apply_green_poison_finalize(base, loadout, state)
-    if board is not None and path is not None:
+    if board is not None and path is not None and not _defer_green_for_grid_word_mults(
+        state
+    ):
         apply_green_tile_word_transfer(
             board,
             path,
@@ -1276,6 +1327,8 @@ def _finalize(
             subtotal,
             multiply_word_score_only=word_only,
             loadout=loadout,
+            board=board,
+            path=path,
         ),
         loadout,
         state,
@@ -1305,7 +1358,9 @@ def _finalize_with_trace(
     if state.get("_compound_word_percents_applied") and not has_compound_post:
         base = float(sum(state["tile_scores"]) + state["word_score"])
         return _apply_green_poison_finalize(base, loadout, state, trace=trace), []
-    if board is not None and path is not None:
+    if board is not None and path is not None and not _defer_green_for_grid_word_mults(
+        state
+    ):
         apply_green_tile_word_transfer(
             board,
             path,
@@ -1347,6 +1402,8 @@ def _finalize_with_trace(
         trace=trace,
         multiply_word_score_only=word_only,
         loadout=loadout,
+        board=board,
+        path=path,
     )
     return _apply_green_poison_finalize(float(total), loadout, state, trace=trace), []
 
@@ -1869,7 +1926,9 @@ class ScoringPipeline:
         elif _multiply_sticker_before_additive_word_sticker(
             self.rules, loadout, ctx.sticker_slot_order
         ):
+            state["_ferris_interleaved_immediate"] = True
             _apply_sticker_pass(multiply_only=False, interleaved=True)
+            state.pop("_ferris_interleaved_immediate", None)
         else:
             _apply_sticker_pass(multiply_only=False)
             _apply_sticker_pass(multiply_only=True)
@@ -1910,12 +1969,13 @@ class ScoringPipeline:
             state = self._apply_hourglass_boss_rules(state, board, path, loadout, ctx)
         else:
             state = self._apply_late_boss_rules(state, board, path, loadout, ctx)
-        apply_green_tile_word_transfer(
-            board,
-            path,
-            state,
-            trace_step=_trace_step if trace is not None else None,
-        )
+        if not _defer_green_for_grid_word_mults(state):
+            apply_green_tile_word_transfer(
+                board,
+                path,
+                state,
+                trace_step=_trace_step if trace is not None else None,
+            )
         if lexographer_active(loadout):
             state = apply_lexographer_tile_zero(state, board, path)
             if trace is not None:

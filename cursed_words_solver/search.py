@@ -63,6 +63,16 @@ from cursed_words_solver.fast_rank import (
     tier2_rank_lower_bound,
     tier2_rank_upper_bound,
 )
+from cursed_words_solver.rules.quest_scoring import (
+    bullseye_active,
+    encounter_remaining_from_loadout,
+    prune_cannot_beat_heap,
+    quest_candidate_rank,
+    quest_inverts_search_rank,
+    quest_skips_rank_ub_prune,
+    search_rank_for_quest,
+    set_quest_search_target,
+)
 from cursed_words_solver.mult_search import (
     MultNeighborHints,
     build_mult_neighbor_hints,
@@ -2561,8 +2571,33 @@ def _chess_cap_start_indices(chess_starts: list[int]) -> list[int]:
     return chess_starts[:3]
 
 
-def _scattered_item_cap_sequence(min_len: int, max_len: int) -> list[int]:
+_SMALL_BOARD_HAMILTONIAN_MAX = 9
+
+
+def _is_shrunk_board(board: Board) -> bool:
+    storage = max(board.storage_rows, board.storage_cols)
+    return board.rows < storage or board.cols < storage
+
+
+def _scattered_item_cap_sequence(
+    min_len: int,
+    max_len: int,
+    *,
+    active_count: int | None = None,
+) -> list[int]:
     """Cap progression when 2+ scattered grid items need short paths explored."""
+    if (
+        active_count is not None
+        and active_count <= _SMALL_BOARD_HAMILTONIAN_MAX
+        and max_len >= active_count
+    ):
+        caps: list[int] = []
+        if active_count >= min_len:
+            caps.append(active_count)
+        if max_len > active_count:
+            caps.append(max_len)
+        if caps:
+            return caps
     mid = min(8, max_len)
     caps = list(range(min_len, mid + 1))
     if max_len > mid:
@@ -3679,11 +3714,14 @@ class WordSearcher:
                     )
                     pruned = False
                     if no_reachable_wild and best_imm is not None and imm_ub <= best_imm:
-                        pruned = True
+                        if not bullseye_active(loadout):
+                            pruned = True
                     elif min_imm is not None and imm_ub < min_imm:
-                        pruned = True
-                    elif min_rank is not None and rank_ub < min_rank:
-                        pruned = True
+                        if not bullseye_active(loadout):
+                            pruned = True
+                    elif min_rank is not None and not quest_skips_rank_ub_prune(loadout):
+                        if prune_cannot_beat_heap(rank_ub, min_rank, loadout):
+                            pruned = True
                     if pruned:
                         if timing is not None:
                             timing.dfs_bb_prunes += 1
@@ -5129,7 +5167,7 @@ class WordSearcher:
         if cached is not None:
             if timing is not None:
                 timing.score_cache_hits += 1
-            return cached[2]
+            return quest_candidate_rank(cached[0], cached[2], loadout)
         if timing is not None:
             timing.score_cache_misses += 1
         heap = prune_heap
@@ -5171,7 +5209,7 @@ class WordSearcher:
                     lb = mult_aware_lower_bound(
                         board, path, loadout, self.scoring.rules
                     )
-                if lb <= min_sc:
+                if prune_cannot_beat_heap(lb, min_sc, loadout):
                     return None
         if heap is not None and self._use_tier2_screen_for(loadout):
             min_imm = heap.min_immediate_score()
@@ -5215,10 +5253,27 @@ class WordSearcher:
                     if timing is not None:
                         timing.tier2_screen_skips += 1
                     return None
-                if rank_ub is not None and rank_ub < min_rank:
-                    if timing is not None:
-                        timing.tier2_rank_screen_skips += 1
-                    return None
+                if rank_ub is not None and min_rank is not None:
+                    prune_bound = (
+                        tier2_rank_lower_bound(
+                            board,
+                            path,
+                            score_word,
+                            loadout,
+                            ctx,
+                            self._mult_rules,
+                            mult_weight=self.mult_search_weight,
+                            hanafuda_level=hanafuda_level,
+                            graph_ctx=self._graph_ctx,
+                            board_scoring_ctx=self._board_scoring_ctx,
+                        )
+                        if quest_inverts_search_rank(loadout)
+                        else rank_ub
+                    )
+                    if prune_cannot_beat_heap(prune_bound, min_rank, loadout):
+                        if timing is not None:
+                            timing.tier2_rank_screen_skips += 1
+                        return None
                 if (
                     self._tier2_two_phase_active(loadout)
                     and min_rank is not None
@@ -5236,7 +5291,7 @@ class WordSearcher:
                         graph_ctx=self._graph_ctx,
                         board_scoring_ctx=self._board_scoring_ctx,
                     )
-                    if rank_lb < min_rank:
+                    if prune_cannot_beat_heap(rank_lb, min_rank, loadout):
                         defer_cap = self._tier2_defer_cap(heap)
                         if defer_cap <= 0 or len(self._provisional_candidates) >= defer_cap:
                             pass
@@ -5305,7 +5360,7 @@ class WordSearcher:
         self._score_cache[cache_key] = (immediate, setup_bonus, rank)
         if cache_key != key:
             self._score_cache[key] = (immediate, setup_bonus, rank)
-        return rank
+        return quest_candidate_rank(immediate, rank, loadout)
 
     def _immediate_and_setup(
         self, board: Board, path: list[int], word: str, loadout: Loadout
@@ -5574,27 +5629,26 @@ class WordSearcher:
         finally:
             self._parallel_executor = saved_pool
 
-    def _collect_full_board_hamiltonian_candidates(
+    def _collect_hamiltonian_word_candidates(
         self,
         board: Board,
         loadout: Loadout,
         candidates: _CandidateHeap,
         deadline: float,
+        *,
+        target_len: int,
+        score_all: bool,
     ) -> None:
-        """Full-board exact length: try each dictionary word of matching length."""
-        active = _active_indices(board)
-        n = len(active)
-        if n < 1 or self.min_len != n or self.max_len != n:
+        """Try dictionary words of target_len that span a valid path on the board."""
+        if target_len < 1:
             return
-
-        words = self.dictionary.words_by_length.get(n, ())
+        words = self.dictionary.words_by_length.get(target_len, ())
         if not words:
             return
 
         ctx = self._search_ctx(loadout)
         stamp_flags = ctx.search_flags
         graph_ctx = self._board_graph(board)
-        found = False
 
         def score_path(
             path: list[int],
@@ -5613,7 +5667,7 @@ class WordSearcher:
 
         def find_path_for_word(target: str) -> list[int] | None:
             target = target.lower()
-            if len(target) != n:
+            if len(target) != target_len:
                 return None
 
             def dfs(path: list[int], visited_mask: int) -> list[int] | None:
@@ -5622,7 +5676,7 @@ class WordSearcher:
                 if deadline != float("inf") and time.monotonic() >= deadline:
                     return None
                 k = len(path)
-                if k == n:
+                if k == target_len:
                     if self.validator.word_ok(board, path, target, stamp_flags):
                         return path
                     return None
@@ -5666,12 +5720,11 @@ class WordSearcher:
             return None
 
         for target in words:
-            if found:
+            if deadline != float("inf") and time.monotonic() >= deadline:
                 break
             path = find_path_for_word(target)
             if path is None:
                 continue
-            found = True
             self._consider_path_candidate(
                 board,
                 loadout,
@@ -5682,6 +5735,122 @@ class WordSearcher:
                 score_path,
                 resolved_word=target,
             )
+            if not score_all:
+                break
+
+    def _collect_small_board_hamiltonian_candidates(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        deadline: float,
+        *,
+        target_len: int,
+    ) -> None:
+        """Enumerate full-grid visits on tiny boards; score via dictionary resolve."""
+        active = _active_indices(board)
+        n = len(active)
+        if (
+            n > _SMALL_BOARD_HAMILTONIAN_MAX
+            or target_len != n
+            or target_len < self.min_len
+            or target_len > self.max_len
+        ):
+            return
+
+        ctx = self._search_ctx(loadout)
+        stamp_flags = ctx.search_flags
+        graph_ctx = self._board_graph(board)
+        required_mask = sum(1 << i for i in active)
+
+        def score_path(
+            path: list[int],
+            word: str,
+            *,
+            resolved_word: str | None = None,
+        ) -> float | None:
+            return self._rank_score_for_candidate(
+                board,
+                path,
+                word,
+                loadout,
+                prune_heap=candidates,
+                resolved_word=resolved_word,
+            )
+
+        def dfs(path: list[int], visited_mask: int) -> None:
+            if self._time_expired() or time.monotonic() >= deadline:
+                return
+            if len(path) == n:
+                if visited_mask != required_mask:
+                    return
+                search_word = search_word_from_path(
+                    board, path, flags=stamp_flags
+                )
+                accepted, score_word = self._accept_path_for_search(
+                    board,
+                    path,
+                    search_word,
+                    loadout,
+                    stamp_flags,
+                )
+                if accepted:
+                    self._consider_path_candidate(
+                        board,
+                        loadout,
+                        candidates,
+                        path,
+                        score_word,
+                        stamp_flags,
+                        score_path,
+                    )
+                return
+            cell = path[-1]
+            nbr_mask = neighbors_mask(
+                board,
+                visited_mask,
+                cell_id=cell,
+                flags=stamp_flags,
+                graph_ctx=graph_ctx,
+            )
+            for nbr in _iter_expansion_neighbors(
+                board,
+                visited_mask,
+                cell_id=cell,
+                path=path,
+                path_length=len(path),
+                flags=stamp_flags,
+                nbr_mask=nbr_mask,
+            ):
+                path.append(nbr)
+                dfs(path, visited_mask | (1 << nbr))
+                path.pop()
+
+        for start in active:
+            if time.monotonic() >= deadline:
+                break
+            dfs([start], 1 << start)
+
+    def _collect_full_board_hamiltonian_candidates(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        deadline: float,
+    ) -> None:
+        """Full-board exact length: try each dictionary word of matching length."""
+        active = _active_indices(board)
+        n = len(active)
+        if n < 1 or self.min_len != n or self.max_len != n:
+            return
+        self._collect_hamiltonian_word_candidates(
+            board,
+            loadout,
+            candidates,
+            deadline,
+            target_len=n,
+            score_all=False,
+        )
 
     def find_best_words(
         self,
@@ -5707,6 +5876,12 @@ class WordSearcher:
         self._solve_start_mono = None
         reset_board_flat_call_count()
         loadout = loadout or Loadout(money=board.money)
+        quest_target: float | None = None
+        if bullseye_active(loadout):
+            remaining = encounter_remaining_from_loadout(loadout)
+            if remaining > 0:
+                quest_target = float(remaining)
+        set_quest_search_target(quest_target)
         board = effective_board_for_loadout(board, loadout, self.scoring.rules)
         _active = _active_indices(board)
         active_count = len(_active)
@@ -5714,6 +5889,13 @@ class WordSearcher:
             self.min_len == self.max_len
             and self.min_len == active_count
             and self.min_len >= 20
+        )
+        self._small_board_hamiltonian = (
+            _is_shrunk_board(board)
+            and active_count <= _SMALL_BOARD_HAMILTONIAN_MAX
+            and self.max_len >= active_count
+            and active_count >= self.min_len
+            and not self._full_board_exact
         )
         self.validator.quest_loadout = loadout
         self.validator.extra_valid_words = equipped_improve_words(loadout)
@@ -5886,14 +6068,25 @@ class WordSearcher:
         use_parallel = (
             self.search_workers > 1
             and self._wordlist_path is not None
-            and (item_count < 2 or self._full_board_exact)
+            and (
+                item_count < 2
+                or self._full_board_exact
+                or (
+                    _is_shrunk_board(board)
+                    and active_count <= _SMALL_BOARD_HAMILTONIAN_MAX
+                )
+            )
         )
         # Short budgets: one pass at max_len. Longer budgets: deepen so DFS does not
         # exhaust the first high-base-score branch to max_len before shorter words.
         # Parallel mode uses one pass at max_len to avoid repeated pool scheduling.
         item_heavy_caps = item_count >= 2 and self.max_len > self.min_len
         if item_heavy_caps:
-            caps = _scattered_item_cap_sequence(self.min_len, self.max_len)
+            caps = _scattered_item_cap_sequence(
+                self.min_len,
+                self.max_len,
+                active_count=active_count if _is_shrunk_board(board) else None,
+            )
         elif use_parallel:
             # One pool round at max_len; add cap=8 when jokers need hub-bridge paths.
             if (
@@ -5990,8 +6183,19 @@ class WordSearcher:
                 candidates,
                 ham_deadline,
             )
+        elif self._small_board_hamiltonian:
+            ham_slice = min(12.0, self.time_budget * 0.2)
+            ham_deadline = min(main_deadline, search_begin + ham_slice)
+            if ham_deadline > time.monotonic():
+                self._collect_small_board_hamiltonian_candidates(
+                    board,
+                    loadout,
+                    candidates,
+                    ham_deadline,
+                    target_len=active_count,
+                )
         try:
-            standard_search = len(candidates) == 0
+            standard_search = len(candidates) == 0 or self._small_board_hamiltonian
             if (
                 standard_search
                 and not self._full_board_exact
@@ -6596,8 +6800,17 @@ class WordSearcher:
                 else:
                     sort_rank = rank_sc
                 prev = best_by_word.get(word)
-                if prev is not None and immediate <= prev[0]:
-                    continue
+                if prev is not None:
+                    if quest_inverts_search_rank(loadout):
+                        if immediate >= prev[0]:
+                            continue
+                    elif bullseye_active(loadout):
+                        if quest_candidate_rank(
+                            immediate, sort_rank, loadout
+                        ) <= quest_candidate_rank(prev[0], prev[2], loadout):
+                            continue
+                    elif immediate <= prev[0]:
+                        continue
                 best_by_word[word] = (
                     immediate,
                     setup,
@@ -6611,7 +6824,7 @@ class WordSearcher:
         unique: list[WordResult] = []
         ranked_finalists = sorted(
             best_by_word.values(),
-            key=lambda row: -row[2],
+            key=lambda row: -quest_candidate_rank(row[0], row[2], loadout),
         )
         for immediate, setup, rank_sc, word, path_tuple in ranked_finalists:
             if time.monotonic() >= deadline and len(unique) >= top_n:
@@ -6677,6 +6890,7 @@ class WordSearcher:
         self.validator.quest_loadout = None
         self.validator.extra_valid_words = frozenset()
         set_quest_movement_loadout(None)
+        set_quest_search_target(None)
         if center_idx is not None:
             unique = [r for r in unique if center_idx in r.path]
         return unique[:top_n]

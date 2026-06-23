@@ -43,6 +43,36 @@ namespace CursedWordsSolverCompanion
 
         }
 
+        public static bool IsTwoWrongs(Player player)
+        {
+            var challenge = TryGetChallengeFromPlayer(player);
+            return challenge != null
+                && string.Equals(
+                    challenge.GetType().Name,
+                    "TwoWrongs",
+                    StringComparison.Ordinal
+                );
+        }
+
+        public static bool IsTwoWrongsSnapshot(RunStateSnapshot snapshot)
+        {
+            if (snapshot == null)
+                return false;
+            if (
+                string.Equals(
+                    snapshot.challenge_game_class,
+                    "TwoWrongs",
+                    StringComparison.Ordinal
+                )
+            )
+                return true;
+            if (snapshot.extras == null)
+                return false;
+            string gc;
+            return snapshot.extras.TryGetValue("challenge_game_class", out gc)
+                && string.Equals(gc, "TwoWrongs", StringComparison.Ordinal);
+        }
+
         public static void FillEmbargoExtras(RunStateSnapshot snapshot, Player player)
         {
             if (snapshot == null || player == null)

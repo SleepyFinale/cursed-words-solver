@@ -155,6 +155,55 @@ def test_parse_ui_layout_solver_row_flip():
     assert parsed.board_cell_centers[0][1] < parsed.board_cell_centers[20][1]
 
 
+def _bat_3x3_ui_layout_run_state() -> dict:
+    """Bat 3×3 shrunk grid: layout indices 0–8 map to storage 10–22."""
+    cells = [
+        {"row": 0, "col": 0, "index": 0, "x": 829, "y": 316},
+        {"row": 0, "col": 1, "index": 1, "x": 959, "y": 315},
+        {"row": 0, "col": 2, "index": 2, "x": 1096, "y": 317},
+        {"row": 1, "col": 0, "index": 3, "x": 828, "y": 450},
+        {"row": 1, "col": 1, "index": 4, "x": 961, "y": 450},
+        {"row": 1, "col": 2, "index": 5, "x": 1096, "y": 450},
+        {"row": 2, "col": 0, "index": 6, "x": 823, "y": 590},
+        {"row": 2, "col": 1, "index": 7, "x": 963, "y": 586},
+        {"row": 2, "col": 2, "index": 8, "x": 1096, "y": 589},
+    ]
+    return {
+        "board": {
+            "rows": 3,
+            "cols": 3,
+            "playable_min_row": 2,
+            "playable_max_row": 4,
+            "playable_min_col": 0,
+            "playable_max_col": 2,
+            "tiles": [{}] * 25,
+        },
+        "ui_layout": {
+            "board": {
+                "x": 660,
+                "y": 126,
+                "width": 601,
+                "height": 632,
+                "rows": 3,
+                "cols": 3,
+                "cells": cells,
+            }
+        },
+    }
+
+
+def test_parse_ui_layout_remaps_shrunk_3x3_cell_centers():
+    """Layout-space indices 0–8 must become solver storage indices 10–22."""
+    parsed = parse_ui_layout(_bat_3x3_ui_layout_run_state())
+    assert parsed is not None
+    centers = parsed.board_cell_centers or {}
+    assert 0 not in centers
+    assert 10 in centers
+    assert 20 in centers
+    assert centers[10] == (829.0, 316.0)
+    assert centers[20] == (823.0, 590.0)
+
+
 def test_parse_ui_layout_filters_collapsed_rack_slots():
     run_state = {
         "extras": {

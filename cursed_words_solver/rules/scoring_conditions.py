@@ -2211,6 +2211,17 @@ def _word_starts_one_letter_after(prev: str, first: str) -> bool:
     return f.isalpha() and f == required
 
 
+def _word_starts_later_in_alphabet(prev: str, first: str) -> bool:
+    """Chips: current first letter is strictly later in the alphabet than prev."""
+    if len(prev) != 1 or len(first) != 1:
+        return False
+    p = prev.lower()
+    f = first.lower()
+    if not p.isalpha() or not f.isalpha():
+        return False
+    return ord(f) > ord(p)
+
+
 def consumable_count_on_path(board: Board, path: list[int]) -> int:
     return sum(
         1 for idx in path if is_consumable_tile(board.get_by_index(idx))
@@ -2622,7 +2633,7 @@ def word_starts_ends_different_color(board: Board, path: list[int]) -> bool:
     end_tile = board.get_by_index(path[-1])
     start = start_tile.color
     end = end_tile.color
-    if start in NON_COLOUR_FOR_NUMBER_BONUS or end in NON_COLOUR_FOR_NUMBER_BONUS:
+    if start in NON_COLOUR_FOR_UNIQUE_COUNT or end in NON_COLOUR_FOR_UNIQUE_COUNT:
         return False
     return start != end
 
@@ -2888,6 +2899,17 @@ def explain_sticker_condition(
         first = _effective_word_start_letter(board, path, word)
         if not prev or not first:
             return False, f"skipped: missing previous or word first letter (prev={prev!r}, word={first!r})"
+        applying = (applying_sticker_id or "").strip().lower()
+        if applying == "chips":
+            if not _word_starts_later_in_alphabet(prev, first):
+                return (
+                    False,
+                    f"skipped: word starts '{first}', need letter after '{prev}' in alphabet",
+                )
+            return (
+                True,
+                f"applied: word starts '{first}' after previous '{prev}' in alphabet",
+            )
         if not _word_starts_one_letter_after(prev, first):
             need = _limnophila_required_next_letter(prev)
             if need:
@@ -2970,7 +2992,7 @@ def _evaluate_sticker_condition(
         )
     if condition == "no_colorless_on_path":
         return all(
-            board.get_by_index(idx).color not in NON_COLOUR_FOR_NUMBER_BONUS
+            board.get_by_index(idx).color not in NON_COLOUR_FOR_UNIQUE_COUNT
             for idx in path
         )
     if condition == "blue_count_eq:2":
@@ -2989,6 +3011,9 @@ def _evaluate_sticker_condition(
         first = _effective_word_start_letter(board, path, word)
         if not prev or not first:
             return False
+        applying = (applying_sticker_id or "").strip().lower()
+        if applying == "chips":
+            return _word_starts_later_in_alphabet(prev, first)
         return _word_starts_one_letter_after(prev, first)
     if condition == "has_double_letter":
         return has_consecutive_double_letter_on_path(board, path, word)
@@ -5051,6 +5076,45 @@ _GRID_PATH_INVENTORY_BLEEDTHROUGH_EXCLUDE = frozenset(
 )
 
 
+def _equipped_sticker_level_for_slug(
+    loadout: Loadout | None, slug_norm: str
+) -> int | None:
+    if loadout is None:
+        return None
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    for sticker in loadout.stickers:
+        if slugify_name(str(sticker.id or "")) != slug_norm:
+            continue
+        try:
+            return max(1, int(sticker.level))
+        except (TypeError, ValueError):
+            return 1
+    return None
+
+
+def _level_from_exported_scatter_tier(
+    tile_lv: int,
+    encounter_level: int,
+    loadout: Loadout | None,
+    slug_norm: str,
+    *,
+    floor_mod_capped: bool,
+    is_grid_path_tile: bool,
+) -> int:
+    """Map melmod scattered_item_level to scoring tier on a grid-path tile."""
+    if floor_mod_capped and is_grid_path_tile:
+        return encounter_level
+    equipped = _equipped_sticker_level_for_slug(loadout, slug_norm)
+    if equipped is None:
+        return tile_lv
+    if tile_lv >= equipped:
+        if tile_lv > encounter_level:
+            return encounter_level
+        return tile_lv
+    return max(tile_lv, equipped)
+
+
 def grid_path_sticker_level(
     loadout: Loadout | None,
     slug: str,
@@ -5108,12 +5172,14 @@ def grid_path_sticker_level(
                     tile_lv = max(1, int(raw))
                     tile_level_known = True
                     exported_tile_level = tile_lv
-                    if floor_mod_capped and is_grid_path_tile:
-                        # Floor mod caps grid scatter scoring tier; export may be component level.
-                        level = encounter_level
-                    else:
-                        # Melmod exports component upgrade level; encounter grid tier can be higher.
-                        level = max(tile_lv, encounter_level)
+                    level = _level_from_exported_scatter_tier(
+                        tile_lv,
+                        encounter_level,
+                        loadout,
+                        slug_norm,
+                        floor_mod_capped=floor_mod_capped,
+                        is_grid_path_tile=is_grid_path_tile,
+                    )
                 except (TypeError, ValueError):
                     pass
 
@@ -5128,10 +5194,14 @@ def grid_path_sticker_level(
         if extras_level is not None:
             tile_level_known = True
             exported_tile_level = extras_level
-            if floor_mod_capped and is_grid_path_tile:
-                level = encounter_level
-            else:
-                level = max(extras_level, encounter_level)
+            level = _level_from_exported_scatter_tier(
+                extras_level,
+                encounter_level,
+                loadout,
+                slug_norm,
+                floor_mod_capped=floor_mod_capped,
+                is_grid_path_tile=is_grid_path_tile,
+            )
 
     if (
         slug_norm in ("down_under", "dusty_coffin", "deep_sea_horror")
@@ -5212,6 +5282,7 @@ def grid_path_sticker_level(
         and exported_tile_level is not None
         and equipped_level is not None
         and exported_tile_level >= equipped_level
+        and exported_tile_level > encounter_level
         and slug_norm not in _GRID_PATH_INVENTORY_BLEEDTHROUGH_EXCLUDE
     ):
         # Export matches inventory tier (component bleed-through); grid scores at

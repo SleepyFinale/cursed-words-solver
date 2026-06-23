@@ -20,7 +20,7 @@ from cursed_words_solver.suggestion import format_suggestion_word, format_result
 from cursed_words_solver.ui.board_geometry import path_geometry
 
 if TYPE_CHECKING:
-    from cursed_words_solver.models import Board, WordResult
+    from cursed_words_solver.models import Board, Loadout, WordResult
 
 
 class ResultOverlay(QWidget):
@@ -179,6 +179,7 @@ class ResultOverlay(QWidget):
         consumable_placements: list | None = None,
         twinkle_toes_swap: Any | None = None,
         trusted: bool = True,
+        loadout: Loadout | None = None,
     ) -> None:
         self._has_solved = True
         self.idle_label.hide()
@@ -265,7 +266,7 @@ class ResultOverlay(QWidget):
                     f"Swap ({row_a + 1},{col_a + 1}) \u2194 ({row_b + 1},{col_b + 1}) first"
                     "</span>"
                 )
-            score_html = format_result_score_display(top)
+            score_html = format_result_score_display(top, loadout)
             if not trusted:
                 score_html = (
                     "<span style='color:#fa0;font-weight:bold'>UNTRUSTED</span> "

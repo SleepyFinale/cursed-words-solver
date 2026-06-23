@@ -102,7 +102,13 @@ from cursed_words_solver.rules.quest_effects import (
     active_quest_name,
     quest_constraints,
 )
-from cursed_words_solver.rules.quest_scoring import target_met
+from cursed_words_solver.rules.quest_scoring import (
+    bullseye_active,
+    display_score_for_quest,
+    quest_rank_beats_baseline,
+    target_met,
+    two_wrongs_active,
+)
 from cursed_words_solver.rules.rule_lookup import boss_display_name, resolve_rule_id
 from cursed_words_solver.consumable_placement import (
     consumable_investment_active,
@@ -192,6 +198,7 @@ class _SolveUIUpdate:
     on_game_highlight: bool
     consumable_placements: list | None = None
     twinkle_toes_swap: TwinkleToesSwap | None = None
+    loadout: Loadout | None = None
     # Fingerprints from run_state.json at solve time (melmod); used to detect shop/round end.
     melmod_board_fingerprint: str | None = None
     melmod_loadout_fingerprint: str | None = None
@@ -673,6 +680,7 @@ class SolverApp:
             consumable_placements=update.consumable_placements,
             twinkle_toes_swap=update.twinkle_toes_swap,
             trusted=update.trusted_suggestion,
+            loadout=update.loadout,
         )
         if (
             update.on_game_highlight
@@ -1109,6 +1117,16 @@ class SolverApp:
             twinkle_swap_record: TwinkleToesSwap | None = None
             has_target = "target_score" in (loadout.extras or {})
             grid_target = target_score_from_loadout(loadout) if has_target else 0
+            if two_wrongs_active(loadout) or bullseye_active(loadout):
+                try:
+                    encounter_remaining = int(
+                        (loadout.extras or {}).get("encounter_remaining_target") or 0
+                    )
+                except (TypeError, ValueError):
+                    encounter_remaining = 0
+                if encounter_remaining > 0:
+                    has_target = True
+                    grid_target = encounter_remaining
             if mandatory:
                 print(
                     f"  Sandy Saguaro: {len(mandatory)} placed consumable(s) "
@@ -1278,10 +1296,30 @@ class SolverApp:
                         flush=True,
                     )
                 if has_target and results:
-                    print(
-                        f"  Target: {grid_target} pts (best {int(results[0].score)})",
-                        flush=True,
+                    best_display = int(
+                        display_score_for_quest(float(results[0].score), loadout)
                     )
+                    if two_wrongs_active(loadout):
+                        print(
+                            f"  Target: {-grid_target} display "
+                            f"({grid_target} remaining, best {best_display})",
+                            flush=True,
+                        )
+                    elif bullseye_active(loadout):
+                        best_score = int(results[0].score)
+                        exact = target_met(
+                            float(best_score), float(grid_target), loadout
+                        )
+                        suffix = "" if exact else " (exact hit needed)"
+                        print(
+                            f"  Target: {grid_target} pts{suffix} (best {best_score})",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            f"  Target: {grid_target} pts (best {int(results[0].score)})",
+                            flush=True,
+                        )
             elif twinkle_pending and solve_remaining() >= 1.0:
                 print(
                     "  Twinkle Toes: swap pending — simulating tile pairs…",
@@ -1319,10 +1357,30 @@ class SolverApp:
                         flush=True,
                     )
                 if has_target and results:
-                    print(
-                        f"  Target: {grid_target} pts (best {int(results[0].score)})",
-                        flush=True,
+                    best_display = int(
+                        display_score_for_quest(float(results[0].score), loadout)
                     )
+                    if two_wrongs_active(loadout):
+                        print(
+                            f"  Target: {-grid_target} display "
+                            f"({grid_target} remaining, best {best_display})",
+                            flush=True,
+                        )
+                    elif bullseye_active(loadout):
+                        best_score = int(results[0].score)
+                        exact = target_met(
+                            float(best_score), float(grid_target), loadout
+                        )
+                        suffix = "" if exact else " (exact hit needed)"
+                        print(
+                            f"  Target: {grid_target} pts{suffix} (best {best_score})",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            f"  Target: {grid_target} pts (best {int(results[0].score)})",
+                            flush=True,
+                        )
             elif solve_remaining() >= 0.5:
                 results = self._searcher.find_best_words(
                     board,
@@ -1450,7 +1508,11 @@ class SolverApp:
                     _accumulate_placement_timing()
                     if (
                         boost_results
-                        and _result_rank_score(boost_results[0]) > baseline_rank
+                        and quest_rank_beats_baseline(
+                            _result_rank_score(boost_results[0]),
+                            baseline_rank,
+                            loadout,
+                        )
                     ):
                         search_board = boost_board
                         placement_records = boost_records
@@ -1518,19 +1580,34 @@ class SolverApp:
             if (
                 has_target
                 and grid_target > 0
-                and baseline_score < grid_target
                 and not sandy_auto_place
                 and solve_remaining() >= 1.0
+                and target_rescue_worth_trying(
+                    baseline_score, grid_target, consumable_rack_tiles(loadout, cactus_only=False), loadout=loadout
+                )
             ):
                 rescue_rack = consumable_rack_tiles(loadout, cactus_only=False)
-                if target_rescue_worth_trying(
-                    baseline_score, grid_target, rescue_rack, loadout=loadout
-                ):
-                    print(
-                        f"  Target: {grid_target} pts (best {int(baseline_score)} "
-                        "— trying consumables…)",
-                        flush=True,
-                    )
+                if rescue_rack:
+                    if two_wrongs_active(loadout):
+                        print(
+                            f"  Target: {-grid_target} display "
+                            f"({grid_target} remaining, best "
+                            f"{int(display_score_for_quest(baseline_score, loadout))} "
+                            "— trying consumables…)",
+                            flush=True,
+                        )
+                    elif bullseye_active(loadout):
+                        print(
+                            f"  Target: {grid_target} pts exact "
+                            f"(best {int(baseline_score)} — trying consumables…)",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            f"  Target: {grid_target} pts (best {int(baseline_score)} "
+                            "— trying consumables…)",
+                            flush=True,
+                        )
                     rescue_board, rescue_records, rescue_results = (
                         search_target_rescue(
                             self._searcher,
@@ -1577,18 +1654,36 @@ class SolverApp:
                 has_target
                 and grid_target > 0
                 and sandy_auto_place
-                and baseline_score < grid_target
                 and solve_remaining() >= 1.0
+                and target_rescue_worth_trying(
+                    baseline_score,
+                    grid_target,
+                    consumable_rack_tiles(loadout, cactus_only=False),
+                    loadout=loadout,
+                )
             ):
                 rescue_rack = consumable_rack_tiles(loadout, cactus_only=False)
-                if target_rescue_worth_trying(
-                    baseline_score, grid_target, rescue_rack, loadout=loadout
-                ):
-                    print(
-                        f"  Target: {grid_target} pts (best {int(baseline_score)} "
-                        "— trying extra consumables…)",
-                        flush=True,
-                    )
+                if rescue_rack:
+                    if two_wrongs_active(loadout):
+                        print(
+                            f"  Target: {-grid_target} display "
+                            f"({grid_target} remaining, best "
+                            f"{int(display_score_for_quest(baseline_score, loadout))} "
+                            "— trying extra consumables…)",
+                            flush=True,
+                        )
+                    elif bullseye_active(loadout):
+                        print(
+                            f"  Target: {grid_target} pts exact "
+                            f"(best {int(baseline_score)} — trying extra consumables…)",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            f"  Target: {grid_target} pts (best {int(baseline_score)} "
+                            "— trying extra consumables…)",
+                            flush=True,
+                        )
                     rescue_board, rescue_records, rescue_results = (
                         search_target_rescue(
                             self._searcher,
@@ -1625,6 +1720,19 @@ class SolverApp:
                             f"({int(rescue_results[0].score)} pts)",
                             flush=True,
                         )
+            if (
+                has_target
+                and grid_target > 0
+                and bullseye_active(loadout)
+                and results
+                and not target_met(float(results[0].score), float(grid_target), loadout)
+            ):
+                best_score = int(results[0].score)
+                print(
+                    f"  Warning: no exact hit found; closest is {best_score} "
+                    f"(target {grid_target}) — overshoot will bounce",
+                    flush=True,
+                )
             for result in results:
                 result.dictionary_word = dictionary_word_for_path(
                     search_board,
@@ -2020,7 +2128,7 @@ class SolverApp:
                 done_msg = (
                     f"Done in {search_elapsed:.1f}s{timing_note}. "
                     f"Best: {format_suggestion_word(top)} "
-                    f"({format_result_score_display(top)})"
+                    f"({format_result_score_display(top, loadout)})"
                 )
                 if twinkle_swap_record and placement_records:
                     done_msg += (
@@ -2105,6 +2213,7 @@ class SolverApp:
                     melmod_board_fingerprint=melmod_board_fp,
                     melmod_loadout_fingerprint=melmod_loadout_fp,
                     trusted_suggestion=trusted,
+                    loadout=loadout,
                 )
             )
         except Exception:

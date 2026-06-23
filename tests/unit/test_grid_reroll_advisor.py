@@ -68,3 +68,25 @@ def test_should_not_reroll_when_cannot_reroll():
 def test_should_not_reroll_without_encounter_target():
     loadout = Loadout(extras={"grids_remaining": "2"})
     assert should_reroll_grid(10.0, loadout, _reroll(), gap_ratio=0.3) is False
+
+
+def test_two_wrongs_should_not_reroll_negative_raw_with_good_effective():
+    loadout = Loadout(
+        extras={
+            "challenge_game_class": "TwoWrongs",
+            "encounter_remaining_target": "3",
+            "grids_remaining": "2",
+        }
+    )
+    assert should_reroll_grid(-6.0, loadout, _reroll(), gap_ratio=0.3) is False
+
+
+def test_two_wrongs_should_reroll_positive_raw():
+    loadout = Loadout(
+        extras={
+            "challenge_game_class": "TwoWrongs",
+            "encounter_remaining_target": "3",
+            "grids_remaining": "2",
+        }
+    )
+    assert should_reroll_grid(53.0, loadout, _reroll(), gap_ratio=0.3) is True

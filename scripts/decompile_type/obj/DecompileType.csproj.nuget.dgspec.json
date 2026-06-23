@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj": {}
+    "c:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj": {}
   },
   "projects": {
-    "C:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj": {
+    "c:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj",
+        "projectUniqueName": "c:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj",
         "projectName": "DecompileType",
-        "projectPath": "C:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj",
-        "packagesPath": "C:\\Users\\TheMi\\AppData\\Local\\Temp\\cursor-sandbox-cache\\86d4305f05b1c8e2b604b973df834608\\nuget",
-        "outputPath": "C:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\obj\\",
+        "projectPath": "c:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj",
+        "packagesPath": "C:\\Users\\TheMi\\.nuget\\packages\\",
+        "outputPath": "c:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\TheMi\\AppData\\Roaming\\NuGet\\NuGet.Config"

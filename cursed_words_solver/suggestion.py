@@ -49,6 +49,7 @@ from cursed_words_solver.search import (
     search_word_from_path,
     word_assignable_on_path,
 )
+from cursed_words_solver.ui.board_geometry import path_to_melmod_indices
 
 
 
@@ -1138,12 +1139,19 @@ def format_suggestion_word(result: WordResult) -> str:
     return result.word
 
 
-def format_result_score_display(result: WordResult) -> str:
+def format_result_score_display(
+    result: WordResult,
+    loadout: Loadout | None = None,
+) -> str:
     """Score line for terminal/overlay; includes Capybara min–max when present."""
+    from cursed_words_solver.rules.quest_scoring import display_score_for_quest
+
     cap = (result.breakdown or {}).get("capybara")
-    score = int(result.score)
-    if cap and float(cap.get("max", score)) > float(cap.get("min", score)):
-        return f"{score:,} pts ({int(cap['min']):,}–{int(cap['max']):,})"
+    score = int(display_score_for_quest(float(result.score), loadout))
+    if cap and float(cap.get("max", result.score)) > float(cap.get("min", result.score)):
+        cap_min = int(display_score_for_quest(float(cap["min"]), loadout))
+        cap_max = int(display_score_for_quest(float(cap["max"]), loadout))
+        return f"{score:,} pts ({cap_min:,}–{cap_max:,})"
     return f"{score:,} pts"
 
 
@@ -1735,6 +1743,11 @@ def save_last_suggestion(
 
     f8_sequence = _next_f8_sequence()
 
+    from cursed_words_solver.rules.quest_scoring import display_score_for_quest
+
+    raw_score = int(result.score)
+    display_score = int(display_score_for_quest(float(result.score), loadout))
+
     payload: dict[str, Any] = {
 
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1747,9 +1760,11 @@ def save_last_suggestion(
 
         "scoring_word": scoring_word,
 
-        "path": list(result.path),
+        "path": list(path_to_melmod_indices(board, result.path)),
 
-        "predicted_score": int(result.score),
+        "predicted_score": display_score,
+
+        "predicted_score_raw": raw_score,
 
         "board_fingerprint": board_fp,
 
@@ -1812,9 +1827,15 @@ def save_last_suggestion(
     if score_nondeterministic:
         payload["score_nondeterministic"] = True
         if predicted_score_min is not None:
-            payload["predicted_score_min"] = int(predicted_score_min)
+            payload["predicted_score_min"] = int(
+                display_score_for_quest(float(predicted_score_min), loadout)
+            )
+            payload["predicted_score_min_raw"] = int(predicted_score_min)
         if predicted_score_max is not None:
-            payload["predicted_score_max"] = int(predicted_score_max)
+            payload["predicted_score_max"] = int(
+                display_score_for_quest(float(predicted_score_max), loadout)
+            )
+            payload["predicted_score_max_raw"] = int(predicted_score_max)
         if capybara_perm_count is not None:
             payload["capybara_perm_count"] = int(capybara_perm_count)
         if capybara_exhaustive is not None:
@@ -1855,6 +1876,8 @@ def save_blocked_suggestion(
     if run_state_snapshot is not None:
         board_fp, loadout_fp = fingerprints_from_run_state(run_state_snapshot)
     f8_sequence = _next_f8_sequence()
+    from cursed_words_solver.rules.quest_scoring import display_score_for_quest
+
     payload: dict[str, Any] = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "f8_sequence": f8_sequence,
@@ -1864,7 +1887,10 @@ def save_blocked_suggestion(
         "word": scoring_word,
         "scoring_word": scoring_word,
         "path": list(result.path),
-        "predicted_score": int(result.score),
+        "predicted_score": int(
+            display_score_for_quest(float(result.score), loadout)
+        ),
+        "predicted_score_raw": int(result.score),
         "board_fingerprint": board_fp,
         "loadout_fingerprint": loadout_fp,
         "predicted_trace": predicted_trace,

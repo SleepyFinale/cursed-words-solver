@@ -15,6 +15,7 @@ from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.rule_lookup import count_scoring_items, slugify_name
 from cursed_words_solver.rules.scoring_conditions import (
     currency_letter_value,
+    evaluate_sticker_condition,
     grid_path_sticker_level,
     money_for_scoring,
     unique_vowels_in_word,
@@ -635,6 +636,32 @@ def test_chips_alphabet_progression():
     assert bd["multiplier"] == 1.5
 
 
+def test_chips_any_later_letter_not_exact_plus_one():
+    """owner capture: o > e but not exactly f — Chips applies, Limnophila does not."""
+    from cursed_words_solver.rules.scoring_conditions import explain_sticker_condition
+
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "O", 1)
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="chips", name="Chips", level=1)],
+        extras={
+            "grid_number": "2",
+            "scoring_previous_words_count": "2",
+            "previous_word_first_letter": "e",
+        },
+    )
+    met, detail = explain_sticker_condition(
+        "word_starts_after_previous",
+        board,
+        [0],
+        "owner",
+        loadout,
+        applying_sticker_id="chips",
+    )
+    assert met is True
+    assert "after previous 'e' in alphabet" in detail
+
+
 def test_telescope_red_encounter_bonus():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 2, color=TileColor.RED)
@@ -1110,29 +1137,32 @@ def test_artist_s_palette_grid_path_uses_scatter_tier_when_export_matches_equipp
     assert level == 1
 
 
-def test_artist_s_palette_grid_path_uses_scatter_tier_when_export_matches_equipped():
-    """trinkum/jazzbos: scattered export L3 + equipped L3 → grid scores at encounter L1 (+42)."""
+def test_artist_s_palette_grid_only_uses_exported_level_on_late_grid():
+    """Beans grid 3: scattered L1 palette (not equipped) scores at L1, not grid-1."""
     board = _empty_board()
-    board.tiles[1][2] = Tile(
-        row=1,
-        col=2,
-        char="p",
-        letter="P",
+    board.tiles[3][3] = Tile(
+        row=3,
+        col=3,
+        char="i",
+        letter="I",
         base_score=0,
-        color=TileColor.RED,
+        color=TileColor.SHINY,
         curse=CurseType.ITEM,
         metadata={
             "source": "melmod",
             "scattered_item_id": "artist_s_palette",
-            "scattered_item_level": 3,
+            "scattered_item_level": 1,
         },
     )
-    board.tiles[1][3] = _tile(1, 3, "a", 2, color=TileColor.RED)
+    board.tiles[3][2] = _tile(3, 2, "e", 12, color=TileColor.WHITE)
     loadout = Loadout(
-        stickers=[LoadoutItem(id="artist_s_palette", name="Artist's Palette", level=3)],
-        extras={"grid_number": "1", "scoring_previous_words_count": "0"},
+        stickers=[
+            LoadoutItem(id="game_pad", name="Game Pad", level=2),
+            LoadoutItem(id="ferris_wheel", name="Ferris Wheel", level=1),
+        ],
+        extras={"grid_number": "3", "scoring_previous_words_count": "2"},
     )
-    path = [7, 8]
+    path = [18, 17]
     level = grid_path_sticker_level(
         loadout,
         "artist_s_palette",
@@ -1141,3 +1171,39 @@ def test_artist_s_palette_grid_path_uses_scatter_tier_when_export_matches_equipp
         path_tile_index=0,
     )
     assert level == 1
+
+
+def test_ornate_key_no_colorless_allows_white_item_on_path():
+    """Ornate Key: WHITE item tiles are not COLOURLESS (Beans sele path)."""
+    board = _empty_board()
+    board.tiles[0][3] = Tile(
+        row=0,
+        col=3,
+        char="e",
+        letter="E",
+        base_score=0,
+        color=TileColor.WHITE,
+        curse=CurseType.ITEM,
+        metadata={"scattered_item_id": "cocktail", "scattered_item_level": 1},
+    )
+    board.tiles[4][4] = _tile(4, 4, "u", 0, color=TileColor.PINK, curse=CurseType.ITEM)
+    board.tiles[4][3] = _tile(4, 3, "l", 12, color=TileColor.BLUE)
+    board.tiles[3][3] = Tile(
+        row=3,
+        col=3,
+        char="i",
+        letter="I",
+        base_score=0,
+        color=TileColor.SHINY,
+        curse=CurseType.ITEM,
+    )
+    loadout = Loadout()
+    path = [3, 24, 23, 18]
+    met = evaluate_sticker_condition(
+        "no_colorless_on_path",
+        board,
+        path,
+        "sele",
+        loadout,
+    )
+    assert met is True

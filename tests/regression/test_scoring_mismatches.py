@@ -2682,6 +2682,45 @@ def test_rectifies_replay_matches_actual_score() -> None:
     assert int(score) == int(data["actual_score"]) == 60
 
 
+def test_ngwee_replay_matches_actual_score() -> None:
+    """Mismatch 20260623_151553: Rainbow pin component + historic poison parity."""
+    case_path = FIXTURES / "20260623_151553.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260623_151553 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 403
+
+
+def test_blackeye_replay_matches_actual_score() -> None:
+    """Mismatch 20260623_151926: grid ferris L2 + ornate finalize stacking."""
+    case_path = FIXTURES / "20260623_151926.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260623_151926 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 2014
+
+
+def test_dob_replay_matches_actual_score() -> None:
+    """Mismatch 20260623_131346: Ferris Wheel applies when path ends white vs green."""
+    case_path = FIXTURES / "20260623_131346.json"
+    if not case_path.is_file():
+        pytest.skip("fixture 20260623_131346 not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 60
+
+
 def test_reink_replay_matches_actual_score() -> None:
     """Mismatch 20260609_155559: Capybara floor mod caps grid Maple at L1; game 48."""
     case_path = FIXTURES / "20260609_155559.json"

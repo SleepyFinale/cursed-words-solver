@@ -1,10 +1,10 @@
 {
   "version": 2,
-  "dgSpecHash": "aqLUniOJWJQ=",
+  "dgSpecHash": "/sqAjffsmj4=",
   "success": true,
-  "projectFilePath": "C:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj",
+  "projectFilePath": "c:\\Users\\TheMi\\Documents\\cursed-words-solver\\scripts\\decompile_type\\DecompileType.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\TheMi\\AppData\\Local\\Temp\\cursor-sandbox-cache\\86d4305f05b1c8e2b604b973df834608\\nuget\\icsharpcode.decompiler\\8.2.0.7535\\icsharpcode.decompiler.8.2.0.7535.nupkg.sha512"
+    "C:\\Users\\TheMi\\.nuget\\packages\\icsharpcode.decompiler\\8.2.0.7535\\icsharpcode.decompiler.8.2.0.7535.nupkg.sha512"
   ],
   "logs": []
 }

@@ -126,12 +126,25 @@ class EffectEngine:
         """Apply post-submit extras without advancing grid."""
         next_state = state.clone()
         extras = next_state.extras
-        score = reward.score
+        raw_score = reward.score
+        from cursed_words_solver.rules.quest_scoring import effective_submit_score
+
+        submit_score = effective_submit_score(raw_score, next_state.loadout)
 
         remaining = next_state.encounter_remaining_target
         if remaining > 0 or "encounter_remaining_target" in extras:
-            next_state.set_encounter_remaining_target(remaining - score)
-        next_state.encounter_score_earned += score
+            from cursed_words_solver.rules.quest_scoring import (
+                remaining_target_after_submit,
+            )
+
+            next_state.set_encounter_remaining_target(
+                int(
+                    remaining_target_after_submit(
+                        float(remaining), raw_score, next_state.loadout
+                    )
+                )
+            )
+        next_state.encounter_score_earned += int(submit_score)
 
         word = submission.word
         first = _effective_word_start_letter(
@@ -146,7 +159,7 @@ class EffectEngine:
         historic = _load_historic_list(extras)
         entry: dict[str, Any] = {
             "word": word.upper(),
-            "score": int(score),
+            "score": int(submit_score),
             "path": list(submission.path),
         }
         if red_count:

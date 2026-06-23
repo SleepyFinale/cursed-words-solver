@@ -95,6 +95,9 @@ def _score_submitted(data: dict) -> int:
     loadout = parse_run_state(replay)
     assert loadout is not None
     path = data["path"]
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    path = path_from_melmod_indices(board, path)
     word = data["word"]
     _adjust_mutating_dna_extras(replay, data, board, path)
     loadout = parse_run_state(replay)
@@ -332,3 +335,117 @@ def test_aardvark_search_does_not_suggest_invalid_path():
             continue
         displayed = (result.dictionary_word or result.word).lower()
         assert displayed != "aardvark"
+
+
+BAILEE_6X6_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260623_105541_bailee_6x6.json"
+)
+
+
+def _coords_to_solver_index(col: int, display_row: int, cols: int) -> int:
+    """Mirror melmod SuggestionMatcher.CoordsToSolverIndex."""
+    if cols <= 0:
+        cols = 5
+    return (cols - 1 - display_row) * cols + col
+
+
+@pytest.mark.skipif(not BAILEE_6X6_FIXTURE.exists(), reason="bailee 6x6 fixture required")
+def test_bailee_6x6_submit_path_needs_board_cols_not_five():
+    """False path_mismatch: 5-wide indexing collapses distinct 6x6 tiles."""
+    data = json.loads(BAILEE_6X6_FIXTURE.read_text(encoding="utf-8"))
+    f8_path = data["solver"]["path"]
+    wrong_path = data["actual"]["path"]
+    assert f8_path == [12, 23, 24, 35, 30, 29]
+    assert wrong_path == [5, 15, 15, 25, 20, 20]
+
+    # Game coords (x=col, y=display_row) for each tile on the F8 path.
+    bailee_coords = [(0, 3), (5, 2), (0, 1), (5, 0), (0, 0), (5, 1)]
+    indexed_6 = [_coords_to_solver_index(c, r, 6) for c, r in bailee_coords]
+    indexed_5 = [_coords_to_solver_index(c, r, 5) for c, r in bailee_coords]
+
+    assert indexed_6 == f8_path
+    assert indexed_5 == wrong_path
+    assert len(set(indexed_5)) < len(indexed_5)
+
+
+PREASSURE_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260623_140715_preassure_path_mismatch.json"
+)
+PREASSURE_MELMOD_PATH = [7, 3, 6, 8, 0, 5, 4, 1, 2]
+UREASES_STORAGE_PATH = [21, 15, 20, 22, 10, 17, 16]
+UREASES_MELMOD_PATH = [7, 3, 6, 8, 0, 5, 4]
+
+
+def _preassure_board_and_loadout():
+    if not PREASSURE_FIXTURE.exists():
+        pytest.skip("preassure fixture required")
+    data = json.loads(PREASSURE_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(_round_log_to_replay(data))
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None and loadout is not None
+    return data, board, loadout
+
+
+@pytest.mark.skipif(not PREASSURE_FIXTURE.exists(), reason="preassure fixture required")
+def test_preassure_replay_submitted_path():
+    data, board, _loadout = _preassure_board_and_loadout()
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    replay = _round_log_to_replay(data)
+    score = _score_submitted(replay)
+    assert replay["word"] == "preassure"
+    assert path_from_melmod_indices(board, replay["path"]) == path_from_melmod_indices(
+        board, PREASSURE_MELMOD_PATH
+    )
+    assert int(replay["actual_score"]) == 1502
+    assert score >= 850
+
+
+@pytest.mark.skipif(not PREASSURE_FIXTURE.exists(), reason="preassure fixture required")
+def test_preassure_search_finds_submitted_path():
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    data, board, loadout = _preassure_board_and_loadout()
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=5)
+    assert results
+    best = results[0]
+    f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
+    assert len(best.path) == 9
+    assert int(best.score) >= 850
+    assert int(best.score) > f8_score
+    expected_storage = path_from_melmod_indices(board, PREASSURE_MELMOD_PATH)
+    assert sorted(best.path) == sorted(expected_storage)
+
+
+@pytest.mark.skipif(not PREASSURE_FIXTURE.exists(), reason="preassure fixture required")
+def test_bat_3x3_path_export_matches_melmod_cols():
+    from cursed_words_solver.ui.board_geometry import path_to_melmod_indices
+
+    _data, board, _loadout = _preassure_board_and_loadout()
+    assert path_to_melmod_indices(board, UREASES_STORAGE_PATH) == UREASES_MELMOD_PATH
+    assert path_to_melmod_indices(board, UREASES_STORAGE_PATH) != [
+        1,
+        3,
+        0,
+        2,
+        6,
+        5,
+        4,
+    ]
+    assert PREASSURE_MELMOD_PATH != UREASES_MELMOD_PATH

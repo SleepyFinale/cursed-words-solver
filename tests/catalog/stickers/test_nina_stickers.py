@@ -105,6 +105,20 @@ def test_ferris_wheel_different_coloured_ends():
     assert score == 12 * 1.5
 
 
+def test_ferris_wheel_white_and_green_endpoints():
+    """Mismatch 20260623_131346: WHITE is a distinct colour for Ferris Wheel."""
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "D", 2, color=TileColor.WHITE)
+    board.tiles[0][1] = _tile(0, 1, "O", 1)
+    board.tiles[0][2] = _tile(0, 2, "B", 3, color=TileColor.GREEN)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="ferris_wheel", name="Ferris Wheel", level=1)])
+    score, bd = pipeline.score(board, [0, 1, 2], "dob", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2], "dob", Loadout())
+    assert bd["multiplier"] == 1.5
+    assert score == base * 1.5
+
+
 def test_ferris_wheel_same_colour_ends_no_mult():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)

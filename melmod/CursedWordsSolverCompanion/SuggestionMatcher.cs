@@ -157,15 +157,16 @@ namespace CursedWordsSolverCompanion
         /// Convert tile coordinates to solver path index (same as overlay / last_suggestion.json).
         /// Game coords use display row (0 = top); solver index uses row 0 = top of overlay.
         /// </summary>
-        public static int CoordsToSolverIndex(UnityEngine.Vector2Int coords)
+        public static int CoordsToSolverIndex(UnityEngine.Vector2Int coords, int cols = 5)
         {
-            const int gridSize = 5;
+            if (cols <= 0)
+                cols = 5;
             var displayRow = coords.y;
             var col = coords.x;
-            return (gridSize - 1 - displayRow) * gridSize + col;
+            return (cols - 1 - displayRow) * cols + col;
         }
 
-        public static List<int> PathFromSelections(List<TileSelection> selections)
+        public static List<int> PathFromSelections(List<TileSelection> selections, int cols = 5)
         {
             var path = new List<int>();
             if (selections == null)
@@ -178,7 +179,7 @@ namespace CursedWordsSolverCompanion
                 try
                 {
                     var coords = sel.SelectedTile.GetCoordinates();
-                    path.Add(CoordsToSolverIndex(coords));
+                    path.Add(CoordsToSolverIndex(coords, cols));
                 }
                 catch
                 {
