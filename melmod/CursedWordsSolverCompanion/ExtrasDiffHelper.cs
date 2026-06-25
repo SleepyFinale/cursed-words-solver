@@ -2,6 +2,8 @@ using System;
 
 using System.Collections.Generic;
 
+using System.Globalization;
+
 using System.Text;
 
 using Newtonsoft.Json;
@@ -294,6 +296,8 @@ namespace CursedWordsSolverCompanion
 
                     && !string.Equals(f8Raw, authRaw, StringComparison.Ordinal)
 
+                    && !HistoricMetadataMatchesJson(f8Raw, authRaw)
+
                 )
 
                     return (
@@ -580,6 +584,77 @@ namespace CursedWordsSolverCompanion
 
             return RunStateExportFill.CountHistoricWordsInJson(json);
 
+        }
+
+
+
+        /// <summary>
+        /// True when F8 metadata-only historic matches authoritative rows (paths ignored).
+        /// </summary>
+        private static bool HistoricMetadataMatchesJson(string f8Json, string authJson)
+        {
+            if (string.IsNullOrEmpty(f8Json) || string.IsNullOrEmpty(authJson))
+                return false;
+            if (string.Equals(f8Json, authJson, StringComparison.Ordinal))
+                return true;
+            try
+            {
+                var f8Rows = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(
+                    f8Json
+                );
+                var authRows = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(
+                    authJson
+                );
+                if (f8Rows == null || authRows == null || f8Rows.Count == 0)
+                    return false;
+                if (f8Rows.Count != authRows.Count)
+                    return false;
+                for (var i = 0; i < f8Rows.Count; i++)
+                {
+                    if (!HistoricRowMetadataMatches(f8Rows[i], authRows[i]))
+                        return false;
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool HistoricRowMetadataMatches(
+            Dictionary<string, object> f8Row,
+            Dictionary<string, object> authRow
+        )
+        {
+            if (f8Row == null || authRow == null)
+                return false;
+            return HistoricFieldEquals(f8Row, authRow, "word")
+                && HistoricFieldEquals(f8Row, authRow, "score")
+                && HistoricFieldEquals(f8Row, authRow, "red_tile_count")
+                && HistoricFieldEquals(f8Row, authRow, "green_tile_count")
+                && HistoricFieldEquals(f8Row, authRow, "chess_take_value");
+        }
+
+        private static bool HistoricFieldEquals(
+            Dictionary<string, object> left,
+            Dictionary<string, object> right,
+            string key
+        )
+        {
+            object l;
+            object r;
+            left.TryGetValue(key, out l);
+            right.TryGetValue(key, out r);
+            if (l == null && r == null)
+                return true;
+            if (l == null || r == null)
+                return false;
+            return string.Equals(
+                Convert.ToString(l, CultureInfo.InvariantCulture),
+                Convert.ToString(r, CultureInfo.InvariantCulture),
+                StringComparison.OrdinalIgnoreCase
+            );
         }
 
 

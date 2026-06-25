@@ -247,6 +247,8 @@ def test_embed_matches_submit_projection_grid3_beans(tmp_path, monkeypatch):
 
         projected_extras=run_state["extras"],
 
+        scoring_extras=snapshot.loadout.extras,
+
     )
 
     assert mismatch is None
@@ -348,6 +350,121 @@ def test_apply_solve_ui_shows_path_when_untrusted():
     solver.board_highlight.show_path.assert_called_once()
 
     solver._clear_highlight_state.assert_not_called()
+
+
+
+
+
+def test_apply_solve_ui_shows_path_for_no_playable_block():
+    from cursed_words_solver.app import SolverApp, _SolveUIUpdate
+    from cursed_words_solver.config import AppConfig
+    from cursed_words_solver.ui.layout import OverlayRegions
+
+    config = AppConfig()
+    config.board_region = Region(0, 0, 500, 500)
+    config.show_board_highlight = True
+    solver = SolverApp.__new__(SolverApp)
+    solver.config = config
+    solver._overlay_regions = OverlayRegions(
+        board=config.board_region,
+        rack=Region(),
+        source="manual",
+    )
+    solver.overlay = MagicMock()
+    solver.board_highlight = MagicMock()
+    solver.rack_highlight = MagicMock()
+    solver._clear_highlight_state = MagicMock()
+
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0, active=[True] * 25)
+    result = WordResult(word="al", path=[23, 24], score=120)
+
+    SolverApp._apply_solve_ui(
+        solver,
+        _SolveUIUpdate(
+            board=board,
+            results=[result],
+            board_bgr=None,
+            warnings_html=format_f8_block_reason_html("no_playable_dictionary_word"),
+            on_game_highlight=True,
+            trusted_suggestion=False,
+            block_reason="no_playable_dictionary_word",
+            melmod_board_fingerprint="fp",
+            melmod_loadout_fingerprint="lfp",
+        ),
+    )
+
+    solver.board_highlight.show_path.assert_called_once()
+    solver._clear_highlight_state.assert_not_called()
+
+
+
+
+
+def test_poll_does_not_clear_highlight_when_blocked_save(monkeypatch):
+    from cursed_words_solver.app import SolverApp
+    from cursed_words_solver.config import LAST_SUGGESTION_PATH
+    from cursed_words_solver.f8_snapshot import F8SuggestionSession
+
+    if LAST_SUGGESTION_PATH.exists():
+        LAST_SUGGESTION_PATH.unlink(missing_ok=True)
+
+    solver = SolverApp.__new__(SolverApp)
+    solver._highlight_board_fingerprint = "6|0,0:a"
+    solver._active_suggestion_session = F8SuggestionSession(
+        board_fingerprint="bfp",
+        loadout_fingerprint="lfp",
+        board_tiles_fingerprint="tiles",
+        grid_number=1,
+    )
+    solver._solve_active = False
+    solver._round_log_index_offset = 0
+    solver._solver_started_at = 0
+    solver._last_invalidation_reason = None
+    solver._clear_highlight_state = MagicMock()
+    solver.overlay = MagicMock()
+    solver._maybe_clear_stale_highlights = MagicMock()
+
+    monkeypatch.setattr(
+        "cursed_words_solver.round_log.poll_round_log_submits",
+        lambda offset: ([], offset),
+    )
+
+    SolverApp._poll_run_state_stale(solver)
+
+    solver._clear_highlight_state.assert_not_called()
+    solver.overlay.show_idle.assert_not_called()
+
+
+
+
+
+def test_poll_clears_highlight_when_no_active_session(monkeypatch):
+    from cursed_words_solver.app import SolverApp
+    from cursed_words_solver.config import LAST_SUGGESTION_PATH
+
+    if LAST_SUGGESTION_PATH.exists():
+        LAST_SUGGESTION_PATH.unlink(missing_ok=True)
+
+    solver = SolverApp.__new__(SolverApp)
+    solver._highlight_board_fingerprint = "6|0,0:a"
+    solver._active_suggestion_session = None
+    solver._solve_active = False
+    solver._round_log_index_offset = 0
+    solver._solver_started_at = 0
+    solver._last_invalidation_reason = None
+    solver._clear_highlight_state = MagicMock()
+    solver.overlay = MagicMock()
+    solver._maybe_clear_stale_highlights = MagicMock()
+
+    monkeypatch.setattr(
+        "cursed_words_solver.round_log.poll_round_log_submits",
+        lambda offset: ([], offset),
+    )
+
+    SolverApp._poll_run_state_stale(solver)
+
+    solver._clear_highlight_state.assert_called_once()
+    solver.overlay.show_idle.assert_called_once()
 
 
 

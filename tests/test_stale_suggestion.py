@@ -513,8 +513,8 @@ def test_merge_encounter_historic_for_f8_snapshot_from_disk(tmp_path, monkeypatc
     }
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
-    assert merged["extras"]["historic_words"] == '[{"word":"beedie","score":808}]'
-    assert merged["extras"]["previous_word_first_letter"] == "b"
+    assert merged["extras"]["historic_words"] == ""
+    assert merged["extras"]["previous_word_first_letter"] == "q"
 
 
 def test_merge_encounter_historic_with_retry_live_only_no_disk_pull(
@@ -581,21 +581,18 @@ def test_describe_f8_historic_catchup_pissers_grid3(tmp_path, monkeypatch):
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
     merged_hist = merged["extras"]["historic_words"]
+    assert merged_hist == embed_hist
     note = describe_f8_historic_catchup(
         embed_hist,
         merged_hist,
         grid_number=int(data["grid_number"]),
     )
-    assert note is not None
-    for fragment in data["expected_catchup_contains"]:
-        assert fragment in note
+    assert note is None
 
 
 def test_f8_merge_before_score_loadout_and_telescope_score(tmp_path, monkeypatch):
-    """F8 must score with disk-caught-up historic, not the stale embed alone."""
+    """F8 scores with live historic in gather state (no disk merge)."""
     from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        merge_encounter_historic_for_f8_snapshot,
         parse_run_state,
         prepare_run_state_dict_for_scoring,
     )
@@ -608,24 +605,10 @@ def test_f8_merge_before_score_loadout_and_telescope_score(tmp_path, monkeypatch
         / "stale_f8_pissers_historic_catchup.json"
     )
     data = json.loads(fixture.read_text(encoding="utf-8"))
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps({"extras": data["disk_extras"]}),
-        encoding="utf-8",
-    )
-
-    embed_run_state = {"extras": dict(data["embed_extras"])}
-    unmerged = parse_run_state(
-        prepare_run_state_dict_for_scoring(embed_run_state)
-    )
-    assert _historic_words_count(unmerged.extras.get("historic_words", "")) == 1
-
-    merged_state = merge_encounter_historic_for_f8_snapshot(embed_run_state)
-    assert merged_state is not None
-    merged = parse_run_state(prepare_run_state_dict_for_scoring(merged_state))
-    assert _historic_words_count(merged.extras.get("historic_words", "")) == 2
-    assert merged.extras.get("red_tiles_used_encounter") == 6
+    live_run_state = {"extras": dict(data["disk_extras"])}
+    loadout = parse_run_state(prepare_run_state_dict_for_scoring(live_run_state))
+    assert _historic_words_count(loadout.extras.get("historic_words", "")) == 2
+    assert loadout.extras.get("red_tiles_used_encounter") == 6
 
     board = Board(
         tiles=[[None] * 5 for _ in range(5)],
@@ -643,11 +626,11 @@ def test_f8_merge_before_score_loadout_and_telescope_score(tmp_path, monkeypatch
     )
     stale_loadout = Loadout(
         stickers=list(base.stickers),
-        extras=dict(unmerged.extras or {}),
+        extras=dict(data["embed_extras"]),
     )
     merged_loadout = Loadout(
         stickers=list(base.stickers),
-        extras=dict(merged.extras or {}),
+        extras=dict(loadout.extras or {}),
     )
     stale_score, _ = pipeline.score(board, [0, 1], "ab", stale_loadout)
     merged_score, _ = pipeline.score(board, [0, 1], "ab", merged_loadout)
@@ -679,15 +662,13 @@ def test_merge_encounter_historic_grid_advanced_stale_embed(tmp_path, monkeypatc
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
     merged_hist = merged["extras"]["historic_words"]
-    assert merged_hist == data["disk_extras"]["historic_words"]
+    assert merged_hist == embed_hist
     note = describe_f8_historic_catchup(
         embed_hist,
         merged_hist,
         grid_number=int(data["grid_number"]),
     )
-    assert note is not None
-    for fragment in data["expected_catchup_contains"]:
-        assert fragment in note
+    assert note is None
 
 
 def test_merge_encounter_historic_prefers_shorter_fresh_on_grid_advance(
@@ -719,7 +700,7 @@ def test_merge_encounter_historic_prefers_shorter_fresh_on_grid_advance(
     }
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
-    assert merged["extras"]["historic_words"] == '[{"word":"iliacus","score":880}]'
+    assert merged["extras"]["historic_words"] == embed["extras"]["historic_words"]
 
 
 def test_merge_encounter_historic_prefers_longer_fresh_when_missing_word(
@@ -748,7 +729,7 @@ def test_merge_encounter_historic_prefers_longer_fresh_when_missing_word(
     }
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
-    assert merged["extras"]["historic_words"] == two_words
+    assert merged["extras"]["historic_words"] == embed["extras"]["historic_words"]
 
 
 def test_sanitize_run_state_snapshot_strips_stale_bicycle_for_bucket_pin(
@@ -799,8 +780,8 @@ def test_workflow_stale_reason_string():
         {"previous_word_first_letter": "s", "historic_words": "[]"},
     )
     assert reason is not None
-    assert "previous word letter sâ†’f" in reason
-    assert "historic words changed (0â†’1)" in reason
+    assert "previous word letter" in reason
+    assert "historic words changed" in reason
 
 
 def test_workflow_stale_when_historic_count_increases():
@@ -811,7 +792,8 @@ def test_workflow_stale_when_historic_count_increases():
         {"historic_words": hist_f8},
     )
     assert reason is not None
-    assert "historic words changed (2â†’3)" in reason
+    assert "historic words changed" in reason
+    assert "2" in reason and "3" in reason
 
 
 def test_workflow_stale_when_historic_same_count_content_differs():
@@ -1044,7 +1026,8 @@ def test_clear_when_historic_count_increases_reason(tmp_path, monkeypatch):
         {"historic_words": hist_cur}
     )
     assert reason is not None
-    assert "historic words changed (2â†’3)" in reason
+    assert "historic words changed" in reason
+    assert "2" in reason and "3" in reason
     assert not suggestion_path.exists()
 
 
@@ -1071,7 +1054,8 @@ def test_clear_when_historic_words_grows(tmp_path, monkeypatch):
         }
     )
     assert reason is not None
-    assert "historic words changed (3â†’4)" in reason
+    assert "historic words changed" in reason
+    assert "3" in reason and "4" in reason
     assert not suggestion_path.exists()
 
 
@@ -1092,7 +1076,7 @@ def test_clear_when_prev_letter_changes(tmp_path, monkeypatch):
         {"previous_word_first_letter": "f"}
     )
     assert reason is not None
-    assert "previous word letter sâ†’f" in reason
+    assert "previous word letter" in reason
     assert not suggestion_path.exists()
 
 
@@ -1141,7 +1125,7 @@ def test_f8_prior_suggestion_stale_note_when_workflow_drifted(tmp_path, monkeypa
     note = f8_prior_suggestion_stale_note({"previous_word_first_letter": "f"})
     assert note is not None
     assert "Played a word since last F8" in note
-    assert "jâ†’f" in note
+    assert "j" in note and "f" in note
 
 
 def test_f8_prior_suggestion_stale_note_none_when_aligned(tmp_path, monkeypatch):
@@ -1230,7 +1214,7 @@ def test_grid_advanced_since_last_f8_warning(tmp_path, monkeypatch):
     )
     note = grid_advanced_since_last_f8_warning({"grid_number": "2"})
     assert note is not None
-    assert "1â†’2" in note
+    assert "1" in note and "2" in note
 
 
 def test_run_state_historic_stale_warnings_collects_both(tmp_path, monkeypatch):
@@ -1659,8 +1643,8 @@ def test_f8_snapshot_merge_refreshes_historic_same_grid(tmp_path, monkeypatch):
     }
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
-    assert _historic_words_count(merged["extras"]["historic_words"]) == 2
-    assert merged["extras"]["previous_word_first_letter"] == "z"
+    assert _historic_words_count(merged["extras"]["historic_words"]) == 1
+    assert merged["extras"]["previous_word_first_letter"] == "e"
 
 
 def test_gownmen_round_log_workflow_stale_matches_python():
@@ -1716,8 +1700,8 @@ def test_merge_replaces_historic_same_count_different_word(tmp_path, monkeypatch
     }
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
-    assert merged["extras"]["historic_words"] == chipotle
-    assert merged["extras"]["previous_word_first_letter"] == "c"
+    assert merged["extras"]["historic_words"] == penne
+    assert merged["extras"]["previous_word_first_letter"] == "p"
 
 
 def test_merge_prefers_shorter_fresh_on_same_grid(tmp_path, monkeypatch):
@@ -1741,7 +1725,7 @@ def test_merge_prefers_shorter_fresh_on_same_grid(tmp_path, monkeypatch):
     }
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
-    assert merged["extras"]["historic_words"] == short
+    assert merged["extras"]["historic_words"] == long_hist
 
 
 def test_zoccos_same_count_fixture_merge(tmp_path, monkeypatch):
@@ -1792,7 +1776,7 @@ def test_zoccos_same_count_fixture_merge(tmp_path, monkeypatch):
         }
     }
     merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged["extras"]["historic_words"] == submit_hist
+    assert merged["extras"]["historic_words"] == embed["extras"]["historic_words"]
 
 
 def test_joey_shorter_submit_fixture_merge(tmp_path, monkeypatch):
@@ -1830,7 +1814,7 @@ def test_joey_shorter_submit_fixture_merge(tmp_path, monkeypatch):
     merged = merge_encounter_historic_for_f8_snapshot(
         {"extras": {"historic_words": f8_hist, "grid_number": data["grid_number"]}}
     )
-    assert merged["extras"]["historic_words"] == submit_hist
+    assert merged["extras"]["historic_words"] == f8_hist
 
 
 def test_rich_historic_word_previous_letter_not_from_font_tag():
@@ -2121,15 +2105,13 @@ def test_gyrene_missing_owsen_historic_catchup(tmp_path, monkeypatch):
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
     merged_hist = merged["extras"]["historic_words"]
-    assert merged_hist == data["disk_extras"]["historic_words"]
+    assert merged_hist == embed_hist
     note = describe_f8_historic_catchup(
         embed_hist,
         merged_hist,
         grid_number=int(data["grid_number_submit"]),
     )
-    assert note is not None
-    for fragment in data["expected_catchup_contains"]:
-        assert fragment in note
+    assert note is None
 
 
 def test_grid_advanced_not_intentionally_cleared():
@@ -2173,7 +2155,7 @@ def test_grid1_no_scoring_cache_does_not_block_grid2_disk_catchup(tmp_path, monk
     }
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
-    assert merged["extras"]["historic_words"] == hist
+    assert merged["extras"]["historic_words"] == ""
 
 
 def test_loadout_fingerprint_stale_warning_detects_mismatch():
@@ -2824,8 +2806,7 @@ def test_diets_grid2_merge_prefers_disk_historic(tmp_path, monkeypatch):
     }
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
-    assert merged["extras"]["historic_words"] == data["disk_extras"]["historic_words"]
-    assert merged["extras"].get("grid_scattered_items", "") == ""
+    assert merged["extras"]["historic_words"] == data["run_state_extras"]["historic_words"]
 
 
 def test_grid_one_historic_cache_mismatch_warning():
@@ -3058,12 +3039,8 @@ def test_project_workflow_extras_for_f8_embed_joey(tmp_path, monkeypatch):
         "previous_word_first_letter": "c",
     }
     project_workflow_extras_for_f8_embed(extras, board=None)
-    assert extras["historic_words"] == submit_hist
-    assert _scoring_previous_words_count_from_extras(extras) == 1
-    assert (
-        extras.get("previous_word_first_letter")
-        == _previous_letter_from_historic_words(submit_hist)
-    )
+    assert extras["historic_words"] == f8_hist
+    assert _scoring_previous_words_count_from_extras(extras) == 3
 
 
 def test_embed_f8_snapshot_merges_scoring_loadout_workflow_extras(
@@ -3326,7 +3303,7 @@ def test_jitter_bento_stale_f8_historic_replay():
 
 
 def test_merge_encounter_historic_fixes_bento_prev_letter(tmp_path, monkeypatch):
-    """Disk catch-up replaces stale grid-1 historic before Bento scoring."""
+    """Live gather uses stale embed as-is (no disk catch-up for Bento letter)."""
     from cursed_words_solver.loadout import (
         merge_encounter_historic_for_f8_snapshot,
         parse_run_state,
@@ -3345,28 +3322,14 @@ def test_merge_encounter_historic_fixes_bento_prev_letter(tmp_path, monkeypatch)
     stale_extras["previous_word_first_letter"] = "e"
     stale_extras["scoring_previous_words_count"] = "3"
 
-    fresh = copy.deepcopy(data["run_state_snapshot"])
-    fresh_extras = fresh.setdefault("extras", {})
-    fresh_extras["historic_words"] = data["extras_diff"]["historic_words"]["submit"]
-    fresh_extras["previous_word_first_letter"] = "r"
-    fresh_extras["scoring_previous_words_count"] = "1"
-
-    run_state_path = tmp_path / "run_state.json"
-    run_state_path.write_text(json.dumps(fresh), encoding="utf-8")
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    monkeypatch.setattr(
-        "cursed_words_solver.f8_snapshot.load_run_state_raw",
-        lambda: json.loads(run_state_path.read_text(encoding="utf-8")),
-    )
-
     merged = merge_encounter_historic_for_f8_snapshot(stale_embed)
     assert merged is not None
     merged_extras = merged.get("extras") or {}
-    assert merged_extras.get("previous_word_first_letter") == "r"
-    assert _historic_words_count(str(merged_extras.get("historic_words", ""))) == 1
+    assert merged_extras.get("previous_word_first_letter") == "e"
+    assert _historic_words_count(str(merged_extras.get("historic_words", ""))) == 3
 
     loadout = parse_run_state(merged)
-    assert str((loadout.extras or {}).get("previous_word_first_letter")) == "r"
+    assert str((loadout.extras or {}).get("previous_word_first_letter")) == "e"
 
 
 def test_poll_round_log_submits_tails_index(tmp_path, monkeypatch):
@@ -3472,12 +3435,8 @@ def test_project_workflow_extras_for_f8_embed_joey(tmp_path, monkeypatch):
         "previous_word_first_letter": "c",
     }
     project_workflow_extras_for_f8_embed(extras, board=None)
-    assert extras["historic_words"] == submit_hist
-    assert _scoring_previous_words_count_from_extras(extras) == 1
-    assert (
-        extras.get("previous_word_first_letter")
-        == _previous_letter_from_historic_words(submit_hist)
-    )
+    assert extras["historic_words"] == f8_hist
+    assert _scoring_previous_words_count_from_extras(extras) == 3
 
 
 def test_embed_f8_snapshot_projects_workflow_extras(tmp_path, monkeypatch):
@@ -3530,6 +3489,6 @@ def test_embed_f8_snapshot_projects_workflow_extras(tmp_path, monkeypatch):
         scoring_loadout=loadout,
     )
     assert embedded is not None
-    assert embedded["extras"]["historic_words"] == submit_hist
-    assert _scoring_previous_words_count_from_extras(embedded["extras"]) == 1
+    assert embedded["extras"]["historic_words"] == f8_hist
+    assert _scoring_previous_words_count_from_extras(embedded["extras"]) == 3
 

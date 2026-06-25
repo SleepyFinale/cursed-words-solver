@@ -616,6 +616,7 @@ class SolverApp:
         elif (
             self._highlight_board_fingerprint is not None
             and not LAST_SUGGESTION_PATH.exists()
+            and self._active_suggestion_session is None
         ):
             self._active_suggestion_session = None
             self._last_invalidation_reason = "suggestion_expired"
@@ -1958,13 +1959,9 @@ class SolverApp:
                         if sample_warn:
                             export_warnings.append(sample_warn)
                 session_extras = solver_session_extras_from_loadout(f8_loadout)
-                fresh_run_state = load_run_state_raw()
                 embed_state = embed_f8_snapshot(
                     snapshot,
                     scoring_loadout=score_loadout,
-                    fresh_run_state=(
-                        fresh_run_state if isinstance(fresh_run_state, dict) else None
-                    ),
                 )
                 f8_extras = (
                     embed_state.get("extras")
@@ -1985,10 +1982,28 @@ class SolverApp:
                     else None
                 )
                 submit_projected_extras = None
-                if isinstance(fresh_run_state, dict):
-                    raw_proj = fresh_run_state.get("extras")
-                    if isinstance(raw_proj, dict):
-                        submit_projected_extras = copy.deepcopy(raw_proj)
+                if (
+                    f8_loadout is not None
+                    and isinstance(f8_loadout.extras, dict)
+                ):
+                    from cursed_words_solver.loadout import (
+                        project_workflow_extras_for_f8_embed,
+                        reconcile_encounter_historic_for_scoring,
+                    )
+
+                    submit_projected_extras = copy.deepcopy(f8_loadout.extras)
+                    reconcile_encounter_historic_for_scoring(
+                        submit_projected_extras, board=search_board
+                    )
+                    project_workflow_extras_for_f8_embed(
+                        submit_projected_extras, board=search_board
+                    )
+                scoring_extras_for_block = (
+                    f8_loadout.extras
+                    if f8_loadout is not None
+                    and isinstance(f8_loadout.extras, dict)
+                    else None
+                )
                 block_f8_save, block_f8_reason = f8_should_block_save(
                     gather_succeeded=gather_succeeded,
                     gather_missing=snapshot.gather_missing or None,
@@ -2013,13 +2028,16 @@ class SolverApp:
                     ),
                     grid_bleed_warn=grid_bleed_warn,
                     mid_solve_grid_advanced=False,
-                    loadout=f8_loadout,
+                    loadout=score_loadout,
                     board=search_board,
                     path=top.path,
                     f8_extras=f8_extras if isinstance(f8_extras, dict) else None,
                     submit_projected_extras=submit_projected_extras,
+                    scoring_extras=scoring_extras_for_block,
                     dictionary=self._dictionary,
                     scoring_word=score_word,
+                    min_len=effective_min,
+                    pipeline=self._scoring,
                 )
                 gather_status = {
                     "f8_export_acked": snapshot.f8_export_acked,

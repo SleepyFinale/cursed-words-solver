@@ -1596,8 +1596,17 @@ def reconcile_scoring_previous_words_count(extras: dict[str, Any]) -> None:
     hist_count = _historic_words_count(hist)
     spc = _scoring_previous_words_count_from_extras(extras)
     if hist_count > 0 and spc > hist_count:
-        extras["scoring_previous_words_count"] = str(hist_count)
-        return
+        source = str(
+            extras.get("encounter_historic_source", "") or ""
+        ).strip().lower()
+        if source not in (
+            "live",
+            "live_cache",
+            "historic_metadata_only",
+            "green_poison_only",
+        ):
+            extras["scoring_previous_words_count"] = str(hist_count)
+            return
     if hist_count > 0 and spc == 0 and _should_infer_spc_from_historic(extras):
         extras["scoring_previous_words_count"] = str(hist_count)
 
@@ -1635,8 +1644,7 @@ def reconcile_historic_after_grid_advance(extras: dict[str, Any]) -> bool:
         grid >= 2
         and hist_count == 0
         and spc > 0
-        and source
-        in ("grid_advanced", "grid_advanced_disk", "grid_start_cleared")
+        and source in ("grid_advanced", "grid_advanced_disk")
     ):
         extras["scoring_previous_words_count"] = "0"
         extras.pop("previous_word_first_letter", None)
@@ -1701,19 +1709,20 @@ def prune_historic_incompatible_with_board(
         if isinstance(row, dict) and _historic_entry_matches_board(board, row):
             return False
     grid = _grid_number_from_extras(extras)
+    spc = _scoring_previous_words_count_from_extras(extras)
     source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
     try:
         enc_earned = int(extras.get("encounter_score_earned") or 0)
     except (TypeError, ValueError):
         enc_earned = 0
-    if grid == 1 and enc_earned == 0 and source != "live":
+    if grid == 1 and enc_earned == 0 and spc == 0 and source != "live":
         extras.pop("historic_words", None)
         extras.pop("red_tiles_used_encounter", None)
         extras["scoring_previous_words_count"] = "0"
         extras.pop("previous_word_first_letter", None)
         extras["encounter_historic_source"] = "grid1_no_scoring_cache"
         return True
-    if grid >= 2 and _scoring_previous_words_count_from_extras(extras) == 0:
+    if grid >= 2 and spc == 0:
         extras.pop("historic_words", None)
         extras.pop("red_tiles_used_encounter", None)
         extras["encounter_historic_source"] = "grid_start_cleared"
@@ -1731,27 +1740,26 @@ def prune_historic_incompatible_with_board(
         extras["historic_words"] = json.dumps(poison_rows, ensure_ascii=False)
         extras["encounter_historic_source"] = "green_poison_only"
         return True
-    if grid >= 2:
-        metadata_rows: list[dict[str, Any]] = []
-        for row in arr:
-            if not isinstance(row, dict):
-                continue
-            meta: dict[str, Any] = {}
-            for key in (
-                "word",
-                "score",
-                "red_tile_count",
-                "green_tile_count",
-                "chess_take_value",
-            ):
-                if key in row and row[key] is not None:
-                    meta[key] = row[key]
-            if meta:
-                metadata_rows.append(meta)
-        if metadata_rows:
-            extras["historic_words"] = json.dumps(metadata_rows, ensure_ascii=False)
-            extras["encounter_historic_source"] = "historic_metadata_only"
-            return True
+    metadata_rows: list[dict[str, Any]] = []
+    for row in arr:
+        if not isinstance(row, dict):
+            continue
+        meta: dict[str, Any] = {}
+        for key in (
+            "word",
+            "score",
+            "red_tile_count",
+            "green_tile_count",
+            "chess_take_value",
+        ):
+            if key in row and row[key] is not None:
+                meta[key] = row[key]
+        if meta:
+            metadata_rows.append(meta)
+    if metadata_rows:
+        extras["historic_words"] = json.dumps(metadata_rows, ensure_ascii=False)
+        extras["encounter_historic_source"] = "historic_metadata_only"
+        return True
     extras.pop("historic_words", None)
     extras.pop("red_tiles_used_encounter", None)
     grid = _grid_number_from_extras(extras)
@@ -1866,143 +1874,10 @@ def f8_historic_stale_after_merge_warning(
 def merge_encounter_historic_for_f8_snapshot(
     run_state: dict | None,
 ) -> dict | None:
-    """Re-read run_state when F8 embed historic lags disk (same grid or grid 2+)."""
+    """Return F8 gather state unchanged (live export only; no disk historic merge)."""
     if run_state is None:
         return None
-
-    snapshot = copy.deepcopy(run_state)
-    extras = snapshot.get("extras")
-    if not isinstance(extras, dict):
-        return snapshot
-
-    hist = str(extras.get("historic_words", "") or "").strip()
-    embed_grid = _grid_number_from_extras(extras)
-    embed_cleared = _encounter_historic_intentionally_cleared(extras)
-
-    fresh = load_run_state_raw()
-    if not isinstance(fresh, dict):
-        return snapshot
-    fresh_extras = fresh.get("extras")
-    if not isinstance(fresh_extras, dict):
-        return snapshot
-
-    fresh_hist = str(fresh_extras.get("historic_words", "") or "").strip()
-    fresh_grid = _grid_number_from_extras(fresh_extras)
-
-    if fresh_grid > embed_grid or _is_grid_advanced_historic_source(fresh_extras):
-        if fresh_grid > embed_grid:
-            extras.pop("historic_words", None)
-            extras.pop("red_tiles_used_encounter", None)
-            _copy_grid_advance_extras_from_fresh(extras, fresh_extras)
-            if fresh_hist and fresh_hist != "[]":
-                _apply_fresh_encounter_historic_to_extras(
-                    extras, fresh_extras, fresh_hist
-                )
-            else:
-                extras["historic_words"] = ""
-                reconcile_previous_word_first_letter_from_historic(extras)
-            snapshot["extras"] = extras
-            return snapshot
-        if _is_grid_advanced_historic_source(fresh_extras):
-            preferred = _historic_words_json_prefer_fresh(
-                hist,
-                fresh_hist,
-                embed_grid=embed_grid,
-                fresh_grid=fresh_grid,
-            )
-            if preferred is not None:
-                _apply_fresh_encounter_historic_to_extras(
-                    extras, fresh_extras, preferred
-                )
-            elif not fresh_hist or fresh_hist == "[]":
-                extras.pop("historic_words", None)
-                extras.pop("red_tiles_used_encounter", None)
-            _copy_grid_advance_extras_from_fresh(extras, fresh_extras)
-            reconcile_previous_word_first_letter_from_historic(extras)
-            snapshot["extras"] = extras
-            return snapshot
-
-    if embed_cleared:
-        if fresh_hist and fresh_hist != "[]" and (
-            fresh_grid != embed_grid or fresh_hist != hist
-        ):
-            _apply_fresh_encounter_historic_to_extras(extras, fresh_extras, fresh_hist)
-        elif fresh_grid > embed_grid or (hist and hist != "[]" and not fresh_hist):
-            extras.pop("historic_words", None)
-            extras.pop("red_tiles_used_encounter", None)
-            for key in (
-                "encounter_historic_source",
-                "previous_word_first_letter",
-                "grid_number",
-            ):
-                val = fresh_extras.get(key)
-                if val is not None:
-                    extras[key] = val
-        snapshot["extras"] = extras
-        return snapshot
-
-    if not fresh_hist or fresh_hist == "[]":
-        if fresh_grid > embed_grid and hist and hist != "[]":
-            extras.pop("historic_words", None)
-            extras.pop("red_tiles_used_encounter", None)
-            for key in ("encounter_historic_source", "grid_number"):
-                val = fresh_extras.get(key)
-                if val is not None:
-                    extras[key] = val
-        elif (
-            embed_grid >= 2
-            and fresh_grid == embed_grid
-            and (not hist or hist == "[]")
-        ):
-            fresh_retry = load_run_state_raw()
-            if isinstance(fresh_retry, dict):
-                retry_extras = fresh_retry.get("extras")
-                if isinstance(retry_extras, dict):
-                    retry_hist = str(
-                        retry_extras.get("historic_words", "") or ""
-                    ).strip()
-                    retry_grid = _grid_number_from_extras(retry_extras)
-                    if (
-                        retry_hist
-                        and retry_hist != "[]"
-                        and retry_grid == embed_grid
-                    ):
-                        _apply_fresh_encounter_historic_to_extras(
-                            extras, retry_extras, retry_hist
-                        )
-        reconcile_previous_word_first_letter_from_historic(extras)
-        snapshot["extras"] = extras
-        return snapshot
-
-    preferred = _historic_words_json_prefer_fresh(
-        hist,
-        fresh_hist,
-        embed_grid=embed_grid,
-        fresh_grid=fresh_grid,
-    )
-
-    if preferred is not None:
-        _apply_fresh_encounter_historic_to_extras(extras, fresh_extras, preferred)
-    else:
-        reconcile_previous_word_first_letter_from_historic(extras)
-
-    # Second-chance: disk caught up after merge (same grid, more words on disk).
-    merged_hist = str(extras.get("historic_words", "") or "").strip()
-    if (
-        not embed_cleared
-        and fresh_hist
-        and fresh_hist != "[]"
-        and embed_grid >= 1
-        and fresh_grid == embed_grid
-        and _historic_words_count(fresh_hist) > _historic_words_count(merged_hist)
-    ):
-        _apply_fresh_encounter_historic_to_extras(extras, fresh_extras, fresh_hist)
-        reconcile_previous_word_first_letter_from_historic(extras)
-
-    board = parse_board_from_run_state(snapshot)
-    reconcile_encounter_historic_for_scoring(extras, board=board)
-    snapshot["extras"] = extras
-    return snapshot
+    return copy.deepcopy(run_state)
 
 
 F8_HISTORIC_CATCHUP_RETRIES = 6
@@ -2012,45 +1887,10 @@ F8_HISTORIC_CATCHUP_DELAY_SEC = 0.15
 def _force_apply_disk_historic_when_ahead(
     run_state: dict | None,
 ) -> dict | None:
-    """Pull disk encounter historic into embed when same grid and disk has more words."""
+    """Disabled — live export only."""
     if run_state is None:
         return None
-
-    snapshot = copy.deepcopy(run_state)
-    extras = snapshot.get("extras")
-    if not isinstance(extras, dict):
-        return snapshot
-
-    embed_hist = str(extras.get("historic_words", "") or "").strip()
-    embed_grid = _grid_number_from_extras(extras)
-    if embed_grid < 1:
-        return snapshot
-
-    fresh = load_run_state_raw()
-    if not isinstance(fresh, dict):
-        return snapshot
-    fresh_extras = fresh.get("extras")
-    if not isinstance(fresh_extras, dict):
-        return snapshot
-
-    fresh_hist = str(fresh_extras.get("historic_words", "") or "").strip()
-    fresh_grid = _grid_number_from_extras(fresh_extras)
-    if not fresh_hist or fresh_hist == "[]" or fresh_grid != embed_grid:
-        return snapshot
-
-    source = str(
-        fresh_extras.get("encounter_historic_source", "") or ""
-    ).strip().lower()
-    if source in ("grid_advanced", "grid_advanced_disk"):
-        return snapshot
-
-    embed_count = _historic_words_count(embed_hist)
-    fresh_count = _historic_words_count(fresh_hist)
-    if fresh_count > embed_count:
-        _apply_fresh_encounter_historic_to_extras(extras, fresh_extras, fresh_hist)
-        snapshot["extras"] = extras
-
-    return snapshot
+    return copy.deepcopy(run_state)
 
 
 def merge_encounter_historic_for_f8_with_retry(
@@ -2130,49 +1970,9 @@ def f8_historic_still_behind_disk_warning(
     *,
     board: Board | None = None,
 ) -> str | None:
-    """Warn when F8 embed still has fewer encounter words than reconciled disk on same grid."""
-    data = embed_extras if isinstance(embed_extras, dict) else {}
-    embed_hist = str(data.get("historic_words", "") or "").strip()
-    embed_grid = _grid_number_from_extras(data)
-    if embed_grid < 1:
-        return None
-
-    fresh = load_run_state_raw()
-    if not isinstance(fresh, dict):
-        return None
-    fresh_extras = fresh.get("extras")
-    if not isinstance(fresh_extras, dict):
-        return None
-
-    fresh_grid = _grid_number_from_extras(fresh_extras)
-    if fresh_grid != embed_grid:
-        return None
-
-    fresh_extras_cmp = copy.deepcopy(fresh_extras)
-    reconcile_board = board
-    if reconcile_board is None:
-        reconcile_board = parse_board_from_run_state(fresh)
-    reconcile_encounter_historic_for_scoring(
-        fresh_extras_cmp,
-        board=reconcile_board,
-    )
-    reconcile_previous_word_first_letter_from_historic(fresh_extras_cmp)
-
-    fresh_hist = str(fresh_extras_cmp.get("historic_words", "") or "").strip()
-    if not fresh_hist or fresh_hist == "[]":
-        return None
-
-    embed_count = _historic_words_count(embed_hist)
-    fresh_count = _historic_words_count(fresh_hist)
-    if fresh_count <= embed_count:
-        return None
-
-    grid_part = f" on grid {embed_grid}" if embed_grid >= 1 else ""
-    return (
-        f"Encounter historic on disk ({fresh_count} words{grid_part}) is ahead of "
-        f"this F8 embed ({embed_count}) — press F8 again before trusting "
-        f"predicted scores."
-    )
+    """Disabled — live export only; no disk historic lag warnings."""
+    del embed_extras, board
+    return None
 
 
 def project_workflow_extras_for_f8_embed(
@@ -2180,43 +1980,8 @@ def project_workflow_extras_for_f8_embed(
     *,
     board: Board | None = None,
 ) -> None:
-    """Shrink F8 embed workflow extras to melmod submit-time projection."""
-    fresh = load_run_state_raw()
-    if not isinstance(fresh, dict):
-        return
-    fresh_extras = fresh.get("extras")
-    if not isinstance(fresh_extras, dict):
-        return
-
-    projected = copy.deepcopy(fresh_extras)
-    reconcile_encounter_historic_for_scoring(projected, board=board)
-
-    embed_hist = str(extras.get("historic_words", "") or "").strip()
-    proj_hist = str(projected.get("historic_words", "") or "").strip()
-    embed_grid = _grid_number_from_extras(extras)
-    proj_grid = _grid_number_from_extras(projected)
-
-    preferred = _historic_words_json_prefer_fresh(
-        embed_hist,
-        proj_hist,
-        embed_grid=embed_grid,
-        fresh_grid=proj_grid,
-    )
-    if preferred is not None:
-        _apply_fresh_encounter_historic_to_extras(extras, projected, preferred)
-    elif (
-        proj_hist
-        and proj_hist != embed_hist
-        and _historic_words_count(proj_hist) < _historic_words_count(embed_hist)
-    ):
-        _apply_fresh_encounter_historic_to_extras(extras, projected, proj_hist)
-
-    embed_spc = _scoring_previous_words_count_from_extras(extras)
-    proj_spc = _scoring_previous_words_count_from_extras(projected)
-    if embed_spc != proj_spc:
-        extras["scoring_previous_words_count"] = str(proj_spc)
-
-    reconcile_scoring_previous_words_count(extras)
+    """Path-stale reconcile on in-memory embed extras only (no disk re-read)."""
+    reconcile_encounter_historic_for_scoring(extras, board=board)
     hist = str(extras.get("historic_words", "") or "").strip()
     last_from_hist = _previous_letter_from_historic_words(hist)
     spc = _scoring_previous_words_count_from_extras(extras)
@@ -2294,10 +2059,28 @@ def align_embed_with_scoring_loadout(
         embed_hist = rec_hist
         embed_count = rec_count
 
+    if rec_count < embed_count:
+        if rec_hist:
+            extras["historic_words"] = rec_hist
+            for key in ("encounter_historic_source", "red_tiles_used_encounter"):
+                val = reconciled.get(key)
+                if val is not None and str(val).strip() != "":
+                    extras[key] = str(val) if not isinstance(val, str) else val
+        elif _scoring_previous_words_count_from_extras(reconciled) <= 0:
+            extras.pop("historic_words", None)
+            extras.pop("red_tiles_used_encounter", None)
+            src = str(reconciled.get("encounter_historic_source", "") or "").strip()
+            if src:
+                extras["encounter_historic_source"] = src
+            else:
+                extras.pop("encounter_historic_source", None)
+        embed_hist = rec_hist
+        embed_count = rec_count
+
     if embed_hist == rec_hist:
         embed_spc = _scoring_previous_words_count_from_extras(extras)
         rec_spc = _scoring_previous_words_count_from_extras(reconciled)
-        if rec_spc > embed_spc:
+        if rec_spc != embed_spc:
             extras["scoring_previous_words_count"] = str(rec_spc)
         rec_letter = str(reconciled.get("previous_word_first_letter", "") or "").strip()
         spc = _scoring_previous_words_count_from_extras(extras)

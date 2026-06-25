@@ -1,0 +1,35 @@
+{
+  "character": "Rodman",
+  "money": 6,
+  "stickers": [
+    {"id": "stilton", "name": "Stilton", "level": 1, "kind": "sticker"}
+  ],
+  "stamps": [],
+  "board": {
+    "money": 6,
+    "rows": 5,
+    "cols": 5,
+    "tiles": []
+  },
+  "extras": {
+    "grid_number": "1",
+    "scoring_previous_words_count": "1",
+    "historic_words": "[{\"word\":\"FACTION\",\"score\":13,\"path\":[17,11,7,2,6,1,5]}]",
+    "previous_word_first_letter": "f",
+    "encounter_historic_source": "live",
+    "encounter_score_earned": "0",
+    "encounter_total_target": "17",
+    "encounter_remaining_target": "17",
+    "pin_effect": "carp_streamers",
+    "pin_left_level": "1",
+    "pin_right_level": "1"
+  },
+  "board_letters": [
+    "lgtrr",
+    "nrohi",
+    "glxie",
+    "uowna",
+    "aeire"
+  ],
+  "blue_cells": [[2, 1]]
+}

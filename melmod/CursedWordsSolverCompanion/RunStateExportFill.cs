@@ -1019,54 +1019,7 @@ namespace CursedWordsSolverCompanion
 
         private static void MergeOnDiskEncounterHistoricInto(Dictionary<string, string> fallback)
         {
-            if (fallback == null)
-                return;
-
-            var diskHistoric = RunStateExporter.TryReadRunStateExtra("historic_words");
-            if (!string.IsNullOrEmpty(diskHistoric) && diskHistoric != "[]")
-            {
-                string cur;
-                if (
-                    !fallback.TryGetValue("historic_words", out cur)
-                    || string.IsNullOrEmpty(cur)
-                    || cur == "[]"
-                )
-                    fallback["historic_words"] = diskHistoric;
-
-            }
-            else
-            {
-                var diskGridRaw = RunStateExporter.TryReadRunStateExtra("grid_number");
-                var diskGrid = TryParseGridNumber(diskGridRaw);
-                if (diskGrid < 2)
-                {
-                    var diskPrev = RunStateExporter.TryReadRunStateExtra(
-                        "previous_word_first_letter"
-                    );
-                    if (!string.IsNullOrEmpty(diskPrev))
-                    {
-                        string curPrev;
-                        if (
-                            !fallback.TryGetValue("previous_word_first_letter", out curPrev)
-                            || string.IsNullOrEmpty(curPrev)
-                        )
-                            fallback["previous_word_first_letter"] = diskPrev;
-                    }
-                }
-                else
-                    fallback.Remove("previous_word_first_letter");
-            }
-
-            var diskRed = RunStateExporter.TryReadRunStateExtra("red_tiles_used_encounter");
-            if (!string.IsNullOrEmpty(diskRed))
-            {
-                string curRed;
-                if (
-                    !fallback.TryGetValue("red_tiles_used_encounter", out curRed)
-                    || string.IsNullOrEmpty(curRed)
-                )
-                    fallback["red_tiles_used_encounter"] = diskRed;
-            }
+            // Live export only — never merge encounter historic from on-disk run_state.json.
         }
 
         /// <summary>

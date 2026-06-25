@@ -842,10 +842,11 @@ def f8_historic_would_fail_submit_projection(
     *,
     board: Board | None = None,
     projected_extras: dict[str, Any] | None = None,
+    scoring_extras: dict[str, Any] | None = None,
 ) -> str | None:
     """True when melmod would block capture for historic lag at submit."""
     from cursed_words_solver.loadout import (
-        load_run_state_raw,
+        _scoring_previous_words_count_from_extras,
         project_workflow_extras_for_f8_embed,
         reconcile_encounter_historic_for_scoring,
     )
@@ -853,16 +854,25 @@ def f8_historic_would_fail_submit_projection(
     if projected_extras is not None:
         source_extras = copy.deepcopy(projected_extras)
         reconcile_encounter_historic_for_scoring(source_extras, board=board)
-    else:
-        fresh = load_run_state_raw()
-        if not isinstance(fresh, dict):
-            return None
-        fresh_extras = fresh.get("extras")
-        if not isinstance(fresh_extras, dict):
-            return None
-        source_extras = copy.deepcopy(fresh_extras)
         project_workflow_extras_for_f8_embed(source_extras, board=board)
+    elif isinstance(scoring_extras, dict):
+        source_extras = copy.deepcopy(scoring_extras)
+        reconcile_encounter_historic_for_scoring(source_extras, board=board)
+        project_workflow_extras_for_f8_embed(source_extras, board=board)
+    else:
+        return None
     embed = embed_extras if isinstance(embed_extras, dict) else {}
+
+    if isinstance(scoring_extras, dict):
+        scoring_mirror = copy.deepcopy(scoring_extras)
+        reconcile_encounter_historic_for_scoring(scoring_mirror, board=board)
+        embed_hist = str(embed.get("historic_words", "") or "").strip()
+        score_hist = str(scoring_mirror.get("historic_words", "") or "").strip()
+        embed_spc = _scoring_previous_words_count_from_extras(embed)
+        score_spc = _scoring_previous_words_count_from_extras(scoring_mirror)
+        if embed_hist == score_hist and embed_spc == score_spc:
+            return None
+
     embed_hist = str(embed.get("historic_words", "") or "").strip()
     proj_hist = str(source_extras.get("historic_words", "") or "").strip()
     embed_count = _historic_words_count(embed_hist)
@@ -880,6 +890,13 @@ def f8_historic_would_fail_submit_projection(
         return None
 
     if embed_count > proj_count:
+        if isinstance(scoring_extras, dict):
+            scoring_mirror = copy.deepcopy(scoring_extras)
+            reconcile_encounter_historic_for_scoring(scoring_mirror, board=board)
+            score_hist = str(scoring_mirror.get("historic_words", "") or "").strip()
+            score_count = _historic_words_count(score_hist)
+            if score_count == proj_count:
+                return None
         return (
             f"F8 embed historic ({embed_count} words) ahead of submit projection "
             f"({proj_count} words)"
@@ -1495,12 +1512,15 @@ def f8_should_block_save(
     board: Board | None = None,
     f8_extras: dict[str, Any] | None = None,
     submit_projected_extras: dict[str, Any] | None = None,
+    scoring_extras: dict[str, Any] | None = None,
     gather_succeeded: bool = True,
     gather_missing: list[str] | None = None,
     mid_solve_grid_advanced: bool = False,
     path: list[int] | None = None,
     dictionary: WordDictionary | None = None,
     scoring_word: str | None = None,
+    min_len: int = 3,
+    pipeline: ScoringPipeline | None = None,
 ) -> tuple[bool, str | None]:
     """Whether F8 must skip trusted last_suggestion.json (melmod capture)."""
     del grid_adv_warn, grid_one_hist_warn
@@ -1541,6 +1561,7 @@ def f8_should_block_save(
             f8_extras,
             board=board,
             projected_extras=submit_projected_extras,
+            scoring_extras=scoring_extras,
         ):
             return True, "submit_projection_mismatch"
     if (
@@ -1555,6 +1576,8 @@ def f8_should_block_save(
             scoring_word,
             loadout,
             dictionary,
+            min_len=min_len,
+            pipeline=pipeline,
         )
     ):
         return True, "no_playable_dictionary_word"

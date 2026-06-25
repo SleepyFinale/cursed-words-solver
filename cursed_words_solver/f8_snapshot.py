@@ -638,30 +638,8 @@ def _last_historic_word_key(raw: str) -> str:
 
 
 def historic_workflow_catchup_needed(snapshot: F8Snapshot) -> bool:
-    """True when embed historic may lag fresh melmod export (midday/mutt class)."""
-    if historic_words_gather_pending(snapshot):
-        return True
-    embed_hist = ""
-    if snapshot.loadout is not None and isinstance(snapshot.loadout.extras, dict):
-        embed_hist = str(
-            snapshot.loadout.extras.get("historic_words", "") or ""
-        ).strip()
-    fresh = load_run_state_raw()
-    if not isinstance(fresh, dict):
-        return False
-    fresh_extras = fresh.get("extras")
-    if not isinstance(fresh_extras, dict):
-        return False
-    if _grid_number_from_extras(snapshot.loadout.extras if snapshot.loadout else {}) != _grid_number_from_extras(
-        fresh_extras
-    ):
-        return False
-    fresh_hist = str(fresh_extras.get("historic_words", "") or "").strip()
-    if not fresh_hist:
-        return False
-    if not embed_hist:
-        return True
-    return _last_historic_word_key(embed_hist) != _last_historic_word_key(fresh_hist)
+    """True when F8 gather still lacks live encounter historic (re-export only)."""
+    return historic_words_gather_pending(snapshot)
 
 
 def sole_gather_miss_is_historic(snapshot: F8Snapshot) -> bool:
@@ -689,28 +667,9 @@ def try_refresh_historic_extras_from_disk(
     loadout: Loadout,
     board: Board,
 ) -> bool:
-    """Pull encounter historic from disk into loadout when export catches up."""
-    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
-    missing = _extras_missing_for_loadout(loadout, board, extras)
-    if "historic_words" not in missing:
-        return False
-
-    fresh = load_run_state_raw()
-    if not isinstance(fresh, dict):
-        return False
-    fresh_extras = fresh.get("extras")
-    if not isinstance(fresh_extras, dict):
-        return False
-
-    if _grid_number_from_extras(extras) != _grid_number_from_extras(fresh_extras):
-        return False
-
-    hist = str(fresh_extras.get("historic_words", "") or "").strip()
-    if not _encounter_historic_export_ready(fresh_extras, hist):
-        return False
-
-    _apply_historic_extras_to_loadout(loadout, fresh_extras)
-    return True
+    """Disabled — live F8 export only; never pull historic from disk."""
+    del loadout, board
+    return False
 
 
 def catchup_historic_gather_after_search(
@@ -720,59 +679,23 @@ def catchup_historic_gather_after_search(
     catchup_timeout_sec: float = 1.5,
     reexport_poll_sec: float = F8_HISTORIC_CATCHUP_REEXPORT_POLL_SEC,
 ) -> tuple[F8Snapshot, str | None, str | None, str | None]:
-    """Retry historic gather after search (disk merge + optional F8 re-export).
+    """Request F8 re-export when gather missed live historic (no disk merge).
 
     Returns (snapshot, catchup_log_note, historic_catchup_stale_note, behind_disk_warn).
     """
-    if not historic_workflow_catchup_needed(snapshot):
+    del catchup_timeout_sec
+    from cursed_words_solver.loadout import describe_f8_historic_catchup
+
+    if not historic_words_gather_pending(snapshot):
         return snapshot, None, None, None
 
-    from cursed_words_solver.loadout import (
-        F8_HISTORIC_CATCHUP_DELAY_SEC,
-        describe_f8_historic_catchup,
-        merge_encounter_historic_for_f8_with_retry,
-    )
-
+    ack = snapshot.f8_export_acked
     embed_hist = ""
     if snapshot.loadout is not None and isinstance(snapshot.loadout.extras, dict):
         embed_hist = str(snapshot.loadout.extras.get("historic_words", "") or "").strip()
 
-    ack = snapshot.f8_export_acked
-    max_retries = max(
-        1,
-        int(catchup_timeout_sec / max(F8_HISTORIC_CATCHUP_DELAY_SEC, 0.01)),
-    )
-    merged, stale_note = merge_encounter_historic_for_f8_with_retry(
-        snapshot.run_state if isinstance(snapshot.run_state, dict) else None,
-        max_retries=max_retries,
-        delay_sec=F8_HISTORIC_CATCHUP_DELAY_SEC,
-    )
-
     catchup_note: str | None = None
-    if isinstance(merged, dict):
-        snapshot = _build_snapshot_from_run_state(merged, rules=rules)
-        snapshot.f8_export_acked = ack
-        snapshot.run_state = copy.deepcopy(merged)
-
-        merged_hist = ""
-        if snapshot.loadout is not None and isinstance(snapshot.loadout.extras, dict):
-            merged_hist = str(
-                snapshot.loadout.extras.get("historic_words", "") or ""
-            ).strip()
-        if merged_hist and merged_hist != embed_hist:
-            gn = 0
-            if snapshot.loadout is not None:
-                try:
-                    gn = grid_number(snapshot.loadout)
-                except (TypeError, ValueError):
-                    gn = 0
-            catchup_note = describe_f8_historic_catchup(
-                embed_hist,
-                merged_hist,
-                grid_number=gn,
-            )
-
-    if historic_words_gather_pending(snapshot) and reexport_poll_sec > 0:
+    if reexport_poll_sec > 0:
         retry_request_id = write_f8_export_request()
         wait_for_f8_export_ack(
             retry_request_id,
@@ -785,43 +708,34 @@ def catchup_historic_gather_after_search(
         while time.monotonic() < deadline:
             fresh = load_run_state_raw()
             if isinstance(fresh, dict):
-                merged_retry, _ = merge_encounter_historic_for_f8_with_retry(
-                    fresh,
-                    max_retries=1,
-                    delay_sec=0,
-                )
-                if isinstance(merged_retry, dict):
-                    snap_retry = _build_snapshot_from_run_state(
-                        merged_retry, rules=rules
-                    )
-                    snap_retry.f8_export_acked = ack
-                    snap_retry.run_state = copy.deepcopy(merged_retry)
-                    if not historic_words_gather_pending(snap_retry):
-                        retry_hist = ""
-                        if snap_retry.loadout is not None and isinstance(
-                            snap_retry.loadout.extras, dict
-                        ):
-                            retry_hist = str(
-                                snap_retry.loadout.extras.get("historic_words", "")
-                                or ""
-                            ).strip()
-                        if retry_hist and retry_hist != embed_hist and not catchup_note:
-                            gn = 0
-                            if snap_retry.loadout is not None:
-                                try:
-                                    gn = grid_number(snap_retry.loadout)
-                                except (TypeError, ValueError):
-                                    gn = 0
-                            catchup_note = describe_f8_historic_catchup(
-                                embed_hist,
-                                retry_hist,
-                                grid_number=gn,
-                            )
-                        snapshot = snap_retry
-                        break
+                snap_retry = _build_snapshot_from_run_state(fresh, rules=rules)
+                snap_retry.f8_export_acked = ack
+                snap_retry.run_state = copy.deepcopy(fresh)
+                if not historic_words_gather_pending(snap_retry):
+                    retry_hist = ""
+                    if snap_retry.loadout is not None and isinstance(
+                        snap_retry.loadout.extras, dict
+                    ):
+                        retry_hist = str(
+                            snap_retry.loadout.extras.get("historic_words", "") or ""
+                        ).strip()
+                    if retry_hist and retry_hist != embed_hist:
+                        gn = 0
+                        if snap_retry.loadout is not None:
+                            try:
+                                gn = grid_number(snap_retry.loadout)
+                            except (TypeError, ValueError):
+                                gn = 0
+                        catchup_note = describe_f8_historic_catchup(
+                            embed_hist,
+                            retry_hist,
+                            grid_number=gn,
+                        )
+                    snapshot = snap_retry
+                    break
             time.sleep(F8_GATHER_POLL_SEC)
 
-    return snapshot, catchup_note, stale_note, None
+    return snapshot, catchup_note, None, None
 
 
 def session_from_snapshot(snapshot: F8Snapshot) -> F8SuggestionSession | None:

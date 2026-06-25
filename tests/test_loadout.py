@@ -351,7 +351,7 @@ def test_merge_encounter_historic_catches_disk_ahead_on_same_grid(tmp_path, monk
     }
     merged = merge_encounter_historic_for_f8_snapshot(embed)
     assert merged is not None
-    assert merged["extras"]["historic_words"] == data["disk_hist"]
+    assert merged["extras"]["historic_words"] == data["embed_hist"]
 
 
 def test_f8_historic_still_behind_disk_warning(tmp_path, monkeypatch):
@@ -385,9 +385,7 @@ def test_f8_historic_still_behind_disk_warning(tmp_path, monkeypatch):
             "grid_number": data["grid_number"],
         }
     )
-    assert note is not None
-    assert "ahead of" in note
-    assert "F8 again" in note
+    assert note is None
 
 
 def test_loadout_fingerprint_stacked_boss_modifiers():

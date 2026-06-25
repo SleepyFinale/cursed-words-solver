@@ -34,6 +34,9 @@ _BLOCK_REASON_OVERLAY: dict[str, str] = {
     "behind_disk": f"Melmod export behind disk — {F8_RETRY_HINT}.",
     "bento_previous_word_stale": f"Previous-word letter stale — {F8_RETRY_HINT}.",
     "empty_historic_on_later_grid": f"Encounter historic missing — {F8_RETRY_HINT}.",
+    "no_playable_dictionary_word": (
+        f"No dictionary word on path — path shown; score untrusted. {F8_RETRY_HINT}."
+    ),
 }
 
 

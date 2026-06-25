@@ -1,0 +1,25 @@
+{
+  "grid_number": "2",
+  "live_export_extras": {
+    "grid_number": "2",
+    "scoring_previous_words_count": "2",
+    "historic_words": "[{\"word\":\"EE\",\"score\":120,\"path\":[6,19]}]",
+    "previous_word_first_letter": "e",
+    "red_tiles_used_encounter": "0",
+    "encounter_historic_source": "live",
+    "encounter_score_earned": "120"
+  },
+  "submit_authoritative_extras": {
+    "grid_number": "2",
+    "scoring_previous_words_count": "2",
+    "historic_words": "[{\"word\":\"EE\",\"score\":120,\"path\":[6,19]}]",
+    "previous_word_first_letter": "e",
+    "encounter_historic_source": "live"
+  },
+  "f8_embed_before_fix": {
+    "grid_number": "2",
+    "scoring_previous_words_count": "0",
+    "historic_words": "",
+    "encounter_historic_source": "grid_start_cleared"
+  }
+}
