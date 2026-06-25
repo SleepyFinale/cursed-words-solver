@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
 import pytest
 
-from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+from cursed_words_solver.loadout import (
+    parse_board_from_run_state,
+    parse_run_state,
+    prepare_run_state_dict_for_scoring,
+)
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.rules.boss_effects import boss_word_constraints
@@ -86,6 +91,86 @@ def _round_log_to_replay(data: dict) -> dict:
         "actual_trace": actual.get("trace"),
         "match_status": data.get("match_status"),
     }
+
+
+def _f8_run_state_from_round_log(data: dict) -> dict:
+    """Reconstruct F8-time run state from a melmod round log."""
+    rs = copy.deepcopy(data["run_state"])
+    ex = rs.setdefault("extras", {})
+    diff = data.get("extras_diff") or {}
+    ex["scoring_previous_words_count"] = diff.get(
+        "scoring_previous_words_count", {}
+    ).get("f8", "0")
+    ex["historic_words"] = "[]"
+    ex["grid_scattered_items"] = diff.get("grid_scattered_items", {}).get("f8", "")
+    ex["red_tiles_used_encounter"] = diff.get("red_tiles_used_encounter", {}).get(
+        "f8", "0"
+    )
+    for key in ("sticker_order", "stamp_order"):
+        if key in diff:
+            ex[key] = diff[key].get("f8", ex.get(key, ""))
+    if "loadout_fingerprint" in diff:
+        ex["loadout_fingerprint"] = diff["loadout_fingerprint"].get(
+            "f8", ex.get("loadout_fingerprint", "")
+        )
+    return prepare_run_state_dict_for_scoring(rs)
+
+
+ITEM_HEAVY_SEARCH_FIXTURES = [
+    (
+        Path(__file__).resolve().parents[1]
+        / "fixtures"
+        / "round_logs"
+        / "20260623_160441_kiddywinks_path_mismatch.json",
+        100_000,
+    ),
+    (
+        Path(__file__).resolve().parents[1]
+        / "fixtures"
+        / "round_logs"
+        / "20260623_160736_hootnannie_path_mismatch.json",
+        10_000,
+    ),
+    (
+        Path(__file__).resolve().parents[1]
+        / "fixtures"
+        / "round_logs"
+        / "20260623_161202_histidines_path_mismatch.json",
+        5_000,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("fixture_path", "min_top_score"),
+    ITEM_HEAVY_SEARCH_FIXTURES,
+    ids=["kiddywinks", "hootnannie", "histidines"],
+)
+def test_item_heavy_grid_search_beats_f8_suggestion(
+    fixture_path: Path, min_top_score: int
+):
+    if not fixture_path.exists():
+        pytest.skip(f"{fixture_path.name} required")
+    data = json.loads(fixture_path.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        time_budget=30.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=3)
+    assert results, "search must find high-scoring item-tour paths"
+    f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
+    top_score = int(results[0].score)
+    assert top_score > f8_score
+    assert top_score >= min_top_score
 
 
 def _score_submitted(data: dict) -> int:

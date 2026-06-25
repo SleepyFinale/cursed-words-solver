@@ -757,6 +757,7 @@ namespace CursedWordsSolverCompanion
             CaptureBicycleAccumulatorFromSteps(steps);
             CaptureBirthdayCakeBonusFromSteps(steps);
             CaptureNeapolitanPercentFromSteps(steps);
+            CaptureRulerDistanceFromSteps(steps);
             CaptureRareItemCountFromSteps(steps);
             CaptureTileNinjaBonusFromSteps(steps);
             CaptureSnapshotCopyFromSteps(steps);
@@ -937,6 +938,62 @@ namespace CursedWordsSolverCompanion
 
             _scoringContextExtras["bicycle_word_score_bonus"] = stored.ToString();
             _scoringContextExtras["cards_submitted"] = stored.ToString();
+        }
+
+        /// <summary>
+        /// Capture Ruler's cumulative Distance after submit for the next F8 prediction.
+        /// </summary>
+        private static void CaptureRulerDistanceFromSteps(List<ScoreCalcVizInfo> steps)
+        {
+            if (steps == null || _scoringContextExtras == null)
+                return;
+
+            try
+            {
+                var player = RunStateExporter.GetPlayerForUpdate();
+                var live = RunStateExporter.TryGetRulerDistance(player);
+                if (live >= 0)
+                {
+                    var text = live.ToString();
+                    _scoringContextExtras["ruler_distance"] = text;
+                    _scoringContextExtras["ruler_distance_last_known"] = text;
+                    return;
+                }
+
+                for (var i = 0; i < steps.Count; i++)
+                {
+                    var step = steps[i];
+                    if (step?.RelevantItem == null || step.WordBonus == null)
+                        continue;
+
+                    var itemId = RunStateExporter.Slugify(
+                        step.RelevantItem.ArtFileName,
+                        step.RelevantItem.Name
+                    );
+                    if (!string.Equals(itemId, "ruler", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (!step.WordBonus.IsMultiplicative || step.WordBonus.IsPoison)
+                        continue;
+
+                    var bonus = step.WordBonus.Bonus != null ? step.WordBonus.Bonus.Score : 0L;
+                    if (bonus <= 100L)
+                        continue;
+
+                    var distance = (int)((bonus - 100L) / 2L);
+                    if (distance < 0)
+                        continue;
+
+                    var text = distance.ToString();
+                    _scoringContextExtras["ruler_distance"] = text;
+                    _scoringContextExtras["ruler_distance_last_known"] = text;
+                    break;
+                }
+            }
+            catch
+            {
+                // best-effort only
+            }
         }
 
         /// <summary>

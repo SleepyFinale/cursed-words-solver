@@ -957,6 +957,7 @@ namespace CursedWordsSolverCompanion
             "cards_submitted",
             "birthday_cake_bonus",
             "neapolitan_percent_last_known",
+            "ruler_distance_last_known",
             "rare_item_count_last_known",
             "steak_word_bonus_percent",
             "snapshot_copy_slug",
@@ -1142,6 +1143,27 @@ namespace CursedWordsSolverCompanion
                         snapshot.extras["neapolitan_percent"] = reflected.ToString();
                     else if (lastKnown >= 100)
                         snapshot.extras["neapolitan_percent"] = lastKnown.ToString();
+                }
+
+                string rulerLastKnownRaw;
+                if (
+                    onDisk.TryGetValue("ruler_distance_last_known", out rulerLastKnownRaw)
+                    && int.TryParse((rulerLastKnownRaw ?? "").Trim(), out var rulerLastKnown)
+                    && rulerLastKnown >= 0
+                )
+                {
+                    var reflectedRuler = -1;
+                    string liveRulerRaw;
+                    if (
+                        snapshot.extras.TryGetValue("ruler_distance", out liveRulerRaw)
+                        && int.TryParse((liveRulerRaw ?? "").Trim(), out var liveRuler)
+                        && liveRuler >= 0
+                    )
+                        reflectedRuler = liveRuler;
+                    if (reflectedRuler >= 0)
+                        snapshot.extras["ruler_distance"] = reflectedRuler.ToString();
+                    else
+                        snapshot.extras["ruler_distance"] = rulerLastKnown.ToString();
                 }
 
                 ApplyResolvedRareItemCount(snapshot, onDisk);
@@ -1581,6 +1603,12 @@ namespace CursedWordsSolverCompanion
             {
                 snapshot.extras.Remove("neapolitan_percent");
                 snapshot.extras.Remove("neapolitan_percent_last_known");
+            }
+
+            if (!PlayerHasStampSlug(player, "ruler"))
+            {
+                snapshot.extras.Remove("ruler_distance");
+                snapshot.extras.Remove("ruler_distance_last_known");
             }
 
             if (!PlayerHasStampSlug(player, "steak"))
@@ -2545,6 +2573,13 @@ namespace CursedWordsSolverCompanion
             if (neapolitanPercent >= 100)
                 snapshot.extras["neapolitan_percent"] = neapolitanPercent.ToString();
 
+            var rulerDistance = ResolveRulerDistanceForExport(player);
+            if (rulerDistance >= 0)
+            {
+                snapshot.extras["ruler_distance"] = rulerDistance.ToString();
+                snapshot.extras["ruler_distance_last_known"] = rulerDistance.ToString();
+            }
+
             if (PlayerHasStampSlug(player, "steak"))
             {
                 var steakPercent = ResolveSteakPercentForExport(player, snapshot.extras);
@@ -2871,6 +2906,65 @@ namespace CursedWordsSolverCompanion
             if (name.IndexOf("Birthday", StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;
             return art.IndexOf("birthday", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// Ruler stamp cumulative non-adjacent Distance (pre-submit). Returns -1 if unknown.
+        /// </summary>
+        public static int TryGetRulerDistance(Player player)
+        {
+            if (player?.Stamps == null)
+                return -1;
+
+            foreach (var stamp in player.Stamps)
+            {
+                if (stamp == null)
+                    continue;
+                var name = stamp.Name ?? "";
+                var art = stamp.ArtFileName ?? "";
+                if (
+                    name.IndexOf("Ruler", StringComparison.OrdinalIgnoreCase) < 0
+                    && art.IndexOf("ruler", StringComparison.OrdinalIgnoreCase) < 0
+                )
+                    continue;
+
+                var distance = TryGetRulerDistanceFromObject(stamp);
+                if (distance >= 0)
+                    return distance;
+
+                foreach (var nested in TryGetNestedStickerTargets(stamp))
+                {
+                    distance = TryGetRulerDistanceFromObject(nested);
+                    if (distance >= 0)
+                        return distance;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int TryGetRulerDistanceFromObject(object target)
+        {
+            if (target == null)
+                return -1;
+
+            return TryGetIntMember(target, "Distance");
+        }
+
+        private static int ResolveRulerDistanceForExport(Player player)
+        {
+            var reflected = TryGetRulerDistance(player);
+            if (reflected >= 0)
+                return reflected;
+            var onDisk = TryReadExtrasFromDisk();
+            string cachedRaw;
+            if (
+                onDisk.TryGetValue("ruler_distance_last_known", out cachedRaw)
+                && int.TryParse((cachedRaw ?? "").Trim(), out var cached)
+                && cached >= 0
+            )
+                return cached;
+            return reflected;
         }
 
         /// <summary>

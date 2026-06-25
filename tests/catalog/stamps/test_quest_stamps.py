@@ -121,6 +121,35 @@ def test_ruler_non_adjacent_steps_scale_word():
     assert bd["multiplier"] == 1.04
 
 
+def test_ruler_uses_accumulated_distance_from_extras():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 10)
+    board.tiles[0][1] = _tile(0, 1, "B", 10)
+    board.tiles[0][4] = _tile(0, 4, "C", 10)
+    path = [0, 1, 4]
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="ruler", name="Ruler", kind="stamp")],
+        extras={"ruler_distance": "2"},
+    )
+    score, bd = pipeline.score(board, path, "abc", loadout)
+    base, _ = pipeline.score(board, path, "abc", Loadout())
+    assert bd["multiplier"] == 1.06
+    assert score == int(base * 1.06)
+
+
+def test_ruler_skips_when_distance_zero():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 10)
+    board.tiles[0][1] = _tile(0, 1, "B", 10)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stamps=[LoadoutItem(id="ruler", name="Ruler", kind="stamp")])
+    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
+    base, _ = pipeline.score(board, [0, 1], "ab", Loadout())
+    assert bd["multiplier"] == 1.0
+    assert score == base
+
+
 def test_chick_level_one_stickers_scale_word():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 10)

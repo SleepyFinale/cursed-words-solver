@@ -175,6 +175,16 @@ namespace CursedWordsSolverCompanion
             if (HasStamp(player, "neapolitan") && !extras.ContainsKey("neapolitan_percent"))
                 missing.Add("neapolitan_percent");
 
+            if (HasStamp(player, "ruler"))
+            {
+                var hasLive = extras.ContainsKey("ruler_distance")
+                    && !string.IsNullOrEmpty(extras["ruler_distance"]);
+                var hasCached = extras.ContainsKey("ruler_distance_last_known")
+                    && !string.IsNullOrEmpty(extras["ruler_distance_last_known"]);
+                if (!hasLive && !hasCached)
+                    missing.Add("ruler_distance");
+            }
+
             if (HasStamp(player, "steak") && !extras.ContainsKey("steak_word_bonus_percent"))
                 missing.Add("steak_word_bonus_percent");
 

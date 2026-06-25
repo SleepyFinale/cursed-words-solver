@@ -2690,62 +2690,80 @@ class ScoringPipeline:
                     board=board,
                     improve_neapolitan_on_submit=improve_neapolitan,
                 )
-                if rid == "neapolitan":
-                    rule_trace_context["neapolitan_effective_percent"] = int(
-                        round(float(factor) * 100.0)
+                ruler_skip = False
+                if rid == "ruler":
+                    from cursed_words_solver.rules.scoring_conditions import (
+                        ruler_effective_distance,
                     )
-                label = condition or rule.get("scale_from_extras", "scaled")
-                salamander_defer = _salamander_defer_multiply_for_mutating(loadout)
-                if (
-                    rid == "yellow_glasses"
-                    and state["word_score"] > 0
-                    and level >= 3
-                    and salamander_defer
-                ):
-                    state["salamander_post_mutating_mults"].append((factor, rule_id))
-                    state["effects"].append(f"×{factor} word ({label})")
-                elif (
-                    rid == "wrestlers"
-                    and state["word_score"] > 0
-                    and salamander_defer
-                    and word_starts_ends_different_suit(board, path)
-                ):
-                    state["salamander_post_mutating_mults"].append((factor, rule_id))
-                    state["effects"].append(f"×{factor} word ({label})")
-                elif (
-                    rid == "wrestlers"
-                    and state["word_score"] > 0
-                    and _boss_is_salamander(loadout)
-                ):
-                    bonus = int(100 * factor)
-                    _add_word_score(state, bonus)
-                    state["multiplier"] *= factor
-                    state["effects"].append(f"+{bonus} word ({label})")
-                else:
-                    if rid == "steak" and loadout is not None:
-                        raw_pct = (loadout.extras or {}).get("steak_word_bonus_percent")
-                        if raw_pct not in (None, ""):
-                            try:
-                                percent = int(raw_pct)
-                                factor = float(percent) / 100.0
-                            except (TypeError, ValueError):
+
+                    if ruler_effective_distance(loadout, path) <= 0:
+                        ruler_skip = True
+                        rule_trace_context["condition_met"] = False
+                        rule_trace_context["skip_reason"] = "skipped (distance zero)"
+                        rule_trace_context["condition_explanation"] = (
+                            "skipped (distance zero)"
+                        )
+                if not ruler_skip:
+                    if rid == "neapolitan":
+                        rule_trace_context["neapolitan_effective_percent"] = int(
+                            round(float(factor) * 100.0)
+                        )
+                    label = condition or rule.get("scale_from_extras", "scaled")
+                    salamander_defer = _salamander_defer_multiply_for_mutating(loadout)
+                    if (
+                        rid == "yellow_glasses"
+                        and state["word_score"] > 0
+                        and level >= 3
+                        and salamander_defer
+                    ):
+                        state["salamander_post_mutating_mults"].append((factor, rule_id))
+                        state["effects"].append(f"×{factor} word ({label})")
+                    elif (
+                        rid == "wrestlers"
+                        and state["word_score"] > 0
+                        and salamander_defer
+                        and word_starts_ends_different_suit(board, path)
+                    ):
+                        state["salamander_post_mutating_mults"].append((factor, rule_id))
+                        state["effects"].append(f"×{factor} word ({label})")
+                    elif (
+                        rid == "wrestlers"
+                        and state["word_score"] > 0
+                        and _boss_is_salamander(loadout)
+                    ):
+                        bonus = int(100 * factor)
+                        _add_word_score(state, bonus)
+                        state["multiplier"] *= factor
+                        state["effects"].append(f"+{bonus} word ({label})")
+                    else:
+                        if rid == "steak" and loadout is not None:
+                            raw_pct = (loadout.extras or {}).get(
+                                "steak_word_bonus_percent"
+                            )
+                            if raw_pct not in (None, ""):
+                                try:
+                                    percent = int(raw_pct)
+                                    factor = float(percent) / 100.0
+                                except (TypeError, ValueError):
+                                    percent = word_percent_bonus_from_multiplier(
+                                        factor, rule, level=level
+                                    )
+                            else:
                                 percent = word_percent_bonus_from_multiplier(
                                     factor, rule, level=level
                                 )
+                        elif rid == "neapolitan" and loadout is not None:
+                            percent = int(round(float(factor) * 100.0))
+                        elif rid == "ruler":
+                            percent = 100 + ruler_effective_distance(loadout, path) * 2
                         else:
                             percent = word_percent_bonus_from_multiplier(
                                 factor, rule, level=level
                             )
-                    elif rid == "neapolitan" and loadout is not None:
-                        percent = int(round(float(factor) * 100.0))
-                    else:
-                        percent = word_percent_bonus_from_multiplier(
-                            factor, rule, level=level
+                        _queue_word_percent_bonus(
+                            state, percent, rule_id, wiki_factor=factor
                         )
-                    _queue_word_percent_bonus(
-                        state, percent, rule_id, wiki_factor=factor
-                    )
-                    state["effects"].append(f"×{factor} word ({label})")
+                        state["effects"].append(f"×{factor} word ({label})")
         elif effect_type == "tile_multiply_by_letter_count":
             counts = letter_counts_on_path(board, path)
             applied = 0

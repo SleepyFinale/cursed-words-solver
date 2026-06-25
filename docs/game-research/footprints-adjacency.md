@@ -41,4 +41,6 @@ Hungry Snake horizontal wrap affects `GetTilesAdjacentToCoordinates(..., isForci
 
 [`cursed_words_solver/rules/scoring_conditions.py`](../../cursed_words_solver/rules/scoring_conditions.py) — `_path_step_adjacent` and `non_adjacent_step_count` must match `AreAdjacentTiles`.
 
+Ruler uses the same adjacency helper but **accumulates** non-adjacent steps on the stamp across the run — see [ruler-distance.md](ruler-distance.md).
+
 Wiki: [Footprints](https://cursedwords.wiki.gg/wiki/Footprints)

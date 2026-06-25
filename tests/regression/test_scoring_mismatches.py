@@ -238,6 +238,67 @@ def _loadout_has_neapolitan(run_state: dict) -> bool:
     return False
 
 
+def _loadout_has_ruler(run_state: dict) -> bool:
+    for key in ("stamps",):
+        items = run_state.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_id = str(item.get("id", "") or "").lower()
+            name = str(item.get("name", "") or "").lower()
+            if item_id == "ruler" or name == "ruler":
+                return True
+    return False
+
+
+def _ruler_trace_percent(data: dict) -> int | None:
+    trace = data.get("actual_trace")
+    if not isinstance(trace, list):
+        return None
+    for step in trace:
+        if not isinstance(step, dict):
+            continue
+        item_id = str(step.get("item_id", "") or "").lower()
+        item_name = str(step.get("item_name", "") or "").lower()
+        if item_id != "ruler" and item_name != "ruler":
+            continue
+        if not step.get("word_bonus_multiplicative") or step.get("word_bonus_poison"):
+            continue
+        try:
+            percent = int(step.get("word_bonus", 0))
+        except (TypeError, ValueError):
+            continue
+        if percent > 100:
+            return percent
+    return None
+
+
+def _adjust_ruler_distance_extras(run_state: dict, data: dict) -> None:
+    """Inject pre-submit Ruler Distance when fixture predates melmod export."""
+    extras = run_state.get("extras")
+    if not isinstance(extras, dict):
+        return
+    if not _loadout_has_ruler(run_state):
+        return
+    if extras.get("ruler_distance") not in (None, ""):
+        return
+    percent = _ruler_trace_percent(data)
+    if percent is None:
+        return
+    path = data.get("path")
+    if not isinstance(path, list):
+        return
+    from cursed_words_solver.rules.scoring_conditions import non_adjacent_step_count
+
+    post_distance = (percent - 100) // 2
+    pre_distance = max(0, post_distance - non_adjacent_step_count(path))
+    text = str(pre_distance)
+    extras["ruler_distance"] = text
+    extras["ruler_distance_last_known"] = text
+
+
 def _adjust_neapolitan_percent_extras(run_state: dict, data: dict) -> None:
     """Inject Neapolitan's live % multiplier when fixture predates melmod export."""
     extras = run_state.get("extras")
@@ -2031,6 +2092,7 @@ def test_scoring_mismatch(case_path: Path) -> None:
     _adjust_previous_word_letter_extras(run_state, data)
     _adjust_bento_previous_word_extras(run_state, data)
     _adjust_neapolitan_percent_extras(run_state, data)
+    _adjust_ruler_distance_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)
@@ -2216,6 +2278,7 @@ def test_inquirendo_electric_guitar_red_note_mismatch() -> None:
     _adjust_previous_word_letter_extras(run_state, data)
     _adjust_bento_previous_word_extras(run_state, data)
     _adjust_neapolitan_percent_extras(run_state, data)
+    _adjust_ruler_distance_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)
@@ -2281,6 +2344,7 @@ def test_upwells_cobra_electric_guitar_scatter_tier() -> None:
     _adjust_previous_word_letter_extras(run_state, data)
     _adjust_bento_previous_word_extras(run_state, data)
     _adjust_neapolitan_percent_extras(run_state, data)
+    _adjust_ruler_distance_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)
@@ -2375,6 +2439,7 @@ def test_nat_h4_ram_trace_checkpoints(
     _adjust_previous_word_letter_extras(run_state, data)
     _adjust_bento_previous_word_extras(run_state, data)
     _adjust_neapolitan_percent_extras(run_state, data)
+    _adjust_ruler_distance_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)

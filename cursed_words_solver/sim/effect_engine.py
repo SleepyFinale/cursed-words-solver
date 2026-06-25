@@ -169,6 +169,14 @@ class EffectEngine:
 
         _apply_setup_extras(next_state, submission, reward, self.rules)
 
+        from cursed_words_solver.rules.scoring_conditions import (
+            advance_ruler_distance_after_submit,
+        )
+
+        advance_ruler_distance_after_submit(
+            next_state.loadout, list(submission.path)
+        )
+
         try:
             prev_count = int(extras.get("scoring_previous_words_count", 0) or 0)
         except (TypeError, ValueError):

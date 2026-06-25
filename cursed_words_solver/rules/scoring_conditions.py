@@ -2657,6 +2657,53 @@ def non_adjacent_step_count(path: list[int]) -> int:
     )
 
 
+def loadout_has_ruler(loadout: Loadout | None) -> bool:
+    if loadout is None:
+        return False
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    for stamp in loadout.stamps or []:
+        if slugify_name(str(stamp.id or stamp.name)) == "ruler":
+            return True
+    return False
+
+
+def ruler_distance_from_loadout(loadout: Loadout | None) -> int:
+    """Stamp ``Distance`` before scoring the candidate word (melmod ``ruler_distance``)."""
+    if loadout is None:
+        return 0
+    return max(0, _extra_int(loadout, "ruler_distance", 0))
+
+
+def ruler_effective_distance(loadout: Loadout | None, path: list[int] | None) -> int:
+    """Game ``Distance`` after adding this word's non-adjacent steps."""
+    base = ruler_distance_from_loadout(loadout)
+    if not path:
+        return base
+    return base + non_adjacent_step_count(path)
+
+
+def ruler_multiplier_from_loadout(
+    loadout: Loadout | None, path: list[int] | None
+) -> float | None:
+    """×WORD factor from cumulative Ruler Distance; None when game emits no bonus."""
+    effective = ruler_effective_distance(loadout, path)
+    if effective <= 0:
+        return None
+    return (100 + effective * 2) / 100.0
+
+
+def advance_ruler_distance_after_submit(loadout: Loadout, path: list[int]) -> None:
+    """Post-submit: mirror ``Ruler.Distance += non_adjacent_steps``."""
+    if not loadout_has_ruler(loadout):
+        return
+    extras = loadout.extras
+    if not isinstance(extras, dict):
+        loadout.extras = {}
+        extras = loadout.extras
+    extras["ruler_distance"] = str(ruler_effective_distance(loadout, path))
+
+
 def wildcard_count_on_path(board: Board, path: list[int]) -> int:
     count = 0
     for idx in path:
@@ -4242,7 +4289,10 @@ def scaled_word_multiplier(
                 rule.get("scale_per_extra", 1.0)
             )
     if path is not None and rule.get("scale_from_path") == "non_adjacent_steps":
-        factor += non_adjacent_step_count(path) * float(rule.get("path_scale", 0.02))
+        ruler_mult = ruler_multiplier_from_loadout(loadout, path)
+        if ruler_mult is None:
+            return 1.0
+        return ruler_mult
     return factor
 
 

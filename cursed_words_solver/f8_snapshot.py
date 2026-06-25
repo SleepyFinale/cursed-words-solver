@@ -160,6 +160,13 @@ def _has_neapolitan_stamp(loadout: Loadout) -> bool:
     )
 
 
+def _has_ruler_stamp(loadout: Loadout) -> bool:
+    return any(
+        str(getattr(stamp, "id", "") or "").strip().lower() == "ruler"
+        for stamp in (loadout.stamps or [])
+    )
+
+
 def _has_steak_stamp(loadout: Loadout) -> bool:
     return any(
         str(getattr(stamp, "id", "") or "").strip().lower() == "steak"
@@ -309,6 +316,11 @@ def _extras_missing_for_loadout(
     if _has_neapolitan_stamp(loadout):
         if extras.get("neapolitan_percent") in (None, ""):
             missing.append("neapolitan_percent")
+    if _has_ruler_stamp(loadout):
+        has_live = extras.get("ruler_distance") not in (None, "")
+        has_cached = extras.get("ruler_distance_last_known") not in (None, "")
+        if not has_live and not has_cached:
+            missing.append("ruler_distance")
     if _has_steak_stamp(loadout):
         has_pct = extras.get("steak_word_bonus_percent") not in (None, "")
         has_rare = extras.get("rare_item_count") not in (None, "")

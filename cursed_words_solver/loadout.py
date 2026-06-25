@@ -869,6 +869,7 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
         "movie_camera_word_score_bonus",
         "bicycle_suited_on_path",
         "neapolitan_percent",
+        "ruler_distance",
         "pin_left_level",
         "pin_right_level",
         "pin_left_variable",
@@ -1383,6 +1384,12 @@ def _is_bicycle_pin(loadout: Loadout) -> bool:
 def _has_neapolitan_stamp(loadout: Loadout) -> bool:
     return any(
         str((s.id or "")).strip().lower() == "neapolitan" for s in (loadout.stamps or [])
+    )
+
+
+def _has_ruler_stamp(loadout: Loadout) -> bool:
+    return any(
+        str((s.id or "")).strip().lower() == "ruler" for s in (loadout.stamps or [])
     )
 
 
@@ -2484,6 +2491,10 @@ def sanitize_run_state_snapshot_for_f8(
     if not _has_neapolitan_stamp(loadout):
         extras.pop("neapolitan_percent", None)
         extras.pop("neapolitan_percent_last_known", None)
+
+    if not _has_ruler_stamp(loadout):
+        extras.pop("ruler_distance", None)
+        extras.pop("ruler_distance_last_known", None)
 
     if not _has_steak_stamp(loadout):
         extras.pop("steak_word_bonus_percent", None)
