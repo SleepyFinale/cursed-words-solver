@@ -38,7 +38,6 @@ from cursed_words_solver.config import (
     resolve_wordlist,
 )
 from cursed_words_solver.f8_snapshot import (
-    F8_GATHER_POLL_SEC,
     F8_HISTORIC_CATCHUP_REEXPORT_POLL_SEC,
     F8SuggestionSession,
     catchup_historic_gather_after_search,
@@ -47,8 +46,6 @@ from cursed_words_solver.f8_snapshot import (
     historic_words_gather_pending,
     historic_workflow_catchup_needed,
     session_from_snapshot,
-    sole_gather_miss_is_historic,
-    try_refresh_historic_extras_from_disk,
     write_f8_export_request,
 )
 from cursed_words_solver.suggestion import (
@@ -60,14 +57,17 @@ from cursed_words_solver.suggestion import (
     effective_scoring_word,
     empty_historic_on_later_grid_warning,
     f8_should_block_save,
+    filter_submittable_results,
     format_suggestion_word,
     format_result_score_display,
+    grid_transition_workflow_bleed_warning,
     poll_invalidate_last_suggestion,
     run_state_historic_stale_warnings,
     save_last_suggestion,
     save_blocked_suggestion,
 )
 from cursed_words_solver.dictionary import WordDictionary
+from cursed_words_solver.f8_messages import format_f8_block_reason_html
 from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor, WordResult
 from cursed_words_solver.board_display import format_board_grid
 from cursed_words_solver.loadout import (
@@ -204,6 +204,7 @@ class _SolveUIUpdate:
     melmod_loadout_fingerprint: str | None = None
     shop_advice_html: str | None = None
     trusted_suggestion: bool = True
+    block_reason: str | None = None
 
 
 class _HotkeyBridge(QObject):
@@ -214,6 +215,7 @@ class _HotkeyBridge(QObject):
     hide_overlay = Signal()
     quit_app = Signal()
     solve_finished = Signal(object)
+    show_stale = Signal(str)
 
 
 class SolverApp:
@@ -246,6 +248,7 @@ class SolverApp:
         self._bridge.hide_overlay.connect(self._hide_overlays)
         self._bridge.quit_app.connect(self._shutdown)
         self._bridge.solve_finished.connect(self._apply_solve_ui)
+        self._bridge.show_stale.connect(self.overlay.show_stale_notice)
         self.overlay.request_quit.connect(self._shutdown)
         self._overlay_regions = resolve_overlay_regions(None, config)
         self._rack_collapse_warned = False
@@ -669,24 +672,23 @@ class SolverApp:
                 warnings_html=update.warnings_html,
             )
             return
-        if not update.trusted_suggestion:
-            self._clear_highlight_state()
+        show_path = (
+            update.on_game_highlight
+            and self._overlay_regions.board.is_valid()
+            and bool(update.results)
+        )
         self.overlay.show_results(
             update.board,
             update.results,
             board_bgr=update.board_bgr,
             warnings_html=update.warnings_html,
-            on_game_highlight=update.on_game_highlight and update.trusted_suggestion,
+            on_game_highlight=show_path,
             consumable_placements=update.consumable_placements,
             twinkle_toes_swap=update.twinkle_toes_swap,
             trusted=update.trusted_suggestion,
             loadout=update.loadout,
         )
-        if (
-            update.on_game_highlight
-            and update.trusted_suggestion
-            and self._overlay_regions.board.is_valid()
-        ):
+        if show_path:
             if update.melmod_board_fingerprint is not None:
                 self._highlight_board_fingerprint = update.melmod_board_fingerprint
                 self._highlight_loadout_fingerprint = update.melmod_loadout_fingerprint
@@ -891,10 +893,8 @@ class SolverApp:
                 )
 
             workflow_warnings: list[str] = []
-            if isinstance(run_state_data, dict):
-                run_extras = run_state_data.get("extras")
-                if isinstance(run_extras, dict):
-                    workflow_warnings = run_state_historic_stale_warnings(run_extras)
+            if loadout is not None and isinstance(loadout.extras, dict):
+                workflow_warnings = run_state_historic_stale_warnings(loadout.extras)
             for warn in workflow_warnings:
                 print(f"  Workflow: {warn}", flush=True)
 
@@ -1235,22 +1235,6 @@ class SolverApp:
                 elif q.two_wrongs:
                     search_msg += " (inverted target)"
             print(search_msg + "...", flush=True)
-            historic_poll_stop: threading.Event | None = None
-            historic_poll_thread: threading.Thread | None = None
-            if sole_gather_miss_is_historic(snapshot):
-                historic_poll_stop = threading.Event()
-
-                def _historic_poll_worker() -> None:
-                    assert loadout is not None and board is not None
-                    while not historic_poll_stop.wait(F8_GATHER_POLL_SEC):
-                        try_refresh_historic_extras_from_disk(loadout, board)
-
-                historic_poll_thread = threading.Thread(
-                    target=_historic_poll_worker,
-                    name="historic-extras-poll",
-                    daemon=True,
-                )
-                historic_poll_thread.start()
             if constraints.blocked and constraints.block_reason:
                 print(f"  Boss: {constraints.block_reason}", flush=True)
             if self._searcher.search_workers > 1:
@@ -1826,17 +1810,33 @@ class SolverApp:
                 for err in drain_parallel_worker_errors():
                     print(f"  Parallel worker error: {err}", flush=True)
 
-            if historic_poll_stop is not None:
-                historic_poll_stop.set()
-            if historic_poll_thread is not None:
-                historic_poll_thread.join(timeout=0.5)
-
             pred_trace: list | None = None
             export_warnings: list[str] = []
             capybara_stats = None
             saved_suggestion = False
             block_f8_save = False
             block_f8_reason: str | None = None
+            if results and self._dictionary is not None:
+                raw_count = len(results)
+                results = filter_submittable_results(
+                    search_board,
+                    results,
+                    loadout,
+                    self._dictionary,
+                    min_len=effective_min,
+                    pipeline=self._scoring,
+                )
+                if raw_count and not results:
+                    print(
+                        "  Warning: no playable dictionary word among search results.",
+                        flush=True,
+                    )
+                elif len(results) < raw_count:
+                    print(
+                        "  Note: skipped unplayable candidate(s) "
+                        "(no dictionary word on path).",
+                        flush=True,
+                    )
             if results:
                 top = results[0]
                 score_run_state = (
@@ -1978,6 +1978,12 @@ class SolverApp:
                     and isinstance(f8_loadout.extras, dict)
                     else None
                 )
+                grid_bleed_warn = grid_transition_workflow_bleed_warning(
+                    f8_loadout.extras
+                    if f8_loadout is not None
+                    and isinstance(f8_loadout.extras, dict)
+                    else None
+                )
                 submit_projected_extras = None
                 if isinstance(fresh_run_state, dict):
                     raw_proj = fresh_run_state.get("extras")
@@ -2005,12 +2011,15 @@ class SolverApp:
                         if post_catchup_workflow_warns
                         else None
                     ),
+                    grid_bleed_warn=grid_bleed_warn,
                     mid_solve_grid_advanced=False,
                     loadout=f8_loadout,
                     board=search_board,
                     path=top.path,
                     f8_extras=f8_extras if isinstance(f8_extras, dict) else None,
                     submit_projected_extras=submit_projected_extras,
+                    dictionary=self._dictionary,
+                    scoring_word=score_word,
                 )
                 gather_status = {
                     "f8_export_acked": snapshot.f8_export_acked,
@@ -2195,6 +2204,11 @@ class SolverApp:
                     warnings = (
                         f"{warnings}<br>{reroll_warn}" if warnings else reroll_warn
                     )
+            block_warn_html = format_f8_block_reason_html(block_f8_reason)
+            if block_warn_html:
+                warnings = (
+                    f"{warnings}<br>{block_warn_html}" if warnings else block_warn_html
+                )
             highlight = (
                 self.config.show_board_highlight
                 and self._overlay_regions.board.is_valid()
@@ -2213,6 +2227,7 @@ class SolverApp:
                     melmod_board_fingerprint=melmod_board_fp,
                     melmod_loadout_fingerprint=melmod_loadout_fp,
                     trusted_suggestion=trusted,
+                    block_reason=block_f8_reason,
                     loadout=loadout,
                 )
             )

@@ -687,47 +687,8 @@ namespace CursedWordsSolverCompanion
             Player player
         )
         {
-            if (snapshot?.extras == null || player == null)
-                return false;
-
-            var grid = ResolveGridNumber(player);
-            if (grid < 2)
-                return false;
-
-            string curHistoric;
-            snapshot.extras.TryGetValue("historic_words", out curHistoric);
-            if (!string.IsNullOrEmpty(curHistoric) && curHistoric != "[]")
-                return false;
-
-            if (ShouldClearEncounterHistoricOnEmptyExport(snapshot))
-                return false;
-
-            var diskFallback = new Dictionary<string, string>();
-            foreach (var kv in snapshot.extras)
-                diskFallback[kv.Key] = kv.Value ?? "";
-
-            MergeOnDiskEncounterHistoricInto(diskFallback);
-            TryMergeCachedEncounterHistoricIntoKeys(diskFallback, player, grid);
-
-            string diskHistoric;
-            if (
-                !diskFallback.TryGetValue("historic_words", out diskHistoric)
-                || string.IsNullOrEmpty(diskHistoric)
-                || diskHistoric == "[]"
-            )
-                return false;
-
-            snapshot.extras["historic_words"] = diskHistoric;
-
-            string diskRed;
-            if (
-                diskFallback.TryGetValue("red_tiles_used_encounter", out diskRed)
-                && !string.IsNullOrEmpty(diskRed)
-            )
-                snapshot.extras["red_tiles_used_encounter"] = diskRed;
-
-            snapshot.extras["encounter_historic_source"] = "grid2_disk_fallback";
-            return true;
+            // Live export only — never resurrect historic from on-disk run_state.json.
+            return false;
         }
 
         private static void TryMergeCachedEncounterHistoricIntoKeys(
@@ -846,7 +807,13 @@ namespace CursedWordsSolverCompanion
                 // Grid 2+: no scoring-cache prior means no Bento prev on this grid —
                 // do not fall back to encounter-wide historic (grid-1 bleed).
                 if (gridNum >= 2)
+                {
+                    extras.Remove("historic_words");
+                    extras.Remove("red_tiles_used_encounter");
+                    if (!freshGridSource)
+                        extras["encounter_historic_source"] = "grid_start_cleared";
                     return;
+                }
 
                 extras.TryGetValue("historic_words", out historicRaw);
                 histEmpty =
@@ -1193,6 +1160,29 @@ namespace CursedWordsSolverCompanion
             if (grid != 1)
                 return false;
 
+            string spcRaw;
+            if (extras.TryGetValue("scoring_previous_words_count", out spcRaw)
+                && int.TryParse((spcRaw ?? "").Trim(), out var spc)
+                && spc > 0)
+                return false;
+
+            string historicRaw;
+            if (extras.TryGetValue("historic_words", out historicRaw)
+                && !string.IsNullOrWhiteSpace(historicRaw)
+                && historicRaw != "[]")
+            {
+                try
+                {
+                    var arr = JsonConvert.DeserializeObject<List<object>>(historicRaw);
+                    if (arr != null && arr.Count > 0)
+                        return false;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
             if (!extras.TryGetValue("encounter_score_earned", out var earnedRaw)
                 || string.IsNullOrWhiteSpace(earnedRaw))
                 return false;
@@ -1423,6 +1413,9 @@ namespace CursedWordsSolverCompanion
                 // Grid 2+: scoring cache is authoritative when player reflection over-counts.
                 if (grid >= 2 && cachedCount > 0 && playerCount > cachedCount)
                     return fromCached;
+                // Grid 2+: empty scoring cache = fresh grid; encounter-wide historic bleeds.
+                if (grid >= 2 && cachedCount == 0)
+                    return null;
                 if (playerCount > 0)
                     return fromPlayer;
                 if (grid >= 2 && cachedCount > 0)
@@ -1589,6 +1582,8 @@ namespace CursedWordsSolverCompanion
             var drafted = ResolveMichaelDraftedCount(michaelBoss);
             if (michaelMin <= 0 && drafted >= 3
                 && IsMichaelSummonedBossesDefeated(player, michaelBoss))
+                michaelMin = 25;
+            if (michaelMin <= 0 && drafted >= 3 && IsMichaelPuzzleGridActive())
                 michaelMin = 25;
             if (michaelMin > 0)
                 snapshot.extras["michael_min_word_length"] = michaelMin.ToString();

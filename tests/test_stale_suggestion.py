@@ -517,15 +517,14 @@ def test_merge_encounter_historic_for_f8_snapshot_from_disk(tmp_path, monkeypatc
     assert merged["extras"]["previous_word_first_letter"] == "b"
 
 
-def test_merge_encounter_historic_with_retry_force_disk_ahead_grid2(
+def test_merge_encounter_historic_with_retry_live_only_no_disk_pull(
     tmp_path, monkeypatch
 ):
+    """F8 solve uses live gather only — merge does not pull ahead-of-embed disk historic."""
     from cursed_words_solver.loadout import (
         RUN_STATE_PATH,
-        f8_historic_still_behind_disk_warning,
         merge_encounter_historic_for_f8_with_retry,
     )
-    from cursed_words_solver.suggestion import f8_should_block_save
 
     run_state_path = tmp_path / "run_state.json"
     monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
@@ -554,22 +553,8 @@ def test_merge_encounter_historic_with_retry_force_disk_ahead_grid2(
     )
     assert stale is None
     assert merged is not None
-    assert merged["extras"]["historic_words"] == '[{"word":"prior","score":10}]'
-    assert merged["extras"]["previous_word_first_letter"] == "p"
-    behind = f8_historic_still_behind_disk_warning(merged["extras"])
-    blocked, _ = f8_should_block_save(
-        historic_catchup_stale_note=None,
-        empty_hist_warn=None,
-        hist_stale_note=None,
-        behind_disk_warn=behind,
-        workflow_stale_warn=None,
-        grid_adv_warn=None,
-        loadout=None,
-        board=None,
-        f8_extras=merged["extras"],
-    )
-    assert blocked is False
-    assert behind is None
+    hist = str(merged["extras"].get("historic_words", "") or "").strip()
+    assert not hist or hist == "[]"
 
 
 def test_describe_f8_historic_catchup_pissers_grid3(tmp_path, monkeypatch):
@@ -1193,10 +1178,14 @@ def test_historic_previous_letter_mismatch_warning():
 
 def test_empty_historic_on_later_grid_warning():
     note = empty_historic_on_later_grid_warning(
-        {"grid_number": "4", "historic_words": ""}
+        {
+            "grid_number": "4",
+            "historic_words": "",
+            "scoring_previous_words_count": "2",
+        }
     )
     assert note is not None
-    assert "F7" in note
+    assert "F8" in note or "f8" in note.lower()
     assert empty_historic_on_later_grid_warning({"grid_number": "1"}) is None
     assert (
         empty_historic_on_later_grid_warning(
@@ -1204,13 +1193,27 @@ def test_empty_historic_on_later_grid_warning():
         )
         is None
     )
+    assert (
+        empty_historic_on_later_grid_warning(
+            {
+                "grid_number": "2",
+                "historic_words": "",
+                "scoring_previous_words_count": "0",
+            }
+        )
+        is None
+    )
 
 
 def test_run_state_historic_stale_warnings_includes_empty_historic():
     warns = run_state_historic_stale_warnings(
-        {"grid_number": "4", "historic_words": ""}
+        {
+            "grid_number": "4",
+            "historic_words": "",
+            "scoring_previous_words_count": "1",
+        }
     )
-    assert any("F7" in w for w in warns)
+    assert any("F8" in w or "f8" in w.lower() for w in warns)
 
 
 def test_grid_advanced_since_last_f8_warning(tmp_path, monkeypatch):
@@ -2289,7 +2292,13 @@ def test_seemelesse_grid2_underexport_stale_f8_fixture():
     assert note is not None
     for fragment in data["expected_stale_note_contains"]:
         assert fragment in note
-    warn = empty_historic_on_later_grid_warning({"grid_number": "2", "historic_words": ""})
+    warn = empty_historic_on_later_grid_warning(
+        {
+            "grid_number": "2",
+            "historic_words": "",
+            "scoring_previous_words_count": "1",
+        }
+    )
     assert warn is not None
 
 
@@ -2403,8 +2412,8 @@ def test_f8_should_block_when_telescope_and_historic_still_empty(
     assert reason and reason.startswith("gather_incomplete")
 
 
-def test_f8_should_block_grid2_empty_historic_without_telescope(tmp_path, monkeypatch):
-    """Rodman-like grid 2: melmod blocks historic lag even without Telescope/Movie Camera."""
+def test_f8_should_not_warn_grid2_empty_historic_fresh_grid(tmp_path, monkeypatch):
+    """Grid 2 word 1: empty historic with spc=0 is valid (no Telescope on board)."""
     from cursed_words_solver.models import Board, Loadout
 
     monkeypatch.setattr(
@@ -2414,9 +2423,13 @@ def test_f8_should_block_grid2_empty_historic_without_telescope(tmp_path, monkey
     board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
     loadout = Loadout(extras={"grid_number": "2"})
     empty_warn = empty_historic_on_later_grid_warning(
-        {"grid_number": "2", "historic_words": ""}
+        {
+            "grid_number": "2",
+            "historic_words": "",
+            "scoring_previous_words_count": "0",
+        }
     )
-    assert empty_warn is not None
+    assert empty_warn is None
     assert not loadout_needs_encounter_historic(loadout, board)
     blocked, reason = f8_should_block_save(
         gather_succeeded=True,
@@ -3094,7 +3107,8 @@ def test_embed_f8_snapshot_merges_scoring_loadout_workflow_extras(
                 "grid_number": "5",
                 "historic_words": "",
                 "encounter_historic_source": "live",
-                "scoring_previous_words_count": "0",
+                "scoring_previous_words_count": "4",
+                "previous_word_first_letter": "z",
             }
         },
         board=None,

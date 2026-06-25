@@ -457,6 +457,12 @@ def empty_historic_on_later_grid_warning(
     hist = str(extras.get("historic_words", "") or "").strip()
     if hist and hist != "[]":
         return None
+    try:
+        spc = int(str(extras.get("scoring_previous_words_count") or "0"))
+    except (TypeError, ValueError):
+        spc = 0
+    if spc == 0:
+        return None
     msg = (
         f"run_state has no encounter historic on grid {grid} — {F8_RETRY_HINT}."
     )
@@ -716,6 +722,24 @@ def grid_transition_workflow_bleed_warning(
     return None
 
 
+def scoring_cache_bleed_blocks_f8(
+    run_state_extras: dict[str, Any] | None,
+) -> bool:
+    """True when grid 2+ has prior-grid historic but melmod scoring cache is still empty."""
+    extras = run_state_extras if isinstance(run_state_extras, dict) else {}
+    hist = str(extras.get("historic_words", "") or "").strip()
+    hist_count = _historic_words_count(hist)
+    try:
+        grid = int(str(extras.get("grid_number") or "0"))
+    except ValueError:
+        grid = 0
+    try:
+        scoring_count = int(str(extras.get("scoring_previous_words_count") or "0"))
+    except ValueError:
+        scoring_count = 0
+    return grid >= 2 and hist_count > 0 and scoring_count == 0
+
+
 def run_state_historic_stale_warnings(
     run_state_extras: dict[str, Any] | None,
 ) -> list[str]:
@@ -823,10 +847,12 @@ def f8_historic_would_fail_submit_projection(
     from cursed_words_solver.loadout import (
         load_run_state_raw,
         project_workflow_extras_for_f8_embed,
+        reconcile_encounter_historic_for_scoring,
     )
 
     if projected_extras is not None:
         source_extras = copy.deepcopy(projected_extras)
+        reconcile_encounter_historic_for_scoring(source_extras, board=board)
     else:
         fresh = load_run_state_raw()
         if not isinstance(fresh, dict):
@@ -835,8 +861,7 @@ def f8_historic_would_fail_submit_projection(
         if not isinstance(fresh_extras, dict):
             return None
         source_extras = copy.deepcopy(fresh_extras)
-
-    project_workflow_extras_for_f8_embed(source_extras, board=board)
+        project_workflow_extras_for_f8_embed(source_extras, board=board)
     embed = embed_extras if isinstance(embed_extras, dict) else {}
     embed_hist = str(embed.get("historic_words", "") or "").strip()
     proj_hist = str(source_extras.get("historic_words", "") or "").strip()
@@ -844,6 +869,12 @@ def f8_historic_would_fail_submit_projection(
     proj_count = _historic_words_count(proj_hist)
 
     if embed_count == 0:
+        try:
+            proj_spc = int(str(source_extras.get("scoring_previous_words_count") or "0"))
+        except (TypeError, ValueError):
+            proj_spc = 0
+        if proj_count > 0 or proj_spc > 0:
+            return describe_f8_prediction_historic_stale_note(embed, source_extras)
         return None
     if proj_count > embed_count:
         return None
@@ -1468,9 +1499,13 @@ def f8_should_block_save(
     gather_missing: list[str] | None = None,
     mid_solve_grid_advanced: bool = False,
     path: list[int] | None = None,
+    dictionary: WordDictionary | None = None,
+    scoring_word: str | None = None,
 ) -> tuple[bool, str | None]:
     """Whether F8 must skip trusted last_suggestion.json (melmod capture)."""
-    del grid_adv_warn, grid_bleed_warn, grid_one_hist_warn
+    del grid_adv_warn, grid_one_hist_warn
+    if grid_bleed_warn:
+        return True, "workflow_bleed"
     if not gather_succeeded:
         from cursed_words_solver.f8_messages import gather_block_reason
 
@@ -1501,21 +1536,28 @@ def f8_should_block_save(
         return True, "historic_catchup_stale"
     if behind_disk_warn:
         return True, "behind_disk"
-    if isinstance(f8_extras, dict) and loadout is not None and isinstance(
-        submit_projected_extras, dict
+    if isinstance(f8_extras, dict) and isinstance(submit_projected_extras, dict):
+        if f8_historic_would_fail_submit_projection(
+            f8_extras,
+            board=board,
+            projected_extras=submit_projected_extras,
+        ):
+            return True, "submit_projection_mismatch"
+    if (
+        dictionary is not None
+        and board is not None
+        and loadout is not None
+        and path
+        and scoring_word
+        and not path_is_submittable(
+            board,
+            list(path),
+            scoring_word,
+            loadout,
+            dictionary,
+        )
     ):
-        try:
-            grid = int(str((loadout.extras or {}).get("grid_number") or "0"))
-        except (TypeError, ValueError):
-            grid = 0
-        embed_hist = str(f8_extras.get("historic_words", "") or "").strip()
-        if grid >= 2 and embed_hist and embed_hist != "[]":
-            if f8_historic_would_fail_submit_projection(
-                f8_extras,
-                board=board,
-                projected_extras=submit_projected_extras,
-            ):
-                return True, "submit_projection_mismatch"
+        return True, "no_playable_dictionary_word"
     return False, None
 
 
@@ -1606,6 +1648,73 @@ def _valid_dictionary_words_for_path(
         if limit is not None and len(valid) >= limit:
             break
     return valid
+
+
+def path_is_submittable(
+    board: Board,
+    path: list[int],
+    scoring_word: str,
+    loadout: Loadout,
+    dictionary: WordDictionary,
+    *,
+    min_len: int = 3,
+    pipeline: ScoringPipeline | None = None,
+) -> bool:
+    """True when the game accepts a dictionary word on this path."""
+    lowered = scoring_word.lower()
+    if "?" in lowered:
+        return bool(
+            _valid_dictionary_words_for_path(
+                board,
+                path,
+                lowered,
+                loadout,
+                dictionary,
+                min_len=min_len,
+                limit=1,
+            )
+        )
+    flags = stamp_search_flags(loadout)
+    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
+    if validator.word_ok(board, path, lowered, flags):
+        return True
+    resolved = dictionary_word_for_path(
+        board,
+        path,
+        lowered,
+        loadout,
+        dictionary,
+        min_len=min_len,
+        pipeline=pipeline,
+    )
+    return resolved is not None and resolved.isalpha()
+
+
+def filter_submittable_results(
+    board: Board,
+    results: list[WordResult],
+    loadout: Loadout,
+    dictionary: WordDictionary | None,
+    *,
+    min_len: int = 3,
+    pipeline: ScoringPipeline | None = None,
+) -> list[WordResult]:
+    """Drop search hits the game cannot submit as a dictionary word."""
+    if not results or dictionary is None:
+        return results
+    return [
+        r
+        for r in results
+        if path_is_submittable(
+            board,
+            r.path,
+            r.word,
+            loadout,
+            dictionary,
+            min_len=min_len,
+            pipeline=pipeline,
+        )
+    ]
 
 
 def game_word_for_path(

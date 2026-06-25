@@ -679,6 +679,13 @@ def _fresh_encounter_grid_one(extras: dict[str, Any]) -> bool:
     """Grid 1 with no points scored yet (remaining still equals total target)."""
     if _grid_number_from_extras(extras) != 1:
         return False
+    if _scoring_previous_words_count_from_extras(extras) > 0:
+        return False
+    rows = _parse_historic_words_rows(extras.get("historic_words"))
+    if any(
+        isinstance(row, dict) and float(row.get("score") or 0) > 0 for row in rows
+    ):
+        return False
     if _encounter_score_earned_from_extras(extras) > 0:
         return False
     try:
@@ -1548,6 +1555,41 @@ def clear_grid_one_stale_encounter_historic(extras: dict[str, Any]) -> bool:
     return True
 
 
+_STALE_ENCOUNTER_HISTORIC_SOURCES = frozenset(
+    {
+        "grid1_no_scoring_cache",
+        "historic_paths_stale",
+    }
+)
+
+_TRUSTED_ENCOUNTER_HISTORIC_SOURCES = frozenset(
+    {
+        "live",
+        "grid2_disk_fallback",
+        "grid_advanced",
+        "grid_advanced_disk",
+        "historic_metadata_only",
+    }
+)
+
+
+def _should_infer_spc_from_historic(extras: dict[str, Any]) -> bool:
+    """True when historic_words should backfill an empty scoring cache."""
+    if (
+        _grid_number_from_extras(extras) >= 2
+        and _scoring_previous_words_count_from_extras(extras) == 0
+    ):
+        # Melmod: grid 2+ empty scoring cache is authoritative; do not infer from
+        # encounter-wide historic (prior-grid bleed).
+        return False
+    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
+    if source in _STALE_ENCOUNTER_HISTORIC_SOURCES:
+        return False
+    if source in _TRUSTED_ENCOUNTER_HISTORIC_SOURCES:
+        return True
+    return _grid_number_from_extras(extras) >= 2 and bool(source)
+
+
 def reconcile_scoring_previous_words_count(extras: dict[str, Any]) -> None:
     """Cap or infer scoring_previous_words_count when historic JSON is present."""
     hist = str(extras.get("historic_words", "") or "").strip()
@@ -1556,10 +1598,8 @@ def reconcile_scoring_previous_words_count(extras: dict[str, Any]) -> None:
     if hist_count > 0 and spc > hist_count:
         extras["scoring_previous_words_count"] = str(hist_count)
         return
-    if hist_count > 0 and spc == 0:
-        source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
-        if source == "live":
-            extras["scoring_previous_words_count"] = str(hist_count)
+    if hist_count > 0 and spc == 0 and _should_infer_spc_from_historic(extras):
+        extras["scoring_previous_words_count"] = str(hist_count)
 
 
 def reconcile_historic_after_grid_advance(extras: dict[str, Any]) -> bool:
@@ -1672,6 +1712,11 @@ def prune_historic_incompatible_with_board(
         extras["scoring_previous_words_count"] = "0"
         extras.pop("previous_word_first_letter", None)
         extras["encounter_historic_source"] = "grid1_no_scoring_cache"
+        return True
+    if grid >= 2 and _scoring_previous_words_count_from_extras(extras) == 0:
+        extras.pop("historic_words", None)
+        extras.pop("red_tiles_used_encounter", None)
+        extras["encounter_historic_source"] = "grid_start_cleared"
         return True
     poison_rows = [
         {
@@ -2014,47 +2059,11 @@ def merge_encounter_historic_for_f8_with_retry(
     max_retries: int = F8_HISTORIC_CATCHUP_RETRIES,
     delay_sec: float = F8_HISTORIC_CATCHUP_DELAY_SEC,
 ) -> tuple[dict | None, str | None]:
-    """Merge encounter historic into F8 state, retrying while disk export lags."""
-    merged = run_state
-    if merged is not None:
-        catchup = merge_encounter_historic_for_f8_snapshot(merged)
-        if catchup is not None:
-            merged = catchup
-        forced = _force_apply_disk_historic_when_ahead(merged)
-        if forced is not None:
-            merged = forced
-
-    stale_note: str | None = None
-    for attempt in range(max(1, max_retries)):
-        if merged is not None:
-            forced = _force_apply_disk_historic_when_ahead(merged)
-            if forced is not None:
-                merged = forced
-        extras = (
-            merged.get("extras")
-            if isinstance(merged, dict) and isinstance(merged.get("extras"), dict)
-            else None
-        )
-        stale_note = f8_historic_still_behind_disk_warning(extras)
-        if stale_note is None:
-            return merged, None
-        if attempt + 1 >= max_retries:
-            return merged, stale_note
-        time.sleep(delay_sec)
-        fresh = load_run_state_raw()
-        if isinstance(fresh, dict):
-            catchup = merge_encounter_historic_for_f8_snapshot(fresh)
-            if catchup is not None:
-                merged = catchup
-        if merged is not None:
-            remerged = merge_encounter_historic_for_f8_snapshot(merged)
-            if remerged is not None:
-                merged = remerged
-            forced = _force_apply_disk_historic_when_ahead(merged)
-            if forced is not None:
-                merged = forced
-
-    return merged, stale_note
+    """Return F8 gather state unchanged (live export only; no disk historic merge)."""
+    del max_retries, delay_sec
+    if run_state is None:
+        return None, None
+    return copy.deepcopy(run_state), None
 
 
 def raw_disk_historic_count_on_grid(grid: int) -> int:

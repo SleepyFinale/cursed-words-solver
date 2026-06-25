@@ -2799,9 +2799,15 @@ class ScoringPipeline:
                     f"×{factor} word ({len(path)} tile(s) @ {per_tile})"
                 )
         elif effect_type == "multiply_word_by_unique_colour_count":
+            rid_lower = str(rule_id or "").strip().lower()
+            if rid_lower == "dango" and state.get("_dango_word_mult_applied"):
+                return state
             n = unique_colour_count_on_path(board, path)
             factor = float(n)
-            if n == 0:
+            if rid_lower == "dango" and n == 1:
+                # Game Dango.ApplyWordBonus: no word bonus when exactly one unique colour.
+                pass
+            elif n == 0:
                 # Preserve hard-zero behavior for Dango when there are no coloured tiles.
                 _queue_word_multiplier(state, factor, rule_id)
                 state["effects"].append(f"×{factor} word ({n} unique colour(s))")
@@ -2814,6 +2820,8 @@ class ScoringPipeline:
                     wiki_factor=factor,
                 )
                 state["effects"].append(f"×{factor} word ({n} unique colour(s))")
+            if rid_lower == "dango" and n not in (0, 1):
+                state["_dango_word_mult_applied"] = True
         elif effect_type == "multiply_word_by_unique_curse_type_count":
             from cursed_words_solver.rules.scoring_conditions import (
                 golden_record_halves_oden_count,

@@ -276,19 +276,17 @@ def _ruler_trace_percent(data: dict) -> int | None:
 
 
 def _adjust_ruler_distance_extras(run_state: dict, data: dict) -> None:
-    """Inject pre-submit Ruler Distance when fixture predates melmod export."""
+    """Align Ruler distance with submit trace when export lagged."""
     extras = run_state.get("extras")
     if not isinstance(extras, dict):
         return
     if not _loadout_has_ruler(run_state):
         return
-    if extras.get("ruler_distance") not in (None, ""):
+    path = data.get("path")
+    if not isinstance(path, list):
         return
     percent = _ruler_trace_percent(data)
     if percent is None:
-        return
-    path = data.get("path")
-    if not isinstance(path, list):
         return
     from cursed_words_solver.rules.scoring_conditions import non_adjacent_step_count
 

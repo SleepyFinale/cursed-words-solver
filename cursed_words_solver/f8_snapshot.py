@@ -228,6 +228,11 @@ def _encounter_historic_export_ready(extras: dict[str, Any], hist: str) -> bool:
     source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
     if source in ("grid1_no_scoring_cache", "historic_metadata_only"):
         return True
+    if (
+        _grid_number_from_extras(extras) >= 2
+        and _scoring_previous_words_count_from_extras(extras) == 0
+    ):
+        return True
     return (
         _grid_number_from_extras(extras) == 1
         and _scoring_previous_words_count_from_extras(extras) == 0
@@ -431,6 +436,20 @@ def _build_snapshot_from_run_state(
         extras_ready=extras_ready,
         gather_missing=list(missing),
     )
+
+
+def rebuild_snapshot_from_run_state(
+    run_state: dict[str, Any] | None,
+    *,
+    rules: dict[str, Any] | None = None,
+    f8_export_acked: bool = False,
+) -> F8Snapshot:
+    """Rebuild a gathered snapshot from an on-disk run_state export."""
+    snapshot = _build_snapshot_from_run_state(run_state, rules=rules)
+    snapshot.f8_export_acked = f8_export_acked
+    if isinstance(run_state, dict):
+        snapshot.run_state = copy.deepcopy(run_state)
+    return snapshot
 
 
 def gather_f8_snapshot(
@@ -711,7 +730,6 @@ def catchup_historic_gather_after_search(
     from cursed_words_solver.loadout import (
         F8_HISTORIC_CATCHUP_DELAY_SEC,
         describe_f8_historic_catchup,
-        f8_historic_still_behind_disk_warning,
         merge_encounter_historic_for_f8_with_retry,
     )
 
@@ -803,16 +821,7 @@ def catchup_historic_gather_after_search(
                         break
             time.sleep(F8_GATHER_POLL_SEC)
 
-    behind_disk_warn: str | None = None
-    if snapshot.loadout is not None:
-        behind_disk_warn = f8_historic_still_behind_disk_warning(
-            snapshot.loadout.extras
-            if isinstance(snapshot.loadout.extras, dict)
-            else None,
-            board=snapshot.board,
-        )
-
-    return snapshot, catchup_note, stale_note, behind_disk_warn
+    return snapshot, catchup_note, stale_note, None
 
 
 def session_from_snapshot(snapshot: F8Snapshot) -> F8SuggestionSession | None:
@@ -869,6 +878,8 @@ def embed_f8_snapshot(
         project_workflow_extras_for_f8_embed(extras, board=board)
         if isinstance(loadout.extras, dict):
             align_embed_with_scoring_loadout(extras, loadout.extras, board=board)
+        # Cap embed to melmod submit projection after scoring-truth alignment.
+        project_workflow_extras_for_f8_embed(extras, board=board)
         sanitized["extras"] = extras
     return sanitized
 

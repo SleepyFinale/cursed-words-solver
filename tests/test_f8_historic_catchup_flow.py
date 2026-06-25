@@ -135,8 +135,8 @@ def test_grid2_prior_grid_historic_path_mismatch_preserves_metadata():
     assert "path" not in rows[0]
 
 
-def test_catchup_unblocks_grid2_virginia_path_mismatch(tmp_path, monkeypatch):
-    """Catchup succeeds when disk has grid-1 historic on grid-2 board."""
+def test_catchup_live_only_does_not_unblock_from_disk_alone(tmp_path, monkeypatch):
+    """Post-search catchup does not merge disk historic; F8 live export required."""
     from cursed_words_solver.loadout import RUN_STATE_PATH
 
     run_state_path = tmp_path / "run_state.json"
@@ -175,26 +175,12 @@ def test_catchup_unblocks_grid2_virginia_path_mismatch(tmp_path, monkeypatch):
         catchup_timeout_sec=0.3,
         reexport_poll_sec=0,
     )
-    assert not historic_words_gather_pending(updated)
-    assert updated.extras_ready
-    assert updated.loadout is not None
-    rows = json.loads(updated.loadout.extras["historic_words"])
-    assert rows[0]["word"] == "VIRGINIA"
-    assert updated.loadout.extras.get("encounter_historic_source") == "historic_metadata_only"
-
-    blocked, reason = f8_should_block_save(
-        gather_succeeded=updated.extras_ready,
-        gather_missing=updated.gather_missing or None,
-        historic_catchup_stale_note=stale,
-        behind_disk_warn=behind,
-        loadout=updated.loadout,
-        board=updated.board,
-    )
-    assert not blocked
-    assert reason is None
+    assert historic_words_gather_pending(updated)
+    assert not updated.extras_ready
+    assert behind is None
 
 
-def test_catchup_unblocks_gather_when_disk_has_historic(tmp_path, monkeypatch):
+def test_catchup_live_only_disk_historic_not_merged(tmp_path, monkeypatch):
     from cursed_words_solver.loadout import RUN_STATE_PATH
 
     run_state_path = tmp_path / "run_state.json"
@@ -231,24 +217,11 @@ def test_catchup_unblocks_gather_when_disk_has_historic(tmp_path, monkeypatch):
         catchup_timeout_sec=0.3,
         reexport_poll_sec=0,
     )
-    assert not historic_words_gather_pending(updated)
-    assert updated.extras_ready
-    assert updated.loadout is not None
-    assert json.loads(updated.loadout.extras["historic_words"])[0]["word"] == "AAA"
-    assert note is not None
-    assert "caught up" in note.lower()
+    assert historic_words_gather_pending(updated)
+    assert not updated.extras_ready
+    assert note is None
     assert stale is None
-
-    blocked, reason = f8_should_block_save(
-        gather_succeeded=updated.extras_ready,
-        gather_missing=updated.gather_missing or None,
-        historic_catchup_stale_note=stale,
-        behind_disk_warn=behind,
-        loadout=updated.loadout,
-        board=updated.board,
-    )
-    assert not blocked
-    assert reason is None
+    assert behind is None
 
 
 def test_catchup_still_blocks_when_historic_stays_empty(tmp_path, monkeypatch):
@@ -373,3 +346,40 @@ def test_catchup_then_embed_projects_to_submit_extras(tmp_path, monkeypatch):
     assert isinstance(extras, dict)
     assert extras.get("historic_words") == one_word
     assert extras.get("previous_word_first_letter") == "l"
+
+
+def test_grid2_does_not_infer_spc_from_prior_grid_historic():
+    """Grid-2 F8: empty scoring cache must not backfill spc from encounter-wide historic."""
+    from cursed_words_solver.loadout import reconcile_scoring_previous_words_count
+
+    grid1_hist = json.dumps(
+        [
+            {
+                "word": "GRIDONE",
+                "score": 1125,
+                "path": [5, 10, 6, 12, 18, 22, 23, 24, 19, 14, 8, 3],
+            }
+        ]
+    )
+    extras = {
+        "grid_number": "2",
+        "historic_words": grid1_hist,
+        "scoring_previous_words_count": "0",
+        "encounter_historic_source": "grid2_disk_fallback",
+    }
+    reconcile_scoring_previous_words_count(extras)
+    assert extras["scoring_previous_words_count"] == "0"
+    assert extras["historic_words"] == grid1_hist
+
+
+def test_grid2_stale_historic_source_does_not_infer_spc():
+    from cursed_words_solver.loadout import reconcile_scoring_previous_words_count
+
+    extras = {
+        "grid_number": "2",
+        "historic_words": json.dumps([{"word": "STALE", "score": 1}]),
+        "scoring_previous_words_count": "0",
+        "encounter_historic_source": "historic_paths_stale",
+    }
+    reconcile_scoring_previous_words_count(extras)
+    assert extras["scoring_previous_words_count"] == "0"

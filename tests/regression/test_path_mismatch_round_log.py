@@ -116,13 +116,30 @@ def _f8_run_state_from_round_log(data: dict) -> dict:
     return prepare_run_state_dict_for_scoring(rs)
 
 
+INTERMEASURED_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260625_intermeasured_path_mismatch.json"
+)
+CENOBITISMS_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260625_cenobitisms_path_mismatch.json"
+)
+INTERMEASURED_PATH = [20, 17, 11, 5, 0, 1, 6, 12, 8, 4, 9, 13, 18]
+INTERMEASURED_WORD = "intermeasured"
+INTERMEASURED_F8_SCORE = 10_511
+
 ITEM_HEAVY_SEARCH_FIXTURES = [
     (
         Path(__file__).resolve().parents[1]
         / "fixtures"
         / "round_logs"
         / "20260623_160441_kiddywinks_path_mismatch.json",
-        100_000,
+        45_000,
+        30.0,
     ),
     (
         Path(__file__).resolve().parents[1]
@@ -130,6 +147,7 @@ ITEM_HEAVY_SEARCH_FIXTURES = [
         / "round_logs"
         / "20260623_160736_hootnannie_path_mismatch.json",
         10_000,
+        30.0,
     ),
     (
         Path(__file__).resolve().parents[1]
@@ -137,17 +155,28 @@ ITEM_HEAVY_SEARCH_FIXTURES = [
         / "round_logs"
         / "20260623_161202_histidines_path_mismatch.json",
         5_000,
+        30.0,
+    ),
+    (
+        INTERMEASURED_FIXTURE,
+        13_000,
+        90.0,
+    ),
+    (
+        CENOBITISMS_FIXTURE,
+        8_500,
+        90.0,
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    ("fixture_path", "min_top_score"),
+    ("fixture_path", "min_top_score", "time_budget"),
     ITEM_HEAVY_SEARCH_FIXTURES,
-    ids=["kiddywinks", "hootnannie", "histidines"],
+    ids=["kiddywinks", "hootnannie", "histidines", "intermeasured", "cenobitisms"],
 )
 def test_item_heavy_grid_search_beats_f8_suggestion(
-    fixture_path: Path, min_top_score: int
+    fixture_path: Path, min_top_score: int, time_budget: float
 ):
     if not fixture_path.exists():
         pytest.skip(f"{fixture_path.name} required")
@@ -163,7 +192,7 @@ def test_item_heavy_grid_search_beats_f8_suggestion(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
         min_len=constraints.min_len,
         max_len=constraints.max_len,
-        time_budget=30.0,
+        time_budget=time_budget,
     )
     results = searcher.find_best_words(board, loadout, top_n=3)
     assert results, "search must find high-scoring item-tour paths"
@@ -422,6 +451,158 @@ def test_aardvark_search_does_not_suggest_invalid_path():
         assert displayed != "aardvark"
 
 
+BEANS_SCATTERED_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "mismatches"
+    / "20260625_beans_scattered_item.json"
+)
+BEANS_SCATTERED_PATH = [16, 10, 15, 20, 2, 8, 4, 9, 14, 13, 12, 18, 23]
+BEANS_SCATTERED_WORD = "???o?????d?p?"
+
+
+def _beans_scattered_board_and_loadout():
+    if not BEANS_SCATTERED_FIXTURE.exists():
+        pytest.skip("beans scattered-item fixture required")
+    data = json.loads(BEANS_SCATTERED_FIXTURE.read_text(encoding="utf-8"))
+    run_state = data.get("run_state_snapshot") or {}
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None and loadout is not None
+    return data, board, loadout
+
+
+@pytest.mark.skipif(
+    not BEANS_SCATTERED_FIXTURE.exists(), reason="beans scattered-item fixture required"
+)
+def test_beans_greedy_item_tour_includes_invalid_path():
+    import time
+
+    from cursed_words_solver.models import CurseType
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+    from cursed_words_solver.search import (
+        _active_indices,
+        _greedy_scattered_item_tour_paths,
+    )
+
+    _data, board, loadout = _beans_scattered_board_and_loadout()
+    flags = stamp_search_flags(loadout)
+    item_indices = [
+        i
+        for i in _active_indices(board)
+        if board.get_by_index(i).curse == CurseType.ITEM
+    ]
+    paths = _greedy_scattered_item_tour_paths(
+        board,
+        item_indices,
+        1,
+        25,
+        flags=flags,
+        deadline=time.monotonic() + 10,
+    )
+    assert any(p == BEANS_SCATTERED_PATH for p in paths)
+
+
+@pytest.mark.skipif(
+    not BEANS_SCATTERED_FIXTURE.exists(), reason="beans scattered-item fixture required"
+)
+def test_beans_scattered_path_has_no_game_dictionary_word():
+    from cursed_words_solver.suggestion import (
+        _valid_dictionary_words_for_path,
+        game_word_for_path,
+        path_is_submittable,
+    )
+
+    _data, board, loadout = _beans_scattered_board_and_loadout()
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    dictionary = WordDictionary(GAME_WORDLIST_PATH)
+    valid = _valid_dictionary_words_for_path(
+        board,
+        BEANS_SCATTERED_PATH,
+        BEANS_SCATTERED_WORD,
+        loadout,
+        dictionary,
+    )
+    assert valid == []
+    assert not path_is_submittable(
+        board,
+        BEANS_SCATTERED_PATH,
+        BEANS_SCATTERED_WORD,
+        loadout,
+        dictionary,
+    )
+    assert "?" in game_word_for_path(
+        board,
+        BEANS_SCATTERED_PATH,
+        BEANS_SCATTERED_WORD,
+        loadout,
+        dictionary,
+    )
+
+
+@pytest.mark.skipif(
+    not BEANS_SCATTERED_FIXTURE.exists(), reason="beans scattered-item fixture required"
+)
+def test_beans_scattered_path_rejected_by_search_accept():
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+    from cursed_words_solver.search import WordSearcher, search_word_from_path
+
+    _data, board, loadout = _beans_scattered_board_and_loadout()
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    flags = stamp_search_flags(loadout)
+    search_word = search_word_from_path(board, BEANS_SCATTERED_PATH, flags=flags)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=1,
+    )
+    searcher.validator.quest_loadout = loadout
+    accepted, _ = searcher._accept_path_for_search(
+        board,
+        BEANS_SCATTERED_PATH,
+        search_word,
+        loadout,
+        flags,
+    )
+    assert not accepted
+
+
+@pytest.mark.skipif(
+    not BEANS_SCATTERED_FIXTURE.exists(), reason="beans scattered-item fixture required"
+)
+def test_beans_search_does_not_suggest_invalid_scattered_path():
+    from cursed_words_solver.rules.boss_effects import boss_word_constraints
+    from cursed_words_solver.search import WordSearcher, word_assignable_on_path
+    from cursed_words_solver.suggestion import game_word_for_path
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+
+    _data, board, loadout = _beans_scattered_board_and_loadout()
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    dictionary = WordDictionary(GAME_WORDLIST_PATH)
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    flags = stamp_search_flags_mask(loadout)
+    searcher = WordSearcher(
+        dictionary=dictionary,
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=30.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=5)
+    assert results, "search must find valid words on beans scattered-item board"
+    for result in results:
+        if result.path == BEANS_SCATTERED_PATH:
+            pytest.fail("search must not return unplayable scattered-item tour path")
+        gw = game_word_for_path(
+            board, result.path, result.word, loadout, dictionary
+        )
+        assert gw.isalpha(), f"unplayable suggestion {result.word!r} -> {gw!r}"
+        assert word_assignable_on_path(board, result.path, gw, flags=flags)
+
+
 BAILEE_6X6_FIXTURE = (
     Path(__file__).resolve().parents[1]
     / "fixtures"
@@ -534,3 +715,59 @@ def test_bat_3x3_path_export_matches_melmod_cols():
         4,
     ]
     assert PREASSURE_MELMOD_PATH != UREASES_MELMOD_PATH
+
+
+@pytest.mark.skipif(
+    not INTERMEASURED_FIXTURE.exists(), reason="intermeasured fixture required"
+)
+def test_intermeasured_replay_submitted_path():
+    data = json.loads(INTERMEASURED_FIXTURE.read_text(encoding="utf-8"))
+    replay = _round_log_to_replay(data)
+    score = _score_submitted(replay)
+    assert replay["word"] == INTERMEASURED_WORD
+    assert replay["path"] == INTERMEASURED_PATH
+    assert int(replay["actual_score"]) == 13_230
+    assert score >= 13_000
+
+
+@pytest.mark.skipif(
+    not INTERMEASURED_FIXTURE.exists(), reason="intermeasured fixture required"
+)
+def test_intermeasured_search_beats_f8():
+    from cursed_words_solver.suggestion import path_is_submittable
+
+    data = json.loads(INTERMEASURED_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    dictionary = WordDictionary(GAME_WORDLIST_PATH)
+    searcher = WordSearcher(
+        dictionary=dictionary,
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=90.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=3)
+    assert results
+    f8_score = INTERMEASURED_F8_SCORE
+    top = results[0]
+    assert int(top.score) > f8_score
+    assert int(top.score) >= 13_000
+    assert path_is_submittable(
+        board,
+        top.path,
+        top.word,
+        loadout,
+        dictionary,
+        min_len=constraints.min_len,
+    )
+    assert any(
+        list(r.path) == INTERMEASURED_PATH
+        or (r.dictionary_word or r.word).lower() == INTERMEASURED_WORD
+        for r in results[:3]
+    )

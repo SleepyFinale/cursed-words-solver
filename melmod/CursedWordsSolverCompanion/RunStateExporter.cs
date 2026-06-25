@@ -949,9 +949,6 @@ namespace CursedWordsSolverCompanion
 
         private static readonly string[] ExtrasPreserveFromDisk =
         {
-            "historic_words",
-            "red_tiles_used_encounter",
-            "previous_word_first_letter",
             "mutating_dna_letter_counts",
             "bicycle_word_score_bonus",
             "cards_submitted",

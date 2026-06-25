@@ -425,6 +425,13 @@ namespace CursedWordsSolverCompanion
             int spc;
             int.TryParse((gridRaw ?? "").Trim(), out gridNum);
             int.TryParse((spcRaw ?? "").Trim(), out spc);
+            if (spc > 0)
+                return false;
+            string historicRaw;
+            if (snapshot.extras.TryGetValue("historic_words", out historicRaw)
+                && !string.IsNullOrWhiteSpace(historicRaw)
+                && historicRaw != "[]")
+                return false;
             return gridNum <= 1 && spc <= 0;
         }
 

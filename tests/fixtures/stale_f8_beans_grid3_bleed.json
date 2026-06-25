@@ -1,0 +1,5 @@
+{
+  "description": "Beans grid 3: prior-grid encounter historic with empty scoring cache",
+  "grid_number": 3,
+  "historic_words": "[{\"word\":\"🎡🪇🗝️🪇🗝️🍹O🗝️🍹🎡P🗝️\",\"score\":1125,\"path\":[5,10,6,12,18,22,23,24,19,14,8,3],\"red_tile_count\":2,\"green_tile_count\":1},{\"word\":\"🎨🎡🪇🪇🎡🎡🎡A🗝️🗝️RED\",\"score\":13230,\"path\":[0,7,11,15,20,21,16,12,18,24,19,13,8],\"red_tile_count\":2}]"
+}

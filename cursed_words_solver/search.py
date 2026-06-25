@@ -4357,7 +4357,52 @@ class WordSearcher:
                     deadline=greedy_deadline,
                 )
             )
-            paths.sort(key=len)
+            if len(item_indices) < _SCATTERED_ITEM_DENSE_MIN:
+                cover_deadline = min(
+                    deadline, gather_start + min(8.0, self.time_budget * 0.15)
+                )
+                if time.monotonic() < cover_deadline:
+                    add_paths(
+                        _scattered_item_cover_paths(
+                            board,
+                            item_indices,
+                            self.min_len,
+                            cover_cap,
+                            flags=stamp_flags,
+                            graph_ctx=graph_ctx,
+                            deadline=cover_deadline,
+                        )
+                    )
+            if len(item_indices) >= _SCATTERED_ITEM_DENSE_MIN:
+                paths.sort(key=len, reverse=True)
+            else:
+                paths.sort(key=len)
+
+            from cursed_words_solver.suggestion import path_is_submittable
+
+            vary_reserve = (
+                8.0
+                if len(item_indices) >= _SCATTERED_ITEM_DENSE_MIN
+                else 0.0
+            )
+            score_deadline = (
+                min(
+                    deadline,
+                    gather_start + max(0.0, (deadline - gather_start) - vary_reserve),
+                )
+                if vary_reserve > 0.0
+                else deadline
+            )
+
+            def path_submittable(path: list[int], word: str) -> bool:
+                return path_is_submittable(
+                    board,
+                    path,
+                    word,
+                    loadout,
+                    self.dictionary,
+                    min_len=self.min_len,
+                )
 
             def score_path(
                 path: list[int],
@@ -4375,27 +4420,12 @@ class WordSearcher:
                 )
 
             for path in paths:
-                if time.monotonic() >= deadline:
+                if time.monotonic() >= score_deadline:
                     break
                 search_word = search_word_from_path(
                     board, path, flags=stamp_flags
                 )
-                if "?" in search_word and self.validator._path_constraints_ok(
-                    board, path, search_word, stamp_flags
-                ):
-                    sc = score_path(path, search_word)
-                    if sc is not None:
-                        cached = self._score_cache.get(
-                            self._score_cache_key(path, search_word)
-                        )
-                        candidates.consider(
-                            sc,
-                            search_word,
-                            path,
-                            immediate=cached[0] if cached is not None else None,
-                        )
-                        continue
-                if time.monotonic() >= deadline:
+                if time.monotonic() >= score_deadline:
                     break
                 accepted, score_word = self._accept_path_for_search(
                     board,
@@ -4405,7 +4435,7 @@ class WordSearcher:
                     stamp_flags,
                 )
                 resolved_word: str | None = None
-                if not accepted and time.monotonic() < deadline:
+                if not accepted and time.monotonic() < score_deadline:
                     resolved = self._resolved_word_for_path(
                         board, path, search_word, loadout
                     )
@@ -4425,6 +4455,9 @@ class WordSearcher:
                         and search_word.lower() != score_word.lower()
                     ):
                         resolved_word = score_word
+                    scoring_word = resolved_word or score_word
+                    if not path_submittable(path, scoring_word):
+                        continue
                     self._consider_path_candidate(
                         board,
                         loadout,
@@ -4435,6 +4468,16 @@ class WordSearcher:
                         score_path,
                         resolved_word=resolved_word,
                     )
+            if (
+                len(item_indices) >= _SCATTERED_ITEM_DENSE_MIN
+                and time.monotonic() < deadline
+            ):
+                self._vary_scattered_item_path_endpoints(
+                    board,
+                    loadout,
+                    candidates,
+                    deadline,
+                )
         finally:
             self._active_deadline = prev_deadline
 
@@ -5337,6 +5380,136 @@ class WordSearcher:
                         path.pop()
                 if not extended:
                     break
+        finally:
+            self._active_deadline = prev_deadline
+
+    def _vary_scattered_item_path_endpoints(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        deadline: float | None,
+    ) -> None:
+        """Prepend/append item-tile variants of strong scattered-item paths."""
+        item_count = (
+            self._graph_ctx.item_mask.bit_count()
+            if self._graph_ctx is not None
+            else 0
+        )
+        if item_count < _SCATTERED_ITEM_DENSE_MIN:
+            return
+        if deadline is not None and time.monotonic() >= deadline:
+            return
+        ctx = self._search_ctx(loadout)
+        base_flags = ctx.search_flags
+        graph_ctx = self._board_graph(board)
+        from cursed_words_solver.suggestion import (
+            _valid_dictionary_words_for_path,
+            path_is_submittable,
+        )
+
+        def try_path(path: list[int]) -> None:
+            if len(path) < self.min_len or len(path) > self.max_len:
+                return
+            path_flags = path_scattered_search_flags_mask(
+                board, path, base_flags, self.scoring.rules
+            )
+            if not path_movement_ok(board, path, flags=path_flags):
+                return
+            search_word = search_word_from_path(
+                board, path, flags=path_flags
+            )
+            valid = _valid_dictionary_words_for_path(
+                board,
+                path,
+                search_word,
+                loadout,
+                self.dictionary,
+                min_len=self.min_len,
+                limit=1,
+            )
+            if not valid:
+                return
+            score_word = valid[0]
+            if not path_is_submittable(
+                board,
+                path,
+                score_word,
+                loadout,
+                self.dictionary,
+                min_len=self.min_len,
+            ):
+                return
+            rank_sc = self._rank_score_for_candidate(
+                board,
+                path,
+                score_word,
+                loadout,
+                prune_heap=candidates,
+                resolved_word=score_word,
+            )
+            if rank_sc is not None:
+                candidates.consider(rank_sc, score_word, path)
+
+        prev_deadline = self._active_deadline
+        if deadline is not None:
+            self._active_deadline = deadline
+        try:
+            seen_variants: set[tuple[int, ...]] = set()
+            for _score, _word, path_tuple in list(candidates.best_sorted()[:24]):
+                if deadline is not None and time.monotonic() >= deadline:
+                    break
+                path = list(path_tuple)
+                if len(path) < 2:
+                    continue
+                if board.get_by_index(path[-1]).curse != CurseType.ITEM:
+                    continue
+                prep = path[-1]
+                first = path[0]
+                if prep == first:
+                    continue
+                prep_flags = path_scattered_search_flags_mask(
+                    board, [prep], base_flags, self.scoring.rules
+                )
+                if not path_movement_ok(board, [prep, first], flags=prep_flags):
+                    continue
+                variant = [prep] + path[:-1]
+                key = tuple(variant)
+                if key not in seen_variants:
+                    seen_variants.add(key)
+                    try_path(variant)
+                if len(variant) >= self.max_len:
+                    continue
+                tail = variant[-1]
+                tail_mask = sum(1 << idx for idx in variant)
+                variant_flags = path_scattered_search_flags_mask(
+                    board, variant, base_flags, self.scoring.rules
+                )
+                tail_nbr_mask = neighbors_mask(
+                    board,
+                    tail_mask,
+                    cell_id=tail,
+                    flags=variant_flags,
+                    graph_ctx=graph_ctx,
+                )
+                for end in _iter_expansion_neighbors(
+                    board,
+                    tail_mask,
+                    cell_id=tail,
+                    path=variant,
+                    path_length=len(variant),
+                    flags=variant_flags,
+                    graph_ctx=graph_ctx,
+                    nbr_mask=tail_nbr_mask,
+                ):
+                    if tail_mask & (1 << end):
+                        continue
+                    extended = variant + [end]
+                    ext_key = tuple(extended)
+                    if ext_key in seen_variants:
+                        continue
+                    seen_variants.add(ext_key)
+                    try_path(extended)
         finally:
             self._active_deadline = prev_deadline
 
@@ -7019,6 +7192,13 @@ class WordSearcher:
                     candidates,
                     deadline=resolve_deadline,
                 )
+            if item_count >= _SCATTERED_ITEM_DENSE_MIN and time.monotonic() < extend_deadline:
+                self._vary_scattered_item_path_endpoints(
+                    board,
+                    loadout,
+                    candidates,
+                    deadline=extend_deadline,
+                )
             timing.extend_sec = time.monotonic() - extend_start
 
         refine_start = time.monotonic()
@@ -7161,6 +7341,8 @@ class WordSearcher:
             self._active_deadline = prev_finalize_deadline
 
         unique: list[WordResult] = []
+        from cursed_words_solver.suggestion import path_is_submittable
+
         ranked_finalists = sorted(
             best_by_word.values(),
             key=lambda row: -quest_candidate_rank(row[0], row[2], loadout),
@@ -7169,6 +7351,10 @@ class WordSearcher:
             if time.monotonic() >= deadline and len(unique) >= top_n:
                 break
             path = list(path_tuple)
+            if not path_is_submittable(
+                board, path, word, loadout, self.dictionary, min_len=self.min_len
+            ):
+                continue
             t_final = time.perf_counter()
             _, bd = self.scoring.score(
                 board,
@@ -7199,9 +7385,15 @@ class WordSearcher:
                     rank_score=rank_sc if rank_sc else immediate + setup,
                 )
             )
+            if len(unique) >= top_n:
+                break
         if not unique and len(candidates) > 0:
-            for rank_sc, word, path_tuple in candidates.best_sorted()[:top_n]:
+            for rank_sc, word, path_tuple in candidates.best_sorted():
                 path = list(path_tuple)
+                if not path_is_submittable(
+                    board, path, word, loadout, self.dictionary, min_len=self.min_len
+                ):
+                    continue
                 immediate, setup = self._immediate_and_setup(
                     board, path, word, loadout
                 )
@@ -7215,6 +7407,8 @@ class WordSearcher:
                         rank_score=rank_sc if rank_sc else immediate + setup,
                     )
                 )
+                if len(unique) >= top_n:
+                    break
         from cursed_words_solver.models import board_flat_call_count
         from cursed_words_solver.rules.chess_tiles import chess_attack_cache_stats
 
