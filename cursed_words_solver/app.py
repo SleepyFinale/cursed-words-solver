@@ -46,6 +46,7 @@ from cursed_words_solver.f8_snapshot import (
     historic_words_gather_pending,
     historic_workflow_catchup_needed,
     session_from_snapshot,
+    sole_gather_miss_is_historic,
     write_f8_export_request,
 )
 from cursed_words_solver.suggestion import (
@@ -1846,12 +1847,23 @@ class SolverApp:
                 f8_loadout = loadout
                 historic_catchup_stale_note: str | None = None
                 behind_disk_warn: str | None = None
+                historic_sole_miss = sole_gather_miss_is_historic(snapshot) or (
+                    snapshot.gather_missing == ["historic_words"]
+                )
                 if not gather_succeeded or historic_workflow_catchup_needed(snapshot):
-                    catchup_budget = min(2.0, max(1.0, solve_remaining() * 0.05))
-                    reexport_poll = min(
-                        F8_HISTORIC_CATCHUP_REEXPORT_POLL_SEC,
-                        max(1.0, solve_remaining() * 0.1),
-                    )
+                    if historic_sole_miss or "historic_words" in (
+                        snapshot.gather_missing or []
+                    ):
+                        catchup_budget = min(
+                            6.0, max(3.0, solve_remaining() * 0.15)
+                        )
+                        reexport_poll = F8_HISTORIC_CATCHUP_REEXPORT_POLL_SEC
+                    else:
+                        catchup_budget = min(2.0, max(1.0, solve_remaining() * 0.05))
+                        reexport_poll = min(
+                            F8_HISTORIC_CATCHUP_REEXPORT_POLL_SEC,
+                            max(1.0, solve_remaining() * 0.1),
+                        )
                     snapshot, catchup_note, historic_catchup_stale_note, behind_disk_warn = (
                         catchup_historic_gather_after_search(
                             snapshot,
@@ -1874,6 +1886,16 @@ class SolverApp:
                         and snapshot.loadout is not None
                         and snapshot.extras_ready
                     )
+                    if (
+                        not gather_succeeded
+                        and historic_sole_miss
+                        and historic_words_gather_pending(snapshot)
+                    ):
+                        print(
+                            "  Movie Camera needs prior-word export — "
+                            "wait ~1s after your last submit, then F8 again.",
+                            flush=True,
+                        )
                 num_placed = consumables_placed_for_scoring(
                     board,
                     search_board,
@@ -2019,7 +2041,9 @@ class SolverApp:
                         f8_loadout.extras
                         if f8_loadout is not None
                         and isinstance(f8_loadout.extras, dict)
-                        else None
+                        else None,
+                        loadout=score_loadout,
+                        board=search_board,
                     ),
                     workflow_stale_warn=(
                         post_catchup_workflow_warns[0]
@@ -2157,6 +2181,14 @@ class SolverApp:
                     f"Best: {format_suggestion_word(top)} "
                     f"({format_result_score_display(top, loadout)})"
                 )
+                if (
+                    block_f8_save
+                    and block_f8_reason
+                    and str(block_f8_reason).startswith("gather_incomplete")
+                ):
+                    done_msg = (
+                        f"Preview only (overlay disabled): {done_msg}"
+                    )
                 if twinkle_swap_record and placement_records:
                     done_msg += (
                         " — swap tiles first, place consumables, "

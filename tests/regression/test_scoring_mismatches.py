@@ -1680,7 +1680,9 @@ def _adjust_movie_camera_pre_word_extras(
     strict = chess_take_strict_mode(
         board, path, strict_requested=rule.get("strict_takes", False)
     )
-    improve = movie_camera_improve_for_path(board, path, n, strict=strict)
+    improve = movie_camera_improve_for_path(
+        board, path, n, strict=strict, loadout=loadout
+    )
     pre = max(0, mc_total - improve)
     extras = dict(run_state.get("extras") or {})
     try:

@@ -640,3 +640,253 @@ def test_michael_phase_four_export_ready_when_min_length_present():
     assert "michael_min_word_length/encounter_min_word_length" not in (
         snapshot.gather_missing or []
     )
+
+
+def _movie_camera_board_and_loadout(*, grid_number: str) -> tuple:
+    from cursed_words_solver.models import Board, Loadout, LoadoutItem
+
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="movie_camera", name="Movie Camera", kind="sticker")],
+        extras={"grid_number": grid_number},
+    )
+    return board, loadout
+
+
+def test_grid1_movie_camera_reconcile_sets_grid1_sentinel():
+    from cursed_words_solver.loadout import reconcile_encounter_historic_for_scoring
+    from cursed_words_solver.suggestion import loadout_needs_encounter_historic
+
+    board, loadout = _movie_camera_board_and_loadout(grid_number="1")
+    assert loadout_needs_encounter_historic(loadout, board)
+    extras = {
+        "grid_number": "1",
+        "scoring_previous_words_count": "0",
+        "historic_words": "",
+    }
+    reconcile_encounter_historic_for_scoring(extras, board=board)
+    assert extras.get("encounter_historic_source") == "grid1_no_scoring_cache"
+    missing = _extras_missing_for_loadout(loadout, board, extras)
+    assert "historic_words" not in missing
+
+
+def test_grid1_movie_camera_word2_empty_historic_still_missing():
+    from cursed_words_solver.suggestion import loadout_needs_encounter_historic
+
+    board, loadout = _movie_camera_board_and_loadout(grid_number="1")
+    assert loadout_needs_encounter_historic(loadout, board)
+    extras = {
+        "grid_number": "1",
+        "scoring_previous_words_count": "1",
+        "historic_words": "",
+    }
+    missing = _extras_missing_for_loadout(loadout, board, extras)
+    assert "historic_words" in missing
+
+
+def test_grid1_movie_camera_word2_spc_zero_prev_letter_still_missing():
+    """Melmod under-export: spc=0 but previous_word_first_letter implies word 2+."""
+    from cursed_words_solver.suggestion import loadout_needs_encounter_historic
+
+    board, loadout = _movie_camera_board_and_loadout(grid_number="1")
+    assert loadout_needs_encounter_historic(loadout, board)
+    extras = {
+        "grid_number": "1",
+        "scoring_previous_words_count": "0",
+        "historic_words": "",
+        "previous_word_first_letter": "b",
+        "encounter_historic_source": "grid1_no_scoring_cache",
+    }
+    missing = _extras_missing_for_loadout(loadout, board, extras)
+    assert "historic_words" in missing
+
+
+def test_grid2_movie_camera_mc_bonus_skips_historic_gather():
+    """Grid 2 word 1: live MC bonus export means empty historic is OK for gather."""
+    from cursed_words_solver.suggestion import loadout_needs_encounter_historic
+
+    board, loadout = _movie_camera_board_and_loadout(grid_number="2")
+    assert loadout_needs_encounter_historic(loadout, board)
+    extras = {
+        "grid_number": "2",
+        "scoring_previous_words_count": "0",
+        "historic_words": "",
+        "encounter_historic_source": "grid_start_cleared",
+        "encounter_score_earned": "44",
+        "movie_camera_word_score_bonus": "14",
+    }
+    loadout.extras.update(extras)
+    missing = _extras_missing_for_loadout(loadout, board, extras)
+    assert "historic_words" not in missing
+
+
+def test_grid2_movie_camera_word2_empty_historic_still_missing():
+    """Grid 2 word 2+: spc>0 without live MC bonus still waits for historic."""
+    from cursed_words_solver.suggestion import loadout_needs_encounter_historic
+
+    board, loadout = _movie_camera_board_and_loadout(grid_number="2")
+    assert loadout_needs_encounter_historic(loadout, board)
+    extras = {
+        "grid_number": "2",
+        "scoring_previous_words_count": "1",
+        "historic_words": "",
+    }
+    missing = _extras_missing_for_loadout(loadout, board, extras)
+    assert "historic_words" in missing
+
+
+def test_grid1_movie_camera_word2_historic_ready():
+    from cursed_words_solver.suggestion import (
+        f8_should_block_save,
+        loadout_needs_encounter_historic,
+    )
+
+    board, loadout = _movie_camera_board_and_loadout(grid_number="1")
+    assert loadout_needs_encounter_historic(loadout, board)
+    one_word = json.dumps([{"word": "ZPNE", "score": 11}])
+    tiles = [
+        {
+            "row": r,
+            "col": c,
+            "char": "a",
+            "letter": "A",
+            "base_score": 1,
+            "color": "colorless",
+            "curse": "letter",
+            "active": True,
+        }
+        for r in range(5)
+        for c in range(5)
+    ]
+    run_state = {
+        "board": {"tiles": tiles, "money": 0},
+        "character": "Test",
+        "stickers": [{"id": "movie_camera", "name": "Movie Camera"}],
+        "stamps": [],
+        "extras": {
+            "grid_number": "1",
+            "scoring_previous_words_count": "1",
+            "historic_words": one_word,
+            "encounter_historic_source": "live",
+        },
+    }
+    snapshot = _build_snapshot_from_run_state(run_state, rules={})
+    assert snapshot.extras_ready
+    blocked, reason = f8_should_block_save(
+        gather_succeeded=True,
+        gather_missing=None,
+        loadout=snapshot.loadout,
+        board=snapshot.board,
+    )
+    assert not blocked
+    assert reason is None
+
+
+def test_historic_gather_timeout_sec_extended_for_movie_camera():
+    from cursed_words_solver.f8_snapshot import (
+        F8_GATHER_EXTRAS_TIMEOUT_SEC,
+        F8_GATHER_HISTORIC_EXTRAS_TIMEOUT_SEC,
+        historic_gather_timeout_sec,
+    )
+
+    board, loadout = _movie_camera_board_and_loadout(grid_number="1")
+    loadout.extras["scoring_previous_words_count"] = "1"
+    snap = F8Snapshot(
+        run_state={},
+        board=board,
+        loadout=loadout,
+        board_available=True,
+        extras_ready=False,
+        gather_missing=["historic_words"],
+    )
+    assert historic_gather_timeout_sec(loadout, snap) == F8_GATHER_HISTORIC_EXTRAS_TIMEOUT_SEC
+    snap.gather_missing = ["historic_words", "consumable_rack"]
+    assert historic_gather_timeout_sec(loadout, snap) == F8_GATHER_EXTRAS_TIMEOUT_SEC
+    snap.gather_missing = ["consumable_rack"]
+    assert historic_gather_timeout_sec(loadout, snap) == F8_GATHER_EXTRAS_TIMEOUT_SEC
+
+
+def test_gather_reexports_f8_when_movie_camera_historic_missing(tmp_path, monkeypatch):
+    """Historic gather polls live F8 re-export, not disk alone."""
+    from cursed_words_solver import config as config_mod
+
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr(config_mod, "RUN_STATE_PATH", run_state_path)
+
+    one_word = json.dumps([{"word": "KOFF", "score": 14}])
+    empty_state = {
+        "board": {
+            "tiles": [
+                {
+                    "row": r,
+                    "col": c,
+                    "char": "a",
+                    "letter": "A",
+                    "base_score": 1,
+                    "color": "colorless",
+                    "curse": "letter",
+                    "active": True,
+                }
+                for r in range(5)
+                for c in range(5)
+            ],
+            "money": 6,
+        },
+        "character": "Sam Gambit",
+        "stickers": [{"id": "movie_camera", "name": "Movie Camera"}],
+        "stamps": [],
+        "extras": {
+            "grid_number": "1",
+            "scoring_previous_words_count": "1",
+            "historic_words": "",
+        },
+    }
+    ready_state = {
+        **empty_state,
+        "extras": {
+            **empty_state["extras"],
+            "historic_words": one_word,
+            "encounter_historic_source": "live",
+            "movie_camera_word_score_bonus": "9",
+        },
+    }
+
+    calls = {"n": 0}
+    reexport_calls = {"n": 0}
+
+    def fake_load():
+        calls["n"] += 1
+        state = ready_state if calls["n"] >= 4 else empty_state
+        run_state_path.write_text(json.dumps(state), encoding="utf-8")
+        return json.loads(run_state_path.read_text(encoding="utf-8"))
+
+    def fake_write_request():
+        reexport_calls["n"] += 1
+        return f"retry-{reexport_calls['n']}"
+
+    monkeypatch.setattr(
+        "cursed_words_solver.f8_snapshot.load_run_state_raw",
+        fake_load,
+    )
+    monkeypatch.setattr(
+        "cursed_words_solver.loadout.load_run_state_raw",
+        fake_load,
+    )
+    monkeypatch.setattr(
+        "cursed_words_solver.f8_snapshot.write_f8_export_request",
+        fake_write_request,
+    )
+    monkeypatch.setattr(
+        "cursed_words_solver.f8_snapshot.wait_for_f8_export_ack",
+        lambda *args, **kwargs: True,
+    )
+
+    snap = gather_f8_snapshot(
+        rules={},
+        extras_timeout_sec=3.0,
+        poll_sec=0.05,
+    )
+    assert reexport_calls["n"] >= 1
+    assert snap.extras_ready
+    assert snap.loadout is not None
+    assert snap.loadout.extras.get("historic_words") == one_word

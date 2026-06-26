@@ -52,6 +52,55 @@ def test_fingerprints_from_12ttee_fixture():
     assert loadout_fingerprint(loadout) == lo_fp
 
 
+def test_loadout_fingerprint_bicycle_pin_includes_bonus_suffix() -> None:
+    lo = Loadout(
+        character="Bones The Dog",
+        money=0,
+        extras={
+            "pin_effect": "bicycle",
+            "bicycle_word_score_bonus": "0",
+        },
+        pin_branch="left",
+    )
+    assert loadout_fingerprint(lo) == "Bones The Dog|0|||-|bicycle:left|0"
+
+
+def test_loadout_fingerprint_matches_melmod_bones_round_export() -> None:
+    melmod_fp = "Bones The Dog|0|||-|bicycle:left|0"
+    lo = Loadout(
+        character="Bones The Dog",
+        money=0,
+        extras={
+            "pin_effect": "bicycle",
+            "bicycle_word_score_bonus": "0",
+            "loadout_fingerprint": melmod_fp,
+        },
+        pin_branch="left",
+    )
+    assert loadout_fingerprint(lo) == melmod_fp
+    from cursed_words_solver.loadout import loadout_fingerprint_stale_warning
+
+    assert loadout_fingerprint_stale_warning(lo) is None
+
+
+def test_fingerprints_from_run_state_bicycle_pin_suffix() -> None:
+    data = {
+        "character": "Bones The Dog",
+        "money": 0,
+        "stickers": [],
+        "stamps": [],
+        "boss_id": "",
+        "pin_branch": "left",
+        "extras": {
+            "pin_effect": "bicycle",
+            "bicycle_word_score_bonus": "34",
+        },
+        "board": {"money": 0, "tiles": []},
+    }
+    _, lo_fp = fingerprints_from_run_state(data)
+    assert lo_fp == "Bones The Dog|0|||-|bicycle:left|34"
+
+
 def test_dictionary_word_for_12ttee_path():
     import pytest
 

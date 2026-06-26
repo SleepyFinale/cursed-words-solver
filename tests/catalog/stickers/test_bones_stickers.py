@@ -203,6 +203,34 @@ def test_celestial_body_duplicate_rank_only_last_gets_bonus():
     assert score == base + 30
 
 
+def test_celestial_body_bones_duplicate_zero_value_both_get_bonus():
+    """Regression styte: duplicate T♥/T♣ on Bones zero-value path both get +10."""
+    board = _empty_board()
+    board.tiles[0][2] = _letter(0, 2, "S", 0)
+    board.tiles[1][2] = Tile(
+        row=1, col=2, char="T", letter="T", base_score=0, curse=CurseType.LETTER,
+        metadata={"source": "melmod", "card_suit": "hearts", "card_rank": "T"},
+    )
+    board.tiles[1][1] = _letter(1, 1, "Y", 0)
+    board.tiles[1][0] = Tile(
+        row=1, col=0, char="T", letter="T", base_score=0, curse=CurseType.LETTER,
+        metadata={"source": "melmod", "card_suit": "clubs", "card_rank": "T"},
+    )
+    board.tiles[0][0] = _letter(0, 0, "E", 0)
+    path = [2, 7, 6, 5, 0]
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=1)]
+    )
+    score, bd = pipeline.score(board, path, "styte", loadout)
+    base, base_bd = pipeline.score(board, path, "styte", Loadout())
+    tiles = bd["pipeline"]["tile_scores"]
+    assert tiles[1] == base_bd["pipeline"]["tile_scores"][1] + 10
+    assert tiles[3] == base_bd["pipeline"]["tile_scores"][3] + 10
+    assert sum(tiles) == sum(base_bd["pipeline"]["tile_scores"]) + 20
+    assert score == base + 20
+
+
 def test_celestial_body_l1_joker_wildcard_gets_bonus():
     board = _empty_board()
     board.tiles[0][0] = _joker_tile(0, 0, "diamonds")

@@ -19,6 +19,7 @@ namespace CursedWordsSolverCompanion
         private static float _lastMutatingDnaMergeTime = -999f;
         private const float MutatingDnaMergeIntervalSec = 0.5f;
         private static List<HistoricWord> _cachedPreviousWords;
+        private static int _cachedMovieCameraWordScoreBonus = -1;
         private static bool _exportLiveOnlyHistoric;
         private static bool _exportSkipWorkflowDiskMerge;
         private static string _f8ExportRequestId = "";
@@ -95,6 +96,7 @@ namespace CursedWordsSolverCompanion
                     _exportLiveOnlyHistoric
                 );
                 SyncLiveBicycleExtrasIntoSnapshot(snapshot, player);
+                SyncLiveMovieCameraExtrasIntoSnapshot(snapshot, player);
                 SyncTileNinjaExtrasIntoSnapshot(snapshot, player);
                 FillSnapshotCopyExtras(snapshot, player);
                 SanitizeLoadoutSpecificExtras(snapshot, player);
@@ -325,6 +327,7 @@ namespace CursedWordsSolverCompanion
         public static void ClearCachedPreviousWordsForExport()
         {
             _cachedPreviousWords = null;
+            _cachedMovieCameraWordScoreBonus = -1;
         }
 
         /// <summary>
@@ -503,7 +506,15 @@ namespace CursedWordsSolverCompanion
                 if (snapshot.extras != null)
                 {
                     foreach (var kv in snapshot.extras)
+                    {
+                        if (string.Equals(
+                                kv.Key,
+                                "bicycle_suited_on_path",
+                                StringComparison.OrdinalIgnoreCase
+                            ))
+                            continue;
                         result[kv.Key] = kv.Value ?? "";
+                    }
                 }
             }
             catch (Exception ex)
@@ -679,6 +690,9 @@ namespace CursedWordsSolverCompanion
                 var accumulated = TryGetMovieCameraWordScoreBonus(player);
                 if (accumulated < 0)
                     return true;
+
+                if (accumulated >= 0)
+                    _cachedMovieCameraWordScoreBonus = accumulated;
 
                 TryMergeExtrasKeys(
                     new Dictionary<string, string>
@@ -2274,6 +2288,33 @@ namespace CursedWordsSolverCompanion
             }
         }
 
+        /// <summary>
+        /// F8 export: prefer max(live sticker bonus, last post-score merge cache).
+        /// </summary>
+        private static void SyncLiveMovieCameraExtrasIntoSnapshot(
+            RunStateSnapshot snapshot,
+            Player player
+        )
+        {
+            if (snapshot?.extras == null || player == null)
+                return;
+
+            if (!PlayerHasStickerSlug(player, "movie_camera"))
+                return;
+
+            var live = TryGetMovieCameraWordScoreBonus(player);
+            var best = live;
+            if (_cachedMovieCameraWordScoreBonus >= 0)
+                best = best >= 0
+                    ? Math.Max(best, _cachedMovieCameraWordScoreBonus)
+                    : _cachedMovieCameraWordScoreBonus;
+
+            if (best < 0)
+                return;
+
+            snapshot.extras["movie_camera_word_score_bonus"] = best.ToString();
+        }
+
         private static Dictionary<string, string> BuildBicycleExtras(Item pin)
         {
             if (pin == null || !IsBicyclePin(pin))
@@ -2404,7 +2445,7 @@ namespace CursedWordsSolverCompanion
             RunStateExportFill.EnsureEncounterHistoricExtras(snapshot, player);
             var historicWords = RunStateExportFill.PickBestHistoricWordList(player);
 
-            RunStateExportFill.ApplyScoringCachedPreviousWordLetter(snapshot.extras);
+            RunStateExportFill.ApplyScoringCachedPreviousWordLetter(snapshot.extras, player);
             string exportedPrev;
             if (
                 !snapshot.extras.TryGetValue("previous_word_first_letter", out exportedPrev)

@@ -104,7 +104,7 @@ namespace CursedWordsSolverCompanion
             }
 
             RunStateExporter.ClearCachedPreviousWordsForExport();
-            ApplyScoringCachedPreviousWordLetter(keys);
+            ApplyScoringCachedPreviousWordLetter(keys, player);
             if (RunStateExporter.PlayerHasStampSlug(player, "tile_ninja"))
             {
                 var baseline = RunStateExporter.TryGetTileNinjaBonusForExport(player);
@@ -569,6 +569,12 @@ namespace CursedWordsSolverCompanion
                 : BuildBestHistoricExtras(player, fallbackExtras, liveOnly);
             if (built == null || built.Count == 0)
             {
+                if (TryApplyLivePlayerEncounterHistoricToSnapshot(snapshot, player))
+                {
+                    ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
+                    return;
+                }
+
                 if (TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
                 {
                     ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
@@ -631,6 +637,12 @@ namespace CursedWordsSolverCompanion
                 || liveHistoric == "[]"
             )
             {
+                if (TryApplyLivePlayerEncounterHistoricToSnapshot(snapshot, player))
+                {
+                    ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
+                    return;
+                }
+
                 if (TryApplyCachedEncounterHistoricToSnapshot(snapshot, player))
                 {
                     ApplyProjectedWorkflowExtrasToSnapshot(snapshot, player);
@@ -651,6 +663,29 @@ namespace CursedWordsSolverCompanion
                 snapshot.extras["encounter_historic_source"] = "live";
         }
 
+        private static bool TryApplyLivePlayerEncounterHistoricToSnapshot(
+            RunStateSnapshot snapshot,
+            Player player,
+            string source = "live_player"
+        )
+        {
+            if (snapshot?.extras == null || player == null)
+                return false;
+
+            var fromPlayer = RunStateExporter.TryGetHistoricPreviousWordsPublic(player);
+            if (fromPlayer == null || fromPlayer.Count == 0)
+                return false;
+
+            var telescope = BuildTelescopeEncounterExtras(fromPlayer, player);
+            if (telescope == null || telescope.Count == 0)
+                return false;
+
+            foreach (var kv in telescope)
+                snapshot.extras[kv.Key] = kv.Value ?? "";
+            snapshot.extras["encounter_historic_source"] = source;
+            return true;
+        }
+
         private static bool TryApplyCachedEncounterHistoricToSnapshot(
             RunStateSnapshot snapshot,
             Player player,
@@ -662,7 +697,10 @@ namespace CursedWordsSolverCompanion
 
             var grid = ResolveGridNumber(player);
             if (grid < 2)
-                return false;
+            {
+                if (grid != 1 || !RunStateExporter.ExportLiveOnlyHistoric)
+                    return false;
+            }
 
             var cached = RunStateExporter.GetCachedPreviousWords();
             if (cached == null || cached.Count == 0)
@@ -749,24 +787,27 @@ namespace CursedWordsSolverCompanion
                     snapshot.extras[key] = val;
             }
 
-            ApplyScoringCachedPreviousWordLetter(snapshot.extras);
+            ApplyScoringCachedPreviousWordLetter(snapshot.extras, player);
         }
 
         /// <summary>
         /// No-op: Limnophila previous comes from scoring hook cache, not encounter historic_words JSON.
         /// </summary>
         public static void ReconcilePreviousWordFirstLetterWithHistoric(
-            Dictionary<string, string> extras
+            Dictionary<string, string> extras,
+            Player player = null
         )
         {
-            ApplyScoringCachedPreviousWordLetter(extras);
+            ApplyScoringCachedPreviousWordLetter(extras, player);
         }
 
         /// <summary>
-        /// Set previous_word_first_letter from last CalculateOverallScore previousWords cache only.
+        /// Set previous_word_first_letter and scoring_previous_words_count from live player
+        /// reflection and/or submit-hook cache (cache wins when longer).
         /// </summary>
         public static void ApplyScoringCachedPreviousWordLetter(
-            Dictionary<string, string> extras
+            Dictionary<string, string> extras,
+            Player player = null
         )
         {
             if (extras == null)
@@ -788,16 +829,37 @@ namespace CursedWordsSolverCompanion
                 || source == "grid1_no_scoring_cache";
             if (histEmpty && freshGridSource)
             {
-                extras["scoring_previous_words_count"] = "0";
-                return;
+                var liveWords = player != null
+                    ? RunStateExporter.TryGetHistoricPreviousWordsPublic(player)
+                    : null;
+                if (liveWords == null || liveWords.Count == 0)
+                {
+                    extras["scoring_previous_words_count"] = "0";
+                    return;
+                }
             }
 
             var scoringPrevious = RunStateExporter.GetCachedPreviousWords();
             var cacheCount = scoringPrevious != null ? scoringPrevious.Count : 0;
+            var fromPlayer = player != null
+                ? RunStateExporter.TryGetHistoricPreviousWordsPublic(player)
+                : null;
+            var playerCount = fromPlayer != null ? fromPlayer.Count : 0;
             var gridNum = TryParseGridNumber(
                 extras.TryGetValue("grid_number", out var gridRaw) ? gridRaw : null
             );
-            if (scoringPrevious == null || scoringPrevious.Count == 0)
+
+            List<HistoricWord> bestWords = null;
+            if (cacheCount > 0 && playerCount > 0)
+                bestWords = cacheCount >= playerCount ? scoringPrevious : fromPlayer;
+            else if (cacheCount > 0)
+                bestWords = scoringPrevious;
+            else if (playerCount > 0)
+                bestWords = fromPlayer;
+
+            var bestCount = bestWords != null ? bestWords.Count : 0;
+
+            if (bestCount == 0)
             {
                 if (gridNum == 1)
                     ClearGridOneStaleEncounterHistoric(extras);
@@ -827,9 +889,40 @@ namespace CursedWordsSolverCompanion
                 return;
             }
 
-            extras["scoring_previous_words_count"] = cacheCount.ToString();
+            extras["scoring_previous_words_count"] = bestCount.ToString();
 
-            var prev = ScoringContextCapture.FirstLetterFromHistoricWords(scoringPrevious);
+            if (histEmpty && player != null && bestWords != null && bestWords.Count > 0)
+            {
+                var telescope = BuildTelescopeEncounterExtras(bestWords, player);
+                if (telescope != null)
+                {
+                    string builtHist;
+                    if (
+                        telescope.TryGetValue("historic_words", out builtHist)
+                        && !string.IsNullOrEmpty(builtHist)
+                        && builtHist != "[]"
+                    )
+                    {
+                        extras["historic_words"] = builtHist;
+                        histEmpty = false;
+                        if (
+                            !string.Equals(
+                                source,
+                                "grid1_no_scoring_cache",
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        )
+                            extras["encounter_historic_source"] = "live";
+                    }
+
+                    string builtRed;
+                    if (telescope.TryGetValue("red_tiles_used_encounter", out builtRed)
+                        && !string.IsNullOrEmpty(builtRed))
+                        extras["red_tiles_used_encounter"] = builtRed;
+                }
+            }
+
+            var prev = ScoringContextCapture.FirstLetterFromHistoricWords(bestWords);
             if (!string.IsNullOrEmpty(prev))
                 extras["previous_word_first_letter"] = prev;
         }
@@ -1296,14 +1389,32 @@ namespace CursedWordsSolverCompanion
 
             projected.Remove("previous_word_first_letter");
             var scoringPrevious = RunStateExporter.GetCachedPreviousWords();
-            if (scoringPrevious != null && scoringPrevious.Count > 0)
+            var fromPlayer = RunStateExporter.TryGetHistoricPreviousWordsPublic(player);
+            var cacheCount = scoringPrevious != null ? scoringPrevious.Count : 0;
+            var playerCount = fromPlayer != null ? fromPlayer.Count : 0;
+            List<HistoricWord> workflowWords = null;
+            if (cacheCount > 0 && playerCount > 0)
+                workflowWords = cacheCount >= playerCount ? scoringPrevious : fromPlayer;
+            else if (cacheCount > 0)
+                workflowWords = scoringPrevious;
+            else if (playerCount > 0)
+                workflowWords = fromPlayer;
+
+            if (workflowWords != null && workflowWords.Count > 0)
             {
-                var captured = ScoringContextCapture.ExtractFromPreviousWords(scoringPrevious);
+                var captured = ScoringContextCapture.ExtractFromPreviousWords(workflowWords);
                 foreach (var kv in captured)
                     projected[kv.Key] = kv.Value ?? "";
+
+                var telescope = BuildTelescopeEncounterExtras(workflowWords, player);
+                if (telescope != null)
+                {
+                    foreach (var kv in telescope)
+                        projected[kv.Key] = kv.Value ?? "";
+                }
             }
 
-            var overlay = BuildBestHistoricExtras(player, projected);
+            var overlay = BuildBestHistoricExtras(player, projected, liveOnly: true);
             if (overlay != null)
             {
                 foreach (var kv in overlay)
@@ -1320,7 +1431,7 @@ namespace CursedWordsSolverCompanion
                 }
             }
 
-            ApplyScoringCachedPreviousWordLetter(projected);
+            ApplyScoringCachedPreviousWordLetter(projected, player);
             return projected;
         }
 
@@ -1343,7 +1454,7 @@ namespace CursedWordsSolverCompanion
                     projected[kv.Key] = kv.Value ?? "";
             }
 
-            ApplyScoringCachedPreviousWordLetter(projected);
+            ApplyScoringCachedPreviousWordLetter(projected, player);
             return projected;
         }
 
@@ -1359,18 +1470,21 @@ namespace CursedWordsSolverCompanion
             {
                 if (cachedCount > playerCount)
                 {
+                    // Grid 1 word 2+: submit-hook cache is authoritative when player
+                    // reflection lags after the last scored word (OnScoringContext only).
                     if (playerCount == 0 && grid < 2)
-                        return null;
+                        return cachedCount > 0 ? fromCached : null;
                     return fromCached;
                 }
                 // Grid 2+: scoring cache is authoritative when player reflection over-counts.
                 if (grid >= 2 && cachedCount > 0 && playerCount > cachedCount)
                     return fromCached;
-                // Grid 2+: empty scoring cache = fresh grid; encounter-wide historic bleeds.
-                if (grid >= 2 && cachedCount == 0)
-                    return null;
+                // Live player reflection is authoritative when cache is empty (F8 after reshuffle).
                 if (playerCount > 0)
                     return fromPlayer;
+                // Grid 2+: empty cache and no live words = fresh grid (no prior-grid bleed).
+                if (grid >= 2 && cachedCount == 0)
+                    return null;
                 if (grid >= 2 && cachedCount > 0)
                     return fromCached;
                 return cachedCount > 0 ? fromCached : null;
@@ -1385,7 +1499,7 @@ namespace CursedWordsSolverCompanion
             if (cachedCount > playerCount)
             {
                 if (playerCount == 0 && grid < 2)
-                    return null;
+                    return cachedCount > 0 ? fromCached : null;
                 return fromCached;
             }
 

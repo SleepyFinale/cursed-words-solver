@@ -914,6 +914,7 @@ def is_take_at_path_position(
         path_prefix=prefix,
         visited=set(prefix),
         flags=flags,
+        loadout=loadout,
     )
 
 
@@ -972,6 +973,7 @@ def _is_full_moon_chess_teleport_step(
         path_prefix=prefix,
         visited=set(prefix),
         flags=flags,
+        loadout=loadout,
     )
 
 
@@ -1139,6 +1141,7 @@ def movie_camera_take_piece_value_at(
                 path_prefix=prefix,
                 visited=set(prefix),
                 flags=flags,
+                loadout=loadout,
             ):
                 return from_base + from_piece + (base - piece)
         if landing.curse == CurseType.CHESS_ROOK and base == piece:
@@ -1154,6 +1157,7 @@ def movie_camera_take_piece_value_at(
             path_prefix=prefix,
             visited=set(prefix),
             flags=flags,
+            loadout=loadout,
         )
     )
     if (
@@ -3606,6 +3610,15 @@ def celestial_body_tile_eligible(
         )
     )
 
+    if letter_count >= 2 and tile.base_score < 2:
+        if (
+            salamander
+            and consecutive_letter_run_length_at(board, path, path_index)
+            < 3
+        ):
+            return False
+        return True
+
     if rank and rank.upper() in POKER_RANKS:
         return is_last_card_rank_on_path(board, path, path_index)
 
@@ -3726,11 +3739,60 @@ def bicycle_suited_on_path_from_extras(loadout: Loadout) -> int:
         return 0
 
 
-def bicycle_suited_credit_on_path(board: Board, path: list[int]) -> int:
-    """Bicycle suited credit: mono-suit → 1; multi-suit + non-end joker → per-tile; else unique ranks.
+def _bicycle_multi_suit_suited_credit(board: Board, path: list[int]) -> int:
+    """Multi-suit Bicycle credit: dedupe (rank,suit); cap rank when letter>2 on path."""
+    entries: list[tuple[int, str, str, str]] = []
+    for path_index, idx in enumerate(path):
+        tile = board.get_by_index(idx)
+        if not _bicycle_suited_path_tile(tile):
+            continue
+        suit = (card_suit(tile) or "").strip().lower()
+        if not suit or suit in ("none", "joker"):
+            continue
+        rank = card_rank(tile)
+        rank_key = (rank or "").strip().upper()[:1]
+        letter = path_letter_for_count(tile)
+        entries.append((path_index, rank_key, suit, letter))
 
-    Board-only fallback heuristic used when melmod has not exported the exact
-    in-game ``bicycle_suited_on_path`` count (see effective_suited_cards_on_path).
+    if not entries:
+        return 0
+
+    last_rank_index: dict[str, int] = {}
+    for path_index, rank_key, _suit, letter in entries:
+        if not rank_key:
+            continue
+        letter_count = _letter_occurrences_on_path(board, path, letter) if letter else 0
+        if letter_count > 2:
+            last_rank_index[rank_key] = path_index
+
+    credit = 0
+    seen_pairs: set[tuple[str, str]] = set()
+    seen_capped_ranks: set[str] = set()
+    for path_index, rank_key, suit, letter in entries:
+        letter_count = (
+            _letter_occurrences_on_path(board, path, letter) if letter else 0
+        )
+        if letter_count > 2:
+            if rank_key and last_rank_index.get(rank_key) != path_index:
+                continue
+            if rank_key:
+                if rank_key in seen_capped_ranks:
+                    continue
+                seen_capped_ranks.add(rank_key)
+            credit += 1
+        else:
+            pair = (rank_key, suit)
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            credit += 1
+    return credit
+
+
+def bicycle_suited_credit_on_path(board: Board, path: list[int]) -> int:
+    """Bicycle suited credit: mono-suit → 1; multi-suit + non-end joker → per-tile; else pair dedup.
+
+    Board-only heuristic (see effective_suited_cards_on_path).
     """
     if not path:
         return 0
@@ -3763,18 +3825,14 @@ def bicycle_suited_credit_on_path(board: Board, path: list[int]) -> int:
         return suited_tile_count
     if len(suits) <= 1:
         return 1
-    return suited_tile_count
+    return _bicycle_multi_suit_suited_credit(board, path)
 
 
 def effective_suited_cards_on_path(
     board: Board, path: list[int], loadout: Loadout
 ) -> int:
-    """Suited tiles credit for Bicycle (board when metadata present, else melmod extra)."""
-    board_credit = bicycle_suited_credit_on_path(board, path)
-    from_extras = bicycle_suited_on_path_from_extras(loadout)
-    if board_credit > 0:
-        return board_credit
-    return from_extras
+    """Suited tiles credit for Bicycle from board card metadata only."""
+    return bicycle_suited_credit_on_path(board, path)
 
 
 def bicycle_suited_tiles_on_path(board: Board, path: list[int], loadout: Loadout) -> int:

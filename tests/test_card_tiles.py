@@ -286,7 +286,7 @@ def test_bicycle_nebbish_only_real_card_on_path_counts_one():
 
 
 def test_suited_cards_count_duplicate_ranks_on_multi_suit_path():
-    """Multi-suit paths credit each suited tile, not unique ranks (appalls)."""
+    """Multi-suit paths credit unique suited ranks (duplicate rank counts once)."""
     board = _empty_board()
     board.tiles[0][0] = Tile(
         row=0, col=0, char="D", letter="D", base_score=2, curse=CurseType.LETTER,
@@ -306,7 +306,7 @@ def test_suited_cards_count_duplicate_ranks_on_multi_suit_path():
         metadata={"source": "melmod", "card_suit": "spades", "card_rank": "M"},
     )
     path = [0, 1, 2, 3, 4]
-    assert suited_cards_on_path_count(board, path) == 4
+    assert suited_cards_on_path_count(board, path) == 3
 
 
 def test_effective_suited_prefers_board_count_over_stale_extras():
@@ -324,16 +324,16 @@ def test_effective_suited_prefers_board_count_over_stale_extras():
         metadata={"source": "melmod", "card_suit": "hearts", "card_rank": "D"},
     )
     loadout = Loadout(extras={"bicycle_suited_on_path": 4})
-    assert effective_suited_cards_on_path(board, [0, 1, 2], loadout) == 3
+    assert effective_suited_cards_on_path(board, [0, 1, 2], loadout) == 2
 
 
-def test_effective_suited_uses_melmod_extra_when_board_lacks_suits():
+def test_effective_suited_uses_board_only_when_board_lacks_suits():
     board = _empty_board()
     board.tiles[0][0] = _plain(0, 0, "A", 1)
     board.tiles[0][1] = _plain(0, 1, "B", 1)
     loadout = Loadout(extras={"bicycle_suited_on_path": 2})
     assert suited_cards_on_path_count(board, [0, 1]) == 0
-    assert effective_suited_cards_on_path(board, [0, 1], loadout) == 2
+    assert effective_suited_cards_on_path(board, [0, 1], loadout) == 0
 
 
 def test_effective_suited_ignores_stale_low_melmod_extra():
@@ -447,8 +447,8 @@ def test_bicycle_two_jokers_multi_suit_per_tile_credit():
     assert bicycle_suited_credit_on_path(board, path) == 5
 
 
-def test_bicycle_multi_suit_counts_suited_tiles_not_unique_ranks():
-    """Regression appalls: duplicate ranks on multi-suit path credit per suited tile."""
+def test_bicycle_multi_suit_counts_unique_suited_ranks():
+    """Multi-suit paths: dedupe (rank,suit); duplicate I♦ counts once (serenities parity)."""
     board = _empty_board()
     board.tiles[0][4] = Tile(
         row=0, col=4, char="A", letter="A", base_score=1, curse=CurseType.LETTER,
@@ -476,7 +476,25 @@ def test_bicycle_multi_suit_counts_suited_tiles_not_unique_ranks():
         metadata={"source": "melmod", "card_suit": "spades", "card_rank": "S"},
     )
     path = [4, 9, 14, 16, 17, 18, 21]
-    assert bicycle_suited_credit_on_path(board, path) == 6
+    assert bicycle_suited_credit_on_path(board, path) == 4
+
+
+def test_bicycle_styte_same_rank_different_suit_counts_both():
+    """Regression styte: T♥ + T♣ on 5-letter path with T×2 → credit 2."""
+    board = _empty_board()
+    board.tiles[0][2] = _plain(0, 2, "S", 0)
+    board.tiles[1][2] = Tile(
+        row=1, col=2, char="T", letter="T", base_score=0, curse=CurseType.LETTER,
+        metadata={"source": "melmod", "card_suit": "hearts", "card_rank": "T"},
+    )
+    board.tiles[1][1] = _plain(1, 1, "Y", 0)
+    board.tiles[1][0] = Tile(
+        row=1, col=0, char="T", letter="T", base_score=0, curse=CurseType.LETTER,
+        metadata={"source": "melmod", "card_suit": "clubs", "card_rank": "T"},
+    )
+    board.tiles[0][0] = _plain(0, 0, "E", 0)
+    path = [2, 7, 6, 5, 0]
+    assert bicycle_suited_credit_on_path(board, path) == 2
 
 
 def test_bicycle_mono_suit_joker_two_non_joker_per_tile_credit():

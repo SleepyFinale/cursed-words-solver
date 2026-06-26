@@ -79,6 +79,9 @@ def apply_lexographer_tile_zero(
     return state
 
 
+_POKER_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
 def _rank_value(tile: Tile) -> int:
     rank = (tile.metadata.get("card_rank") or tile.letter or tile.char or "").upper()
     if rank.isdigit():
@@ -89,6 +92,30 @@ def _rank_value(tile: Tile) -> int:
     if tile.curse.value == "number" and tile.number_value is not None:
         return int(tile.number_value)
     return 0
+
+
+def _poker_string_rep(tile: Tile) -> str:
+    """Mirror Tile.GetStringRepresentation for suited Bones letter/number cards."""
+    if tile.curse.value == "number" and tile.number_value is not None:
+        return str(int(tile.number_value))
+    raw = tile.metadata.get("card_rank") or tile.letter or tile.char or ""
+    rep = str(raw).strip().upper()
+    if rep and rep != "?":
+        return rep
+    return ""
+
+
+def _poker_sort_index(tile: Tile) -> int:
+    """Alphabet index for letter glyphs; numeric value for number glyphs."""
+    if tile.curse.value == "number" and tile.number_value is not None:
+        return int(tile.number_value)
+    rep = _poker_string_rep(tile)
+    if not rep:
+        return -1
+    if rep.isdigit():
+        return int(rep)
+    idx = _POKER_ALPHABET.find(rep[0])
+    return idx if idx >= 0 else -1
 
 
 def _suited_cards_on_path(board: Board, path: list[int]) -> list[Tile]:
@@ -106,76 +133,110 @@ def _is_joker(tile: Tile) -> bool:
     return suit == "joker" or tile.metadata.get("is_joker") in (True, "true", "1", 1)
 
 
+def _detect_straight_from_indices(indices: list[int], min_len: int = 5) -> bool:
+    uniq = sorted(set(indices), reverse=True)
+    if len(uniq) < min_len:
+        return False
+    for i in range(len(uniq) - min_len + 1):
+        seg = uniq[i : i + min_len]
+        if seg[0] - seg[-1] == min_len - 1:
+            return True
+    return False
+
+
 def detect_poker_hand(cards: list[Tile]) -> tuple[str, list[Tile]]:
     """Best poker hand from suited path cards (Bones Round / PokerHands parity)."""
     if not cards:
         return "high_card", []
     suited = [t for t in cards if not _is_joker(t) and card_suit(t)]
     jokers = [t for t in cards if _is_joker(t)]
+    joker_count = len(jokers)
     pool = suited + jokers
     if len(pool) == 1:
         return "high_card", pool[:1]
-    if len(jokers) >= 5:
+    if joker_count >= 5:
         return "straight_flush", jokers[:5]
-    ranks = sorted((_rank_value(t) for t in suited), reverse=True)
+
     suits: dict[str, list[Tile]] = {}
     for t in suited:
         s = (card_suit(t) or "").lower()
         suits.setdefault(s, []).append(t)
-    # Flush
+
+    # Flush (before of-a-kind in game when no straight flush)
     for suit_tiles in suits.values():
-        if len(suit_tiles) + len(jokers) >= 5:
-            hand = sorted(suit_tiles, key=_rank_value, reverse=True)[:5]
-            while len(hand) < 5 and jokers:
-                hand.append(jokers.pop(0))
+        if len(suit_tiles) + joker_count >= 5:
+            hand = sorted(suit_tiles, key=_poker_sort_index, reverse=True)[:5]
+            jokers_left = list(jokers)
+            while len(hand) < 5 and jokers_left:
+                hand.append(jokers_left.pop(0))
             return "flush", hand[:5]
-    # Groups by rank
-    by_rank: dict[int, list[Tile]] = {}
+
+    # Groups by GetStringRepresentation (GetXOfAKind / GetBestOfAKind parity)
+    by_rep: dict[str, list[Tile]] = {}
     for t in suited:
-        by_rank.setdefault(_rank_value(t), []).append(t)
-    counts = sorted(((len(v), r) for r, v in by_rank.items()), reverse=True)
-    if counts and counts[0][0] >= 4:
-        r = counts[0][1]
-        hand = by_rank[r][:4]
+        rep = _poker_string_rep(t)
+        if not rep:
+            continue
+        by_rep.setdefault(rep, []).append(t)
+
+    counts = sorted(((len(v), rep) for rep, v in by_rep.items()), reverse=True)
+    if counts and counts[0][0] + joker_count >= 4:
+        rep = counts[0][1]
+        hand = list(by_rep[rep][:4])
+        jokers_left = list(jokers)
+        while len(hand) < 4 and jokers_left:
+            hand.append(jokers_left.pop(0))
         for t in suited:
             if t not in hand:
                 hand.append(t)
                 break
         return "four_of_a_kind", hand[:5]
-    if len(counts) >= 2 and counts[0][0] >= 3 and counts[1][0] >= 2:
-        hand = by_rank[counts[0][1]][:3] + by_rank[counts[1][1]][:2]
+    if (
+        len(counts) >= 2
+        and counts[0][0] >= 3
+        and counts[1][0] >= 2
+    ):
+        hand = by_rep[counts[0][1]][:3] + by_rep[counts[1][1]][:2]
         return "full_house", hand[:5]
     if counts and counts[0][0] >= 3:
-        r = counts[0][1]
-        hand = by_rank[r][:3]
+        hand = list(by_rep[counts[0][1]][:3])
         for t in suited:
             if t not in hand:
                 hand.append(t)
             if len(hand) >= 5:
                 break
         return "three_of_a_kind", hand[:5]
-    pairs = [r for c, r in counts if c >= 2]
+    if counts and counts[0][0] == 2 and joker_count >= 1:
+        hand = list(by_rep[counts[0][1]][:2])
+        if jokers:
+            hand.append(jokers[0])
+        return "three_of_a_kind", hand[:3]
+    pairs = [rep for c, rep in counts if c >= 2]
     if len(pairs) >= 2:
-        hand = by_rank[pairs[0]][:2] + by_rank[pairs[1]][:2]
+        hand = by_rep[pairs[0]][:2] + by_rep[pairs[1]][:2]
         for t in suited:
             if t not in hand:
                 hand.append(t)
                 break
         return "two_pair", hand[:5]
     if len(pairs) == 1:
-        hand = by_rank[pairs[0]][:2]
+        hand = list(by_rep[pairs[0]][:2])
         for t in suited:
             if t not in hand:
                 hand.append(t)
             if len(hand) >= 5:
                 break
         return "pair", hand[:2] if len(hand) < 2 else hand[:5]
-    uniq = sorted(set(ranks), reverse=True)
-    if len(uniq) >= 5:
-        for i in range(len(uniq) - 4):
-            seg = uniq[i : i + 5]
-            if seg[0] - seg[4] == 4:
-                return "straight", suited[:5]
+    if joker_count >= 2 and suited:
+        return "three_of_a_kind", [suited[0], *jokers[:2]]
+    if joker_count == 1 and suited:
+        return "pair", [suited[0], jokers[0]]
+
+    letter_indices = [_poker_sort_index(t) for t in suited]
+    letter_indices = [v for v in letter_indices if v >= 0]
+    if _detect_straight_from_indices(letter_indices, min_len=5):
+        return "straight", suited[:5]
+
     return "high_card", suited[:1] if suited else pool[:1]
 
 
@@ -215,8 +276,10 @@ def apply_bones_round_early_bonus(
         state.setdefault("bones_poker_bonus", bonus)
         if trace_step is not None:
             trace_step(
+                state,
                 "quest_bones_poker",
-                {"hand": hand, "bonus": bonus},
+                hand=hand,
+                bonus=bonus,
             )
     return state
 

@@ -16,12 +16,14 @@ from cursed_words_solver.graph_bitboard import (
     STRAIGHT_DIR_INDICES,
     get_valid_extensions,
     iter_mask,
+    knight_targets_for_cell,
     mask_from_indices,
 )
 from cursed_words_solver.models import (
     CHESS_CURSES,
     Board,
     CurseType,
+    Loadout,
     Tile,
 )
 from cursed_words_solver.rules.stamp_behaviors import (
@@ -339,16 +341,24 @@ def knight_neighbors_mask(
     moving_side: str,
     allies_can_take: bool = False,
     graph_ctx: BoardGraphContext | None = None,
+    horizontal_wrap: bool = False,
 ) -> int:
-    if graph_ctx is not None:
+    if graph_ctx is not None and not horizontal_wrap:
         return (
             graph_ctx.knight_land_for(
                 start_idx, moving_side, allies_can_take=allies_can_take
             )
             & ~visited_mask
         )
+    rows, cols = board.storage_rows, board.storage_cols
+    candidates = knight_targets_for_cell(
+        start_idx,
+        rows=rows,
+        cols=cols,
+        horizontal_wrap=horizontal_wrap,
+    )
     mask = 0
-    for idx in iter_mask(KNIGHT_TARGETS[start_idx]):
+    for idx in iter_mask(candidates):
         if can_land_on_chess_square(
             board,
             idx,
@@ -1347,6 +1357,39 @@ def identical_chess_piece(a: Tile, b: Tile) -> bool:
     return a.curse == b.curse and chess_side(a) == chess_side(b)
 
 
+def _capture_step_reachable(
+    board: Board,
+    from_idx: int,
+    to_idx: int,
+    *,
+    prefix: list[int],
+    visited_set: int | set[int],
+    search_flags: SearchFlagsMask,
+    loadout: Loadout | None,
+) -> bool:
+    if loadout is not None:
+        from cursed_words_solver.rules.quest_movement import sicilian_defense_active
+
+        if sicilian_defense_active(loadout):
+            from cursed_words_solver.rules.quest_movement import (
+                sicilian_neighbors_mask,
+            )
+
+            visited_mask = (
+                visited_set
+                if isinstance(visited_set, int)
+                else mask_from_indices(visited_set)
+            )
+            mask = sicilian_neighbors_mask(
+                board,
+                from_idx,
+                visited_mask,
+                flags=search_flags,
+            )
+            return bool(mask & (1 << to_idx))
+    return to_idx in chess_neighbors(board, prefix, visited_set, search_flags)
+
+
 def is_chess_capture_step(
     board: Board,
     from_idx: int,
@@ -1356,6 +1399,7 @@ def is_chess_capture_step(
     path_prefix: list[int] | None = None,
     visited: int | set[int] | None = None,
     flags: SearchFlagsMask = 0,
+    loadout: Loadout | None = None,
 ) -> bool:
     """True when a chess step lands on an opponent (or ally take) or en passant."""
     from_tile = board.get_by_index(from_idx)
@@ -1372,7 +1416,15 @@ def is_chess_capture_step(
         search_flags = flag_set(search_flags, FLAG_CHESS_ALLIES_CAN_TAKE)
     elif allies_can_take and not search_flags:
         search_flags = FLAG_CHESS_ALLIES_CAN_TAKE
-    if to_idx not in chess_neighbors(board, prefix, visited_set, search_flags):
+    if not _capture_step_reachable(
+        board,
+        from_idx,
+        to_idx,
+        prefix=prefix,
+        visited_set=visited_set,
+        search_flags=search_flags,
+        loadout=loadout,
+    ):
         return False
 
     to_tile = board.get_by_index(to_idx)

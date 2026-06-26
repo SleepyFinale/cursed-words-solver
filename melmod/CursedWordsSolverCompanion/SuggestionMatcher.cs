@@ -150,7 +150,9 @@ namespace CursedWordsSolverCompanion
         {
             if (string.IsNullOrEmpty(word))
                 return false;
-            return word.Any(ch => char.IsDigit(ch));
+            if (word.Any(ch => char.IsDigit(ch)))
+                return true;
+            return word.IndexOf('?') >= 0;
         }
 
         /// <summary>
@@ -253,6 +255,13 @@ namespace CursedWordsSolverCompanion
                 return "no last_suggestion.json (press F8 in solver first)";
 
             var parts = new List<string>();
+            if (suggestion.capture_blocked)
+            {
+                if (!string.IsNullOrEmpty(suggestion.block_reason))
+                    parts.Add("capture blocked: " + suggestion.block_reason);
+                else
+                    parts.Add("capture blocked");
+            }
             var pathMatches = PathsEqual(suggestion.path, path);
             var boardMatches = ConsumablePlacementHelper.BoardFingerprintMatchesSuggestion(
                 suggestion,

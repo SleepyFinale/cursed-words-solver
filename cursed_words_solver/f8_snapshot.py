@@ -46,13 +46,15 @@ from cursed_words_solver.rules.quest_effects import (
     board_has_crossed_out_tile,
 )
 from cursed_words_solver.suggestion import (
-    loadout_needs_encounter_historic,
+    loadout_needs_historic_words_gather,
     loadout_needs_previous_word_letter,
 )
 
 F8_GATHER_POLL_SEC = 0.1
 F8_GATHER_BOARD_TIMEOUT_SEC = 5.0
 F8_GATHER_EXTRAS_TIMEOUT_SEC = 5.0
+F8_GATHER_HISTORIC_EXTRAS_TIMEOUT_SEC = 12.0
+F8_GATHER_HISTORIC_REEXPORT_INTERVAL_SEC = 1.5
 F8_EXPORT_ACK_TIMEOUT_SEC = 5.0
 F8_HISTORIC_CATCHUP_REEXPORT_POLL_SEC = 3.0
 F8_HISTORIC_CATCHUP_ACK_TIMEOUT_SEC = 2.0
@@ -221,13 +223,20 @@ def _supply_and_demand_needs_crossed_out_flags(
     return False
 
 
-def _encounter_historic_export_ready(extras: dict[str, Any], hist: str) -> bool:
-    """True when melmod exported encounter historic (empty is valid on grid 1)."""
+def _encounter_historic_export_ready(
+    extras: dict[str, Any],
+    hist: str,
+    *,
+    loadout: Loadout | None = None,
+    board: Board | None = None,
+) -> bool:
+    """True when melmod exported encounter historic (empty OK when gather does not need it)."""
     if hist and hist != "[]":
         return True
-    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
-    if source in ("grid1_no_scoring_cache", "historic_metadata_only"):
-        return True
+    if loadout is not None and board is not None:
+        if not loadout_needs_historic_words_gather(loadout, board, extras):
+            return True
+        return False
     if (
         _grid_number_from_extras(extras) >= 2
         and _scoring_previous_words_count_from_extras(extras) == 0
@@ -307,16 +316,12 @@ def _extras_missing_for_loadout(
         prev = str(extras.get("previous_word_first_letter", "") or "").strip()
         if not prev:
             missing.append("previous_word_first_letter")
-    needs_historic = loadout_needs_encounter_historic(loadout, board)
-    if (
-        not needs_historic
-        and _grid_number_from_extras(extras) >= 2
-        and _scoring_previous_words_count_from_extras(extras) > 0
-    ):
-        needs_historic = True
+    needs_historic = loadout_needs_historic_words_gather(loadout, board, extras)
     if needs_historic:
         hist = str(extras.get("historic_words", "") or "").strip()
-        if not _encounter_historic_export_ready(extras, hist):
+        if not _encounter_historic_export_ready(
+            extras, hist, loadout=loadout, board=board
+        ):
             missing.append("historic_words")
     if _has_neapolitan_stamp(loadout):
         if extras.get("neapolitan_percent") in (None, ""):
@@ -505,7 +510,9 @@ def gather_f8_snapshot(
             on_wait(msg)
 
     deadline_extras = time.monotonic() + max(0.0, extras_timeout_sec)
+    extras_phase_start = time.monotonic()
     last_missing: list[str] = []
+    last_historic_reexport = 0.0
     while time.monotonic() < deadline_extras:
         run_state = load_run_state_raw()
         snapshot = _build_snapshot_from_run_state(run_state, rules=rules)
@@ -515,6 +522,32 @@ def gather_f8_snapshot(
         last_missing = _extras_missing_for_loadout(
             snapshot.loadout, snapshot.board, extras or {}
         )
+        snapshot.gather_missing = list(last_missing)
+        historic_timeout = historic_gather_timeout_sec(snapshot.loadout, snapshot)
+        if historic_timeout > extras_timeout_sec:
+            deadline_extras = extras_phase_start + historic_timeout
+        if (
+            "historic_words" in last_missing
+            and snapshot.loadout is not None
+            and snapshot.board is not None
+            and loadout_needs_historic_words_gather(
+                snapshot.loadout, snapshot.board, extras or {}
+            )
+            and time.monotonic() - last_historic_reexport
+            >= F8_GATHER_HISTORIC_REEXPORT_INTERVAL_SEC
+        ):
+            last_historic_reexport = time.monotonic()
+            retry_id = write_f8_export_request()
+            acked = wait_for_f8_export_ack(
+                retry_id,
+                timeout_sec=min(
+                    F8_EXPORT_ACK_TIMEOUT_SEC,
+                    F8_GATHER_HISTORIC_REEXPORT_INTERVAL_SEC,
+                ),
+                poll_sec=poll_sec,
+            )
+            if acked:
+                snapshot.f8_export_acked = True
         if last_missing:
             _notify_wait(f"waiting for melmod: {', '.join(last_missing)}")
         time.sleep(poll_sec)
@@ -652,6 +685,25 @@ def sole_gather_miss_is_historic(snapshot: F8Snapshot) -> bool:
     )
 
 
+def historic_gather_timeout_sec(
+    loadout: Loadout | None,
+    snapshot: F8Snapshot | None,
+) -> float:
+    """Longer live-only poll when Movie Camera / Telescope historic is the sole miss."""
+    if loadout is None or snapshot is None or snapshot.board is None:
+        return F8_GATHER_EXTRAS_TIMEOUT_SEC
+    if not loadout_needs_historic_words_gather(
+        loadout, snapshot.board, snapshot.loadout.extras if snapshot.loadout else None
+    ):
+        return F8_GATHER_EXTRAS_TIMEOUT_SEC
+    missing = snapshot.gather_missing or []
+    if sole_gather_miss_is_historic(snapshot):
+        return F8_GATHER_HISTORIC_EXTRAS_TIMEOUT_SEC
+    if len(missing) == 1 and missing[0] == "historic_words":
+        return F8_GATHER_HISTORIC_EXTRAS_TIMEOUT_SEC
+    return F8_GATHER_EXTRAS_TIMEOUT_SEC
+
+
 def _apply_historic_extras_to_loadout(
     loadout: Loadout,
     extras: dict[str, Any],
@@ -683,7 +735,6 @@ def catchup_historic_gather_after_search(
 
     Returns (snapshot, catchup_log_note, historic_catchup_stale_note, behind_disk_warn).
     """
-    del catchup_timeout_sec
     from cursed_words_solver.loadout import describe_f8_historic_catchup
 
     if not historic_words_gather_pending(snapshot):
@@ -695,16 +746,19 @@ def catchup_historic_gather_after_search(
         embed_hist = str(snapshot.loadout.extras.get("historic_words", "") or "").strip()
 
     catchup_note: str | None = None
-    if reexport_poll_sec > 0:
+    poll_budget = (
+        max(0.0, reexport_poll_sec, catchup_timeout_sec) if reexport_poll_sec > 0 else 0.0
+    )
+    if poll_budget > 0:
         retry_request_id = write_f8_export_request()
         wait_for_f8_export_ack(
             retry_request_id,
             timeout_sec=min(
                 F8_HISTORIC_CATCHUP_ACK_TIMEOUT_SEC,
-                max(0.0, reexport_poll_sec),
+                max(0.0, poll_budget),
             ),
         )
-        deadline = time.monotonic() + reexport_poll_sec
+        deadline = time.monotonic() + poll_budget
         while time.monotonic() < deadline:
             fresh = load_run_state_raw()
             if isinstance(fresh, dict):

@@ -2996,6 +2996,7 @@ class ScoringPipeline:
                         board,
                         path,
                         strict=strict_takes,
+                        loadout=loadout,
                         search_flags=state.get("_search_flags", 0),
                     )
                     == 0
@@ -3014,6 +3015,7 @@ class ScoringPipeline:
                     board,
                     path,
                     strict=strict_takes,
+                    loadout=loadout,
                     search_flags=state.get("_search_flags", 0),
                 )
                 if takes:

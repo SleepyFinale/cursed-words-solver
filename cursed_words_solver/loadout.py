@@ -874,7 +874,6 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
         "cards_submitted",
         "bicycle_word_score_bonus",
         "movie_camera_word_score_bonus",
-        "bicycle_suited_on_path",
         "neapolitan_percent",
         "ruler_distance",
         "pin_left_level",
@@ -1007,6 +1006,7 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
     for key in ("kokeshi_dolls", "frozen_in_shop", "board_from_melmod"):
         if key in out:
             out[key] = out[key] in (True, "true", "True", "1", 1)
+    out.pop("bicycle_suited_on_path", None)
     return out
 
 
@@ -1779,7 +1779,26 @@ def reconcile_encounter_historic_for_scoring(
     """Normalize encounter historic / scoring cache before F8 or replay scoring."""
     reconcile_scoring_previous_words_count(extras)
     reconcile_historic_after_grid_advance(extras)
+    reconcile_grid_one_no_scoring_cache_sentinel(extras)
     prune_historic_incompatible_with_board(board, extras)
+
+
+def reconcile_grid_one_no_scoring_cache_sentinel(extras: dict[str, Any]) -> bool:
+    """Grid 1 word 1: mark empty historic as intentionally cleared (not stale bleed)."""
+    if _grid_number_from_extras(extras) != 1:
+        return False
+    if _scoring_previous_words_count_from_extras(extras) != 0:
+        return False
+    if encounter_submit_signals_imply_prior_words(extras):
+        return False
+    hist = str(extras.get("historic_words", "") or "").strip()
+    if hist and hist != "[]":
+        return False
+    source = str(extras.get("encounter_historic_source", "") or "").strip()
+    if source:
+        return False
+    extras["encounter_historic_source"] = "grid1_no_scoring_cache"
+    return True
 
 
 def _historic_words_json_prefer_fresh(
@@ -1975,6 +1994,60 @@ def f8_historic_still_behind_disk_warning(
     return None
 
 
+def encounter_submit_signals_imply_prior_words(
+    extras: dict[str, Any] | None,
+    *,
+    loadout: Loadout | None = None,
+    board: Board | None = None,
+) -> bool:
+    """True when live export signals words were played but historic may be missing."""
+    if not isinstance(extras, dict):
+        return False
+    if _scoring_previous_words_count_from_extras(extras) > 0:
+        return True
+    prev = str(extras.get("previous_word_first_letter", "") or "").strip()
+    if prev:
+        return True
+    try:
+        words_run = int(str(extras.get("words_submitted_this_run_count") or "0"))
+    except (TypeError, ValueError):
+        words_run = 0
+    if words_run > 0:
+        return True
+    return False
+
+
+def infer_submit_historic_projection(
+    extras: dict[str, Any] | None,
+    *,
+    loadout: Loadout | None = None,
+    board: Board | None = None,
+) -> dict[str, Any]:
+    """Minimal submit projection when historic is empty but other signals imply prior words."""
+    if not isinstance(extras, dict):
+        return {}
+    hist = str(extras.get("historic_words", "") or "").strip()
+    if hist and hist != "[]":
+        return {}
+    if not encounter_submit_signals_imply_prior_words(
+        extras, loadout=loadout, board=board
+    ):
+        return {}
+    from cursed_words_solver.suggestion import loadout_needs_historic_words_gather
+
+    if not loadout_needs_historic_words_gather(loadout, board, extras):
+        return {}
+    spc = _scoring_previous_words_count_from_extras(extras)
+    overlay: dict[str, Any] = {
+        "scoring_previous_words_count": str(max(spc, 1)),
+        "historic_words": json.dumps([{"word": "_inferred_submit_", "score": 0}]),
+    }
+    prev = str(extras.get("previous_word_first_letter", "") or "").strip()
+    if prev:
+        overlay["previous_word_first_letter"] = prev
+    return overlay
+
+
 def project_workflow_extras_for_f8_embed(
     extras: dict[str, Any],
     *,
@@ -2014,6 +2087,7 @@ F8_EMBED_WORKFLOW_EXTRA_KEYS = (
     "pin_memory",
     "pin_memory_count",
     "consumable_rack_count",
+    "movie_camera_word_score_bonus",
     *TILE_NINJA_LIVE_EXTRA_KEYS,
 )
 
@@ -2276,6 +2350,8 @@ def sanitize_run_state_snapshot_for_f8(
     if not _is_bicycle_pin(loadout):
         extras.pop("bicycle_word_score_bonus", None)
         extras.pop("cards_submitted", None)
+
+    extras.pop("bicycle_suited_on_path", None)
 
     if not _has_mutating_dna_stamp(loadout):
         extras.pop("mutating_dna_letter_counts", None)

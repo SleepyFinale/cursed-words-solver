@@ -946,34 +946,41 @@ def number_position_valid(
     return _position_matches_number_values(position, values, flags)
 
 
-_quest_movement_loadout: Loadout | None = None
-
-
-def set_quest_movement_loadout(loadout: Loadout | None) -> None:
-    global _quest_movement_loadout
-    _quest_movement_loadout = loadout
-
-
 def path_movement_ok(
     board: Board,
     path: list[int],
     *,
     flags: SearchFlagsMask = 0,
     graph_ctx: BoardGraphContext | None = None,
+    loadout: Loadout | None = None,
+    rules: dict | None = None,
 ) -> bool:
     """True when every consecutive pair follows search neighbor rules (8-dir, wrap, chess, etc.)."""
     if len(path) < 2:
         return True
+    if graph_ctx is None:
+        graph_ctx = build_board_graph_context(board)
+    base_flags = coerce_search_flags(flags)
+    if loadout is not None:
+        from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+
+        base_flags = stamp_search_flags(loadout)
     visited = 0
     for i in range(len(path) - 1):
         a, b = path[i], path[i + 1]
         visited |= 1 << a
+        step_flags = base_flags
+        if loadout is not None:
+            step_flags = path_scattered_search_flags_mask(
+                board, path[: i + 1], base_flags, rules
+            )
         mask = neighbors_mask(
             board,
             visited,
             cell_id=a,
-            flags=flags,
+            flags=step_flags,
             graph_ctx=graph_ctx,
+            loadout=loadout,
         )
         if not (mask & (1 << b)):
             return False
@@ -1059,7 +1066,12 @@ class PathValidator:
 
         if not quest_path_allowed(board, path, loadout=self.quest_loadout):
             return False
-        if not path_movement_ok(board, path, flags=stamp_flags):
+        if not path_movement_ok(
+            board,
+            path,
+            flags=stamp_flags,
+            loadout=self.quest_loadout,
+        ):
             return False
         relaxed_fractions = self.relaxed_numbers
         for i, idx in enumerate(path):
@@ -1415,7 +1427,7 @@ def _probe_fraction_chess_prefixes(
             if (
                 len(path) >= 3
                 and path_tiles_need_dictionary_resolve(board, path, flags=flags)
-                and path_movement_ok(board, path, flags=flags)
+                and path_movement_ok(board, path, flags=flags, loadout=loadout)
             ):
                 out.append(list(path))
                 if len(out) >= max_paths:
@@ -1428,6 +1440,7 @@ def _probe_fraction_chess_prefixes(
                 cell_id=path[-1],
                 flags=flags,
                 graph_ctx=graph_ctx,
+                loadout=loadout,
             )
             nbrs = list(
                 _iter_expansion_neighbors(
@@ -1590,6 +1603,7 @@ def neighbors_mask(
     path: list[int] | None = None,
     flags: SearchFlagsMask = 0,
     graph_ctx: BoardGraphContext | None = None,
+    loadout: Loadout | None = None,
 ) -> int:
     """Curse-aware neighbor expansion as a bitmask."""
     flags = coerce_search_flags(flags)
@@ -1657,19 +1671,17 @@ def neighbors_mask(
         mask |= _double_letter_teleport_mask(
             board, cell_id, visited_mask, graph_ctx=graph_ctx
         )
-    if _quest_movement_loadout is not None:
-        from cursed_words_solver.rules.quest_movement import neighbors_mask_for_quest
+    from cursed_words_solver.rules.quest_movement import neighbors_mask_for_quest
 
-        return neighbors_mask_for_quest(
-            board,
-            visited_mask,
-            cell_id=cell_id,
-            flags=flags,
-            graph_ctx=graph_ctx,
-            loadout=_quest_movement_loadout,
-            standard_mask=mask,
-        )
-    return mask
+    return neighbors_mask_for_quest(
+        board,
+        visited_mask,
+        cell_id=cell_id,
+        flags=flags,
+        graph_ctx=graph_ctx,
+        loadout=loadout,
+        standard_mask=mask,
+    )
 
 
 def neighbors_from_tile(
@@ -1679,6 +1691,7 @@ def neighbors_from_tile(
     *,
     flags: SearchFlagsMask = 0,
     graph_ctx: BoardGraphContext | None = None,
+    loadout: Loadout | None = None,
 ) -> list[int]:
     """Curse-aware neighbor expansion."""
     cell_id = path[-1]
@@ -1688,6 +1701,7 @@ def neighbors_from_tile(
         cell_id=cell_id,
         flags=flags,
         graph_ctx=graph_ctx,
+        loadout=loadout,
     )
     return list(
         _iter_expansion_neighbors(
@@ -1754,6 +1768,7 @@ def _iter_expansion_neighbors(
     flags: SearchFlagsMask = 0,
     hints: MultNeighborHints | None = None,
     graph_ctx: BoardGraphContext | None = None,
+    loadout: Loadout | None = None,
     nbr_mask: int | None = None,
 ) -> Iterator[int]:
     """Yield neighbor indices for DFS expansion; reuses scratch buffer instead of list(iter_mask)."""
@@ -1769,6 +1784,7 @@ def _iter_expansion_neighbors(
             cell_id=cell_id,
             flags=flags,
             graph_ctx=graph_ctx,
+            loadout=loadout,
         )
     if not nbr_mask:
         return
@@ -1901,6 +1917,7 @@ def _neighbors_sorted_by_base_score(
     *,
     flags: SearchFlagsMask = 0,
     graph_ctx: BoardGraphContext | None = None,
+    loadout: Loadout | None = None,
     nbr_mask: int | None = None,
 ) -> list[int]:
     return list(
@@ -1912,6 +1929,7 @@ def _neighbors_sorted_by_base_score(
             path_length=len(path),
             flags=flags,
             graph_ctx=graph_ctx,
+            loadout=loadout,
             nbr_mask=nbr_mask,
         )
     )
@@ -1925,6 +1943,7 @@ def _neighbors_sorted_for_loadout(
     flags: SearchFlagsMask = 0,
     hints: MultNeighborHints | None = None,
     graph_ctx: BoardGraphContext | None = None,
+    loadout: Loadout | None = None,
     nbr_mask: int | None = None,
 ) -> list[int]:
     cell_id = path[-1]
@@ -1935,6 +1954,7 @@ def _neighbors_sorted_for_loadout(
             cell_id=cell_id,
             flags=flags,
             graph_ctx=graph_ctx,
+            loadout=loadout,
         )
     if not hints or not nbr_mask:
         return _neighbors_sorted_by_base_score(
@@ -1943,6 +1963,7 @@ def _neighbors_sorted_for_loadout(
             visited,
             flags=flags,
             graph_ctx=graph_ctx,
+            loadout=loadout,
             nbr_mask=nbr_mask,
         )
     return list(
@@ -1955,6 +1976,7 @@ def _neighbors_sorted_for_loadout(
             flags=flags,
             hints=hints,
             graph_ctx=graph_ctx,
+            loadout=loadout,
             nbr_mask=nbr_mask,
         )
     )
@@ -3917,6 +3939,7 @@ class WordSearcher:
                 cell_id=cell_id,
                 flags=path_flags,
                 graph_ctx=graph_ctx,
+                loadout=loadout,
             )
             for idx in _iter_expansion_neighbors(
                 board,
@@ -3927,6 +3950,7 @@ class WordSearcher:
                 flags=path_flags,
                 hints=mult_hints,
                 graph_ctx=graph_ctx,
+                loadout=loadout,
                 nbr_mask=nbr_mask,
             ):
                 if timed_out or self._time_expired():
@@ -5270,6 +5294,7 @@ class WordSearcher:
                         cell_id=path[-1],
                         flags=stamp_flags,
                         graph_ctx=graph_ctx,
+                        loadout=loadout,
                     )
                     for idx in _neighbors_sorted_for_loadout(
                         board,
@@ -5277,6 +5302,7 @@ class WordSearcher:
                         visited_mask,
                         flags=stamp_flags,
                         graph_ctx=graph_ctx,
+                        loadout=loadout,
                         nbr_mask=nbr_mask,
                     ):
                         if deadline is not None and time.monotonic() >= deadline:
@@ -5414,7 +5440,7 @@ class WordSearcher:
             path_flags = path_scattered_search_flags_mask(
                 board, path, base_flags, self.scoring.rules
             )
-            if not path_movement_ok(board, path, flags=path_flags):
+            if not path_movement_ok(board, path, flags=path_flags, loadout=loadout):
                 return
             search_word = search_word_from_path(
                 board, path, flags=path_flags
@@ -5471,7 +5497,7 @@ class WordSearcher:
                 prep_flags = path_scattered_search_flags_mask(
                     board, [prep], base_flags, self.scoring.rules
                 )
-                if not path_movement_ok(board, [prep, first], flags=prep_flags):
+                if not path_movement_ok(board, [prep, first], flags=prep_flags, loadout=loadout):
                     continue
                 variant = [prep] + path[:-1]
                 key = tuple(variant)
@@ -5491,6 +5517,7 @@ class WordSearcher:
                     cell_id=tail,
                     flags=variant_flags,
                     graph_ctx=graph_ctx,
+                    loadout=loadout,
                 )
                 for end in _iter_expansion_neighbors(
                     board,
@@ -5500,6 +5527,7 @@ class WordSearcher:
                     path_length=len(variant),
                     flags=variant_flags,
                     graph_ctx=graph_ctx,
+                    loadout=loadout,
                     nbr_mask=tail_nbr_mask,
                 ):
                     if tail_mask & (1 << end):
@@ -6173,6 +6201,7 @@ class WordSearcher:
                     cell_id=cell,
                     flags=stamp_flags,
                     graph_ctx=graph_ctx,
+                    loadout=loadout,
                 )
                 next_ch = target[k]
                 for nbr in _iter_expansion_neighbors(
@@ -6183,6 +6212,7 @@ class WordSearcher:
                     path_length=k,
                     flags=stamp_flags,
                     nbr_mask=nbr_mask,
+                    loadout=loadout,
                 ):
                     tile = board.get_by_index(nbr)
                     if not _tile_accepts_word_letter(
@@ -6298,6 +6328,7 @@ class WordSearcher:
                 cell_id=cell,
                 flags=stamp_flags,
                 graph_ctx=graph_ctx,
+                loadout=loadout,
             )
             for nbr in _iter_expansion_neighbors(
                 board,
@@ -6307,6 +6338,7 @@ class WordSearcher:
                 path_length=len(path),
                 flags=stamp_flags,
                 nbr_mask=nbr_mask,
+                loadout=loadout,
             ):
                 path.append(nbr)
                 dfs(path, visited_mask | (1 << nbr))
@@ -6385,7 +6417,6 @@ class WordSearcher:
         )
         self.validator.quest_loadout = loadout
         self.validator.extra_valid_words = equipped_improve_words(loadout)
-        set_quest_movement_loadout(loadout)
         self._solve_ctx = build_solve_context(loadout, self.scoring.rules)
         self._mult_rules = loadout_mult_rules(
             loadout,
@@ -7422,7 +7453,6 @@ class WordSearcher:
         self._active_deadline = None
         self.validator.quest_loadout = None
         self.validator.extra_valid_words = frozenset()
-        set_quest_movement_loadout(None)
         set_quest_search_target(None)
         if center_idx is not None:
             unique = [r for r in unique if center_idx in r.path]

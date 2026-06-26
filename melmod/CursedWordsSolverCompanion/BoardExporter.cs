@@ -395,7 +395,8 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
-        /// Bicycle suited credit on path: 1 when at most one suit, else unique suited card ranks.
+        /// Bicycle suited credit on path: 1 when at most one suit; else pair-dedup with
+        /// letter-count cap (matches solver bicycle_suited_credit_on_path).
         /// </summary>
         public static int CountSuitedCardsOnSelections(List<TileSelection> selections)
         {
@@ -412,7 +413,6 @@ namespace CursedWordsSolverCompanion
                 return 0;
 
             var suits = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var ranks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var jokerNotAtEnd = false;
             var suitedTileCount = 0;
             var nonJokerSuited = 0;
@@ -446,9 +446,6 @@ namespace CursedWordsSolverCompanion
                 {
                     suits.Add(suit);
                     nonJokerSuited++;
-                    var rank = MapCardRank(tile, null);
-                    if (!string.IsNullOrEmpty(rank))
-                        ranks.Add(rank.Substring(0, 1).ToUpperInvariant());
                 }
 
                 if (isJoker && !isPathEnd)
@@ -467,7 +464,107 @@ namespace CursedWordsSolverCompanion
                 return 1;
             if (jokerNotAtEnd)
                 return suitedTileCount;
-            return suitedTileCount;
+            return CountMultiSuitBicycleCredit(valid);
+        }
+
+        private static int CountMultiSuitBicycleCredit(List<TileSelection> valid)
+        {
+            var entries = new List<(int pathIndex, string rankKey, string suit, string letter)>();
+            for (var i = 0; i < valid.Count; i++)
+            {
+                var tile = valid[i].SelectedTile;
+                var suit = MapCardSuitStrict(tile);
+                if (string.IsNullOrEmpty(suit)
+                    || string.Equals(suit, "joker", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(suit, "none", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                var rank = MapCardRank(tile, null);
+                var rankKey = string.IsNullOrEmpty(rank)
+                    ? ""
+                    : rank.Substring(0, 1).ToUpperInvariant();
+                var letter = PathLetterForCount(tile);
+                entries.Add((i, rankKey, suit.ToLowerInvariant(), letter));
+            }
+
+            if (entries.Count == 0)
+                return 0;
+
+            var letterCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var sel in valid)
+            {
+                var letter = PathLetterForCount(sel.SelectedTile);
+                if (string.IsNullOrEmpty(letter))
+                    continue;
+                if (!letterCounts.ContainsKey(letter))
+                    letterCounts[letter] = 0;
+                letterCounts[letter]++;
+            }
+
+            var lastRankIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (pathIndex, rankKey, _, letter) in entries)
+            {
+                if (string.IsNullOrEmpty(rankKey))
+                    continue;
+                if (letterCounts.TryGetValue(letter, out var count) && count > 2)
+                    lastRankIndex[rankKey] = pathIndex;
+            }
+
+            var credit = 0;
+            var seenPairs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenCappedRanks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (pathIndex, rankKey, suit, letter) in entries)
+            {
+                var letterCount = 0;
+                if (!string.IsNullOrEmpty(letter))
+                    letterCounts.TryGetValue(letter, out letterCount);
+
+                if (letterCount > 2)
+                {
+                    if (!string.IsNullOrEmpty(rankKey)
+                        && lastRankIndex.TryGetValue(rankKey, out var lastIdx)
+                        && lastIdx != pathIndex)
+                        continue;
+                    if (!string.IsNullOrEmpty(rankKey))
+                    {
+                        if (seenCappedRanks.Contains(rankKey))
+                            continue;
+                        seenCappedRanks.Add(rankKey);
+                    }
+                    credit++;
+                }
+                else
+                {
+                    var pair = rankKey + "|" + suit;
+                    if (seenPairs.Contains(pair))
+                        continue;
+                    seenPairs.Add(pair);
+                    credit++;
+                }
+            }
+
+            return credit;
+        }
+
+        private static string PathLetterForCount(Tile tile)
+        {
+            if (tile == null)
+                return "";
+            try
+            {
+                if (tile.GetGlyphType() == GlyphType.Number)
+                    return "";
+            }
+            catch
+            {
+                // best-effort
+            }
+            var letter = tile.GetStringRepresentation();
+            if (string.IsNullOrEmpty(letter))
+                return "";
+            letter = letter.Trim().ToLowerInvariant();
+            return letter.Length == 1 && char.IsLetter(letter[0]) ? letter : "";
         }
 
         /// <summary>

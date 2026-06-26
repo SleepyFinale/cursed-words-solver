@@ -188,9 +188,6 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
         int(idx) for idx in required_raw
     )
     searcher.validator.quest_loadout = loadout
-    from cursed_words_solver.search import set_quest_movement_loadout
-
-    set_quest_movement_loadout(loadout)
     active = _active_indices(board)
     searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
     searcher._mult_rules = loadout_mult_rules(
@@ -240,7 +237,6 @@ def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[i
         return mini.best_sorted()
     finally:
         searcher.validator.quest_loadout = None
-        set_quest_movement_loadout(None)
 
 
 def parallel_collect_fair_starts(
@@ -317,7 +313,7 @@ def parallel_collect_fair_starts(
 
 
 def _mp_extend_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[int, ...]]]:
-    from cursed_words_solver.search import WordSearcher, _CandidateHeap, set_quest_movement_loadout
+    from cursed_words_solver.search import WordSearcher, _CandidateHeap
     from cursed_words_solver.solve_context import build_solve_context
 
     if _mp_dictionary is None:
@@ -351,7 +347,7 @@ def _mp_extend_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[in
     )
     if _mp_pipeline is not None:
         searcher.scoring = _mp_pipeline
-    set_quest_movement_loadout(loadout)
+    searcher.validator.quest_loadout = loadout
     searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
     mini = _CandidateHeap(max(len(seeds) + 50, 80))
     for rank_sc, word, path_tuple in seeds:
@@ -367,7 +363,7 @@ def _mp_extend_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[in
         )
         return [(sc, w, tuple(p)) for sc, w, p in mini.best_sorted()]
     finally:
-        set_quest_movement_loadout(None)
+        searcher.validator.quest_loadout = None
 
 
 def parallel_extend_seeds(

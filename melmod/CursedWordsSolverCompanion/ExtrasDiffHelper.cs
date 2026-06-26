@@ -1603,6 +1603,20 @@ namespace CursedWordsSolverCompanion
 
             if (suited <= 0)
 
+            {
+
+                var fromSession = ScoringCaptureSession.TryGetLastSubmitBicycleSuitedCount();
+
+                if (fromSession > 0)
+
+                    suited = fromSession;
+
+            }
+
+
+
+            if (suited <= 0)
+
                 return false;
 
 

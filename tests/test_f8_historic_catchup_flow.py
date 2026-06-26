@@ -313,6 +313,69 @@ def test_catchup_then_embed_projects_to_submit_extras(tmp_path, monkeypatch):
     assert extras.get("previous_word_first_letter") == "l"
 
 
+def test_catchup_live_reexport_unblocks_historic(tmp_path, monkeypatch):
+    """Post-search catchup succeeds when melmod live F8 re-export adds historic_words."""
+    from cursed_words_solver.loadout import RUN_STATE_PATH
+
+    run_state_path = tmp_path / "run_state.json"
+    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
+
+    empty_state = _board_run_state(
+        extras={
+            "grid_number": "2",
+            "scoring_previous_words_count": "1",
+            "historic_words": "",
+        }
+    )
+    run_state_path.write_text(json.dumps(empty_state), encoding="utf-8")
+
+    snap = _build_snapshot_from_run_state(empty_state, rules={})
+    assert historic_words_gather_pending(snap)
+
+    one_word = json.dumps([{"word": "LACERATING", "score": 13}])
+    live_state = _board_run_state(
+        extras={
+            "grid_number": "2",
+            "scoring_previous_words_count": "1",
+            "historic_words": one_word,
+            "previous_word_first_letter": "l",
+            "encounter_historic_source": "live",
+        }
+    )
+
+    call_count = {"n": 0}
+
+    def _load_run_state_raw():
+        call_count["n"] += 1
+        if call_count["n"] <= 1:
+            return empty_state
+        return live_state
+
+    monkeypatch.setattr(
+        "cursed_words_solver.f8_snapshot.load_run_state_raw",
+        _load_run_state_raw,
+    )
+    monkeypatch.setattr(
+        "cursed_words_solver.f8_snapshot.write_f8_export_request",
+        lambda: "retry-1",
+    )
+    monkeypatch.setattr(
+        "cursed_words_solver.f8_snapshot.wait_for_f8_export_ack",
+        lambda *args, **kwargs: True,
+    )
+
+    updated, note, stale, behind = catchup_historic_gather_after_search(
+        snap,
+        rules={},
+        catchup_timeout_sec=1.0,
+        reexport_poll_sec=1.0,
+    )
+    assert not historic_words_gather_pending(updated)
+    assert updated.extras_ready
+    assert stale is None
+    assert behind is None
+
+
 def test_grid2_does_not_infer_spc_from_prior_grid_historic():
     """Grid-2 F8: empty scoring cache must not backfill spc from encounter-wide historic."""
     from cursed_words_solver.loadout import reconcile_scoring_previous_words_count

@@ -1,0 +1,39 @@
+{
+  "description": "Repro from round_logs/20260626_112549_625.json: grid 2 F8 embed empty historic/spc=0 after bluestem; submit has 1-word historic.",
+  "grid_number": "2",
+  "f8_extras": {
+    "grid_number": "2",
+    "scoring_previous_words_count": "0",
+    "historic_words": "",
+    "encounter_historic_source": "grid_start_cleared",
+    "previous_word_first_letter": ""
+  },
+  "run_state_extras": {
+    "grid_number": "2",
+    "scoring_previous_words_count": "0",
+    "historic_words": "",
+    "encounter_historic_source": "grid_start_cleared",
+    "previous_word_first_letter": "",
+    "encounter_score_earned": "44"
+  },
+  "run_state_extras_mc_bonus": {
+    "grid_number": "2",
+    "scoring_previous_words_count": "0",
+    "historic_words": "",
+    "encounter_historic_source": "grid_start_cleared",
+    "previous_word_first_letter": "",
+    "encounter_score_earned": "44",
+    "movie_camera_word_score_bonus": "14"
+  },
+  "submit_extras": {
+    "grid_number": "2",
+    "scoring_previous_words_count": "1",
+    "historic_words": "[{\"word\":\"BLUESTEM\",\"score\":44}]",
+    "encounter_historic_source": "live",
+    "previous_word_first_letter": "b"
+  },
+  "expected_stale_note_contains": [
+    "empty historic",
+    "1-word historic"
+  ]
+}

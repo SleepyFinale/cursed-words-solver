@@ -131,6 +131,40 @@ def board_fingerprint(board: Board) -> str:
     return "".join(parts)
 
 
+_BICYCLE_PIN_IDS = frozenset({"bicycle", "bones_the_dog", "bones"})
+
+
+def _bicycle_word_score_bonus_from_extras(extras: dict | None) -> int | None:
+    """Pre-word Bicycle pin bonus from run_state extras (melmod AppendPinFingerprint)."""
+    if not isinstance(extras, dict):
+        return None
+    raw = extras.get("bicycle_word_score_bonus")
+    if raw is None:
+        return None
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _append_pin_fingerprint(
+    parts: list[str],
+    pin_effect: str,
+    pin_branch: str,
+    extras: dict | None,
+) -> None:
+    """Match melmod RunStateExporter.AppendPinFingerprint."""
+    parts.append(pin_effect)
+    parts.append(":")
+    parts.append(pin_branch or "")
+    pin = pin_effect.strip().lower()
+    if pin in _BICYCLE_PIN_IDS:
+        bonus = _bicycle_word_score_bonus_from_extras(extras)
+        if bonus is not None and bonus >= 0:
+            parts.append("|")
+            parts.append(str(bonus))
+
+
 def loadout_fingerprint(loadout: Loadout) -> str:
     """Match melmod loadout portion of ComputeFingerprint (no board)."""
     parts: list[str] = [
@@ -145,10 +179,13 @@ def loadout_fingerprint(loadout: Loadout) -> str:
     parts.append("|")
     parts.append(boss_fingerprint_from_loadout(loadout))
     parts.append("|")
-    pin_effect = str(loadout.extras.get("pin_effect", "") or "")
-    parts.append(pin_effect)
-    parts.append(":")
-    parts.append(loadout.pin_branch or "")
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    _append_pin_fingerprint(
+        parts,
+        str(extras.get("pin_effect", "") or ""),
+        loadout.pin_branch or "",
+        extras,
+    )
     return "".join(parts)
 
 
@@ -203,9 +240,12 @@ def fingerprints_from_run_state(data: dict) -> tuple[str, str]:
     )
     lo_parts.append("|")
     extras = data.get("extras") if isinstance(data.get("extras"), dict) else {}
-    lo_parts.append(str(extras.get("pin_effect", "") or ""))
-    lo_parts.append(":")
-    lo_parts.append(str(data.get("pin_branch") or ""))
+    _append_pin_fingerprint(
+        lo_parts,
+        str(extras.get("pin_effect", "") or ""),
+        str(data.get("pin_branch") or ""),
+        extras,
+    )
     return board_fp, "".join(lo_parts)
 
 

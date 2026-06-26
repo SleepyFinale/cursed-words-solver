@@ -304,20 +304,26 @@ def test_bicycle_zoonymy_two_suited_cards_on_path():
     assert int(score) == 40
 
 
-def test_bicycle_suited_count_from_melmod_extra():
+def test_bicycle_suited_count_from_board_metadata():
     pipeline = ScoringPipeline()
-    board = _letter_board("abc")
+    grid = [[_tile(0, c, "A", 1) for c in range(5)] for _ in range(5)]
+    grid[0][0] = _tile(
+        0, 0, "A", 1, metadata={"source": "melmod", "card_suit": "hearts"},
+    )
+    grid[0][1] = _tile(
+        0, 1, "B", 1, metadata={"source": "melmod", "card_suit": "spades"},
+    )
+    board = Board(tiles=grid, money=0)
     lo = Loadout(
         extras={
             "pin_effect": "bicycle",
             "pin_right_level": "1",
             "bicycle_word_score_bonus": 1,
-            "bicycle_suited_on_path": 2,
         }
     )
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", lo)
+    score, bd = pipeline.score(board, [0, 1], "ab", lo)
     assert bd["pipeline"]["word_score"] == 3
-    assert score == 6.0
+    assert score == 5.0
 
 
 def test_bicycle_suited_cards_on_path():

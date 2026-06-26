@@ -30,6 +30,12 @@ namespace CursedWordsSolverCompanion
         private static Dictionary<string, string> _preWordScoringExtrasForDiff =
             new Dictionary<string, string>();
         private static string _f8PredictionHistoricStaleNote = "";
+        private static int _lastSubmitBicycleSuitedCount = -1;
+
+        public static int TryGetLastSubmitBicycleSuitedCount()
+        {
+            return _lastSubmitBicycleSuitedCount;
+        }
 
         public static bool IsActive
         {
@@ -363,12 +369,33 @@ namespace CursedWordsSolverCompanion
 
             try
             {
-                RunStateExporter.TryMergeExtrasKeys(_scoringContextExtras);
+                var toMerge = new Dictionary<string, string>();
+                foreach (var kv in _scoringContextExtras)
+                {
+                    if (IsScoringSessionOnlyExtraKey(kv.Key))
+                        continue;
+                    toMerge[kv.Key] = kv.Value ?? "";
+                }
+                if (toMerge.Count == 0)
+                    return;
+                RunStateExporter.TryMergeExtrasKeys(toMerge);
             }
             catch
             {
                 // ignore — F7 full export still available
             }
+        }
+
+        private static bool IsScoringSessionOnlyExtraKey(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+                return false;
+            foreach (var blocked in ScoringSessionOnlyExtrasKeys)
+            {
+                if (string.Equals(key, blocked, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>Best-effort Tile Ninja additive bonus from the latest scoring context.</summary>
@@ -410,6 +437,14 @@ namespace CursedWordsSolverCompanion
         };
 
         /// <summary>
+        /// Submit-time scoring capture only — never persist to run_state.json / F8 embed.
+        /// </summary>
+        private static readonly string[] ScoringSessionOnlyExtrasKeys =
+        {
+            "bicycle_suited_on_path",
+        };
+
+        /// <summary>
         /// After submit, BuildExtrasSnapshot reflects live encounter state; do not let
         /// pre-word scoring-context extras overwrite these keys.
         /// </summary>
@@ -424,6 +459,7 @@ namespace CursedWordsSolverCompanion
             "previous_word_first_letter",
             "historic_words",
             "mutating_dna_letter_counts",
+            "movie_camera_word_score_bonus",
         };
 
         private static readonly string[] ScoringContextPreserveKeys =
@@ -506,6 +542,8 @@ namespace CursedWordsSolverCompanion
             foreach (var kv in _scoringContextExtras)
             {
                 if (IsBicyclePinExtraKey(kv.Key))
+                    continue;
+                if (IsScoringSessionOnlyExtraKey(kv.Key))
                     continue;
                 if (IsPostSubmitLiveExtraKey(kv.Key) && ShouldKeepPostSubmitLiveExtra(target, kv.Key))
                     continue;
@@ -1211,6 +1249,7 @@ namespace CursedWordsSolverCompanion
 
             var suitedOnPath = BoardExporter.CountSuitedCardsOnSelections(wordTiles);
             _scoringContextExtras["bicycle_suited_on_path"] = suitedOnPath.ToString();
+            _lastSubmitBicycleSuitedCount = suitedOnPath;
 
             _submitBoardSnapshot = snapshot;
         }

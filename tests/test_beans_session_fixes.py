@@ -77,6 +77,130 @@ def test_f8_should_block_save_on_empty_embed_historic_lag() -> None:
     assert reason == "submit_projection_mismatch"
 
 
+def test_f8_should_block_save_inferred_from_prev_letter_movie_camera() -> None:
+    """Grid 1 movie camera: block when embed empty but prev letter implies submit historic."""
+    from cursed_words_solver.models import Board, Loadout, LoadoutItem
+
+    embed = {
+        "grid_number": "1",
+        "historic_words": "",
+        "scoring_previous_words_count": "0",
+    }
+    projected = {
+        "grid_number": "1",
+        "historic_words": "",
+        "scoring_previous_words_count": "0",
+        "previous_word_first_letter": "b",
+        "encounter_historic_source": "grid1_no_scoring_cache",
+    }
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="movie_camera", name="Movie Camera", kind="sticker")],
+        extras=projected,
+    )
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    blocked, reason = f8_should_block_save(
+        f8_extras=embed,
+        submit_projected_extras=projected,
+        gather_succeeded=True,
+        loadout=loadout,
+        board=board,
+    )
+    assert blocked
+    assert reason == "submit_projection_mismatch"
+
+
+def test_stale_f8_movie_camera_grid2_empty_export_fixture() -> None:
+    """Session repro: stale note when submit has historic but F8 embed does not."""
+    from cursed_words_solver.models import Board, Loadout, LoadoutItem
+    from cursed_words_solver.suggestion import describe_f8_prediction_historic_stale_note
+
+    fixture_path = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_movie_camera_grid1_word2_empty_export.json"
+    )
+    data = json.loads(fixture_path.read_text(encoding="utf-8"))
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="movie_camera", name="Movie Camera", kind="sticker")],
+        extras=data["run_state_extras"],
+    )
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    blocked, reason = f8_should_block_save(
+        f8_extras=data["f8_extras"],
+        submit_projected_extras=data["run_state_extras"],
+        gather_succeeded=True,
+        loadout=loadout,
+        board=board,
+    )
+    assert not blocked
+    assert reason is None
+    note = describe_f8_prediction_historic_stale_note(
+        data["f8_extras"], data["submit_extras"]
+    )
+    assert note is not None
+    for fragment in data["expected_stale_note_contains"]:
+        assert fragment in note
+
+
+def test_stale_f8_movie_camera_mc_bonus_does_not_block_save() -> None:
+    """Grid 2 word 1 with live MC bonus: earned score alone must not block F8 save."""
+    from cursed_words_solver.models import Board, Loadout, LoadoutItem
+
+    fixture_path = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "stale_f8_movie_camera_grid1_word2_empty_export.json"
+    )
+    data = json.loads(fixture_path.read_text(encoding="utf-8"))
+    mc_extras = data["run_state_extras_mc_bonus"]
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="movie_camera", name="Movie Camera", kind="sticker")],
+        extras=mc_extras,
+    )
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    blocked, reason = f8_should_block_save(
+        f8_extras=data["f8_extras"],
+        submit_projected_extras=mc_extras,
+        gather_succeeded=True,
+        loadout=loadout,
+        board=board,
+    )
+    assert not blocked
+    assert reason is None
+
+
+def test_stale_f8_movie_camera_prev_letter_still_blocks_save() -> None:
+    """Grid 1 movie camera without MC bonus: prev letter implies submit historic lag."""
+    from cursed_words_solver.models import Board, Loadout, LoadoutItem
+
+    embed = {
+        "grid_number": "1",
+        "historic_words": "",
+        "scoring_previous_words_count": "0",
+    }
+    projected = {
+        "grid_number": "1",
+        "historic_words": "",
+        "scoring_previous_words_count": "0",
+        "previous_word_first_letter": "b",
+        "encounter_historic_source": "grid1_no_scoring_cache",
+    }
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="movie_camera", name="Movie Camera", kind="sticker")],
+        extras=projected,
+    )
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    blocked, reason = f8_should_block_save(
+        f8_extras=embed,
+        submit_projected_extras=projected,
+        gather_succeeded=True,
+        loadout=loadout,
+        board=board,
+    )
+    assert blocked
+    assert reason == "submit_projection_mismatch"
+
+
 def _rodman_grid1_word2_run_state() -> dict:
     fixture_path = (
         Path(__file__).resolve().parent / "fixtures" / "rodman_grid1_word2_faction.json"

@@ -78,6 +78,15 @@ def test_knight_targets_center():
     assert KNIGHT_TARGETS[12].bit_count() == 8
 
 
+def test_knight_targets_wrap_modulo_column():
+    """Hungry Snake: knight col wrap uses modulo (game ChessPieces.GetKnightMoves)."""
+    from cursed_words_solver.graph_bitboard import knight_targets_for_cell
+
+    wrap = knight_targets_for_cell(19, rows=5, cols=5, horizontal_wrap=True)
+    assert 21 in iter_mask(wrap), "white knight at index 19 must attack index 21 with wrap"
+    assert 20 not in iter_mask(wrap)
+
+
 def test_ray_lines_exclude_start():
     for cell in range(25):
         for d, (dr, dc) in enumerate(DIRS_8):

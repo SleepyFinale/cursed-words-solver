@@ -37,6 +37,10 @@ _BLOCK_REASON_OVERLAY: dict[str, str] = {
     "no_playable_dictionary_word": (
         f"No dictionary word on path — path shown; score untrusted. {F8_RETRY_HINT}."
     ),
+    "invalid_path_movement": (
+        f"Path uses illegal moves for this quest — path shown; score untrusted. "
+        f"{F8_RETRY_HINT}."
+    ),
 }
 
 

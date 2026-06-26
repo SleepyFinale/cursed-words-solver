@@ -44,6 +44,7 @@ from cursed_words_solver.rules.twinkle_toes import TwinkleToesSwap
 
 from cursed_words_solver.search import (
     PathValidator,
+    path_movement_ok,
     physical_word_for_path,
     resolve_letter,
     search_word_from_path,
@@ -445,23 +446,22 @@ def historic_previous_letter_mismatch_warning(
 
 def empty_historic_on_later_grid_warning(
     run_state_extras: dict[str, Any] | None,
+    *,
+    loadout: Loadout | None = None,
+    board: Board | None = None,
 ) -> str | None:
-    """Warn when grid 2+ has no encounter historic in run_state (F8 score may be wrong)."""
+    """Warn when encounter historic is missing but prior words were likely played."""
     extras = run_state_extras if isinstance(run_state_extras, dict) else {}
     try:
         grid = int(str(extras.get("grid_number") or "0"))
     except ValueError:
-        return None
-    if grid < 2:
-        return None
+        grid = 0
     hist = str(extras.get("historic_words", "") or "").strip()
     if hist and hist != "[]":
         return None
-    try:
-        spc = int(str(extras.get("scoring_previous_words_count") or "0"))
-    except (TypeError, ValueError):
-        spc = 0
-    if spc == 0:
+    if loadout is None or not loadout_needs_historic_words_gather(
+        loadout, board, extras
+    ):
         return None
     msg = (
         f"run_state has no encounter historic on grid {grid} — {F8_RETRY_HINT}."
@@ -841,18 +841,29 @@ def f8_historic_would_fail_submit_projection(
     embed_extras: dict[str, Any] | None,
     *,
     board: Board | None = None,
+    loadout: Loadout | None = None,
     projected_extras: dict[str, Any] | None = None,
     scoring_extras: dict[str, Any] | None = None,
 ) -> str | None:
     """True when melmod would block capture for historic lag at submit."""
     from cursed_words_solver.loadout import (
         _scoring_previous_words_count_from_extras,
+        infer_submit_historic_projection,
         project_workflow_extras_for_f8_embed,
         reconcile_encounter_historic_for_scoring,
     )
 
     if projected_extras is not None:
         source_extras = copy.deepcopy(projected_extras)
+        inferred = infer_submit_historic_projection(
+            source_extras, loadout=loadout, board=board
+        )
+        for key, val in inferred.items():
+            if key == "historic_words":
+                if not str(source_extras.get("historic_words", "") or "").strip():
+                    source_extras[key] = val
+            elif val is not None and str(val).strip() != "":
+                source_extras[key] = val
         reconcile_encounter_historic_for_scoring(source_extras, board=board)
         project_workflow_extras_for_f8_embed(source_extras, board=board)
     elif isinstance(scoring_extras, dict):
@@ -1459,6 +1470,81 @@ def loadout_needs_encounter_historic(loadout: Loadout | None, board: Board | Non
     return False
 
 
+def loadout_needs_historic_words_gather(
+    loadout: Loadout | None,
+    board: Board | None,
+    extras: dict[str, Any] | None = None,
+) -> bool:
+    """True when F8 gather must wait for melmod historic_words export before solve."""
+    from cursed_words_solver.loadout import (
+        _grid_number_from_extras,
+        _scoring_previous_words_count_from_extras,
+    )
+    from cursed_words_solver.rules.scoring_conditions import (
+        movie_camera_word_score_bonus_exported,
+    )
+
+    if extras is None and loadout is not None and isinstance(loadout.extras, dict):
+        extras = loadout.extras
+    if not isinstance(extras, dict):
+        extras = {}
+
+    if board is not None:
+        has_telescope = False
+        for tile in board.flat:
+            if tile is None:
+                continue
+            if (tile.metadata or {}).get("scattered_item_id") == "telescope":
+                has_telescope = True
+                break
+        if has_telescope:
+            grid_n = _grid_number_from_extras(extras)
+            spc = _scoring_previous_words_count_from_extras(extras)
+            source = str(
+                extras.get("encounter_historic_source", "") or ""
+            ).strip().lower()
+            if grid_n == 1 and spc == 0 and source == "grid1_no_scoring_cache":
+                return False
+            if grid_n >= 2 or spc > 0:
+                return True
+            from cursed_words_solver.loadout import (
+                encounter_submit_signals_imply_prior_words,
+            )
+
+            return encounter_submit_signals_imply_prior_words(
+                extras, loadout=loadout, board=board
+            )
+
+    if (
+        _grid_number_from_extras(extras) >= 2
+        and _scoring_previous_words_count_from_extras(extras) > 0
+    ):
+        return True
+
+    has_movie_camera = False
+    if loadout is not None:
+        for sticker in loadout.stickers:
+            if (sticker.id or "").lower() == "movie_camera":
+                has_movie_camera = True
+                break
+
+    if has_movie_camera:
+        if movie_camera_word_score_bonus_exported(loadout) is not None:
+            return False
+        if _scoring_previous_words_count_from_extras(extras) > 0:
+            return True
+        prev = str(extras.get("previous_word_first_letter", "") or "").strip()
+        if prev:
+            return True
+        try:
+            words_run = int(str(extras.get("words_submitted_this_run_count") or "0"))
+        except (TypeError, ValueError):
+            words_run = 0
+        return words_run > 0
+
+    return False
+
+
 _PREVIOUS_WORD_LETTER_STAMPS = frozenset({"bento_box", "bento", "chips", "limnophila"})
 
 
@@ -1560,17 +1646,27 @@ def f8_should_block_save(
         if f8_historic_would_fail_submit_projection(
             f8_extras,
             board=board,
+            loadout=loadout,
             projected_extras=submit_projected_extras,
             scoring_extras=scoring_extras,
         ):
             return True, "submit_projection_mismatch"
+    if (
+        board is not None
+        and loadout is not None
+        and path
+    ):
+        flags = stamp_search_flags(loadout)
+        if not path_movement_ok(board, list(path), flags=flags, loadout=loadout):
+            return True, "invalid_path_movement"
     if (
         dictionary is not None
         and board is not None
         and loadout is not None
         and path
         and scoring_word
-        and not path_is_submittable(
+    ):
+        if not path_is_submittable(
             board,
             list(path),
             scoring_word,
@@ -1578,9 +1674,8 @@ def f8_should_block_save(
             dictionary,
             min_len=min_len,
             pipeline=pipeline,
-        )
-    ):
-        return True, "no_playable_dictionary_word"
+        ):
+            return True, "no_playable_dictionary_word"
     return False, None
 
 
@@ -1684,6 +1779,9 @@ def path_is_submittable(
     pipeline: ScoringPipeline | None = None,
 ) -> bool:
     """True when the game accepts a dictionary word on this path."""
+    flags = stamp_search_flags(loadout)
+    if not path_movement_ok(board, path, flags=flags, loadout=loadout):
+        return False
     lowered = scoring_word.lower()
     if "?" in lowered:
         return bool(
@@ -1697,7 +1795,6 @@ def path_is_submittable(
                 limit=1,
             )
         )
-    flags = stamp_search_flags(loadout)
     validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
     if validator.word_ok(board, path, lowered, flags):
         return True
@@ -1835,6 +1932,24 @@ def save_last_suggestion(
 ) -> None:
 
     """Write last_suggestion.json for the companion mod after F8 solve."""
+
+    flags = stamp_search_flags(loadout)
+    if not path_movement_ok(
+        board, list(result.path), flags=flags, loadout=loadout
+    ):
+        return
+
+    if dictionary is not None:
+        word = scoring_word or result.word
+        if not path_is_submittable(
+            board,
+            list(result.path),
+            word,
+            loadout,
+            dictionary,
+            min_len=min_len,
+        ):
+            return
 
     LAST_SUGGESTION_PATH.parent.mkdir(parents=True, exist_ok=True)
 

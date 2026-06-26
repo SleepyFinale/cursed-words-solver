@@ -63,8 +63,31 @@ def _build_neighbors_8_for(rows: int, cols: int, *, horizontal_wrap: bool) -> tu
     return result
 
 
-def _build_knight_targets_for(rows: int, cols: int) -> tuple[int, ...]:
-    key = _adjacency_cache_key(rows, cols, horizontal_wrap=False, kind="knight")
+def _knight_step(
+    row: int,
+    col: int,
+    dr: int,
+    dc: int,
+    *,
+    rows: int,
+    cols: int,
+    horizontal_wrap: bool,
+) -> tuple[int, int] | None:
+    """One knight L-step; Hungry Snake wraps columns with modulo (game: x % width)."""
+    nr, nc = row + dr, col + dc
+    if not (0 <= nr < rows):
+        return None
+    if 0 <= nc < cols:
+        return nr, nc
+    if horizontal_wrap:
+        return nr, (nc + cols) % cols
+    return None
+
+
+def _build_knight_targets_for(
+    rows: int, cols: int, *, horizontal_wrap: bool = False
+) -> tuple[int, ...]:
+    key = _adjacency_cache_key(rows, cols, horizontal_wrap=horizontal_wrap, kind="knight")
     cached = _ADJACENCY_CACHE.get(key)
     if cached is not None:
         return cached  # type: ignore[return-value]
@@ -73,8 +96,11 @@ def _build_knight_targets_for(rows: int, cols: int) -> tuple[int, ...]:
         row, col = divmod(idx, cols)
         mask = 0
         for dr, dc in KNIGHT_DIRS:
-            nr, nc = row + dr, col + dc
-            if 0 <= nr < rows and 0 <= nc < cols:
+            nxt = _knight_step(
+                row, col, dr, dc, rows=rows, cols=cols, horizontal_wrap=horizontal_wrap
+            )
+            if nxt is not None:
+                nr, nc = nxt
                 mask |= 1 << index_of_rows_cols(nr, nc, cols)
         out.append(mask)
     result = tuple(out)
@@ -182,16 +208,11 @@ def _build_neighbors_8(*, horizontal_wrap: bool) -> list[int]:
 
 
 def _build_knight_targets() -> list[int]:
-    out: list[int] = []
-    for idx in range(CELL_COUNT):
-        row, col = divmod(idx, GRID_SIZE)
-        mask = 0
-        for dr, dc in KNIGHT_DIRS:
-            nr, nc = row + dr, col + dc
-            if 0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE:
-                mask |= 1 << index_of(nr, nc)
-        out.append(mask)
-    return out
+    return list(_build_knight_targets_for(GRID_SIZE, GRID_SIZE, horizontal_wrap=False))
+
+
+def _build_knight_targets_wrap() -> list[int]:
+    return list(_build_knight_targets_for(GRID_SIZE, GRID_SIZE, horizontal_wrap=True))
 
 
 def _build_ray_lines(*, horizontal_wrap: bool) -> tuple[tuple[tuple[int, ...], ...], ...]:
@@ -216,11 +237,12 @@ def _build_ray_lines(*, horizontal_wrap: bool) -> tuple[tuple[tuple[int, ...], .
     return tuple(lines)
 
 
-def _build_static_tables() -> tuple[list[int], list[int], list[int], tuple, tuple]:
+def _build_static_tables() -> tuple[list[int], list[int], list[int], list[int], tuple, tuple]:
     return (
         _build_neighbors_8(horizontal_wrap=False),
         _build_neighbors_8(horizontal_wrap=True),
         _build_knight_targets(),
+        _build_knight_targets_wrap(),
         _build_ray_lines(horizontal_wrap=False),
         _build_ray_lines(horizontal_wrap=True),
     )
@@ -230,6 +252,7 @@ def _build_static_tables() -> tuple[list[int], list[int], list[int], tuple, tupl
     NEIGHBORS_8,
     NEIGHBORS_8_WRAP,
     KNIGHT_TARGETS,
+    KNIGHT_TARGETS_WRAP,
     RAY_LINES,
     RAY_LINES_WRAP,
 ) = _build_static_tables()
@@ -239,6 +262,21 @@ STANDARD_ADJACENCY = NEIGHBORS_8
 STANDARD_ADJACENCY_WRAP = NEIGHBORS_8_WRAP
 KNIGHT_ADJACENCY = KNIGHT_TARGETS
 KING_STEP_MASK = NEIGHBORS_8
+
+
+def knight_targets_for_cell(
+    cell_id: int,
+    *,
+    rows: int = GRID_SIZE,
+    cols: int = GRID_SIZE,
+    horizontal_wrap: bool = False,
+) -> int:
+    """Knight L-move destinations from cell_id (bitmask)."""
+    if rows == GRID_SIZE and cols == GRID_SIZE:
+        table = KNIGHT_TARGETS_WRAP if horizontal_wrap else KNIGHT_TARGETS
+        return table[cell_id]
+    table = _build_knight_targets_for(rows, cols, horizontal_wrap=horizontal_wrap)
+    return table[cell_id]
 
 
 def iter_mask(mask: int) -> Iterator[int]:
