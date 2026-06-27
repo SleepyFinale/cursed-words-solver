@@ -141,22 +141,8 @@ namespace CursedWordsSolverCompanion
             if (staleF8Extras)
             {
                 MelonLogger.Warning(staleNote);
-                if (pathBoardMatch)
-                {
-                    MelonLogger.Msg(
-                        "Scoring drift with stale F8 embed (path/board match): predicted "
-                            + predicted
-                            + ", actual "
-                            + actualScore
-                            + " — exporting mismatch with submit-projected extras."
-                    );
-                }
-            }
-
-            if (staleF8Extras && !pathBoardMatch)
-            {
                 MelonLogger.Msg(
-                    "Scoring drift skipped (stale F8, path/board mismatch): predicted "
+                    "Scoring drift skipped (stale F8 embed): predicted "
                         + predicted
                         + ", actual "
                         + actualScore

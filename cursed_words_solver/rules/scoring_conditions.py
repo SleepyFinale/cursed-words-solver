@@ -3562,6 +3562,8 @@ def celestial_body_tile_eligible(
     letter = (tile.letter or "").strip().lower()[:1]
     letter_count = _letter_occurrences_on_path(board, path, letter)
     if level >= 3 and card_suit(tile) and tile.base_score < 2:
+        if is_joker_tile(tile):
+            return True
         if letter_count >= 2:
             first = _first_path_index_for_letter(board, path, letter)
             if (

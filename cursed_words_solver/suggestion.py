@@ -1642,6 +1642,12 @@ def f8_should_block_save(
         return True, "historic_catchup_stale"
     if behind_disk_warn:
         return True, "behind_disk"
+    if loadout is not None:
+        from cursed_words_solver.loadout import bicycle_extras_stale_warning
+
+        bicycle_warn = bicycle_extras_stale_warning(loadout)
+        if bicycle_warn:
+            return True, "bicycle_extras_stale"
     if isinstance(f8_extras, dict) and isinstance(submit_projected_extras, dict):
         if f8_historic_would_fail_submit_projection(
             f8_extras,

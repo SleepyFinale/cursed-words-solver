@@ -24,7 +24,7 @@ namespace CursedWordsSolverCompanion
         private static bool _exportSkipWorkflowDiskMerge;
         private static string _f8ExportRequestId = "";
         private static DateTime _lastF8ExportCompletedUtc = DateTime.MinValue;
-        private const double F8SuggestionClearGraceSec = 8.0;
+        private const double F8SuggestionClearGraceSec = 0.0;
 
         internal static bool ExportLiveOnlyHistoric
         {
@@ -964,8 +964,6 @@ namespace CursedWordsSolverCompanion
         private static readonly string[] ExtrasPreserveFromDisk =
         {
             "mutating_dna_letter_counts",
-            "bicycle_word_score_bonus",
-            "cards_submitted",
             "birthday_cake_bonus",
             "neapolitan_percent_last_known",
             "ruler_distance_last_known",

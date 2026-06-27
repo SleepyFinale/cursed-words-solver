@@ -48,8 +48,6 @@ namespace CursedWordsSolverCompanion
         {
             var suggestion = TryReadSuggestionFile(SuggestionFilePath);
             if (suggestion != null)
-                TryRefreshWorkflowExtrasOnLoad(suggestion);
-            if (suggestion != null)
                 return suggestion;
             return LoadBlocked();
         }

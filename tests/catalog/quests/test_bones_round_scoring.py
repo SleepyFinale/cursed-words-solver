@@ -199,3 +199,50 @@ def test_bones_round_letter_cards_group_by_spelled_letter() -> None:
     assert int(score) == 26
     poker_steps = [s for s in trace if s.get("phase") == "quest_bones_poker"]
     assert poker_steps and poker_steps[0].get("hand") == "pair"
+
+
+def test_bones_round_straight_flush_beats_flush() -> None:
+    """Same-suit consecutive letters score straight flush (800), not flush (140)."""
+    from cursed_words_solver.rules.quest_scoring import detect_poker_hand
+
+    # V-N-E-R in clubs + jokers (evener-style path subset)
+    tiles = [
+        _card(0, "V", "clubs"),
+        _card(1, "N", "clubs"),
+        _card(2, "E", "clubs"),
+        _card(3, "R", "clubs"),
+    ]
+    hand, _ = detect_poker_hand(tiles, Loadout())
+    assert hand == "straight_flush"
+
+
+def test_bones_round_cross_suit_run_is_flush_not_straight_flush() -> None:
+    """Consecutive ranks across suits are flush/straight, not straight flush."""
+    from cursed_words_solver.rules.quest_scoring import detect_poker_hand
+
+    tiles = [
+        _card(0, "2", "hearts"),
+        _card(1, "3", "diamonds"),
+        _card(2, "4", "clubs"),
+        _card(3, "5", "spades"),
+        _card(4, "6", "hearts"),
+    ]
+    hand, _ = detect_poker_hand(tiles, Loadout())
+    assert hand == "flush"
+
+
+def test_bones_round_martini_lowers_required_hand_size() -> None:
+    """Martini stamp allows 3-card straight flush."""
+    from cursed_words_solver.models import LoadoutItem
+    from cursed_words_solver.rules.quest_scoring import detect_poker_hand
+
+    tiles = [
+        _card(0, "A", "hearts"),
+        _card(1, "B", "hearts"),
+        _card(2, "C", "hearts"),
+    ]
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="martini", name="Martini", level=1)],
+    )
+    hand, _ = detect_poker_hand(tiles, loadout)
+    assert hand == "straight_flush"

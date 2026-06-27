@@ -258,35 +258,8 @@ namespace CursedWordsSolverCompanion
                 );
             }
 
-            SuggestionMatcher.TrySyncWorkflowExtrasToProjected(
-                _suggestion,
-                authoritativeExtras
-            );
-            _originalF8ExtrasForDiff = ExtrasDiffHelper.ExtrasFromRunStateObject(
-                _suggestion?.run_state_snapshot
-            );
-            var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
-                _suggestion?.run_state_snapshot
-            );
-            var diff = ExtrasDiffHelper.DiffExtras(f8Extras, authoritativeExtras);
-            if (ExtrasDiffHelper.HasPlayedWordSinceF8(diff))
-            {
-                var playedSinceF8 = ExtrasDiffHelper.DescribePlayedWordSinceF8Drift(
-                    diff,
-                    staleCtx
-                );
-                if (!string.IsNullOrEmpty(playedSinceF8))
-                    MelonLogger.Warning(playedSinceF8);
-                MelonLogger.Warning(
-                    "Blocking score capture — workflow drift; press F8 again before submitting overlay."
-                );
-                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
-                _active = false;
-                return;
-            }
-
             ExtrasDiffHelper.LogStaleF8DriftWarnings(
-                f8Extras,
+                _preSyncF8ExtrasForDiff,
                 authoritativeExtras,
                 staleCtx
             );

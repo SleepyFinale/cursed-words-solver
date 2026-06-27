@@ -37,14 +37,18 @@ from cursed_words_solver.loadout import (
 )
 from cursed_words_solver.models import Board, Loadout
 from cursed_words_solver.rules.scoring_conditions import (
+    card_rank,
+    card_suit,
     consumable_rack_count,
     grid_number,
+    is_joker_tile,
 )
 from cursed_words_solver.rules.quest_effects import (
     active_quest_game_class,
     active_quest_slug,
     board_has_crossed_out_tile,
 )
+from cursed_words_solver.rules.quest_scoring import bones_round_active
 from cursed_words_solver.suggestion import (
     loadout_needs_historic_words_gather,
     loadout_needs_previous_word_letter,
@@ -305,6 +309,30 @@ def _boss_extras_missing(
     return missing
 
 
+def _bones_round_card_metadata_missing(board: Board | None) -> bool:
+    """True when melmod export has rank without suit on active Bones Round tiles."""
+    if board is None:
+        return False
+    for idx in range(25):
+        if not board.is_active_index(idx):
+            continue
+        tile = board.get_by_index(idx)
+        if is_joker_tile(tile):
+            continue
+        meta = tile.metadata or {}
+        suit_raw = str(meta.get("card_suit") or "").strip().lower()
+        rank_raw = str(meta.get("card_rank") or "").strip()
+        if suit_raw in ("", "none") and rank_raw:
+            return True
+        if suit_raw and suit_raw != "joker" and not card_rank(tile):
+            return True
+        if suit_raw and suit_raw != "joker" and not rank_raw and not (
+            tile.letter and str(tile.letter).strip() not in ("", "?")
+        ):
+            return True
+    return False
+
+
 def _extras_missing_for_loadout(
     loadout: Loadout,
     board: Board,
@@ -366,6 +394,8 @@ def _extras_missing_for_loadout(
     if slug in ("chromaphobia", "chromaphilia", "cursophobia") and not game_class:
         missing.append("challenge_game_class")
     missing.extend(_boss_extras_missing(loadout, board, extras))
+    if bones_round_active(loadout) and _bones_round_card_metadata_missing(board):
+        missing.append("bones_card_suit_export")
     return missing
 
 
@@ -533,6 +563,23 @@ def gather_f8_snapshot(
             and loadout_needs_historic_words_gather(
                 snapshot.loadout, snapshot.board, extras or {}
             )
+            and time.monotonic() - last_historic_reexport
+            >= F8_GATHER_HISTORIC_REEXPORT_INTERVAL_SEC
+        ):
+            last_historic_reexport = time.monotonic()
+            retry_id = write_f8_export_request()
+            acked = wait_for_f8_export_ack(
+                retry_id,
+                timeout_sec=min(
+                    F8_EXPORT_ACK_TIMEOUT_SEC,
+                    F8_GATHER_HISTORIC_REEXPORT_INTERVAL_SEC,
+                ),
+                poll_sec=poll_sec,
+            )
+            if acked:
+                snapshot.f8_export_acked = True
+        if (
+            "bones_card_suit_export" in last_missing
             and time.monotonic() - last_historic_reexport
             >= F8_GATHER_HISTORIC_REEXPORT_INTERVAL_SEC
         ):
