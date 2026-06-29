@@ -843,6 +843,97 @@ def test_refine_provisional_heap_stops_at_deadline():
     assert timing.tier2_phase2_calls == 0
 
 
+def test_provisional_deferral_stores_two_tuple_keys():
+    """Regression: tier-1 deferral keys must match _refine_provisional_heap unpacking."""
+    from cursed_words_solver.search import _CandidateHeap
+
+    board = _board_cat_horizontal()
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="red_rider", name="Red Rider", level=1, kind="sticker")
+        ]
+    )
+    searcher = WordSearcher(
+        min_len=3,
+        max_len=8,
+        time_budget=5.0,
+        use_tier2_screen=True,
+        use_tier2_two_phase=True,
+    )
+    searcher._scoring_cache_tag = "fp-tag"
+    searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
+    searcher._tier2_adaptive_mode = "normal"
+    heap = _CandidateHeap(1)
+    heap.consider(50.0, "leader", [0, 1, 2])
+
+    path = [0, 1, 2]
+    with (
+        patch.object(searcher, "_use_tier2_screen_for", return_value=True),
+        patch.object(searcher, "_tier2_two_phase_active", return_value=True),
+        patch(
+            "cursed_words_solver.search.tier2_rank_upper_bound",
+            return_value=100.0,
+        ),
+        patch(
+            "cursed_words_solver.search.tier2_rank_lower_bound",
+            return_value=10.0,
+        ),
+        patch(
+            "cursed_words_solver.search.tier2_immediate_upper_bound",
+            return_value=100.0,
+        ),
+    ):
+        searcher._provisional_candidates.clear()
+        result = searcher._rank_score_for_candidate(
+            board, path, "cat", loadout, prune_heap=heap
+        )
+    assert result == 100.0
+    assert len(searcher._provisional_candidates) == 1
+    key = next(iter(searcher._provisional_candidates))
+    assert key == (tuple(path), "cat")
+    assert len(key) == 2
+    searcher._refine_provisional_heap(
+        board, loadout, heap, deadline=time.monotonic() + 5.0
+    )
+
+
+def test_parallel_extend_seeds_survives_pool_shutdown(tmp_path):
+    """Quitting mid-solve must not raise when parallel extend hits a shut-down pool."""
+    from cursed_words_solver.search_parallel import (
+        get_search_pool,
+        parallel_extend_seeds,
+        shutdown_search_pool,
+        warmup_search_pool,
+    )
+
+    wl = _make_wordlist(tmp_path)
+    pool = get_search_pool(wl, 2)
+    assert pool is not None
+    warmup_search_pool(wl, 2)
+    stale_pool = pool
+    shutdown_search_pool(wait=False)
+    assert get_search_pool(wl, 2) is None
+    board = _board_cat_horizontal()
+    loadout = Loadout()
+    seeds = [(100.0, "cat", (0, 1, 2))] * 4
+    result = parallel_extend_seeds(
+        executor=stale_pool,
+        workers=2,
+        board=board,
+        loadout=loadout,
+        seeds=seeds,
+        deadline=time.monotonic() + 5.0,
+        min_len=3,
+        max_len=8,
+        top_paths=4,
+        max_rounds=3,
+        setup_weight=0.0,
+        setup_discount=0.0,
+        wordlist_path=wl,
+    )
+    assert result is None
+
+
 @pytest.mark.slow
 @pytest.mark.skipif(
     not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,

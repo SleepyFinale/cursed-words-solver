@@ -547,6 +547,11 @@ class SolverApp:
         print("\nShutting down...", flush=True)
         self._cleanup_keyboard()
         self._hide_overlays()
+        if self._solve_active:
+            deadline = time.monotonic() + 5.0
+            while self._solve_active and time.monotonic() < deadline:
+                time.sleep(0.05)
+        self._shutdown_search_pool()
         self.app.quit()
 
     def _hide_overlays(self) -> None:
@@ -931,6 +936,14 @@ class SolverApp:
             workflow_warnings: list[str] = []
             if loadout is not None and isinstance(loadout.extras, dict):
                 workflow_warnings = run_state_historic_stale_warnings(loadout.extras)
+            if board is not None and loadout is not None:
+                from cursed_words_solver.suggestion import (
+                    scatter_level_below_equipped_warning,
+                )
+
+                scatter_note = scatter_level_below_equipped_warning(loadout, board)
+                if scatter_note:
+                    workflow_warnings.append(scatter_note)
             for warn in workflow_warnings:
                 print(f"  Workflow: {warn}", flush=True)
 
@@ -2344,11 +2357,16 @@ class SolverApp:
                     loadout=loadout,
                 )
             )
-        except Exception:
-            err = traceback.format_exc()
-            print(err)
-            DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-            (DEBUG_DIR / "last_error.txt").write_text(err, encoding="utf-8")
+        except Exception as exc:
+            if self._shutting_down and isinstance(exc, RuntimeError) and (
+                "cannot schedule new futures after shutdown" in str(exc)
+            ):
+                pass
+            else:
+                err = traceback.format_exc()
+                print(err)
+                DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+                (DEBUG_DIR / "last_error.txt").write_text(err, encoding="utf-8")
         finally:
             self._busy = False
             self._solve_active = False

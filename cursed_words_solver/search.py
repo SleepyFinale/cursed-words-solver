@@ -24,7 +24,7 @@ from cursed_words_solver.models import (
     normalize_tile_glyph,
 )
 from cursed_words_solver.encounter_board import effective_board_for_loadout
-from cursed_words_solver.fingerprints import board_fingerprint
+from cursed_words_solver.fingerprints import board_fingerprint, loadout_fingerprint
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.scoring_conditions import (
     CARD_SUIT_FIRST_LETTER,
@@ -2948,7 +2948,10 @@ class WordSearcher:
         self._use_tier2_screen_override = use_tier2_screen
         self._use_tier2_two_phase_override = use_tier2_two_phase
         self._use_dfs_bb_override = use_dfs_bb
-        self._score_cache: dict[tuple[tuple[int, ...], str], tuple[float, float, float]] = {}
+        self._score_cache: dict[
+            tuple[str, tuple[int, ...], str], tuple[float, float, float]
+        ] = {}
+        self._scoring_cache_tag: str = ""
         self._grid_refs_cache: dict[tuple[int, ...], tuple] = {}
         self._provisional_candidates: dict[tuple[tuple[int, ...], str], float] = {}
         self._dict_path_cache: dict[tuple[int, ...], str] = {}
@@ -3209,7 +3212,7 @@ class WordSearcher:
             if refined_this_pass >= refine_cap:
                 break
             path = list(path_tuple)
-            key = (path_tuple, word)
+            key = self._score_cache_key(path, word)
             self._score_cache.pop(key, None)
             t0 = time.perf_counter()
             immediate = self._score_total_for_path(
@@ -4342,7 +4345,9 @@ class WordSearcher:
                     continue
                 sc = self._rank_score_for_candidate(board, path, word, loadout)
                 if sc is not None:
-                    cached = self._score_cache.get((tuple(path), word))
+                    cached = self._score_cache.get(
+                        self._score_cache_key(path, word)
+                    )
                     candidates.consider(
                         sc,
                         word,
@@ -4378,7 +4383,9 @@ class WordSearcher:
                     continue
                 sc = self._rank_score_for_candidate(board, path, spelled, loadout)
                 if sc is not None:
-                    cached = self._score_cache.get((tuple(path), spelled))
+                    cached = self._score_cache.get(
+                        self._score_cache_key(path, spelled)
+                    )
                     candidates.consider(
                         sc,
                         spelled,
@@ -4590,7 +4597,9 @@ class WordSearcher:
                     board, path, phys, loadout
                 )
                 if sc is not None:
-                    cached = self._score_cache.get((tuple(path), phys))
+                    cached = self._score_cache.get(
+                        self._score_cache_key(path, phys)
+                    )
                     candidates.consider(
                         sc,
                         phys,
@@ -4609,7 +4618,7 @@ class WordSearcher:
     ) -> tuple[float, float] | None:
         """Full pipeline score for seed paths; skips tier-2 deferral (fast)."""
         ctx = self._search_ctx(loadout)
-        key = (tuple(path), word)
+        key = self._score_cache_key(path, word)
         cached = self._score_cache.get(key)
         if cached is not None:
             return cached[2], cached[0]
@@ -4754,7 +4763,9 @@ class WordSearcher:
                                 board, path, word, loadout
                             )
                             if sc is not None:
-                                cached = self._score_cache.get((tuple(path), word))
+                                cached = self._score_cache.get(
+                                    self._score_cache_key(path, word)
+                                )
                                 candidates.consider(
                                     sc,
                                     word,
@@ -4801,7 +4812,9 @@ class WordSearcher:
                                 board, path, word, loadout
                             )
                             if sc is not None:
-                                cached = self._score_cache.get((tuple(path), word))
+                                cached = self._score_cache.get(
+                                    self._score_cache_key(path, word)
+                                )
                                 candidates.consider(
                                     sc,
                                     word,
@@ -4838,7 +4851,9 @@ class WordSearcher:
                                 board, path, word, loadout
                             )
                             if sc is not None:
-                                cached = self._score_cache.get((tuple(path), word))
+                                cached = self._score_cache.get(
+                                    self._score_cache_key(path, word)
+                                )
                                 candidates.consider(
                                     sc,
                                     word,
@@ -4866,7 +4881,9 @@ class WordSearcher:
                                 board, path, word, loadout
                             )
                             if sc is not None:
-                                cached = self._score_cache.get((tuple(path), word))
+                                cached = self._score_cache.get(
+                                    self._score_cache_key(path, word)
+                                )
                                 candidates.consider(
                                     sc,
                                     word,
@@ -5176,9 +5193,10 @@ class WordSearcher:
                     wordlist_path=Path(self._wordlist_path),
                     f8_deadline=getattr(self, "_f8_deadline", None),
                 )
-                for rank_sc, word, path_tuple in extended:
-                    candidates.consider(rank_sc, word, list(path_tuple))
-                return
+                if extended is not None:
+                    for rank_sc, word, path_tuple in extended:
+                        candidates.consider(rank_sc, word, list(path_tuple))
+                    return
         mini = _CandidateHeap(max(len(seeds) + 50, 80))
         for rank_sc, word, path_tuple in seeds:
             mini.consider(rank_sc, word, list(path_tuple))
@@ -5681,9 +5699,9 @@ class WordSearcher:
         word: str,
         *,
         resolved_word: str | None = None,
-    ) -> tuple[tuple[int, ...], str]:
+    ) -> tuple[str, tuple[int, ...], str]:
         canonical = (resolved_word or word).lower()
-        return (tuple(path), canonical)
+        return (self._scoring_cache_tag, tuple(path), canonical)
 
     def _consider_path_candidate(
         self,
@@ -5920,9 +5938,10 @@ class WordSearcher:
                             if timing is not None:
                                 timing.tier2_phase1_calls += 1
                                 timing.tier2_phase2_deferred += 1
-                            prev_ub = self._provisional_candidates.get(key)
+                            prov_key = (key[1], key[2])
+                            prev_ub = self._provisional_candidates.get(prov_key)
                             if prev_ub is None or rank_ub > prev_ub:
-                                self._provisional_candidates[key] = rank_ub
+                                self._provisional_candidates[prov_key] = rank_ub
                             return rank_ub
         setup_bonus = 0.0
         timing = self._active_timing
@@ -6493,6 +6512,9 @@ class WordSearcher:
         from cursed_words_solver.models import reset_board_flat_call_count
 
         self._run_until_found = run_until_found
+        self._scoring_cache_tag = (
+            f"{loadout_fingerprint(loadout)}|{board_fingerprint(board)}"
+        )
         self._score_cache.clear()
         self._dict_path_cache.clear()
         self._dict_valid_words_cache.clear()
@@ -7548,13 +7570,17 @@ class WordSearcher:
                 immediate, setup = self._immediate_and_setup(
                     board, path, word, loadout
                 )
-                cached = self._score_cache.get((path_tuple, word))
+                cached = self._score_cache.get(
+                    self._score_cache_key(path, word)
+                )
                 if cached is None:
                     ctx = self._search_ctx(loadout)
                     score_word = physical_word_for_path(
                         board, path, flags=ctx.search_flags
                     )
-                    cached = self._score_cache.get((path_tuple, score_word))
+                    cached = self._score_cache.get(
+                        self._score_cache_key(path, score_word)
+                    )
                 if cached is not None:
                     sort_rank = cached[2]
                 elif immediate > 0:

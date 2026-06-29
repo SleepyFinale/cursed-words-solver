@@ -2109,6 +2109,22 @@ def test_scoring_mismatch(case_path: Path) -> None:
         "20260526_103842",
         "20260526_134420",
         "20260530_175032",
+        "20260629_122328",
+        "20260629_122625",
+        "20260629_122802",
+        "20260629_125703",
+        "20260629_125833",
+        "20260629_130154",
+        "20260629_130252",
+        "20260629_130347",
+        "20260629_135322",
+        "20260629_135501",
+        "20260629_141855",
+        "20260629_142001",
+        "20260629_142306",
+        "20260629_143611",
+        "20260629_143704",
+        "20260629_150249",
     }:
         board = parse_board_from_run_state(data.get("run_state_snapshot") or {})
         loadout = parse_run_state(data.get("run_state_snapshot") or {})
@@ -2797,6 +2813,76 @@ def test_reink_replay_matches_actual_score() -> None:
     loadout = parse_run_state(run_state)
     score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
     assert int(score) == int(data["actual_score"]) == 48
+
+
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        ("20260629_122328", 113),
+        ("20260629_122625", 334),
+        ("20260629_122802", 365),
+    ],
+)
+def test_nina_nix_20260629_replay_without_trace_inference(
+    stem: str, expected: int
+) -> None:
+    """Nina Nix lig/neele/ryked: raw F8 snapshot without trace level inference."""
+    case_path = FIXTURES / f"{stem}.json"
+    if not case_path.is_file():
+        pytest.skip(f"fixture {stem} not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = data.get("run_state_snapshot")
+    if not isinstance(run_state, dict):
+        pytest.fail(f"{case_path.name}: missing run_state_snapshot")
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    from cursed_words_solver.rules.scoring_conditions import (
+        apply_snapshot_phased_session_extras,
+    )
+
+    apply_snapshot_phased_session_extras(loadout, board)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == expected
+
+
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        ("20260629_125703", 401),
+        ("20260629_125833", 449),
+        ("20260629_130154", 528),
+        ("20260629_130252", 552),
+        ("20260629_130347", 504),
+        ("20260629_135322", 684),
+        ("20260629_135501", 523),
+        ("20260629_141855", 771),
+        ("20260629_142001", 987),
+        ("20260629_142306", 1056),
+        ("20260629_143611", 613),
+        ("20260629_143704", 748),
+        ("20260629_150249", 646),
+    ],
+)
+def test_nina_nix_20260629_session_mismatches(
+    stem: str, expected: int
+) -> None:
+    """Nina Nix urp/yeti/suq/yirths/unix: Dusty Coffin + Tombstone grid-path tiers."""
+    case_path = FIXTURES / f"{stem}.json"
+    if not case_path.is_file():
+        pytest.skip(f"fixture {stem} not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = data.get("run_state_snapshot")
+    if not isinstance(run_state, dict):
+        pytest.fail(f"{case_path.name}: missing run_state_snapshot")
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    from cursed_words_solver.rules.scoring_conditions import (
+        apply_snapshot_phased_session_extras,
+    )
+
+    apply_snapshot_phased_session_extras(loadout, board)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == expected
 
 
 def test_ay_encounter_first_stale_boss_replay() -> None:

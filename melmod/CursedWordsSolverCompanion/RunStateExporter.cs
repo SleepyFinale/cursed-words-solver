@@ -648,6 +648,8 @@ namespace CursedWordsSolverCompanion
 
             if (grid < 1 && RunStateExportFill.CachedGridNumber >= 1)
                 grid = RunStateExportFill.CachedGridNumber;
+            else if (RunStateExportFill.CachedGridNumber >= 1)
+                grid = Math.Max(grid, RunStateExportFill.CachedGridNumber);
 
             if (grid < 1)
                 return;

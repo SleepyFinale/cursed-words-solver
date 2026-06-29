@@ -1607,6 +1607,14 @@ class ScoringPipeline:
                 state["_applying_grid_path_scatter"] = False
             if ref.rule_id == "tombstone" and rule.get("type") == "add_tile_score":
                 state["_grid_path_tombstone_applied"] = True
+                state["_tombstone_applied_this_word"] = True
+            if ref.rule_id == "dusty_coffin" and rule.get("type") == "add_word_score":
+                from cursed_words_solver.rules.scoring_conditions import (
+                    snapshot_dusty_interleaved_word_scoring,
+                )
+
+                if snapshot_dusty_interleaved_word_scoring(loadout, board):
+                    state["_grid_dusty_word_pending_flush"] = True
             if (
                 snapshot_phased_word_scoring(loadout)
                 and rule.get("type") == "multiply_word_by_unique_colour_count"
@@ -1812,6 +1820,15 @@ class ScoringPipeline:
                     rule,
                     multiply_only=slot_multiply_only,
                 ):
+                    if (
+                        apply_additive_pass
+                        and slug == "tombstone"
+                        and rule
+                        and rule.get("type") == "add_tile_score"
+                        and state.get("_grid_dusty_word_pending_flush")
+                    ):
+                        state["word_score"] = 0.0
+                        state["_grid_dusty_word_pending_flush"] = False
                     state = apply_sticker_with_orchestration(
                         rules=self.rules,
                         loadout=loadout,
@@ -1823,6 +1840,14 @@ class ScoringPipeline:
                         apply_rule=self._apply_rule,
                         multiply_only=slot_multiply_only,
                     )
+                if (
+                    apply_additive_pass
+                    and slug == "tombstone"
+                    and rule
+                    and rule.get("type") == "add_tile_score"
+                ):
+                    state["_equipped_tombstone_applied"] = True
+                    state["_tombstone_applied_this_word"] = True
                 if apply_additive_pass and slug == "cocktail":
                     from cursed_words_solver.rules.scoring_conditions import (
                         compound_word_finalize_at_cocktail,
@@ -2478,21 +2503,38 @@ class ScoringPipeline:
                 )
             elif word_mode == "per_void_unused":
                 from cursed_words_solver.rules.scoring_conditions import (
+                    dusty_coffin_word_score_level,
                     snapshot_per_void_unused_override,
                 )
 
+                from_grid = bool(state.get("_applying_grid_path_scatter"))
+                after_tombstone = bool(
+                    state.get("_tombstone_applied_this_word")
+                    or state.get("_grid_path_tombstone_applied")
+                    or state.get("_equipped_tombstone_applied")
+                )
+                dusty_level = dusty_coffin_word_score_level(
+                    loadout,
+                    from_grid_scatter=from_grid,
+                    sticker_level=level,
+                    board=board,
+                    path=path,
+                    word=state["word"],
+                )
                 n = dusty_coffin_void_units(
                     board,
                     state["word"],
                     loadout,
                     applying_sticker_id=applying_sticker_id or "",
                     path=path,
+                    from_grid_scatter=from_grid,
+                    after_tombstone=after_tombstone,
                 )
                 if (applying_sticker_id or "").lower() == "snapshot":
                     override = snapshot_per_void_unused_override(loadout)
                     if override is not None:
                         n = override
-                bonus = sticker_rule_int(level, rule) * n
+                bonus = sticker_rule_int(dusty_level, rule) * n
             elif word_mode == "per_unused_red":
                 n = unused_red_tiles_on_board(board, path)
                 bonus = sticker_rule_int(level, rule) * n

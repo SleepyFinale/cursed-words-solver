@@ -302,6 +302,8 @@ namespace CursedWordsSolverCompanion
         private static void FillGridNumber(RunStateSnapshot snapshot, Player player)
         {
             var n = ResolveGridNumber(player);
+            if (CachedGridNumber >= 1)
+                n = Math.Max(n, CachedGridNumber);
             if (n >= 1)
                 snapshot.extras["grid_number"] = n.ToString();
         }

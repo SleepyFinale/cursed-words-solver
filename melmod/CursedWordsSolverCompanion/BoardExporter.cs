@@ -83,6 +83,7 @@ namespace CursedWordsSolverCompanion
 
             ApplyToolboxScatterLevels(player, tiles);
             ApplyEquippedScatterLevels(player, tiles);
+            ApplyVoidTombstoneCombinedScatterLevels(player, tiles);
 
             var snapshot = new BoardSnapshot
             {
@@ -162,12 +163,53 @@ namespace CursedWordsSolverCompanion
                 var equipped = RunStateExporter.TryGetEquippedStickerLevel(player, scatterSlug);
                 if (equipped < 1)
                     continue;
+                // Dusty Coffin grid tiles keep encounter scatter tier; inventory level
+                // still fires separately in sticker order (do not bleed equipped tier).
+                if (string.Equals(
+                        scatterSlug,
+                        "dusty_coffin",
+                        StringComparison.OrdinalIgnoreCase))
+                    continue;
                 if (
                     encounterScatterTier > 0
                     && equipped > encounterScatterTier)
                     continue;
                 var exported = tile.scattered_item_level ?? 1;
                 tile.scattered_item_level = Math.Max(exported, equipped);
+            }
+        }
+
+        /// <summary>
+        /// VOID Tombstone grid tiles score at tile tier + equipped Tombstone tier.
+        /// </summary>
+        private static void ApplyVoidTombstoneCombinedScatterLevels(
+            Player player,
+            List<BoardTileSnapshot> tiles
+        )
+        {
+            if (player == null || tiles == null)
+                return;
+
+            var equipped = RunStateExporter.TryGetEquippedStickerLevel(player, "tombstone");
+            if (equipped < 1)
+                return;
+
+            foreach (var tile in tiles)
+            {
+                if (tile == null || string.IsNullOrEmpty(tile.scattered_item_id))
+                    continue;
+                if (!string.Equals(tile.curse, "item", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!string.Equals(tile.color, "void", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var slug = RunStateExporter.Slugify(
+                    tile.scattered_item_id,
+                    tile.scattered_item_id
+                );
+                if (!string.Equals(slug, "tombstone", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var exported = tile.scattered_item_level ?? 1;
+                tile.scattered_item_level = Math.Max(exported, exported + equipped);
             }
         }
 

@@ -477,6 +477,49 @@ def empty_historic_on_later_grid_warning(
     return msg
 
 
+def scatter_level_below_equipped_warning(
+    loadout: Loadout | None,
+    board: Board | None,
+) -> str | None:
+    """Warn when a grid scatter tile exports below its equipped sticker tier."""
+    if loadout is None or board is None or not loadout.stickers:
+        return None
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    equipped: dict[str, int] = {}
+    for sticker in loadout.stickers:
+        slug = slugify_name(str(sticker.id or sticker.name or ""))
+        if not slug:
+            continue
+        try:
+            equipped[slug] = max(1, int(sticker.level))
+        except (TypeError, ValueError):
+            equipped[slug] = 1
+
+    mismatches: list[str] = []
+    for tile in board.flat:
+        if tile.curse != CurseType.ITEM:
+            continue
+        slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
+        if not slug or slug not in equipped:
+            continue
+        raw = (tile.metadata or {}).get("scattered_item_level")
+        try:
+            exported = max(1, int(raw)) if raw is not None else 1
+        except (TypeError, ValueError):
+            exported = 1
+        eq = equipped[slug]
+        if eq > exported:
+            mismatches.append(f"{slug} L{exported}<{eq}")
+    if not mismatches:
+        return None
+    return (
+        "Board scatter level below equipped sticker ("
+        + ", ".join(mismatches)
+        + f") — {F8_RETRY_HINT}."
+    )
+
+
 def grid_advanced_since_last_f8_warning(
     run_state_extras: dict[str, Any] | None,
 ) -> str | None:

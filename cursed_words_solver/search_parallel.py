@@ -21,6 +21,7 @@ _mp_pipeline = None
 _pool: ProcessPoolExecutor | None = None
 _pool_key: tuple[str, int, str] | None = None
 _pool_warm = False
+_pool_shutdown_requested = False
 _worker_errors: list[str] = []
 
 
@@ -68,6 +69,8 @@ def get_search_pool(
     global _pool, _pool_key
     if workers <= 1 or wordlist_path is None:
         return None
+    if _pool_shutdown_requested:
+        return None
     backend = _trie_backend_from_env()
     key = (str(wordlist_path), workers, backend)
     if _pool is None or _pool_key != key:
@@ -104,12 +107,16 @@ def warmup_search_pool(wordlist_path: Path | None, workers: int) -> float:
 
 def shutdown_search_pool(*, wait: bool = True) -> None:
     """Shut down the shared pool (app exit or tests)."""
-    global _pool, _pool_key, _pool_warm
+    global _pool, _pool_key, _pool_warm, _pool_shutdown_requested
     if _pool is not None:
         _pool.shutdown(wait=wait, cancel_futures=not wait)
         _pool = None
         _pool_key = None
         _pool_warm = False
+    if wait:
+        _pool_shutdown_requested = False
+    else:
+        _pool_shutdown_requested = True
 
 
 def _mp_warmup(_: int) -> int:
@@ -292,7 +299,10 @@ def parallel_collect_fair_starts(
     # Grace for process IPC / teardown (workers honor pass_deadline internally).
     collect_timeout = remaining + min(5.0, max(1.0, remaining * 0.15))
     collect_end = time.monotonic() + collect_timeout
-    futures = [executor.submit(_mp_collect_chunk, p) for p in payloads]
+    try:
+        futures = [executor.submit(_mp_collect_chunk, p) for p in payloads]
+    except RuntimeError:
+        return
     pending = set(futures)
     while pending and time.monotonic() < collect_end:
         wait_sec = max(0.01, collect_end - time.monotonic())
@@ -387,7 +397,7 @@ def parallel_extend_seeds(
     setup_discount: float,
     wordlist_path: Path | None,
     f8_deadline: float | None = None,
-) -> list[tuple[float, str, tuple[int, ...]]]:
+) -> list[tuple[float, str, tuple[int, ...]]] | None:
     """Partition dictionary-resolve extension seeds across worker processes."""
     if workers <= 1 or len(seeds) < 4 or deadline is None:
         return []
@@ -419,17 +429,20 @@ def parallel_extend_seeds(
         "f8_deadline": f8_deadline,
     }
     per_chunk_budget = remaining / max(len(chunks), 1)
-    futures = [
-        executor.submit(
-            _mp_extend_chunk,
-            {
-                **base_payload,
-                "seeds": chunk,
-                "budget_sec": per_chunk_budget,
-            },
-        )
-        for chunk in chunks
-    ]
+    try:
+        futures = [
+            executor.submit(
+                _mp_extend_chunk,
+                {
+                    **base_payload,
+                    "seeds": chunk,
+                    "budget_sec": per_chunk_budget,
+                },
+            )
+            for chunk in chunks
+        ]
+    except RuntimeError:
+        return None
     merged: list[tuple[float, str, tuple[int, ...]]] = []
     collect_end = min(deadline, time.monotonic() + remaining)
     if f8_deadline is not None:
