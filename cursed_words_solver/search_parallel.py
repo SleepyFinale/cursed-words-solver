@@ -8,7 +8,7 @@ import time
 import traceback
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from cursed_words_solver.models import Board, Loadout
 
@@ -264,8 +264,11 @@ def parallel_collect_fair_starts(
     use_tier2_screen: bool,
     use_dfs_bb: bool = False,
     required_consumable_indices: frozenset[int] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> None:
     """Run start slices on a reused process pool and merge into candidates."""
+    if cancel_check is not None and cancel_check():
+        return
     if time.monotonic() >= deadline:
         return
     if workers <= 1 or len(starts) <= 1:
@@ -305,6 +308,8 @@ def parallel_collect_fair_starts(
         return
     pending = set(futures)
     while pending and time.monotonic() < collect_end:
+        if cancel_check is not None and cancel_check():
+            break
         wait_sec = max(0.01, collect_end - time.monotonic())
         done, pending = wait(pending, timeout=wait_sec, return_when=FIRST_COMPLETED)
         for fut in done:

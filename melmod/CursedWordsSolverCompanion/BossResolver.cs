@@ -45,6 +45,30 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
+        /// Live boss list for run_state export — never uses scoring-hook cache.
+        /// </summary>
+        public static List<BossModifier> ResolveLiveForExport(Player player)
+        {
+            var encounter = TryGetEncounter();
+            if (encounter != null)
+            {
+                var fromEncounter = ResolveFromEncounter(encounter);
+                if (fromEncounter != null && fromEncounter.Count > 0)
+                    return fromEncounter;
+
+                if (fromEncounter != null && fromEncounter.Count == 0)
+                {
+                    var fromPlayer = ResolveFromPlayer(player);
+                    if (fromPlayer != null && fromPlayer.Count > 0)
+                        return fromPlayer;
+                    return null;
+                }
+            }
+
+            return ResolveFromPlayer(player);
+        }
+
+        /// <summary>
         /// Live encounter/player state only — never returns a stale scoring cache
         /// after the boss fight ends.
         /// </summary>

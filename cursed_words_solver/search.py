@@ -3267,6 +3267,9 @@ class WordSearcher:
                 refined_keys.add((path_tuple, word))
 
     def _time_expired(self) -> bool:
+        cancel = getattr(self, "_cancel_check", None)
+        if cancel is not None and cancel():
+            return True
         now = time.monotonic()
         f8 = getattr(self, "_f8_deadline", None)
         if f8 is not None and now >= f8:
@@ -3378,6 +3381,7 @@ class WordSearcher:
                     ),
                 ),
                 required_consumable_indices=self.validator.required_consumable_indices,
+                cancel_check=getattr(self, "_cancel_check", None),
             )
             return
         n = len(starts)
@@ -6504,11 +6508,14 @@ class WordSearcher:
         *,
         deadline: float | None = None,
         run_until_found: bool = False,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> list[WordResult]:
         if self.blocked:
             return []
         f8_cap = deadline
         self._f8_deadline = f8_cap
+        if cancel_check is not None:
+            self._cancel_check = cancel_check
         from cursed_words_solver.models import reset_board_flat_call_count
 
         self._run_until_found = run_until_found

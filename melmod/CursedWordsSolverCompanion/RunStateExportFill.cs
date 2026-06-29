@@ -104,6 +104,7 @@ namespace CursedWordsSolverCompanion
             }
 
             RunStateExporter.ClearCachedPreviousWordsForExport();
+            BossResolver.ClearScoringCache();
             ApplyScoringCachedPreviousWordLetter(keys, player);
             if (RunStateExporter.PlayerHasStampSlug(player, "tile_ninja"))
             {
@@ -1744,7 +1745,7 @@ namespace CursedWordsSolverCompanion
         /// </summary>
         private static List<BossModifier> ResolveBossesForExport(Player player)
         {
-            var bosses = BossResolver.Resolve(player);
+            var bosses = BossResolver.ResolveLiveForExport(player);
             if (bosses != null && bosses.Count > 0)
                 return bosses;
 
@@ -1821,7 +1822,14 @@ namespace CursedWordsSolverCompanion
                 if (drafted >= 1 && drafted <= 3)
                     snapshot.extras["michael_phase"] = drafted.ToString();
 
-                if (michaelMin <= 0 && drafted >= 3 && !_loggedMichaelMissingExtrasWarning)
+                if (
+                    michaelMin <= 0
+                    && !_loggedMichaelMissingExtrasWarning
+                    && (
+                        IsMichaelSummonedBossesDefeated(player, michaelBoss)
+                        || IsMichaelPuzzleGridActive()
+                    )
+                )
                 {
                     MelonLogger.Warning(
                         "Michael boss detected but final-phase/min-length extras were unavailable; "
@@ -2166,6 +2174,9 @@ namespace CursedWordsSolverCompanion
             BossModifier michaelBoss
         )
         {
+            if (michaelBoss is MichaelBoss mb && mb.SummonedBossesDefeated)
+                return true;
+
             if (
                 michaelBoss != null
                 && TryGetBoolMember(

@@ -132,7 +132,7 @@ namespace CursedWordsSolverCompanion
 
                 return false;
 
-            return CollectBossDriftNotes(extrasDiff).Count > 0;
+            return CollectBossDriftNotes(extrasDiff, f8Extras, submitExtras).Count > 0;
 
         }
 
@@ -414,19 +414,7 @@ namespace CursedWordsSolverCompanion
 
             var tileNinja = CollectTileNinjaDriftNotes(extrasDiff);
 
-            var boss = CollectBossDriftNotes(extrasDiff);
-
-            if (
-
-                f8Extras != null
-
-                && submitExtras != null
-
-                && IsBenignEncounterBossDrift(f8Extras, submitExtras)
-
-            )
-
-                boss = new List<string>();
+            var boss = CollectBossDriftNotes(extrasDiff, f8Extras, submitExtras);
 
             if (workflow.Count == 0 && bicycle.Count == 0 && tileNinja.Count == 0 && boss.Count == 0)
 
@@ -1747,9 +1735,39 @@ namespace CursedWordsSolverCompanion
 
         {
 
+            return CollectBossDriftNotes(extrasDiff, null, null);
+
+        }
+
+
+
+        private static List<string> CollectBossDriftNotes(
+
+            Dictionary<string, object> extrasDiff,
+
+            Dictionary<string, string> f8Extras,
+
+            Dictionary<string, string> submitExtras
+
+        )
+
+        {
+
             var notes = new List<string>();
 
             if (extrasDiff == null || extrasDiff.Count == 0)
+
+                return notes;
+
+            var benignEncounter =
+
+                f8Extras != null
+
+                && submitExtras != null
+
+                && IsBenignEncounterBossDrift(f8Extras, submitExtras);
+
+            if (benignEncounter)
 
                 return notes;
 

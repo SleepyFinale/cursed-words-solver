@@ -284,8 +284,11 @@ namespace CursedWordsSolverCompanion
             )
             {
                 MelonLogger.Warning(
-                    "F8 boss stale — press F8 again before submitting the overlay suggestion."
+                    "Blocking score capture — boss extras stale; press F8 again."
                 );
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                _active = false;
+                return;
             }
 
             ExtrasDiffHelper.LogStaleF8DriftWarnings(

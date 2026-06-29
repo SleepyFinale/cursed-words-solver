@@ -138,3 +138,42 @@ def test_badger_only_modifiers_are_encounter_meta_not_scoring_early():
     from cursed_words_solver.rules.boss_effects import boss_modifier_active
 
     assert not boss_modifier_active(loadout, "salamander")
+
+
+def test_f8_boss_extras_stale_mole_only_not_stale():
+    from cursed_words_solver.suggestion import f8_boss_extras_stale
+
+    f8 = {"boss_modifiers": '["mole"]', "boss_modifier_floor_mods": '{"mole":3}'}
+    projected = {"boss_modifiers": "[]"}
+    assert not f8_boss_extras_stale(f8, projected)
+
+
+def test_f8_boss_extras_stale_salamander_mismatch():
+    from cursed_words_solver.suggestion import f8_boss_extras_stale
+
+    f8 = {"boss_modifiers": '["salamander"]'}
+    projected = {"boss_modifiers": "[]"}
+    assert f8_boss_extras_stale(f8, projected)
+
+
+def test_f8_should_block_save_mid_solve_grid_advanced():
+    from cursed_words_solver.suggestion import f8_should_block_save
+
+    blocked, reason = f8_should_block_save(
+        gather_succeeded=True,
+        mid_solve_grid_advanced=True,
+    )
+    assert blocked
+    assert reason == "grid_advanced_during_solve"
+
+
+def test_f8_should_block_save_boss_extras_stale():
+    from cursed_words_solver.suggestion import f8_should_block_save
+
+    blocked, reason = f8_should_block_save(
+        gather_succeeded=True,
+        f8_extras={"boss_modifiers": '["salamander"]'},
+        submit_projected_extras={"boss_modifiers": "[]"},
+    )
+    assert blocked
+    assert reason == "boss_extras_stale"

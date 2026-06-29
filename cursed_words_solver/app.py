@@ -240,6 +240,10 @@ class SolverApp:
         self._searcher: WordSearcher | None = None
         self._busy = False
         self._solve_active = False
+        self._solve_generation = 0
+        self._solve_gather_board_fp = ""
+        self._solve_gather_grid = 0
+        self._mid_solve_grid_advanced = False
         self._calibrating = False
         self._hotkey_handle = None
         self._shutting_down = False
@@ -591,6 +595,31 @@ class SolverApp:
             print("  Word submitted — press F8 for the next grid.", flush=True)
 
         if self._solve_active:
+            from cursed_words_solver.fingerprints import fingerprints_from_run_state
+            from cursed_words_solver.suggestion import _board_tiles_match
+
+            if isinstance(data, dict):
+                cur_board_fp, _ = fingerprints_from_run_state(data)
+                if (
+                    self._solve_gather_board_fp
+                    and cur_board_fp
+                    and not _board_tiles_match(
+                        self._solve_gather_board_fp, cur_board_fp
+                    )
+                ):
+                    self._solve_generation += 1
+                extras_poll = data.get("extras")
+                if isinstance(extras_poll, dict):
+                    try:
+                        cur_grid = int(str(extras_poll.get("grid_number") or "0"))
+                    except ValueError:
+                        cur_grid = 0
+                    if (
+                        self._solve_gather_grid > 0
+                        and cur_grid > self._solve_gather_grid
+                    ):
+                        self._mid_solve_grid_advanced = True
+                        self._solve_generation += 1
             return
 
         from cursed_words_solver.config import LAST_SUGGESTION_PATH
@@ -807,9 +836,20 @@ class SolverApp:
             print(f"Could not save capture preview: {e}", flush=True)
 
     def _on_hotkey_pressed(self) -> None:
-        if self._busy or self._calibrating:
+        if self._calibrating:
             return
+        if self._busy:
+            self._solve_generation += 1
+            print(
+                "F8 re-pressed — cancelling stale solve and re-exporting.",
+                flush=True,
+            )
+            return
+        self._solve_generation += 1
         threading.Thread(target=self._solve_worker, daemon=True).start()
+
+    def _solve_cancelled(self, my_gen: int) -> bool:
+        return self._solve_generation != my_gen
 
     def _shop_advisor_worker(self, run_state_data: dict | None) -> None:
         """Shop advice path when encounter_mode is shop."""
@@ -879,8 +919,13 @@ class SolverApp:
         )
 
     def _solve_worker(self) -> None:
+        my_gen = self._solve_generation
+        self._mid_solve_grid_advanced = False
+        self._solve_gather_board_fp = ""
+        self._solve_gather_grid = 0
         self._busy = True
         self._solve_active = True
+        cancel_check = lambda: self._solve_cancelled(my_gen)
         unmapped: list[str] = []
         board_source = "melmod"
         money_source = "mod"
@@ -896,6 +941,8 @@ class SolverApp:
             if not self._ensure_solver():
                 print("Solver not ready (dictionary failed to load).", flush=True)
                 return
+            if self._searcher is not None:
+                self._searcher._cancel_check = cancel_check
 
             f8_request_id = write_f8_export_request()
             snapshot = gather_f8_snapshot(
@@ -1030,6 +1077,13 @@ class SolverApp:
                     "Press F10 to calibrate board region for on-screen path highlights.",
                     flush=True,
                 )
+
+            if melmod_board_fp:
+                self._solve_gather_board_fp = melmod_board_fp
+            self._solve_gather_grid = solve_grid_at_start
+
+            if self._solve_cancelled(my_gen):
+                return
 
             search_budget = self.config.search_time_budget_sec
             search_started = time.monotonic()
@@ -1426,6 +1480,7 @@ class SolverApp:
                     loadout=loadout,
                     top_n=self.config.top_n_results,
                     deadline=solve_deadline,
+                    cancel_check=cancel_check,
                 )
             else:
                 results = []
@@ -1499,6 +1554,7 @@ class SolverApp:
                     loadout=loadout,
                     top_n=self.config.top_n_results,
                     run_until_found=True,
+                    cancel_check=cancel_check,
                 )
                 if completion_results:
                     results = completion_results
@@ -2122,7 +2178,7 @@ class SolverApp:
                         else None
                     ),
                     grid_bleed_warn=grid_bleed_warn,
-                    mid_solve_grid_advanced=False,
+                    mid_solve_grid_advanced=self._mid_solve_grid_advanced,
                     loadout=score_loadout,
                     board=search_board,
                     path=top.path,
@@ -2341,6 +2397,8 @@ class SolverApp:
                 )
             )
             trusted = not block_f8_save if results else True
+            if self._solve_cancelled(my_gen):
+                return
             self._bridge.solve_finished.emit(
                 _SolveUIUpdate(
                     board=search_board,
@@ -2368,8 +2426,13 @@ class SolverApp:
                 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
                 (DEBUG_DIR / "last_error.txt").write_text(err, encoding="utf-8")
         finally:
+            restart = self._solve_generation != my_gen
             self._busy = False
             self._solve_active = False
+            self._solve_gather_board_fp = ""
+            self._solve_gather_grid = 0
+            if restart and not self._shutting_down:
+                threading.Thread(target=self._solve_worker, daemon=True).start()
 
     def _detect_loadout_source(self) -> str:
         path = CONFIG_DIR / "run_state.json"

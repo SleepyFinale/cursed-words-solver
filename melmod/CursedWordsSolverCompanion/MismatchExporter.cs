@@ -54,6 +54,33 @@ namespace CursedWordsSolverCompanion
                 return;
             }
 
+            var f8ExtrasEarly = originalF8Extras != null && originalF8Extras.Count > 0
+                ? originalF8Extras
+                : ExtrasDiffHelper.ExtrasFromRunStateObject(suggestion.run_state_snapshot);
+            var diffExtrasEarly = preWordScoringExtras ?? extrasSnapshot;
+            var extrasDiffEarly = ExtrasDiffHelper.DiffExtras(
+                f8ExtrasEarly,
+                diffExtrasEarly
+            );
+            var staleCtxEarly = submitPlayer != null
+                ? RunStateExporter.BuildStaleF8Context(submitPlayer)
+                : StaleF8Context.Default();
+            var staleNoteEarly = ExtrasDiffHelper.DescribeStaleF8Extras(
+                extrasDiffEarly,
+                staleCtxEarly,
+                f8ExtrasEarly,
+                diffExtrasEarly
+            );
+            if (
+                string.IsNullOrEmpty(staleNoteEarly)
+                && !string.IsNullOrEmpty(f8PredictionHistoricStaleNote)
+            )
+                staleNoteEarly =
+                    "F8 snapshot stale — re-run F8 after your last word before trusting predicted scores ("
+                    + f8PredictionHistoricStaleNote
+                    + ")";
+            var staleF8ExtrasEarly = !string.IsNullOrEmpty(staleNoteEarly);
+
             var predicted = suggestion.predicted_score;
             if (
                 suggestion.score_nondeterministic
@@ -62,30 +89,58 @@ namespace CursedWordsSolverCompanion
                 && actualScore <= suggestion.predicted_score_max
             )
             {
-                MelonLogger.Msg(
-                    "Scoring match (Capybara range) for suggested word '"
-                        + word
-                        + "': "
-                        + actualScore
-                        + " pts (predicted "
-                        + predicted
-                        + ", range "
-                        + suggestion.predicted_score_min
-                        + "–"
-                        + suggestion.predicted_score_max
-                        + ")"
-                );
+                if (staleF8ExtrasEarly)
+                {
+                    MelonLogger.Warning(staleNoteEarly);
+                    MelonLogger.Msg(
+                        "Scoring match (stale F8 extras, Capybara range) for suggested word '"
+                            + word
+                            + "': "
+                            + actualScore
+                            + " pts"
+                    );
+                }
+                else
+                {
+                    MelonLogger.Msg(
+                        "Scoring match (Capybara range) for suggested word '"
+                            + word
+                            + "': "
+                            + actualScore
+                            + " pts (predicted "
+                            + predicted
+                            + ", range "
+                            + suggestion.predicted_score_min
+                            + "–"
+                            + suggestion.predicted_score_max
+                            + ")"
+                    );
+                }
                 return;
             }
             if (predicted == actualScore)
             {
-                MelonLogger.Msg(
-                    "Scoring match for suggested word '"
-                        + word
-                        + "': "
-                        + actualScore
-                        + " pts"
-                );
+                if (staleF8ExtrasEarly)
+                {
+                    MelonLogger.Warning(staleNoteEarly);
+                    MelonLogger.Msg(
+                        "Scoring match (stale F8 extras) for suggested word '"
+                            + word
+                            + "': "
+                            + actualScore
+                            + " pts"
+                    );
+                }
+                else
+                {
+                    MelonLogger.Msg(
+                        "Scoring match for suggested word '"
+                            + word
+                            + "': "
+                            + actualScore
+                            + " pts"
+                    );
+                }
                 return;
             }
 
@@ -113,36 +168,12 @@ namespace CursedWordsSolverCompanion
                 extrasSnapshot["path_resolved_word"] = word ?? "";
             }
 
-            var f8Extras = originalF8Extras != null && originalF8Extras.Count > 0
-                ? originalF8Extras
-                : ExtrasDiffHelper.ExtrasFromRunStateObject(suggestion.run_state_snapshot);
-            var diffExtras = preWordScoringExtras ?? extrasSnapshot;
-            var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, diffExtras);
-            var staleCtx = submitPlayer != null
-                ? RunStateExporter.BuildStaleF8Context(submitPlayer)
-                : StaleF8Context.Default();
-            var staleNote = ExtrasDiffHelper.DescribeStaleF8Extras(
-                extrasDiff,
-                staleCtx,
-                f8Extras,
-                diffExtras
-            );
-            if (
-                string.IsNullOrEmpty(staleNote)
-                && !string.IsNullOrEmpty(f8PredictionHistoricStaleNote)
-            )
-                staleNote =
-                    "F8 snapshot stale — re-run F8 after your last word before trusting predicted scores ("
-                    + f8PredictionHistoricStaleNote
-                    + ")";
-            var pathBoardMatch = SuggestionMatcher.MatchesSuggestion(
-                suggestion,
-                word,
-                path,
-                boardFingerprint,
-                loadoutFingerprint
-            );
-            var staleF8Extras = !string.IsNullOrEmpty(staleNote);
+            var f8Extras = f8ExtrasEarly;
+            var diffExtras = diffExtrasEarly;
+            var extrasDiff = extrasDiffEarly;
+            var staleCtx = staleCtxEarly;
+            var staleNote = staleNoteEarly;
+            var staleF8Extras = staleF8ExtrasEarly;
             if (staleF8Extras)
             {
                 MelonLogger.Warning(staleNote);

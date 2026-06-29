@@ -63,11 +63,9 @@ F8_EXPORT_CATCHUP_GRACE_SEC = 2.5
 
 
 def f8_export_catchup_grace_sec(search_budget_sec: float | None = None) -> float:
-    """Grace period for post-F8 export catch-up (covers long searches)."""
-    base = F8_EXPORT_CATCHUP_GRACE_SEC
-    if search_budget_sec is None:
-        return base
-    return max(base, float(search_budget_sec) + 5.0)
+    """Grace period for post-F8 export catch-up (extras-only disk lag)."""
+    del search_budget_sec
+    return F8_EXPORT_CATCHUP_GRACE_SEC
 
 
 def _board_tiles_match(saved_board_fp: str, cur_board_fp: str) -> bool:
@@ -1662,6 +1660,66 @@ def _loadout_has_bento_box(loadout: Loadout | None) -> bool:
     return False
 
 
+_ENCOUNTER_ONLY_BOSS_SLUGS = frozenset(
+    {
+        "badger",
+        "hyena",
+        "bat",
+        "mole",
+        "axolotl",
+        "bison",
+        "yeti_crab",
+        "robo_eel",
+        "wolf",
+        "cobra",
+        "toothed_whale",
+    }
+)
+_SCORING_EARLY_BOSS_SLUGS = frozenset({"salamander", "robo_monkey", "fox"})
+
+
+def _parse_boss_modifier_slugs(extras: dict[str, Any]) -> list[str]:
+    raw = extras.get("boss_modifiers")
+    if isinstance(raw, list):
+        return [str(x).strip().lower() for x in raw if str(x).strip()]
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text or text == "[]":
+            return []
+        try:
+            import json
+
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return [str(x).strip().lower() for x in parsed if str(x).strip()]
+        except json.JSONDecodeError:
+            pass
+    return []
+
+
+def f8_boss_extras_stale(
+    f8_extras: dict[str, Any] | None,
+    projected_extras: dict[str, Any] | None,
+) -> bool:
+    """True when F8 boss embed won't match submit-time scoring boss list."""
+    if not isinstance(f8_extras, dict) or not isinstance(projected_extras, dict):
+        return False
+    f8_mods = _parse_boss_modifier_slugs(f8_extras)
+    proj_mods = _parse_boss_modifier_slugs(projected_extras)
+    if f8_mods == proj_mods:
+        return False
+    if not f8_mods:
+        return False
+    if proj_mods:
+        return True
+    for slug in f8_mods:
+        if slug in _SCORING_EARLY_BOSS_SLUGS:
+            return True
+        if slug not in _ENCOUNTER_ONLY_BOSS_SLUGS and slug != "capybara":
+            return True
+    return False
+
+
 def f8_should_block_save(
     *,
     historic_catchup_stale_note: str | None = None,
@@ -1735,6 +1793,8 @@ def f8_should_block_save(
             scoring_extras=scoring_extras,
         ):
             return True, "submit_projection_mismatch"
+        if f8_boss_extras_stale(f8_extras, submit_projected_extras):
+            return True, "boss_extras_stale"
     if isinstance(f8_extras, dict) and loadout is not None:
         from cursed_words_solver.loadout import _scoring_previous_words_count_from_extras
 
