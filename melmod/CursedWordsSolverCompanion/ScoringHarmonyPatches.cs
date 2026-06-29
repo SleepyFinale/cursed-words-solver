@@ -59,7 +59,7 @@ namespace CursedWordsSolverCompanion
         {
             RunStateExporter.CacheGridNumber(GridNumber);
             BossResolver.CacheFromScoring(bossModifiers);
-            ScoringCaptureSession.OnScoringContext(previousWords);
+            ScoringCaptureSession.OnScoringContext(previousWords, bossModifiers);
             ScoringCaptureSession.OnSubmitWordTiles(tileSelections);
         }
 

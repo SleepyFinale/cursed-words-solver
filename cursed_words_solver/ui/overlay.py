@@ -24,6 +24,99 @@ if TYPE_CHECKING:
 
 _FALLBACK_MAX_CONTENT_WIDTH = 380
 _COLUMN_WIDTH_MARGIN = 16
+_BOARD_GAP = 8
+
+
+def _rects_overlap(
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    other: Region,
+) -> bool:
+    return not (
+        x + width <= other.x
+        or x >= other.x + other.width
+        or y + height <= other.y
+        or y >= other.y + other.height
+    )
+
+
+def _clamp_origin(
+    x: int,
+    y: int,
+    panel_width: int,
+    panel_height: int,
+    avail: Region,
+) -> tuple[int, int]:
+    x = max(avail.x, min(x, avail.x + avail.width - panel_width))
+    y = max(avail.y, min(y, avail.y + avail.height - panel_height))
+    return x, y
+
+
+def _fits_on_screen(
+    x: int,
+    y: int,
+    panel_width: int,
+    panel_height: int,
+    avail: Region,
+) -> bool:
+    return (
+        x >= avail.x
+        and y >= avail.y
+        and x + panel_width <= avail.x + avail.width
+        and y + panel_height <= avail.y + avail.height
+    )
+
+
+def _column_fallback_origin(
+    panel_width: int,
+    panel_height: int,
+    avail: Region,
+    *,
+    panel_columns: int = 5,
+    panel_column_index: int = 1,
+    margin_y: int = 32,
+) -> tuple[int, int]:
+    col_width = avail.width / panel_columns
+    x = avail.x + int(col_width * panel_column_index)
+    y = avail.y + margin_y
+    return _clamp_origin(x, y, panel_width, panel_height, avail)
+
+
+def compute_result_panel_origin(
+    panel_width: int,
+    panel_height: int,
+    *,
+    board_region: Region | None,
+    avail: Region,
+) -> tuple[int, int]:
+    """Place the result panel outside the board when layout is known."""
+    candidates: list[tuple[int, int]] = []
+    if board_region is not None and board_region.is_valid():
+        br = board_region
+        candidates.append(
+            (
+                br.x + max(0, (br.width - panel_width) // 2),
+                br.y - panel_height - _BOARD_GAP,
+            )
+        )
+        candidates.append((br.x + br.width + _BOARD_GAP, br.y))
+        candidates.append((br.x - panel_width - _BOARD_GAP, br.y))
+
+    fallback = _column_fallback_origin(panel_width, panel_height, avail)
+    candidates.append(fallback)
+
+    for x, y in candidates:
+        cx, cy = _clamp_origin(x, y, panel_width, panel_height, avail)
+        if not _fits_on_screen(cx, cy, panel_width, panel_height, avail):
+            continue
+        if board_region is not None and board_region.is_valid():
+            if _rects_overlap(cx, cy, panel_width, panel_height, board_region):
+                continue
+        return cx, cy
+
+    return fallback
 
 
 def build_hero_result_html(
@@ -67,7 +160,9 @@ class ResultOverlay(QWidget):
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Tool,
+            | Qt.WindowType.Tool
+            | Qt.WindowType.WindowDoesNotAcceptFocus
+            | Qt.WindowType.WindowTransparentForInput,
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.setStyleSheet(
@@ -117,19 +212,16 @@ class ResultOverlay(QWidget):
         self.request_quit.emit()
         event.accept()
 
-    def show_idle(self) -> None:
+    def show_idle(self, *, board_region: Region | None = None) -> None:
         self._has_solved = False
         self._stale_notice_active = False
         self.idle_label.show()
         self.hero_result.hide()
         self.warnings_label.hide()
         self.preview.hide()
-        self._resize_for_content()
-        self._position_panel()
-        self.show()
-        self.raise_()
+        self._finish_show(board_region)
 
-    def show_solving_notice(self) -> None:
+    def show_solving_notice(self, *, board_region: Region | None = None) -> None:
         """Brief state while auto-solve runs after an in-game word submit."""
         self._has_solved = False
         self._stale_notice_active = False
@@ -141,12 +233,11 @@ class ResultOverlay(QWidget):
         self.hero_result.show()
         self.warnings_label.hide()
         self.preview.hide()
-        self._resize_for_content()
-        self._position_panel()
-        self.show()
-        self.raise_()
+        self._finish_show(board_region)
 
-    def show_stale_notice(self, message: str) -> None:
+    def show_stale_notice(
+        self, message: str, *, board_region: Region | None = None
+    ) -> None:
         """Warn that the F8 suggestion is stale — user should press F8 again."""
         self._has_solved = False
         self._stale_notice_active = True
@@ -163,10 +254,7 @@ class ResultOverlay(QWidget):
         else:
             self.warnings_label.hide()
         self.preview.hide()
-        self._resize_for_content()
-        self._position_panel()
-        self.show()
-        self.raise_()
+        self._finish_show(board_region)
 
     def clear_stale_notice(self) -> None:
         """Remove stale warning (fresh F8 solve will replace content)."""
@@ -175,7 +263,13 @@ class ResultOverlay(QWidget):
         self._stale_notice_active = False
         self.warnings_label.hide()
 
-    def show_shop_advice(self, advice_html: str, *, warnings_html: str = "") -> None:
+    def show_shop_advice(
+        self,
+        advice_html: str,
+        *,
+        warnings_html: str = "",
+        board_region: Region | None = None,
+    ) -> None:
         """Show shop purchase/sell/restock recommendations."""
         self._has_solved = True
         self.idle_label.hide()
@@ -188,10 +282,7 @@ class ResultOverlay(QWidget):
         self.hero_result.setText(advice_html)
         self.hero_result.show()
         self.preview.hide()
-        self._resize_for_content()
-        self._position_panel()
-        self.show()
-        self.raise_()
+        self._finish_show(board_region)
 
     def show_results(
         self,
@@ -205,6 +296,7 @@ class ResultOverlay(QWidget):
         twinkle_toes_swap: Any | None = None,
         trusted: bool = True,
         loadout: Loadout | None = None,
+        board_region: Region | None = None,
     ) -> None:
         self._has_solved = True
         self.idle_label.hide()
@@ -321,30 +413,49 @@ class ResultOverlay(QWidget):
         else:
             self.preview.hide()
 
-        self._resize_for_content()
-        self._position_panel()
+        self._finish_show(board_region)
+
+    def _finish_show(self, board_region: Region | None) -> None:
+        self._resize_for_content(board_region)
+        self._position_panel(board_region)
         self.show()
+        self.setWindowFlag(Qt.WindowType.WindowTransparentForInput, True)
         self.raise_()
 
-    def _panel_max_content_width(self) -> int:
-        """Max panel width: one screen column minus margin (stays in column 2)."""
+    def _screen_avail_region(self) -> Region | None:
         screen = QGuiApplication.primaryScreen()
         if screen is None:
-            return _FALLBACK_MAX_CONTENT_WIDTH
+            return None
         avail = screen.availableGeometry()
-        col_width = int(avail.width() / self._PANEL_COLUMNS)
-        return max(self._MIN_PANEL_WIDTH, col_width - _COLUMN_WIDTH_MARGIN)
+        return Region(avail.x(), avail.y(), avail.width(), avail.height())
 
-    def _position_panel(self) -> None:
-        """Place in the 2nd column of a 5-column layout (away from the score)."""
-        screen = QGuiApplication.primaryScreen()
-        if screen is None:
+    def _panel_max_content_width(self, board_region: Region | None = None) -> int:
+        """Max panel width: screen column, capped to board width when layout known."""
+        avail = self._screen_avail_region()
+        if avail is None:
+            return _FALLBACK_MAX_CONTENT_WIDTH
+        col_width = int(avail.width / self._PANEL_COLUMNS)
+        max_w = max(self._MIN_PANEL_WIDTH, col_width - _COLUMN_WIDTH_MARGIN)
+        if board_region is not None and board_region.is_valid():
+            board_cap = max(
+                self._MIN_PANEL_WIDTH,
+                board_region.width - _COLUMN_WIDTH_MARGIN,
+            )
+            max_w = min(max_w, board_cap)
+        return max_w
+
+    def _position_panel(self, board_region: Region | None = None) -> None:
+        """Place outside the melmod board when known; else 2nd screen column."""
+        avail = self._screen_avail_region()
+        if avail is None:
             self.move(200, self._MARGIN_Y)
             return
-        avail = screen.availableGeometry()
-        col_width = avail.width() / self._PANEL_COLUMNS
-        x = avail.x() + int(col_width * self._PANEL_COLUMN_INDEX)
-        y = avail.y() + self._MARGIN_Y
+        x, y = compute_result_panel_origin(
+            self.width(),
+            self.height(),
+            board_region=board_region,
+            avail=avail,
+        )
         self.move(x, y)
 
     def _set_capture_preview(self, bgr: np.ndarray) -> None:
@@ -354,9 +465,9 @@ class ResultOverlay(QWidget):
         self.preview.setPixmap(QPixmap.fromImage(qimg.copy()))
         self.preview.show()
 
-    def _resize_for_content(self) -> None:
+    def _resize_for_content(self, board_region: Region | None = None) -> None:
         """Size panel from layout hints; never below minimumSizeHint (Qt geometry warnings)."""
-        max_w = self._panel_max_content_width()
+        max_w = self._panel_max_content_width(board_region)
         layout = self.layout()
         if layout is not None:
             lm = layout.contentsMargins()

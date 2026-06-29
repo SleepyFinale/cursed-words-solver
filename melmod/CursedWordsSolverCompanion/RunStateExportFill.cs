@@ -1389,6 +1389,30 @@ namespace CursedWordsSolverCompanion
             }
         }
 
+        private static readonly string[] AuthoritativeWorkflowExtraKeys =
+        {
+            "historic_words",
+            "previous_word_first_letter",
+            "scoring_previous_words_count",
+            "red_tiles_used_encounter",
+            "mutating_dna_letter_counts",
+            "encounter_historic_source",
+            "birthday_cake_bonus",
+            "movie_camera_word_score_bonus",
+        };
+
+        private static bool IsAuthoritativeWorkflowExtraKey(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+                return false;
+            foreach (var workflowKey in AuthoritativeWorkflowExtraKeys)
+            {
+                if (string.Equals(key, workflowKey, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
         /// <summary>
         /// F8 live export: historic and prev-letter aligned with submit-time scoring projection.
         /// </summary>
@@ -1397,10 +1421,12 @@ namespace CursedWordsSolverCompanion
             Dictionary<string, string> fallbackExtras
         )
         {
-            var live = fallbackExtras != null
-                ? new Dictionary<string, string>(fallbackExtras)
-                : new Dictionary<string, string>();
-            return BuildSubmitWorkflowExtras(player, live);
+            return BuildAuthoritativeWorkflowExtras(
+                player,
+                null,
+                fallbackExtras,
+                liveOnlyHistoric: true
+            );
         }
 
         /// <summary>
@@ -1411,11 +1437,43 @@ namespace CursedWordsSolverCompanion
             Dictionary<string, string> liveExtras
         )
         {
-            RefreshEncounterHistoricCacheFromPlayer(player);
+            var projected = BuildAuthoritativeWorkflowExtras(
+                player,
+                null,
+                liveExtras,
+                liveOnlyHistoric: true
+            );
+            var bosses = ResolveBossesForExport(player);
+            AppendBossExtrasFromModifiers(projected, player, bosses);
+            return projected;
+        }
 
-            var projected = liveExtras != null
-                ? new Dictionary<string, string>(liveExtras)
-                : new Dictionary<string, string>();
+        /// <summary>
+        /// Single source for F8 export and submit-time workflow extras from previousWords / live player.
+        /// Does not inherit stale workflow keys from disk-merged run_state.
+        /// </summary>
+        public static Dictionary<string, string> BuildAuthoritativeWorkflowExtras(
+            Player player,
+            List<HistoricWord> previousWords,
+            Dictionary<string, string> contextExtras,
+            bool liveOnlyHistoric = true
+        )
+        {
+            if (previousWords != null && previousWords.Count > 0)
+                RunStateExporter.CachePreviousWordsForExport(previousWords);
+            else
+                RefreshEncounterHistoricCacheFromPlayer(player);
+
+            var projected = new Dictionary<string, string>();
+            if (contextExtras != null)
+            {
+                foreach (var kv in contextExtras)
+                {
+                    if (IsAuthoritativeWorkflowExtraKey(kv.Key))
+                        continue;
+                    projected[kv.Key] = kv.Value ?? "";
+                }
+            }
 
             projected.Remove("previous_word_first_letter");
             var scoringPrevious = RunStateExporter.GetCachedPreviousWords();
@@ -1423,7 +1481,9 @@ namespace CursedWordsSolverCompanion
             var cacheCount = scoringPrevious != null ? scoringPrevious.Count : 0;
             var playerCount = fromPlayer != null ? fromPlayer.Count : 0;
             List<HistoricWord> workflowWords = null;
-            if (cacheCount > 0 && playerCount > 0)
+            if (previousWords != null && previousWords.Count > 0)
+                workflowWords = previousWords;
+            else if (cacheCount > 0 && playerCount > 0)
                 workflowWords = cacheCount >= playerCount ? scoringPrevious : fromPlayer;
             else if (cacheCount > 0)
                 workflowWords = scoringPrevious;
@@ -1444,7 +1504,7 @@ namespace CursedWordsSolverCompanion
                 }
             }
 
-            var overlay = BuildBestHistoricExtras(player, projected, liveOnly: true);
+            var overlay = BuildBestHistoricExtras(player, projected, liveOnlyHistoric);
             if (overlay != null)
             {
                 foreach (var kv in overlay)
@@ -1512,9 +1572,27 @@ namespace CursedWordsSolverCompanion
         public static Dictionary<string, string> BuildScoringContextWorkflowExtras(
             Player player,
             Dictionary<string, string> liveExtras,
-            Dictionary<string, string> scoringExtras
+            Dictionary<string, string> scoringExtras,
+            List<HistoricWord> previousWords = null,
+            List<BossModifier> scoringBossModifiers = null
         )
         {
+            if (previousWords != null && previousWords.Count > 0)
+            {
+                var scoreProjected = BuildAuthoritativeWorkflowExtras(
+                    player,
+                    previousWords,
+                    scoringExtras,
+                    liveOnlyHistoric: true
+                );
+                AppendBossExtrasFromModifiers(
+                    scoreProjected,
+                    player,
+                    scoringBossModifiers ?? new List<BossModifier>()
+                );
+                return scoreProjected;
+            }
+
             var projected = liveExtras != null
                 ? new Dictionary<string, string>(liveExtras)
                 : new Dictionary<string, string>();
@@ -1755,6 +1833,160 @@ namespace CursedWordsSolverCompanion
                 snapshot.extras["boss_modifiers"] = JsonConvert.SerializeObject(ids);
             if (floorMods.Count > 0)
                 snapshot.extras["boss_modifier_floor_mods"] = JsonConvert.SerializeObject(floorMods);
+        }
+
+        /// <summary>
+        /// Boss extras from CalculateOverallScore bossModifiers (or live resolve for F7 sync).
+        /// Empty list clears boss keys and sets boss_modifiers to [].
+        /// </summary>
+        public static void AppendBossExtrasFromModifiers(
+            Dictionary<string, string> target,
+            Player player,
+            List<BossModifier> bosses
+        )
+        {
+            if (target == null)
+                return;
+
+            if (bosses == null || bosses.Count == 0)
+            {
+                ClearBossExtras(target);
+                target["boss_modifiers"] = "[]";
+                return;
+            }
+
+            var floorMods = new Dictionary<string, int>();
+            var ids = new List<string>();
+            foreach (var b in bosses)
+            {
+                if (b == null)
+                    continue;
+                var id = WikiBossIdFromModifier(b);
+                if (string.IsNullOrEmpty(id) || IsMetaBossSlug(id))
+                    continue;
+                if (!ids.Contains(id))
+                    ids.Add(id);
+                try
+                {
+                    var mod = b.FloorAdjustedModification;
+                    if (mod > 0)
+                        floorMods[id] = mod;
+                }
+                catch
+                {
+                    // optional
+                }
+            }
+
+            if (ids.Count == 0)
+            {
+                ClearBossExtras(target);
+                target["boss_modifiers"] = "[]";
+                return;
+            }
+
+            target["boss_modifiers"] = JsonConvert.SerializeObject(ids);
+            if (floorMods.Count > 0)
+                target["boss_modifier_floor_mods"] = JsonConvert.SerializeObject(floorMods);
+            else
+                target.Remove("boss_modifier_floor_mods");
+
+            BossModifier boss = null;
+            foreach (var b in bosses)
+            {
+                if (b == null)
+                    continue;
+                boss = b;
+                break;
+            }
+            if (boss == null)
+                return;
+
+            var cursed = boss.IsCursed;
+            if (!cursed)
+                cursed = TryGetBoolField(boss, "IsCursed", "Cursed", "IsCursedBoss");
+            if (!cursed)
+                cursed = TryGetBoolProperty(player, "BossIsCursed", "ActiveBossIsCursed");
+            if (!cursed)
+            {
+                var encounter = BossResolver.TryGetEncounter();
+                if (encounter != null)
+                    cursed = TryGetBoolProperty(
+                        encounter,
+                        "BossIsCursed",
+                        "IsCursedBoss",
+                        "ActiveBossIsCursed",
+                        "IsCursed"
+                    );
+            }
+            if (!cursed)
+                cursed = TryGetBoolProperty(
+                    typeof(GameStatics),
+                    "BossIsCursed",
+                    "ActiveBossIsCursed"
+                );
+            if (cursed)
+                target["boss_cursed"] = "true";
+            else
+                target.Remove("boss_cursed");
+
+            var area = TryGetIntProperty(
+                boss,
+                "AreaNumber",
+                "Area",
+                "StageNumber",
+                "Stage"
+            );
+            if (area < 0)
+                area = TryGetIntProperty(
+                    player,
+                    "AreaNumber",
+                    "CurrentArea",
+                    "StageNumber",
+                    "CurrentStage",
+                    "AreaIndex"
+                );
+            if (area < 0)
+            {
+                var encounter = BossResolver.TryGetEncounter();
+                if (encounter != null)
+                    area = TryGetIntProperty(
+                        encounter,
+                        "AreaNumber",
+                        "CurrentArea",
+                        "StageNumber",
+                        "CurrentStage",
+                        "AreaIndex",
+                        "Area"
+                    );
+            }
+            if (area < 0)
+                area = TryGetIntProperty(
+                    typeof(GameStatics),
+                    "AreaNumber",
+                    "CurrentArea",
+                    "CurrentStage",
+                    "StageNumber"
+                );
+            if (area < 0)
+                area = BossResolver.TryGetRunStage(player);
+            if (area >= 1)
+                target["boss_area_number"] = area.ToString();
+            else
+                target.Remove("boss_area_number");
+
+            try
+            {
+                var floorMod = boss.FloorAdjustedModification;
+                if (floorMod > 0)
+                    target["boss_floor_modification"] = floorMod.ToString();
+                else
+                    target.Remove("boss_floor_modification");
+            }
+            catch
+            {
+                target.Remove("boss_floor_modification");
+            }
         }
 
         /// <summary>Michael finale puzzle grid (PuzzleController.SubmitWord).</summary>

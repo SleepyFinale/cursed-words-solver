@@ -27,8 +27,24 @@ namespace CursedWordsSolverCompanion
             new Dictionary<string, string>();
         private static Dictionary<string, string> _preSyncF8ExtrasForDiff =
             new Dictionary<string, string>();
+        private static DateTime _lastOverlaySubmitUtc = DateTime.MinValue;
+        private const double OverlaySubmitGraceSec = 2.0;
+
+        public static void MarkOverlaySubmitCompleted()
+        {
+            _lastOverlaySubmitUtc = DateTime.UtcNow;
+        }
+
+        public static bool IsWithinOverlaySubmitGrace()
+        {
+            if (_lastOverlaySubmitUtc == DateTime.MinValue)
+                return false;
+            return (DateTime.UtcNow - _lastOverlaySubmitUtc).TotalSeconds < OverlaySubmitGraceSec;
+        }
+
         private static Dictionary<string, string> _preWordScoringExtrasForDiff =
             new Dictionary<string, string>();
+        private static List<BossModifier> _scoringBossModifiers;
         private static string _f8PredictionHistoricStaleNote = "";
         private static int _lastSubmitBicycleSuitedCount = -1;
 
@@ -63,6 +79,7 @@ namespace CursedWordsSolverCompanion
             _originalF8ExtrasForDiff = new Dictionary<string, string>();
             _preSyncF8ExtrasForDiff = new Dictionary<string, string>();
             _preWordScoringExtrasForDiff = new Dictionary<string, string>();
+            _scoringBossModifiers = null;
             _f8PredictionHistoricStaleNote = "";
             _suggestion = SuggestionMatcher.Load();
             if (_suggestion == null)
@@ -157,9 +174,14 @@ namespace CursedWordsSolverCompanion
             BeginSubmit("PuzzleController.SubmitWord", selections, null);
         }
 
-        public static void OnScoringContext(List<HistoricWord> previousWords)
+        public static void OnScoringContext(
+            List<HistoricWord> previousWords,
+            List<BossModifier> bossModifiers = null
+        )
         {
             var player = RunStateExporter.GetPlayerForUpdate();
+            if (_submitInFlight || _captureCandidate)
+                _scoringBossModifiers = bossModifiers;
             if (_submitInFlight || _captureCandidate)
                 RunStateExporter.CachePreviousWordsForExport(previousWords);
             var captured = ScoringContextCapture.ExtractFromPreviousWords(previousWords);
@@ -186,23 +208,25 @@ namespace CursedWordsSolverCompanion
             if (_captureCandidate)
             {
                 _captureCandidate = false;
-                TryActivateCaptureFromScoringContext(player, captured);
+                TryActivateCaptureFromScoringContext(player, previousWords, captured);
             }
         }
 
         private static void TryActivateCaptureFromScoringContext(
             Player player,
+            List<HistoricWord> previousWords,
             Dictionary<string, string> scoringExtras
         )
         {
             if (_suggestion == null || player == null)
                 return;
 
-            var liveExtras = RunStateExporter.BuildExtrasSnapshot();
             var authoritativeExtras = RunStateExportFill.BuildScoringContextWorkflowExtras(
                 player,
-                liveExtras,
-                scoringExtras
+                null,
+                scoringExtras,
+                previousWords,
+                _scoringBossModifiers
             );
 
             _originalF8ExtrasForDiff = ExtrasDiffHelper.ExtrasFromRunStateObject(
@@ -251,7 +275,13 @@ namespace CursedWordsSolverCompanion
                 return;
             }
 
-            if (ExtrasDiffHelper.HasBossExtrasDrift(preSyncDiff))
+            if (
+                ExtrasDiffHelper.HasBossExtrasDrift(
+                    preSyncDiff,
+                    _originalF8ExtrasForDiff,
+                    authoritativeExtras
+                )
+            )
             {
                 MelonLogger.Warning(
                     "F8 boss stale — press F8 again before submitting the overlay suggestion."
@@ -1231,6 +1261,13 @@ namespace CursedWordsSolverCompanion
         {
             try
             {
+                if (
+                    _suggestion != null
+                    && _path != null
+                    && SuggestionMatcher.PathsEqual(_suggestion.path, _path)
+                )
+                    MarkOverlaySubmitCompleted();
+
                 var actualScore = ComputeActualScore();
                 var submitPlayer = RunStateExporter.GetPlayerForUpdate();
                 var runState = RunStateExporter.CaptureRunState(submitPlayer);

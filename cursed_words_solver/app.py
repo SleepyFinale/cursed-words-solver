@@ -34,6 +34,7 @@ from cursed_words_solver.config import (
     CONFIG_DIR,
     DEBUG_DIR,
     AppConfig,
+    Region,
     describe_wordlist,
     resolve_wordlist,
 )
@@ -249,7 +250,7 @@ class SolverApp:
         self._bridge.hide_overlay.connect(self._hide_overlays)
         self._bridge.quit_app.connect(self._shutdown)
         self._bridge.solve_finished.connect(self._apply_solve_ui)
-        self._bridge.show_stale.connect(self.overlay.show_stale_notice)
+        self._bridge.show_stale.connect(self._on_show_stale_notice)
         self.overlay.request_quit.connect(self._shutdown)
         self._overlay_regions = resolve_overlay_regions(None, config)
         self._rack_collapse_warned = False
@@ -327,6 +328,25 @@ class SolverApp:
                 flush=True,
             )
         return self._overlay_regions
+
+    def _overlay_board_region(self) -> Region | None:
+        regions = getattr(self, "_overlay_regions", None)
+        if regions is None:
+            return None
+        br = regions.board
+        return br if br.is_valid() else None
+
+    def _maybe_refresh_overlay_regions(self, run_state: dict | None) -> None:
+        if run_state and hasattr(self, "config"):
+            self._refresh_overlay_regions(run_state)
+
+    def _on_show_stale_notice(self, message: str) -> None:
+        data = load_run_state_raw()
+        self._maybe_refresh_overlay_regions(data)
+        self.overlay.show_stale_notice(
+            message,
+            board_region=self._overlay_board_region(),
+        )
 
     def _needs_manual_calibration(self) -> bool:
         if self.calibrate:
@@ -548,6 +568,8 @@ class SolverApp:
             round_log_entries_after,
         )
 
+        data = load_run_state_raw()
+
         entries, self._round_log_index_offset = poll_round_log_submits(
             self._round_log_index_offset
         )
@@ -558,7 +580,9 @@ class SolverApp:
             self._last_invalidation_reason = "word_submitted"
             self._workflow_stale_overlay_reason = None
             self._clear_highlight_state()
-            self.overlay.show_idle()
+            if data:
+                self._maybe_refresh_overlay_regions(data)
+            self.overlay.show_idle(board_region=self._overlay_board_region())
             print("  Word submitted — press F8 for the next grid.", flush=True)
 
         if self._solve_active:
@@ -570,7 +594,6 @@ class SolverApp:
             fingerprints_from_run_state,
         )
 
-        data = load_run_state_raw()
         extras = data.get("extras") if isinstance(data, dict) else None
         board_fp = ""
         loadout_fp = ""
@@ -606,11 +629,18 @@ class SolverApp:
 
                     if poll_invalidation_is_workflow_stale(reason):
                         detail = reason.removeprefix("workflow drift (").removesuffix(")")
+                        if data:
+                            self._maybe_refresh_overlay_regions(data)
                         self.overlay.show_stale_notice(
-                            f"F8 prediction may be wrong ({detail}) — press F8 again."
+                            f"F8 prediction may be wrong ({detail}) — press F8 again.",
+                            board_region=self._overlay_board_region(),
                         )
                     else:
-                        self.overlay.show_idle()
+                        if data:
+                            self._maybe_refresh_overlay_regions(data)
+                        self.overlay.show_idle(
+                            board_region=self._overlay_board_region()
+                        )
                     print(f"  Suggestion cleared — {reason}", flush=True)
             elif reason is None and self._active_suggestion_session is not None:
                 self._last_invalidation_reason = None
@@ -622,7 +652,9 @@ class SolverApp:
             self._active_suggestion_session = None
             self._last_invalidation_reason = "suggestion_expired"
             self._clear_highlight_state()
-            self.overlay.show_idle()
+            if data:
+                self._maybe_refresh_overlay_regions(data)
+            self.overlay.show_idle(board_region=self._overlay_board_region())
 
         self._maybe_clear_stale_highlights(board_tiles_fingerprint_suffix)
 
@@ -672,6 +704,7 @@ class SolverApp:
             self.overlay.show_shop_advice(
                 update.shop_advice_html,
                 warnings_html=update.warnings_html,
+                board_region=self._overlay_board_region(),
             )
             return
         show_path = (
@@ -689,6 +722,7 @@ class SolverApp:
             twinkle_toes_swap=update.twinkle_toes_swap,
             trusted=update.trusted_suggestion,
             loadout=update.loadout,
+            board_region=self._overlay_board_region(),
         )
         if show_path:
             if update.melmod_board_fingerprint is not None:
@@ -2287,6 +2321,11 @@ class SolverApp:
                 self.config.show_board_highlight
                 and self._overlay_regions.board.is_valid()
                 and bool(results)
+                and not (
+                    block_f8_save
+                    and block_f8_reason
+                    and str(block_f8_reason).startswith("gather_incomplete")
+                )
             )
             trusted = not block_f8_save if results else True
             self._bridge.solve_finished.emit(

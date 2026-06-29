@@ -24,7 +24,7 @@ namespace CursedWordsSolverCompanion
         private static bool _exportSkipWorkflowDiskMerge;
         private static string _f8ExportRequestId = "";
         private static DateTime _lastF8ExportCompletedUtc = DateTime.MinValue;
-        private const double F8SuggestionClearGraceSec = 0.0;
+        private const double F8SuggestionClearGraceSec = 1.5;
 
         internal static bool ExportLiveOnlyHistoric
         {
@@ -208,6 +208,13 @@ namespace CursedWordsSolverCompanion
             var ctx = BuildStaleF8Context(player);
             if (ExtrasDiffHelper.IsBenignWorkflowShrinkDrift(diff, ctx))
                 return;
+            if (ScoringCaptureSession.IsWithinOverlaySubmitGrace())
+                return;
+            if (ExtrasDiffHelper.IsExpectedPostOverlaySubmitDrift(f8Extras, snapshot.extras))
+            {
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                return;
+            }
             if (ExtrasDiffHelper.HasPlayedWordSinceF8(diff))
             {
                 var workflow = ExtrasDiffHelper.DescribePlayedWordSinceF8Drift(diff, ctx);

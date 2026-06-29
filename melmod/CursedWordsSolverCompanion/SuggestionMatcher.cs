@@ -308,7 +308,8 @@ namespace CursedWordsSolverCompanion
             if (!boardMatches)
                 parts.Add("board_fingerprint differs (board changed since F8?)");
 
-            if (pathMatches && boardMatches && suggestion.run_state_snapshot != null)
+            if (pathMatches && boardMatches && suggestion.run_state_snapshot != null
+                && !suggestion.capture_blocked)
             {
                 var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
                     suggestion.run_state_snapshot

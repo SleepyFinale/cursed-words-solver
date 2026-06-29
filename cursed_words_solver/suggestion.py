@@ -905,7 +905,10 @@ def f8_historic_would_fail_submit_projection(
             return describe_f8_prediction_historic_stale_note(embed, source_extras)
         return None
     if proj_count > embed_count:
-        return None
+        return (
+            f"F8 embed historic ({embed_count} words) behind submit projection "
+            f"({proj_count} words)"
+        )
 
     if embed_count > proj_count:
         if isinstance(scoring_extras, dict):
@@ -2194,7 +2197,20 @@ def save_blocked_suggestion(
         "predicted_trace": predicted_trace,
     }
     if run_state_snapshot is not None:
-        payload["run_state_snapshot"] = run_state_snapshot
+        snapshot = copy.deepcopy(run_state_snapshot)
+        if str(block_reason or "").startswith("gather_incomplete:historic_words"):
+            extras = snapshot.get("extras")
+            if isinstance(extras, dict):
+                for key in (
+                    "historic_words",
+                    "previous_word_first_letter",
+                    "scoring_previous_words_count",
+                    "red_tiles_used_encounter",
+                    "encounter_historic_source",
+                    "mutating_dna_letter_counts",
+                ):
+                    extras.pop(key, None)
+        payload["run_state_snapshot"] = snapshot
     if export_diagnostics:
         payload["export_diagnostics"] = export_diagnostics
     if consumable_placements:

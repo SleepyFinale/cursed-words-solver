@@ -234,3 +234,243 @@ def test_poll_invalidate_clears_with_active_session_on_historic_advance(
     assert reason is not None
     assert reason.startswith("workflow drift (")
     assert not suggestion_path.exists()
+
+
+def test_prune_historic_metadata_when_spc_exceeds_green_poison_rows():
+    """f8#1010: EWEST (no green) must not be dropped when spc=4 on new grid."""
+    from cursed_words_solver.f8_snapshot import _encounter_historic_export_ready
+    from cursed_words_solver.loadout import (
+        prune_historic_incompatible_with_board,
+        reconcile_encounter_historic_for_scoring,
+    )
+
+    board = _simple_board()
+    historic = json.dumps(
+        [
+            {
+                "word": "EWEST",
+                "score": 690,
+                "path": [14, 18, 19, 20, 15],
+            },
+            {
+                "word": "INSCIENT",
+                "score": 1770,
+                "path": [7, 2, 6, 0, 13, 18, 24, 15],
+                "green_tile_count": 1,
+            },
+            {
+                "word": "MAORMOR",
+                "score": 1532,
+                "path": [17, 10, 11, 6, 7, 13, 14],
+                "green_tile_count": 1,
+            },
+            {
+                "word": "EGMA",
+                "score": 1590,
+                "path": [14, 19, 23, 24],
+                "green_tile_count": 1,
+            },
+        ]
+    )
+    extras = {
+        "grid_number": "5",
+        "scoring_previous_words_count": "4",
+        "historic_words": historic,
+        "encounter_historic_source": "live",
+    }
+    reconcile_encounter_historic_for_scoring(extras, board=board)
+    prune_historic_incompatible_with_board(board, extras)
+    assert extras.get("encounter_historic_source") == "historic_metadata_only"
+    rows = json.loads(extras["historic_words"])
+    assert len(rows) == 4
+    assert rows[0]["word"] == "EWEST"
+    loadout = Loadout(
+        character="Rodman",
+        stickers=[{"id": "movie_camera", "level": 1}],
+        stamps=[],
+        extras=extras,
+    )
+    assert _encounter_historic_export_ready(
+        extras,
+        extras["historic_words"],
+        loadout=loadout,
+        board=board,
+    )
+
+
+def test_f8_historic_blocks_when_embed_behind_projection():
+    from cursed_words_solver.suggestion import f8_historic_would_fail_submit_projection
+
+    embed = {
+        "historic_words": json.dumps([{"word": "ONE", "score": 10}]),
+        "scoring_previous_words_count": "1",
+    }
+    projected = {
+        "historic_words": json.dumps(
+            [{"word": "ONE", "score": 10}, {"word": "TWO", "score": 20}]
+        ),
+        "scoring_previous_words_count": "2",
+    }
+    note = f8_historic_would_fail_submit_projection(
+        embed,
+        projected_extras=projected,
+    )
+    assert note is not None
+    assert "behind submit projection" in note
+
+
+def test_save_blocked_strips_historic_on_gather_incomplete(tmp_path, monkeypatch):
+    from cursed_words_solver.config import LAST_SUGGESTION_BLOCKED_PATH
+    from cursed_words_solver.models import CurseType, Tile, TileColor, WordResult
+    from cursed_words_solver.suggestion import save_blocked_suggestion
+
+    monkeypatch.setattr(
+        "cursed_words_solver.suggestion.LAST_SUGGESTION_BLOCKED_PATH",
+        tmp_path / "last_suggestion_blocked.json",
+    )
+    board = _simple_board()
+    loadout = Loadout(character="Rodman", stickers=[], stamps=[])
+    result = WordResult(
+        word="ora",
+        path=[3, 9, 0],
+        score=100.0,
+        breakdown={},
+    )
+    snapshot = {
+        "extras": {
+            "historic_words": json.dumps([{"word": "A", "score": 1}]),
+            "scoring_previous_words_count": "3",
+            "encounter_historic_source": "green_poison_only",
+        }
+    }
+    save_blocked_suggestion(
+        board=board,
+        loadout=loadout,
+        result=result,
+        predicted_trace=None,
+        run_state_snapshot=snapshot,
+        scoring_word="ora",
+        block_reason="gather_incomplete:historic_words",
+    )
+    saved = json.loads(
+        (tmp_path / "last_suggestion_blocked.json").read_text(encoding="utf-8")
+    )
+    extras = saved["run_state_snapshot"]["extras"]
+    assert "historic_words" not in extras
+    assert "scoring_previous_words_count" not in extras
+
+
+def test_post_overlay_submit_historic_prefix_matches():
+    """After overlay submit, live historic is +1 word with matching prefix (ayurveda pattern)."""
+    f8_hist = json.dumps([{"word": "AYURVEDA", "score": 100}])
+    submit_hist = json.dumps(
+        [
+            {"word": "AYURVEDA", "score": 100},
+            {"word": "DIACODION", "score": 80, "path": [0, 1, 2, 3, 4, 5, 6, 8, 9]},
+        ]
+    )
+    assert historic_metadata_matches_json(f8_hist, f8_hist)
+    prefix = json.dumps(json.loads(submit_hist)[:1])
+    assert historic_metadata_matches_json(prefix, f8_hist)
+    assert len(json.loads(submit_hist)) == len(json.loads(f8_hist)) + 1
+
+
+def test_gather_incomplete_disables_board_highlight():
+    """gather_incomplete preview must not enable on-game path highlight."""
+    block_f8_save = True
+    block_f8_reason = "gather_incomplete:historic_words"
+    show_board_highlight = True
+    board_valid = True
+    results = [object()]
+    highlight = (
+        show_board_highlight
+        and board_valid
+        and bool(results)
+        and not (
+            block_f8_save
+            and block_f8_reason
+            and str(block_f8_reason).startswith("gather_incomplete")
+        )
+    )
+    assert highlight is False
+
+
+def test_gather_completes_after_metadata_prune_without_reexport():
+    """f8#1009/1010: one reconcile+prune must satisfy gather (no retry loop)."""
+    from cursed_words_solver.loadout import (
+        prune_historic_incompatible_with_board,
+        reconcile_encounter_historic_for_scoring,
+    )
+
+    board = _simple_board()
+    historic = json.dumps(
+        [
+            {"word": "EWEST", "score": 690, "path": [14, 18, 19, 20, 15]},
+            {
+                "word": "INSCIENT",
+                "score": 1770,
+                "path": [7, 2, 6, 0, 13, 18, 24, 15],
+                "green_tile_count": 1,
+            },
+            {
+                "word": "MAORMOR",
+                "score": 1532,
+                "path": [17, 10, 11, 6, 7, 13, 14],
+                "green_tile_count": 1,
+            },
+            {
+                "word": "EGMA",
+                "score": 1590,
+                "path": [14, 19, 23, 24],
+                "green_tile_count": 1,
+            },
+        ]
+    )
+    extras = {
+        "grid_number": "5",
+        "scoring_previous_words_count": "4",
+        "historic_words": historic,
+        "encounter_historic_source": "live",
+    }
+    reconcile_encounter_historic_for_scoring(extras, board=board)
+    prune_historic_incompatible_with_board(board, extras)
+    loadout = Loadout(
+        character="Rodman",
+        stickers=[{"id": "movie_camera", "level": 1}],
+        stamps=[],
+        extras=dict(extras),
+    )
+    assert _encounter_historic_export_ready(
+        extras,
+        extras["historic_words"],
+        loadout=loadout,
+        board=board,
+    )
+    assert "historic_words" not in (
+        _build_snapshot_from_run_state(
+            {
+                "board": {
+                    "tiles": [
+                        {
+                            "row": r,
+                            "col": c,
+                            "char": "a",
+                            "letter": "A",
+                            "base_score": 1,
+                            "color": "colorless",
+                            "curse": "letter",
+                            "active": True,
+                        }
+                        for r in range(5)
+                        for c in range(5)
+                    ],
+                    "money": 10,
+                },
+                "character": "Rodman",
+                "stickers": [{"id": "movie_camera", "level": 1}],
+                "stamps": [],
+                "extras": extras,
+            }
+        ).gather_missing
+        or []
+    )

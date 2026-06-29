@@ -121,7 +121,12 @@ namespace CursedWordsSolverCompanion
             var staleCtx = submitPlayer != null
                 ? RunStateExporter.BuildStaleF8Context(submitPlayer)
                 : StaleF8Context.Default();
-            var staleNote = ExtrasDiffHelper.DescribeStaleF8Extras(extrasDiff, staleCtx);
+            var staleNote = ExtrasDiffHelper.DescribeStaleF8Extras(
+                extrasDiff,
+                staleCtx,
+                f8Extras,
+                diffExtras
+            );
             if (
                 string.IsNullOrEmpty(staleNote)
                 && !string.IsNullOrEmpty(f8PredictionHistoricStaleNote)

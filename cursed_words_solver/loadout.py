@@ -157,17 +157,26 @@ def reconcile_boss_extras_for_f8_embed(run_state: dict[str, Any]) -> None:
     fresh_extras = fresh.get("extras")
     if not isinstance(fresh_extras, dict):
         fresh_extras = {}
-    node_type = str(
-        fresh_extras.get("run_node_type") or extras.get("run_node_type") or ""
-    ).strip()
-    if node_type != "EncounterFirst":
-        return
     embed_has = _boss_modifiers_active(extras.get("boss_modifiers")) or bool(
         str(run_state.get("boss_id") or "").strip()
     )
     fresh_has = _boss_modifiers_active(fresh_extras.get("boss_modifiers")) or bool(
         str(fresh.get("boss_id") or "").strip()
     )
+    fresh_mods = str(fresh_extras.get("boss_modifiers") or "").strip()
+    embed_mods = str(extras.get("boss_modifiers") or "").strip()
+    if fresh_has and fresh_mods and fresh_mods != embed_mods:
+        for key in BOSS_RECONCILE_EXTRA_KEYS:
+            if key in fresh_extras:
+                extras[key] = fresh_extras[key]
+            else:
+                extras.pop(key, None)
+        for field in ("boss_id", "boss_name", "boss_effect"):
+            if field in fresh:
+                run_state[field] = fresh[field]
+            else:
+                run_state[field] = ""
+        return
     if not embed_has or fresh_has:
         return
     for key in BOSS_RECONCILE_EXTRA_KEYS:
@@ -1782,10 +1791,6 @@ def prune_historic_incompatible_with_board(
         for row in arr
         if isinstance(row, dict) and int(row.get("green_tile_count") or 0) > 0
     ]
-    if poison_rows:
-        extras["historic_words"] = json.dumps(poison_rows, ensure_ascii=False)
-        extras["encounter_historic_source"] = "green_poison_only"
-        return True
     metadata_rows: list[dict[str, Any]] = []
     for row in arr:
         if not isinstance(row, dict):
@@ -1802,6 +1807,15 @@ def prune_historic_incompatible_with_board(
                 meta[key] = row[key]
         if meta:
             metadata_rows.append(meta)
+    if poison_rows and len(poison_rows) < spc and len(poison_rows) < len(arr):
+        if metadata_rows:
+            extras["historic_words"] = json.dumps(metadata_rows, ensure_ascii=False)
+            extras["encounter_historic_source"] = "historic_metadata_only"
+            return True
+    if poison_rows:
+        extras["historic_words"] = json.dumps(poison_rows, ensure_ascii=False)
+        extras["encounter_historic_source"] = "green_poison_only"
+        return True
     if metadata_rows:
         extras["historic_words"] = json.dumps(metadata_rows, ensure_ascii=False)
         extras["encounter_historic_source"] = "historic_metadata_only"
@@ -2200,7 +2214,7 @@ def align_embed_with_scoring_loadout(
     if embed_hist == rec_hist:
         embed_spc = _scoring_previous_words_count_from_extras(extras)
         rec_spc = _scoring_previous_words_count_from_extras(reconciled)
-        if rec_spc != embed_spc:
+        if rec_spc > embed_spc:
             extras["scoring_previous_words_count"] = str(rec_spc)
         rec_letter = str(reconciled.get("previous_word_first_letter", "") or "").strip()
         spc = _scoring_previous_words_count_from_extras(extras)
@@ -2224,6 +2238,13 @@ def align_embed_with_scoring_loadout(
         val = reconciled.get(key)
         if val is None or str(val).strip() == "":
             continue
+        if key == "mutating_dna_letter_counts":
+            text = str(val).strip()
+            if text in ("{}", "[]"):
+                continue
+            embed_dna = str(extras.get(key, "") or "").strip()
+            if embed_dna and embed_dna not in ("", "{}", "[]") and text in ("{}", "[]"):
+                continue
         extras[key] = str(val) if not isinstance(val, str) else val
 
 

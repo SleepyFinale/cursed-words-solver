@@ -116,6 +116,190 @@ namespace CursedWordsSolverCompanion
 
 
 
+        public static bool HasBossExtrasDrift(
+
+            Dictionary<string, object> extrasDiff,
+
+            Dictionary<string, string> f8Extras,
+
+            Dictionary<string, string> submitExtras
+
+        )
+
+        {
+
+            if (IsBenignEncounterBossDrift(f8Extras, submitExtras))
+
+                return false;
+
+            return CollectBossDriftNotes(extrasDiff).Count > 0;
+
+        }
+
+
+
+        private static readonly HashSet<string> ScoringEarlyBossSlugs =
+
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+
+            {
+
+                "salamander",
+
+                "robo_monkey",
+
+                "fox",
+
+            };
+
+
+
+        private static readonly HashSet<string> EncounterOnlyBossSlugs =
+
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+
+            {
+
+                "badger",
+
+                "hyena",
+
+                "bat",
+
+                "mole",
+
+                "axolotl",
+
+                "bison",
+
+                "yeti_crab",
+
+                "robo_eel",
+
+                "wolf",
+
+                "cobra",
+
+                "toothed_whale",
+
+            };
+
+
+
+        /// <summary>
+
+        /// F8 embed lists encounter/grid bosses but CalculateOverallScore passed no scoring bosses.
+
+        /// </summary>
+
+        public static bool IsBenignEncounterBossDrift(
+
+            Dictionary<string, string> f8Extras,
+
+            Dictionary<string, string> submitExtras
+
+        )
+
+        {
+
+            if (f8Extras == null || submitExtras == null)
+
+                return false;
+
+
+
+            var f8Mods = ParseBossModifierSlugs(f8Extras);
+
+            var submitMods = ParseBossModifierSlugs(submitExtras);
+
+            if (submitMods.Count > 0 || f8Mods.Count == 0)
+
+                return false;
+
+
+
+            foreach (var id in f8Mods)
+
+            {
+
+                if (ScoringEarlyBossSlugs.Contains(id))
+
+                    return false;
+
+                if (!EncounterOnlyBossSlugs.Contains(id) && id != "capybara")
+
+                    return false;
+
+            }
+
+
+
+            return true;
+
+        }
+
+
+
+        private static List<string> ParseBossModifierSlugs(Dictionary<string, string> extras)
+
+        {
+
+            var result = new List<string>();
+
+            if (extras == null)
+
+                return result;
+
+            string raw;
+
+            if (!extras.TryGetValue("boss_modifiers", out raw))
+
+                return result;
+
+            raw = (raw ?? "").Trim();
+
+            if (string.IsNullOrEmpty(raw) || raw == "[]")
+
+                return result;
+
+            try
+
+            {
+
+                var parsed = JsonConvert.DeserializeObject<List<string>>(raw);
+
+                if (parsed == null)
+
+                    return result;
+
+                foreach (var entry in parsed)
+
+                {
+
+                    var slug = (entry ?? "").Trim().ToLowerInvariant();
+
+                    if (!string.IsNullOrEmpty(slug) && !result.Contains(slug))
+
+                        result.Add(slug);
+
+                }
+
+            }
+
+            catch
+
+            {
+
+                // ignore
+
+            }
+
+            return result;
+
+        }
+
+
+
         /// <summary>
 
         /// True when submit-time extras drifted from the F8 snapshot (workflow stale, not a solver bug).
@@ -142,7 +326,31 @@ namespace CursedWordsSolverCompanion
 
         {
 
-            return !string.IsNullOrEmpty(DescribeStaleF8Extras(extrasDiff, ctx));
+            return HasStaleF8ExtrasDrift(extrasDiff, ctx, null, null);
+
+        }
+
+
+
+        public static bool HasStaleF8ExtrasDrift(
+
+            Dictionary<string, object> extrasDiff,
+
+            StaleF8Context ctx,
+
+            Dictionary<string, string> f8Extras,
+
+            Dictionary<string, string> submitExtras
+
+        )
+
+        {
+
+            return !string.IsNullOrEmpty(
+
+                DescribeStaleF8Extras(extrasDiff, ctx, f8Extras, submitExtras)
+
+            );
 
         }
 
@@ -174,6 +382,26 @@ namespace CursedWordsSolverCompanion
 
         {
 
+            return DescribeStaleF8Extras(extrasDiff, ctx, null, null);
+
+        }
+
+
+
+        public static string DescribeStaleF8Extras(
+
+            Dictionary<string, object> extrasDiff,
+
+            StaleF8Context ctx,
+
+            Dictionary<string, string> f8Extras,
+
+            Dictionary<string, string> submitExtras
+
+        )
+
+        {
+
             var benignShrink = IsBenignWorkflowShrinkDrift(extrasDiff, ctx);
 
             var workflow = benignShrink
@@ -187,6 +415,18 @@ namespace CursedWordsSolverCompanion
             var tileNinja = CollectTileNinjaDriftNotes(extrasDiff);
 
             var boss = CollectBossDriftNotes(extrasDiff);
+
+            if (
+
+                f8Extras != null
+
+                && submitExtras != null
+
+                && IsBenignEncounterBossDrift(f8Extras, submitExtras)
+
+            )
+
+                boss = new List<string>();
 
             if (workflow.Count == 0 && bicycle.Count == 0 && tileNinja.Count == 0 && boss.Count == 0)
 
@@ -1161,6 +1401,10 @@ namespace CursedWordsSolverCompanion
 
             var diff = DiffExtras(f8Extras, liveExtras);
 
+            if (IsBenignCaptureTimeDrift(diff, ctx))
+
+                return;
+
             var workflow = DescribeStaleF8WorkflowDrift(diff, ctx);
 
             var bicycle = DescribeStaleF8BicycleDrift(diff, ctx);
@@ -1172,6 +1416,200 @@ namespace CursedWordsSolverCompanion
             if (!string.IsNullOrEmpty(bicycle))
 
                 MelonLoader.MelonLogger.Warning(bicycle);
+
+        }
+
+
+
+        /// <summary>
+
+        /// True when F8 embed vs live differs only by metadata/path fill-in at capture time.
+
+        /// </summary>
+
+        public static bool IsBenignCaptureTimeDrift(
+
+            Dictionary<string, object> extrasDiff,
+
+            StaleF8Context ctx
+
+        )
+
+        {
+
+            if (extrasDiff == null || extrasDiff.Count == 0)
+
+                return true;
+
+
+
+            if (!extrasDiff.TryGetValue("historic_words", out var histRaw))
+
+                return false;
+
+            var histEntry = histRaw as Dictionary<string, string>;
+
+            if (histEntry == null)
+
+                return false;
+
+
+
+            string f8Hist;
+
+            string submitHist;
+
+            histEntry.TryGetValue("f8", out f8Hist);
+
+            histEntry.TryGetValue("submit", out submitHist);
+
+            f8Hist = (f8Hist ?? "").Trim();
+
+            submitHist = (submitHist ?? "").Trim();
+
+            if (string.Equals(f8Hist, submitHist, StringComparison.Ordinal))
+
+                return true;
+
+
+
+            var f8Count = CountHistoricWordsInJson(f8Hist);
+
+            var submitCount = CountHistoricWordsInJson(submitHist);
+
+            if (submitCount == f8Count && f8Count > 0)
+
+                return HistoricMetadataMatchesJson(f8Hist, submitHist);
+
+
+
+            return false;
+
+        }
+
+
+
+        /// <summary>
+
+        /// True when live historic is exactly one word ahead of F8 embed (expected after overlay submit).
+
+        /// </summary>
+
+        public static bool IsExpectedPostOverlaySubmitDrift(
+
+            Dictionary<string, string> f8Extras,
+
+            Dictionary<string, string> liveExtras
+
+        )
+
+        {
+
+            if (f8Extras == null || liveExtras == null)
+
+                return false;
+
+
+
+            string f8Hist;
+
+            string liveHist;
+
+            f8Extras.TryGetValue("historic_words", out f8Hist);
+
+            liveExtras.TryGetValue("historic_words", out liveHist);
+
+            f8Hist = (f8Hist ?? "").Trim();
+
+            liveHist = (liveHist ?? "").Trim();
+
+
+
+            var f8Count = CountHistoricWordsInJson(f8Hist);
+
+            var liveCount = CountHistoricWordsInJson(liveHist);
+
+
+
+            if (liveCount == f8Count && f8Count > 0)
+
+                return HistoricMetadataMatchesJson(f8Hist, liveHist);
+
+
+
+            if (liveCount != f8Count + 1 || f8Count <= 0)
+
+                return false;
+
+
+
+            return HistoricMetadataPrefixMatches(f8Hist, liveHist, f8Count);
+
+        }
+
+
+
+        private static bool HistoricMetadataPrefixMatches(
+
+            string f8Json,
+
+            string liveJson,
+
+            int prefixCount
+
+        )
+
+        {
+
+            if (string.IsNullOrEmpty(f8Json) || string.IsNullOrEmpty(liveJson) || prefixCount <= 0)
+
+                return false;
+
+            try
+
+            {
+
+                var f8Rows = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(
+
+                    f8Json
+
+                );
+
+                var liveRows = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(
+
+                    liveJson
+
+                );
+
+                if (f8Rows == null || liveRows == null || f8Rows.Count != prefixCount)
+
+                    return false;
+
+                if (liveRows.Count < prefixCount)
+
+                    return false;
+
+                for (var i = 0; i < prefixCount; i++)
+
+                {
+
+                    if (!HistoricRowMetadataMatches(f8Rows[i], liveRows[i]))
+
+                        return false;
+
+                }
+
+                return true;
+
+            }
+
+            catch
+
+            {
+
+                return false;
+
+            }
 
         }
 

@@ -69,6 +69,16 @@ namespace CursedWordsSolverCompanion
             );
         }
 
+        private static Dictionary<string, string> ResolveScoringExtrasForStaleCheck(
+            RoundCaptureContext ctx
+        )
+        {
+            var preWord = ScoringCaptureSession.GetPreWordScoringExtrasForMismatchDiff();
+            if (preWord != null && preWord.Count > 0)
+                return preWord;
+            return ctx.ScoringExtras;
+        }
+
         public static string ExportRound(RoundCaptureContext ctx)
         {
             if (!IsEnabled || ctx == null)
@@ -87,7 +97,11 @@ namespace CursedWordsSolverCompanion
                 var f8Extras = ctx.Suggestion != null
                     ? ExtrasDiffHelper.ExtrasFromRunStateObject(ctx.Suggestion.run_state_snapshot)
                     : new Dictionary<string, string>();
-                var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, ctx.ScoringExtras);
+                var scoringExtrasForStale = ResolveScoringExtrasForStaleCheck(ctx);
+                var extrasDiff = ExtrasDiffHelper.DiffExtras(
+                    f8Extras,
+                    scoringExtrasForStale
+                );
 
                 var payload = new Dictionary<string, object>
                 {
@@ -196,11 +210,19 @@ namespace CursedWordsSolverCompanion
                 : ExtrasDiffHelper.ExtrasFromRunStateObject(
                     ctx.Suggestion.run_state_snapshot
                 );
-            var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, ctx.ScoringExtras);
+            var scoringExtrasForStale = ResolveScoringExtrasForStaleCheck(ctx);
+            var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, scoringExtrasForStale);
             var staleCtx = RunStateExporter.BuildStaleF8Context(
                 RunStateExporter.GetPlayerForUpdate()
             );
-            if (ExtrasDiffHelper.HasStaleF8ExtrasDrift(extrasDiff, staleCtx))
+            if (
+                ExtrasDiffHelper.HasStaleF8ExtrasDrift(
+                    extrasDiff,
+                    staleCtx,
+                    f8Extras,
+                    scoringExtrasForStale
+                )
+            )
                 return "stale_f8_extras";
 
             var predicted = ctx.Suggestion.predicted_score;
@@ -371,16 +393,29 @@ namespace CursedWordsSolverCompanion
             }
 
             string staleF8Reason = null;
-            if (ctx.Suggestion != null && ctx.ScoringExtras != null)
+            var scoringExtrasForStale = ResolveScoringExtrasForStaleCheck(ctx);
+            if (
+                ctx.Suggestion != null
+                && scoringExtrasForStale != null
+                && !ctx.Suggestion.capture_blocked
+            )
             {
-                var f8Extras = ExtrasDiffHelper.ExtrasFromRunStateObject(
+                var f8ExtrasForReason = ExtrasDiffHelper.ExtrasFromRunStateObject(
                     ctx.Suggestion.run_state_snapshot
                 );
-                var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, ctx.ScoringExtras);
+                var extrasDiffForReason = ExtrasDiffHelper.DiffExtras(
+                    f8ExtrasForReason,
+                    scoringExtrasForStale
+                );
                 var staleCtx = RunStateExporter.BuildStaleF8Context(
                     RunStateExporter.GetPlayerForUpdate()
                 );
-                staleF8Reason = ExtrasDiffHelper.DescribeStaleF8Extras(extrasDiff, staleCtx);
+                staleF8Reason = ExtrasDiffHelper.DescribeStaleF8Extras(
+                    extrasDiffForReason,
+                    staleCtx,
+                    f8ExtrasForReason,
+                    scoringExtrasForStale
+                );
             }
 
             return new Dictionary<string, object>
