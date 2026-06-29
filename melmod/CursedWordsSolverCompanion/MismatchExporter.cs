@@ -57,7 +57,10 @@ namespace CursedWordsSolverCompanion
             var f8ExtrasEarly = originalF8Extras != null && originalF8Extras.Count > 0
                 ? originalF8Extras
                 : ExtrasDiffHelper.ExtrasFromRunStateObject(suggestion.run_state_snapshot);
-            var diffExtrasEarly = preWordScoringExtras ?? extrasSnapshot;
+            var diffExtrasEarly = ExtrasDiffHelper.MergePinDerivedExtrasForStaleCheck(
+                preWordScoringExtras,
+                extrasSnapshot
+            );
             var extrasDiffEarly = ExtrasDiffHelper.DiffExtras(
                 f8ExtrasEarly,
                 diffExtrasEarly

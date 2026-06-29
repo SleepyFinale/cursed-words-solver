@@ -72,6 +72,32 @@ def _is_same_submit_bicycle_increment(
     return delta == suited * per_card
 
 
+_PIN_DERIVED_STALE_KEYS = (
+    "bicycle_word_score_bonus",
+    "cards_submitted",
+    "bicycle_suited_on_path",
+)
+
+
+def _merge_pin_derived_for_stale_check(
+    workflow_extras: dict[str, str] | None,
+    scoring_extras: dict[str, str] | None,
+) -> dict[str, str]:
+    """Mirror melmod MergePinDerivedExtrasForStaleCheck."""
+    if workflow_extras:
+        merged = dict(workflow_extras)
+    elif scoring_extras:
+        merged = dict(scoring_extras)
+    else:
+        merged = {}
+    if not scoring_extras:
+        return merged
+    for key in _PIN_DERIVED_STALE_KEYS:
+        if key in scoring_extras:
+            merged[key] = scoring_extras[key] or ""
+    return merged
+
+
 def _stale_f8_extras_note(
     extras_diff: dict[str, dict[str, str]],
     *,
@@ -90,12 +116,21 @@ def _stale_f8_extras_note(
             submit_raw = str(entry.get("submit", "") or "")
             try:
                 f8_val = int(f8_raw)
-                submit_val = int(submit_raw)
             except ValueError:
                 if not f8_raw and submit_raw:
                     notes.append(f"{key} f8=(empty) submit={submit_raw}")
                 elif f8_raw and not submit_raw:
                     notes.append(f"{key} f8={f8_raw} submit=(empty)")
+                continue
+            try:
+                submit_val = int(submit_raw)
+            except ValueError:
+                if not submit_raw:
+                    if f8_val == 0:
+                        continue
+                    notes.append(f"{key} f8={f8_val} submit=(empty)")
+                    continue
+                notes.append(f"{key} f8={f8_val} submit={submit_raw}")
                 continue
             if submit_val > f8_val:
                 if not _is_same_submit_bicycle_increment(
@@ -399,6 +434,50 @@ def test_stale_f8_mirror_cards_submitted_higher_is_stale():
     )
     assert note is not None
     assert "cards_submitted f8=30 submit=32" in note
+
+
+def test_stale_f8_mirror_bicycle_f8_zero_submit_empty_not_stale():
+    note = _stale_f8_extras_note(
+        {
+            "cards_submitted": {"f8": "0", "submit": ""},
+            "bicycle_word_score_bonus": {"f8": "0", "submit": ""},
+        }
+    )
+    assert note is None
+
+
+def test_stale_f8_mirror_bicycle_merge_from_scoring_extras_not_stale():
+    workflow = {
+        "historic_words": "[]",
+        "previous_word_first_letter": "f",
+    }
+    scoring = {
+        "bicycle_word_score_bonus": "2",
+        "cards_submitted": "2",
+    }
+    merged = _merge_pin_derived_for_stale_check(workflow, scoring)
+    f8_extras = {
+        "bicycle_word_score_bonus": "2",
+        "cards_submitted": "2",
+        "historic_words": "[]",
+    }
+    extras_diff = {
+        k: {"f8": f8_extras.get(k, ""), "submit": merged.get(k, "")}
+        for k in set(f8_extras) | set(merged)
+    }
+    note = _stale_f8_extras_note(extras_diff)
+    assert note is None
+
+
+def test_stale_f8_mirror_bicycle_f8_two_submit_empty_without_merge_is_stale():
+    note = _stale_f8_extras_note(
+        {
+            "cards_submitted": {"f8": "2", "submit": ""},
+            "bicycle_word_score_bonus": {"f8": "2", "submit": ""},
+        }
+    )
+    assert note is not None
+    assert "submit=(empty)" in note
 
 
 def test_stale_f8_mirror_bicycle_delta_equals_suited_not_stale():

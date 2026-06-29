@@ -100,6 +100,78 @@ namespace CursedWordsSolverCompanion
 
 
 
+        private static readonly string[] PinDerivedStaleKeys =
+
+        {
+
+            "bicycle_word_score_bonus",
+
+            "cards_submitted",
+
+            "bicycle_suited_on_path",
+
+        };
+
+
+
+        /// <summary>
+
+        /// Workflow extras from score prefix plus pin/step keys from the score pipeline at submit.
+
+        /// </summary>
+
+        public static Dictionary<string, string> MergePinDerivedExtrasForStaleCheck(
+
+            Dictionary<string, string> workflowExtras,
+
+            Dictionary<string, string> scoringExtras
+
+        )
+
+        {
+
+            Dictionary<string, string> merged;
+
+            if (workflowExtras != null && workflowExtras.Count > 0)
+
+                merged = new Dictionary<string, string>(workflowExtras);
+
+            else if (scoringExtras != null)
+
+                merged = new Dictionary<string, string>(scoringExtras);
+
+            else
+
+                merged = new Dictionary<string, string>();
+
+
+
+            if (scoringExtras == null)
+
+                return merged;
+
+
+
+            foreach (var key in PinDerivedStaleKeys)
+
+            {
+
+                string val;
+
+                if (scoringExtras.TryGetValue(key, out val))
+
+                    merged[key] = val ?? "";
+
+            }
+
+
+
+            return merged;
+
+        }
+
+
+
         /// <summary>
 
         /// True when F8 embed had boss extras that submit-time scoring did not use.
@@ -1375,7 +1447,9 @@ namespace CursedWordsSolverCompanion
 
             Dictionary<string, string> liveExtras,
 
-            StaleF8Context ctx
+            StaleF8Context ctx,
+
+            bool includeBicycleDrift = true
 
         )
 
@@ -1395,15 +1469,21 @@ namespace CursedWordsSolverCompanion
 
             var workflow = DescribeStaleF8WorkflowDrift(diff, ctx);
 
-            var bicycle = DescribeStaleF8BicycleDrift(diff, ctx);
-
             if (!string.IsNullOrEmpty(workflow))
 
                 MelonLoader.MelonLogger.Warning(workflow);
 
-            if (!string.IsNullOrEmpty(bicycle))
+            if (includeBicycleDrift)
 
-                MelonLoader.MelonLogger.Warning(bicycle);
+            {
+
+                var bicycle = DescribeStaleF8BicycleDrift(diff, ctx);
+
+                if (!string.IsNullOrEmpty(bicycle))
+
+                    MelonLoader.MelonLogger.Warning(bicycle);
+
+            }
 
         }
 
@@ -1957,7 +2037,7 @@ namespace CursedWordsSolverCompanion
 
             int submitVal;
 
-            if (!int.TryParse(f8Raw, out f8Val) || !int.TryParse(submitRaw, out submitVal))
+            if (!int.TryParse(f8Raw, out f8Val))
 
             {
 
@@ -1968,6 +2048,30 @@ namespace CursedWordsSolverCompanion
                 else if (!string.IsNullOrEmpty(f8Raw) && string.IsNullOrEmpty(submitRaw))
 
                     notes.Add(key + " f8=" + f8Raw + " submit=(empty)");
+
+                return;
+
+            }
+
+            if (!int.TryParse(submitRaw, out submitVal))
+
+            {
+
+                if (string.IsNullOrEmpty(submitRaw))
+
+                {
+
+                    if (f8Val == 0)
+
+                        return;
+
+                    notes.Add(key + " f8=" + f8Val + " submit=(empty)");
+
+                    return;
+
+                }
+
+                notes.Add(key + " f8=" + f8Val + " submit=" + submitRaw);
 
                 return;
 

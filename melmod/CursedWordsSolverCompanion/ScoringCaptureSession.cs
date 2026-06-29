@@ -294,7 +294,8 @@ namespace CursedWordsSolverCompanion
             ExtrasDiffHelper.LogStaleF8DriftWarnings(
                 _preSyncF8ExtrasForDiff,
                 authoritativeExtras,
-                staleCtx
+                staleCtx,
+                includeBicycleDrift: false
             );
 
             _active = true;

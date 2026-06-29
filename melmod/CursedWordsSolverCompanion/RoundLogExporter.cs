@@ -74,9 +74,10 @@ namespace CursedWordsSolverCompanion
         )
         {
             var preWord = ScoringCaptureSession.GetPreWordScoringExtrasForMismatchDiff();
-            if (preWord != null && preWord.Count > 0)
-                return preWord;
-            return ctx.ScoringExtras;
+            return ExtrasDiffHelper.MergePinDerivedExtrasForStaleCheck(
+                preWord,
+                ctx != null ? ctx.ScoringExtras : null
+            );
         }
 
         public static string ExportRound(RoundCaptureContext ctx)
