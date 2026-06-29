@@ -1673,6 +1673,46 @@ namespace CursedWordsSolverCompanion
 
             {
 
+                var f8Count = CountHistoricWordsInJson(f8Raw);
+
+                var submitCount = CountHistoricWordsInJson(submitRaw);
+
+                if (submitCount > f8Count)
+
+                {
+
+                    notes.Add(
+
+                        "historic_words f8=" + f8Count + " submit=" + submitCount
+
+                    );
+
+                    return;
+
+                }
+
+                if (
+
+                    submitCount == f8Count
+
+                    && submitCount > 0
+
+                    && HistoricMetadataMatchesJson(f8Raw, submitRaw)
+
+                )
+
+                    return;
+
+                if (submitCount == f8Count && submitCount > 0)
+
+                {
+
+                    notes.Add("historic_words metadata changed");
+
+                    return;
+
+                }
+
                 notes.Add("historic_words changed");
 
                 return;

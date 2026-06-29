@@ -235,6 +235,22 @@ def _encounter_historic_export_ready(
     board: Board | None = None,
 ) -> bool:
     """True when melmod exported encounter historic (empty OK when gather does not need it)."""
+    from cursed_words_solver.loadout import _historic_words_count
+
+    needs_gather = (
+        loadout is not None
+        and board is not None
+        and loadout_needs_historic_words_gather(loadout, board, extras)
+    )
+    if needs_gather:
+        spc = _scoring_previous_words_count_from_extras(extras)
+        hist_count = _historic_words_count(hist) if hist and hist != "[]" else 0
+        if spc > 0 and hist_count < spc:
+            return False
+        if hist and hist != "[]":
+            return True
+        return False
+
     if hist and hist != "[]":
         return True
     if loadout is not None and board is not None:

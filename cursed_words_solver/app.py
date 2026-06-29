@@ -987,6 +987,9 @@ class SolverApp:
             search_budget = self.config.search_time_budget_sec
             search_started = time.monotonic()
             solve_deadline = search_started + search_budget
+            search_call_mono = search_started
+            search_end_mono = search_started
+            dict_resolve_truncated = False
             placement_gen_sec = 0.0
             placement_screen_sec = 0.0
             placement_refine_sec = 0.0
@@ -1148,7 +1151,7 @@ class SolverApp:
                 self._scoring.rules,
                 default_max_len=board_max_len,
             )
-            effective_min = max(1, constraints.min_len)
+            effective_min = max(constraints.min_len, 3)
             effective_max = min(board_max_len, constraints.max_len)
             if effective_max < effective_min:
                 effective_max = effective_min
@@ -1253,6 +1256,7 @@ class SolverApp:
             )
             rack_boost_budget = search_budget * rack_boost_share
             if sandy_auto_place and rack_tiles and solve_remaining() >= 1.0:
+                search_call_mono = time.monotonic()
                 search_board, placement_records, results = (
                     search_with_consumable_placements(
                         self._searcher,
@@ -1311,6 +1315,7 @@ class SolverApp:
                     "  Twinkle Toes: swap pending — simulating tile pairs…",
                     flush=True,
                 )
+                search_call_mono = time.monotonic()
                 twinkle_budget = twinkle_swap_time_budget(
                     search_budget=search_budget,
                     rack_placement_pending=rack_placement_pending,
@@ -1368,6 +1373,7 @@ class SolverApp:
                             flush=True,
                         )
             elif solve_remaining() >= 0.5:
+                search_call_mono = time.monotonic()
                 results = self._searcher.find_best_words(
                     board,
                     loadout=loadout,
@@ -1439,6 +1445,7 @@ class SolverApp:
                     "— continuing until solution found…",
                     flush=True,
                 )
+                search_call_mono = time.monotonic()
                 completion_start = time.monotonic()
                 completion_results = self._searcher.find_best_words(
                     search_board,
@@ -1719,7 +1726,15 @@ class SolverApp:
                     f"(target {grid_target}) — overshoot will bounce",
                     flush=True,
                 )
+            search_end_mono = time.monotonic()
+
+            def _post_deadline_reached() -> bool:
+                return time.monotonic() >= solve_deadline
+
             for result in results:
+                if _post_deadline_reached():
+                    dict_resolve_truncated = True
+                    break
                 result.dictionary_word = dictionary_word_for_path(
                     search_board,
                     result.path,
@@ -1727,8 +1742,16 @@ class SolverApp:
                     loadout,
                     self._dictionary,
                     min_len=effective_min,
+                    deadline_check=_post_deadline_reached,
                 )
+            post_search_sec = time.monotonic() - search_end_mono
+            pre_search_sec = search_call_mono - search_started
             search_elapsed = time.monotonic() - search_started
+            if dict_resolve_truncated:
+                print(
+                    "  Note: dictionary resolve truncated (F8 budget).",
+                    flush=True,
+                )
             timing = self._searcher.last_search_timing
             if timing is not None:
                 pool_note = (
@@ -1827,6 +1850,7 @@ class SolverApp:
                     self._dictionary,
                     min_len=effective_min,
                     pipeline=self._scoring,
+                    deadline_check=_post_deadline_reached,
                 )
                 if raw_count and not results:
                     print(
@@ -2171,10 +2195,10 @@ class SolverApp:
                 timing_note = ""
                 if timing is not None and search_elapsed > search_budget + 0.5:
                     core_sec = timing.wall_sec
-                    post_sec = max(0.0, search_elapsed - core_sec)
                     timing_note = (
                         f" (budget {search_budget:.0f}s; "
-                        f"search core {core_sec:.1f}s + post {post_sec:.1f}s)"
+                        f"pre {pre_search_sec:.1f}s + core {core_sec:.1f}s "
+                        f"+ post {post_search_sec:.1f}s)"
                     )
                 done_msg = (
                     f"Done in {search_elapsed:.1f}s{timing_note}. "

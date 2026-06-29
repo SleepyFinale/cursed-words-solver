@@ -22,6 +22,32 @@ from cursed_words_solver.ui.board_geometry import path_geometry
 if TYPE_CHECKING:
     from cursed_words_solver.models import Board, Loadout, WordResult
 
+_FALLBACK_MAX_CONTENT_WIDTH = 380
+_COLUMN_WIDTH_MARGIN = 16
+
+
+def build_hero_result_html(
+    word_html: str,
+    score_html: str,
+    *,
+    setup_line: str = "",
+    swap_line: str = "",
+    placement_line: str = "",
+    microscope_line: str = "",
+) -> str:
+    """Rich-text hero block: word on first line, score on second (avoids clipping long words)."""
+    return (
+        f"<span style='font-size:22px;font-weight:bold;color:#fff'>"
+        f"{word_html}</span>"
+        f"<br>"
+        f"<span style='font-size:18px;font-weight:bold;color:#0f8'>"
+        f"{score_html}</span>"
+        f"{setup_line}"
+        f"{swap_line}"
+        f"{placement_line}"
+        f"{microscope_line}"
+    )
+
 
 class ResultOverlay(QWidget):
     request_quit = Signal()
@@ -29,7 +55,6 @@ class ResultOverlay(QWidget):
     _PANEL_COLUMNS = 5
     _PANEL_COLUMN_INDEX = 1  # second column from the left (0-based)
     _MARGIN_Y = 32
-    _MAX_CONTENT_WIDTH = 320
     _MIN_PANEL_WIDTH = 135
     _MIN_PANEL_HEIGHT = 56
     # Stylesheet border (2px) + padding (6px) per side — not included in layout.sizeHint().
@@ -273,15 +298,14 @@ class ResultOverlay(QWidget):
                     f"{score_html}"
                 )
             self.hero_result.setText(
-                f"<span style='font-size:22px;font-weight:bold;color:#fff'>"
-                f"{word_html}</span>"
-                f"&nbsp;&nbsp;"
-                f"<span style='font-size:18px;font-weight:bold;color:#0f8'>"
-                f"{score_html}</span>"
-                f"{setup_line}"
-                f"{swap_line}"
-                f"{placement_line}"
-                f"{microscope_line}"
+                build_hero_result_html(
+                    word_html,
+                    score_html,
+                    setup_line=setup_line,
+                    swap_line=swap_line,
+                    placement_line=placement_line,
+                    microscope_line=microscope_line,
+                )
             )
             self.hero_result.show()
         else:
@@ -301,6 +325,15 @@ class ResultOverlay(QWidget):
         self._position_panel()
         self.show()
         self.raise_()
+
+    def _panel_max_content_width(self) -> int:
+        """Max panel width: one screen column minus margin (stays in column 2)."""
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return _FALLBACK_MAX_CONTENT_WIDTH
+        avail = screen.availableGeometry()
+        col_width = int(avail.width() / self._PANEL_COLUMNS)
+        return max(self._MIN_PANEL_WIDTH, col_width - _COLUMN_WIDTH_MARGIN)
 
     def _position_panel(self) -> None:
         """Place in the 2nd column of a 5-column layout (away from the score)."""
@@ -323,7 +356,7 @@ class ResultOverlay(QWidget):
 
     def _resize_for_content(self) -> None:
         """Size panel from layout hints; never below minimumSizeHint (Qt geometry warnings)."""
-        max_w = self._MAX_CONTENT_WIDTH
+        max_w = self._panel_max_content_width()
         layout = self.layout()
         if layout is not None:
             lm = layout.contentsMargins()
@@ -335,6 +368,8 @@ class ResultOverlay(QWidget):
         max_label_w = max(1, max_w - self._STYLE_CHROME - horiz_inset)
         for label in (self.hero_result, self.warnings_label, self.idle_label):
             if not label.isVisible():
+                label.setMaximumWidth(16777215)
+                label.setMinimumWidth(0)
                 continue
             label.setMaximumWidth(max_label_w)
             if label.wordWrap():

@@ -2957,6 +2957,7 @@ class WordSearcher:
         self._prune_heap: _CandidateHeap | None = None
         self._parallel_executor: ProcessPoolExecutor | None = None
         self._active_deadline: float | None = None
+        self._f8_deadline: float | None = None
         self.last_search_timing: SearchTiming | None = None
         self._active_timing: SearchTiming | None = None
         self._solve_ctx: SolveContext | None = None
@@ -3263,8 +3264,61 @@ class WordSearcher:
                 refined_keys.add((path_tuple, word))
 
     def _time_expired(self) -> bool:
+        now = time.monotonic()
+        f8 = getattr(self, "_f8_deadline", None)
+        if f8 is not None and now >= f8:
+            return True
         dl = self._active_deadline
-        return dl is not None and time.monotonic() >= dl
+        return dl is not None and now >= dl
+
+    def _deadline_reached(self, deadline: float | None = None) -> bool:
+        """True when an explicit or active solve deadline has passed."""
+        if self._time_expired():
+            return True
+        if deadline is not None and time.monotonic() >= deadline:
+            return True
+        if getattr(self, "_run_until_found", False):
+            return False
+        if deadline is None and self._active_deadline is None:
+            return True
+        return False
+
+    def _remaining_f8_sec(self) -> float:
+        """Seconds until the F8 solve deadline (0 when none or expired)."""
+        f8 = getattr(self, "_f8_deadline", None)
+        if f8 is None:
+            return float("inf")
+        return max(0.0, f8 - time.monotonic())
+
+    def _f8_expired(self) -> bool:
+        f8 = getattr(self, "_f8_deadline", None)
+        return f8 is not None and time.monotonic() >= f8
+
+    def _extend_leader_is_dominant(self, candidates: _CandidateHeap) -> bool:
+        leader_sorted = candidates.best_sorted()
+        if not leader_sorted:
+            return False
+        leader_rank = leader_sorted[0][0]
+        leader_imm = candidates.max_immediate_score() or 0.0
+        if leader_imm >= 800:
+            return True
+        if leader_rank >= 2000 and len(leader_sorted) >= 2:
+            margin = leader_sorted[0][0] - leader_sorted[1][0]
+            if margin >= leader_sorted[0][0] * 0.15:
+                return True
+        return False
+
+    def _extend_dominant_resolved(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        deadline: float | None,
+    ) -> bool:
+        """True when extend should stop because the leader is clearly dominant."""
+        if self._f8_expired():
+            return True
+        return self._extend_leader_is_dominant(candidates)
 
     def _time_check_interval(self, loadout: Loadout) -> int:
         if loadout.stickers or loadout.stamps or loadout.boss_effect:
@@ -3511,6 +3565,7 @@ class WordSearcher:
                     self.dictionary,
                     min_len=self.min_len,
                     pipeline=self.scoring,
+                    deadline_check=self._deadline_reached,
                 )
                 or ""
             )
@@ -4979,7 +5034,7 @@ class WordSearcher:
         )
         if not seeds:
             return
-        if deadline is not None and time.monotonic() >= deadline:
+        if self._f8_expired() or self._deadline_reached(deadline):
             return
         long_seeds = [entry for entry in seeds if len(entry[2]) >= 4]
         if long_seeds:
@@ -5033,6 +5088,22 @@ class WordSearcher:
             seeds = merged
         else:
             seeds = sorted(seeds, key=lambda entry: len(entry[2]), reverse=True)
+        resolve_cap = deadline
+        if self._f8_deadline is not None:
+            resolve_cap = (
+                min(resolve_cap, self._f8_deadline)
+                if resolve_cap is not None
+                else self._f8_deadline
+            )
+        remaining = self._remaining_f8_sec()
+        if remaining < float("inf"):
+            bounded = time.monotonic() + min(6.0, max(0.0, remaining))
+            resolve_cap = (
+                min(resolve_cap, bounded) if resolve_cap is not None else bounded
+            )
+        if resolve_cap is None or resolve_cap <= time.monotonic():
+            return
+        deadline = resolve_cap
         if use_per_seed:
             seed_cap = 12 if self.time_budget >= 30.0 else 8
             seeds = seeds[:seed_cap]
@@ -5044,8 +5115,10 @@ class WordSearcher:
             boundaries_end = time.monotonic() + boundaries_budget
             if deadline is not None and deadline > time.monotonic():
                 boundaries_end = min(boundaries_end, deadline)
+            if self._f8_deadline is not None:
+                boundaries_end = min(boundaries_end, self._f8_deadline)
             for rank_sc, word, path_tuple in seeds:
-                if time.monotonic() >= boundaries_end:
+                if self._deadline_reached(boundaries_end):
                     break
                 if len(path_tuple) >= self.max_len:
                     continue
@@ -5071,6 +5144,10 @@ class WordSearcher:
         seeds = seeds[:20]
         top_paths = len(seeds)
         max_rounds = min(self.max_len - self.min_len, 8)
+        if remaining < 30.0:
+            seeds = seeds[:8]
+            max_rounds = min(max_rounds, 3)
+            top_paths = min(top_paths, len(seeds))
         if (
             self.search_workers > 1
             and len(seeds) >= 4
@@ -5097,6 +5174,7 @@ class WordSearcher:
                     setup_weight=self.setup_weight,
                     setup_discount=self.setup_discount,
                     wordlist_path=Path(self._wordlist_path),
+                    f8_deadline=getattr(self, "_f8_deadline", None),
                 )
                 for rank_sc, word, path_tuple in extended:
                     candidates.consider(rank_sc, word, list(path_tuple))
@@ -5135,6 +5213,10 @@ class WordSearcher:
             self.time_budget * 0.25,
         )
         guarantee_end = time.monotonic() + budget
+        if deadline is not None:
+            guarantee_end = min(guarantee_end, deadline)
+        if self._f8_deadline is not None:
+            guarantee_end = min(guarantee_end, self._f8_deadline)
         prev_deadline = self._active_deadline
         self._active_deadline = guarantee_end
         try:
@@ -5210,7 +5292,7 @@ class WordSearcher:
         """Extend strong partial paths by one tile per round (cheap cap+N refinement)."""
         if self.max_len <= self.min_len:
             return
-        if deadline is not None and time.monotonic() >= deadline:
+        if self._f8_expired() or self._deadline_reached(deadline):
             return
         if max_rounds is None:
             max_rounds = min(self.max_len - self.min_len, 12)
@@ -5222,13 +5304,25 @@ class WordSearcher:
         use_tier2 = self._use_tier2_screen_for(loadout)
         use_heap = use_prune or use_tier2
 
+        prev_deadline = self._active_deadline
+        effective_deadline = deadline
+        if self._f8_deadline is not None:
+            effective_deadline = (
+                min(effective_deadline, self._f8_deadline)
+                if effective_deadline is not None
+                else self._f8_deadline
+            )
+        if effective_deadline is not None:
+            self._active_deadline = effective_deadline
+        timing = self._active_timing
+
         def score_path(
             path: list[int],
             word: str,
             *,
             resolved_word: str | None = None,
         ) -> float | None:
-            if self._time_expired():
+            if self._deadline_reached(effective_deadline):
                 return None
             return self._rank_score_for_candidate(
                 board,
@@ -5239,22 +5333,18 @@ class WordSearcher:
                 resolved_word=resolved_word,
             )
 
-        prev_deadline = self._active_deadline
-        if deadline is not None:
-            self._active_deadline = deadline
-        timing = self._active_timing
         try:
             for _round in range(max_rounds):
-                if deadline is not None and time.monotonic() >= deadline:
-                    break
+                if self._f8_expired() or self._deadline_reached(effective_deadline):
+                    return
                 extended = False
                 seen_prefixes: set[tuple[int, ...]] = set()
                 seed_entries = list(candidates.best_sorted()[:top_paths])
                 if extra_seeds:
                     seed_entries.extend(extra_seeds)
                 for _score, seed_word, path_tuple in seed_entries:
-                    if deadline is not None and time.monotonic() >= deadline:
-                        break
+                    if self._deadline_reached(effective_deadline):
+                        return
                     path = list(path_tuple)
                     if len(path) >= self.max_len:
                         continue
@@ -5305,8 +5395,8 @@ class WordSearcher:
                         loadout=loadout,
                         nbr_mask=nbr_mask,
                     ):
-                        if deadline is not None and time.monotonic() >= deadline:
-                            break
+                        if self._deadline_reached(effective_deadline):
+                            return
                         tile = board.get_by_index(idx)
                         if not tile_playable_for_path(tile):
                             continue
@@ -5329,6 +5419,8 @@ class WordSearcher:
                         extensions: list[tuple[str, TrieCursor | None, bool]] = []
                         if branch_letters:
                             for ch in branch_letters:
+                                if self._deadline_reached(effective_deadline):
+                                    return
                                 child = self.dictionary.step_cursor(seed_cursor, ch)
                                 if timing is not None:
                                     timing.trie_steps += 1
@@ -5350,6 +5442,8 @@ class WordSearcher:
                             )
 
                         for ext_token, ext_cursor, ext_wildcard in extensions:
+                            if self._deadline_reached(effective_deadline):
+                                return
                             if (
                                 not next_has_digit
                                 and ext_cursor is None
@@ -5406,6 +5500,12 @@ class WordSearcher:
                         path.pop()
                 if not extended:
                     break
+                if self._f8_expired():
+                    return
+                if self._extend_dominant_resolved(
+                    board, loadout, candidates, effective_deadline
+                ):
+                    return
         finally:
             self._active_deadline = prev_deadline
 
@@ -5549,9 +5649,12 @@ class WordSearcher:
         chess_seeds: list[tuple[float, str, tuple[int, ...]]],
         *,
         top_paths: int,
+        deadline: float | None = None,
     ) -> None:
         """Extend chess capture chains on a large scratch heap, then merge back."""
         if not chess_seeds:
+            return
+        if deadline is not None and time.monotonic() >= deadline:
             return
         main_entries = candidates.best_sorted()
         refine = _CandidateHeap(4000)
@@ -5564,6 +5667,7 @@ class WordSearcher:
             top_paths=min(120, len(chess_seeds) + 20),
             extra_seeds=None,
             max_rounds=6,
+            deadline=deadline,
         )
         candidates._heap.clear()
         for score, word, path in refine.best_sorted()[:120]:
@@ -5657,6 +5761,7 @@ class WordSearcher:
             self.dictionary,
             min_len=self.min_len,
             pipeline=self.scoring,
+            deadline_check=self._deadline_reached,
         )
         resolved = alt or ""
         self._dict_path_cache[cache_key] = resolved
@@ -5672,6 +5777,8 @@ class WordSearcher:
         prune_heap: _CandidateHeap | None = None,
         resolved_word: str | None = None,
     ) -> float | None:
+        if self._f8_expired():
+            return None
         self._update_tier2_adaptive_mode()
         if self._time_expired():
             return None
@@ -6381,6 +6488,8 @@ class WordSearcher:
     ) -> list[WordResult]:
         if self.blocked:
             return []
+        f8_cap = deadline
+        self._f8_deadline = f8_cap
         from cursed_words_solver.models import reset_board_flat_call_count
 
         self._run_until_found = run_until_found
@@ -6455,6 +6564,8 @@ class WordSearcher:
         candidates = _CandidateHeap(heap_k)
         solve_start = time.monotonic()
         self._solve_start_mono = solve_start
+        if f8_cap is not None:
+            self._f8_deadline = f8_cap
         timing = SearchTiming(parallel_workers=self.search_workers)
         self._active_timing = timing
         has_number_tiles = any(is_number_like_tile(t) for t in board.flat)
@@ -6528,6 +6639,12 @@ class WordSearcher:
 
         joker_count = len(_wildcard_start_indices(board))
         hanafuda_level = self._solve_ctx.hanafuda_level
+        if f8_cap is not None and joker_count >= 2 and _chess_tile_count(board) >= 3:
+            presearch_allowance = min(18.0, self.time_budget * 0.22)
+            self.time_budget = min(
+                self.time_budget,
+                max(0.0, f8_cap - solve_start - presearch_allowance),
+            )
         seed_reserve = 0.0
         if hanafuda_level >= 1 and joker_count >= 2:
             seed_reserve = min(5.0, self.time_budget * 0.12)
@@ -6644,12 +6761,19 @@ class WordSearcher:
         )
         # Budget starts after pool handle exists (workers should already be warm).
         search_begin = time.monotonic()
+        f8_deadline = f8_cap
+        self._f8_deadline = f8_deadline
         if run_until_found:
             deadline = float("inf")
             self._active_deadline = None
         else:
             local_deadline = search_begin + self.time_budget
-            if deadline is not None:
+            if f8_cap is not None:
+                remaining_at_search = max(0.0, f8_cap - search_begin)
+                if joker_count >= 2 and _chess_tile_count(board) >= 3:
+                    self.time_budget = min(self.time_budget, remaining_at_search)
+                local_deadline = min(local_deadline, search_begin + self.time_budget, f8_cap)
+            elif deadline is not None:
                 local_deadline = min(local_deadline, deadline)
             deadline = local_deadline
             self._active_deadline = deadline
@@ -7116,11 +7240,16 @@ class WordSearcher:
 
         heap_k = self.candidate_heap_size or _candidate_heap_size(top_n, mult_count)
         chess_seeds: list[tuple[float, str, tuple[int, ...]]] = []
-        post_extend_slack = min(8.0, max(extension_reserve, 5.0))
-        resolve_grace = min(20.0, extension_reserve + post_extend_slack + 8.0)
-        resolve_phase_deadline = deadline + resolve_grace
-        if len(candidates) > 0 and time.monotonic() < resolve_phase_deadline:
-            self._active_deadline = resolve_phase_deadline
+        resolve_phase_deadline = deadline
+        if f8_deadline is not None:
+            resolve_phase_deadline = min(resolve_phase_deadline, f8_deadline)
+        skip_post_extend = False
+        extend_entry_deadline = resolve_phase_deadline
+        if len(candidates) > 0 and time.monotonic() < extend_entry_deadline:
+            active_cap = resolve_phase_deadline
+            if f8_deadline is not None:
+                active_cap = min(active_cap, f8_deadline)
+            self._active_deadline = active_cap
             chess_start = time.monotonic()
             chess_max_cap = (
                 self.max_len
@@ -7140,6 +7269,9 @@ class WordSearcher:
             timing.chess_sec = time.monotonic() - chess_start
             extend_start = time.monotonic()
             extend_deadline = resolve_phase_deadline
+            leader_sorted = candidates.best_sorted()
+            leader_len = len(leader_sorted[0][2]) if leader_sorted else 0
+            leader_rank = leader_sorted[0][0] if leader_sorted else 0.0
             leader_imm = candidates.max_immediate_score()
             if leader_imm is not None and leader_imm >= 400:
                 extend_cap = min(3.0, extension_reserve or 3.0)
@@ -7155,6 +7287,8 @@ class WordSearcher:
                     heap_k,
                 )
             )
+            if curse_heavy and (leader_imm is not None and leader_imm >= 400):
+                top_paths = min(top_paths, 40)
             max_extend_rounds: int | None = None
             if self.max_len > self.min_len:
                 preview = candidates.best_sorted()[:top_paths]
@@ -7171,7 +7305,44 @@ class WordSearcher:
                     for _sc, word, path in preview
                 ):
                     top_paths = min(120, len(candidates), heap_k)
+                    if curse_heavy:
+                        top_paths = min(top_paths, 40)
                     max_extend_rounds = min(self.max_len - self.min_len, 16)
+            if curse_heavy and leader_len > 0:
+                round_cap = min(
+                    6,
+                    max(0, self.max_len - leader_len),
+                    self.max_len - self.min_len,
+                )
+                if max_extend_rounds is None:
+                    max_extend_rounds = round_cap
+                else:
+                    max_extend_rounds = min(max_extend_rounds, round_cap)
+            parallel_dfs_fast = (
+                parallel_dfs_viable
+                and timing.main_dfs_slice_sec > 0.0
+                and timing.dfs_sec < timing.main_dfs_slice_sec * 0.10
+            )
+            if parallel_dfs_fast and curse_heavy:
+                top_paths = min(top_paths, 20)
+                fast_cap = min(3, self.max_len - self.min_len)
+                if max_extend_rounds is None:
+                    max_extend_rounds = fast_cap
+                else:
+                    max_extend_rounds = min(max_extend_rounds, fast_cap)
+            elif parallel_dfs_fast and leader_len >= 10 and leader_rank >= 2000:
+                fast_cap = min(3, self.max_len - self.min_len)
+                if max_extend_rounds is None:
+                    max_extend_rounds = fast_cap
+                else:
+                    max_extend_rounds = min(max_extend_rounds, fast_cap)
+            if (
+                len(leader_sorted) >= 2
+                and len(leader_sorted[0][2]) >= 10
+                and leader_sorted[0][0] - leader_sorted[1][0]
+                >= leader_sorted[0][0] * 0.15
+            ):
+                skip_post_extend = True
             leader_extra_seeds = [
                 (sc, word, path)
                 for sc, word, path in candidates.best_sorted()[:5]
@@ -7191,29 +7362,45 @@ class WordSearcher:
                     continue
                 seen_seed_paths.add(path_key)
                 deduped_extra.append(entry)
-            if time.monotonic() < extend_deadline:
+            phase_extend_deadline = extend_deadline
+            if f8_deadline is not None:
+                phase_extend_deadline = min(phase_extend_deadline, f8_deadline)
+                remaining_f8 = self._remaining_f8_sec()
+                if remaining_f8 > 0:
+                    default_extend_budget = min(
+                        remaining_f8, max(8.0, remaining_f8 * 0.75)
+                    )
+                    default_cap = time.monotonic() + default_extend_budget
+                    phase_extend_deadline = min(phase_extend_deadline, default_cap)
+            if not self._f8_expired() and time.monotonic() < phase_extend_deadline:
                 self._supplement_fraction_chess_word_boundaries(
                     board,
                     loadout,
                     candidates,
-                    deadline=extend_deadline,
+                    deadline=phase_extend_deadline,
                 )
-            self._extend_top_candidates(
-                board,
-                loadout,
-                candidates,
-                top_paths=top_paths,
-                max_rounds=max_extend_rounds,
-                extra_seeds=deduped_extra or None,
-                deadline=extend_deadline if extension_reserve > 0 else deadline,
-            )
-            if time.monotonic() < extend_deadline:
-                resolve_deadline = extend_deadline
+            if not self._f8_expired():
+                self._extend_top_candidates(
+                    board,
+                    loadout,
+                    candidates,
+                    top_paths=top_paths,
+                    max_rounds=max_extend_rounds,
+                    extra_seeds=deduped_extra or None,
+                    deadline=phase_extend_deadline,
+                )
+            if (
+                not self._f8_expired()
+                and self._remaining_f8_sec() >= 3.0
+                and time.monotonic() < phase_extend_deadline
+                and not (parallel_dfs_fast and curse_heavy)
+            ):
+                resolve_deadline = phase_extend_deadline
                 if extension_reserve > 0 and not (
                     has_fraction_tiles and _chess_tile_count(board) >= 3
                 ):
                     resolve_deadline = min(
-                        extend_deadline,
+                        phase_extend_deadline,
                         time.monotonic()
                         + max(4.0, extension_reserve * 0.55),
                     )
@@ -7223,61 +7410,74 @@ class WordSearcher:
                     candidates,
                     deadline=resolve_deadline,
                 )
-            if item_count >= _SCATTERED_ITEM_DENSE_MIN and time.monotonic() < extend_deadline:
+            if (
+                item_count >= _SCATTERED_ITEM_DENSE_MIN
+                and time.monotonic() < phase_extend_deadline
+            ):
                 self._vary_scattered_item_path_endpoints(
                     board,
                     loadout,
                     candidates,
-                    deadline=extend_deadline,
+                    deadline=phase_extend_deadline,
                 )
             timing.extend_sec = time.monotonic() - extend_start
 
         refine_start = time.monotonic()
-        deferred_snapshot = dict(self._provisional_candidates)
-        refined_keys: set[tuple[tuple[int, ...], str]] = set()
-        self._refine_provisional_heap(
-            board,
-            loadout,
-            candidates,
-            deadline=deadline,
-            refined_keys=refined_keys,
-        )
-        unrefined = len(deferred_snapshot) - len(refined_keys)
-        if (
-            unrefined > 0
-            and self._use_tier2_two_phase_for(loadout)
-            and len(candidates) > 0
-        ):
-            leader_prefixes = [
-                path for _sc, _word, path in candidates.best_sorted()[:heap_k]
-            ]
-            overrun_start = time.monotonic()
+        if not self._f8_expired():
+            deferred_snapshot = dict(self._provisional_candidates)
+            refined_keys: set[tuple[tuple[int, ...], str]] = set()
             self._refine_provisional_heap(
                 board,
                 loadout,
                 candidates,
-                deadline=deadline + REFINE_OVERRUN_SEC,
-                pending={
-                    key: rank_ub
-                    for key, rank_ub in deferred_snapshot.items()
-                    if key not in refined_keys
-                },
+                deadline=deadline,
                 refined_keys=refined_keys,
-                path_prefixes=leader_prefixes,
-                refine_cap_override=heap_k,
             )
-            timing.refine_overrun_sec = time.monotonic() - overrun_start
-            timing.refine_overrun_deferred = unrefined
+            unrefined = len(deferred_snapshot) - len(refined_keys)
+            if (
+                unrefined > 0
+                and self._use_tier2_two_phase_for(loadout)
+                and len(candidates) > 0
+            ):
+                leader_prefixes = [
+                    path for _sc, _word, path in candidates.best_sorted()[:heap_k]
+                ]
+                overrun_start = time.monotonic()
+                refine_overrun_deadline = deadline + REFINE_OVERRUN_SEC
+                if f8_deadline is not None:
+                    refine_overrun_deadline = min(
+                        refine_overrun_deadline, f8_deadline
+                    )
+                self._refine_provisional_heap(
+                    board,
+                    loadout,
+                    candidates,
+                    deadline=refine_overrun_deadline,
+                    pending={
+                        key: rank_ub
+                        for key, rank_ub in deferred_snapshot.items()
+                        if key not in refined_keys
+                    },
+                    refined_keys=refined_keys,
+                    path_prefixes=leader_prefixes,
+                    refine_cap_override=heap_k,
+                )
+                timing.refine_overrun_sec = time.monotonic() - overrun_start
+                timing.refine_overrun_deferred = unrefined
         timing.refine_sec = time.monotonic() - refine_start
 
         if (
             self.max_len > self.min_len
             and extension_reserve > 0
             and len(candidates) > 0
+            and not skip_post_extend
+            and not self._f8_expired()
         ):
             post_extend_start = time.monotonic()
             post_extend_reserve = min(8.0, max(extension_reserve, 5.0))
             post_extend_deadline = resolve_phase_deadline
+            if f8_deadline is not None:
+                post_extend_deadline = min(post_extend_deadline, f8_deadline)
             post_top_paths = min(heap_k, 60, len(candidates))
             post_resolve_seeds = self._dictionary_resolve_extension_seeds(
                 board, loadout, candidates
@@ -7305,33 +7505,45 @@ class WordSearcher:
                 )
             timing.extend_sec += time.monotonic() - post_extend_start
 
-        if self.max_len > self.min_len and len(candidates) > 0:
+        if self.max_len > self.min_len and len(candidates) > 0 and not self._f8_expired():
             if any(is_fraction_tile(t) for t in board.flat) and _chess_tile_count(
                 board
             ) >= 3:
                 final_resolve_deadline = resolve_phase_deadline
-                self._active_deadline = final_resolve_deadline
-                self._extend_dictionary_resolve_boundaries(
-                    board,
-                    loadout,
-                    candidates,
-                    deadline=final_resolve_deadline,
-                )
-                self._guarantee_fraction_chess_probe_extensions(
-                    board,
-                    loadout,
-                    candidates,
-                    deadline=final_resolve_deadline,
-                )
+                if f8_deadline is not None:
+                    final_resolve_deadline = min(final_resolve_deadline, f8_deadline)
+                if (
+                    not self._f8_expired()
+                    and time.monotonic() < final_resolve_deadline
+                ):
+                    self._active_deadline = final_resolve_deadline
+                    self._extend_dictionary_resolve_boundaries(
+                        board,
+                        loadout,
+                        candidates,
+                        deadline=final_resolve_deadline,
+                    )
+                    self._guarantee_fraction_chess_probe_extensions(
+                        board,
+                        loadout,
+                        candidates,
+                        deadline=final_resolve_deadline,
+                    )
 
         best_by_word: dict[
             str, tuple[float, float, float, str, tuple[int, ...]]
         ] = {}
         finalize_deadline = time.monotonic() + 5.0
+        if f8_deadline is not None:
+            finalize_deadline = min(finalize_deadline, f8_deadline)
+        if self._f8_expired():
+            finalize_deadline = time.monotonic()
         prev_finalize_deadline = self._active_deadline
         self._active_deadline = finalize_deadline
         try:
             for rank_sc, word, path_tuple in candidates.best_sorted():
+                if self._f8_expired():
+                    break
                 path = list(path_tuple)
                 immediate, setup = self._immediate_and_setup(
                     board, path, word, loadout
@@ -7451,6 +7663,7 @@ class WordSearcher:
         self.last_search_timing = timing
         self._active_timing = None
         self._active_deadline = None
+        self._f8_deadline = None
         self.validator.quest_loadout = None
         self.validator.extra_valid_words = frozenset()
         set_quest_search_target(None)

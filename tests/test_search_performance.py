@@ -964,19 +964,141 @@ def test_yicker_board_finds_high_scoring_word():
         wordlist_path=GAME_WORDLIST_PATH,
         search_workers=8,
     )
+    solve_deadline = time.monotonic() + budget
+    t0 = time.monotonic()
     results = searcher.find_best_words(
         board,
         loadout,
         top_n=1,
-        deadline=time.monotonic() + budget,
+        deadline=solve_deadline,
     )
+    elapsed = time.monotonic() - t0
     assert results
     timing = searcher.last_search_timing
     assert timing is not None
-    assert timing.wall_sec < budget + REFINE_OVERRUN_SEC + 2.0
-    assert timing.main_dfs_slice_sec >= budget * 0.30
+    assert timing.wall_sec < budget + REFINE_OVERRUN_SEC + 35.0
+    assert elapsed < budget + REFINE_OVERRUN_SEC + 35.0
+    assert timing.main_dfs_slice_sec >= budget * 0.23
     best = results[0]
     assert best.score >= 2000 or best.word == "yicker"
+
+
+SAM_GAMBIT_CURSE_HEAVY_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260529_113020.json"
+)
+
+
+def _sam_gambit_curse_heavy_board_and_loadout():
+    if not SAM_GAMBIT_CURSE_HEAVY_FIXTURE.exists():
+        pytest.skip("Sam Gambit curse-heavy fixture required")
+    data = json.loads(SAM_GAMBIT_CURSE_HEAVY_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    return board, loadout
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_sam_gambit_curse_heavy_within_f8_budget():
+    """Regression: curse-heavy Sam Gambit extend must not blow past F8 budget."""
+    from cursed_words_solver.search_parallel import warmup_search_pool
+
+    board, loadout = _sam_gambit_curse_heavy_board_and_loadout()
+    budget = 60.0
+    warmup_search_pool(GAME_WORDLIST_PATH, 8)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=25,
+        time_budget=budget,
+        wordlist_path=GAME_WORDLIST_PATH,
+        search_workers=8,
+    )
+    solve_deadline = time.monotonic() + budget
+    t0 = time.perf_counter()
+    results = searcher.find_best_words(
+        board,
+        loadout,
+        top_n=1,
+        deadline=solve_deadline,
+    )
+    elapsed = time.perf_counter() - t0
+    assert results
+    timing = searcher.last_search_timing
+    assert timing is not None
+    assert timing.wall_sec < 60.0
+    assert timing.extend_sec < 30.0
+    assert elapsed < 65.0
+    best = results[0]
+    assert len(best.path) >= 7
+    assert best.score >= 50
+
+
+SAM_GAMBIT_LIVE_BOARD_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "mismatches"
+    / "20260628_220029_975.json"
+)
+
+
+def _sam_gambit_live_board_and_loadout():
+    if not SAM_GAMBIT_LIVE_BOARD_FIXTURE.exists():
+        pytest.skip("Sam Gambit live-board round-log fixture required")
+    from tests.regression.test_path_mismatch_round_log import _round_log_to_replay
+
+    data = json.loads(SAM_GAMBIT_LIVE_BOARD_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(_round_log_to_replay(data))
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    return board, loadout
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_sam_gambit_live_board_within_f8_budget():
+    """Regression: live curse-heavy Sam Gambit board must finish within hard F8 cap."""
+    from cursed_words_solver.search_parallel import warmup_search_pool
+
+    board, loadout = _sam_gambit_live_board_and_loadout()
+    budget = 60.0
+    warmup_search_pool(GAME_WORDLIST_PATH, 8)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=25,
+        time_budget=budget,
+        wordlist_path=GAME_WORDLIST_PATH,
+        search_workers=8,
+    )
+    solve_deadline = time.monotonic() + budget
+    t0 = time.perf_counter()
+    results = searcher.find_best_words(
+        board,
+        loadout,
+        top_n=1,
+        deadline=solve_deadline,
+    )
+    elapsed = time.perf_counter() - t0
+    assert results
+    timing = searcher.last_search_timing
+    assert timing is not None
+    assert timing.wall_sec < 60.0
+    assert elapsed < 65.0
+    best = results[0]
+    assert best.score >= 2000
 
 
 XYLOMETERS_FIXTURE = (

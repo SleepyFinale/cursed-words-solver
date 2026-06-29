@@ -12,7 +12,7 @@ import copy
 
 from datetime import datetime, timezone
 
-from typing import Any
+from typing import Any, Callable
 
 
 
@@ -578,6 +578,9 @@ def is_disk_catchup_drift(
     count_f8 = _historic_words_count(hist_f8)
     count_cur = _historic_words_count(hist_cur)
     if count_cur > count_f8:
+        # Embed already had historic — forward advance is played since F8, not export lag.
+        if count_f8 > 0:
+            return False
         return True
     if count_cur == count_f8:
         prev_f8 = str(f8.get("previous_word_first_letter", "") or "").strip().lower()
@@ -818,9 +821,13 @@ def describe_f8_prediction_historic_stale_note(
                 f"{auth_count}-word historic (previous word letter drift)"
             )
         if f8_count > 0 and auth_count == f8_count and f8_raw != auth_raw:
+            from cursed_words_solver.loadout import historic_metadata_matches_json
+
+            if historic_metadata_matches_json(f8_raw, auth_raw):
+                return None
             return (
                 f"F8 prediction used {f8_count}-word historic, score used "
-                f"{auth_count}-word historic (historic_words changed)"
+                f"{auth_count}-word historic (historic_words metadata changed)"
             )
         if has_played_word_since_f8_embed(auth, f8):
             return "F8 prediction historic lag (workflow advanced since F8)"
@@ -942,7 +949,10 @@ def workflow_stale_vs_f8_snapshot(
         if count_cur > count_f8:
             notes.append(f"historic words changed ({count_f8}→{count_cur})")
         elif hist_f8 and hist_cur:
-            notes.append("historic words changed")
+            from cursed_words_solver.loadout import historic_metadata_matches_json
+
+            if not historic_metadata_matches_json(hist_f8, hist_cur):
+                notes.append("historic words metadata changed")
 
     prev_dna = str(f8_extras.get("mutating_dna_letter_counts", "") or "").strip()
     cur_dna = str(extras.get("mutating_dna_letter_counts", "") or "").strip()
@@ -964,8 +974,6 @@ def workflow_stale_vs_f8_snapshot(
     except ValueError:
         spc_cur = None
     if spc_f8 is not None and spc_cur is not None and spc_cur > spc_f8:
-        notes.append(f"scoring previous words count {spc_f8}→{spc_cur}")
-    if spc_f8 is not None and spc_cur is not None and spc_f8 > spc_cur:
         notes.append(f"scoring previous words count {spc_f8}→{spc_cur}")
 
     if not notes:
@@ -1096,8 +1104,6 @@ def poll_invalidate_last_suggestion(
     if data is not None and saved_board and _board_tiles_match(saved_board, current_board_fp):
         extras = run_state_extras if isinstance(run_state_extras, dict) else {}
         embed_extras = _f8_snapshot_extras(data)
-        if _active_session_same_board_tiles(active_session, current_board_fp):
-            return None
         if workflow_invalidate_suppressed_for_export_catchup(
             extras,
             current_board_fp=current_board_fp,
@@ -1247,6 +1253,40 @@ def _alignment_pattern_for_path(
     return "".join(parts)
 
 
+def _collect_dictionary_matches_for_path(
+    board: Board,
+    path: list[int],
+    pattern: str,
+    loadout: Loadout,
+    dictionary: WordDictionary,
+    *,
+    min_len: int = 3,
+    limit: int | None = None,
+    deadline_check: Callable[[], bool] | None = None,
+) -> list[str]:
+    """Dictionary spellings matching a path alignment pattern."""
+    flags = stamp_search_flags(loadout)
+    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
+    if len(pattern) < min_len:
+        return []
+    valid: list[str] = []
+    for candidate in dictionary.enumerate_pattern_matches(
+        pattern,
+        limit=limit,
+        deadline_check=deadline_check,
+    ):
+        if not _fixed_letters_align(pattern, candidate):
+            continue
+        if not word_assignable_on_path(board, path, candidate, flags=flags):
+            continue
+        if not validator.word_ok(board, path, candidate, flags):
+            continue
+        valid.append(candidate)
+        if limit is not None and len(valid) >= limit:
+            break
+    return valid
+
+
 def dictionary_word_length_for_path(
     board: Board, path: list[int], scoring_word: str
 ) -> int:
@@ -1393,35 +1433,22 @@ def _pick_best_dictionary_word(
 
 
 def dictionary_word_for_path(
-
     board: Board,
-
     path: list[int],
-
     scoring_word: str,
-
     loadout: Loadout,
-
     dictionary: WordDictionary,
-
     *,
-
     min_len: int = 3,
-
     pipeline: ScoringPipeline | None = None,
-
+    deadline_check: Callable[[], bool] | None = None,
 ) -> str | None:
-
     """Best-effort dictionary spelling the game accepts on this path (vs scoring form)."""
-
     word = scoring_word.lower()
-
     flags = stamp_search_flags(loadout)
-
     validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
 
     if word.isalpha() and validator.word_ok(board, path, word, flags):
-
         return word
 
     if validator.word_ok(board, path, word, flags) and not path_requires_tile_dictionary_resolve(
@@ -1429,24 +1456,18 @@ def dictionary_word_for_path(
     ):
         return word
 
-
-
     pattern = _alignment_pattern_for_path(board, path, flags)
-    word_len = len(pattern)
-
-    valid: list[str] = []
-
-    for candidate in dictionary.words_of_length(word_len):
-        if not _fixed_letters_align(pattern, candidate):
-            continue
-        if not word_assignable_on_path(board, path, candidate, flags=flags):
-            continue
-        if not validator.word_ok(board, path, candidate, flags):
-            continue
-        valid.append(candidate)
+    valid = _collect_dictionary_matches_for_path(
+        board,
+        path,
+        pattern,
+        loadout,
+        dictionary,
+        min_len=min_len,
+        deadline_check=deadline_check,
+    )
 
     if not valid:
-
         return None
 
     return _pick_best_dictionary_word(
@@ -1488,6 +1509,17 @@ def loadout_needs_historic_words_gather(
         extras = loadout.extras
     if not isinstance(extras, dict):
         extras = {}
+
+    spc = _scoring_previous_words_count_from_extras(extras)
+    if spc > 0:
+        return True
+
+    try:
+        words_run = int(str(extras.get("words_submitted_this_run_count") or "0"))
+    except (TypeError, ValueError):
+        words_run = 0
+    if words_run > 0 and _grid_number_from_extras(extras) >= 1:
+        return True
 
     if board is not None:
         has_telescope = False
@@ -1657,6 +1689,19 @@ def f8_should_block_save(
             scoring_extras=scoring_extras,
         ):
             return True, "submit_projection_mismatch"
+    if isinstance(f8_extras, dict) and loadout is not None:
+        from cursed_words_solver.loadout import _scoring_previous_words_count_from_extras
+
+        embed_spc = _scoring_previous_words_count_from_extras(f8_extras)
+        live_spc = _scoring_previous_words_count_from_extras(
+            loadout.extras if isinstance(loadout.extras, dict) else {}
+        )
+        embed_hist = str(f8_extras.get("historic_words", "") or "").strip()
+        embed_count = _historic_words_count(embed_hist)
+        if live_spc > 0 and embed_count < live_spc:
+            return True, "submit_projection_mismatch"
+        if embed_spc > 0 and embed_count < embed_spc:
+            return True, "submit_projection_mismatch"
     if (
         board is not None
         and loadout is not None
@@ -1753,25 +1798,20 @@ def _valid_dictionary_words_for_path(
     *,
     min_len: int = 3,
     limit: int | None = None,
+    deadline_check: Callable[[], bool] | None = None,
 ) -> list[str]:
     flags = stamp_search_flags(loadout)
-    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
     pattern = _alignment_pattern_for_path(board, path, flags)
-    word_len = len(pattern)
-    if word_len < min_len:
-        return []
-    valid: list[str] = []
-    for candidate in dictionary.words_of_length(word_len):
-        if not _fixed_letters_align(pattern, candidate):
-            continue
-        if not word_assignable_on_path(board, path, candidate, flags=flags):
-            continue
-        if not validator.word_ok(board, path, candidate, flags):
-            continue
-        valid.append(candidate)
-        if limit is not None and len(valid) >= limit:
-            break
-    return valid
+    return _collect_dictionary_matches_for_path(
+        board,
+        path,
+        pattern,
+        loadout,
+        dictionary,
+        min_len=min_len,
+        limit=limit,
+        deadline_check=deadline_check,
+    )
 
 
 def path_is_submittable(
@@ -1783,6 +1823,7 @@ def path_is_submittable(
     *,
     min_len: int = 3,
     pipeline: ScoringPipeline | None = None,
+    deadline_check: Callable[[], bool] | None = None,
 ) -> bool:
     """True when the game accepts a dictionary word on this path."""
     flags = stamp_search_flags(loadout)
@@ -1799,6 +1840,7 @@ def path_is_submittable(
                 dictionary,
                 min_len=min_len,
                 limit=1,
+                deadline_check=deadline_check,
             )
         )
     validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
@@ -1812,6 +1854,7 @@ def path_is_submittable(
         dictionary,
         min_len=min_len,
         pipeline=pipeline,
+        deadline_check=deadline_check,
     )
     return resolved is not None and resolved.isalpha()
 
@@ -1824,6 +1867,7 @@ def filter_submittable_results(
     *,
     min_len: int = 3,
     pipeline: ScoringPipeline | None = None,
+    deadline_check: Callable[[], bool] | None = None,
 ) -> list[WordResult]:
     """Drop search hits the game cannot submit as a dictionary word."""
     if not results or dictionary is None:
@@ -1839,6 +1883,7 @@ def filter_submittable_results(
             dictionary,
             min_len=min_len,
             pipeline=pipeline,
+            deadline_check=deadline_check,
         )
     ]
 

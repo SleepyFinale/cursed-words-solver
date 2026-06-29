@@ -668,6 +668,51 @@ def _parse_historic_words_rows(raw: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _historic_row_metadata_matches(
+    left: dict[str, Any],
+    right: dict[str, Any],
+) -> bool:
+    """True when melmod-style historic row metadata matches (paths ignored)."""
+    if not left or not right:
+        return False
+    for key in (
+        "word",
+        "score",
+        "red_tile_count",
+        "green_tile_count",
+        "chess_take_value",
+    ):
+        if key not in left and key not in right:
+            continue
+        lv = left.get(key)
+        rv = right.get(key)
+        if lv is None and rv is None:
+            continue
+        if lv is None or rv is None:
+            return False
+        if str(lv).strip().lower() != str(rv).strip().lower():
+            return False
+    return True
+
+
+def historic_metadata_matches_json(f8_json: str, auth_json: str) -> bool:
+    """True when F8 metadata-only historic matches authoritative rows (paths ignored)."""
+    f8_json = (f8_json or "").strip()
+    auth_json = (auth_json or "").strip()
+    if not f8_json or not auth_json:
+        return False
+    if f8_json == auth_json:
+        return True
+    f8_rows = _parse_historic_words_rows(f8_json)
+    auth_rows = _parse_historic_words_rows(auth_json)
+    if not f8_rows or not auth_rows or len(f8_rows) != len(auth_rows):
+        return False
+    return all(
+        _historic_row_metadata_matches(f8_rows[i], auth_rows[i])
+        for i in range(len(f8_rows))
+    )
+
+
 def _encounter_score_earned_from_extras(extras: dict[str, Any]) -> float:
     try:
         return float(extras.get("encounter_score_earned") or 0)
@@ -1599,14 +1644,15 @@ def reconcile_scoring_previous_words_count(extras: dict[str, Any]) -> None:
         source = str(
             extras.get("encounter_historic_source", "") or ""
         ).strip().lower()
-        if source not in (
+        if source in (
             "live",
             "live_cache",
             "historic_metadata_only",
             "green_poison_only",
         ):
-            extras["scoring_previous_words_count"] = str(hist_count)
             return
+        extras["scoring_previous_words_count"] = str(hist_count)
+        return
     if hist_count > 0 and spc == 0 and _should_infer_spc_from_historic(extras):
         extras["scoring_previous_words_count"] = str(hist_count)
 
@@ -2124,7 +2170,7 @@ def align_embed_with_scoring_loadout(
     embed_count = _historic_words_count(embed_hist)
     rec_count = _historic_words_count(rec_hist)
 
-    if rec_count > embed_count and embed_count == 0 and rec_hist:
+    if rec_count > embed_count and rec_hist:
         extras["historic_words"] = rec_hist
         for key in ("encounter_historic_source", "red_tiles_used_encounter"):
             val = reconciled.get(key)

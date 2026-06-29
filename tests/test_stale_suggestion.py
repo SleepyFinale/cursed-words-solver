@@ -804,9 +804,7 @@ def test_workflow_stale_when_historic_same_count_content_differs():
         {"historic_words": hist_f8},
     )
     assert reason is not None
-    assert "historic words changed" in reason
-    assert "(2â†’3)" not in reason
-
+    assert "historic words metadata changed" in reason
 
 def test_grid2_empty_historic_not_blocked_when_stale_pruned_no_telescope(
     tmp_path, monkeypatch
@@ -1501,6 +1499,7 @@ def test_poll_clears_when_board_fingerprint_changes(tmp_path, monkeypatch):
 def test_poll_suppresses_historic_catchup_with_money_only_board_fp_drift(
     tmp_path, monkeypatch
 ):
+    """Money-only board fp drift still suppresses; historic advance with embed prior clears."""
     suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
     tiles = "4,0:R/letter/colorless;"
     board_fp_saved = f"5|{tiles}"
@@ -1511,6 +1510,39 @@ def test_poll_suppresses_historic_catchup_with_money_only_board_fp_drift(
             {
                 "created_at": created,
                 "board_fingerprint": board_fp_saved,
+                "run_state_snapshot": {
+                    "extras": {
+                        "historic_words": "[]",
+                        "previous_word_first_letter": "",
+                        "scoring_previous_words_count": "0",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    poll_extras = {
+        "historic_words": '[{"word":"penne"}]',
+        "previous_word_first_letter": "p",
+        "scoring_previous_words_count": "1",
+    }
+    assert workflow_invalidate_suppressed_for_export_catchup(
+        poll_extras,
+        current_board_fp=board_fp_current,
+        search_budget_sec=60.0,
+    )
+    assert poll_invalidate_last_suggestion(
+        poll_extras,
+        current_board_fp=board_fp_current,
+        search_budget_sec=60.0,
+    ) is None
+    assert suggestion_path.exists()
+
+    suggestion_path.write_text(
+        json.dumps(
+            {
+                "created_at": created,
+                "board_fingerprint": board_fp_current,
                 "run_state_snapshot": {
                     "extras": {
                         "historic_words": '[{"word":"penne"}]',
@@ -1525,17 +1557,19 @@ def test_poll_suppresses_historic_catchup_with_money_only_board_fp_drift(
         "historic_words": '[{"word":"penne"},{"word":"zooty"}]',
         "previous_word_first_letter": "f",
     }
-    assert workflow_invalidate_suppressed_for_export_catchup(
+    assert not workflow_invalidate_suppressed_for_export_catchup(
         poll_extras,
         current_board_fp=board_fp_current,
         search_budget_sec=60.0,
     )
-    assert poll_invalidate_last_suggestion(
+    reason = poll_invalidate_last_suggestion(
         poll_extras,
         current_board_fp=board_fp_current,
         search_budget_sec=60.0,
-    ) is None
-    assert suggestion_path.exists()
+    )
+    assert reason is not None
+    assert reason.startswith("workflow drift (")
+    assert not suggestion_path.exists()
 
 
 def test_poll_suppresses_historic_catchup_within_search_budget_grace(
@@ -1564,12 +1598,19 @@ def test_poll_suppresses_historic_catchup_within_search_budget_grace(
         "previous_word_first_letter": "f",
     }
     assert f8_export_catchup_grace_sec(60.0) >= 65.0
-    assert poll_invalidate_last_suggestion(
+    assert not workflow_invalidate_suppressed_for_export_catchup(
         poll_extras,
         current_board_fp=board_fp,
         search_budget_sec=60.0,
-    ) is None
-    assert suggestion_path.exists()
+    )
+    reason = poll_invalidate_last_suggestion(
+        poll_extras,
+        current_board_fp=board_fp,
+        search_budget_sec=60.0,
+    )
+    assert reason is not None
+    assert reason.startswith("workflow drift (")
+    assert not suggestion_path.exists()
 
 
 def test_loadout_reconcile_normalizes_previous_word_not_from_historic():
@@ -1663,9 +1704,12 @@ def test_gownmen_round_log_workflow_stale_matches_python():
     }
     reason = workflow_stale_vs_f8_snapshot(submit_extras, f8_extras)
     assert reason is not None
-    assert "historic words changed" in reason
+    assert (
+        "historic words changed" in reason
+        or "historic words metadata changed" in reason
+    )
     assert "e" in reason and "f" in reason
-    # Same historic count but different words â€” true stale, not export catch-up.
+    # Same historic count but different words — true stale, not export catch-up.
     assert not is_export_catchup_drift(f8_extras, submit_extras)
 
 

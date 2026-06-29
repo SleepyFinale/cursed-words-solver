@@ -780,6 +780,8 @@ namespace CursedWordsSolverCompanion
                 "historic_words",
                 "previous_word_first_letter",
                 "red_tiles_used_encounter",
+                "scoring_previous_words_count",
+                "encounter_historic_source",
             })
             {
                 string val;
@@ -1362,6 +1364,32 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
+        /// Seed submit-hook cache from live encounter _previousWords before workflow export.
+        /// </summary>
+        public static void RefreshEncounterHistoricCacheFromPlayer(Player player)
+        {
+            if (player == null)
+                return;
+
+            try
+            {
+                var encounter = BossResolver.TryGetEncounter();
+                if (encounter == null)
+                    return;
+
+                var words = encounter.GetPreviousWords();
+                if (words == null || words.Count == 0)
+                    return;
+
+                RunStateExporter.CachePreviousWordsForExport(words);
+            }
+            catch
+            {
+                // ignore reflection failures
+            }
+        }
+
+        /// <summary>
         /// F8 live export: historic and prev-letter aligned with submit-time scoring projection.
         /// </summary>
         public static Dictionary<string, string> BuildF8HistoricExtras(
@@ -1383,6 +1411,8 @@ namespace CursedWordsSolverCompanion
             Dictionary<string, string> liveExtras
         )
         {
+            RefreshEncounterHistoricCacheFromPlayer(player);
+
             var projected = liveExtras != null
                 ? new Dictionary<string, string>(liveExtras)
                 : new Dictionary<string, string>();
@@ -1432,7 +1462,48 @@ namespace CursedWordsSolverCompanion
             }
 
             ApplyScoringCachedPreviousWordLetter(projected, player);
+
+            TryLogEncounterHistoricExportLag(player, projected);
+
             return projected;
+        }
+
+        private static void TryLogEncounterHistoricExportLag(
+            Player player,
+            Dictionary<string, string> projected
+        )
+        {
+            if (player == null || projected == null)
+                return;
+
+            try
+            {
+                var encounter = BossResolver.TryGetEncounter();
+                if (encounter == null)
+                    return;
+
+                var encounterWords = encounter.GetPreviousWords();
+                var encounterCount = encounterWords != null ? encounterWords.Count : 0;
+                if (encounterCount <= 0)
+                    return;
+
+                string historicRaw;
+                projected.TryGetValue("historic_words", out historicRaw);
+                var exportedCount = CountHistoricWordsInJson((historicRaw ?? "").Trim());
+                if (exportedCount >= encounterCount)
+                    return;
+
+                CompanionDiagnostics.LogVerboseWarning(
+                    "Encounter historic lag: encounter has "
+                        + encounterCount
+                        + " word(s), export has "
+                        + exportedCount
+                );
+            }
+            catch
+            {
+                // ignore
+            }
         }
 
         /// <summary>

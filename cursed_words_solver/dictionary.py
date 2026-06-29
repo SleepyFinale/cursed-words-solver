@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from cursed_words_solver.config import ensure_wordlist
@@ -165,3 +166,47 @@ class WordDictionary:
             if node is None:
                 return None
         return node
+
+    def enumerate_pattern_matches(
+        self,
+        pattern: str,
+        *,
+        limit: int | None = None,
+        deadline_check: Callable[[], bool] | None = None,
+    ) -> list[str]:
+        """Enumerate dictionary words matching a wildcard pattern (? = any letter)."""
+        if not pattern:
+            return []
+        if "?" not in pattern and pattern.isalpha():
+            return [pattern] if self.contains(pattern) else []
+
+        results: list[str] = []
+
+        def dfs(pos: int, cursor: TrieCursor | None, built: list[str]) -> None:
+            if deadline_check is not None and deadline_check():
+                return
+            if limit is not None and len(results) >= limit:
+                return
+            if pos == len(pattern):
+                if cursor is not None and self.cursor_is_word(cursor):
+                    results.append("".join(built))
+                return
+            ch = pattern[pos]
+            if ch == "?":
+                for letter in "abcdefghijklmnopqrstuvwxyz":
+                    if deadline_check is not None and deadline_check():
+                        return
+                    child = self.step_cursor(cursor, letter)
+                    if child is not None:
+                        built.append(letter)
+                        dfs(pos + 1, child, built)
+                        built.pop()
+            elif ch.isalpha():
+                child = self.step_cursor(cursor, ch.lower())
+                if child is not None:
+                    built.append(ch.lower())
+                    dfs(pos + 1, child, built)
+                    built.pop()
+
+        dfs(0, self.root_cursor(), [])
+        return results

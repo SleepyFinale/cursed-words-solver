@@ -329,9 +329,13 @@ def _mp_extend_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[in
     max_rounds: int = int(payload.get("max_rounds", 8))
     setup_weight: float = payload["setup_weight"]
     setup_discount: float = payload["setup_discount"]
+    f8_raw = payload.get("f8_deadline")
+    f8_deadline: float | None = float(f8_raw) if f8_raw is not None else None
 
     now = time.monotonic()
     local_deadline = min(pass_deadline, now + budget_sec) if pass_deadline else now + budget_sec
+    if f8_deadline is not None:
+        local_deadline = min(local_deadline, f8_deadline)
     if local_deadline <= now or not seeds:
         return []
 
@@ -349,6 +353,7 @@ def _mp_extend_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[in
         searcher.scoring = _mp_pipeline
     searcher.validator.quest_loadout = loadout
     searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
+    searcher._f8_deadline = f8_deadline
     mini = _CandidateHeap(max(len(seeds) + 50, 80))
     for rank_sc, word, path_tuple in seeds:
         mini.consider(rank_sc, word, list(path_tuple))
@@ -381,17 +386,22 @@ def parallel_extend_seeds(
     setup_weight: float,
     setup_discount: float,
     wordlist_path: Path | None,
+    f8_deadline: float | None = None,
 ) -> list[tuple[float, str, tuple[int, ...]]]:
     """Partition dictionary-resolve extension seeds across worker processes."""
     if workers <= 1 or len(seeds) < 4 or deadline is None:
         return []
     if time.monotonic() >= deadline:
         return []
+    if f8_deadline is not None and time.monotonic() >= f8_deadline:
+        return []
 
     n = min(workers, len(seeds))
     chunk_size = (len(seeds) + n - 1) // n
     chunks = [seeds[i : i + chunk_size] for i in range(0, len(seeds), chunk_size)]
     remaining = max(0.0, deadline - time.monotonic())
+    if f8_deadline is not None:
+        remaining = min(remaining, max(0.0, f8_deadline - time.monotonic()))
     if remaining <= 0:
         return []
 
@@ -406,6 +416,7 @@ def parallel_extend_seeds(
         "setup_discount": setup_discount,
         "wordlist_path": str(wordlist_path) if wordlist_path else None,
         "pass_deadline": deadline,
+        "f8_deadline": f8_deadline,
     }
     per_chunk_budget = remaining / max(len(chunks), 1)
     futures = [
@@ -421,9 +432,18 @@ def parallel_extend_seeds(
     ]
     merged: list[tuple[float, str, tuple[int, ...]]] = []
     collect_end = min(deadline, time.monotonic() + remaining)
+    if f8_deadline is not None:
+        collect_end = min(collect_end, f8_deadline)
     pending = set(futures)
-    while pending and time.monotonic() < collect_end:
-        wait_sec = max(0.01, collect_end - time.monotonic())
+    while pending:
+        now = time.monotonic()
+        if f8_deadline is not None and now >= f8_deadline:
+            break
+        if now >= collect_end:
+            break
+        wait_sec = max(0.01, collect_end - now)
+        if f8_deadline is not None:
+            wait_sec = min(wait_sec, max(0.01, f8_deadline - now))
         done, pending = wait(pending, timeout=wait_sec, return_when=FIRST_COMPLETED)
         for fut in done:
             try:
