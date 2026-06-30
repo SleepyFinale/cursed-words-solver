@@ -116,6 +116,50 @@ namespace CursedWordsSolverCompanion
 
         /// <summary>
 
+        /// Workflow keys from pre-word scoring context — never overwrite from post-submit live snapshot.
+
+        /// </summary>
+
+        private static readonly string[] ScoringAuthorityStaleKeys =
+
+        {
+
+            "tile_ninja_consumables_used",
+
+            "tile_ninja_word_bonus_percent",
+
+            "tile_ninja_bonus",
+
+            "tile_ninja_bonus_last_known",
+
+            "boss_modifiers",
+
+            "boss_modifier_floor_mods",
+
+            "boss_cursed",
+
+            "boss_area_number",
+
+            "boss_floor_modification",
+
+            "historic_words",
+
+            "scoring_previous_words_count",
+
+            "previous_word_first_letter",
+
+            "mutating_dna_letter_counts",
+
+            "birthday_cake_bonus",
+
+            "movie_camera_word_score_bonus",
+
+        };
+
+
+
+        /// <summary>
+
         /// Workflow extras from score prefix plus pin/step keys from the score pipeline at submit.
 
         /// </summary>
@@ -161,6 +205,26 @@ namespace CursedWordsSolverCompanion
                 if (scoringExtras.TryGetValue(key, out val))
 
                     merged[key] = val ?? "";
+
+            }
+
+
+
+            foreach (var key in ScoringAuthorityStaleKeys)
+
+            {
+
+                string workflowVal;
+
+                if (!merged.TryGetValue(key, out workflowVal) || string.IsNullOrEmpty(workflowVal))
+
+                    continue;
+
+                string scoringVal;
+
+                if (scoringExtras.TryGetValue(key, out scoringVal) && !string.IsNullOrEmpty(scoringVal))
+
+                    merged[key] = scoringVal;
 
             }
 
@@ -952,7 +1016,12 @@ namespace CursedWordsSolverCompanion
 
             var bicycle = CollectBicycleDriftNotes(extrasDiff, ctx, scoreMatched);
 
-            var tileNinja = CollectTileNinjaDriftNotes(extrasDiff);
+            var tileNinja = CollectTileNinjaDriftNotes(
+                extrasDiff,
+                scoreMatched,
+                f8Extras,
+                submitExtras
+            );
 
             var boss = CollectBossDriftNotes(extrasDiff, f8Extras, submitExtras);
 
@@ -2337,6 +2406,20 @@ namespace CursedWordsSolverCompanion
 
 
 
+            var benignFinale =
+
+                f8Extras != null
+
+                && submitExtras != null
+
+                && IsBenignFinaleBossClearDrift(f8Extras, submitExtras);
+
+            if (benignFinale)
+
+                return notes;
+
+
+
             foreach (var key in StaleF8BossKeys)
 
             {
@@ -2421,7 +2504,13 @@ namespace CursedWordsSolverCompanion
 
         private static List<string> CollectTileNinjaDriftNotes(
 
-            Dictionary<string, object> extrasDiff
+            Dictionary<string, object> extrasDiff,
+
+            bool scoreMatched = false,
+
+            Dictionary<string, string> f8Extras = null,
+
+            Dictionary<string, string> submitExtras = null
 
         )
 
@@ -2433,6 +2522,12 @@ namespace CursedWordsSolverCompanion
 
                 return notes;
 
+            if (
+                scoreMatched
+                && IsBenignTileNinjaCounterDrift(extrasDiff, f8Extras, submitExtras)
+            )
+                return notes;
+
 
 
             foreach (var key in StaleF8TileNinjaIntKeys)
@@ -2442,6 +2537,100 @@ namespace CursedWordsSolverCompanion
 
 
             return notes;
+
+        }
+
+
+
+        /// <summary>
+
+        /// Counter keys missing at submit while additive tile_ninja_bonus agrees — export schema gap.
+
+        /// </summary>
+
+        private static bool IsBenignTileNinjaCounterDrift(
+
+            Dictionary<string, object> extrasDiff,
+
+            Dictionary<string, string> f8Extras,
+
+            Dictionary<string, string> submitExtras
+
+        )
+
+        {
+
+            if (f8Extras == null)
+
+                return false;
+
+            string f8Bonus;
+
+            string submitBonus;
+
+            f8Extras.TryGetValue("tile_ninja_bonus", out f8Bonus);
+
+            if (submitExtras != null)
+
+                submitExtras.TryGetValue("tile_ninja_bonus", out submitBonus);
+
+            else
+
+                submitBonus = null;
+
+            f8Bonus = (f8Bonus ?? "").Trim();
+
+            submitBonus = (submitBonus ?? "").Trim();
+
+            if (string.IsNullOrEmpty(f8Bonus))
+
+                return false;
+
+            if (!string.IsNullOrEmpty(submitBonus) && !string.Equals(f8Bonus, submitBonus, StringComparison.Ordinal))
+
+                return false;
+
+
+
+            foreach (var key in StaleF8TileNinjaIntKeys)
+
+            {
+
+                if (!extrasDiff.TryGetValue(key, out var raw))
+
+                    continue;
+
+                var entry = raw as Dictionary<string, string>;
+
+                if (entry == null)
+
+                    continue;
+
+                string f8Raw;
+
+                string submitRaw;
+
+                entry.TryGetValue("f8", out f8Raw);
+
+                entry.TryGetValue("submit", out submitRaw);
+
+                f8Raw = (f8Raw ?? "").Trim();
+
+                submitRaw = (submitRaw ?? "").Trim();
+
+                if (string.IsNullOrEmpty(f8Raw))
+
+                    continue;
+
+                if (!string.IsNullOrEmpty(submitRaw))
+
+                    return false;
+
+            }
+
+
+
+            return true;
 
         }
 

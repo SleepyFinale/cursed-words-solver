@@ -20,6 +20,7 @@ namespace CursedWordsSolverCompanion
         private const float MutatingDnaMergeIntervalSec = 0.5f;
         private static List<HistoricWord> _cachedPreviousWords;
         private static int _cachedMovieCameraWordScoreBonus = -1;
+        private static bool _scoringCacheSubmitInFlight;
         private static bool _exportLiveOnlyHistoric;
         private static bool _exportSkipWorkflowDiskMerge;
         private static string _f8ExportRequestId = "";
@@ -321,10 +322,26 @@ namespace CursedWordsSolverCompanion
             sb.Append(ScoringContextCapture.SerializeLetterCounts(letterCounts));
         }
 
+        public static bool IsScoringCacheSubmitInFlight()
+        {
+            return _scoringCacheSubmitInFlight;
+        }
+
+        public static void SetScoringCacheSubmitInFlight(bool inFlight)
+        {
+            _scoringCacheSubmitInFlight = inFlight;
+            if (inFlight)
+                return;
+            ClearCachedPreviousWordsForExport();
+            RunStateExportFill.CachedGridNumber = -1;
+            BossResolver.ClearScoringCache();
+        }
+
         public static void CacheGridNumber(int gridNumber)
         {
-            if (gridNumber >= 1)
-                RunStateExportFill.CachedGridNumber = gridNumber;
+            if (!_scoringCacheSubmitInFlight || gridNumber < 1)
+                return;
+            RunStateExportFill.CachedGridNumber = gridNumber;
         }
 
         public static List<HistoricWord> TryGetHistoricPreviousWordsPublic(Player player)
@@ -334,6 +351,8 @@ namespace CursedWordsSolverCompanion
 
         public static void CachePreviousWordsForExport(List<HistoricWord> previousWords)
         {
+            if (!_scoringCacheSubmitInFlight)
+                return;
             if (previousWords != null && previousWords.Count > 0)
                 _cachedPreviousWords = previousWords;
         }
@@ -649,6 +668,9 @@ namespace CursedWordsSolverCompanion
         /// </summary>
         public static void TryMergeCachedGridNumber()
         {
+            if (!_scoringCacheSubmitInFlight)
+                return;
+
             var grid = -1;
             try
             {
@@ -658,13 +680,8 @@ namespace CursedWordsSolverCompanion
             }
             catch
             {
-                // fall through to cached
+                return;
             }
-
-            if (grid < 1 && RunStateExportFill.CachedGridNumber >= 1)
-                grid = RunStateExportFill.CachedGridNumber;
-            else if (RunStateExportFill.CachedGridNumber >= 1)
-                grid = Math.Max(grid, RunStateExportFill.CachedGridNumber);
 
             if (grid < 1)
                 return;
@@ -988,7 +1005,6 @@ namespace CursedWordsSolverCompanion
         private static readonly string[] ExtrasPreserveFromDisk =
         {
             "birthday_cake_bonus",
-            "neapolitan_percent_last_known",
             "ruler_distance_last_known",
             "rare_item_count_last_known",
             "steak_word_bonus_percent",
@@ -1055,23 +1071,11 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
-        /// Neapolitan only increases within a run. Prefer current in-game reflection for F7;
-        /// use on-disk last_known only when reflection is missing or below 100 (stale ×1.00).
+        /// Neapolitan percent from live MulticolouredWordsSubmitted (100 + n×5).
         /// </summary>
         private static int ResolveNeapolitanPercentForExport(Player player)
         {
-            var reflected = TryGetNeapolitanPercent(player);
-            if (reflected >= 100)
-                return reflected;
-            var onDisk = TryReadExtrasFromDisk();
-            string cachedRaw;
-            if (
-                onDisk.TryGetValue("neapolitan_percent_last_known", out cachedRaw)
-                && TryParseExtraPercent(cachedRaw, out var cached)
-                && cached >= 100
-            )
-                return cached;
-            return reflected;
+            return TryGetNeapolitanPercent(player);
         }
 
         private static void MergePreservedExtrasFromDisk(
@@ -1155,26 +1159,6 @@ namespace CursedWordsSolverCompanion
                     if (!onDisk.TryGetValue(key, out value) || string.IsNullOrEmpty(value))
                         continue;
                     snapshot.extras[key] = value;
-                }
-
-                // Prefer current reflection; only use last_known when live is stale/missing.
-                string lastKnownRaw;
-                if (
-                    onDisk.TryGetValue("neapolitan_percent_last_known", out lastKnownRaw)
-                    && TryParseExtraPercent(lastKnownRaw, out var lastKnown)
-                )
-                {
-                    var reflected = -1;
-                    string liveRaw;
-                    if (
-                        snapshot.extras.TryGetValue("neapolitan_percent", out liveRaw)
-                        && TryParseExtraPercent(liveRaw, out var live)
-                    )
-                        reflected = live;
-                    if (reflected >= 100)
-                        snapshot.extras["neapolitan_percent"] = reflected.ToString();
-                    else if (lastKnown >= 100)
-                        snapshot.extras["neapolitan_percent"] = lastKnown.ToString();
                 }
 
                 string rulerLastKnownRaw;
@@ -1280,7 +1264,7 @@ namespace CursedWordsSolverCompanion
         /// <summary>
         /// Read Tile Ninja from live stamp instance (game source of truth).
         /// </summary>
-        private static bool TryReadTileNinjaLive(
+        public static bool TryReadTileNinjaLive(
             Player player,
             out int consumablesUsed,
             out int wordBonusPercent
@@ -1317,7 +1301,19 @@ namespace CursedWordsSolverCompanion
             return false;
         }
 
-        private static void ExportTileNinjaLiveExtras(
+        public static void AppendTileNinjaLiveExtras(
+            Player player,
+            Dictionary<string, string> extras
+        )
+        {
+            if (player == null || extras == null || !HasTileNinjaStamp(player))
+                return;
+
+            if (TryReadTileNinjaLive(player, out var used, out var percent))
+                ExportTileNinjaLiveExtras(extras, used, percent);
+        }
+
+        public static void ExportTileNinjaLiveExtras(
             Dictionary<string, string> extras,
             int consumablesUsed,
             int wordBonusPercent
@@ -1634,6 +1630,9 @@ namespace CursedWordsSolverCompanion
             if (!PlayerHasStampSlug(player, "neapolitan"))
             {
                 snapshot.extras.Remove("neapolitan_percent");
+            }
+            else
+            {
                 snapshot.extras.Remove("neapolitan_percent_last_known");
             }
 
@@ -3220,6 +3219,17 @@ namespace CursedWordsSolverCompanion
         {
             if (target == null)
                 return -1;
+
+            var count = TryGetIntMember(target, "MulticolouredWordsSubmitted");
+            if (count >= 0)
+            {
+                var percent = 100 + count * 5;
+                if (percent < 100)
+                    return 100;
+                if (percent > 500)
+                    return 500;
+                return percent;
+            }
 
             var bonus = TryGetAccumulatedWordBonusFromObject(target);
             if (bonus >= 100 && bonus <= 500)

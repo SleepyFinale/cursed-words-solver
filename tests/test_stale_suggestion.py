@@ -2124,7 +2124,7 @@ def test_poll_suppresses_historic_catchup_within_search_budget_grace(
         "historic_words": '[{"word":"penne"},{"word":"zooty"}]',
         "previous_word_first_letter": "f",
     }
-    assert f8_export_catchup_grace_sec(60.0) == 2.5
+    assert f8_export_catchup_grace_sec(60.0) == F8_EXPORT_CATCHUP_GRACE_SEC
     assert not workflow_invalidate_suppressed_for_export_catchup(
         poll_extras,
         current_board_fp=board_fp,

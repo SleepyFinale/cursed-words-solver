@@ -59,7 +59,7 @@ SOLVER_VERSION = "0.1.0"
 _F8_SEQUENCE_PATH = LAST_SUGGESTION_PATH.parent / ".f8_sequence"
 
 # Melmod auto-export can update workflow extras shortly after F8 save.
-F8_EXPORT_CATCHUP_GRACE_SEC = 2.5
+F8_EXPORT_CATCHUP_GRACE_SEC = 1.5
 
 
 def f8_export_catchup_grace_sec(search_budget_sec: float | None = None) -> float:

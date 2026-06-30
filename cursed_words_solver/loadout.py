@@ -152,14 +152,25 @@ def reconcile_boss_extras_from_extras_diff(
         return
 
 
-def reconcile_boss_extras_for_f8_embed(run_state: dict[str, Any]) -> None:
+def reconcile_boss_extras_for_f8_embed(
+    run_state: dict[str, Any],
+    *,
+    allow_disk_reconcile: bool = False,
+    fresh_run_state: dict[str, Any] | None = None,
+) -> None:
     """Prefer live boss projection when F8 embed carries stale boss from a prior fight."""
     if not isinstance(run_state, dict):
         return
     extras = run_state.get("extras")
     if not isinstance(extras, dict):
         return
-    fresh = load_run_state_raw()
+    fresh: dict[str, Any] | None = (
+        fresh_run_state if isinstance(fresh_run_state, dict) else None
+    )
+    if fresh is None:
+        if not allow_disk_reconcile:
+            return
+        fresh = load_run_state_raw()
     if not isinstance(fresh, dict):
         return
     fresh_extras = fresh.get("extras")
@@ -173,7 +184,10 @@ def reconcile_boss_extras_for_f8_embed(run_state: dict[str, Any]) -> None:
     )
     fresh_mods = str(fresh_extras.get("boss_modifiers") or "").strip()
     embed_mods = str(extras.get("boss_modifiers") or "").strip()
-    if fresh_has and fresh_mods and fresh_mods != embed_mods:
+    if (
+        _boss_modifiers_active(fresh_extras.get("boss_modifiers"))
+        and fresh_mods != embed_mods
+    ):
         for key in BOSS_RECONCILE_EXTRA_KEYS:
             if key in fresh_extras:
                 extras[key] = fresh_extras[key]
@@ -2406,9 +2420,49 @@ def _backfill_tile_ninja_at_grid_start(dest: dict[str, Any]) -> None:
         dest["tile_ninja_bonus_at_grid_start"] = str(seed)
 
 
+def _michael_finale_embed_context(run_state: dict[str, Any]) -> bool:
+    """True when run_state carries Michael finale metadata (submit clears boss reconcile keys)."""
+    if not isinstance(run_state, dict):
+        return False
+    extras = run_state.get("extras")
+    if not isinstance(extras, dict):
+        extras = {}
+    probe = str(extras.get("michael_finale_probe") or "").strip()
+    if "finale=1" in probe.lower():
+        return True
+    try:
+        phase = int(extras.get("michael_phase") or 0)
+    except (TypeError, ValueError):
+        phase = 0
+    if phase >= 4:
+        return True
+    defeated = str(extras.get("michael_summoned_bosses_defeated") or "").strip().lower()
+    if defeated in ("1", "true", "yes"):
+        return True
+    boss_id = str(run_state.get("boss_id") or "").strip().lower()
+    return boss_id == "michael"
+
+
+def _strip_non_scoring_boss_embed(run_state: dict[str, Any]) -> None:
+    """Drop boss reconcile keys that Michael finale scoring does not use at submit."""
+    if not isinstance(run_state, dict):
+        return
+    extras = run_state.get("extras")
+    if not isinstance(extras, dict):
+        return
+    if _boss_modifiers_active(extras.get("boss_modifiers")):
+        return
+    if not _michael_finale_embed_context(run_state):
+        return
+    for key in BOSS_RECONCILE_EXTRA_KEYS:
+        extras.pop(key, None)
+
+
 def sanitize_run_state_snapshot_for_f8(
     run_state: dict | None,
     loadout: Loadout,
+    *,
+    fresh_run_state: dict[str, Any] | None = None,
 ) -> dict | None:
     """Trim unequipped-item extras from the F8 embed; game export is otherwise as-is."""
     if run_state is None:
@@ -2452,7 +2506,11 @@ def sanitize_run_state_snapshot_for_f8(
     from cursed_words_solver.fingerprints import loadout_fingerprint as _loadout_fp
 
     extras["loadout_fingerprint"] = _loadout_fp(loadout)
-    reconcile_boss_extras_for_f8_embed(snapshot)
+    _strip_non_scoring_boss_embed(snapshot)
+    reconcile_boss_extras_for_f8_embed(
+        snapshot,
+        fresh_run_state=fresh_run_state,
+    )
     _strip_finale_boss_embed_for_non_boss_node(snapshot)
     snapshot["extras"] = extras
     return snapshot
@@ -2610,17 +2668,12 @@ def neapolitan_extras_stale_warning(loadout: Loadout | None) -> str | None:
         neapolitan_base_percent_from_loadout,
     )
 
-    base_percent, source = neapolitan_base_percent_from_loadout(loadout)
+    _base_percent, source = neapolitan_base_percent_from_loadout(loadout)
     if source == "live":
         return None
-    if source == "cached":
-        return (
-            "Neapolitan: using cached baseline "
-            f"{base_percent}% (live neapolitan_percent missing) — press F8 again if stale."
-        )
     return (
-        "Neapolitan: live/cached baseline missing, defaulting to 100% — "
-        "press F8 again after a qualifying submit to capture current value."
+        "Neapolitan: live baseline missing from run_state, defaulting to 100% — "
+        "press F8 so melmod can export neapolitan_percent."
     )
 
 

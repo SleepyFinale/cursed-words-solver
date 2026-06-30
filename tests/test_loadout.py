@@ -196,15 +196,23 @@ def test_loadout_to_dict_matches_melmod_keys():
     }
 
 
-def test_neapolitan_warning_uses_cached_baseline_message():
+def test_neapolitan_warning_when_live_missing():
     lo = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={"neapolitan_percent_last_known": "125"},
+        extras={},
     )
     warning = neapolitan_extras_stale_warning(lo)
     assert warning is not None
-    assert "125%" in warning
-    assert "cached baseline" in warning
+    assert "defaulting to 100%" in warning
+    assert "neapolitan_percent" in warning
+
+
+def test_neapolitan_warning_none_when_live_exported():
+    lo = Loadout(
+        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
+        extras={"neapolitan_percent": "125"},
+    )
+    assert neapolitan_extras_stale_warning(lo) is None
 
 
 def test_neapolitan_warning_default_when_no_percent_available():

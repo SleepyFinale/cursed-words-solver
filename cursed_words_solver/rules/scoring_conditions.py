@@ -4130,18 +4130,6 @@ def rewind_setup_extras(
         if after != before:
             notes.append(f"movie camera bonus {before}→{after}")
 
-    from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
-
-    if loadout_has_stamp(loadout, "neapolitan"):
-        extras = dict(loadout.extras or {})
-        live_neapolitan = _extra_int(loadout, "neapolitan_percent", -1)
-        if live_neapolitan > 0 and extras.get("neapolitan_percent_last_known") != str(
-            live_neapolitan
-        ):
-            extras["neapolitan_percent_last_known"] = str(live_neapolitan)
-            loadout.extras = extras
-            notes.append(f"neapolitan baseline cached at {live_neapolitan}%")
-
     return notes
 
 
@@ -4301,24 +4289,22 @@ def neapolitan_base_percent_from_loadout(loadout: Loadout | None) -> tuple[int, 
         else {}
     )
     live_percent = _extra_positive_int(extras, "neapolitan_percent")
-    cached_percent = _extra_positive_int(extras, "neapolitan_percent_last_known")
     if live_percent is not None:
-        if (
-            cached_percent is not None
-            and live_percent <= 100
-            and cached_percent > live_percent
-        ):
-            return cached_percent, "cached"
-        elif (
-            cached_percent is not None
-            and live_percent > cached_percent
-            and cached_percent >= 145
-        ):
-            return cached_percent, "cached"
         return live_percent, "live"
-    if cached_percent is not None:
-        return cached_percent, "cached"
     return 100, "default"
+
+
+def _neapolitan_improve_percent_above_cap(live: int, grid_cap: int) -> int:
+    """Game increments MulticolouredWordsSubmitted before applying WordBonus (+5%)."""
+    if live % 10 == 0 and live > grid_cap + 10:
+        if live >= grid_cap + 20:
+            return live
+        return live + 5
+    if live % 10 == 5 and live > grid_cap + 15:
+        return live
+    if live % 10 == 5 and live == grid_cap + 15:
+        return grid_cap + 10
+    return live + 5
 
 
 def _neapolitan_multiplier_from_extras(
@@ -4350,7 +4336,6 @@ def _neapolitan_multiplier_from_extras(
         "yes",
     )
     live = _extra_positive_int(extras, "neapolitan_percent")
-    cached = _extra_positive_int(extras, "neapolitan_percent_last_known")
     simulate = str(extras.get("simulate_submit_improvements", "")).lower() in (
         "1",
         "true",
@@ -4363,13 +4348,7 @@ def _neapolitan_multiplier_from_extras(
         and (live is not None or simulate)
     ):
         if live is not None and live > grid_cap + 5:
-            if (
-                (live % 10 == 0 and live > grid_cap + 10)
-                or (live % 10 == 5 and live > grid_cap + 15)
-            ):
-                effective_percent = live
-            else:
-                effective_percent = grid_cap + 10
+            effective_percent = _neapolitan_improve_percent_above_cap(live, grid_cap)
         elif base_percent > grid_cap:
             if (
                 grid_number(loadout) == 1
@@ -4392,12 +4371,10 @@ def _neapolitan_multiplier_from_extras(
             not improve_eligible
             and not submit_final
             and live is not None
-            and cached is not None
-            and live == cached
             and base_percent == live
             and base_percent > 100
             and base_percent % 10 == 5
-            and base_percent <= 155
+            and 150 <= base_percent <= 155
         ):
             stripped = base_percent - 5
             if stripped >= 100:

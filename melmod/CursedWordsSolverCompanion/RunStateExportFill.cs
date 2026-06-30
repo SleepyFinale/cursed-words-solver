@@ -303,8 +303,6 @@ namespace CursedWordsSolverCompanion
         private static void FillGridNumber(RunStateSnapshot snapshot, Player player)
         {
             var n = ResolveGridNumber(player);
-            if (CachedGridNumber >= 1)
-                n = Math.Max(n, CachedGridNumber);
             if (n >= 1)
                 snapshot.extras["grid_number"] = n.ToString();
         }
@@ -356,7 +354,7 @@ namespace CursedWordsSolverCompanion
                 }
             }
 
-            if (CachedGridNumber >= 1)
+            if (RunStateExporter.IsScoringCacheSubmitInFlight() && CachedGridNumber >= 1)
                 return CachedGridNumber;
 
             return 1;
@@ -1476,14 +1474,60 @@ namespace CursedWordsSolverCompanion
             Dictionary<string, string> liveExtras
         )
         {
-            var projected = BuildAuthoritativeWorkflowExtras(
+            return BuildScoringAlignedWorkflowExtras(
                 player,
                 null,
                 liveExtras,
+                null,
+                useLiveBossWhenScoringEmpty: true,
                 liveOnlyHistoric: true
             );
-            var bosses = ResolveBossesForExport(player);
-            AppendBossExtrasFromModifiers(projected, player, bosses);
+        }
+
+        /// <summary>
+        /// Single source for F8 export, submit projection, and scoring-capture workflow extras.
+        /// </summary>
+        public static Dictionary<string, string> BuildScoringAlignedWorkflowExtras(
+            Player player,
+            List<HistoricWord> previousWords,
+            Dictionary<string, string> contextExtras,
+            List<BossModifier> scoringBossModifiers,
+            bool useLiveBossWhenScoringEmpty,
+            bool liveOnlyHistoric = true
+        )
+        {
+            var allowCache = RunStateExporter.IsScoringCacheSubmitInFlight();
+            var projected = BuildAuthoritativeWorkflowExtras(
+                player,
+                previousWords,
+                contextExtras,
+                liveOnlyHistoric,
+                allowScoringCache: allowCache
+            );
+
+            if (scoringBossModifiers != null && scoringBossModifiers.Count > 0)
+            {
+                AppendBossExtrasFromModifiers(projected, player, scoringBossModifiers);
+            }
+            else if (useLiveBossWhenScoringEmpty)
+            {
+                var bosses = ResolveBossesForExport(player);
+                AppendBossExtrasFromModifiers(
+                    projected,
+                    player,
+                    bosses ?? new List<BossModifier>()
+                );
+            }
+            else
+            {
+                AppendBossExtrasFromModifiers(
+                    projected,
+                    player,
+                    scoringBossModifiers ?? new List<BossModifier>()
+                );
+            }
+
+            RunStateExporter.AppendTileNinjaLiveExtras(player, projected);
             return projected;
         }
 
@@ -1495,12 +1539,13 @@ namespace CursedWordsSolverCompanion
             Player player,
             List<HistoricWord> previousWords,
             Dictionary<string, string> contextExtras,
-            bool liveOnlyHistoric = true
+            bool liveOnlyHistoric = true,
+            bool allowScoringCache = false
         )
         {
-            if (previousWords != null && previousWords.Count > 0)
+            if (allowScoringCache && previousWords != null && previousWords.Count > 0)
                 RunStateExporter.CachePreviousWordsForExport(previousWords);
-            else
+            else if (allowScoringCache)
                 RefreshEncounterHistoricCacheFromPlayer(player);
 
             var projected = new Dictionary<string, string>();
@@ -1515,16 +1560,18 @@ namespace CursedWordsSolverCompanion
             }
 
             projected.Remove("previous_word_first_letter");
-            var scoringPrevious = RunStateExporter.GetCachedPreviousWords();
+            var scoringPrevious = allowScoringCache
+                ? RunStateExporter.GetCachedPreviousWords()
+                : null;
             var fromPlayer = RunStateExporter.TryGetHistoricPreviousWordsPublic(player);
             var cacheCount = scoringPrevious != null ? scoringPrevious.Count : 0;
             var playerCount = fromPlayer != null ? fromPlayer.Count : 0;
             List<HistoricWord> workflowWords = null;
             if (previousWords != null && previousWords.Count > 0)
                 workflowWords = previousWords;
-            else if (cacheCount > 0 && playerCount > 0)
+            else if (allowScoringCache && cacheCount > 0 && playerCount > 0)
                 workflowWords = cacheCount >= playerCount ? scoringPrevious : fromPlayer;
-            else if (cacheCount > 0)
+            else if (allowScoringCache && cacheCount > 0)
                 workflowWords = scoringPrevious;
             else if (playerCount > 0)
                 workflowWords = fromPlayer;
@@ -1626,34 +1673,16 @@ namespace CursedWordsSolverCompanion
             List<BossModifier> scoringBossModifiers = null
         )
         {
-            if (previousWords != null && previousWords.Count > 0)
-            {
-                var scoreProjected = BuildAuthoritativeWorkflowExtras(
-                    player,
-                    previousWords,
-                    scoringExtras,
-                    liveOnlyHistoric: true
-                );
-                AppendBossExtrasFromModifiers(
-                    scoreProjected,
-                    player,
-                    scoringBossModifiers ?? new List<BossModifier>()
-                );
-                return scoreProjected;
-            }
-
-            var projected = liveExtras != null
-                ? new Dictionary<string, string>(liveExtras)
-                : new Dictionary<string, string>();
-
-            if (scoringExtras != null)
-            {
-                foreach (var kv in scoringExtras)
-                    projected[kv.Key] = kv.Value ?? "";
-            }
-
-            ApplyScoringCachedPreviousWordLetter(projected, player);
-            return projected;
+            var useLiveBoss =
+                scoringBossModifiers == null || scoringBossModifiers.Count == 0;
+            return BuildScoringAlignedWorkflowExtras(
+                player,
+                previousWords,
+                scoringExtras,
+                scoringBossModifiers,
+                useLiveBossWhenScoringEmpty: useLiveBoss,
+                liveOnlyHistoric: true
+            );
         }
 
         public static List<HistoricWord> PickBestHistoricWordList(Player player, bool liveOnly = false)

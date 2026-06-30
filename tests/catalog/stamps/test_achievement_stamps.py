@@ -288,92 +288,53 @@ def test_neapolitan_uses_live_percent_from_extras():
     assert score == math.floor(base * 1.1)
 
 
-def test_neapolitan_prefers_cached_when_stale_live_export():
-    """Stale F7 export at 100% must not beat last_known 110% (hafting class)."""
+def test_neapolitan_fresh_stamp_defaults_to_100():
+    """Fresh stamp (0 multicolour submits) exports ×1.00 baseline."""
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
     pipeline = ScoringPipeline()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "100",
-            "neapolitan_percent_last_known": "110",
-        },
+        extras={"neapolitan_percent": "100"},
     )
     score, bd = pipeline.score(board, [0, 1], "ab", loadout)
     base, _ = pipeline.score(board, [0, 1], "ab", Loadout())
-    assert bd["multiplier"] == 1.1
-    assert score == math.floor(base * 1.1)
+    assert bd["multiplier"] == 1.0
+    assert score == base
 
 
-def test_neapolitan_prefers_cached_when_stale_high_live_export():
-    """F8 live export above last_known must not inflate submit (sweepy class)."""
+def test_neapolitan_uses_live_percent_when_export_at_100():
+    """Live export at 100% is authoritative (no cached override)."""
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
+    board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
+    pipeline = ScoringPipeline()
     loadout = Loadout(
-        extras={
-            "neapolitan_percent": "150",
-            "neapolitan_percent_last_known": "145",
-        },
+        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
+        extras={"neapolitan_percent": "100"},
     )
-    pct, src = neapolitan_base_percent_from_loadout(loadout)
-    assert pct == 145
-    assert src == "cached"
+    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
+    base, _ = pipeline.score(board, [0, 1], "ab", Loadout())
+    assert bd["multiplier"] == 1.0
+    assert score == base
 
 
-def test_neapolitan_prefers_live_over_stale_higher_cache():
-    """When live is not stale-high, live export wins over lower last_known."""
-    loadout = Loadout(
-        extras={
-            "neapolitan_percent": "125",
-            "neapolitan_percent_last_known": "120",
-        },
-    )
+def test_neapolitan_uses_live_percent_from_high_export():
+    loadout = Loadout(extras={"neapolitan_percent": "150"})
     pct, src = neapolitan_base_percent_from_loadout(loadout)
-    assert pct == 125
+    assert pct == 150
     assert src == "live"
 
 
-def test_neapolitan_uses_last_known_when_live_missing_only():
-    loadout = Loadout(extras={"neapolitan_percent_last_known": "125"})
+def test_neapolitan_defaults_when_live_missing():
+    loadout = Loadout(extras={})
     pct, src = neapolitan_base_percent_from_loadout(loadout)
-    assert pct == 125
-    assert src == "cached"
+    assert pct == 100
+    assert src == "default"
 
 
-def test_neapolitan_live_wins_when_higher_than_cached():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
-    board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "110",
-            "neapolitan_percent_last_known": "105",
-        },
-    )
-    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
-    base, _ = pipeline.score(board, [0, 1], "ab", Loadout())
-    assert bd["multiplier"] == 1.1
-    assert score == math.floor(base * 1.1)
-
-
-def test_neapolitan_uses_cached_percent_when_live_missing():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
-    board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={"neapolitan_percent_last_known": "115"},
-    )
-    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
-    base, _ = pipeline.score(board, [0, 1], "ab", Loadout())
-    assert bd["multiplier"] == 1.15
-    assert score == math.floor(base * 1.15)
-
-
-def test_neapolitan_submit_simulation_uses_cached_baseline():
+def test_neapolitan_submit_simulation_uses_live_baseline():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
@@ -382,7 +343,7 @@ def test_neapolitan_submit_simulation_uses_cached_baseline():
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
-            "neapolitan_percent_last_known": "115",
+            "neapolitan_percent": "115",
             "simulate_submit_improvements": True,
         },
     )
@@ -435,7 +396,6 @@ def test_neapolitan_improves_with_void_red_blue_without_simulate_flag():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "155",
-            "neapolitan_percent_last_known": "155",
         },
     )
     score, bd = pipeline.score(board, [7, 12, 17], "abc", loadout)
@@ -455,7 +415,6 @@ def test_neapolitan_strips_f8_preview_when_under_three_colours():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "155",
-            "neapolitan_percent_last_known": "155",
         },
     )
     score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
@@ -474,7 +433,6 @@ def test_neapolitan_does_not_strip_encounter_tier_175():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "175",
-            "neapolitan_percent_last_known": "175",
             "grid_number": "3",
         },
     )
@@ -499,7 +457,6 @@ def test_neapolitan_grid_cap_blocks_improve_on_grid_1_at_170():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "175",
-            "neapolitan_percent_last_known": "175",
             "grid_number": "1",
         },
     )
@@ -517,7 +474,6 @@ def test_neapolitan_clamps_stale_export_to_grid_cap():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "175",
-            "neapolitan_percent_last_known": "175",
             "grid_number": "1",
         },
     )
@@ -542,7 +498,6 @@ def test_neapolitan_stale_above_cap_strips_to_cap_minus_five_with_two_colours():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "185",
-            "neapolitan_percent_last_known": "185",
             "grid_number": "1",
         },
     )
@@ -560,7 +515,6 @@ def test_neapolitan_stale_above_cap_keeps_cap_with_three_colours():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "175",
-            "neapolitan_percent_last_known": "175",
             "grid_number": "1",
         },
     )
@@ -578,7 +532,6 @@ def test_neapolitan_keeps_stored_tier_above_grid_cap_with_two_colours():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "175",
-            "neapolitan_percent_last_known": "175",
             "grid_number": "1",
         },
     )
@@ -596,7 +549,6 @@ def test_neapolitan_improves_above_grid_cap_with_three_colours():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "175",
-            "neapolitan_percent_last_known": "175",
             "grid_number": "2",
         },
     )
@@ -614,7 +566,6 @@ def test_neapolitan_super_stale_improve_on_grid_1():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "185",
-            "neapolitan_percent_last_known": "185",
             "grid_number": "1",
         },
     )
@@ -632,7 +583,6 @@ def test_neapolitan_improves_from_cap_plus_five_on_grid_2():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "180",
-            "neapolitan_percent_last_known": "180",
             "grid_number": "2",
         },
     )
@@ -650,7 +600,6 @@ def test_neapolitan_improves_from_cap_plus_five_on_grid_3():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "185",
-            "neapolitan_percent_last_known": "185",
             "grid_number": "3",
         },
     )
@@ -668,7 +617,6 @@ def test_neapolitan_improves_at_grid_cap_on_grid_3():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "180",
-            "neapolitan_percent_last_known": "180",
             "grid_number": "3",
         },
     )
@@ -686,7 +634,6 @@ def test_neapolitan_improves_to_grid_cap_on_grid_2():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "170",
-            "neapolitan_percent_last_known": "170",
             "grid_number": "2",
         },
     )
@@ -704,7 +651,6 @@ def test_neapolitan_stored_baseline_without_improve_on_grid_1():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "200",
-            "neapolitan_percent_last_known": "200",
             "grid_number": "1",
         },
     )
@@ -722,7 +668,6 @@ def test_neapolitan_stored_baseline_without_improve_on_grid_2():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "200",
-            "neapolitan_percent_last_known": "200",
             "grid_number": "2",
         },
     )
@@ -740,7 +685,6 @@ def test_neapolitan_stored_baseline_without_improve_on_grid_2_210():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "210",
-            "neapolitan_percent_last_known": "210",
             "grid_number": "2",
         },
     )
@@ -758,7 +702,6 @@ def test_neapolitan_stored_baseline_without_improve_on_grid_4():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "205",
-            "neapolitan_percent_last_known": "205",
             "grid_number": "4",
         },
     )
@@ -776,7 +719,6 @@ def test_neapolitan_submit_improve_five_percent_on_grid_1_190():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "190",
-            "neapolitan_percent_last_known": "190",
             "grid_number": "1",
         },
     )
@@ -794,7 +736,6 @@ def test_neapolitan_submit_improve_five_percent_on_grid_2_195():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "195",
-            "neapolitan_percent_last_known": "195",
             "grid_number": "2",
         },
     )
@@ -812,7 +753,6 @@ def test_neapolitan_submit_improve_five_percent_on_grid_3_200():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "200",
-            "neapolitan_percent_last_known": "200",
             "grid_number": "3",
         },
     )
@@ -830,7 +770,6 @@ def test_neapolitan_submit_improve_five_percent_on_grid_3_205():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "205",
-            "neapolitan_percent_last_known": "205",
             "grid_number": "3",
         },
     )
@@ -848,7 +787,6 @@ def test_neapolitan_submit_improve_five_percent_on_grid_1_210():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "210",
-            "neapolitan_percent_last_known": "210",
             "grid_number": "1",
         },
     )
@@ -866,7 +804,6 @@ def test_neapolitan_submit_improve_five_percent_on_grid_3_215():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "215",
-            "neapolitan_percent_last_known": "215",
             "grid_number": "3",
         },
     )
@@ -884,7 +821,6 @@ def test_neapolitan_submit_improve_five_percent_on_grid_4_220():
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "220",
-            "neapolitan_percent_last_known": "220",
             "grid_number": "4",
         },
     )
@@ -905,7 +841,6 @@ def test_neapolitan_submit_simulation_improves_from_baseline_with_three_colours(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
             "neapolitan_percent": "140",
-            "neapolitan_percent_last_known": "140",
             "simulate_submit_improvements": True,
         },
     )
@@ -937,6 +872,57 @@ def test_neapolitan_submit_simulation_only_improves_with_three_colours():
     board_high.tiles[0][2] = _tile(0, 2, "C", 5, color=TileColor.SHINY)
     _score_high, bd_high = pipeline.score(board_high, [0, 1, 2], "abc", loadout)
     assert bd_high["multiplier"] == 1.15
+
+
+def test_neapolitan_submit_improve_grid_1_live_180():
+    """sixte capture: grid 1 live 180 + 3 colours → ×1.85 (game increment-before-apply)."""
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
+        extras={
+            "neapolitan_percent": "180",
+            "grid_number": "1",
+        },
+    )
+    board = _neapolitan_three_colour_board()
+    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
+    assert bd["multiplier"] == 1.85
+    assert score == math.floor(base * 1.85)
+
+
+def test_neapolitan_submit_improve_grid_2_live_185():
+    """devvel capture: grid 2 live 185 + 3 colours → ×1.90."""
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
+        extras={
+            "neapolitan_percent": "185",
+            "grid_number": "2",
+        },
+    )
+    board = _neapolitan_three_colour_board()
+    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
+    assert bd["multiplier"] == 1.9
+    assert score == math.floor(base * 1.9)
+
+
+def test_neapolitan_submit_improve_grid_2_live_190():
+    """reslices capture: grid 2 live 190 + 3 colours → ×1.95."""
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
+        extras={
+            "neapolitan_percent": "190",
+            "grid_number": "2",
+        },
+    )
+    board = _neapolitan_three_colour_board()
+    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
+    assert bd["multiplier"] == 1.95
+    assert score == math.floor(base * 1.95)
 
 
 def test_stiletto_red_half_grid_number():

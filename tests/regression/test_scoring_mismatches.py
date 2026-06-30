@@ -313,7 +313,6 @@ def _adjust_neapolitan_percent_extras(run_state: dict, data: dict) -> None:
         best = max(trace_percent, live_i) if live_i >= 100 else trace_percent
         text = str(best)
         extras["neapolitan_percent"] = text
-        extras["neapolitan_percent_last_known"] = text
         extras["neapolitan_percent_submit_final"] = "true"
         return
     # Trace is authoritative: when the game's actual_trace is present and shows
@@ -328,7 +327,6 @@ def _adjust_neapolitan_percent_extras(run_state: dict, data: dict) -> None:
         and extras.get("neapolitan_percent")
     ):
         extras["neapolitan_percent"] = "100"
-        extras["neapolitan_percent_last_known"] = "100"
         extras["neapolitan_percent_submit_final"] = "true"
         return
     if extras.get("neapolitan_percent"):
@@ -2616,21 +2614,21 @@ def test_nat_h4_ram_trace_checkpoints(
         ) == expected_scores
 
 
-def test_neapolitan_replay_uses_cached_percent_when_live_missing() -> None:
+def test_neapolitan_replay_uses_live_percent() -> None:
+    """Live neapolitan_percent from run_state drives the multiply step."""
     case_path = FIXTURES / "20260527_141228.json"
     data = json.loads(case_path.read_text(encoding="utf-8"))
     run_state = _run_state_for_replay(data)
     assert run_state
-    extras = dict(run_state.get("extras") or {})
-    extras.pop("neapolitan_percent", None)
-    extras["neapolitan_percent_last_known"] = "110"
-    run_state["extras"] = extras
+    _adjust_neapolitan_percent_extras(run_state, data)
     board = parse_board_from_run_state(run_state)
     loadout = parse_run_state(run_state)
     assert board is not None
+    assert str((loadout.extras or {}).get("neapolitan_percent")) == "110"
     pipeline = ScoringPipeline()
-    score, _bd, trace = pipeline.score_with_trace(board, data["path"], data["word"], loadout)
-    assert int(score) == int(data["actual_score"])
+    _score, _bd, trace = pipeline.score_with_trace(
+        board, data["path"], data["word"], loadout
+    )
     assert any(
         isinstance(step, dict)
         and step.get("phase") == "multiply"

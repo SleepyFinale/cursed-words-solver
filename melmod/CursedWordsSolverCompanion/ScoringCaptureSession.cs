@@ -82,6 +82,7 @@ namespace CursedWordsSolverCompanion
             _active = false;
             _captureCandidate = false;
             _submitInFlight = true;
+            RunStateExporter.SetScoringCacheSubmitInFlight(true);
             _actualTrace = null;
             _roundTrace = null;
             _submitBoardSnapshot = null;
@@ -1227,9 +1228,7 @@ namespace CursedWordsSolverCompanion
                     if (bonus <= 0L)
                         continue;
 
-                    var percent = bonus.ToString();
-                    _scoringContextExtras["neapolitan_percent"] = percent;
-                    _scoringContextExtras["neapolitan_percent_last_known"] = percent;
+                    _scoringContextExtras["neapolitan_percent"] = bonus.ToString();
                     break;
                 }
             }
@@ -1516,6 +1515,7 @@ namespace CursedWordsSolverCompanion
                 _active = false;
                 _captureCandidate = false;
                 _submitInFlight = false;
+                RunStateExporter.SetScoringCacheSubmitInFlight(false);
                 _submitBoardSnapshot = null;
                 _originalF8ExtrasForDiff = new Dictionary<string, string>();
             _preSyncF8ExtrasForDiff = new Dictionary<string, string>();

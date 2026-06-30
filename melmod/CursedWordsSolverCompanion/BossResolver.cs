@@ -17,6 +17,12 @@ namespace CursedWordsSolverCompanion
 
         public static void CacheFromScoring(List<BossModifier> bossModifiers)
         {
+            if (!RunStateExporter.IsScoringCacheSubmitInFlight())
+            {
+                ClearScoringCache();
+                return;
+            }
+
             if (bossModifiers == null || bossModifiers.Count == 0)
             {
                 ClearScoringCache();

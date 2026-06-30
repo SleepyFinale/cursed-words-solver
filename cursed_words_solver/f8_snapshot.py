@@ -903,7 +903,11 @@ def embed_f8_snapshot(
     src_extras = source.get("extras")
     if isinstance(src_extras, dict):
         export_fp = str(src_extras.get("loadout_fingerprint", "") or "").strip()
-    sanitized = sanitize_run_state_snapshot_for_f8(run_state, loadout)
+    sanitized = sanitize_run_state_snapshot_for_f8(
+        run_state,
+        loadout,
+        fresh_run_state=source,
+    )
     if not isinstance(sanitized, dict):
         return copy.deepcopy(source)
     extras = sanitized.get("extras")
