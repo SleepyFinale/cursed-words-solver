@@ -68,6 +68,7 @@ namespace CursedWordsSolverCompanion
             }
 
             var cols = 6;
+            var gridRows = 6;
             if (grid != null)
             {
                 try
@@ -75,6 +76,8 @@ namespace CursedWordsSolverCompanion
                     var dims = grid.Dimensions;
                     if (dims.x > 0)
                         cols = dims.x;
+                    if (dims.y > 0)
+                        gridRows = dims.y;
                 }
                 catch
                 {
@@ -99,16 +102,18 @@ namespace CursedWordsSolverCompanion
                     continue;
                 }
 
-                var row = coord.y;
                 var col = coord.x;
-                var index = row * cols + col;
-                record.path.Add(index);
+                // Unity y=0 is bottom; solver board export uses top_first (row 0 = top).
+                var storageRow = gridRows - 1 - coord.y;
+                // Cursedle submit indices use Unity bottom-origin (not CoordsToSolverIndex).
+                var cursedleIndex = coord.y * cols + col;
+                record.path.Add(cursedleIndex);
                 record.tiles.Add(
                     new CursedleGuessTileRecord
                     {
-                        row = row,
+                        row = storageRow,
                         col = col,
-                        index = index,
+                        index = cursedleIndex,
                         feedback = FeedbackToString(states[i]),
                     }
                 );

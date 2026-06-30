@@ -634,6 +634,26 @@ def _coords_to_solver_index(col: int, display_row: int, cols: int) -> int:
 
 
 @pytest.mark.skipif(not BAILEE_6X6_FIXTURE.exists(), reason="bailee 6x6 fixture required")
+def test_full_6x6_grid_path_conversion_roundtrip():
+    """Full 6x6 boards must convert storage paths for melmod export (not identity)."""
+    from cursed_words_solver.loadout import parse_board_from_run_state
+    from cursed_words_solver.ui.board_geometry import (
+        path_from_melmod_indices,
+        path_to_melmod_indices,
+    )
+
+    data = json.loads(BAILEE_6X6_FIXTURE.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data["run_state"])
+    assert board is not None
+    assert board.rows == 6 and board.cols == 6
+
+    melmod_path = data["solver"]["path"]
+    storage_path = path_from_melmod_indices(board, melmod_path)
+    assert path_to_melmod_indices(board, storage_path) == melmod_path
+    assert storage_path != melmod_path
+
+
+@pytest.mark.skipif(not BAILEE_6X6_FIXTURE.exists(), reason="bailee 6x6 fixture required")
 def test_bailee_6x6_submit_path_needs_board_cols_not_five():
     """False path_mismatch: 5-wide indexing collapses distinct 6x6 tiles."""
     data = json.loads(BAILEE_6X6_FIXTURE.read_text(encoding="utf-8"))

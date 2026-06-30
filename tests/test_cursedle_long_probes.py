@@ -75,12 +75,18 @@ def test_probe_enumeration_includes_long_word() -> None:
     assert found["testing"] == [0, 1, 2, 3, 4, 5, 11]
 
 
+@patch("cursed_words_solver.cursedle_solver._enumerate_dictionary_probe_paths")
 @patch("cursed_words_solver.cursedle_solver.filter_candidates")
-def test_run_cursedle_suggests_long_probe_when_available(mock_filter) -> None:
+def test_run_cursedle_suggests_long_probe_when_available(mock_filter, mock_enum) -> None:
     mock_filter.return_value = [
         [0, 1, 2, 3],
         [0, 6, 12, 18, 24],
         [5, 11, 17, 23, 29],
+        [1, 2, 3, 4],
+    ]
+    mock_enum.return_value = [
+        ("testing", [0, 1, 2, 3, 4, 5, 11]),
+        ("test", [0, 1, 2, 3]),
     ]
     board = _testing_board()
     dictionary = _FakeDictionary({"testing", "test", "aaaa"})

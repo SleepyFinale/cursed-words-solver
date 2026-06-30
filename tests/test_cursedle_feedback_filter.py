@@ -9,6 +9,7 @@ from cursed_words_solver.cursedle_solver import (
 )
 from cursed_words_solver.loadout import parse_board_from_run_state
 from cursed_words_solver.models import Board, CurseType, Tile, TileColor
+from cursed_words_solver.ui.board_geometry import path_to_melmod_indices
 
 
 def _tile(row: int, col: int, letter: str) -> Tile:
@@ -35,11 +36,12 @@ def _board_6x6(letters: list[str]) -> Board:
 def test_green_feedback_pins_solution_index() -> None:
     board = _board_6x6(["A"] * 36)
     solution = [0, 1, 2, 3]
-    guess = CursedleGuess(path=[0, 1, 2, 3], feedback=["green"] * 4)
+    melmod = path_to_melmod_indices(board, solution)
+    guess = CursedleGuess(path=melmod, feedback=["green"] * 4)
     assert solution_matches_guess(board, solution, guess)
 
     wrong_order = CursedleGuess(
-        path=[1, 0, 2, 3],
+        path=[melmod[1], melmod[0], melmod[2], melmod[3]],
         feedback=["yellow", "yellow", "green", "green"],
     )
     assert solution_matches_guess(board, solution, wrong_order)
@@ -50,12 +52,18 @@ def test_grey_and_red_adjacency() -> None:
     board = _board_6x6(["A"] * 36)
     solution = [0, 1, 2, 3]
     # index 7 is adjacent to 1 (row0col1); index 35 is far corner
-    guess = CursedleGuess(path=[7, 35], feedback=["red", "grey"])
+    guess = CursedleGuess(
+        path=path_to_melmod_indices(board, [7, 35]),
+        feedback=["red", "grey"],
+    )
     assert solution_matches_guess(board, solution, guess)
     assert not solution_matches_guess(
         board,
         solution,
-        CursedleGuess(path=[7, 35], feedback=["grey", "grey"]),
+        CursedleGuess(
+            path=path_to_melmod_indices(board, [7, 35]),
+            feedback=["grey", "grey"],
+        ),
     )
 
 
@@ -64,7 +72,7 @@ def test_filter_narrows_to_solution_length() -> None:
     solution = [0, 6, 12, 18]
     guesses = [
         CursedleGuess(
-            path=solution,
+            path=path_to_melmod_indices(board, solution),
             feedback=["green", "green", "green", "green"],
         )
     ]

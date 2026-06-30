@@ -36,42 +36,57 @@ def _is_shrunk_grid(board: Board) -> bool:
     return board.rows < storage or board.cols < storage
 
 
+def melmod_index_from_storage(board: Board, idx: int) -> int:
+    """Storage grid index to melmod submit index (SuggestionMatcher.CoordsToSolverIndex)."""
+    row, col = board.coords_at(idx)
+    cols = board.cols or board.storage_cols
+    return (cols - 1 - row) * cols + col
+
+
+def storage_index_from_melmod(board: Board, idx: int) -> int:
+    """Melmod submit index back to storage grid index."""
+    cols = board.cols or board.storage_cols
+    display_row = cols - 1 - (idx // cols)
+    col = idx % cols
+    return board.index_at(display_row, col)
+
+
 def path_to_melmod_indices(board: Board, path: list[int]) -> list[int]:
     """Convert storage-grid path indices to melmod submit / last_suggestion indices."""
-    if not _is_shrunk_grid(board):
-        return list(path)
-    bounds = playable_bounds(board)
-    if bounds is None:
-        return list(path)
-    min_r, max_r, min_c, _max_c = bounds
-    cols = board.cols
-    out: list[int] = []
-    for idx in path:
-        row, col = board.coords_at(idx)
-        display_row = max_r - row
-        display_col = col - min_c
-        out.append((cols - 1 - display_row) * cols + display_col)
-    return out
+    if _is_shrunk_grid(board):
+        bounds = playable_bounds(board)
+        if bounds is None:
+            return list(path)
+        min_r, max_r, min_c, _max_c = bounds
+        cols = board.cols
+        out: list[int] = []
+        for idx in path:
+            row, col = board.coords_at(idx)
+            display_row = max_r - row
+            display_col = col - min_c
+            out.append((cols - 1 - display_row) * cols + display_col)
+        return out
+    return [melmod_index_from_storage(board, idx) for idx in path]
 
 
 def path_from_melmod_indices(board: Board, path: list[int]) -> list[int]:
     """Convert melmod submit indices back to storage-grid path indices."""
-    if not _is_shrunk_grid(board):
-        return list(path)
-    bounds = playable_bounds(board)
-    if bounds is None:
-        return list(path)
-    min_r, max_r, min_c, _max_c = bounds
-    cols = board.cols
-    storage_cols = board.storage_cols
-    out: list[int] = []
-    for idx in path:
-        display_row = cols - 1 - (idx // cols)
-        display_col = idx % cols
-        row = max_r - display_row
-        col = min_c + display_col
-        out.append(row * storage_cols + col)
-    return out
+    if _is_shrunk_grid(board):
+        bounds = playable_bounds(board)
+        if bounds is None:
+            return list(path)
+        min_r, max_r, min_c, _max_c = bounds
+        cols = board.cols
+        storage_cols = board.storage_cols
+        out: list[int] = []
+        for idx in path:
+            display_row = cols - 1 - (idx // cols)
+            display_col = idx % cols
+            row = max_r - display_row
+            col = min_c + display_col
+            out.append(row * storage_cols + col)
+        return out
+    return [storage_index_from_melmod(board, idx) for idx in path]
 
 
 @dataclass(frozen=True)
