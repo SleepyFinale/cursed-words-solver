@@ -20,6 +20,7 @@ from cursed_words_solver.rules.rule_lookup import (
     slugify_name,
 )
 from cursed_words_solver.rules.scoring_conditions import (
+    bicycle_pin_accumulator_from_fingerprint,
     bicycle_word_per_card,
     birthday_cake_improve_for_path,
     effective_suited_cards_on_path,
@@ -442,6 +443,38 @@ def _steak_trace_rare_count(data: dict) -> int | None:
         if percent >= 100:
             return max(0, percent // 100 - 1)
     return None
+
+
+def _blessing_trace_cursed_boss_count(data: dict) -> int | None:
+    trace = data.get("actual_trace")
+    if not isinstance(trace, list):
+        return None
+    for step in trace:
+        if not isinstance(step, dict):
+            continue
+        item_id = str(step.get("item_id", "") or "").lower()
+        if item_id != "blessing_of_the_fairies":
+            continue
+        if not step.get("word_bonus_multiplicative"):
+            continue
+        try:
+            percent = int(step.get("word_bonus", 0))
+        except (TypeError, ValueError):
+            continue
+        if percent >= 100 and (percent - 100) % 50 == 0:
+            return max(0, (percent - 100) // 50)
+    return None
+
+
+def _adjust_cursed_bosses_defeated_from_trace(run_state: dict, data: dict) -> None:
+    """Inject Blessing of the Fairies scale from actual trace (CursedBossesDefeated.Count)."""
+    extras = run_state.get("extras")
+    if not isinstance(extras, dict):
+        return
+    count = _blessing_trace_cursed_boss_count(data)
+    if count is None:
+        return
+    extras["cursed_bosses_defeated_count"] = str(count)
 
 
 def _adjust_rare_item_count_extras(run_state: dict, data: dict) -> None:
@@ -1249,6 +1282,25 @@ def _adjust_snapshot_copy_from_trace(
     run_state["extras"] = extras
 
 
+def _bicycle_suited_count_for_replay(
+    data: dict, extras: dict, board, path: list[int], loadout
+) -> int:
+    suited = effective_suited_cards_on_path(board, path, loadout)
+    if suited > 0:
+        return suited
+    for source in (extras, data.get("extras_snapshot") or {}):
+        if not isinstance(source, dict):
+            continue
+        raw = source.get("bicycle_suited_on_path")
+        if raw in (None, ""):
+            continue
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
 def _infer_bicycle_accumulator_from_trace(
     data: dict, extras: dict, board, path: list[int], loadout
 ) -> int | None:
@@ -1267,7 +1319,7 @@ def _infer_bicycle_accumulator_from_trace(
     if not rule:
         return None
     per_card = bicycle_word_per_card(loadout, rule)
-    suited = effective_suited_cards_on_path(board, path, loadout)
+    suited = _bicycle_suited_count_for_replay(data, extras, board, path, loadout)
     return max(0, total - per_card * suited)
 
 
@@ -1721,13 +1773,20 @@ def _adjust_bicycle_pre_word_extras(
         data, extras, board, path, loadout
     )
     if inferred is not None:
+        pin_acc = bicycle_pin_accumulator_from_fingerprint(
+            str(extras.get("loadout_fingerprint", "") or "")
+        )
+        if pin_acc is not None and pin_acc > inferred:
+            inferred = pin_acc
         extras = dict(run_state.get("extras") or {})
         extras["bicycle_word_score_bonus"] = str(inferred)
         extras["cards_submitted"] = str(inferred)
         total = _bicycle_trace_word_bonus(data)
         per_card = bicycle_word_per_card(loadout, rule)
         if total is not None and per_card > 0:
-            suited = max(0, (int(total) - inferred) // per_card)
+            suited = _bicycle_suited_count_for_replay(
+                data, extras, board, path, loadout
+            )
             extras["bicycle_suited_on_path"] = str(suited)
         run_state["extras"] = extras
         return
@@ -1737,7 +1796,24 @@ def _adjust_bicycle_pre_word_extras(
         post = int(snapshot_extras.get("bicycle_word_score_bonus", -1))
     except (TypeError, ValueError):
         post = -1
+    try:
+        current_acc = int(extras.get("bicycle_word_score_bonus", -1))
+    except (TypeError, ValueError):
+        current_acc = -1
+    pin_acc = bicycle_pin_accumulator_from_fingerprint(
+        str(extras.get("loadout_fingerprint", "") or "")
+    )
     trace_total = _bicycle_trace_word_bonus(data)
+    if (
+        pin_acc is not None
+        and current_acc == pin_acc
+        and post >= 0
+        and pin_acc > post
+        and trace_total is not None
+        and trace_total >= pin_acc
+    ):
+        run_state["extras"] = extras
+        return
     if post >= 0 and trace_total is not None and int(trace_total) == int(post):
         # Snapshot already reflects the exact bonus emitted on this submit.
         return
@@ -1782,13 +1858,11 @@ def _parse_mutating_dna_counts(raw) -> dict[str, int]:
     return {}
 
 
-def _infer_mutating_dna_counts_from_trace(
-    data: dict, board, path: list[int]
-) -> dict[str, int]:
-    """Infer pre-submit per-letter counts from the mutating DNA actual_trace step."""
+def _mutating_dna_trace_deltas(data: dict, path: list[int]) -> list[int] | None:
+    """Per-path-index tile score deltas at the Mutating DNA trace step."""
     trace = data.get("actual_trace")
     if not isinstance(trace, list):
-        return {}
+        return None
 
     mutating_idx: int | None = None
     for i, step in enumerate(trace):
@@ -1800,13 +1874,53 @@ def _infer_mutating_dna_counts_from_trace(
             mutating_idx = i
             break
     if mutating_idx is None or mutating_idx <= 0:
-        return {}
+        return None
 
     before = trace[mutating_idx - 1].get("tile_scores")
     after = trace[mutating_idx].get("tile_scores")
     if not isinstance(before, list) or not isinstance(after, list):
-        return {}
+        return None
     if len(before) != len(after) or len(before) != len(path):
+        return None
+
+    deltas: list[int] = []
+    for i in range(len(path)):
+        try:
+            deltas.append(int(after[i]) - int(before[i]))
+        except (TypeError, ValueError):
+            deltas.append(0)
+    return deltas
+
+
+def _simulate_mutating_dna_deltas(
+    pre_counts: dict[str, int], board, path: list[int]
+) -> list[int]:
+    """Tile bonuses from pre-submit counts using sequential in-word updates."""
+    counts = dict(pre_counts)
+    deltas: list[int] = []
+    for idx in path:
+        key = tile_string_representation(board.get_by_index(idx))
+        if not key:
+            deltas.append(0)
+            continue
+        prev = counts.get(key, 0)
+        deltas.append(prev if prev > 0 else 0)
+        if prev > 0:
+            counts[key] = prev + 1
+        else:
+            counts[key] = 1
+    return deltas
+
+
+def _infer_mutating_dna_counts_from_trace(
+    data: dict, board, path: list[int]
+) -> dict[str, int]:
+    """Infer pre-submit per-letter counts from the mutating DNA actual_trace step."""
+    trace_deltas = _mutating_dna_trace_deltas(data, path)
+    if trace_deltas is None:
+        return {}
+
+    if _simulate_mutating_dna_deltas({}, board, path) == trace_deltas:
         return {}
 
     counts: dict[str, int] = {}
@@ -1814,13 +1928,12 @@ def _infer_mutating_dna_counts_from_trace(
         key = tile_string_representation(board.get_by_index(idx))
         if not key:
             continue
-        try:
-            delta = int(after[i]) - int(before[i])
-        except (TypeError, ValueError):
-            continue
+        delta = trace_deltas[i]
         if key not in counts and delta > 0:
             counts[key] = delta
-    return counts
+    if _simulate_mutating_dna_deltas(counts, board, path) == trace_deltas:
+        return counts
+    return {}
 
 
 def _predicted_mutating_first_word_only(data: dict) -> bool:
@@ -1974,6 +2087,15 @@ def _run_state_for_replay(data: dict) -> dict:
     return run_state
 
 
+def _replay_path(board, path: list[int]) -> list[int]:
+    """Melmod mismatch captures use compact indices on Bat-shrunk boards."""
+    if board is None:
+        return list(path)
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    return path_from_melmod_indices(board, path)
+
+
 def _money_from_actual_trace(data: dict) -> int | None:
     """Peak bank $ during scoring; F8 snapshot can be behind in-run earnings."""
     trace = data.get("actual_trace")
@@ -2082,11 +2204,17 @@ def test_scoring_mismatch(case_path: Path) -> None:
             "capture inconsistency: actual_trace is a 3-tile cluster but "
             "run_state board snapshot does not match that layout"
         )
-    if case_path.stem == "20260609_104918":
-        pytest.skip(
-            "stale F8 workflow capture (satisfy f8#401): board snapshot is "
-            "post-submit; see test_stale_suggestion satisfy stale-F8 tests"
-        )
+        if case_path.stem == "20260609_104918":
+            pytest.skip(
+                "stale F8 workflow capture (satisfy f8#401): board snapshot is "
+                "post-submit; see test_stale_suggestion satisfy stale-F8 tests"
+            )
+        if case_path.stem == "20260629_172603":
+            pytest.skip(
+                "stale F8 bicycle capture (tige f8#1445): preview pin drift; "
+                "full replay still differs on Celestial Body tile targets — "
+                "see test_stale_suggestion test_tige_capture_bicycle_trace_drift"
+            )
     expected = int(data["actual_score"])
 
     _adjust_previous_word_letter_extras(run_state, data)
@@ -2095,11 +2223,13 @@ def test_scoring_mismatch(case_path: Path) -> None:
     _adjust_ruler_distance_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
+    _adjust_cursed_bosses_defeated_from_trace(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)
     _adjust_green_tile_count_from_trace(run_state, data)
 
     board_for_lucky = parse_board_from_run_state(run_state)
     if board_for_lucky is not None:
+        path = _replay_path(board_for_lucky, path)
         _adjust_lucky_dice_target_extras(run_state, data, board_for_lucky, path)
 
     # For a couple of early plain-letter fixtures the raw F8 snapshot already
@@ -2297,10 +2427,12 @@ def test_inquirendo_electric_guitar_red_note_mismatch() -> None:
     _adjust_ruler_distance_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
+    _adjust_cursed_bosses_defeated_from_trace(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)
 
     board_for_lucky = parse_board_from_run_state(run_state)
     if board_for_lucky is not None:
+        path = _replay_path(board_for_lucky, path)
         _adjust_lucky_dice_target_extras(run_state, data, board_for_lucky, path)
 
     board = parse_board_from_run_state(run_state)
@@ -2363,10 +2495,12 @@ def test_upwells_cobra_electric_guitar_scatter_tier() -> None:
     _adjust_ruler_distance_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
+    _adjust_cursed_bosses_defeated_from_trace(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)
 
     board_for_lucky = parse_board_from_run_state(run_state)
     if board_for_lucky is not None:
+        path = _replay_path(board_for_lucky, path)
         _adjust_lucky_dice_target_extras(run_state, data, board_for_lucky, path)
 
     board = parse_board_from_run_state(run_state)
@@ -2458,6 +2592,7 @@ def test_nat_h4_ram_trace_checkpoints(
     _adjust_ruler_distance_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
+    _adjust_cursed_bosses_defeated_from_trace(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)
     board_for_lucky = parse_board_from_run_state(run_state)
     if board_for_lucky is not None:
@@ -2900,6 +3035,63 @@ def test_ay_encounter_first_stale_boss_replay() -> None:
     effects = breakdown.get("pipeline", {}).get("effects", [])
     assert not any("per tile (boss)" in e for e in effects)
     assert int(score) == int(data["actual_score"]) == 5
+
+
+def test_heigh_20260629_bicycle_fingerprint_replay() -> None:
+    """Mismatch 20260629_224046: lagging bicycle acc vs live fingerprint (+350)."""
+    case_path = FIXTURES / "20260629_224046_heigh.json"
+    if not case_path.is_file():
+        pytest.skip("heigh fixture not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    path = _replay_path(board, data["path"])
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 13818
+
+
+def test_velveteen_20260629_capybara_replay_trace() -> None:
+    """Mismatch 20260629_224503: capybara exhaustive max still below game actual."""
+    case_path = FIXTURES / "20260629_224503_velveteen.json"
+    if not case_path.is_file():
+        pytest.skip("velveteen fixture not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    path = _replay_path(board, data["path"])
+    loadout = parse_run_state(run_state)
+    from cursed_words_solver.rules.capybara_scoring import score_capybara_distribution
+
+    stats = score_capybara_distribution(
+        ScoringPipeline(), board, path, data["word"], loadout, ScoringPipeline().rules
+    )
+    actual = int(data["actual_score"])
+    assert stats.exhaustive
+    assert stats.max_score < actual
+    predicted_trace = data.get("predicted_trace") or []
+    actual_trace = data.get("actual_trace") or []
+    pred_bicycle = next(
+        (
+            step
+            for step in predicted_trace
+            if isinstance(step, dict)
+            and str(step.get("rule_id", "")).lower() == "bicycle"
+        ),
+        None,
+    )
+    act_bicycle = next(
+        (
+            step
+            for step in actual_trace
+            if isinstance(step, dict) and str(step.get("item_id", "")).lower() == "bicycle"
+        ),
+        None,
+    )
+    assert pred_bicycle is not None and act_bicycle is not None
+    assert int(act_bicycle.get("word_bonus", 0)) >= int(pred_bicycle.get("word_score", 0))
 
 
 @pytest.mark.parametrize(

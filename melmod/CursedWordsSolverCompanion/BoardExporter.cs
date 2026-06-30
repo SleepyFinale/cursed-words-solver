@@ -445,13 +445,18 @@ namespace CursedWordsSolverCompanion
             if (selections == null)
                 return 0;
 
-            var valid = new List<TileSelection>();
+            var pathTiles = new List<Tile>();
             foreach (var sel in selections)
             {
                 if (sel?.SelectedTile != null)
-                    valid.Add(sel);
+                    pathTiles.Add(sel.SelectedTile);
             }
-            if (valid.Count == 0)
+            return CountSuitedCardsOnOrderedTiles(pathTiles);
+        }
+
+        private static int CountSuitedCardsOnOrderedTiles(List<Tile> pathTiles)
+        {
+            if (pathTiles == null || pathTiles.Count == 0)
                 return 0;
 
             var suits = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -459,10 +464,10 @@ namespace CursedWordsSolverCompanion
             var suitedTileCount = 0;
             var nonJokerSuited = 0;
 
-            for (var i = 0; i < valid.Count; i++)
+            for (var i = 0; i < pathTiles.Count; i++)
             {
-                var tile = valid[i].SelectedTile;
-                var isPathEnd = i == valid.Count - 1;
+                var tile = pathTiles[i];
+                var isPathEnd = i == pathTiles.Count - 1;
                 var isJoker = false;
                 var suit = MapCardSuitStrict(tile);
                 if (string.IsNullOrEmpty(suit))
@@ -506,15 +511,61 @@ namespace CursedWordsSolverCompanion
                 return 1;
             if (jokerNotAtEnd)
                 return suitedTileCount;
-            return CountMultiSuitBicycleCredit(valid);
+            return CountMultiSuitBicycleCredit(pathTiles);
         }
 
-        private static int CountMultiSuitBicycleCredit(List<TileSelection> valid)
+        /// <summary>
+        /// Bicycle suited credit for a path by board index (pre-submit capture prediction).
+        /// </summary>
+        public static int CountSuitedCardsOnPath(Player player, List<int> pathIndices)
+        {
+            if (player == null || pathIndices == null || pathIndices.Count == 0)
+                return 0;
+
+            var grid = ResolveActiveGridData();
+            if (grid == null)
+                return 0;
+
+            var gridCols = DefaultGridSize;
+            var gridRows = DefaultGridSize;
+            try
+            {
+                var dims = grid.Dimensions;
+                if (dims.x > 0)
+                    gridCols = dims.x;
+                if (dims.y > 0)
+                    gridRows = dims.y;
+            }
+            catch
+            {
+                // optional
+            }
+
+            var storageSize = Math.Max(gridRows, gridCols);
+            if (storageSize < DefaultGridSize)
+                storageSize = DefaultGridSize;
+
+            var pathTiles = new List<Tile>();
+            foreach (var idx in pathIndices)
+            {
+                if (idx < 0)
+                    continue;
+                var row = idx / gridCols;
+                var col = idx % gridCols;
+                var tile = TryGetTileAt(grid, col, row, storageSize);
+                if (tile != null)
+                    pathTiles.Add(tile);
+            }
+
+            return CountSuitedCardsOnOrderedTiles(pathTiles);
+        }
+
+        private static int CountMultiSuitBicycleCredit(List<Tile> pathTiles)
         {
             var entries = new List<(int pathIndex, string rankKey, string suit, string letter)>();
-            for (var i = 0; i < valid.Count; i++)
+            for (var i = 0; i < pathTiles.Count; i++)
             {
-                var tile = valid[i].SelectedTile;
+                var tile = pathTiles[i];
                 var suit = MapCardSuitStrict(tile);
                 if (string.IsNullOrEmpty(suit)
                     || string.Equals(suit, "joker", StringComparison.OrdinalIgnoreCase)
@@ -534,9 +585,9 @@ namespace CursedWordsSolverCompanion
                 return 0;
 
             var letterCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            foreach (var sel in valid)
+            foreach (var tile in pathTiles)
             {
-                var letter = PathLetterForCount(sel.SelectedTile);
+                var letter = PathLetterForCount(tile);
                 if (string.IsNullOrEmpty(letter))
                     continue;
                 if (!letterCounts.ContainsKey(letter))

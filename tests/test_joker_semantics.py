@@ -193,12 +193,12 @@ def test_joker_start_poker_face_not_wrestlers_one_suited_for_bicycle():
     effects = bd["pipeline"]["effects"]
     assert any("word_starts_face_card" in e for e in effects)
     assert not any("word_starts_ends_different_suit" in e for e in effects)
-  # (4 + 22) * 2
+  # (4 + 22) * 2 — one Bicycle suited credit (joker mid-path + mono-suit hearts)
     assert score == 52.0
 
 
 def test_wrestlers_joker_start_two_suited_on_path():
-    """Joker start + clubs/hearts on path uses first/last suited (ich)."""
+    """Joker start + suited path end (game endpoint check)."""
     grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
     grid[4][4] = _tile(
         4,
@@ -206,7 +206,7 @@ def test_wrestlers_joker_start_two_suited_on_path():
         "?",
         0,
         curse=CurseType.WILDCARD,
-        metadata={"is_joker": True},
+        metadata={"is_joker": True, "card_suit": "joker"},
     )
     grid[3][3] = _tile(
         3,
@@ -237,7 +237,7 @@ def test_wrestlers_joker_start_repeated_end_suit_uses_middle():
         "?",
         0,
         curse=CurseType.WILDCARD,
-        metadata={"is_joker": True},
+        metadata={"is_joker": True, "card_suit": "joker"},
     )
     grid[3][1] = _tile(
         3,
@@ -347,7 +347,7 @@ def test_wrestlers_suited_start_joker_end():
         "?",
         0,
         curse=CurseType.WILDCARD,
-        metadata={"is_joker": True},
+        metadata={"is_joker": True, "card_suit": "joker"},
     )
     board = Board(tiles=grid, money=0)
     assert word_starts_ends_different_suit(board, [1, 9])

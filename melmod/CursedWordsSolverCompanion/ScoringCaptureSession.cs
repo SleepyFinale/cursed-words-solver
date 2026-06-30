@@ -44,8 +44,13 @@ namespace CursedWordsSolverCompanion
 
         private static Dictionary<string, string> _preWordScoringExtrasForDiff =
             new Dictionary<string, string>();
+        /// <summary>Post-submit bicycle prediction for mismatch replay only (not stale compare).</summary>
+        private static Dictionary<string, string> _postSubmitScoringExtrasForMismatchDiff =
+            new Dictionary<string, string>();
         private static List<BossModifier> _scoringBossModifiers;
         private static string _f8PredictionHistoricStaleNote = "";
+        private static string _captureTimeStaleNote = "";
+        private static string _mismatchExportSkipReason = "";
         private static int _lastSubmitBicycleSuitedCount = -1;
 
         public static int TryGetLastSubmitBicycleSuitedCount()
@@ -56,6 +61,11 @@ namespace CursedWordsSolverCompanion
         public static bool IsActive
         {
             get { return _active; }
+        }
+
+        public static bool IsSubmitInFlight()
+        {
+            return _submitInFlight;
         }
 
         public static BoardSnapshot SubmitBoardSnapshot
@@ -79,8 +89,10 @@ namespace CursedWordsSolverCompanion
             _originalF8ExtrasForDiff = new Dictionary<string, string>();
             _preSyncF8ExtrasForDiff = new Dictionary<string, string>();
             _preWordScoringExtrasForDiff = new Dictionary<string, string>();
+            _postSubmitScoringExtrasForMismatchDiff = new Dictionary<string, string>();
             _scoringBossModifiers = null;
             _f8PredictionHistoricStaleNote = "";
+            _lastSubmitBicycleSuitedCount = -1;
             _suggestion = SuggestionMatcher.Load();
             if (_suggestion == null)
             {
@@ -255,6 +267,20 @@ namespace CursedWordsSolverCompanion
             }
 
             var staleCtx = RunStateExporter.BuildStaleF8Context(player);
+            if (staleCtx.HasBicyclePin)
+            {
+                var liveBicycle = RunStateExporter.TryGetLiveBicycleWordScoreBonus();
+                if (liveBicycle >= 0)
+                {
+                    authoritativeExtras["bicycle_word_score_bonus"] = liveBicycle.ToString();
+                    authoritativeExtras["cards_submitted"] = liveBicycle.ToString();
+                }
+            }
+
+            _preWordScoringExtrasForDiff = authoritativeExtras != null
+                ? new Dictionary<string, string>(authoritativeExtras)
+                : new Dictionary<string, string>();
+
             var preSyncDiff = ExtrasDiffHelper.DiffExtras(
                 _originalF8ExtrasForDiff,
                 authoritativeExtras
@@ -291,14 +317,55 @@ namespace CursedWordsSolverCompanion
                 return;
             }
 
-            ExtrasDiffHelper.LogStaleF8DriftWarnings(
-                _preSyncF8ExtrasForDiff,
-                authoritativeExtras,
-                staleCtx,
-                includeBicycleDrift: false
+            if (staleCtx.HasBicyclePin && _suggestion?.path != null && _suggestion.path.Count > 0)
+                ApplyPredictedPostSubmitBicycleExtras(player, _suggestion.path);
+
+            if (
+                ShouldBlockCaptureForBicycleF8Drift(
+                    _originalF8ExtrasForDiff,
+                    staleCtx
+                )
+            )
+            {
+                MelonLogger.Warning(
+                    "Blocking score capture — bicycle acc stale; press F8 again."
+                );
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                _active = false;
+                return;
+            }
+
+            var f8ForStale = _preSyncF8ExtrasForDiff ?? _originalF8ExtrasForDiff;
+            var submitForStale = ExtrasDiffHelper.PrepareExtrasForBicycleStaleCompare(
+                authoritativeExtras != null
+                    ? new Dictionary<string, string>(authoritativeExtras)
+                    : new Dictionary<string, string>(),
+                null,
+                f8ForStale,
+                TryGetLastSubmitBicycleSuitedCount()
             );
 
+            _captureTimeStaleNote =
+                ExtrasDiffHelper.DescribeCaptureTimeStaleDrift(
+                    f8ForStale,
+                    submitForStale,
+                    staleCtx
+                )
+                ?? "";
+            if (!string.IsNullOrEmpty(_captureTimeStaleNote))
+            {
+                MelonLogger.Warning(_captureTimeStaleNote);
+                MelonLogger.Warning(
+                    "Blocking score capture — F8 extras stale; press F8 again before submitting overlay."
+                );
+                SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                _active = false;
+                return;
+            }
+
             _active = true;
+            ApplyPredictedPostSubmitBicycleExtras(player, _suggestion?.path);
+
             var f8Seq = "";
             try
             {
@@ -320,12 +387,23 @@ namespace CursedWordsSolverCompanion
             );
         }
 
-        /// <summary>Pre-word workflow extras for mismatch diff (not post-submit live merge).</summary>
+        /// <summary>Pre-word workflow extras for stale compare (never post-submit bicycle).</summary>
         public static Dictionary<string, string> GetPreWordScoringExtrasForMismatchDiff()
         {
             if (_preWordScoringExtrasForDiff == null || _preWordScoringExtrasForDiff.Count == 0)
                 return null;
             return new Dictionary<string, string>(_preWordScoringExtrasForDiff);
+        }
+
+        /// <summary>Post-submit bicycle prediction for mismatch JSON replay metadata.</summary>
+        public static Dictionary<string, string> GetPostSubmitScoringExtrasForMismatchDiff()
+        {
+            if (
+                _postSubmitScoringExtrasForMismatchDiff == null
+                || _postSubmitScoringExtrasForMismatchDiff.Count == 0
+            )
+                return null;
+            return new Dictionary<string, string>(_postSubmitScoringExtrasForMismatchDiff);
         }
 
         public static Dictionary<string, string> GetOriginalF8ExtrasForMismatchDiff()
@@ -347,6 +425,21 @@ namespace CursedWordsSolverCompanion
         public static string GetF8PredictionHistoricStaleNote()
         {
             return _f8PredictionHistoricStaleNote ?? "";
+        }
+
+        public static string GetCaptureTimeStaleNote()
+        {
+            return _captureTimeStaleNote ?? "";
+        }
+
+        public static void SetMismatchExportSkipReason(string reason)
+        {
+            _mismatchExportSkipReason = reason ?? "";
+        }
+
+        public static string GetMismatchExportSkipReason()
+        {
+            return _mismatchExportSkipReason ?? "";
         }
 
         /// <summary>
@@ -665,9 +758,55 @@ namespace CursedWordsSolverCompanion
             }
 
             ApplyBicyclePreWordRewindFallback(extras);
-            ApplyF8SnapshotBicycleOverlay(extras);
 
             return extras;
+        }
+
+        private static bool ShouldBlockCaptureForBicycleF8Drift(
+            Dictionary<string, string> f8Extras,
+            StaleF8Context ctx
+        )
+        {
+            if (f8Extras == null || f8Extras.Count == 0 || ctx == null || !ctx.HasBicyclePin)
+                return false;
+
+            var f8Acc = TryGetF8SnapshotBicycleAcc();
+            if (f8Acc < 0)
+                return false;
+
+            var liveAcc = RunStateExporter.TryGetLiveBicycleWordScoreBonus();
+            if (liveAcc < 0 || liveAcc <= f8Acc)
+                return false;
+
+            var delta = liveAcc - f8Acc;
+            var perCard = RunStateExporter.TryGetBicyclePerCardRate();
+            if (perCard <= 0)
+                perCard = 1;
+
+            // Same-submit path preview can advance pin before score prefix; only block true
+            // intervening-word drift (delta not a whole suited-card increment on this path).
+            var suitedOnPath = -1;
+            if (_suggestion?.path != null && _suggestion.path.Count > 0)
+            {
+                var player = RunStateExporter.GetPlayerForUpdate();
+                if (player != null)
+                    suitedOnPath = BoardExporter.CountSuitedCardsOnPath(
+                        player,
+                        _suggestion.path
+                    );
+            }
+            if (suitedOnPath < 0)
+                suitedOnPath = _lastSubmitBicycleSuitedCount;
+
+            if (suitedOnPath > 0 && delta == suitedOnPath * perCard)
+                return false;
+
+            if (delta > 0 && delta % perCard == 0 && suitedOnPath <= 0)
+            {
+                // Ambiguous without path suited count — block (hover / intervening word).
+            }
+
+            return true;
         }
 
         private static bool IsBicycleFamilySlug(string slug)
@@ -711,33 +850,6 @@ namespace CursedWordsSolverCompanion
             )
                 int.TryParse(suitedRaw, out suited);
             return suited;
-        }
-
-        /// <summary>
-        /// Use F8 embed pre-word acc for export when capture matches (prediction baseline).
-        /// </summary>
-        private static void ApplyF8SnapshotBicycleOverlay(Dictionary<string, string> extras)
-        {
-            if (!_active || _suggestion == null || extras == null)
-                return;
-
-            if (
-                !SuggestionMatcher.MatchesSuggestion(
-                    _suggestion,
-                    _word,
-                    _path,
-                    _boardFingerprint,
-                    _loadoutFingerprint
-                )
-            )
-                return;
-
-            var f8Acc = TryGetF8SnapshotBicycleAcc();
-            if (f8Acc < 0)
-                return;
-
-            extras["bicycle_word_score_bonus"] = f8Acc.ToString();
-            extras["cards_submitted"] = f8Acc.ToString();
         }
 
         /// <summary>
@@ -906,6 +1018,50 @@ namespace CursedWordsSolverCompanion
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// After capture is active, predict post-submit bicycle acc for mismatch stale diff.
+        /// </summary>
+        private static void ApplyPredictedPostSubmitBicycleExtras(
+            Player player,
+            List<int> path
+        )
+        {
+            if (player == null || path == null || path.Count == 0)
+                return;
+            if (_postSubmitScoringExtrasForMismatchDiff == null)
+                _postSubmitScoringExtrasForMismatchDiff = new Dictionary<string, string>();
+
+            var livePin = RunStateExporter.TryGetLiveBicycleWordScoreBonus();
+            if (livePin < 0)
+            {
+                if (
+                    _preWordScoringExtrasForDiff != null
+                    && _preWordScoringExtrasForDiff.TryGetValue(
+                        "bicycle_word_score_bonus",
+                        out var raw
+                    )
+                    && int.TryParse(raw, out livePin)
+                ) { }
+                else
+                    return;
+            }
+
+            var suitedOnPath = BoardExporter.CountSuitedCardsOnPath(player, path);
+            _lastSubmitBicycleSuitedCount = suitedOnPath;
+            var perCard = RunStateExporter.TryGetBicyclePerCardRate();
+            if (perCard <= 0)
+                perCard = 1;
+
+            var predicted = livePin + suitedOnPath * perCard;
+            _postSubmitScoringExtrasForMismatchDiff["bicycle_word_score_bonus"] =
+                predicted.ToString();
+            _postSubmitScoringExtrasForMismatchDiff["cards_submitted"] =
+                predicted.ToString();
+            if (suitedOnPath > 0)
+                _postSubmitScoringExtrasForMismatchDiff["bicycle_suited_on_path"] =
+                    suitedOnPath.ToString();
         }
 
         /// <summary>
@@ -1281,6 +1437,23 @@ namespace CursedWordsSolverCompanion
                 if (rackAfter != null)
                     extras["consumable_rack_count_at_submit"] = rackAfter.Count.ToString();
 
+                _mismatchExportSkipReason = "";
+                if (_active && _suggestion != null)
+                {
+                    _mismatchExportSkipReason = MismatchExporter.EvaluateMismatchStaleNote(
+                        _suggestion,
+                        _path,
+                        _actualTrace,
+                        extras,
+                        submitPlayer,
+                        GetPreWordScoringExtrasForMismatchDiff(),
+                        GetF8PredictionHistoricStaleNote(),
+                        GetOriginalF8ExtrasForMismatchDiff(),
+                        GetCaptureTimeStaleNote(),
+                        actualScore
+                    );
+                }
+
                 var ctx = new RoundCaptureContext
                 {
                     SubmitMethod = _submitMethod,
@@ -1323,7 +1496,8 @@ namespace CursedWordsSolverCompanion
                         _submitBoardSnapshot,
                         GetPreWordScoringExtrasForMismatchDiff(),
                         GetF8PredictionHistoricStaleNote(),
-                        GetOriginalF8ExtrasForMismatchDiff()
+                        GetOriginalF8ExtrasForMismatchDiff(),
+                        GetCaptureTimeStaleNote()
                     );
                 }
 
@@ -1347,6 +1521,8 @@ namespace CursedWordsSolverCompanion
             _preSyncF8ExtrasForDiff = new Dictionary<string, string>();
                 _preWordScoringExtrasForDiff = new Dictionary<string, string>();
                 _f8PredictionHistoricStaleNote = "";
+                _captureTimeStaleNote = "";
+                _mismatchExportSkipReason = "";
                 CalculateOverallScorePatch.LastCalculatedSteps = null;
             }
         }

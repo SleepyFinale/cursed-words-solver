@@ -116,6 +116,21 @@ def _f8_run_state_from_round_log(data: dict) -> dict:
     return prepare_run_state_dict_for_scoring(rs)
 
 
+def _f8_run_state_from_extras_diff(data: dict) -> dict:
+    """Reconstruct F8-time run state using all f8 values from extras_diff."""
+    rs = copy.deepcopy(data["run_state"])
+    ex = rs.setdefault("extras", {})
+    diff = data.get("extras_diff") or {}
+    for key, entry in diff.items():
+        if not isinstance(entry, dict) or "f8" not in entry:
+            continue
+        f8_val = entry["f8"]
+        if f8_val in (None, ""):
+            continue
+        ex[key] = f8_val
+    return prepare_run_state_dict_for_scoring(rs)
+
+
 INTERMEASURED_FIXTURE = (
     Path(__file__).resolve().parents[1]
     / "fixtures"
@@ -771,3 +786,178 @@ def test_intermeasured_search_beats_f8():
         or (r.dictionary_word or r.word).lower() == INTERMEASURED_WORD
         for r in results[:3]
     )
+
+
+THUYA_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260629_thuya_path_mismatch.json"
+)
+THUYA_PATH = [17, 13, 7, 1, 0]
+THUYA_F8_SCORE = 1656
+
+
+@pytest.mark.skipif(not THUYA_FIXTURE.exists(), reason="thuya fixture required")
+def test_thuya_submitted_path_scores():
+    data = json.loads(THUYA_FIXTURE.read_text(encoding="utf-8"))
+    from cursed_words_solver.debug_path import validate_submitted_path
+
+    rs = prepare_run_state_dict_for_scoring(data["run_state"])
+    report = validate_submitted_path(rs, THUYA_PATH)
+    assert report.accepted
+    assert report.predicted_score >= 6200
+    actual = int((data.get("actual") or {}).get("score", 0))
+    assert actual == 6300
+
+
+@pytest.mark.skipif(not THUYA_FIXTURE.exists(), reason="thuya fixture required")
+def test_thuya_parallel_search_beats_f8_suggestion():
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    from cursed_words_solver.config import AppConfig
+
+    data = json.loads(THUYA_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_extras_diff(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    cfg = AppConfig.load()
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    searcher.setup_weight = cfg.setup_weight
+    searcher.mult_search_weight = cfg.mult_search_weight
+    results = searcher.find_best_words(board, loadout, top_n=3)
+    assert results, "parallel search must find words on thuya board"
+    timing = searcher.last_search_timing
+    assert timing is not None
+    assert timing.parallel_serial_fallback is True
+    top_score = int(results[0].score)
+    assert top_score > THUYA_F8_SCORE
+    assert top_score >= 6000
+
+
+TREENS_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260629_214131_treens_path_mismatch.json"
+)
+TREENS_PATH = [11, 5, 9, 3, 2, 1]
+TREENS_F8_SCORE = 4445
+
+
+@pytest.mark.skipif(not TREENS_FIXTURE.exists(), reason="treens fixture required")
+def test_treens_submitted_path_beats_f8_suggestion():
+    data = json.loads(TREENS_FIXTURE.read_text(encoding="utf-8"))
+    replay = _round_log_to_replay(data)
+    score = _score_submitted(replay)
+    assert replay["path"] == TREENS_PATH
+    assert replay["word"] == "treens"
+    assert score > TREENS_F8_SCORE
+    assert score >= 17_000
+
+
+@pytest.mark.skipif(not TREENS_FIXTURE.exists(), reason="treens fixture required")
+def test_treens_parallel_search_beats_f8_suggestion():
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    from cursed_words_solver.config import AppConfig
+
+    data = json.loads(TREENS_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_extras_diff(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    cfg = AppConfig.load()
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    searcher.setup_weight = cfg.setup_weight
+    searcher.mult_search_weight = cfg.mult_search_weight
+    results = searcher.find_best_words(board, loadout, top_n=3)
+    assert results, "parallel search must find words on treens board"
+    top_score = int(results[0].score)
+    assert top_score > TREENS_F8_SCORE
+    assert top_score >= 15_000
+    treens_score, _ = ScoringPipeline().score(
+        board, TREENS_PATH, "treens", loadout
+    )
+    assert int(treens_score) > TREENS_F8_SCORE
+
+
+DILUTES_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260629_221610_dilutes_no_search.json"
+)
+DILUTES_PATH = [3, 2, 7, 11, 12, 18, 14]
+DILUTES_WORD = "dilutes"
+
+
+@pytest.mark.skipif(not DILUTES_FIXTURE.exists(), reason="dilutes fixture required")
+def test_dilutes_submitted_path_valid_on_f8_board():
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    data = json.loads(DILUTES_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_extras_diff(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    assert PathValidator(WordDictionary(GAME_WORDLIST_PATH)).word_ok(
+        board, DILUTES_PATH, DILUTES_WORD
+    )
+    assert path_movement_ok(board, DILUTES_PATH, loadout=loadout)
+
+
+@pytest.mark.skipif(not DILUTES_FIXTURE.exists(), reason="dilutes fixture required")
+def test_dilutes_parallel_search_finds_words_with_cobra_min_len():
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    from cursed_words_solver.config import AppConfig
+
+    data = json.loads(DILUTES_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_extras_diff(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    assert constraints.min_len >= 7
+    cfg = AppConfig.load()
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=max(constraints.min_len, 3),
+        max_len=min(25, constraints.max_len),
+        search_workers=8,
+        time_budget=55.0,
+    )
+    searcher.setup_weight = cfg.setup_weight
+    searcher.mult_search_weight = cfg.mult_search_weight
+    results = searcher.find_best_words(board, loadout, top_n=3)
+    assert results, "parallel search must find words on dilutes board (cobra min len)"
+    timing = searcher.last_search_timing
+    assert timing is not None
+    assert timing.score_calls > 0
+    dilutes_score, _ = ScoringPipeline().score(
+        board, DILUTES_PATH, DILUTES_WORD, loadout
+    )
+    assert int(dilutes_score) >= 1500

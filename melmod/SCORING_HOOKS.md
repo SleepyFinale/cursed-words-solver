@@ -74,6 +74,8 @@ Workflow stale detection (`historic_words`, `previous_word_first_letter`, etc.) 
 
 `PopulateValidityAndScore` also calls score calculation for the preview — session flag must be **submit-only** (capture candidate set in `SubmitWord` prefix, `_active` set in `CalculateOverallScore` prefix, cleared in submit postfix).
 
+**Preview pin guard:** non-submit `CalculateOverallScore` calls snapshot and restore Bicycle `WordScoreBonus` (and Movie Camera) via `RunStateExporter.BeginPreviewScoreMutationGuard` / `EndPreviewScoreMutationGuard`. Post-score disk merges (`TryMergeBicycleExtrasAfterScore`, etc.) run only when `ScoringCaptureSession.IsSubmitInFlight()`.
+
 ### Round logs vs mismatch capture
 
 | Feature | When | Output |

@@ -176,13 +176,13 @@ def test_count_scoring_vs_grid_only_achievement_stamps():
 
 
 
-def test_blessing_of_the_fairies_fairy_scale():
+def test_blessing_of_the_fairies_cursed_boss_scale():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 10)
     pipeline = ScoringPipeline()
     loadout = Loadout(
         stamps=[LoadoutItem(id="blessing_of_the_fairies", name="Blessing of the Fairies", kind="stamp")],
-        extras={"fairy_count": "2"},
+        extras={"cursed_bosses_defeated_count": "2"},
     )
     score, bd = pipeline.score(board, [0], "a", loadout)
     base, _ = pipeline.score(board, [0], "a", Loadout())

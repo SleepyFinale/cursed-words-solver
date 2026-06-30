@@ -19,7 +19,7 @@ namespace CursedWordsSolverCompanion
             sb.Append('|');
             RunStateExporter.AppendItemsFingerprint(sb, player.Stamps);
             sb.Append('|');
-            RunStateExporter.AppendBossFingerprint(sb, BossResolver.Resolve(player));
+            RunStateExporter.AppendBossFingerprint(sb, BossResolver.ResolveLiveForExport(player));
             sb.Append('|');
             var beforePin = sb.Length;
             RunStateExporter.AppendPinFingerprint(sb, player.MyCharacter);

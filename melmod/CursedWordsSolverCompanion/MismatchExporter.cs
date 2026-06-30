@@ -16,6 +16,83 @@ namespace CursedWordsSolverCompanion
             "scoring_mismatches"
         );
 
+        /// <summary>
+        /// Stale F8 / bicycle trace note that would block mismatch export (for round log match_status).
+        /// </summary>
+        public static string EvaluateMismatchStaleNote(
+            LastSuggestion suggestion,
+            List<int> path,
+            List<Dictionary<string, object>> actualTrace,
+            Dictionary<string, string> extrasSnapshot,
+            Player submitPlayer,
+            Dictionary<string, string> preWordScoringExtras = null,
+            string f8PredictionHistoricStaleNote = null,
+            Dictionary<string, string> originalF8Extras = null,
+            string captureTimeStaleNote = null,
+            int actualScore = -1
+        )
+        {
+            if (suggestion == null)
+                return "";
+
+            if (
+                suggestion.path != null
+                && path != null
+                && !SuggestionMatcher.PathsEqual(suggestion.path, path)
+                && !SuggestionMatcher.PathsIsPrefixExtension(suggestion.path, path)
+            )
+                return "";
+
+            var f8ExtrasEarly = originalF8Extras != null && originalF8Extras.Count > 0
+                ? originalF8Extras
+                : ExtrasDiffHelper.ExtrasFromRunStateObject(suggestion.run_state_snapshot);
+            var diffExtrasEarly = ExtrasDiffHelper.PrepareExtrasForBicycleStaleCompare(
+                preWordScoringExtras,
+                extrasSnapshot,
+                f8ExtrasEarly,
+                ScoringCaptureSession.TryGetLastSubmitBicycleSuitedCount()
+            );
+            var extrasDiffEarly = ExtrasDiffHelper.DiffExtras(
+                f8ExtrasEarly,
+                diffExtrasEarly
+            );
+            var staleCtxEarly = submitPlayer != null
+                ? RunStateExporter.BuildStaleF8Context(submitPlayer)
+                : StaleF8Context.Default();
+            var staleNoteEarly = ExtrasDiffHelper.DescribeStaleF8Extras(
+                extrasDiffEarly,
+                staleCtxEarly,
+                f8ExtrasEarly,
+                diffExtrasEarly,
+                suggestion.predicted_score,
+                actualScore
+            );
+            if (
+                string.IsNullOrEmpty(staleNoteEarly)
+                && !string.IsNullOrEmpty(f8PredictionHistoricStaleNote)
+            )
+                staleNoteEarly =
+                    "F8 snapshot stale — re-run F8 after your last word before trusting predicted scores ("
+                    + f8PredictionHistoricStaleNote
+                    + ")";
+            if (string.IsNullOrEmpty(staleNoteEarly) && !string.IsNullOrEmpty(captureTimeStaleNote))
+                staleNoteEarly = captureTimeStaleNote;
+            if (string.IsNullOrEmpty(staleNoteEarly))
+            {
+                var traceStale = ExtrasDiffHelper.DescribeBicycleTraceStaleDrift(
+                    suggestion,
+                    actualTrace,
+                    extrasDiffEarly,
+                    staleCtxEarly,
+                    f8ExtrasEarly,
+                    diffExtrasEarly
+                );
+                if (!string.IsNullOrEmpty(traceStale))
+                    staleNoteEarly = traceStale;
+            }
+            return staleNoteEarly ?? "";
+        }
+
         public static void ExportIfMismatch(
             LastSuggestion suggestion,
             string word,
@@ -30,7 +107,8 @@ namespace CursedWordsSolverCompanion
             BoardSnapshot scoringBoardSnapshot = null,
             Dictionary<string, string> preWordScoringExtras = null,
             string f8PredictionHistoricStaleNote = null,
-            Dictionary<string, string> originalF8Extras = null
+            Dictionary<string, string> originalF8Extras = null,
+            string captureTimeStaleNote = null
         )
         {
             if (suggestion == null)
@@ -57,9 +135,11 @@ namespace CursedWordsSolverCompanion
             var f8ExtrasEarly = originalF8Extras != null && originalF8Extras.Count > 0
                 ? originalF8Extras
                 : ExtrasDiffHelper.ExtrasFromRunStateObject(suggestion.run_state_snapshot);
-            var diffExtrasEarly = ExtrasDiffHelper.MergePinDerivedExtrasForStaleCheck(
+            var diffExtrasEarly = ExtrasDiffHelper.PrepareExtrasForBicycleStaleCompare(
                 preWordScoringExtras,
-                extrasSnapshot
+                extrasSnapshot,
+                f8ExtrasEarly,
+                ScoringCaptureSession.TryGetLastSubmitBicycleSuitedCount()
             );
             var extrasDiffEarly = ExtrasDiffHelper.DiffExtras(
                 f8ExtrasEarly,
@@ -68,20 +148,18 @@ namespace CursedWordsSolverCompanion
             var staleCtxEarly = submitPlayer != null
                 ? RunStateExporter.BuildStaleF8Context(submitPlayer)
                 : StaleF8Context.Default();
-            var staleNoteEarly = ExtrasDiffHelper.DescribeStaleF8Extras(
-                extrasDiffEarly,
-                staleCtxEarly,
-                f8ExtrasEarly,
-                diffExtrasEarly
+            var staleNoteEarly = EvaluateMismatchStaleNote(
+                suggestion,
+                path,
+                actualTrace,
+                extrasSnapshot,
+                submitPlayer,
+                preWordScoringExtras,
+                f8PredictionHistoricStaleNote,
+                originalF8Extras,
+                captureTimeStaleNote,
+                actualScore
             );
-            if (
-                string.IsNullOrEmpty(staleNoteEarly)
-                && !string.IsNullOrEmpty(f8PredictionHistoricStaleNote)
-            )
-                staleNoteEarly =
-                    "F8 snapshot stale — re-run F8 after your last word before trusting predicted scores ("
-                    + f8PredictionHistoricStaleNote
-                    + ")";
             var staleF8ExtrasEarly = !string.IsNullOrEmpty(staleNoteEarly);
 
             var predicted = suggestion.predicted_score;
@@ -187,6 +265,7 @@ namespace CursedWordsSolverCompanion
                         + actualScore
                         + " — re-run F8 after your last word."
                 );
+                ScoringCaptureSession.SetMismatchExportSkipReason(staleNote);
                 return;
             }
 

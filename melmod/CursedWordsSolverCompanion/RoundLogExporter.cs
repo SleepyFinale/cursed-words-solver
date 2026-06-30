@@ -74,9 +74,14 @@ namespace CursedWordsSolverCompanion
         )
         {
             var preWord = ScoringCaptureSession.GetPreWordScoringExtrasForMismatchDiff();
-            return ExtrasDiffHelper.MergePinDerivedExtrasForStaleCheck(
+            var f8Extras = ctx?.Suggestion != null
+                ? ExtrasDiffHelper.ExtrasFromRunStateObject(ctx.Suggestion.run_state_snapshot)
+                : null;
+            return ExtrasDiffHelper.PrepareExtrasForBicycleStaleCompare(
                 preWord,
-                ctx != null ? ctx.ScoringExtras : null
+                ctx != null ? ctx.ScoringExtras : null,
+                f8Extras,
+                ScoringCaptureSession.TryGetLastSubmitBicycleSuitedCount()
             );
         }
 
@@ -212,6 +217,14 @@ namespace CursedWordsSolverCompanion
                     ctx.Suggestion.run_state_snapshot
                 );
             var scoringExtrasForStale = ResolveScoringExtrasForStaleCheck(ctx);
+            var captureTimeStale = ScoringCaptureSession.GetCaptureTimeStaleNote();
+            if (!string.IsNullOrEmpty(captureTimeStale))
+                return "stale_f8_extras";
+
+            var mismatchExportStale = ScoringCaptureSession.GetMismatchExportSkipReason();
+            if (!string.IsNullOrEmpty(mismatchExportStale))
+                return "stale_f8_extras";
+
             var extrasDiff = ExtrasDiffHelper.DiffExtras(f8Extras, scoringExtrasForStale);
             var staleCtx = RunStateExporter.BuildStaleF8Context(
                 RunStateExporter.GetPlayerForUpdate()
@@ -221,7 +234,9 @@ namespace CursedWordsSolverCompanion
                     extrasDiff,
                     staleCtx,
                     f8Extras,
-                    scoringExtrasForStale
+                    scoringExtrasForStale,
+                    ctx.Suggestion.predicted_score,
+                    ctx.ActualScore
                 )
             )
                 return "stale_f8_extras";
@@ -394,11 +409,21 @@ namespace CursedWordsSolverCompanion
             }
 
             string staleF8Reason = null;
+            var captureTimeStale = ScoringCaptureSession.GetCaptureTimeStaleNote();
+            if (!string.IsNullOrEmpty(captureTimeStale))
+                staleF8Reason = captureTimeStale;
+            if (string.IsNullOrEmpty(staleF8Reason))
+            {
+                var mismatchExportStale = ScoringCaptureSession.GetMismatchExportSkipReason();
+                if (!string.IsNullOrEmpty(mismatchExportStale))
+                    staleF8Reason = mismatchExportStale;
+            }
             var scoringExtrasForStale = ResolveScoringExtrasForStaleCheck(ctx);
             if (
                 ctx.Suggestion != null
                 && scoringExtrasForStale != null
                 && !ctx.Suggestion.capture_blocked
+                && string.IsNullOrEmpty(staleF8Reason)
             )
             {
                 var f8ExtrasForReason = ExtrasDiffHelper.ExtrasFromRunStateObject(
@@ -415,7 +440,9 @@ namespace CursedWordsSolverCompanion
                     extrasDiffForReason,
                     staleCtx,
                     f8ExtrasForReason,
-                    scoringExtrasForStale
+                    scoringExtrasForStale,
+                    ctx.Suggestion.predicted_score,
+                    ctx.ActualScore
                 );
             }
 

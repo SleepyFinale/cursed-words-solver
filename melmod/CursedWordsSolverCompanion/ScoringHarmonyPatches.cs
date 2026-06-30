@@ -57,6 +57,9 @@ namespace CursedWordsSolverCompanion
             int GridNumber
         )
         {
+            if (!ScoringCaptureSession.IsSubmitInFlight())
+                RunStateExporter.BeginPreviewScoreMutationGuard();
+
             RunStateExporter.CacheGridNumber(GridNumber);
             BossResolver.CacheFromScoring(bossModifiers);
             ScoringCaptureSession.OnScoringContext(previousWords, bossModifiers);
@@ -68,6 +71,13 @@ namespace CursedWordsSolverCompanion
         {
             LastCalculatedSteps = __result;
             ScoringCaptureSession.OnScoreStepsCalculated(__result);
+
+            if (!ScoringCaptureSession.IsSubmitInFlight())
+            {
+                RunStateExporter.EndPreviewScoreMutationGuard();
+                return;
+            }
+
             if (!RunStateExporter.TryMergeBicycleExtrasAfterScore())
                 RunStateExporter.QueueBicycleExtrasRetry();
             RunStateExporter.TryMergeMovieCameraExtrasAfterScore();

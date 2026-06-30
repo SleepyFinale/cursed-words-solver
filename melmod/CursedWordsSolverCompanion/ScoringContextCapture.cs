@@ -40,11 +40,6 @@ namespace CursedWordsSolverCompanion
             if (!string.IsNullOrEmpty(letter))
                 extras["previous_word_first_letter"] = letter;
 
-            var letterCounts = LetterUseCountsFromPreviousWords(previousWords);
-            extras["mutating_dna_letter_counts"] = JsonConvert.SerializeObject(
-                letterCounts
-            );
-
             return extras;
         }
 
@@ -202,22 +197,31 @@ namespace CursedWordsSolverCompanion
                 result = fromStamp;
             else if (fromHistoric != null && fromHistoric.Count > 0)
                 result = fromHistoric;
+            else if (fromStamp != null)
+                result = fromStamp;
             else
-                result = fromStamp ?? fromHistoric ?? new Dictionary<string, int>();
+                result = fromHistoric ?? new Dictionary<string, int>();
 
+            var prevWordCount = previousWords != null ? previousWords.Count : 0;
             if (
                 MutatingDnaLetterCounts.PlayerHasMutatingDnaStamp(player)
                 && result.Count == 0
+                && prevWordCount > 0
             )
             {
                 var liveN = fromStamp?.Count ?? 0;
                 var histN = fromHistoric?.Count ?? 0;
+                var liveStatus = fromStamp == null ? "unread" : "empty";
                 CompanionDiagnostics.LogVerbose(
                     "Mutating DNA stamp equipped but LetterUseCounts export empty (live="
                         + liveN
+                        + " "
+                        + liveStatus
                         + " historic="
                         + histN
-                        + " keys)"
+                        + " keys prevWords="
+                        + prevWordCount
+                        + ")"
                 );
             }
 

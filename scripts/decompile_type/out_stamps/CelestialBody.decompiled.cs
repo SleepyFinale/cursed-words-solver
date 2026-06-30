@@ -1,3 +1,4 @@
+// ===== CelestialBody =====
 using System.Collections.Generic;
 
 public class CelestialBody : Item

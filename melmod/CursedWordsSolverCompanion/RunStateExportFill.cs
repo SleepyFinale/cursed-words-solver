@@ -489,6 +489,42 @@ namespace CursedWordsSolverCompanion
                 if (string.Equals(nodeType, "EncounterFirst", StringComparison.Ordinal))
                     BossResolver.ClearScoringCache();
             }
+
+            var cursedBossesDefeated = TryGetCursedBossesDefeatedCount(player);
+            if (cursedBossesDefeated >= 0)
+                snapshot.extras["cursed_bosses_defeated_count"] = cursedBossesDefeated.ToString();
+        }
+
+        /// <summary>
+        /// Live count for Blessing of the Fairies (decompiled: CurrentRunProgress.CursedBossesDefeated.Count).
+        /// </summary>
+        private static int TryGetCursedBossesDefeatedCount(Player player)
+        {
+            var progress = TryGetRunProgress(player);
+            if (progress == null)
+                return -1;
+            try
+            {
+                var prop = progress.GetType().GetProperty("CursedBossesDefeated", MemberFlags);
+                if (prop != null)
+                {
+                    var list = prop.GetValue(progress, null) as System.Collections.ICollection;
+                    if (list != null)
+                        return list.Count;
+                }
+                var field = progress.GetType().GetField("CursedBossesDefeated", MemberFlags);
+                if (field != null)
+                {
+                    var list = field.GetValue(progress) as System.Collections.ICollection;
+                    if (list != null)
+                        return list.Count;
+                }
+            }
+            catch
+            {
+                // optional
+            }
+            return -1;
         }
 
         private static string TryGetCurrentNodeType(Player player)
@@ -1525,6 +1561,16 @@ namespace CursedWordsSolverCompanion
             }
 
             ApplyScoringCachedPreviousWordLetter(projected, player);
+
+            if (MutatingDnaLetterCounts.PlayerHasMutatingDnaStamp(player))
+            {
+                var letterCounts = ScoringContextCapture.ResolveMutatingDnaLetterCounts(
+                    player,
+                    workflowWords ?? previousWords
+                );
+                projected["mutating_dna_letter_counts"] =
+                    ScoringContextCapture.SerializeLetterCounts(letterCounts);
+            }
 
             TryLogEncounterHistoricExportLag(player, projected);
 

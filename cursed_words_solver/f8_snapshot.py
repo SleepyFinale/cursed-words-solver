@@ -196,7 +196,11 @@ def _has_mutating_dna_stamp(loadout: Loadout) -> bool:
 
 def _mutating_dna_counts_missing(extras: dict[str, Any]) -> bool:
     raw = str(extras.get("mutating_dna_letter_counts", "") or "").strip()
-    return not raw or raw == "{}"
+    if not raw:
+        return True
+    if raw != "{}":
+        return False
+    return _scoring_previous_words_count_from_extras(extras) > 0
 
 
 def _supply_and_demand_needs_crossed_out_flags(
@@ -895,6 +899,10 @@ def embed_f8_snapshot(
         return copy.deepcopy(source)
 
     run_state = copy.deepcopy(source)
+    export_fp = ""
+    src_extras = source.get("extras")
+    if isinstance(src_extras, dict):
+        export_fp = str(src_extras.get("loadout_fingerprint", "") or "").strip()
     sanitized = sanitize_run_state_snapshot_for_f8(run_state, loadout)
     if not isinstance(sanitized, dict):
         return copy.deepcopy(source)
@@ -911,6 +919,11 @@ def embed_f8_snapshot(
             align_embed_with_scoring_loadout(extras, loadout.extras, board=board)
         # Cap embed to melmod submit projection after scoring-truth alignment.
         project_workflow_extras_for_f8_embed(extras, board=board)
+        from cursed_words_solver.loadout import align_bicycle_extras_from_fingerprint
+
+        align_bicycle_extras_from_fingerprint(
+            extras, loadout, export_fingerprint=export_fp or None
+        )
         sanitized["extras"] = extras
     return sanitized
 

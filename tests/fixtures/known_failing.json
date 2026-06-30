@@ -35,6 +35,7 @@
     {"stem": "20260605_183024", "category": "replay_gap", "reason": "Submit-time consumable board not reconstructed in literal replay"},
     {"stem": "20260605_183119", "category": "replay_gap", "reason": "Submit-time consumable board not reconstructed in literal replay"},
     {"stem": "20260607_145101", "category": "stale_snapshot", "reason": "Stale F8 historic + under_construction×hi_vis finalize under-replay"},
-    {"stem": "20260625_144708", "category": "replay_gap", "reason": "Badger mid-encounter + glitch settle + phased poison replay gap (Beans/Michael aggiornamenti)"}
+    {"stem": "20260625_144708", "category": "replay_gap", "reason": "Badger mid-encounter + glitch settle + phased poison replay gap (Beans/Michael aggiornamenti)"},
+    {"stem": "20260629_224503_velveteen", "category": "replay_gap", "reason": "Capybara exhaustive replay max below game actual on bat-shrunk board (22820 vs ~21094)"}
   ]
 }

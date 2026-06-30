@@ -285,6 +285,34 @@ def test_bicycle_nebbish_only_real_card_on_path_counts_one():
     assert int(score) == 15
 
 
+def test_bicycle_joker_not_at_end_mono_suit_counts_one():
+    """Melmod: joker mid-path + one non-joker suited suit → credit 1, not per-tile."""
+    from cursed_words_solver.models import CurseType, Tile
+    from cursed_words_solver.rules.scoring_conditions import bicycle_suited_credit_on_path
+
+    board = _empty_board()
+    board.tiles[0][0] = Tile(
+        row=0,
+        col=0,
+        char="?",
+        letter="A",
+        base_score=1,
+        curse=CurseType.LETTER,
+        metadata={"source": "melmod", "is_joker": True},
+    )
+    board.tiles[0][1] = Tile(
+        row=0,
+        col=1,
+        char="H",
+        letter="H",
+        base_score=1,
+        curse=CurseType.LETTER,
+        metadata={"source": "melmod", "card_suit": "hearts"},
+    )
+    path = [0, 1]
+    assert bicycle_suited_credit_on_path(board, path) == 1
+
+
 def test_suited_cards_count_duplicate_ranks_on_multi_suit_path():
     """Multi-suit paths credit unique suited ranks (duplicate rank counts once)."""
     board = _empty_board()

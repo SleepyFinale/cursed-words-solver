@@ -52,6 +52,7 @@ def _is_same_submit_bicycle_increment(
     delta: int,
     *,
     per_card: int = 1,
+    suited_on_path: int = -1,
 ) -> bool:
     """Mirror melmod IsSameSubmitBicycleIncrement."""
     if delta <= 0:
@@ -59,17 +60,104 @@ def _is_same_submit_bicycle_increment(
     if per_card <= 0:
         per_card = 1
 
-    suited = 0
-    entry = extras_diff.get("bicycle_suited_on_path")
-    if entry:
-        try:
-            suited = int(str(entry.get("submit", "") or ""))
-        except ValueError:
-            suited = 0
+    suited = suited_on_path
+    if suited < 0:
+        entry = extras_diff.get("bicycle_suited_on_path")
+        if entry:
+            try:
+                suited = int(str(entry.get("submit", "") or ""))
+            except ValueError:
+                suited = 0
+
+    if suited <= 0 and delta > 0 and delta % per_card == 0:
+        inferred = delta // per_card
+        if suited <= 0 or suited * per_card != delta:
+            suited = inferred
 
     if suited <= 0:
         return False
     return delta == suited * per_card
+
+
+def _try_parse_bicycle_acc(extras: dict[str, str]) -> int:
+    for key in ("bicycle_word_score_bonus", "cards_submitted"):
+        raw = extras.get(key)
+        if raw is None:
+            continue
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            continue
+    return -1
+
+
+def _rewind_submit_bicycle_to_pre_word(
+    submit_extras: dict[str, str],
+    f8_extras: dict[str, str],
+    suited_on_path: int,
+    per_card: int,
+) -> None:
+    """Mirror melmod RewindSubmitBicycleToPreWord."""
+    if per_card <= 0:
+        per_card = 1
+    f8_acc = _try_parse_bicycle_acc(f8_extras)
+    if f8_acc < 0:
+        return
+    submit_acc = _try_parse_bicycle_acc(submit_extras)
+    if submit_acc < 0 or submit_acc <= f8_acc:
+        return
+    delta = submit_acc - f8_acc
+    suited = suited_on_path
+    if delta > 0 and delta % per_card == 0:
+        inferred = delta // per_card
+        if suited <= 0 or suited * per_card != delta:
+            suited = inferred
+    if suited > 0 and delta == suited * per_card:
+        pre = submit_acc - per_card * suited
+        if pre >= 0:
+            submit_extras["bicycle_word_score_bonus"] = str(pre)
+            submit_extras["cards_submitted"] = str(pre)
+
+
+def _merge_mutating_dna_for_stale_compare(
+    merged: dict[str, str] | None,
+    scoring_extras: dict[str, str] | None,
+) -> None:
+    """Mirror melmod MergeMutatingDnaForStaleCompare."""
+    if merged is None or scoring_extras is None:
+        return
+    workflow_dna = str(merged.get("mutating_dna_letter_counts", "") or "")
+    scoring_dna = str(scoring_extras.get("mutating_dna_letter_counts", "") or "")
+    if _mutating_dna_letter_counts_equal(workflow_dna, scoring_dna):
+        return
+    if _is_empty_mutating_dna_json(workflow_dna) and not _is_empty_mutating_dna_json(
+        scoring_dna
+    ):
+        merged["mutating_dna_letter_counts"] = scoring_dna
+
+
+def _is_empty_mutating_dna_json(raw: str) -> bool:
+    text = (raw or "").strip()
+    return not text or text in ("{}", "[]")
+
+
+def _prepare_extras_for_bicycle_stale_compare(
+    workflow_extras: dict[str, str] | None,
+    scoring_extras: dict[str, str] | None,
+    f8_extras: dict[str, str] | None,
+    *,
+    suited_on_path: int = -1,
+    per_card: int = 1,
+) -> dict[str, str]:
+    """Mirror melmod PrepareExtrasForBicycleStaleCompare."""
+    merged = _merge_pin_derived_for_stale_check(workflow_extras, scoring_extras)
+    _merge_mutating_dna_for_stale_compare(merged, scoring_extras)
+    if not f8_extras:
+        return merged
+    if per_card <= 0:
+        per_card = 1
+    _rewind_submit_bicycle_to_pre_word(merged, f8_extras, suited_on_path, per_card)
+    return merged
 
 
 _PIN_DERIVED_STALE_KEYS = (
@@ -104,6 +192,7 @@ def _stale_f8_extras_note(
     per_card: int = 1,
     has_bicycle_pin: bool = True,
     has_mutating_dna_stamp: bool = True,
+    score_matched: bool = False,
 ) -> str | None:
     """Mirror melmod ExtrasDiffHelper stale-key rules (post fix)."""
     notes: list[str] = []
@@ -133,8 +222,16 @@ def _stale_f8_extras_note(
                 notes.append(f"{key} f8={f8_val} submit={submit_raw}")
                 continue
             if submit_val > f8_val:
+                delta = submit_val - f8_val
+                if (
+                    score_matched
+                    and per_card > 0
+                    and 0 < delta <= per_card
+                    and delta % per_card == 0
+                ):
+                    continue
                 if not _is_same_submit_bicycle_increment(
-                    extras_diff, submit_val - f8_val, per_card=per_card
+                    extras_diff, delta, per_card=per_card
                 ):
                     notes.append(f"{key} f8={f8_val} submit={submit_val}")
 
@@ -430,7 +527,10 @@ def test_stale_f8_mirror_loadout_fingerprint_alone_not_stale():
 
 def test_stale_f8_mirror_cards_submitted_higher_is_stale():
     note = _stale_f8_extras_note(
-        {"cards_submitted": {"f8": "30", "submit": "32"}}
+        {
+            "cards_submitted": {"f8": "30", "submit": "32"},
+            "bicycle_suited_on_path": {"f8": "", "submit": "1"},
+        }
     )
     assert note is not None
     assert "cards_submitted f8=30 submit=32" in note
@@ -477,7 +577,344 @@ def test_stale_f8_mirror_bicycle_f8_two_submit_empty_without_merge_is_stale():
         }
     )
     assert note is not None
-    assert "submit=(empty)" in note
+
+
+def test_stale_f8_mirror_capture_preseed_bicycle_live_pin_not_stale():
+    """Mirror capture-time pre-seed: empty submit extras + live pin matching F8."""
+    workflow = {
+        "historic_words": "[]",
+        "previous_word_first_letter": "f",
+    }
+    f8_extras = {
+        "bicycle_word_score_bonus": "25",
+        "cards_submitted": "25",
+        "historic_words": "[]",
+    }
+    authoritative = dict(workflow)
+    live_pin = "25"
+    authoritative["bicycle_word_score_bonus"] = live_pin
+    authoritative["cards_submitted"] = live_pin
+    extras_diff = {
+        k: {"f8": f8_extras.get(k, ""), "submit": authoritative.get(k, "")}
+        for k in set(f8_extras) | set(authoritative)
+    }
+    note = _stale_f8_extras_note(extras_diff)
+    assert note is None
+
+
+def test_stale_f8_mirror_predicted_post_submit_bicycle_not_stale():
+    """Post-submit scoring extras rewound to pre-word — f8=33 + 3 suited → submit 36."""
+    f8_extras = {
+        "bicycle_word_score_bonus": "33",
+        "cards_submitted": "33",
+        "historic_words": "[]",
+    }
+    preword = {
+        "bicycle_word_score_bonus": "33",
+        "cards_submitted": "33",
+        "historic_words": "[]",
+    }
+    post_submit = {
+        "bicycle_word_score_bonus": "36",
+        "cards_submitted": "36",
+        "bicycle_suited_on_path": "3",
+        "historic_words": "[]",
+    }
+    merged = _prepare_extras_for_bicycle_stale_compare(
+        preword, post_submit, f8_extras, suited_on_path=3, per_card=1
+    )
+    extras_diff = {
+        k: {"f8": f8_extras.get(k, ""), "submit": merged.get(k, "")}
+        for k in set(f8_extras) | set(merged)
+    }
+    note = _stale_f8_extras_note(extras_diff)
+    assert note is None
+
+
+def test_stale_f8_rewind_feisty_post_submit_not_stale():
+    """Bones session feisty: f8=88, post-submit acc=90, 2 suited @ per_card=1."""
+    f8_extras = {
+        "bicycle_word_score_bonus": "88",
+        "cards_submitted": "88",
+    }
+    preword = {"bicycle_word_score_bonus": "88", "cards_submitted": "88"}
+    post_submit = {
+        "bicycle_word_score_bonus": "90",
+        "cards_submitted": "90",
+        "bicycle_suited_on_path": "2",
+    }
+    merged = _prepare_extras_for_bicycle_stale_compare(
+        preword, post_submit, f8_extras, suited_on_path=2, per_card=1
+    )
+    extras_diff = {
+        k: {"f8": f8_extras.get(k, ""), "submit": merged.get(k, "")}
+        for k in set(f8_extras) | set(merged)
+    }
+    assert _stale_f8_extras_note(extras_diff) is None
+
+
+def test_stale_f8_rewind_acca_bicycle_fixture_not_stale():
+    """Michael encounter acca: post-submit acc +2 @ per_card=2 is benign after rewind."""
+    f8_extras = {
+        "bicycle_word_score_bonus": "197",
+        "cards_submitted": "197",
+    }
+    post_submit = {
+        "bicycle_word_score_bonus": "199",
+        "cards_submitted": "199",
+        "bicycle_suited_on_path": "3",
+    }
+    merged = _prepare_extras_for_bicycle_stale_compare(
+        dict(post_submit),
+        dict(post_submit),
+        f8_extras,
+        suited_on_path=3,
+        per_card=2,
+    )
+    extras_diff = {
+        "bicycle_word_score_bonus": {
+            "f8": "197",
+            "submit": merged.get("bicycle_word_score_bonus", ""),
+        },
+        "cards_submitted": {
+            "f8": "197",
+            "submit": merged.get("cards_submitted", ""),
+        },
+        "bicycle_suited_on_path": {"f8": "", "submit": "3"},
+    }
+    assert _stale_f8_extras_note(extras_diff, per_card=2) is None
+
+
+def test_acca_bicycle_stale_round_log_fixture():
+    """Vendored 20260629_223913 acca capture: bicycle stale clears after rewind."""
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "round_logs"
+        / "20260629_223913_acca_bicycle_stale.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    diff = data["extras_diff"]
+    f8_extras = {
+        key: str(entry.get("f8", "") or "")
+        for key, entry in diff.items()
+        if key in ("bicycle_word_score_bonus", "cards_submitted")
+    }
+    submit_raw = {
+        key: str(entry.get("submit", "") or "")
+        for key, entry in diff.items()
+        if key in ("bicycle_word_score_bonus", "cards_submitted", "bicycle_suited_on_path")
+    }
+    suited = int(submit_raw.get("bicycle_suited_on_path") or "0")
+    merged = _prepare_extras_for_bicycle_stale_compare(
+        submit_raw,
+        submit_raw,
+        f8_extras,
+        suited_on_path=suited,
+        per_card=2,
+    )
+    bicycle_diff = {
+        key: {"f8": f8_extras.get(key, ""), "submit": merged.get(key, "")}
+        for key in ("bicycle_word_score_bonus", "cards_submitted")
+    }
+    bicycle_diff["bicycle_suited_on_path"] = diff["bicycle_suited_on_path"]
+    assert _stale_f8_extras_note(bicycle_diff, per_card=2) is None
+
+
+_STALE_F8_BOSS_KEYS = (
+    "boss_area_number",
+    "boss_floor_modification",
+    "boss_modifiers",
+    "boss_modifier_floor_mods",
+    "boss_id",
+    "boss_cursed",
+)
+
+
+def _f8_extras_had_finale_boss_metadata(f8_extras: dict[str, str]) -> bool:
+    probe = str(f8_extras.get("michael_finale_probe", "") or "")
+    if "finale=1" in probe.lower():
+        return True
+    try:
+        phase = int(str(f8_extras.get("michael_phase", "") or "").strip())
+    except ValueError:
+        phase = -1
+    if phase >= 4:
+        return True
+    try:
+        enc_min = int(str(f8_extras.get("encounter_min_word_length", "") or "").strip())
+    except ValueError:
+        enc_min = -1
+    if enc_min >= 25:
+        return True
+    try:
+        michael_min = int(str(f8_extras.get("michael_min_word_length", "") or "").strip())
+    except ValueError:
+        michael_min = -1
+    return michael_min >= 25
+
+
+def _is_benign_finale_boss_clear_drift(
+    f8_extras: dict[str, str],
+    submit_extras: dict[str, str],
+) -> bool:
+    if not _f8_extras_had_finale_boss_metadata(f8_extras):
+        return False
+    for key in _STALE_F8_BOSS_KEYS:
+        f8_val = str(f8_extras.get(key, "") or "").strip()
+        submit_val = str(submit_extras.get(key, "") or "").strip()
+        if f8_val and submit_val:
+            return False
+    for key in (
+        "michael_phase",
+        "michael_min_word_length",
+        "encounter_min_word_length",
+        "michael_finale_probe",
+        "michael_summoned_bosses_defeated",
+    ):
+        f8_val = str(f8_extras.get(key, "") or "").strip()
+        submit_val = str(submit_extras.get(key, "") or "").strip()
+        if f8_val and submit_val:
+            return False
+    return True
+
+
+def _has_boss_extras_drift(
+    extras_diff: dict[str, dict[str, str]],
+    f8_extras: dict[str, str],
+    submit_extras: dict[str, str],
+) -> bool:
+    if _is_benign_finale_boss_clear_drift(f8_extras, submit_extras):
+        return False
+    notes: list[str] = []
+    for key in _STALE_F8_BOSS_KEYS:
+        entry = extras_diff.get(key)
+        if not entry:
+            continue
+        f8_val = str(entry.get("f8", "") or "").strip()
+        submit_val = str(entry.get("submit", "") or "").strip()
+        if f8_val != submit_val and (f8_val or submit_val):
+            notes.append(key)
+    return bool(notes)
+
+
+def test_finale_boss_clear_drift_not_stale():
+    """Post-Michael grid: F8 finale boss keys cleared on submit are benign."""
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "round_logs"
+        / "20260629_224652_finale_boss_stale.json"
+    )
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    diff = data["extras_diff"]
+    f8_extras = {key: str(entry.get("f8", "") or "") for key, entry in diff.items()}
+    submit_extras = {key: str(entry.get("submit", "") or "") for key, entry in diff.items()}
+    assert _is_benign_finale_boss_clear_drift(f8_extras, submit_extras)
+    assert not _has_boss_extras_drift(diff, f8_extras, submit_extras)
+
+
+def test_sanitize_run_state_strips_finale_boss_on_grid_advance():
+    """F8 sanitize drops Michael finale embed when run_node_type is no longer Boss."""
+    from cursed_words_solver.loadout import FINALE_BOSS_EMBED_KEYS
+
+    run_state = {
+        "boss_id": "michael",
+        "boss_name": "Michael",
+        "extras": {
+            "run_node_type": "Normal",
+            "grid_number": "2",
+            "boss_area_number": "6",
+            "boss_floor_modification": "3",
+            "michael_phase": "4",
+            "michael_min_word_length": "25",
+            "michael_finale_probe": "finale=1,michael_boss=1",
+        },
+    }
+    loadout = Loadout()
+    sanitized = sanitize_run_state_snapshot_for_f8(run_state, loadout)
+    extras = sanitized.get("extras") or {}
+    for key in FINALE_BOSS_EMBED_KEYS + ("boss_area_number", "boss_floor_modification"):
+        assert key not in extras
+    assert sanitized.get("boss_id") == ""
+
+
+def test_stale_f8_rewind_tinklers_post_submit_not_stale():
+    """Bones session tinklers: f8=106, post-submit acc=107, 1 suited @ per_card=1."""
+    f8_extras = {
+        "bicycle_word_score_bonus": "106",
+        "cards_submitted": "106",
+    }
+    preword = {"bicycle_word_score_bonus": "106", "cards_submitted": "106"}
+    post_submit = {
+        "bicycle_word_score_bonus": "107",
+        "cards_submitted": "107",
+        "bicycle_suited_on_path": "1",
+    }
+    merged = _prepare_extras_for_bicycle_stale_compare(
+        preword, post_submit, f8_extras, suited_on_path=1, per_card=1
+    )
+    extras_diff = {
+        k: {"f8": f8_extras.get(k, ""), "submit": merged.get(k, "")}
+        for k in set(f8_extras) | set(merged)
+    }
+    assert _stale_f8_extras_note(extras_diff) is None
+
+
+def test_stale_f8_rewind_invalid_per_card_increment_still_stale():
+    """f8=106 submit=107 with per_card=3 is not a valid same-submit increment."""
+    f8_extras = {
+        "bicycle_word_score_bonus": "106",
+        "cards_submitted": "106",
+    }
+    preword = {"bicycle_word_score_bonus": "106", "cards_submitted": "106"}
+    post_submit = {
+        "bicycle_word_score_bonus": "107",
+        "cards_submitted": "107",
+    }
+    merged = _prepare_extras_for_bicycle_stale_compare(
+        preword, post_submit, f8_extras, suited_on_path=1, per_card=3
+    )
+    extras_diff = {
+        k: {"f8": f8_extras.get(k, ""), "submit": merged.get(k, "")}
+        for k in set(f8_extras) | set(merged)
+    }
+    note = _stale_f8_extras_note(extras_diff, per_card=3)
+    assert note is not None
+    assert "bicycle_word_score_bonus f8=106 submit=107" in note
+
+
+def test_poll_invalidate_clears_on_bicycle_fingerprint_drift(tmp_path, monkeypatch):
+    from cursed_words_solver.suggestion import (
+        LAST_SUGGESTION_PATH,
+        poll_invalidate_last_suggestion,
+    )
+
+    path = tmp_path / "last_suggestion.json"
+    monkeypatch.setattr("cursed_words_solver.suggestion.LAST_SUGGESTION_PATH", path)
+    path.write_text(
+        json.dumps(
+            {
+                "board_fingerprint": "board|same",
+                "loadout_fingerprint": "Bones The Dog|5|postal_horn:2|joker:3|bicycle:left|88",
+                "run_state_snapshot": {
+                    "extras": {
+                        "bicycle_word_score_bonus": "88",
+                        "cards_submitted": "88",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    reason = poll_invalidate_last_suggestion(
+        {"bicycle_word_score_bonus": "90", "cards_submitted": "90"},
+        current_board_fp="board|same",
+        current_loadout_fp="Bones The Dog|5|postal_horn:2|joker:3|bicycle:left|88",
+    )
+    assert reason is not None
+    assert "bicycle drift" in reason
+    assert not path.exists()
 
 
 def test_stale_f8_mirror_bicycle_delta_equals_suited_not_stale():
@@ -500,6 +937,17 @@ def test_stale_f8_mirror_bicycle_delta_without_matching_suited_is_stale():
     )
     assert note is not None
     assert "cards_submitted f8=34 submit=37" in note
+
+
+def test_stale_f8_score_match_per_card_bicycle_embed_not_stale():
+    """abbey-style: post-word pin embed +1 while score matched (62→63, 5 suited on path)."""
+    extras_diff = {
+        "cards_submitted": {"f8": "62", "submit": "63"},
+        "bicycle_word_score_bonus": {"f8": "62", "submit": "63"},
+        "bicycle_suited_on_path": {"f8": "", "submit": "5"},
+    }
+    assert _stale_f8_extras_note(extras_diff) is not None
+    assert _stale_f8_extras_note(extras_diff, score_matched=True) is None
 
 
 def test_stale_f8_mirror_bicycle_per_card_times_suited_not_stale():
@@ -3614,4 +4062,98 @@ def test_embed_f8_snapshot_projects_workflow_extras(tmp_path, monkeypatch):
     assert embedded is not None
     assert embedded["extras"]["historic_words"] == f8_hist
     assert _scoring_previous_words_count_from_extras(embedded["extras"]) == 3
+
+
+def _bicycle_word_bonus_from_solver_trace(trace: list) -> int | None:
+    for step in trace or []:
+        if not isinstance(step, dict):
+            continue
+        rule_id = str(step.get("rule_id", "") or "").lower()
+        game_class = str(step.get("game_class", "") or "").lower()
+        if rule_id not in ("bicycle", "cards_submitted_word_bonus") and game_class != "bicycle":
+            continue
+        try:
+            return int(step.get("word_score", 0))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _bicycle_word_bonus_from_actual_trace(trace: list) -> int | None:
+    for step in trace or []:
+        if not isinstance(step, dict):
+            continue
+        if str(step.get("item_id", "") or "").lower() != "bicycle":
+            continue
+        try:
+            return int(step.get("word_bonus", 0))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def test_tige_capture_bicycle_trace_drift():
+    """Live capture where preview pin drift lowered F8 bicycle prediction vs game."""
+    path = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "mismatches"
+        / "20260629_172603.json"
+    )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    predicted_bicycle = _bicycle_word_bonus_from_solver_trace(data.get("predicted_trace"))
+    actual_bicycle = _bicycle_word_bonus_from_actual_trace(data.get("actual_trace"))
+    assert predicted_bicycle == 9
+    assert actual_bicycle == 11
+    assert data.get("stale_f8_extras") is False
+    assert int(data["predicted_score"]) < int(data["actual_score"])
+
+
+FLEECE_DNA_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "round_logs"
+    / "20260629_220953_fleece_dna_stale.json"
+)
+KIERIE_DNA_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "round_logs"
+    / "20260629_221116_kierie_dna_stale.json"
+)
+
+
+def test_merge_mutating_dna_for_stale_compare_prefers_scoring():
+    workflow = {"mutating_dna_letter_counts": "{}"}
+    scoring = {"mutating_dna_letter_counts": '{"m":2,"a":1}'}
+    merged = _prepare_extras_for_bicycle_stale_compare(workflow, scoring, {})
+    assert merged["mutating_dna_letter_counts"] == '{"m":2,"a":1}'
+
+
+@pytest.mark.parametrize(
+    "fixture_path",
+    [FLEECE_DNA_FIXTURE, KIERIE_DNA_FIXTURE],
+)
+def test_fleece_kierie_mutating_dna_not_stale_when_submit_matches_f8(fixture_path: Path):
+    if not fixture_path.exists():
+        pytest.skip(f"{fixture_path.name} required")
+    data = json.loads(fixture_path.read_text(encoding="utf-8"))
+    extras_diff = data.get("extras_diff") or {}
+    dna_entry = extras_diff.get("mutating_dna_letter_counts")
+    assert isinstance(dna_entry, dict)
+    f8_dna = str(dna_entry.get("f8") or "")
+    assert f8_dna and f8_dna != "{}"
+    note = _stale_f8_extras_note(
+        {"mutating_dna_letter_counts": {"f8": f8_dna, "submit": f8_dna}}
+    )
+    assert note is None
+
+
+def test_fleece_kierie_mutating_dna_was_stale_before_authoritative_fix():
+    if not FLEECE_DNA_FIXTURE.exists():
+        pytest.skip("fleece fixture required")
+    data = json.loads(FLEECE_DNA_FIXTURE.read_text(encoding="utf-8"))
+    extras_diff = data.get("extras_diff") or {}
+    assert _stale_f8_extras_note(extras_diff) is not None
+    assert "mutating_dna_letter_counts changed" in _stale_f8_extras_note(extras_diff)
 

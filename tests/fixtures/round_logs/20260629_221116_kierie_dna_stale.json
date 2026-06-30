@@ -1,0 +1,2122 @@
+{
+  "schema_version": 1,
+  "exported_at": "2026-06-30T03:11:16.1850977Z",
+  "round_id": "20260629_221116_185",
+  "submit_method": "EncounterController.SubmitWord",
+  "grid_number": "3",
+  "match_status": "stale_f8_extras",
+  "solver": {
+    "available": true,
+    "word": "ki?rie",
+    "scoring_word": "ki?rie",
+    "path": [
+      0,
+      5,
+      14,
+      13,
+      7,
+      3
+    ],
+    "predicted_score": 14910,
+    "board_fingerprint": "3|4,0:R/letter/colorless;4,1:D/letter/colorless;4,2:T/letter/colorless;4,3:T/letter/colorless;4,4:T/letter/colorless;3,0:?/wildcard/colorless;3,1:?/wildcard/colorless;3,2:A/letter/colorless;3,3:A/letter/colorless;3,4:S/letter/colorless;2,0:W/letter/colorless;2,1:K/letter/colorless;2,2:T/letter/colorless;2,3:R/letter/colorless;2,4:?/wildcard/colorless;1,0:I/letter/colorless;1,1:I/letter/colorless;1,2:I/letter/colorless;1,3:R/letter/colorless;1,4:V/letter/colorless;0,0:K/letter/colorless;0,1:Z/letter/colorless;0,2:I/letter/colorless;0,3:E/letter/colorless;0,4:T/letter/colorless;",
+    "loadout_fingerprint": "Bones The Dog|3|postal_horn:3,joker:3,celestial_body:3,wrestlers:3,poker_face:3|blessing_of_the_fairies:1,martini:1,hungry_snake:1,full_moon:1,mutating_dna:1|michael|bicycle:left|221",
+    "f8_path_prefix_match": false,
+    "f8_path_exact_match": true,
+    "suggested_path_length": 6,
+    "submitted_path_length": 6,
+    "predicted_trace": [
+      {
+        "phase": "tile_init",
+        "tile_scores": [
+          5.0,
+          1.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "word_score": 0.0,
+        "subtotal": 9.0,
+        "phase_detail": "init_scores",
+        "detail": "base tile sum 9.0"
+      },
+      {
+        "phase": "rule",
+        "tile_scores": [
+          5.0,
+          1.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "word_score": 233.0,
+        "subtotal": 242.0,
+        "rule_id": "Bicycle",
+        "effect_type": "cards_submitted_word_bonus",
+        "applied": true,
+        "detail": "+233 word (Bicycle: 221 acc + 6 suited × 2)"
+      },
+      {
+        "phase": "pin",
+        "track": "right",
+        "rule_id": "cards_submitted_word_bonus",
+        "game_class": "Bicycle",
+        "detail": "pin bones_the_dog"
+      },
+      {
+        "phase": "pin",
+        "tile_scores": [
+          5.0,
+          1.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "word_score": 233.0,
+        "subtotal": 242.0,
+        "rule_id": "bicycle",
+        "detail": "pin applied"
+      },
+      {
+        "phase": "rule",
+        "tile_scores": [
+          35.0,
+          31.0,
+          30.0,
+          31.0,
+          31.0,
+          31.0
+        ],
+        "word_score": 233.0,
+        "subtotal": 422.0,
+        "rule_id": "celestial_body",
+        "effect_type": "add_tile_score",
+        "applied": true,
+        "detail": "+180 card tile score (6)"
+      },
+      {
+        "phase": "rule",
+        "tile_scores": [
+          35.0,
+          31.0,
+          30.0,
+          31.0,
+          31.0,
+          31.0
+        ],
+        "word_score": 233.0,
+        "subtotal": 422.0,
+        "rule_id": "wrestlers",
+        "effect_type": "multiply_word_scaled",
+        "applied": true,
+        "detail": "applied (word_starts_ends_different_suit)",
+        "condition": "word_starts_ends_different_suit",
+        "condition_met": true
+      },
+      {
+        "phase": "rule",
+        "tile_scores": [
+          35.0,
+          31.0,
+          30.0,
+          31.0,
+          31.0,
+          31.0
+        ],
+        "word_score": 233.0,
+        "subtotal": 422.0,
+        "rule_id": "poker_face",
+        "effect_type": "multiply_word_scaled",
+        "applied": true,
+        "detail": "applied (word_starts_face_card)",
+        "condition": "word_starts_face_card",
+        "condition_met": true
+      },
+      {
+        "phase": "rule",
+        "tile_scores": [
+          35.0,
+          31.0,
+          30.0,
+          31.0,
+          31.0,
+          31.0
+        ],
+        "word_score": 233.0,
+        "subtotal": 422.0,
+        "rule_id": "blessing_of_the_fairies",
+        "effect_type": "multiply_word_scaled",
+        "applied": true,
+        "detail": "applied (always)",
+        "condition": "always",
+        "condition_met": true
+      },
+      {
+        "phase": "rule",
+        "tile_scores": [
+          35.0,
+          31.0,
+          30.0,
+          31.0,
+          31.0,
+          31.0
+        ],
+        "word_score": 233.0,
+        "subtotal": 422.0,
+        "rule_id": "martini",
+        "effect_type": "card_hand_min_size",
+        "applied": false,
+        "detail": "skipped (card_hand_min_size)"
+      },
+      {
+        "phase": "rule",
+        "tile_scores": [
+          35.0,
+          31.0,
+          30.0,
+          31.0,
+          32.0,
+          34.0
+        ],
+        "word_score": 233.0,
+        "subtotal": 426.0,
+        "rule_id": "mutating_dna",
+        "effect_type": "mutating_dna_tile_bonus",
+        "applied": true,
+        "detail": "+4 mutating DNA tile"
+      },
+      {
+        "phase": "pre_multiply",
+        "tile_scores": [
+          35.0,
+          31.0,
+          30.0,
+          31.0,
+          32.0,
+          34.0
+        ],
+        "word_score": 233.0,
+        "subtotal": 426.0,
+        "detail": "tile sum + word score"
+      },
+      {
+        "phase": "multiply",
+        "tile_scores": [
+          35.0,
+          31.0,
+          30.0,
+          31.0,
+          32.0,
+          34.0
+        ],
+        "word_score": 233.0,
+        "subtotal": 426.0,
+        "factor": 2.5,
+        "percent": 250,
+        "detail": "×2.5 word (word_bonus:250)",
+        "rule_id": "wrestlers"
+      },
+      {
+        "phase": "multiply",
+        "tile_scores": [
+          35.0,
+          31.0,
+          30.0,
+          31.0,
+          32.0,
+          34.0
+        ],
+        "word_score": 233.0,
+        "subtotal": 426.0,
+        "factor": 4.0,
+        "percent": 400,
+        "detail": "×4 word (word_bonus:400)",
+        "rule_id": "poker_face"
+      },
+      {
+        "phase": "multiply",
+        "tile_scores": [
+          35.0,
+          31.0,
+          30.0,
+          31.0,
+          32.0,
+          34.0
+        ],
+        "word_score": 233.0,
+        "subtotal": 426.0,
+        "factor": 3.5,
+        "percent": 350,
+        "detail": "×3.5 word (word_bonus:350)",
+        "rule_id": "blessing_of_the_fairies"
+      }
+    ]
+  },
+  "actual": {
+    "word": "kierie",
+    "path": [
+      0,
+      5,
+      14,
+      13,
+      7,
+      3
+    ],
+    "path_tiles": [
+      {
+        "path_index": 0,
+        "row": 0,
+        "col": 0,
+        "letter": "K",
+        "char": "k",
+        "curse": "letter",
+        "color": "colorless",
+        "base_score": 5.0,
+        "consumable": false,
+        "was_consumable": false,
+        "take": false,
+        "card_suit": "hearts",
+        "card_rank": "K"
+      },
+      {
+        "path_index": 5,
+        "row": 1,
+        "col": 0,
+        "letter": "I",
+        "char": "i",
+        "curse": "letter",
+        "color": "colorless",
+        "base_score": 1.0,
+        "consumable": false,
+        "was_consumable": false,
+        "take": false,
+        "card_suit": "diamonds",
+        "card_rank": "I"
+      },
+      {
+        "path_index": 14,
+        "row": 2,
+        "col": 4,
+        "letter": "?",
+        "char": "🃏︎",
+        "curse": "wildcard",
+        "color": "colorless",
+        "base_score": 0.0,
+        "consumable": false,
+        "was_consumable": false,
+        "take": false,
+        "card_suit": "joker",
+        "card_rank": ""
+      },
+      {
+        "path_index": 13,
+        "row": 2,
+        "col": 3,
+        "letter": "R",
+        "char": "r",
+        "curse": "letter",
+        "color": "colorless",
+        "base_score": 1.0,
+        "consumable": false,
+        "was_consumable": false,
+        "take": false,
+        "card_suit": "diamonds",
+        "card_rank": "R"
+      },
+      {
+        "path_index": 7,
+        "row": 1,
+        "col": 2,
+        "letter": "I",
+        "char": "i",
+        "curse": "letter",
+        "color": "colorless",
+        "base_score": 1.0,
+        "consumable": false,
+        "was_consumable": false,
+        "take": false,
+        "card_suit": "diamonds",
+        "card_rank": "I"
+      },
+      {
+        "path_index": 3,
+        "row": 0,
+        "col": 3,
+        "letter": "E",
+        "char": "e",
+        "curse": "letter",
+        "color": "colorless",
+        "base_score": 1.0,
+        "consumable": false,
+        "was_consumable": false,
+        "take": false,
+        "card_suit": "spades",
+        "card_rank": "E"
+      }
+    ],
+    "score": 15078,
+    "trace": [
+      {
+        "step_index": 0,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          5,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "running_subtotal": 9
+      },
+      {
+        "step_index": 1,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          5,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "running_subtotal": 9
+      },
+      {
+        "step_index": 2,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          5,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "word_bonus": 233,
+        "word_bonus_multiplicative": false,
+        "word_bonus_poison": false,
+        "running_subtotal": 242,
+        "item_id": "bicycle",
+        "item_name": "Bicycle",
+        "item_level": 1
+      },
+      {
+        "step_index": 3,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          5,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "running_subtotal": 9
+      },
+      {
+        "step_index": 4,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          5,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "running_subtotal": 9
+      },
+      {
+        "step_index": 5,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          35,
+          31,
+          30,
+          31,
+          31,
+          31
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "running_subtotal": 189,
+        "item_id": "celestial_body",
+        "item_name": "Celestial Body",
+        "item_level": 1
+      },
+      {
+        "step_index": 6,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          35,
+          31,
+          30,
+          31,
+          31,
+          31
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "word_bonus": 250,
+        "word_bonus_multiplicative": true,
+        "word_bonus_poison": false,
+        "running_subtotal": 189,
+        "item_id": "wrestlers",
+        "item_name": "Wrestlers",
+        "item_level": 1
+      },
+      {
+        "step_index": 7,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          35,
+          31,
+          30,
+          31,
+          31,
+          31
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "word_bonus": 400,
+        "word_bonus_multiplicative": true,
+        "word_bonus_poison": false,
+        "running_subtotal": 189,
+        "item_id": "poker_face",
+        "item_name": "Poker Face",
+        "item_level": 1
+      },
+      {
+        "step_index": 8,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          35,
+          31,
+          30,
+          31,
+          31,
+          31
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "word_bonus": 350,
+        "word_bonus_multiplicative": true,
+        "word_bonus_poison": false,
+        "running_subtotal": 189,
+        "item_id": "blessing_of_the_fairies",
+        "item_name": "Blessing of the Fairies",
+        "item_level": 1
+      },
+      {
+        "step_index": 9,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          35,
+          31,
+          30,
+          31,
+          31,
+          31
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "running_subtotal": 189
+      },
+      {
+        "step_index": 10,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          35,
+          31,
+          30,
+          31,
+          31,
+          31
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "running_subtotal": 189
+      },
+      {
+        "step_index": 11,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          35,
+          31,
+          30,
+          31,
+          31,
+          31
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "running_subtotal": 189
+      },
+      {
+        "step_index": 12,
+        "money": 3,
+        "is_pulsing_whole_word": false,
+        "is_settling_glitch": false,
+        "poker_hand": "None",
+        "path_tile_indices": [
+          0,
+          5,
+          14,
+          13,
+          7,
+          3
+        ],
+        "tile_scores": [
+          35,
+          31,
+          35,
+          31,
+          32,
+          34
+        ],
+        "tile_score_multipliers": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "running_subtotal": 198,
+        "item_id": "mutating_dna",
+        "item_name": "Mutating DNA",
+        "item_level": 1
+      }
+    ],
+    "submitted_word_first_letter": "k"
+  },
+  "run_state": {
+    "schema_version": 1,
+    "exported_at": "2026-06-30T03:11:16.119Z",
+    "character": "Bones The Dog",
+    "pin_branch": "left",
+    "money": 3,
+    "stickers": [
+      {
+        "id": "postal_horn",
+        "name": "Postal Horn",
+        "level": 3,
+        "kind": "sticker"
+      },
+      {
+        "id": "joker",
+        "name": "Joker",
+        "level": 3,
+        "kind": "sticker"
+      },
+      {
+        "id": "celestial_body",
+        "name": "Celestial Body",
+        "level": 3,
+        "kind": "sticker"
+      },
+      {
+        "id": "wrestlers",
+        "name": "Wrestlers",
+        "level": 3,
+        "kind": "sticker"
+      },
+      {
+        "id": "poker_face",
+        "name": "Poker Face",
+        "level": 3,
+        "kind": "sticker"
+      }
+    ],
+    "stamps": [
+      {
+        "id": "blessing_of_the_fairies",
+        "name": "Blessing of the Fairies",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "martini",
+        "name": "Martini",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "hungry_snake",
+        "name": "Hungry Snake",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "full_moon",
+        "name": "Full Moon",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "mutating_dna",
+        "name": "Mutating DNA",
+        "level": 1,
+        "kind": "sticker"
+      }
+    ],
+    "boss_id": "michael",
+    "boss_name": "Michael",
+    "boss_effect": "",
+    "challenge_game_class": "",
+    "challenge_name": "",
+    "challenge_elite": false,
+    "extras": {
+      "boss_area_number": "6",
+      "boss_floor_modification": "1",
+      "pin_effect": "bicycle",
+      "pin_left_level": "5",
+      "pin_right_level": "2",
+      "pin_left_variable": "10",
+      "pin_right_variable": "2",
+      "pin_memory_export_note": "empty",
+      "pin_memory": "[]",
+      "pin_memory_count": "0",
+      "bicycle_word_score_bonus": "233",
+      "cards_submitted": "233",
+      "historic_words": "[{\"word\":\"🃏︎🃏︎M🃏︎MA\",\"score\":14000,\"path\":[3,4,5,10,14,8]},{\"word\":\"🃏︎LEE🃏︎E\",\"score\":14518,\"path\":[11,15,20,8,9,5]},{\"word\":\"KI🃏︎RIE\",\"score\":15078,\"path\":[20,15,14,13,17,23]}]",
+      "previous_word_first_letter": "k",
+      "scoring_previous_words_count": "3",
+      "encounter_historic_source": "live",
+      "red_tiles_used_encounter": "0",
+      "mutating_dna_letter_counts": "{\"m\":2,\"a\":1,\"l\":1,\"e\":4,\"k\":1,\"i\":2,\"r\":1}",
+      "embargoed_item_types": "",
+      "embargoed_item_slugs": "",
+      "character_slug": "bones_the_dog",
+      "board_from_melmod": "true",
+      "grid_number": "3",
+      "rare_item_count": "1",
+      "fairy_count": "1",
+      "animal_stamp_count": "0",
+      "encounter_mode": "encounter",
+      "run_stage": "6",
+      "run_node_type": "Boss",
+      "cursed_bosses_defeated_count": "5",
+      "game_version": "0.2.0",
+      "sticker_order": "[\"postal_horn\",\"joker\",\"celestial_body\",\"wrestlers\",\"poker_face\"]",
+      "stamp_order": "[\"blessing_of_the_fairies\",\"martini\",\"hungry_snake\",\"full_moon\",\"mutating_dna\"]",
+      "michael_finale_probe": "finale=0,michael_boss=1,summoned_defeated=0,live_min=-,active_tiles=25",
+      "michael_phase": "1",
+      "boss_modifiers": "[\"badger\"]",
+      "boss_modifier_floor_mods": "{\"badger\":1}",
+      "snapshot_copy_export_note": "not_equipped",
+      "loadout_fingerprint": "Bones The Dog|3|postal_horn:3,joker:3,celestial_body:3,wrestlers:3,poker_face:3|blessing_of_the_fairies:1,martini:1,hungry_snake:1,full_moon:1,mutating_dna:1|badger|bicycle:left|233",
+      "encounter_total_target": "38204",
+      "encounter_remaining_target": "9686",
+      "encounter_score_earned": "28518"
+    },
+    "export_diagnostics": null,
+    "board": {
+      "source": "melmod",
+      "row_order": "top_first",
+      "money": 3,
+      "rows": 5,
+      "cols": 5,
+      "playable_origin": "full",
+      "playable_min_row": 0,
+      "playable_max_row": 4,
+      "playable_min_col": 0,
+      "playable_max_col": 4,
+      "tiles": [
+        {
+          "row": 4,
+          "col": 0,
+          "char": "r",
+          "letter": "R",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "diamonds",
+          "card_rank": "R",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 4,
+          "col": 1,
+          "char": "d",
+          "letter": "D",
+          "base_score": 2.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "diamonds",
+          "card_rank": "D",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 4,
+          "col": 2,
+          "char": "t",
+          "letter": "T",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "clubs",
+          "card_rank": "T",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 4,
+          "col": 3,
+          "char": "t",
+          "letter": "T",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "hearts",
+          "card_rank": "T",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 4,
+          "col": 4,
+          "char": "t",
+          "letter": "T",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "clubs",
+          "card_rank": "T",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 3,
+          "col": 0,
+          "char": "🃏︎",
+          "letter": "?",
+          "base_score": 0.0,
+          "color": "colorless",
+          "curse": "wildcard",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "joker",
+          "card_rank": "",
+          "is_joker": true,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 3,
+          "col": 1,
+          "char": "🃏︎",
+          "letter": "?",
+          "base_score": 0.0,
+          "color": "colorless",
+          "curse": "wildcard",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "joker",
+          "card_rank": "",
+          "is_joker": true,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 3,
+          "col": 2,
+          "char": "a",
+          "letter": "A",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "hearts",
+          "card_rank": "A",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 3,
+          "col": 3,
+          "char": "a",
+          "letter": "A",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "hearts",
+          "card_rank": "A",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 3,
+          "col": 4,
+          "char": "s",
+          "letter": "S",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "hearts",
+          "card_rank": "S",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 2,
+          "col": 0,
+          "char": "w",
+          "letter": "W",
+          "base_score": 4.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "diamonds",
+          "card_rank": "W",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 2,
+          "col": 1,
+          "char": "k",
+          "letter": "K",
+          "base_score": 5.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "hearts",
+          "card_rank": "K",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 2,
+          "col": 2,
+          "char": "t",
+          "letter": "T",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "clubs",
+          "card_rank": "T",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 2,
+          "col": 3,
+          "char": "r",
+          "letter": "R",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "diamonds",
+          "card_rank": "R",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 2,
+          "col": 4,
+          "char": "🃏︎",
+          "letter": "?",
+          "base_score": 0.0,
+          "color": "colorless",
+          "curse": "wildcard",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "joker",
+          "card_rank": "",
+          "is_joker": true,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "char": "i",
+          "letter": "I",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "diamonds",
+          "card_rank": "I",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "char": "i",
+          "letter": "I",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "diamonds",
+          "card_rank": "I",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 1,
+          "col": 2,
+          "char": "i",
+          "letter": "I",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "diamonds",
+          "card_rank": "I",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 1,
+          "col": 3,
+          "char": "r",
+          "letter": "R",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "spades",
+          "card_rank": "R",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 1,
+          "col": 4,
+          "char": "v",
+          "letter": "V",
+          "base_score": 4.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "spades",
+          "card_rank": "V",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 0,
+          "col": 0,
+          "char": "k",
+          "letter": "K",
+          "base_score": 5.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "hearts",
+          "card_rank": "K",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "char": "z",
+          "letter": "Z",
+          "base_score": 10.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "clubs",
+          "card_rank": "Z",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 0,
+          "col": 2,
+          "char": "i",
+          "letter": "I",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "hearts",
+          "card_rank": "I",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 0,
+          "col": 3,
+          "char": "e",
+          "letter": "E",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "spades",
+          "card_rank": "E",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        },
+        {
+          "row": 0,
+          "col": 4,
+          "char": "t",
+          "letter": "T",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter",
+          "number_value": null,
+          "fraction_value": null,
+          "consumable": false,
+          "was_consumable": false,
+          "active": true,
+          "take": false,
+          "chess_color": "",
+          "card_suit": "diamonds",
+          "card_rank": "T",
+          "is_joker": false,
+          "was_glitch": false,
+          "cactus_growth": null,
+          "scattered_item_id": "",
+          "scattered_item_level": null,
+          "void_penalty_steps": null,
+          "is_crossed_out": false,
+          "is_up_and_up_center": false
+        }
+      ]
+    },
+    "ui_layout": {
+      "coordinate_space": "screen_top_left",
+      "screen_w": 3440,
+      "screen_h": 1440,
+      "board": {
+        "x": 1122,
+        "y": 0,
+        "width": 1190,
+        "height": 1173,
+        "rows": 5,
+        "cols": 5,
+        "cells": [
+          {
+            "row": 4,
+            "col": 0,
+            "index": 20,
+            "x": 1349,
+            "y": 975
+          },
+          {
+            "row": 3,
+            "col": 0,
+            "index": 15,
+            "x": 1345,
+            "y": 789
+          },
+          {
+            "row": 2,
+            "col": 0,
+            "index": 10,
+            "x": 1342,
+            "y": 597
+          },
+          {
+            "row": 1,
+            "col": 0,
+            "index": 5,
+            "x": 1336,
+            "y": 405
+          },
+          {
+            "row": 0,
+            "col": 0,
+            "index": 0,
+            "x": 1332,
+            "y": 206
+          },
+          {
+            "row": 4,
+            "col": 1,
+            "index": 21,
+            "x": 1534,
+            "y": 975
+          },
+          {
+            "row": 3,
+            "col": 1,
+            "index": 16,
+            "x": 1533,
+            "y": 789
+          },
+          {
+            "row": 2,
+            "col": 1,
+            "index": 11,
+            "x": 1531,
+            "y": 598
+          },
+          {
+            "row": 1,
+            "col": 1,
+            "index": 6,
+            "x": 1530,
+            "y": 406
+          },
+          {
+            "row": 0,
+            "col": 1,
+            "index": 1,
+            "x": 1528,
+            "y": 209
+          },
+          {
+            "row": 4,
+            "col": 2,
+            "index": 22,
+            "x": 1721,
+            "y": 975
+          },
+          {
+            "row": 3,
+            "col": 2,
+            "index": 17,
+            "x": 1722,
+            "y": 789
+          },
+          {
+            "row": 2,
+            "col": 2,
+            "index": 12,
+            "x": 1722,
+            "y": 598
+          },
+          {
+            "row": 1,
+            "col": 2,
+            "index": 7,
+            "x": 1722,
+            "y": 405
+          },
+          {
+            "row": 0,
+            "col": 2,
+            "index": 2,
+            "x": 1722,
+            "y": 210
+          },
+          {
+            "row": 4,
+            "col": 3,
+            "index": 23,
+            "x": 1908,
+            "y": 974
+          },
+          {
+            "row": 3,
+            "col": 3,
+            "index": 18,
+            "x": 1910,
+            "y": 788
+          },
+          {
+            "row": 2,
+            "col": 3,
+            "index": 13,
+            "x": 1914,
+            "y": 598
+          },
+          {
+            "row": 1,
+            "col": 3,
+            "index": 8,
+            "x": 1914,
+            "y": 407
+          },
+          {
+            "row": 0,
+            "col": 3,
+            "index": 3,
+            "x": 1918,
+            "y": 208
+          },
+          {
+            "row": 4,
+            "col": 4,
+            "index": 24,
+            "x": 2092,
+            "y": 974
+          },
+          {
+            "row": 3,
+            "col": 4,
+            "index": 19,
+            "x": 2096,
+            "y": 788
+          },
+          {
+            "row": 2,
+            "col": 4,
+            "index": 14,
+            "x": 2103,
+            "y": 598
+          },
+          {
+            "row": 1,
+            "col": 4,
+            "index": 9,
+            "x": 2104,
+            "y": 407
+          },
+          {
+            "row": 0,
+            "col": 4,
+            "index": 4,
+            "x": 2107,
+            "y": 211
+          }
+        ]
+      },
+      "consumable_rack": {
+        "x": 2986,
+        "y": 709,
+        "width": 374,
+        "height": 65,
+        "slot_count": 5,
+        "rack_slots": [
+          {
+            "rack_index": 0,
+            "x": 3019,
+            "y": 741,
+            "width": 64,
+            "height": 64
+          },
+          {
+            "rack_index": 1,
+            "x": 3096,
+            "y": 741,
+            "width": 64,
+            "height": 64
+          },
+          {
+            "rack_index": 2,
+            "x": 3173,
+            "y": 741,
+            "width": 64,
+            "height": 64
+          },
+          {
+            "rack_index": 3,
+            "x": 3251,
+            "y": 741,
+            "width": 64,
+            "height": 64
+          },
+          {
+            "rack_index": 4,
+            "x": 3328,
+            "y": 741,
+            "width": 64,
+            "height": 64
+          }
+        ]
+      }
+    },
+    "inventory_sell": [
+      {
+        "kind": "sticker",
+        "slot": 0,
+        "id": "postal_horn",
+        "name": "Postal Horn",
+        "level": 3,
+        "foil": false,
+        "sell_value": 8,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "sticker",
+        "slot": 1,
+        "id": "joker",
+        "name": "Joker",
+        "level": 3,
+        "foil": false,
+        "sell_value": 12,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "sticker",
+        "slot": 2,
+        "id": "celestial_body",
+        "name": "Celestial Body",
+        "level": 3,
+        "foil": false,
+        "sell_value": 9,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "sticker",
+        "slot": 3,
+        "id": "wrestlers",
+        "name": "Wrestlers",
+        "level": 3,
+        "foil": false,
+        "sell_value": 9,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "sticker",
+        "slot": 4,
+        "id": "poker_face",
+        "name": "Poker Face",
+        "level": 3,
+        "foil": false,
+        "sell_value": 9,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "stamp",
+        "slot": 0,
+        "id": "blessing_of_the_fairies",
+        "name": "Blessing of the Fairies",
+        "level": 1,
+        "foil": false,
+        "sell_value": 10,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "stamp",
+        "slot": 1,
+        "id": "martini",
+        "name": "Martini",
+        "level": 1,
+        "foil": false,
+        "sell_value": 6,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "stamp",
+        "slot": 2,
+        "id": "hungry_snake",
+        "name": "Hungry Snake",
+        "level": 1,
+        "foil": false,
+        "sell_value": 5,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "stamp",
+        "slot": 3,
+        "id": "full_moon",
+        "name": "Full Moon",
+        "level": 1,
+        "foil": false,
+        "sell_value": 5,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "stamp",
+        "slot": 4,
+        "id": "mutating_dna",
+        "name": "Mutating DNA",
+        "level": 1,
+        "foil": false,
+        "sell_value": 12,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      }
+    ],
+    "encounter_grid_reroll": {
+      "remaining": 1,
+      "cost_per_use": 0,
+      "can_reroll": false,
+      "wheel_equipped": false,
+      "fan_equipped": false,
+      "cost": 0,
+      "available": false
+    }
+  },
+  "consumables": {
+    "rack_before": [],
+    "rack_after": [],
+    "placements_this_round": []
+  },
+  "comparison": {
+    "score_delta": 168,
+    "path_matches_suggestion": true,
+    "board_fingerprint_matches_suggestion": true,
+    "submitted_beat_suggestion": false,
+    "submitted_score_advantage": 0,
+    "stale_suggestion": true,
+    "stale_f8_extras": true,
+    "stale_f8_reason": "F8 snapshot stale — re-run F8 after your last word before trusting predicted scores (mutating_dna_letter_counts changed)",
+    "capture_active": true,
+    "match_status": "stale_f8_extras"
+  },
+  "extras_diff": {
+    "pin_effect": {
+      "f8": "bicycle",
+      "submit": ""
+    },
+    "pin_left_level": {
+      "f8": "5",
+      "submit": ""
+    },
+    "pin_right_level": {
+      "f8": "2",
+      "submit": ""
+    },
+    "pin_left_variable": {
+      "f8": "10",
+      "submit": ""
+    },
+    "pin_right_variable": {
+      "f8": "2",
+      "submit": ""
+    },
+    "pin_memory_export_note": {
+      "f8": "empty",
+      "submit": ""
+    },
+    "pin_memory": {
+      "f8": "[]",
+      "submit": ""
+    },
+    "pin_memory_count": {
+      "f8": "0",
+      "submit": ""
+    },
+    "historic_words": {
+      "f8": "[{\"word\": \"🃏︎🃏︎M🃏︎MA\", \"score\": 14000}, {\"word\": \"🃏︎LEE🃏︎E\", \"score\": 14518}]",
+      "submit": "[{\"word\":\"🃏︎🃏︎M🃏︎MA\",\"score\":14000,\"path\":[3,4,5,10,14,8]},{\"word\":\"🃏︎LEE🃏︎E\",\"score\":14518,\"path\":[11,15,20,8,9,5]}]"
+    },
+    "encounter_historic_source": {
+      "f8": "historic_metadata_only",
+      "submit": ""
+    },
+    "red_tiles_used_encounter": {
+      "f8": "0",
+      "submit": ""
+    },
+    "mutating_dna_letter_counts": {
+      "f8": "{\"m\":2,\"a\":1,\"l\":1,\"e\":3}",
+      "submit": "{}"
+    },
+    "character_slug": {
+      "f8": "bones_the_dog",
+      "submit": ""
+    },
+    "board_from_melmod": {
+      "f8": "true",
+      "submit": ""
+    },
+    "grid_number": {
+      "f8": "3",
+      "submit": ""
+    },
+    "grid_scattered_items": {
+      "f8": "[]",
+      "submit": ""
+    },
+    "fairy_count": {
+      "f8": "1",
+      "submit": ""
+    },
+    "animal_stamp_count": {
+      "f8": "0",
+      "submit": ""
+    },
+    "encounter_mode": {
+      "f8": "encounter",
+      "submit": ""
+    },
+    "run_stage": {
+      "f8": "6",
+      "submit": ""
+    },
+    "run_node_type": {
+      "f8": "Boss",
+      "submit": ""
+    },
+    "cursed_bosses_defeated_count": {
+      "f8": "5",
+      "submit": ""
+    },
+    "game_version": {
+      "f8": "0.2.0",
+      "submit": ""
+    },
+    "sticker_order": {
+      "f8": "[\"postal_horn\",\"joker\",\"celestial_body\",\"wrestlers\",\"poker_face\"]",
+      "submit": ""
+    },
+    "stamp_order": {
+      "f8": "[\"blessing_of_the_fairies\",\"martini\",\"hungry_snake\",\"full_moon\",\"mutating_dna\"]",
+      "submit": ""
+    },
+    "michael_finale_probe": {
+      "f8": "finale=0,michael_boss=1,summoned_defeated=0,live_min=-,active_tiles=25",
+      "submit": ""
+    },
+    "michael_phase": {
+      "f8": "1",
+      "submit": ""
+    },
+    "snapshot_copy_export_note": {
+      "f8": "not_equipped",
+      "submit": ""
+    },
+    "loadout_fingerprint": {
+      "f8": "Bones The Dog|3|postal_horn:3,joker:3,celestial_body:3,wrestlers:3,poker_face:3|blessing_of_the_fairies:1,martini:1,hungry_snake:1,full_moon:1,mutating_dna:1|badger|bicycle:left|221",
+      "submit": ""
+    },
+    "encounter_total_target": {
+      "f8": "38204",
+      "submit": ""
+    },
+    "encounter_remaining_target": {
+      "f8": "9686",
+      "submit": ""
+    },
+    "encounter_score_earned": {
+      "f8": "28518",
+      "submit": ""
+    },
+    "birthday_cake_bonus": {
+      "f8": "27",
+      "submit": ""
+    },
+    "bicycle_suited_on_path": {
+      "f8": "",
+      "submit": "6"
+    }
+  },
+  "export_diagnostics_at_submit": null,
+  "export_diagnostics_at_f8": {
+    "companion_version": "1.2.1",
+    "game_version": "0.2.0",
+    "export_trigger": "f8",
+    "f8_request_id": "1782789008176",
+    "fingerprint": "Bones The Dog|3|postal_horn:3,joker:3,celestial_body:3,wrestlers:3,poker_face:3|blessing_of_the_fairies:1,martini:1,hungry_snake:1,full_moon:1,mutating_dna:1|badger|-|bicycle:left|221|3|4,0:R/letter/colorless;4,1:D/letter/colorless;4,2:T/letter/colorless;4,3:T/letter/colorless;4,4:T/letter/colorless;3,0:?/wildcard/colorless;3,1:?/wildcard/colorless;3,2:A/letter/colorless;3,3:A/letter/colorless;3,4:S/letter/colorless;2,0:W/letter/colorless;2,1:K/letter/colorless;2,2:T/letter/colorless;2,3:R/letter/colorless;2,4:?/wildcard/colorless;1,0:I/letter/colorless;1,1:I/letter/colorless;1,2:I/letter/colorless;1,3:R/letter/colorless;1,4:V/letter/colorless;0,0:K/letter/colorless;0,1:Z/letter/colorless;0,2:I/letter/colorless;0,3:E/letter/colorless;0,4:T/letter/colorless;|3|0|-1|{\"m\":2,\"a\":1,\"l\":1,\"e\":3}",
+    "fingerprint_changed": false,
+    "missing_keys": [],
+    "merge_errors": [],
+    "pin_memory_count": 0,
+    "snapshot_copy_source": "",
+    "last_export_ms": 63,
+    "ui_layout_status": "ok",
+    "snapshot_copy_export_note": "not_equipped"
+  }
+}

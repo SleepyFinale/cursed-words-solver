@@ -295,7 +295,7 @@ namespace CursedWordsSolverCompanion
             sb.Append('|');
             AppendItemsFingerprint(sb, player.Stamps);
             sb.Append('|');
-            AppendBossFingerprint(sb, BossResolver.Resolve(player));
+            AppendBossFingerprint(sb, BossResolver.ResolveLiveForExport(player));
             sb.Append('|');
             AppendChallengeFingerprint(sb, player);
             sb.Append('|');
@@ -303,7 +303,22 @@ namespace CursedWordsSolverCompanion
             sb.Append('|');
             sb.Append(ComputeBoardFingerprint(player));
             RunStateExportFill.AppendEncounterFingerprint(sb, player);
+            AppendMutatingDnaFingerprint(sb, player);
             return sb.ToString();
+        }
+
+        private static void AppendMutatingDnaFingerprint(StringBuilder sb, Player player)
+        {
+            if (!HasMutatingDnaStamp(player))
+                return;
+
+            var previousWords = TryGetHistoricPreviousWords(player);
+            var letterCounts = ScoringContextCapture.ResolveMutatingDnaLetterCounts(
+                player,
+                previousWords
+            );
+            sb.Append('|');
+            sb.Append(ScoringContextCapture.SerializeLetterCounts(letterCounts));
         }
 
         public static void CacheGridNumber(int gridNumber)
@@ -929,7 +944,7 @@ namespace CursedWordsSolverCompanion
                 stamps = MapItems(player.Stamps, true, player),
             };
 
-            var bosses = BossResolver.Resolve(player);
+            var bosses = BossResolver.ResolveLiveForExport(player);
             if (bosses == null || bosses.Count == 0)
             {
                 var michael = RunStateExportFill.TryFindMichaelBossFromPlayer(player);
@@ -972,7 +987,6 @@ namespace CursedWordsSolverCompanion
 
         private static readonly string[] ExtrasPreserveFromDisk =
         {
-            "mutating_dna_letter_counts",
             "birthday_cake_bonus",
             "neapolitan_percent_last_known",
             "ruler_distance_last_known",
@@ -2296,7 +2310,7 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
-        /// F8 export: prefer max(live sticker bonus, last post-score merge cache).
+        /// F8 export: live Movie Camera WordScoreBonus from equipped sticker.
         /// </summary>
         private static void SyncLiveMovieCameraExtrasIntoSnapshot(
             RunStateSnapshot snapshot,
@@ -2310,16 +2324,10 @@ namespace CursedWordsSolverCompanion
                 return;
 
             var live = TryGetMovieCameraWordScoreBonus(player);
-            var best = live;
-            if (_cachedMovieCameraWordScoreBonus >= 0)
-                best = best >= 0
-                    ? Math.Max(best, _cachedMovieCameraWordScoreBonus)
-                    : _cachedMovieCameraWordScoreBonus;
-
-            if (best < 0)
+            if (live < 0)
                 return;
 
-            snapshot.extras["movie_camera_word_score_bonus"] = best.ToString();
+            snapshot.extras["movie_camera_word_score_bonus"] = live.ToString();
         }
 
         private static Dictionary<string, string> BuildBicycleExtras(Item pin)
@@ -2379,6 +2387,167 @@ namespace CursedWordsSolverCompanion
             {
                 return -1;
             }
+        }
+
+        private static int _previewGuardBicycleBonus = int.MinValue;
+        private static int _previewGuardMovieCameraBonus = int.MinValue;
+        private static bool _previewGuardActive;
+
+        /// <summary>
+        /// Snapshot mutable pin/sticker accumulators before preview CalculateOverallScore.
+        /// </summary>
+        public static void BeginPreviewScoreMutationGuard()
+        {
+            if (ScoringCaptureSession.IsSubmitInFlight())
+                return;
+
+            _previewGuardBicycleBonus = int.MinValue;
+            _previewGuardMovieCameraBonus = int.MinValue;
+
+            try
+            {
+                var player = GetPlayerForUpdate();
+                if (player?.MyCharacter?.CharacterItem != null
+                    && IsBicyclePin(player.MyCharacter.CharacterItem))
+                {
+                    var bonus = TryGetBicycleWordScoreBonus(player.MyCharacter.CharacterItem);
+                    if (bonus >= 0)
+                        _previewGuardBicycleBonus = bonus;
+                }
+
+                if (player != null && PlayerHasStickerSlug(player, "movie_camera"))
+                {
+                    var movie = TryGetMovieCameraWordScoreBonus(player);
+                    if (movie >= 0)
+                        _previewGuardMovieCameraBonus = movie;
+                }
+            }
+            catch
+            {
+                // optional
+            }
+
+            _previewGuardActive =
+                _previewGuardBicycleBonus >= 0 || _previewGuardMovieCameraBonus >= 0;
+        }
+
+        /// <summary>
+        /// Restore pin/sticker accumulators after preview score (Bicycle mutates in ApplyWordBonus).
+        /// </summary>
+        public static void EndPreviewScoreMutationGuard()
+        {
+            if (!_previewGuardActive)
+                return;
+
+            try
+            {
+                var player = GetPlayerForUpdate();
+                if (player?.MyCharacter?.CharacterItem != null
+                    && _previewGuardBicycleBonus >= 0
+                    && IsBicyclePin(player.MyCharacter.CharacterItem))
+                {
+                    TrySetBicycleWordScoreBonus(
+                        player.MyCharacter.CharacterItem,
+                        _previewGuardBicycleBonus
+                    );
+                }
+
+                if (player != null && _previewGuardMovieCameraBonus >= 0)
+                    TrySetMovieCameraWordScoreBonus(player, _previewGuardMovieCameraBonus);
+            }
+            catch
+            {
+                // optional
+            }
+            finally
+            {
+                _previewGuardBicycleBonus = int.MinValue;
+                _previewGuardMovieCameraBonus = int.MinValue;
+                _previewGuardActive = false;
+            }
+        }
+
+        private static bool TrySetBicycleWordScoreBonus(Item pin, int value)
+        {
+            if (pin == null || value < 0)
+                return false;
+            try
+            {
+                var bicycle = pin as Bicycle;
+                if (bicycle != null)
+                {
+                    bicycle.WordScoreBonus = value;
+                    return true;
+                }
+                return TrySetIntMember(pin, value, "WordScoreBonus");
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TrySetMovieCameraWordScoreBonus(Player player, int value)
+        {
+            if (player == null || value < 0)
+                return false;
+            try
+            {
+                var stickers = player.GetStickers(forItemComparison: true);
+                if (stickers == null)
+                    return false;
+                foreach (var item in stickers)
+                {
+                    if (item == null)
+                        continue;
+                    var camera = item as MovieCamera;
+                    if (camera != null)
+                    {
+                        camera.WordScoreBonus = value;
+                        return true;
+                    }
+                    var slug = Slugify(item.ArtFileName, item.Name);
+                    if (slug == "movie_camera" && TrySetIntMember(item, value, "WordScoreBonus"))
+                        return true;
+                }
+            }
+            catch
+            {
+                // optional
+            }
+            return false;
+        }
+
+        private static bool TrySetIntMember(object target, int value, params string[] names)
+        {
+            if (target == null)
+                return false;
+
+            foreach (var name in names)
+            {
+                try
+                {
+                    var prop = target.GetType().GetProperty(name, MemberFlags);
+                    if (prop != null && prop.CanWrite)
+                    {
+                        prop.SetValue(target, value, null);
+                        return true;
+                    }
+
+                    var field = target.GetType().GetField(name, MemberFlags);
+                    if (field != null)
+                    {
+                        field.SetValue(target, value);
+                        return true;
+                    }
+                }
+                catch
+                {
+                    // try next
+                }
+            }
+
+            return false;
         }
 
         private static int TryGetBicycleWordScoreBonus(Item pin)

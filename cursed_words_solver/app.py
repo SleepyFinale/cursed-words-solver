@@ -658,6 +658,7 @@ class SolverApp:
                     self._active_suggestion_session = None
                     self._clear_highlight_state()
                     from cursed_words_solver.suggestion import (
+                        poll_invalidation_is_bicycle_stale,
                         poll_invalidation_is_workflow_stale,
                     )
 
@@ -667,6 +668,13 @@ class SolverApp:
                             self._maybe_refresh_overlay_regions(data)
                         self.overlay.show_stale_notice(
                             f"F8 prediction may be wrong ({detail}) — press F8 again.",
+                            board_region=self._overlay_board_region(),
+                        )
+                    elif poll_invalidation_is_bicycle_stale(reason):
+                        if data:
+                            self._maybe_refresh_overlay_regions(data)
+                        self.overlay.show_stale_notice(
+                            "Bicycle acc changed — press F8 again.",
                             board_region=self._overlay_board_region(),
                         )
                     else:
@@ -2108,9 +2116,15 @@ class SolverApp:
                         if sample_warn:
                             export_warnings.append(sample_warn)
                 session_extras = solver_session_extras_from_loadout(f8_loadout)
+                fresh_embed_run_state = load_run_state_raw()
                 embed_state = embed_f8_snapshot(
                     snapshot,
                     scoring_loadout=score_loadout,
+                    fresh_run_state=(
+                        fresh_embed_run_state
+                        if isinstance(fresh_embed_run_state, dict)
+                        else score_run_state
+                    ),
                 )
                 f8_extras = (
                     embed_state.get("extras")

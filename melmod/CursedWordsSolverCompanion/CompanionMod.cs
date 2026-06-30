@@ -69,7 +69,6 @@ namespace CursedWordsSolverCompanion
             {
                 RunStateExporter.TryExport(true);
                 RunStateExporter.TryFlushPendingBicycleExtrasRetry();
-                RunStateExporter.TryMergeMutatingDnaExtrasIfChanged();
                 RefreshFingerprint();
                 return;
             }
@@ -82,7 +81,6 @@ namespace CursedWordsSolverCompanion
 
             RunStateExporter.TryFlushPendingBicycleExtrasRetry();
             RunStateExporter.TryMergeBicycleExtrasAfterScore();
-            RunStateExporter.TryMergeMutatingDnaExtrasIfChanged();
 
             var fingerprint = RunStateExporter.ComputeFingerprint(player);
             if (fingerprint == _lastFingerprint)

@@ -3166,6 +3166,7 @@ class ScoringPipeline:
                 path,
                 state["tile_scores"],
                 loadout,
+                word=str(state.get("word", "") or ""),
             )
             if tile_bonus:
                 state["effects"].append(f"+{int(tile_bonus)} mutating DNA tile")

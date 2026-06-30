@@ -77,6 +77,27 @@ def test_embed_f8_snapshot_deep_copies_gather_state():
     assert snapshot.run_state["extras"]["mutating_dna_letter_counts"] == '{"1":1}'
 
 
+def test_embed_f8_snapshot_aligns_bicycle_from_loadout_fingerprint():
+    run_state = {
+        "board": {"tiles": [], "money": 5},
+        "character": "Bones The Dog",
+        "stickers": [],
+        "stamps": [],
+        "extras": {
+            "pin_effect": "bicycle",
+            "loadout_fingerprint": "Bones The Dog|5|bicycle:left|106",
+            "bicycle_word_score_bonus": "105",
+            "cards_submitted": "105",
+        },
+    }
+    loadout = parse_run_state(run_state)
+    snapshot = F8Snapshot(run_state=run_state, board=None, loadout=loadout)
+    embed = embed_f8_snapshot(snapshot, scoring_loadout=loadout)
+    assert embed is not None
+    assert embed["extras"]["bicycle_word_score_bonus"] == "106"
+    assert embed["extras"]["cards_submitted"] == "106"
+
+
 def test_mutating_dna_missing_blocks_gather():
     from cursed_words_solver.f8_snapshot import _extras_missing_for_loadout
     from cursed_words_solver.loadout import parse_board_from_run_state
@@ -89,6 +110,21 @@ def test_mutating_dna_missing_blocks_gather():
     )
     missing = _extras_missing_for_loadout(loadout, board, run_state["extras"])
     assert "mutating_dna_letter_counts" in missing
+
+
+def test_mutating_dna_empty_ok_on_first_word():
+    from cursed_words_solver.f8_snapshot import _extras_missing_for_loadout
+    from cursed_words_solver.loadout import parse_board_from_run_state
+
+    run_state = _number_board_run_state(dna_json="{}")
+    run_state["extras"]["scoring_previous_words_count"] = "0"
+    board = parse_board_from_run_state(run_state)
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="mutating_dna", name="Mutating DNA", kind="stamp")],
+        extras=run_state["extras"],
+    )
+    missing = _extras_missing_for_loadout(loadout, board, run_state["extras"])
+    assert "mutating_dna_letter_counts" not in missing
 
 
 def test_round_log_fixture_embed_dna_pattern():

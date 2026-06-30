@@ -65,6 +65,43 @@ def test_mutating_dna_first_use_no_bonus():
     assert tile_scores == [12.0]
 
 
+def test_mutating_dna_second_same_letter_in_word_gets_bonus():
+    """Within-word duplicate letters: first use sets count, second gets +1 bonus."""
+    from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
+
+    tiles = [
+        [Tile(row=0, col=0, letter="E", char="e", curse=CurseType.LETTER, color=TileColor.COLORLESS, base_score=1.0)],
+        [Tile(row=0, col=1, letter="E", char="e", curse=CurseType.LETTER, color=TileColor.COLORLESS, base_score=1.0)],
+    ]
+    board = Board(tiles=tiles, cols=2, rows=1, money=0)
+    loadout = Loadout(
+        character="Test",
+        stickers=[],
+        stamps=[{"id": "mutating_dna", "name": "Mutating DNA", "kind": "stamp"}],
+        extras={"mutating_dna_letter_counts": "{}"},
+    )
+    tile_scores = [10.0, 10.0]
+    tile_bonus, _ = apply_mutating_dna_bonus(board, [0, 1], tile_scores, loadout)
+    assert tile_bonus == 1.0
+    assert tile_scores == [10.0, 11.0]
+
+
+def test_tweens_mutating_dna_sequential_within_word():
+    """Regression: tweens second e gets +1 scaled by multipliers → 13930 total."""
+    data = json.loads((FIXTURES / "20260629_212650.json").read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    _adjust_birthday_cake_pre_word_extras(
+        run_state, data, board, data["path"], loadout
+    )
+    loadout = parse_run_state(run_state)
+    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    assert int(score) == 13930
+
+
 @pytest.mark.parametrize(
     "fixture_name,expected",
     [

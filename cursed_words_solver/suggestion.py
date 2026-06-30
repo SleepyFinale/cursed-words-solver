@@ -1154,6 +1154,13 @@ def poll_invalidate_last_suggestion(
             search_budget_sec=search_budget_sec,
         ):
             return None
+        bike_reason = _poll_bicycle_drift_reason(
+            data,
+            current_loadout_fp=current_loadout_fp,
+            run_state_extras=extras,
+        )
+        if bike_reason and clear_last_suggestion():
+            return bike_reason
         if not has_played_word_since_f8_embed(extras, embed_extras):
             return None
         workflow_reason = workflow_stale_vs_f8_snapshot(
@@ -1169,6 +1176,50 @@ def poll_invalidate_last_suggestion(
 def poll_invalidation_is_workflow_stale(reason: str | None) -> bool:
     """True when poll cleared the suggestion due to workflow extras drift."""
     return bool(reason and reason.startswith("workflow drift ("))
+
+
+def poll_invalidation_is_bicycle_stale(reason: str | None) -> bool:
+    """True when poll cleared the suggestion due to Bicycle pin accumulator drift."""
+    return bool(reason and reason.startswith("bicycle drift"))
+
+
+def _bicycle_bonus_from_loadout_fingerprint(fp: str) -> int | None:
+    from cursed_words_solver.rules.scoring_conditions import (
+        bicycle_pin_accumulator_from_fingerprint,
+    )
+
+    return bicycle_pin_accumulator_from_fingerprint(str(fp or ""))
+
+
+def _poll_bicycle_drift_reason(
+    data: dict[str, Any],
+    *,
+    current_loadout_fp: str | None,
+    run_state_extras: dict[str, Any] | None,
+) -> str | None:
+    """Detect Bicycle acc drift on the same board (hover preview / export lag)."""
+    embed_fp = str(data.get("loadout_fingerprint") or "").strip()
+    current_fp = str(current_loadout_fp or "").strip()
+    embed_bike = _bicycle_bonus_from_loadout_fingerprint(embed_fp)
+    current_bike = _bicycle_bonus_from_loadout_fingerprint(current_fp)
+    if (
+        embed_bike is not None
+        and current_bike is not None
+        and embed_bike != current_bike
+    ):
+        return (
+            f"bicycle drift (fingerprint {embed_bike}→{current_bike}) — "
+            "press F8 again."
+        )
+
+    embed_extras = _f8_snapshot_extras(data)
+    extras = run_state_extras if isinstance(run_state_extras, dict) else {}
+    for key in ("bicycle_word_score_bonus", "cards_submitted"):
+        prev = str(embed_extras.get(key, "") or "").strip()
+        cur = str(extras.get(key, "") or "").strip()
+        if prev and cur and prev != cur:
+            return f"bicycle drift ({key} {prev}→{cur}) — press F8 again."
+    return None
 
 
 def clear_stale_last_suggestion_if_context_changed(
@@ -1752,6 +1803,23 @@ def f8_should_block_save(
         from cursed_words_solver.f8_messages import gather_block_reason
 
         return True, gather_block_reason(gather_missing)
+    if isinstance(f8_extras, dict) and loadout is not None:
+        from cursed_words_solver.f8_snapshot import _has_mutating_dna_stamp
+
+        if _has_mutating_dna_stamp(loadout):
+            f8_dna = str(f8_extras.get("mutating_dna_letter_counts", "") or "").strip()
+            live_extras = (
+                scoring_extras
+                if isinstance(scoring_extras, dict)
+                else (loadout.extras if isinstance(loadout.extras, dict) else {})
+            )
+            live_dna = str(live_extras.get("mutating_dna_letter_counts", "") or "").strip()
+            if (
+                live_dna
+                and live_dna not in ("{}", "[]")
+                and f8_dna in ("", "{}", "[]")
+            ):
+                return True, "mutating_dna_counts_missing"
     if mid_solve_grid_advanced:
         return True, "grid_advanced_during_solve"
     if f8_path_uses_crossed_out_tiles(board, path):
@@ -2183,6 +2251,19 @@ def save_last_suggestion(
         payload["dictionary_word"] = dict_word
 
     if run_state_snapshot is not None:
+
+        from cursed_words_solver.loadout import _is_bicycle_pin
+
+        if _is_bicycle_pin(loadout):
+            rs_extras = run_state_snapshot.setdefault("extras", {})
+            if isinstance(rs_extras, dict):
+                from cursed_words_solver.rules.scoring_conditions import (
+                    bicycle_suited_credit_on_path,
+                )
+
+                rs_extras["bicycle_suited_on_path"] = str(
+                    int(bicycle_suited_credit_on_path(board, list(result.path)))
+                )
 
         payload["run_state_snapshot"] = run_state_snapshot
 

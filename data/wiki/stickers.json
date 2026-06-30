@@ -1506,9 +1506,9 @@
       "condition": "always",
       "base": 1,
       "upgrade": 0,
-      "scale_from_extras": "fairy_count",
+      "scale_from_extras": "cursed_bosses_defeated_count",
       "scale_per_extra": 0.5,
-      "wiki_effect": "Get \u00d71 WORD SCORE (0.5 extra for each fairy)",
+      "wiki_effect": "Get \u00d71 WORD SCORE (+0.5 per cursed boss defeated this run; scales with CursedBossesDefeated)",
       "wiki_page": "Blessing_of_the_Fairies",
       "shop_price": 20,
       "game_class": "BlessingOfTheFairies"

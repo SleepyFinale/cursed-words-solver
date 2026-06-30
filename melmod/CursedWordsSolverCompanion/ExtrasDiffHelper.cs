@@ -174,6 +174,266 @@ namespace CursedWordsSolverCompanion
 
         /// <summary>
 
+        /// Prefer non-empty Mutating DNA from scoring context when workflow preWord is empty.
+
+        /// </summary>
+
+        private static void MergeMutatingDnaForStaleCompare(
+
+            Dictionary<string, string> merged,
+
+            Dictionary<string, string> scoringExtras
+
+        )
+
+        {
+
+            if (merged == null || scoringExtras == null)
+
+                return;
+
+
+
+            string workflowDna;
+
+            string scoringDna;
+
+            merged.TryGetValue("mutating_dna_letter_counts", out workflowDna);
+
+            scoringExtras.TryGetValue("mutating_dna_letter_counts", out scoringDna);
+
+
+
+            if (MutatingDnaLetterCountsEqual(workflowDna, scoringDna))
+
+                return;
+
+
+
+            if (IsEmptyMutatingDnaJson(workflowDna) && !IsEmptyMutatingDnaJson(scoringDna))
+
+                merged["mutating_dna_letter_counts"] = scoringDna;
+
+        }
+
+
+
+        private static bool IsEmptyMutatingDnaJson(string raw)
+
+        {
+
+            var text = (raw ?? "").Trim();
+
+            return string.IsNullOrEmpty(text) || text == "{}" || text == "[]";
+
+        }
+
+
+
+        /// <summary>
+
+        /// Merge workflow + scoring extras and rewind post-submit bicycle acc to pre-word for stale compare.
+
+        /// </summary>
+
+        public static Dictionary<string, string> PrepareExtrasForBicycleStaleCompare(
+
+            Dictionary<string, string> workflowExtras,
+
+            Dictionary<string, string> scoringExtras,
+
+            Dictionary<string, string> f8Extras,
+
+            int suitedOnPath = -1
+
+        )
+
+        {
+
+            var merged = MergePinDerivedExtrasForStaleCheck(workflowExtras, scoringExtras);
+
+            MergeMutatingDnaForStaleCompare(merged, scoringExtras);
+
+            if (merged == null || f8Extras == null || f8Extras.Count == 0)
+
+                return merged;
+
+
+
+            var perCard = RunStateExporter.TryGetBicyclePerCardRate();
+
+            if (perCard <= 0)
+
+                perCard = 1;
+
+
+
+            if (suitedOnPath < 0)
+
+                suitedOnPath = ScoringCaptureSession.TryGetLastSubmitBicycleSuitedCount();
+
+
+
+            RewindSubmitBicycleToPreWord(merged, f8Extras, suitedOnPath, perCard);
+
+            return merged;
+
+        }
+
+
+
+        /// <summary>
+
+        /// When submit extras hold post-word pin acc, rewind to pre-word for F8 embed comparison.
+
+        /// </summary>
+
+        public static void RewindSubmitBicycleToPreWord(
+
+            Dictionary<string, string> submitExtras,
+
+            Dictionary<string, string> f8Extras,
+
+            int suitedOnPath,
+
+            int perCard
+
+        )
+
+        {
+
+            if (submitExtras == null || f8Extras == null)
+
+                return;
+
+
+
+            if (perCard <= 0)
+
+                perCard = 1;
+
+
+
+            var f8Acc = TryParseBicycleAcc(f8Extras);
+
+            if (f8Acc < 0)
+
+                return;
+
+
+
+            var submitAcc = TryParseBicycleAcc(submitExtras);
+
+            if (submitAcc < 0 || submitAcc <= f8Acc)
+
+                return;
+
+
+
+            var delta = submitAcc - f8Acc;
+
+            suitedOnPath = ResolveBicycleSuitedForIncrement(delta, suitedOnPath, perCard);
+
+
+
+            if (suitedOnPath > 0 && delta == suitedOnPath * perCard)
+
+            {
+
+                var pre = submitAcc - perCard * suitedOnPath;
+
+                if (pre >= 0)
+
+                {
+
+                    submitExtras["bicycle_word_score_bonus"] = pre.ToString();
+
+                    submitExtras["cards_submitted"] = pre.ToString();
+
+                }
+
+            }
+
+        }
+
+
+
+        private static int ResolveBicycleSuitedForIncrement(
+
+            int delta,
+
+            int suitedOnPath,
+
+            int perCard
+
+        )
+
+        {
+
+            if (perCard <= 0)
+
+                perCard = 1;
+
+            if (delta <= 0 || delta % perCard != 0)
+
+                return suitedOnPath;
+
+
+
+            var inferred = delta / perCard;
+
+            if (suitedOnPath <= 0 || suitedOnPath * perCard != delta)
+
+                return inferred;
+
+            return suitedOnPath;
+
+        }
+
+
+
+        private static int TryParseBicycleAcc(Dictionary<string, string> extras)
+
+        {
+
+            if (extras == null)
+
+                return -1;
+
+            string raw;
+
+            if (
+
+                extras.TryGetValue("bicycle_word_score_bonus", out raw)
+
+                && int.TryParse(raw, out var bonus)
+
+                && bonus >= 0
+
+            )
+
+                return bonus;
+
+            if (
+
+                extras.TryGetValue("cards_submitted", out raw)
+
+                && int.TryParse(raw, out bonus)
+
+                && bonus >= 0
+
+            )
+
+                return bonus;
+
+            return -1;
+
+        }
+
+
+
+        /// <summary>
+
         /// True when F8 embed had boss extras that submit-time scoring did not use.
 
         /// </summary>
@@ -201,6 +461,10 @@ namespace CursedWordsSolverCompanion
         {
 
             if (IsBenignEncounterBossDrift(f8Extras, submitExtras))
+
+                return false;
+
+            if (IsBenignFinaleBossClearDrift(f8Extras, submitExtras))
 
                 return false;
 
@@ -312,6 +576,186 @@ namespace CursedWordsSolverCompanion
 
 
 
+        /// <summary>
+
+        /// F8 embed carried Michael finale boss metadata; submit scoring cleared boss keys.
+
+        /// </summary>
+
+        public static bool IsBenignFinaleBossClearDrift(
+
+            Dictionary<string, string> f8Extras,
+
+            Dictionary<string, string> submitExtras
+
+        )
+
+        {
+
+            if (f8Extras == null || submitExtras == null)
+
+                return false;
+
+
+
+            if (!F8ExtrasHadFinaleBossMetadata(f8Extras))
+
+                return false;
+
+
+
+            foreach (var key in StaleF8BossKeys)
+
+            {
+
+                string f8Val;
+
+                string submitVal;
+
+                f8Extras.TryGetValue(key, out f8Val);
+
+                submitExtras.TryGetValue(key, out submitVal);
+
+                f8Val = (f8Val ?? "").Trim();
+
+                submitVal = (submitVal ?? "").Trim();
+
+                if (string.IsNullOrEmpty(f8Val))
+
+                    continue;
+
+                if (!string.IsNullOrEmpty(submitVal))
+
+                    return false;
+
+            }
+
+
+
+            foreach (var key in new[]
+
+            {
+
+                "michael_phase",
+
+                "michael_min_word_length",
+
+                "encounter_min_word_length",
+
+                "michael_finale_probe",
+
+                "michael_summoned_bosses_defeated",
+
+            })
+
+            {
+
+                string f8Val;
+
+                string submitVal;
+
+                f8Extras.TryGetValue(key, out f8Val);
+
+                submitExtras.TryGetValue(key, out submitVal);
+
+                f8Val = (f8Val ?? "").Trim();
+
+                submitVal = (submitVal ?? "").Trim();
+
+                if (string.IsNullOrEmpty(f8Val))
+
+                    continue;
+
+                if (!string.IsNullOrEmpty(submitVal))
+
+                    return false;
+
+            }
+
+
+
+            return true;
+
+        }
+
+
+
+        private static bool F8ExtrasHadFinaleBossMetadata(Dictionary<string, string> f8Extras)
+
+        {
+
+            if (f8Extras == null)
+
+                return false;
+
+
+
+            var probe = (f8Extras.TryGetValue("michael_finale_probe", out var raw)
+
+                ? raw
+
+                : "") ?? "";
+
+            probe = probe.Trim();
+
+            if (probe.IndexOf("finale=1", StringComparison.OrdinalIgnoreCase) >= 0)
+
+                return true;
+
+
+
+            int phase;
+
+            if (
+
+                f8Extras.TryGetValue("michael_phase", out raw)
+
+                && int.TryParse((raw ?? "").Trim(), out phase)
+
+                && phase >= 4
+
+            )
+
+                return true;
+
+
+
+            int encMin;
+
+            if (
+
+                f8Extras.TryGetValue("encounter_min_word_length", out raw)
+
+                && int.TryParse((raw ?? "").Trim(), out encMin)
+
+                && encMin >= 20
+
+            )
+
+                return true;
+
+
+
+            if (f8Extras.TryGetValue("boss_area_number", out raw))
+
+            {
+
+                var area = (raw ?? "").Trim();
+
+                if (!string.IsNullOrEmpty(area))
+
+                    return true;
+
+            }
+
+
+
+            return false;
+
+        }
+
+
+
         private static List<string> ParseBossModifierSlugs(Dictionary<string, string> extras)
 
         {
@@ -412,7 +856,11 @@ namespace CursedWordsSolverCompanion
 
             Dictionary<string, string> f8Extras,
 
-            Dictionary<string, string> submitExtras
+            Dictionary<string, string> submitExtras,
+
+            int predictedScore = -1,
+
+            int actualScore = -1
 
         )
 
@@ -420,7 +868,21 @@ namespace CursedWordsSolverCompanion
 
             return !string.IsNullOrEmpty(
 
-                DescribeStaleF8Extras(extrasDiff, ctx, f8Extras, submitExtras)
+                DescribeStaleF8Extras(
+
+                    extrasDiff,
+
+                    ctx,
+
+                    f8Extras,
+
+                    submitExtras,
+
+                    predictedScore,
+
+                    actualScore
+
+                )
 
             );
 
@@ -468,11 +930,17 @@ namespace CursedWordsSolverCompanion
 
             Dictionary<string, string> f8Extras,
 
-            Dictionary<string, string> submitExtras
+            Dictionary<string, string> submitExtras,
+
+            int predictedScore = -1,
+
+            int actualScore = -1
 
         )
 
         {
+
+            var scoreMatched = predictedScore >= 0 && actualScore >= 0 && predictedScore == actualScore;
 
             var benignShrink = IsBenignWorkflowShrinkDrift(extrasDiff, ctx);
 
@@ -482,7 +950,7 @@ namespace CursedWordsSolverCompanion
 
                 : CollectWorkflowDriftNotes(extrasDiff, ctx);
 
-            var bicycle = CollectBicycleDriftNotes(extrasDiff, ctx);
+            var bicycle = CollectBicycleDriftNotes(extrasDiff, ctx, scoreMatched);
 
             var tileNinja = CollectTileNinjaDriftNotes(extrasDiff);
 
@@ -1455,35 +1923,51 @@ namespace CursedWordsSolverCompanion
 
         {
 
-            if (f8Extras == null || liveExtras == null)
+            var note = DescribeCaptureTimeStaleDrift(f8Extras, liveExtras, ctx);
+
+            if (string.IsNullOrEmpty(note))
 
                 return;
 
+            MelonLoader.MelonLogger.Warning(note);
+
+        }
 
 
-            var diff = DiffExtras(f8Extras, liveExtras);
+
+        /// <summary>
+
+        /// F8 embed vs authoritative extras at capture time; benign metadata fill-in is ignored.
+
+        /// </summary>
+
+        public static string DescribeCaptureTimeStaleDrift(
+
+            Dictionary<string, string> f8Extras,
+
+            Dictionary<string, string> authoritativeExtras,
+
+            StaleF8Context ctx
+
+        )
+
+        {
+
+            if (f8Extras == null || authoritativeExtras == null)
+
+                return null;
+
+
+
+            var diff = DiffExtras(f8Extras, authoritativeExtras);
 
             if (IsBenignCaptureTimeDrift(diff, ctx))
 
-                return;
+                return null;
 
-            var workflow = DescribeStaleF8WorkflowDrift(diff, ctx);
 
-            if (!string.IsNullOrEmpty(workflow))
 
-                MelonLoader.MelonLogger.Warning(workflow);
-
-            if (includeBicycleDrift)
-
-            {
-
-                var bicycle = DescribeStaleF8BicycleDrift(diff, ctx);
-
-                if (!string.IsNullOrEmpty(bicycle))
-
-                    MelonLoader.MelonLogger.Warning(bicycle);
-
-            }
+            return DescribeStaleF8Extras(diff, ctx, f8Extras, authoritativeExtras);
 
         }
 
@@ -1967,7 +2451,9 @@ namespace CursedWordsSolverCompanion
 
             Dictionary<string, object> extrasDiff,
 
-            StaleF8Context ctx
+            StaleF8Context ctx,
+
+            bool scoreMatched = false
 
         )
 
@@ -1987,7 +2473,7 @@ namespace CursedWordsSolverCompanion
 
             foreach (var key in StaleF8IntKeys)
 
-                TryAddStaleIntDriftNote(extrasDiff, key, notes, requireSubmitHigher: true);
+                TryAddStaleIntDriftNote(extrasDiff, key, notes, requireSubmitHigher: true, scoreMatched: scoreMatched);
 
 
 
@@ -2005,7 +2491,9 @@ namespace CursedWordsSolverCompanion
 
             List<string> notes,
 
-            bool requireSubmitHigher
+            bool requireSubmitHigher,
+
+            bool scoreMatched = false
 
         )
 
@@ -2085,7 +2573,25 @@ namespace CursedWordsSolverCompanion
 
                 {
 
-                    if (!IsSameSubmitBicycleIncrement(extrasDiff, submitVal - f8Val))
+                    var delta = submitVal - f8Val;
+
+                    if (scoreMatched)
+
+                    {
+
+                        var perCard = RunStateExporter.TryGetBicyclePerCardRate();
+
+                        if (perCard <= 0)
+
+                            perCard = 1;
+
+                        if (delta > 0 && delta <= perCard && delta % perCard == 0)
+
+                            return;
+
+                    }
+
+                    if (!IsSameSubmitBicycleIncrement(extrasDiff, delta))
 
                         notes.Add(key + " f8=" + f8Val + " submit=" + submitVal);
 
@@ -2172,6 +2678,10 @@ namespace CursedWordsSolverCompanion
                     suited = fromSession;
 
             }
+
+
+
+            suited = ResolveBicycleSuitedForIncrement(delta, suited, perCard);
 
 
 
@@ -2580,13 +3090,208 @@ namespace CursedWordsSolverCompanion
             }
 
             catch
-
             {
-
                 return null;
+            }
+        }
 
+        /// <summary>
+        /// True when actual Bicycle word bonus exceeds F8 prediction (preview pin drift).
+        /// </summary>
+        public static string DescribeBicycleTraceStaleDrift(
+            LastSuggestion suggestion,
+            List<Dictionary<string, object>> actualTrace,
+            Dictionary<string, object> extrasDiff,
+            StaleF8Context ctx,
+            Dictionary<string, string> f8Extras = null,
+            Dictionary<string, string> submitExtras = null
+        )
+        {
+            if (suggestion == null || ctx == null || !ctx.HasBicyclePin)
+                return "";
+
+            var predictedBonus = TryExtractPredictedBicycleWordBonus(suggestion);
+            var actualBonus = TryExtractActualBicycleWordBonus(actualTrace);
+            if (predictedBonus < 0 || actualBonus < 0 || actualBonus <= predictedBonus)
+                return "";
+
+            var delta = actualBonus - predictedBonus;
+            if (IsSameSubmitBicycleIncrement(extrasDiff, delta))
+                return "";
+
+            var perCard = RunStateExporter.TryGetBicyclePerCardRate();
+            if (perCard <= 0)
+                perCard = 1;
+
+            if (
+                TryResolveSubmitBicycleWordBonus(
+                    f8Extras,
+                    submitExtras,
+                    extrasDiff,
+                    predictedBonus,
+                    perCard,
+                    out var expectedSubmitBonus
+                )
+                && actualBonus == expectedSubmitBonus
+            )
+                return "";
+
+            return (
+                "F8 bicycle stale — predicted "
+                + predictedBonus
+                + " word bonus, game applied "
+                + actualBonus
+                + " (re-run F8 after preview/hover)"
+            );
+        }
+
+        private static bool TryResolveSubmitBicycleWordBonus(
+            Dictionary<string, string> f8Extras,
+            Dictionary<string, string> submitExtras,
+            Dictionary<string, object> extrasDiff,
+            int predictedBonus,
+            int perCard,
+            out int bonus
+        )
+        {
+            bonus = -1;
+            if (submitExtras != null)
+            {
+                string raw;
+                if (
+                    submitExtras.TryGetValue("bicycle_word_score_bonus", out raw)
+                    || submitExtras.TryGetValue("cards_submitted", out raw)
+                )
+                {
+                    if (int.TryParse(raw ?? "", out bonus) && bonus >= 0)
+                        return true;
+                }
             }
 
+            var suitedSubmit = 0;
+            if (extrasDiff != null)
+            {
+                object raw;
+                if (extrasDiff.TryGetValue("bicycle_suited_on_path", out raw))
+                {
+                    var entry = raw as Dictionary<string, string>;
+                    string submitRaw;
+                    if (entry != null && entry.TryGetValue("submit", out submitRaw))
+                        int.TryParse(submitRaw ?? "", out suitedSubmit);
+                }
+            }
+            if (suitedSubmit <= 0 && submitExtras != null)
+            {
+                string suitedRaw;
+                if (submitExtras.TryGetValue("bicycle_suited_on_path", out suitedRaw))
+                    int.TryParse(suitedRaw ?? "", out suitedSubmit);
+            }
+            if (suitedSubmit <= 0)
+            {
+                var fromSession = ScoringCaptureSession.TryGetLastSubmitBicycleSuitedCount();
+                if (fromSession > 0)
+                    suitedSubmit = fromSession;
+            }
+            if (suitedSubmit <= 0)
+                return false;
+
+            var f8Suited = 0;
+            if (f8Extras != null)
+            {
+                string suitedRaw;
+                if (f8Extras.TryGetValue("bicycle_suited_on_path", out suitedRaw))
+                    int.TryParse(suitedRaw ?? "", out f8Suited);
+            }
+            if (f8Suited <= 0 && predictedBonus > 0 && perCard > 0)
+            {
+                var pinAcc = TryParseF8BicyclePinAcc(f8Extras);
+                if (pinAcc >= 0)
+                    f8Suited = (predictedBonus - pinAcc) / perCard;
+            }
+
+            var f8Acc = predictedBonus - f8Suited * perCard;
+            if (f8Acc < 0)
+                return false;
+
+            bonus = f8Acc + suitedSubmit * perCard;
+            return bonus >= 0;
+        }
+
+        private static int TryParseF8BicyclePinAcc(Dictionary<string, string> f8Extras)
+        {
+            if (f8Extras == null)
+                return -1;
+            string raw;
+            if (!f8Extras.TryGetValue("bicycle_word_score_bonus", out raw)
+                && !f8Extras.TryGetValue("cards_submitted", out raw))
+                return -1;
+            if (!int.TryParse(raw ?? "", out var fullBonus) || fullBonus < 0)
+                return -1;
+
+            var perCard = RunStateExporter.TryGetBicyclePerCardRate();
+            if (perCard <= 0)
+                perCard = 1;
+
+            var f8Suited = 0;
+            if (f8Extras.TryGetValue("bicycle_suited_on_path", out raw))
+                int.TryParse(raw ?? "", out f8Suited);
+
+            if (f8Suited > 0)
+                return fullBonus - f8Suited * perCard;
+
+            return -1;
+        }
+
+        private static int TryExtractPredictedBicycleWordBonus(LastSuggestion suggestion)
+        {
+            try
+            {
+                var trace = suggestion.predicted_trace as JArray;
+                if (trace == null)
+                    return -1;
+                foreach (var step in trace)
+                {
+                    if (step == null || step.Type != JTokenType.Object)
+                        continue;
+                    var ruleId = (step["rule_id"]?.ToString() ?? "").ToLowerInvariant();
+                    var gameClass = (step["game_class"]?.ToString() ?? "").ToLowerInvariant();
+                    if (
+                        ruleId != "bicycle"
+                        && ruleId != "cards_submitted_word_bonus"
+                        && gameClass != "bicycle"
+                    )
+                        continue;
+                    if (step["word_score"] != null && int.TryParse(step["word_score"].ToString(), out var ws))
+                        return ws;
+                }
+            }
+            catch
+            {
+                // optional
+            }
+            return -1;
+        }
+
+        private static int TryExtractActualBicycleWordBonus(
+            List<Dictionary<string, object>> actualTrace
+        )
+        {
+            if (actualTrace == null)
+                return -1;
+            foreach (var step in actualTrace)
+            {
+                if (step == null)
+                    continue;
+                var itemId = (step.TryGetValue("item_id", out var rawId) ? rawId?.ToString() : "")
+                    ?? "";
+                if (!string.Equals(itemId, "bicycle", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (step.TryGetValue("word_bonus", out var rawBonus)
+                    && int.TryParse(rawBonus?.ToString(), out var bonus)
+                    && bonus >= 0)
+                    return bonus;
+            }
+            return -1;
         }
 
     }

@@ -107,6 +107,14 @@ BOSS_RECONCILE_EXTRA_KEYS = (
     "boss_floor_modification",
 )
 
+FINALE_BOSS_EMBED_KEYS = (
+    "michael_phase",
+    "michael_min_word_length",
+    "encounter_min_word_length",
+    "michael_finale_probe",
+    "michael_summoned_bosses_defeated",
+)
+
 
 def _boss_modifiers_active(raw: Any) -> bool:
     if raw is None:
@@ -277,6 +285,8 @@ def prepare_run_state_dict_for_scoring(data: dict[str, Any]) -> dict[str, Any]:
             run_state["extras"],
             board=board,
         )
+        loadout = parse_run_state(run_state)
+        align_bicycle_extras_from_fingerprint(run_state["extras"], loadout)
     return run_state
 
 
@@ -972,6 +982,7 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
         "rare_item_count",
         "rare_item_count_last_known",
         "fairy_count",
+        "cursed_bosses_defeated_count",
         "animal_stamp_count",
         "money_lost_encounter",
         "grids_total",
@@ -2230,6 +2241,7 @@ def align_embed_with_scoring_loadout(
             "scoring_previous_words_count",
             "encounter_historic_source",
             "red_tiles_used_encounter",
+            "mutating_dna_letter_counts",
         }
     )
     for key in F8_EMBED_WORKFLOW_EXTRA_KEYS:
@@ -2238,13 +2250,6 @@ def align_embed_with_scoring_loadout(
         val = reconciled.get(key)
         if val is None or str(val).strip() == "":
             continue
-        if key == "mutating_dna_letter_counts":
-            text = str(val).strip()
-            if text in ("{}", "[]"):
-                continue
-            embed_dna = str(extras.get(key, "") or "").strip()
-            if embed_dna and embed_dna not in ("", "{}", "[]") and text in ("{}", "[]"):
-                continue
         extras[key] = str(val) if not isinstance(val, str) else val
 
 
@@ -2417,8 +2422,7 @@ def sanitize_run_state_snapshot_for_f8(
     if not _is_bicycle_pin(loadout):
         extras.pop("bicycle_word_score_bonus", None)
         extras.pop("cards_submitted", None)
-
-    extras.pop("bicycle_suited_on_path", None)
+        extras.pop("bicycle_suited_on_path", None)
 
     if not _has_mutating_dna_stamp(loadout):
         extras.pop("mutating_dna_letter_counts", None)
@@ -2449,8 +2453,26 @@ def sanitize_run_state_snapshot_for_f8(
 
     extras["loadout_fingerprint"] = _loadout_fp(loadout)
     reconcile_boss_extras_for_f8_embed(snapshot)
+    _strip_finale_boss_embed_for_non_boss_node(snapshot)
     snapshot["extras"] = extras
     return snapshot
+
+
+def _strip_finale_boss_embed_for_non_boss_node(run_state: dict[str, Any]) -> None:
+    """Drop Michael finale boss metadata when F8 embed is not on a boss node."""
+    if not isinstance(run_state, dict):
+        return
+    extras = run_state.get("extras")
+    if not isinstance(extras, dict):
+        return
+    node = str(extras.get("run_node_type") or "").strip().lower()
+    if "boss" in node:
+        return
+    for key in BOSS_RECONCILE_EXTRA_KEYS + FINALE_BOSS_EMBED_KEYS:
+        extras.pop(key, None)
+    run_state["boss_id"] = ""
+    run_state["boss_name"] = ""
+    run_state["boss_effect"] = ""
 
 
 def loadout_fingerprint_stale_warning(
@@ -2471,6 +2493,31 @@ def loadout_fingerprint_stale_warning(
         "run_state loadout_fingerprint disagrees with parsed loadout "
         f"({exported} vs {computed}) — press F8 again."
     )
+
+
+def align_bicycle_extras_from_fingerprint(
+    extras: dict[str, Any],
+    loadout: Loadout,
+    *,
+    export_fingerprint: str | None = None,
+) -> None:
+    """Prefer live pin acc from melmod loadout_fingerprint over lagging export fields."""
+    if not isinstance(extras, dict) or not _is_bicycle_pin(loadout):
+        return
+    from cursed_words_solver.rules.scoring_conditions import (
+        bicycle_pin_accumulator_from_fingerprint,
+    )
+
+    fp = str(export_fingerprint or "").strip()
+    if not fp:
+        fp = str(extras.get("loadout_fingerprint", "") or "").strip()
+    if not fp and isinstance(loadout.extras, dict):
+        fp = str(loadout.extras.get("loadout_fingerprint", "") or "").strip()
+    pin_acc = bicycle_pin_accumulator_from_fingerprint(fp)
+    if pin_acc is None:
+        return
+    extras["bicycle_word_score_bonus"] = str(pin_acc)
+    extras["cards_submitted"] = str(pin_acc)
 
 
 def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:

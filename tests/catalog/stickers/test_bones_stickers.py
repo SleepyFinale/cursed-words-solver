@@ -142,8 +142,8 @@ def test_celestial_body_card_tile_bonus_level2():
     assert score == base + 40
 
 
-def test_celestial_body_l2_solitary_endpoint_d_no_bonus():
-    """L2: duplicate suited E get +20; solitary suited D at path end does not (coalesced)."""
+def test_celestial_body_l2_solitary_endpoint_d_gets_bonus():
+    """L2: every suited path tile gets +20 (game GetSuit() != 0)."""
     board = _empty_board()
     board.tiles[4][3] = _letter_card(4, 3, "E", "clubs", 1)
     board.tiles[3][3] = _letter(3, 3, "O", 1)
@@ -163,13 +163,13 @@ def test_celestial_body_l2_solitary_endpoint_d_no_bonus():
     base, base_bd = pipeline.score(board, path, "coalesced", Loadout())
     tiles = bd["pipeline"]["tile_scores"]
     base_tiles = base_bd["pipeline"]["tile_scores"]
-    assert tiles[-1] == base_tiles[-1]
-    assert sum(tiles) == sum(base_tiles) + 60
-    assert score == base + 60
+    assert tiles[-1] == base_tiles[-1] + 20
+    assert sum(tiles) == sum(base_tiles) + 80
+    assert score == base + 80
 
 
 def test_celestial_body_duplicate_rank_only_last_gets_bonus():
-    """Duplicate D letters: last suited D (+10); poker T and value-3 M also qualify."""
+    """L1: every suited path tile gets +10 (game GetSuit() != 0)."""
     board = _empty_board()
     board.tiles[0][0] = Tile(
         row=0, col=0, char="D", letter="D", base_score=2, curse=CurseType.LETTER,
@@ -195,12 +195,12 @@ def test_celestial_body_duplicate_rank_only_last_gets_bonus():
     )
     score, bd = pipeline.score(board, path, "dotdm", loadout)
     base, base_bd = pipeline.score(board, path, "dotdm", Loadout())
-    assert sum(bd["pipeline"]["tile_scores"]) == sum(base_bd["pipeline"]["tile_scores"]) + 30
-    assert bd["pipeline"]["tile_scores"][0] == base_bd["pipeline"]["tile_scores"][0]
+    assert sum(bd["pipeline"]["tile_scores"]) == sum(base_bd["pipeline"]["tile_scores"]) + 40
+    assert bd["pipeline"]["tile_scores"][0] == base_bd["pipeline"]["tile_scores"][0] + 10
     assert bd["pipeline"]["tile_scores"][3] == base_bd["pipeline"]["tile_scores"][3] + 10
     assert bd["pipeline"]["tile_scores"][2] == base_bd["pipeline"]["tile_scores"][2] + 10
     assert bd["pipeline"]["tile_scores"][4] == base_bd["pipeline"]["tile_scores"][4] + 10
-    assert score == base + 30
+    assert score == base + 40
 
 
 def test_celestial_body_bones_duplicate_zero_value_both_get_bonus():
@@ -290,8 +290,8 @@ def test_celestial_body_l1_high_value_non_poker_rank_gets_bonus():
     assert score == base + 10
 
 
-def test_celestial_body_l3_duplicate_letter_coalesce():
-    """First unsuited duplicate + last per suit; middle duplicate skipped (snash-style)."""
+def test_celestial_body_l3_duplicate_letter_all_suited():
+    """L3: every suited path tile gets +30 (game GetSuit() != 0)."""
     board = _empty_board()
     board.tiles[0][4] = _letter_card(0, 4, "A", "spades", 1)
     board.tiles[1][4] = _letter(1, 4, "N", 1)
@@ -477,7 +477,7 @@ def test_wrestlers_flush_all_suited_letter_endpoints():
 
 
 def test_wrestlers_bones_rank_letter_endpoints_mismatch_value():
-    """D/I suited ends with different tile values do not trigger Wrestlers (dooses)."""
+    """Suited D/I path endpoints on different suits trigger Wrestlers (game endpoint check)."""
     board = _empty_board()
     board.tiles[2][3] = _letter_card(2, 3, "D", "diamonds", 2)
     board.tiles[0][1] = _letter(0, 1, "A", 1)
@@ -487,12 +487,12 @@ def test_wrestlers_bones_rank_letter_endpoints_mismatch_value():
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=1)])
     score, bd = pipeline.score(board, path, "dai", loadout)
     base, _ = pipeline.score(board, path, "dai", Loadout())
-    assert bd["multiplier"] == 1.0
-    assert score == base
+    assert bd["multiplier"] == 1.5
+    assert score == int(base * 1.5)
 
 
 def test_wrestlers_first_last_suited_not_path_endpoints():
-    """Unsuited path ends; first/last suited share letter on different suits (diatheses-style)."""
+    """Unsuited path ends do not proc Wrestlers even when inner tiles are suited."""
     board = _empty_board()
     board.tiles[0][0] = _letter(0, 0, "T", 1)
     board.tiles[0][1] = _letter(0, 1, "I", 1)
@@ -504,8 +504,8 @@ def test_wrestlers_first_last_suited_not_path_endpoints():
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=1)])
     score, bd = pipeline.score(board, path, "tille", loadout)
     base, _ = pipeline.score(board, path, "tille", Loadout())
-    assert bd["multiplier"] == 1.5
-    assert score == int(base * 1.5)
+    assert bd["multiplier"] == 1.0
+    assert score == base
 
 
 def test_wrestlers_unsuited_path_end_different_letter_suited_no_mult():
@@ -590,7 +590,7 @@ def test_wrestlers_long_path_one_suited_endpoint_no_mult():
 
 
 def test_celestial_body_l3_last_suited_single_letter():
-    """L3: path-end suited tile and rank-I singleton get +30."""
+    """L3: every suited path tile gets +30."""
     board = _empty_board()
     board.tiles[0][4] = _letter(0, 4, "Y", 4)
     board.tiles[1][3] = _letter(1, 3, "E", 1)
@@ -612,7 +612,7 @@ def test_celestial_body_l3_last_suited_single_letter():
 
 
 def test_celestial_body_l3_mid_path_last_suited_low_card():
-    """klongs-style: suited L/N mid-path (last suited, not path end) get +30 at L3."""
+    """L3: every suited path tile gets +30."""
     board = _empty_board()
     board.tiles[3][1] = _letter_card(3, 1, "K", "clubs", 5)
     board.tiles[2][2] = _letter_card(2, 2, "L", "spades", 1)
@@ -634,7 +634,7 @@ def test_celestial_body_l3_mid_path_last_suited_low_card():
 
 
 def test_celestial_body_l3_base2_suited_path_end():
-    """jabbed-style: suited D at path end (base 2) gets +30 at L3."""
+    """L3: every suited path tile gets +30."""
     board = _empty_board()
     board.tiles[1][3] = _letter_card(1, 3, "J", "hearts", 8)
     board.tiles[1][4] = _letter(1, 4, "A", 1)
@@ -651,12 +651,11 @@ def test_celestial_body_l3_base2_suited_path_end():
     base, base_bd = pipeline.score(board, path, "jabbed", Loadout())
     tiles = bd["pipeline"]["tile_scores"]
     assert tiles == [38.0, 1.0, 3.0, 33.0, 1.0, 32.0]
-    assert tiles[-1] == base_bd["pipeline"]["tile_scores"][-1] + 30
     assert sum(tiles) == sum(base_bd["pipeline"]["tile_scores"]) + 90
 
 
 def test_celestial_body_l3_path_start_last_suited_low_cards():
-    """togging-style: suited T/O at path start (last suited, not path end) get +30 at L3."""
+    """L3: every suited path tile gets +30."""
     board = _empty_board()
     board.tiles[1][3] = _letter_card(1, 3, "T", "clubs", 1)
     board.tiles[2][3] = _letter_card(2, 3, "O", "clubs", 1)
@@ -788,8 +787,8 @@ def test_celestial_before_yellow_glasses_with_bicycle_pin():
         pin_branch="left",
     )
     score, bd = pipeline.score(board, path, "dooses", loadout)
-    assert bd["multiplier"] == 1.5
-    assert score == 55.0
+    assert bd["multiplier"] == 2.25
+    assert score == 105.0
 
 
 def test_peas_of_a_pod_four_of_a_kind():

@@ -6772,6 +6772,12 @@ class WordSearcher:
                 and self.max_len > 8
             ):
                 caps = [8, self.max_len]
+            elif self.min_len > 3 and self.max_len > self.min_len:
+                caps = [self.min_len]
+                if self.min_len < 8 <= self.max_len:
+                    caps.append(8)
+                if self.max_len not in caps:
+                    caps.append(self.max_len)
             else:
                 caps = [self.max_len]
         elif chess_reserve > 0.0 and self.max_len > self.min_len:
@@ -6820,6 +6826,12 @@ class WordSearcher:
         main_dfs_floor = search_begin + self.time_budget * MAIN_DFS_FLOOR_FRAC
         if main_deadline < main_dfs_floor:
             main_deadline = main_dfs_floor
+        if use_parallel and self.min_len > 3 and self.max_len > self.min_len:
+            parallel_cap = search_begin + min(
+                self.time_budget * 0.45,
+                max(12.0, self.time_budget - 18.0),
+            )
+            main_deadline = min(main_deadline, parallel_cap)
         timing.reserve_scaling_applied = reserve_scaled
         timing.main_dfs_slice_sec = max(0.0, main_deadline - search_begin)
         pre_extend_deadline = deadline - extension_reserve if extension_reserve > 0 else deadline
@@ -7018,12 +7030,21 @@ class WordSearcher:
                 center_idx is not None
                 and not _candidate_heap_includes_index(candidates, center_idx)
             )
+            shallow_parallel_heap = (
+                use_parallel
+                and candidates
+                and self.max_len >= 5
+                and joker_count >= 2
+                and (loadout.stickers or loadout.stamps)
+                and candidates.all_paths_max_len(3)
+            )
             needs_serial_fallback = use_parallel and (
                 not parallel_dfs_viable
                 or not candidates
                 or timing.letter_dfs_added == 0
                 or candidates.all_paths_max_len(1)
                 or center_missing
+                or shallow_parallel_heap
             )
             if standard_search and needs_serial_fallback:
                 timing.parallel_serial_fallback = True
@@ -7065,6 +7086,8 @@ class WordSearcher:
                             time.monotonic()
                             + max(0.0, remaining - post_dfs_budget),
                         )
+                    if time.monotonic() >= fallback_deadline:
+                        fallback_deadline = deadline
                     fallback_starts = letter_starts
                 try:
                     for i, cap in enumerate(fallback_caps):
