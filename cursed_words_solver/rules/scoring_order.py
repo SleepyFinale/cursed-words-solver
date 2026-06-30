@@ -92,10 +92,8 @@ def _path_grid_item_refs(
         if not slug:
             continue
         _key, rule = get_rule(rules, "stickers", slug, slug)
-        bucket = "stickers"
         if not rule:
             _key, rule = get_rule(rules, "stamps", slug, slug)
-            bucket = "stamps"
         if not rule:
             continue
         rule_id = _key or slug
@@ -110,6 +108,71 @@ def _path_grid_item_refs(
                     board=board,
                     path=path,
                     path_tile_index=path_pos,
+                ),
+            )
+        )
+    return refs
+
+
+def encounter_grid_scatter_refs(
+    board: Board,
+    path: list[int],
+    rules: dict,
+    loadout: Loadout | None = None,
+) -> list[ScoringItemRef]:
+    """Scattered grid stickers not on the word path (game scores before pin)."""
+    from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
+
+    path_set = set(path)
+    path_slugs: set[str] = set()
+    for idx in path:
+        if not board.is_active_index(idx):
+            continue
+        tile = board.get_by_index(idx)
+        if tile.curse != CurseType.ITEM:
+            continue
+        slug = slugify_name(str((tile.metadata or {}).get("scattered_item_id") or ""))
+        if slug:
+            path_slugs.add(slug)
+
+    refs: list[ScoringItemRef] = []
+    seen_off_path: set[str] = set()
+    for tile in board.flat:
+        if not board.is_active_index(tile.index):
+            continue
+        if tile.index in path_set:
+            continue
+        if tile.curse != CurseType.ITEM:
+            continue
+        slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip()
+        if not slug:
+            continue
+        slug_norm = slugify_name(slug)
+        if slug_norm in path_slugs or slug_norm in seen_off_path:
+            continue
+        _key, rule = get_rule(rules, "stickers", slug, slug)
+        if not rule:
+            _key, rule = get_rule(rules, "stamps", slug, slug)
+        if not rule or rule.get("type") in (
+            "unmodeled",
+            "custom",
+            "scatter_start_grid",
+            "scatter_start_encounter",
+        ):
+            continue
+        rule_id = _key or slug
+        seen_off_path.add(slug_norm)
+        refs.append(
+            ScoringItemRef(
+                kind="grid_path",
+                item=None,
+                rule_id=rule_id,
+                level=grid_path_sticker_level(
+                    loadout,
+                    rule_id,
+                    board=board,
+                    path=path,
+                    scatter_tile_index=tile.index,
                 ),
             )
         )

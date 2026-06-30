@@ -1323,7 +1323,33 @@ namespace CursedWordsSolverCompanion
             string letter
         )
         {
-            if (color != "void" || curse != "letter")
+            if (curse != "letter")
+                return null;
+
+            if (color == "colorless")
+            {
+                try
+                {
+                    var packet = tile.GetValue();
+                    if (packet != null)
+                    {
+                        var face = ScrabbleFaceValue(letter);
+                        if (packet.Score < face)
+                        {
+                            var steps = (face - (int)Math.Round(packet.Score) + 9) / 10;
+                            if (steps >= 1)
+                                return steps;
+                        }
+                    }
+                }
+                catch
+                {
+                    // optional
+                }
+                return null;
+            }
+
+            if (color != "void")
                 return null;
 
             var face = ScrabbleFaceValue(letter);
@@ -1598,8 +1624,8 @@ namespace CursedWordsSolverCompanion
                 var packet = tile.GetValue();
                 if (packet != null)
                 {
-                    // VOID letters keep signed packet.Score for void_penalty_steps inference.
-                    if (color == "void" && curse == "letter")
+                    // VOID letters and colorless void-generation letters keep signed packet.Score.
+                    if (curse == "letter" && (color == "void" || color == "colorless"))
                         return packet.Score;
                     // Keep full packet.Score (can exceed 10 after colour/manipulator bonuses).
                     return Math.Max(0, packet.Score);

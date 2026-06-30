@@ -14,6 +14,7 @@ from cursed_words_solver.models import (
     Board,
     CurseType,
     Loadout,
+    LoadoutItem,
     Tile,
     TileColor,
     normalize_tile_glyph,
@@ -1730,6 +1731,24 @@ def _dusty_coffin_scatter_tile_on_path(
     return None
 
 
+def _dusty_coffin_scatter_tile_off_path(
+    board: Board, path: list[int] | None
+) -> Tile | None:
+    """Scattered Dusty Coffin on the grid but not on the word path."""
+    path_set = set(path or [])
+    for tile in board.flat:
+        if not board.is_active_index(tile.index):
+            continue
+        if tile.index in path_set:
+            continue
+        if tile.curse != CurseType.ITEM:
+            continue
+        slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
+        if slug == "dusty_coffin":
+            return tile
+    return None
+
+
 def _dusty_coffin_equipped_in_loadout(loadout: Loadout | None) -> bool:
     if loadout is None or not loadout.stickers:
         return False
@@ -1770,6 +1789,21 @@ def dusty_coffin_void_units(
                 except (TypeError, ValueError):
                     pass
     off_path_count = void_tiles_letter_not_in_word(board, word, path=path)
+    scatter_tile = (
+        _dusty_coffin_scatter_tile_on_path(board, path)
+        if path is not None
+        else None
+    )
+    if from_grid_scatter and scatter_tile is None and path is not None:
+        scatter_tile = _dusty_coffin_scatter_tile_off_path(board, path)
+    if (
+        from_grid_scatter
+        and scatter_tile is not None
+        and scatter_tile.color == TileColor.COLORLESS
+        and not _dusty_coffin_equipped_in_loadout(loadout)
+        and dusty_coffin_scattered_on_path(board, path) is False
+    ):
+        return void_tiles_letter_not_in_word(board, word)
     if (
         not from_grid_scatter
         and applying == "dusty_coffin"
@@ -1777,11 +1811,6 @@ def dusty_coffin_void_units(
         and path is not None
     ):
         return max(0, off_path_count * 2)
-    scatter_tile = (
-        _dusty_coffin_scatter_tile_on_path(board, path)
-        if path is not None
-        else None
-    )
     eq_dusty = _equipped_sticker_level_for_slug(loadout, "dusty_coffin")
     scatter_tier = scattered_grid_item_level(loadout)
     if (
@@ -1976,8 +2005,27 @@ def dusty_coffin_word_score_level(
             if board is not None and path is not None
             else None
         )
+        if scatter_tile is None and board is not None:
+            scatter_tile = _dusty_coffin_scatter_tile_off_path(board, path)
         if scatter_tile is not None and scatter_tile.color == TileColor.VOID:
             return 1
+        if (
+            scatter_tile is not None
+            and scatter_tile.color == TileColor.COLORLESS
+            and eq is None
+            and loadout is not None
+        ):
+            mods = _active_boss_modifier_slugs(loadout)
+            if mods and all(m in _SCATTER_TIER_IGNORE_FLOOR_BOSSES for m in mods):
+                extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+                raw_floor = extras.get("boss_floor_modification")
+                if raw_floor not in (None, ""):
+                    try:
+                        floor = max(0, int(raw_floor))
+                        grid = grid_number(loadout) or 1
+                        return max(1, max(1, grid - floor) + 1)
+                    except (TypeError, ValueError):
+                        pass
         if (
             scatter_tile is not None
             and scatter_tile.color == TileColor.COLORLESS
@@ -4782,6 +4830,38 @@ def grid_path_encounter_level(loadout: Loadout | None) -> int:
     return scattered_grid_item_level(loadout)
 
 
+def _tombstone_export_is_inventory_bleed(
+    exported: int,
+    equipped: int | None,
+    encounter_level: int,
+) -> bool:
+    """Melmod void Tombstone export tier includes equipped bleed, not score tier."""
+    if equipped is None or equipped < 1:
+        return False
+    return exported > equipped + max(1, encounter_level)
+
+
+def tombstone_inventory_scoring_level(
+    sticker: LoadoutItem,
+    loadout: Loadout | None,
+    board: Board | None,
+    *,
+    base_level: int | None = None,
+) -> int:
+    """Equipped Tombstone level when a grid scatter Tombstone is on the board."""
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    level = max(1, int(base_level if base_level is not None else sticker.level))
+    if (
+        board is not None
+        and "tombstone" in grid_scatter_sticker_slugs(board)
+        and level > 1
+    ):
+        return 1
+    del loadout, slugify_name
+    return level
+
+
 def _tombstone_uses_grid_encounter_level(
     board: Board, path: list[int], loadout: Loadout | None
 ) -> bool:
@@ -5351,9 +5431,20 @@ def _level_from_exported_scatter_tier(
     """Map melmod scattered_item_level to scoring tier on a grid-path tile."""
     if floor_mod_capped and is_grid_path_tile:
         return encounter_level
-    if is_grid_path_tile and slug_norm in ("dusty_coffin", "tombstone"):
+    if is_grid_path_tile and slug_norm == "dusty_coffin":
+        return tile_lv
+    if is_grid_path_tile and slug_norm == "tombstone":
+        equipped = _equipped_sticker_level_for_slug(loadout, slug_norm)
+        if equipped is not None and _tombstone_export_is_inventory_bleed(
+            tile_lv, equipped, encounter_level
+        ):
+            return encounter_level
         return tile_lv
     equipped = _equipped_sticker_level_for_slug(loadout, slug_norm)
+    if slug_norm == "tombstone" and equipped is not None and _tombstone_export_is_inventory_bleed(
+        tile_lv, equipped, encounter_level
+    ):
+        return encounter_level
     if equipped is None:
         return tile_lv
     if tile_lv >= equipped:
@@ -5370,6 +5461,7 @@ def grid_path_sticker_level(
     board: Board | None = None,
     path: list[int] | None = None,
     path_tile_index: int | None = None,
+    scatter_tile_index: int | None = None,
 ) -> int:
     """Sticker level when a rule fires from a scattered tile on the path.
 
@@ -5430,6 +5522,31 @@ def grid_path_sticker_level(
                     )
                 except (TypeError, ValueError):
                     pass
+    elif (
+        board is not None
+        and scatter_tile_index is not None
+        and board.is_active_index(scatter_tile_index)
+    ):
+        tile = board.get_by_index(scatter_tile_index)
+        is_grid_path_tile = bool(
+            str((tile.metadata or {}).get("scattered_item_id") or "").strip()
+        )
+        raw = (tile.metadata or {}).get("scattered_item_level")
+        if raw is not None:
+            try:
+                tile_lv = max(1, int(raw))
+                tile_level_known = True
+                exported_tile_level = tile_lv
+                level = _level_from_exported_scatter_tier(
+                    tile_lv,
+                    encounter_level,
+                    loadout,
+                    slug_norm,
+                    floor_mod_capped=floor_mod_capped,
+                    is_grid_path_tile=is_grid_path_tile,
+                )
+            except (TypeError, ValueError):
+                pass
 
     if not tile_level_known and loadout is not None:
         extras_level = _grid_scattered_level_from_extras(
@@ -5499,44 +5616,15 @@ def grid_path_sticker_level(
         return max(2, grid_path_encounter_level(loadout))
     if (
         slug_norm == "tombstone"
-        and board is not None
-        and path is not None
-        and path_tile_index is not None
-        and 0 <= path_tile_index < len(path)
+        and tile_level_known
+        and exported_tile_level is not None
         and loadout is not None
-        and is_grid_path_tile
     ):
-        tomb_tile = board.get_by_index(path[path_tile_index])
-        tomb_slug = str((tomb_tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
         eq_tomb = _equipped_sticker_level_for_slug(loadout, "tombstone")
-        if tomb_slug == "tombstone" and eq_tomb is not None and eq_tomb >= 1:
-            base_lv = max(1, exported_tile_level if exported_tile_level is not None else level)
-            if tomb_tile.color == TileColor.VOID:
-                if base_lv > eq_tomb:
-                    if (
-                        floor_mod_capped
-                        and exported_tile_level is not None
-                        and exported_tile_level > encounter_level
-                    ):
-                        level = max(level, eq_tomb)
-                    else:
-                        level = max(level, base_lv)
-                elif base_lv < eq_tomb:
-                    level = max(level, base_lv + eq_tomb)
-                else:
-                    if base_lv == 1 and eq_tomb == 1:
-                        level = max(level, base_lv + eq_tomb)
-                    else:
-                        level = max(level, base_lv)
-            elif (
-                tile_level_known
-                and exported_tile_level is not None
-                and (
-                    exported_tile_level < eq_tomb
-                    or (exported_tile_level == 1 and eq_tomb == 1)
-                )
-            ):
-                level = max(level, exported_tile_level + eq_tomb)
+        if _tombstone_export_is_inventory_bleed(
+            exported_tile_level, eq_tomb, encounter_level
+        ):
+            level = max(level, encounter_level)
     if (
         loadout is not None
         and boss_modifier_active(loadout, "badger")

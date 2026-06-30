@@ -43,6 +43,7 @@ from cursed_words_solver.f8_snapshot import (
     F8SuggestionSession,
     catchup_historic_gather_after_search,
     embed_f8_snapshot,
+    f8_embed_replay_score,
     gather_f8_snapshot,
     historic_words_gather_pending,
     historic_workflow_catchup_needed,
@@ -2255,12 +2256,32 @@ class SolverApp:
                 embed_state = embed_f8_snapshot(
                     snapshot,
                     scoring_loadout=score_loadout,
+                    scoring_board=search_board,
                     fresh_run_state=(
                         fresh_embed_run_state
                         if isinstance(fresh_embed_run_state, dict)
                         else score_run_state
                     ),
                 )
+                embed_replay_mismatch = False
+                if (
+                    isinstance(embed_state, dict)
+                    and capybara_stats is None
+                    and score_word
+                ):
+                    replay_score = f8_embed_replay_score(
+                        embed_state,
+                        path=list(top.path),
+                        word=score_word,
+                        loadout=score_loadout,
+                        pipeline=self._scoring,
+                    )
+                    if replay_score is not None and int(replay_score) != int(pred_score):
+                        embed_replay_mismatch = True
+                        export_warnings = list(export_warnings) + [
+                            f"F8 embed replay mismatch: predicted {int(pred_score)} "
+                            f"vs embed replay {replay_score}"
+                        ]
                 f8_extras = (
                     embed_state.get("extras")
                     if isinstance(embed_state, dict)
@@ -2344,6 +2365,9 @@ class SolverApp:
                     "extras_ready": snapshot.extras_ready,
                     "gather_missing": list(snapshot.gather_missing),
                 }
+                if not block_f8_save and embed_replay_mismatch:
+                    block_f8_save = True
+                    block_f8_reason = "embed_replay_mismatch"
                 if not block_f8_save:
                     save_last_suggestion(
                         board=search_board,

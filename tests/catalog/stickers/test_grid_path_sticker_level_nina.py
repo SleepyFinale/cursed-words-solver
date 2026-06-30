@@ -207,6 +207,62 @@ def test_incave_session_capture_score() -> None:
     assert int(score) == 646
 
 
+def test_tombstone_bleed_export_scores_at_encounter_level() -> None:
+    """deepies: void Tombstone L4 export is inventory bleed; grid scatter scores at L1."""
+    data = _load("20260630_154233")
+    board = parse_board_from_run_state(data["run_state_snapshot"])
+    loadout = parse_run_state(data["run_state_snapshot"])
+    apply_snapshot_phased_session_extras(loadout, board)
+    path = data["path"]
+    path_pos = path.index(11)
+    level = grid_path_sticker_level(
+        loadout,
+        "tombstone",
+        board=board,
+        path=path,
+        path_tile_index=path_pos,
+    )
+    assert level == 1
+
+
+def test_dusty_wolf_off_path_grid_scatter_level_hoi() -> None:
+    data = _load("20260630_153156")
+    board = parse_board_from_run_state(data["run_state_snapshot"])
+    loadout = parse_run_state(data["run_state_snapshot"])
+    assert (
+        dusty_coffin_word_score_level(
+            loadout,
+            from_grid_scatter=True,
+            sticker_level=1,
+            board=board,
+            path=data["path"],
+        )
+        == 2
+    )
+    assert (
+        dusty_coffin_void_units(
+            board,
+            data["word"],
+            loadout,
+            applying_sticker_id="dusty_coffin",
+            path=data["path"],
+            from_grid_scatter=True,
+        )
+        == 8
+    )
+
+
+def test_off_path_tombstone_grid_ref_ynals() -> None:
+    from cursed_words_solver.rules.scoring_order import encounter_grid_scatter_refs
+
+    data = _load("20260630_152914")
+    board = parse_board_from_run_state(data["run_state_snapshot"])
+    loadout = parse_run_state(data["run_state_snapshot"])
+    rules = ScoringPipeline().rules
+    refs = encounter_grid_scatter_refs(board, data["path"], rules, loadout)
+    assert any(r.rule_id == "tombstone" for r in refs)
+
+
 def test_dusty_colorless_path_void_in_word_caps_units_incave() -> None:
     """incave: COLORLESS dusty on path + void letter in word caps grid/equipped units."""
     data = _load("20260629_150249")

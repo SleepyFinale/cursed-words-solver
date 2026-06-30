@@ -154,16 +154,14 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
-        /// Convert tile coordinates to solver path index (same as overlay / last_suggestion.json).
-        /// Game coords use display row (0 = top); solver index uses row 0 = top of overlay.
+        /// Convert Unity tile coordinates to melmod path index (same as last_suggestion.json).
+        /// GetCoordinates().y is bottom-origin (0 = bottom row); index is y * cols + col.
         /// </summary>
         public static int CoordsToSolverIndex(UnityEngine.Vector2Int coords, int cols = 5)
         {
             if (cols <= 0)
                 cols = 5;
-            var displayRow = coords.y;
-            var col = coords.x;
-            return (cols - 1 - displayRow) * cols + col;
+            return coords.y * cols + coords.x;
         }
 
         public static List<int> PathFromSelections(List<TileSelection> selections, int cols = 5)

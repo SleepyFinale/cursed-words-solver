@@ -2833,6 +2833,17 @@ namespace CursedWordsSolverCompanion
         private static string SerializeHistoricWords(List<HistoricWord> words, Player player)
         {
             var takeLimit = TryGetMovieCameraTakeLimit(player);
+            var pathCols = 5;
+            try
+            {
+                var board = BoardExporter.TryBuild(player);
+                if (board != null && board.cols > 0)
+                    pathCols = board.cols;
+            }
+            catch
+            {
+                // optional
+            }
             var rows = new List<Dictionary<string, object>>();
             foreach (var hw in words)
             {
@@ -2871,7 +2882,7 @@ namespace CursedWordsSolverCompanion
                             if (sel?.SelectedTile == null)
                                 continue;
                             var coords = sel.SelectedTile.GetCoordinates();
-                            path.Add(coords.y * 5 + coords.x);
+                            path.Add(SuggestionMatcher.CoordsToSolverIndex(coords, pathCols));
                         }
                     }
                 }

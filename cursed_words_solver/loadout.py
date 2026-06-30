@@ -667,6 +667,173 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
     )
 
 
+def _solver_row_to_melmod(board_data: dict[str, Any], solver_row: int, storage: int) -> int:
+    """Inverse of _melmod_row_to_solver for embedding scored boards."""
+    if board_data.get("row_order") == "top_first":
+        return solver_row
+    return (storage - 1) - solver_row
+
+
+def _tile_curse_key(tile: Tile, *, active: bool) -> str:
+    if not active:
+        return "inactive"
+    curse = tile.curse
+    if curse == CurseType.WILDCARD:
+        return "wildcard"
+    if curse == CurseType.BLANK:
+        return "wildcard"
+    if curse == CurseType.CURRENCY:
+        return "currency"
+    if curse == CurseType.NUMBER:
+        return "number"
+    if curse == CurseType.FRACTION:
+        return "fraction"
+    if curse == CurseType.ITEM:
+        return "item"
+    if curse == CurseType.CARD:
+        return "card"
+    if curse == CurseType.ARROW:
+        return "arrow"
+    if curse in (
+        CurseType.CHESS_PAWN,
+        CurseType.CHESS_BISHOP,
+        CurseType.CHESS_ROOK,
+        CurseType.CHESS_KNIGHT,
+        CurseType.CHESS_QUEEN,
+        CurseType.CHESS_KING,
+    ):
+        return curse.value
+    return "letter"
+
+
+def board_tile_to_melmod_dict(
+    tile: Tile,
+    *,
+    board_data: dict[str, Any],
+    storage: int,
+    active: bool,
+) -> dict[str, Any]:
+    """Serialize one solver Tile to melmod board export shape."""
+    game_row = _solver_row_to_melmod(board_data, tile.row, storage)
+    entry: dict[str, Any] = {
+        "row": game_row,
+        "col": tile.col,
+        "active": bool(active),
+    }
+    if not active:
+        entry.update(
+            {
+                "char_display": "",
+                "char": "",
+                "letter": "",
+                "base_score": 0,
+                "color": "colorless",
+                "curse": "inactive",
+            }
+        )
+        return entry
+
+    meta = tile.metadata or {}
+    curse_key = _tile_curse_key(tile, active=True)
+    color_key = tile.color.value if tile.color != TileColor.UNKNOWN else "unknown"
+    char_display = str(tile.char or tile.letter or "?")
+    letter = str(tile.letter or tile.char or "?")
+    entry.update(
+        {
+            "char_display": char_display,
+            "char": char_display,
+            "letter": letter,
+            "base_score": float(tile.base_score),
+            "color": color_key,
+            "curse": curse_key,
+        }
+    )
+    if meta.get("is_joker"):
+        entry["is_joker"] = True
+    if meta.get("consumable"):
+        entry["consumable"] = True
+    if meta.get("was_consumable"):
+        entry["was_consumable"] = True
+    if meta.get("take"):
+        entry["take"] = True
+    if meta.get("was_glitch"):
+        entry["was_glitch"] = True
+    if meta.get("is_crossed_out"):
+        entry["is_crossed_out"] = True
+    if meta.get("is_up_and_up_center"):
+        entry["is_up_and_up_center"] = True
+    if meta.get("chess_color"):
+        entry["chess_color"] = meta["chess_color"]
+    if meta.get("card_suit"):
+        entry["card_suit"] = meta["card_suit"]
+    if meta.get("card_rank"):
+        entry["card_rank"] = meta["card_rank"]
+    if tile.number_value is not None:
+        entry["number_value"] = tile.number_value
+    if tile.fraction_value is not None:
+        entry["fraction_value"] = tile.fraction_value
+    if meta.get("cactus_growth") is not None:
+        entry["cactus_growth"] = meta["cactus_growth"]
+    scattered = meta.get("scattered_item_id")
+    if scattered:
+        entry["scattered_item_id"] = str(scattered)
+    scattered_level = meta.get("scattered_item_level")
+    if scattered_level is not None:
+        try:
+            entry["scattered_item_level"] = max(1, int(scattered_level))
+        except (TypeError, ValueError):
+            pass
+    void_steps = meta.get("void_penalty_steps")
+    if void_steps is not None:
+        try:
+            entry["void_penalty_steps"] = int(void_steps)
+        except (TypeError, ValueError):
+            pass
+    return entry
+
+
+def board_to_run_state_board(
+    board: Board,
+    *,
+    source_run_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Embed the exact Board used for F8 scoring into run_state snapshot form."""
+    storage = board.storage_rows
+    template = (
+        source_run_state.get("board")
+        if isinstance(source_run_state, dict)
+        and isinstance(source_run_state.get("board"), dict)
+        else {}
+    )
+    board_data: dict[str, Any] = {
+        "source": "melmod",
+        "money": board.money,
+        "rows": board.rows,
+        "cols": board.cols,
+        "playable_origin": board.playable_origin or template.get("playable_origin", ""),
+        "playable_min_row": board.playable_min_row,
+        "playable_max_row": board.playable_max_row,
+        "playable_min_col": board.playable_min_col,
+        "playable_max_col": board.playable_max_col,
+    }
+    if template.get("row_order"):
+        board_data["row_order"] = template["row_order"]
+    tiles: list[dict[str, Any]] = []
+    for idx in range(board.cell_count):
+        row, col = board.coords_at(idx)
+        tile = board.tiles[row][col]
+        tiles.append(
+            board_tile_to_melmod_dict(
+                tile,
+                board_data=board_data,
+                storage=storage,
+                active=board.is_active_index(idx),
+            )
+        )
+    board_data["tiles"] = tiles
+    return board_data
+
+
 _FONT_TAG_RE = re.compile(r"<font[^>]*>|</font>", re.IGNORECASE)
 
 

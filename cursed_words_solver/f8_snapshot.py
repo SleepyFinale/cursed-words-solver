@@ -24,6 +24,7 @@ from cursed_words_solver.fingerprints import (
 from cursed_words_solver.loadout import (
     _grid_number_from_extras,
     _scoring_previous_words_count_from_extras,
+    board_to_run_state_board,
     encounter_mode_from_run_state,
     hydrate_tile_ninja_loadout_extras,
     load_run_state_raw,
@@ -907,6 +908,7 @@ def embed_f8_snapshot(
     *,
     scoring_loadout: Loadout | None = None,
     fresh_run_state: dict[str, Any] | None = None,
+    scoring_board: Board | None = None,
 ) -> dict[str, Any] | None:
     """Embed for last_suggestion.json from melmod game export (not reconciled loadout)."""
     source = (
@@ -922,6 +924,11 @@ def embed_f8_snapshot(
         return copy.deepcopy(source)
 
     run_state = copy.deepcopy(source)
+    if scoring_board is not None:
+        run_state["board"] = board_to_run_state_board(
+            scoring_board,
+            source_run_state=source,
+        )
     export_fp = ""
     src_extras = source.get("extras")
     if isinstance(src_extras, dict):
@@ -953,6 +960,30 @@ def embed_f8_snapshot(
         )
         sanitized["extras"] = extras
     return sanitized
+
+
+def f8_embed_replay_score(
+    embed_state: dict[str, Any],
+    *,
+    path: list[int],
+    word: str,
+    loadout: Loadout,
+    pipeline: Any,
+) -> int | None:
+    """Re-score an F8 embed snapshot; None when board/loadout cannot be parsed."""
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+
+    prepared = prepare_run_state_dict_for_scoring(embed_state)
+    board = parse_board_from_run_state(prepared)
+    replay_loadout = parse_run_state(prepared)
+    if board is None or replay_loadout is None:
+        return None
+    score, _ = pipeline.score(board, path, word, replay_loadout)
+    return int(score)
 
 
 def embed_run_state_for_suggestion(run_state: dict[str, Any]) -> dict[str, Any]:

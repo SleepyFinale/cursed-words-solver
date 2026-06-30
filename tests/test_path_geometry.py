@@ -1,9 +1,13 @@
 """Tests for on-board path highlight geometry."""
 
+import json
+from pathlib import Path
+
 from cursed_words_solver.config import Region
 from cursed_words_solver.loadout import parse_board_from_run_state
 from cursed_words_solver.ui.board_geometry import (
     estimate_rack_slot_size,
+    path_from_melmod_indices,
     path_geometry,
     placement_display_steps,
     rack_marker_radius,
@@ -257,3 +261,48 @@ def test_estimate_rack_slot_size_prefers_melmod_slot_sizes():
     slot_w, slot_h = estimate_rack_slot_size(region, None, rack_slot_sizes=sizes)
     assert abs(slot_w - 61.0) < 0.1
     assert abs(slot_h - 52.0) < 0.1
+
+
+NINA_OVERLAY_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "round_logs"
+    / "20260630_145629_nina_false_encoding.json"
+)
+
+
+def test_nina_overlay_path_geometry_aligns_with_melmod_cell_centers():
+    """F8 highlight centers match exported ui_layout for Nina 5×5 session."""
+    if not NINA_OVERLAY_FIXTURE.exists():
+        import pytest
+
+        pytest.skip("nina overlay fixture required")
+
+    data = json.loads(NINA_OVERLAY_FIXTURE.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data["run_state"])
+    assert board is not None
+
+    ui_board = data["run_state"]["ui_layout"]["board"]
+    region = Region(
+        x=int(ui_board["x"]),
+        y=int(ui_board["y"]),
+        width=int(ui_board["width"]),
+        height=int(ui_board["height"]),
+    )
+    cell_centers = {
+        int(cell["index"]): (float(cell["x"]), float(cell["y"]))
+        for cell in ui_board["cells"]
+    }
+
+    melmod_path = data["solver"]["path"]
+    storage_path = path_from_melmod_indices(board, melmod_path)
+    steps = path_geometry(region, storage_path, board, cell_centers=cell_centers)
+    assert len(steps) == len(storage_path)
+
+    by_index = {int(cell["index"]): cell for cell in ui_board["cells"]}
+    for idx, step in zip(storage_path, steps, strict=True):
+        cell = by_index[int(idx)]
+        expected_x = float(cell["x"]) - region.x
+        expected_y = float(cell["y"]) - region.y
+        assert abs(step.x - expected_x) < 30.0
+        assert abs(step.y - expected_y) < 30.0

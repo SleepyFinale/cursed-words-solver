@@ -271,6 +271,14 @@ def apply_sticker_with_orchestration(
         sticker.name,
         loadout,
     )
+    if slugify_name(sticker.id or sticker.name) == "tombstone":
+        from cursed_words_solver.rules.scoring_conditions import (
+            tombstone_inventory_scoring_level,
+        )
+
+        eff_level = tombstone_inventory_scoring_level(
+            sticker, loadout, board, base_level=eff_level
+        )
     state = apply_rule(
         rule,
         state,

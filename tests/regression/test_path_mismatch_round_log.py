@@ -627,10 +627,69 @@ BAILEE_6X6_FIXTURE = (
 
 
 def _coords_to_solver_index(col: int, display_row: int, cols: int) -> int:
-    """Mirror melmod SuggestionMatcher.CoordsToSolverIndex."""
+    """Top-first storage/display row → melmod index (not Unity GetCoordinates)."""
     if cols <= 0:
         cols = 5
     return (cols - 1 - display_row) * cols + col
+
+
+def _unity_coords_to_melmod_index(unity_y: int, col: int, cols: int) -> int:
+    """Mirror fixed melmod SuggestionMatcher.CoordsToSolverIndex."""
+    if cols <= 0:
+        cols = 5
+    return unity_y * cols + col
+
+
+def _broken_coords_on_unity_y(unity_y: int, col: int, cols: int) -> int:
+    """Pre-v1.2.2 bug: treated Unity bottom-origin y as top-first display row."""
+    if cols <= 0:
+        cols = 5
+    return (cols - 1 - unity_y) * cols + col
+
+
+def _melmod_index_to_solver_coords(idx: int, cols: int) -> tuple[int, int]:
+    unity_y = idx // cols
+    col = idx % cols
+    return cols - 1 - unity_y, col
+
+
+def _storage_index_to_solver_coords(idx: int, cols: int) -> tuple[int, int]:
+    return idx // cols, idx % cols
+
+
+NINA_FALSE_MISMATCH_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260630_145629_nina_false_encoding.json"
+)
+
+
+@pytest.mark.skipif(
+    not NINA_FALSE_MISMATCH_FIXTURE.exists(),
+    reason="nina false path mismatch fixture required",
+)
+def test_nina_false_path_mismatch_same_tiles_different_encoding():
+    """v1.2.1 still false-mismatched when user traced F8 overlay on 5×5."""
+    data = json.loads(NINA_FALSE_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    f8_path = data["solver"]["path"]
+    wrong_path = data["actual"]["path"]
+    assert f8_path == [14, 8, 12, 6, 2]
+    assert wrong_path == [14, 18, 12, 16, 22]
+    assert f8_path != wrong_path
+
+    cols = 5
+    f8_coords = [_melmod_index_to_solver_coords(i, cols) for i in f8_path]
+    wrong_coords = [_storage_index_to_solver_coords(i, cols) for i in wrong_path]
+    assert f8_coords == wrong_coords
+
+    for f8_idx, wrong_idx in zip(f8_path, wrong_path, strict=True):
+        unity_y, col = f8_idx // cols, f8_idx % cols
+        assert _unity_coords_to_melmod_index(unity_y, col, cols) == f8_idx
+        assert _broken_coords_on_unity_y(unity_y, col, cols) == wrong_idx
+
+    assert data["comparison"]["board_fingerprint_matches_suggestion"] is True
+    assert data["comparison"]["path_matches_suggestion"] is False
 
 
 @pytest.mark.skipif(not BAILEE_6X6_FIXTURE.exists(), reason="bailee 6x6 fixture required")

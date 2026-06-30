@@ -366,6 +366,24 @@ namespace CursedWordsSolverCompanion
             return !string.IsNullOrEmpty(wordFirst) ? wordFirst : pathFirst;
         }
 
+        private static int ResolvePathCols()
+        {
+            try
+            {
+                var player = RunStateExporter.GetPlayerForUpdate();
+                if (player == null)
+                    return 5;
+                var board = BoardExporter.TryBuild(player);
+                if (board != null && board.cols > 0)
+                    return board.cols;
+            }
+            catch
+            {
+                // optional
+            }
+            return 5;
+        }
+
         private static List<int> TryGetPathFromHistoric(HistoricWord historic)
         {
             var path = new List<int>();
@@ -373,6 +391,7 @@ namespace CursedWordsSolverCompanion
             if (selections == null)
                 return path;
 
+            var pathCols = ResolvePathCols();
             foreach (var sel in selections)
             {
                 if (sel?.SelectedTile == null)
@@ -380,7 +399,7 @@ namespace CursedWordsSolverCompanion
                 try
                 {
                     var coords = sel.SelectedTile.GetCoordinates();
-                    path.Add(coords.y * 5 + coords.x);
+                    path.Add(SuggestionMatcher.CoordsToSolverIndex(coords, pathCols));
                 }
                 catch
                 {
@@ -401,13 +420,13 @@ namespace CursedWordsSolverCompanion
             if (selections == null)
                 return "";
 
-            const int cols = 5;
+            var pathCols = ResolvePathCols();
             foreach (var idx in path)
             {
                 if (idx < 0)
                     continue;
-                var row = idx / cols;
-                var col = idx % cols;
+                var row = idx / pathCols;
+                var col = idx % pathCols;
                 foreach (var sel in selections)
                 {
                     if (sel?.SelectedTile == null)
@@ -547,12 +566,12 @@ namespace CursedWordsSolverCompanion
             if (string.IsNullOrEmpty(wordFirst))
                 return "";
 
-            const int cols = 5;
+            var pathCols = board.cols > 0 ? board.cols : 5;
             var idx = path[0];
             if (idx < 0)
                 return "";
-            var row = idx / cols;
-            var col = idx % cols;
+            var row = idx / pathCols;
+            var col = idx % pathCols;
             foreach (var tile in board.tiles)
             {
                 if (tile == null || tile.row != row || tile.col != col)
@@ -586,12 +605,12 @@ namespace CursedWordsSolverCompanion
             if (selections == null)
                 return "";
 
-            const int cols = 5;
+            var pathCols = ResolvePathCols();
             var idx = path[0];
             if (idx < 0)
                 return "";
-            var row = idx / cols;
-            var col = idx % cols;
+            var row = idx / pathCols;
+            var col = idx % pathCols;
             foreach (var sel in selections)
             {
                 if (sel?.SelectedTile == null)
@@ -623,13 +642,13 @@ namespace CursedWordsSolverCompanion
             if (path == null || board?.tiles == null)
                 return "";
 
-            const int cols = 5;
+            var pathCols = board.cols > 0 ? board.cols : 5;
             foreach (var idx in path)
             {
                 if (idx < 0)
                     continue;
-                var row = idx / cols;
-                var col = idx % cols;
+                var row = idx / pathCols;
+                var col = idx % pathCols;
                 foreach (var tile in board.tiles)
                 {
                     if (tile == null || tile.row != row || tile.col != col)

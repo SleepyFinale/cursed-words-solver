@@ -1555,6 +1555,8 @@ class ScoringPipeline:
         compound_percents = ctx.compound_percents
         if compound_percents or ctx.compound_finalize_at_cocktail:
             state["_defer_word_mults_for_compound"] = True
+        from cursed_words_solver.rules.scoring_order import encounter_grid_scatter_refs
+
         grid_refs = list(
             path_grid_item_refs(
                 board,
@@ -1565,6 +1567,11 @@ class ScoringPipeline:
                 cache_timing=grid_refs_timing,
             )
         )
+        off_path_refs = encounter_grid_scatter_refs(
+            board, path, self.rules, loadout
+        )
+        if off_path_refs:
+            grid_refs = list(grid_refs) + list(off_path_refs)
         if hourglass:
             grid_refs.reverse()
         if ctx.grid_tile_multiply_first:

@@ -19,6 +19,40 @@ def _is_melmod_tile(tile: Tile) -> bool:
     return tile.metadata.get("source") == "melmod"
 
 
+def milmod_colorless_void_scatter_init_contribution(
+    tile: Tile,
+    *,
+    loadout: Loadout | None,
+    path_index: int,
+    path_len: int,
+) -> float | None:
+    """Milky Way void grids: colorless letters use void-generation init, not packet face."""
+    if not _is_melmod_tile(tile):
+        return None
+    if tile.curse != CurseType.LETTER or tile.color != TileColor.COLORLESS:
+        return None
+    if loadout is None:
+        return None
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    pin = str(extras.get("pin_effect") or "").strip().lower().replace(" ", "_")
+    if pin != "milky_way":
+        return None
+    from cursed_words_solver.rules.scoring_conditions import grid_number
+
+    if (grid_number(loadout) or 1) < 2:
+        return None
+    try:
+        raw_base = float(tile.base_score)
+    except (TypeError, ValueError):
+        return None
+    face = _scrabble_value(tile.letter)
+    if raw_base != float(face) or face <= 0 or face >= 4:
+        return None
+    if path_index == path_len - 1 and face == 1:
+        return 0.0
+    return -float(face)
+
+
 _CHESS_VOID_VALUES: dict[CurseType, int] = {
     CurseType.CHESS_KING: 15,
     CurseType.CHESS_QUEEN: 9,

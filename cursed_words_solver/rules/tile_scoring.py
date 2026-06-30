@@ -237,7 +237,20 @@ def initial_tile_scores(
         ):
             contrib = float(tile.base_score)
         else:
-            contrib = float(tile_base_contribution(tile, money, loadout))
+            from cursed_words_solver.rules.base_scoring import (
+                milmod_colorless_void_scatter_init_contribution,
+            )
+
+            colorless_void = milmod_colorless_void_scatter_init_contribution(
+                tile,
+                loadout=loadout,
+                path_index=i,
+                path_len=len(path),
+            )
+            if colorless_void is not None:
+                contrib = colorless_void
+            else:
+                contrib = float(tile_base_contribution(tile, money, loadout))
         scores.append(contrib)
         total += contrib
     return scores, total
