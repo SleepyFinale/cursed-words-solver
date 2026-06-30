@@ -619,6 +619,28 @@ def parse_ui_layout(
     )
 
 
+def cursedle_overlay_mode(run_state: dict[str, Any] | None) -> bool:
+    """True when run_state is a Cursedle trial (no consumable rack)."""
+    from cursed_words_solver.loadout import encounter_mode_from_run_state
+
+    return encounter_mode_from_run_state(run_state) == "cursedle"
+
+
+def _overlay_regions_without_rack(regions: OverlayRegions) -> OverlayRegions:
+    return OverlayRegions(
+        board=regions.board,
+        rack=Region(),
+        source=regions.source,
+        board_cell_centers=regions.board_cell_centers,
+        rack_slot_centers=None,
+        rack_slot_sizes=None,
+        rack_tile_height=None,
+        board_region_repaired=regions.board_region_repaired,
+        rack_slot_corrected=False,
+        rack_layout_collapsed=False,
+    )
+
+
 def resolve_overlay_regions(
     run_state: dict[str, Any] | None,
     config: AppConfig,
@@ -626,12 +648,17 @@ def resolve_overlay_regions(
     """Prefer melmod ui_layout; fall back to config.json manual regions."""
     parsed = parse_ui_layout(run_state, config=config)
     if parsed is not None:
+        if cursedle_overlay_mode(run_state):
+            return _overlay_regions_without_rack(parsed)
         return parsed
-    return OverlayRegions(
+    regions = OverlayRegions(
         board=config.board_region,
         rack=config.rack_region,
         source="manual",
     )
+    if cursedle_overlay_mode(run_state):
+        return _overlay_regions_without_rack(regions)
+    return regions
 
 
 def ui_layout_export_status(run_state: dict[str, Any] | None) -> str | None:

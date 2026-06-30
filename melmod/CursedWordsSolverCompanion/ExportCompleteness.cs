@@ -66,7 +66,11 @@ namespace CursedWordsSolverCompanion
             var encounterMode = extras.TryGetValue("encounter_mode", out var modeRaw)
                 ? modeRaw
                 : RunStateExportFill.DetectEncounterMode(player);
-            if (encounterMode == "encounter")
+            if (encounterMode == "cursedle")
+            {
+                CollectCursedleWarnings(extras, missing);
+            }
+            else if (encounterMode == "encounter")
             {
                 if (!extras.ContainsKey("run_stage"))
                     missing.Add("run_stage");
@@ -111,6 +115,50 @@ namespace CursedWordsSolverCompanion
             CollectRamMemoryWarnings(snapshot, player, missing);
 
             return missing;
+        }
+
+        private static void CollectCursedleWarnings(
+            Dictionary<string, string> extras,
+            List<string> missing
+        )
+        {
+            if (!extras.ContainsKey("cursedle_guesses_remaining"))
+                missing.Add("cursedle_guesses_remaining");
+            if (!extras.ContainsKey("cursedle_guesses_used"))
+                missing.Add("cursedle_guesses_used");
+            if (!extras.ContainsKey("cursedle_guesses"))
+                missing.Add("cursedle_guesses");
+
+            var used = 0;
+            if (extras.TryGetValue("cursedle_guesses_used", out var usedRaw))
+                int.TryParse(usedRaw, out used);
+            if (used <= 0)
+                return;
+
+            var historyCount = CountCursedleGuessesInExport(extras);
+            if (historyCount < used && !missing.Contains("cursedle_guesses"))
+                missing.Add("cursedle_guesses");
+        }
+
+        private static int CountCursedleGuessesInExport(Dictionary<string, string> extras)
+        {
+            if (
+                !extras.TryGetValue("cursedle_guesses", out var guessesRaw)
+                || string.IsNullOrWhiteSpace(guessesRaw)
+                || guessesRaw == "[]"
+            )
+                return 0;
+            try
+            {
+                var rows = JsonConvert.DeserializeObject<System.Collections.Generic.List<object>>(
+                    guessesRaw
+                );
+                return rows != null ? rows.Count : 0;
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         private static void CollectSnapshotWarnings(

@@ -11,6 +11,7 @@ Requires the [MelonLoader companion mod](melmod/README.md), which reads the live
 - Always-on-top result overlay plus numbered, click-through path highlights on the game board
 - Scoring mismatch capture (melmod v1.1.6+) and per-submit round logs (v1.2+), with regression fixtures from real in-game submits
 - Shop advice (melmod shop export + F8 in Ej?A56): build-synergy recommendations ported from the in-game Advice button, plus encounter grid reroll hints
+- **Cursedle** (daily fairy trial): F8 runs a constraint-based word finder on the live 6×6 export and guess feedback (`encounter_mode: cursedle`); probes may be any valid word length (solution is 4–6 letters); scoring capture is disabled in that scene
 
 ## Quick start
 

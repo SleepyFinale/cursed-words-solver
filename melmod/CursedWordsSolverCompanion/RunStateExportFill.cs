@@ -191,6 +191,7 @@ namespace CursedWordsSolverCompanion
             FillEquippedStampFlags(snapshot, player);
             FillFrozenInShop(snapshot, player);
             FillEncounterMode(snapshot, player);
+            CursedleExporter.FillExtras(snapshot);
             FillRunProgressExtras(snapshot, player);
             FillFutureProofTierA(snapshot, player);
             FillBossParams(snapshot, player);
@@ -245,11 +246,11 @@ namespace CursedWordsSolverCompanion
 
         public static string DetectEncounterMode(Player player)
         {
+            if (CursedleExporter.IsCursedleActive())
+                return "cursedle";
+
             if (player == null)
                 return "none";
-
-            if (IsMichaelPuzzleGridActive())
-                return "puzzle";
 
             var shopController = UnityEngine.Object.FindAnyObjectByType<ShopController>();
             if (shopController != null && shopController.isActiveAndEnabled)
@@ -1877,8 +1878,6 @@ namespace CursedWordsSolverCompanion
             if (michaelMin <= 0 && drafted >= 3
                 && IsMichaelSummonedBossesDefeated(player, michaelBoss))
                 michaelMin = 25;
-            if (michaelMin <= 0 && drafted >= 3 && IsMichaelPuzzleGridActive())
-                michaelMin = 25;
             if (michaelMin > 0)
                 snapshot.extras["michael_min_word_length"] = michaelMin.ToString();
             if (liveMin > 0)
@@ -1900,10 +1899,7 @@ namespace CursedWordsSolverCompanion
                 if (
                     michaelMin <= 0
                     && !_loggedMichaelMissingExtrasWarning
-                    && (
-                        IsMichaelSummonedBossesDefeated(player, michaelBoss)
-                        || IsMichaelPuzzleGridActive()
-                    )
+                    && IsMichaelSummonedBossesDefeated(player, michaelBoss)
                 )
                 {
                     MelonLogger.Warning(
@@ -2074,17 +2070,10 @@ namespace CursedWordsSolverCompanion
             }
         }
 
-        /// <summary>Michael finale puzzle grid (PuzzleController.SubmitWord).</summary>
+        /// <summary>Deprecated: Michael finale uses EncounterController, not PuzzleController.</summary>
         public static bool IsMichaelPuzzleGridActive()
         {
-            try
-            {
-                return UnityEngine.Object.FindAnyObjectByType<PuzzleController>() != null;
-            }
-            catch
-            {
-                return false;
-            }
+            return false;
         }
 
         public struct MichaelFinaleState
@@ -2316,8 +2305,6 @@ namespace CursedWordsSolverCompanion
 
             if (michaelBoss != null && TryResolveMichaelFinale(michaelBoss, player, drafted, michaelMin, liveMin))
                 result.IsFinale = true;
-            else if (IsMichaelPuzzleGridActive())
-                result.IsFinale = true;
             else if (IsMichaelSummonedBossesDefeated(player, michaelBoss))
                 result.IsFinale = true;
 
@@ -2503,7 +2490,6 @@ namespace CursedWordsSolverCompanion
                 return;
 
             var summonedDefeated = IsMichaelSummonedBossesDefeated(player, michaelBoss);
-            var puzzleGrid = IsMichaelPuzzleGridActive();
 
             snapshot.boss_id = "michael";
             snapshot.boss_name = "Michael";
@@ -2513,17 +2499,13 @@ namespace CursedWordsSolverCompanion
             else
                 snapshot.extras.Remove("michael_summoned_bosses_defeated");
             snapshot.extras["michael_phase"] = "4";
-            if (summonedDefeated || puzzleGrid)
+            if (summonedDefeated)
             {
                 snapshot.extras["boss_modifiers"] = "[]";
                 snapshot.extras.Remove("boss_modifier_floor_mods");
             }
             snapshot.extras["michael_min_word_length"] = finaleMin.ToString();
             snapshot.extras["encounter_min_word_length"] = finaleMin.ToString();
-            if (puzzleGrid)
-            {
-                snapshot.extras["michael_puzzle_grid"] = "true";
-            }
         }
 
         /// <summary>

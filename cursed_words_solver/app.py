@@ -264,10 +264,15 @@ class SolverApp:
         atexit.register(keyboard.unhook_all)
         atexit.register(self._shutdown_search_pool)
 
-    def _ensure_solver(self) -> bool:
+    def _ensure_dictionary(self) -> bool:
         if self._dictionary is None:
             wl_path = resolve_wordlist(self.config.wordlist)
             self._dictionary = WordDictionary(wl_path)
+        return True
+
+    def _ensure_solver(self) -> bool:
+        if not self._ensure_dictionary():
+            return False
         if self._searcher is None:
             from cursed_words_solver.search_parallel import (
                 resolve_search_workers,
@@ -308,6 +313,9 @@ class SolverApp:
     def _refresh_overlay_regions(self, run_state: dict | None = None) -> OverlayRegions:
         if run_state is None:
             run_state = load_run_state_raw()
+        from cursed_words_solver.ui.layout import cursedle_overlay_mode
+
+        cursedle = cursedle_overlay_mode(run_state)
         self._overlay_regions = resolve_overlay_regions(run_state, self.config)
         if self._overlay_regions.board_region_repaired:
             br = self._overlay_regions.board
@@ -317,20 +325,21 @@ class SolverApp:
                 f"at ({br.x},{br.y}) — press F7 if highlights still misaligned",
                 flush=True,
             )
-        if self._overlay_regions.rack_layout_collapsed:
-            if not self._rack_collapse_warned:
-                self._rack_collapse_warned = True
+        if not cursedle:
+            if self._overlay_regions.rack_layout_collapsed:
+                if not self._rack_collapse_warned:
+                    self._rack_collapse_warned = True
+                    print(
+                        "  Warning: consumable rack layout export collapsed — "
+                        "using last good F7 alignment (press F7 if markers still wrong)",
+                        flush=True,
+                    )
+            elif self._overlay_regions.rack_slot_corrected:
                 print(
-                    "  Warning: consumable rack layout export collapsed — "
-                    "using last good F7 alignment (press F7 if markers still wrong)",
+                    "  Warning: consumable rack slot alignment corrected — "
+                    "press F7 if rack markers still misaligned",
                     flush=True,
                 )
-        elif self._overlay_regions.rack_slot_corrected:
-            print(
-                "  Warning: consumable rack slot alignment corrected — "
-                "press F7 if rack markers still misaligned",
-                flush=True,
-            )
         return self._overlay_regions
 
     def _overlay_board_region(self) -> Region | None:
@@ -926,6 +935,121 @@ class SolverApp:
             )
         )
 
+    def _cursedle_worker(self, run_state_data: dict | None) -> None:
+        """Cursedle constraint solver when encounter_mode is cursedle."""
+        from cursed_words_solver.f8_snapshot import gather_f8_snapshot, write_f8_export_request
+
+        if not self._ensure_dictionary():
+            print("Solver not ready (dictionary failed to load).", flush=True)
+            return
+
+        f8_request_id = write_f8_export_request()
+        snapshot = gather_f8_snapshot(
+            rules=self._scoring.rules,
+            f8_request_id=f8_request_id,
+            on_wait=lambda msg: print(f"  {msg}", flush=True),
+        )
+        self._finish_cursedle_from_snapshot(snapshot)
+
+    def _finish_cursedle_from_snapshot(self, snapshot) -> None:
+        """Run Cursedle solver from a gathered F8 snapshot."""
+        from cursed_words_solver.cursedle_solver import (
+            format_cursedle_advice_text,
+            run_cursedle_solver,
+            save_cursedle_suggestion,
+        )
+        from cursed_words_solver.f8_messages import gather_incomplete_message
+
+        run_state_data = snapshot.run_state
+        board = snapshot.board
+        loadout = snapshot.loadout
+
+        gather_succeeded = (
+            snapshot.board_available
+            and snapshot.loadout is not None
+            and snapshot.extras_ready
+        )
+        for warn in snapshot.warnings:
+            if not warn.startswith("waiting for melmod"):
+                print(f"  Warning: {warn}", flush=True)
+        if not gather_succeeded:
+            print(
+                f"  {gather_incomplete_message(snapshot.gather_missing)}",
+                flush=True,
+            )
+            return
+        if board is None or loadout is None:
+            print("Cursedle: no board in export — press F8 in the trial.", flush=True)
+            return
+
+        if not self._ensure_dictionary():
+            print("Solver not ready (dictionary failed to load).", flush=True)
+            return
+        print("Cursedle solve started...", flush=True)
+        print(format_board_grid(board, compact=True), flush=True)
+        self._refresh_overlay_regions(run_state_data)
+
+        advice = run_cursedle_solver(
+            board,
+            loadout,
+            self._dictionary,
+            on_progress=lambda msg: print(f"  {msg}", flush=True),
+        )
+        print(format_cursedle_advice_text(advice), flush=True)
+
+        if advice.path and advice.word:
+            save_cursedle_suggestion(
+                board=board,
+                loadout=loadout,
+                advice=advice,
+                run_state_snapshot=run_state_data,
+                export_diagnostics=(
+                    run_state_data.get("export_diagnostics")
+                    if isinstance(run_state_data, dict)
+                    else None
+                ),
+                export_warnings=snapshot.warnings,
+                gather_status={
+                    "extras_ready": snapshot.extras_ready,
+                    "gather_missing": snapshot.gather_missing,
+                },
+            )
+            self._last_invalidation_reason = None
+            melmod_board_fp = ""
+            melmod_loadout_fp = ""
+            if isinstance(run_state_data, dict):
+                from cursed_words_solver.fingerprints import fingerprints_from_run_state
+
+                melmod_board_fp, melmod_loadout_fp = fingerprints_from_run_state(
+                    run_state_data
+                )
+            result = WordResult(
+                word=advice.word,
+                path=advice.path,
+                score=0,
+            )
+            self._bridge.solve_finished.emit(
+                _SolveUIUpdate(
+                    board=board,
+                    results=[result],
+                    board_bgr=None,
+                    warnings_html="<br>".join(advice.warnings) if advice.warnings else "",
+                    on_game_highlight=True,
+                    melmod_board_fingerprint=melmod_board_fp or None,
+                    melmod_loadout_fingerprint=melmod_loadout_fp or None,
+                )
+            )
+        else:
+            self._bridge.solve_finished.emit(
+                _SolveUIUpdate(
+                    board=board,
+                    results=[],
+                    board_bgr=None,
+                    warnings_html="<br>".join(advice.warnings) if advice.warnings else "",
+                    on_game_highlight=False,
+                )
+            )
+
     def _solve_worker(self) -> None:
         my_gen = self._solve_generation
         self._mid_solve_grid_advanced = False
@@ -945,12 +1069,9 @@ class SolverApp:
             if mode == "shop":
                 self._shop_advisor_worker(run_state_data)
                 return
-
-            if not self._ensure_solver():
-                print("Solver not ready (dictionary failed to load).", flush=True)
+            if mode == "cursedle":
+                self._cursedle_worker(run_state_data)
                 return
-            if self._searcher is not None:
-                self._searcher._cancel_check = cancel_check
 
             f8_request_id = write_f8_export_request()
             snapshot = gather_f8_snapshot(
@@ -987,6 +1108,20 @@ class SolverApp:
                     f"  {gather_incomplete_message(snapshot.gather_missing)}",
                     flush=True,
                 )
+
+            if (
+                gather_succeeded
+                and run_state_data is not None
+                and encounter_mode_from_run_state(run_state_data) == "cursedle"
+            ):
+                self._finish_cursedle_from_snapshot(snapshot)
+                return
+
+            if not self._ensure_solver():
+                print("Solver not ready (dictionary failed to load).", flush=True)
+                return
+            if self._searcher is not None:
+                self._searcher._cancel_check = cancel_check
 
             workflow_warnings: list[str] = []
             if loadout is not None and isinstance(loadout.extras, dict):
@@ -1029,7 +1164,7 @@ class SolverApp:
                 else:
                     n = len(run_state_data.get("board", {}).get("tiles", []))
                     print(
-                        f"Board export invalid ({n} tiles, need 25) — press F8 again.",
+                        f"Board export invalid ({n} tiles, need 25 or 36) — press F8 again.",
                         flush=True,
                     )
                 return

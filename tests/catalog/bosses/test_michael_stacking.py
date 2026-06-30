@@ -274,11 +274,11 @@ def test_michael_finale_export_expected_true_when_defeated() -> None:
 
     puzzle = Loadout(
         extras={
-            "michael_puzzle_grid": True,
-            "encounter_mode": "puzzle",
+            "encounter_mode": "cursedle",
+            "cursedle_active": True,
         },
     )
-    assert michael_finale_export_expected(puzzle, default_max_len=25)
+    assert not michael_finale_export_expected(puzzle, default_max_len=25)
 
 
 def test_michael_phase_two_probe_vetoes_export_expected() -> None:
@@ -346,16 +346,16 @@ def test_michael_phase_two_cobra_min_without_probe() -> None:
     assert c.max_len == 25
 
 
-def test_michael_puzzle_grid_stale_modifiers_25_tile_word() -> None:
-    """Regression: puzzle finale export clears yeti+whale even when boss_modifiers stale."""
+def test_michael_puzzle_encounter_mode_stale_modifiers_25_tile_word() -> None:
+    """Regression: puzzle encounter_mode clears yeti+whale when finale min length applies."""
     board = _board()
     loadout = Loadout(
         boss_id="yeti_crab",
         extras={
             "boss_modifiers": ["yeti_crab", "toothed_whale"],
             "boss_modifier_floor_mods": '{"yeti_crab": 4, "toothed_whale": 160}',
-            "michael_puzzle_grid": True,
             "michael_min_word_length": 25,
+            "michael_summoned_bosses_defeated": True,
             "encounter_mode": "puzzle",
         },
     )

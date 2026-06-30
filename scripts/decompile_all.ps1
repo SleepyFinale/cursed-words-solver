@@ -54,6 +54,12 @@ Invoke-Decompile (Join-Path $project "out2") @(
     "TileObject", "TileConsumableObject"
 )
 
+Write-Host "Cursedle -> scripts/decompile_type/out_cursedle/"
+Invoke-Decompile (Join-Path $project "out_cursedle") @(
+    "FairyGrid", "FairyGridGeneration", "PuzzleController",
+    "TileSolutionState", "WordHistoryController"
+)
+
 Write-Host "Scratch copies -> docs/game-research/_decompiled/ (gitignored)"
 Invoke-Decompile (Join-Path $repo "docs\game-research\_decompiled") @(
     "ScoreCalculation", "EncounterController", "Item", "Player", "Tile", "Hanafuda", "PokerHands"

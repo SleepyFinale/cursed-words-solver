@@ -36,6 +36,8 @@ namespace CursedWordsSolverCompanion
         [HarmonyPostfix]
         public static void Postfix()
         {
+            if (CursedleExporter.IsCursedleActive())
+                return;
             ScoringCaptureSession.EndSubmit();
             RunStateExporter.TryMergeExtrasAfterSubmit();
         }

@@ -527,7 +527,14 @@ namespace CursedWordsSolverCompanion
         public static string ComputeBoardFingerprint(Player player)
         {
             var board = BoardExporter.TryBuild(player);
-            return BoardExporter.ComputeBoardFingerprint(board);
+            var fp = BoardExporter.ComputeBoardFingerprint(board) ?? "";
+            if (CursedleExporter.IsCursedleActive())
+            {
+                var sb = new StringBuilder(fp);
+                CursedleGuessTracker.AppendFingerprint(sb);
+                return sb.ToString();
+            }
+            return fp;
         }
 
         public static Player GetPlayerForUpdate()

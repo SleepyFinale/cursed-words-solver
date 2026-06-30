@@ -416,6 +416,29 @@ def _extras_missing_for_loadout(
     missing.extend(_boss_extras_missing(loadout, board, extras))
     if bones_round_active(loadout) and _bones_round_card_metadata_missing(board):
         missing.append("bones_card_suit_export")
+    missing.extend(_cursedle_extras_missing(loadout, extras))
+    return missing
+
+
+def _cursedle_extras_missing(loadout: Loadout, extras: dict[str, Any]) -> list[str]:
+    from cursed_words_solver.cursedle_solver import cursedle_active, parse_cursedle_guesses
+
+    if not cursedle_active(loadout):
+        return []
+    missing: list[str] = []
+    if extras.get("cursedle_guesses_remaining") in (None, ""):
+        missing.append("cursedle_guesses_remaining")
+    if extras.get("cursedle_guesses_used") in (None, ""):
+        missing.append("cursedle_guesses_used")
+    if "cursedle_guesses" not in extras:
+        missing.append("cursedle_guesses")
+    try:
+        used = int(extras.get("cursedle_guesses_used") or 0)
+    except (TypeError, ValueError):
+        used = 0
+    if used > 0 and len(parse_cursedle_guesses(extras)) < used:
+        if "cursedle_guesses" not in missing:
+            missing.append("cursedle_guesses")
     return missing
 
 

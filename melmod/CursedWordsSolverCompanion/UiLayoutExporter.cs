@@ -143,8 +143,10 @@ namespace CursedWordsSolverCompanion
                     return null;
                 }
 
-                var rackRect = BuildRackRect(cam, originX, originY, clientH, scaleX, scaleY);
-                if (rackRect == null)
+                var rackRect = CursedleExporter.IsCursedleActive()
+                    ? null
+                    : BuildRackRect(cam, originX, originY, clientH, scaleX, scaleY);
+                if (rackRect == null && !CursedleExporter.IsCursedleActive())
                     LastStatus = "rack_bounds_empty";
                 else
                     LastStatus = "ok";

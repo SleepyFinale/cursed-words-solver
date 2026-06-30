@@ -180,6 +180,11 @@ def loadout_fingerprint(loadout: Loadout) -> str:
     parts.append(boss_fingerprint_from_loadout(loadout))
     parts.append("|")
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    from cursed_words_solver.cursedle_solver import cursedle_active, cursedle_guess_fingerprint
+
+    if cursedle_active(loadout):
+        parts.append(cursedle_guess_fingerprint(extras))
+        parts.append("|")
     _append_pin_fingerprint(
         parts,
         str(extras.get("pin_effect", "") or ""),
@@ -215,6 +220,17 @@ def fingerprints_from_run_state(data: dict) -> tuple[str, str]:
         )
     board_fp = "".join(tile_parts)
 
+    extras = data.get("extras") if isinstance(data.get("extras"), dict) else {}
+    mode = str(extras.get("encounter_mode", "") or "").strip().lower()
+    if mode == "cursedle" or str(extras.get("cursedle_active", "")).lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        from cursed_words_solver.cursedle_solver import cursedle_guess_fingerprint
+
+        board_fp = f"{board_fp}|{cursedle_guess_fingerprint(extras)}"
+
     lo_parts: list[str] = [
         str(data.get("character") or ""),
         "|",
@@ -247,6 +263,37 @@ def fingerprints_from_run_state(data: dict) -> tuple[str, str]:
         extras,
     )
     return board_fp, "".join(lo_parts)
+
+
+def board_fingerprint_tiles_only_from_fp(board_fp: str) -> str:
+    """Board fingerprint without the trailing Cursedle guess-history suffix."""
+    fp = (board_fp or "").strip()
+    if "|" not in fp:
+        return fp
+    parts = fp.split("|")
+    if len(parts) <= 2:
+        return fp
+    money, tiles = parts[0], parts[1]
+    if ";" in tiles or ("," in tiles and ":" in tiles):
+        return f"{money}|{tiles}"
+    return fp
+
+
+def board_fingerprint_tiles_only_from_run_state(data: dict) -> str:
+    """Tile board fingerprint from run_state without Cursedle guess suffix."""
+    board_fp, _ = fingerprints_from_run_state(data)
+    return board_fingerprint_tiles_only_from_fp(board_fp)
+
+
+def cursedle_guess_suffix_from_board_fp(board_fp: str) -> str:
+    """Guess-history suffix embedded in a Cursedle board fingerprint."""
+    base = board_fingerprint_tiles_only_from_fp(board_fp)
+    fp = (board_fp or "").strip()
+    if not fp or fp == base:
+        return ""
+    if not fp.startswith(base):
+        return ""
+    return fp[len(base) :].lstrip("|")
 
 
 def board_tiles_fingerprint_suffix(board_fp: str) -> str:

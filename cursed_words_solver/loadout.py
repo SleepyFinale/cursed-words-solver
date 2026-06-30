@@ -2904,6 +2904,11 @@ def _has_shop_offers(data: dict[str, Any]) -> bool:
 def encounter_mode_from_run_state(data: dict[str, Any] | None) -> str:
     if not isinstance(data, dict):
         return "none"
+    extras = data.get("extras")
+    if isinstance(extras, dict):
+        mode = str(extras.get("encounter_mode", "") or "").strip().lower()
+        if mode == "cursedle":
+            return "cursedle"
     if _has_valid_board_export(data):
         return "encounter"
     if _has_shop_offers(data):

@@ -14,5 +14,6 @@
     <Compile Remove="out_quests/**" />
     <Compile Remove="out_shop/**" />
     <Compile Remove="out_stamps/**" />
+    <Compile Remove="out_cursedle/**" />
   </ItemGroup>
 </Project>

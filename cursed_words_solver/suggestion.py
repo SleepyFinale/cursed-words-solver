@@ -23,7 +23,9 @@ from cursed_words_solver.dictionary import WordDictionary
 
 from cursed_words_solver.fingerprints import (
     board_fingerprint,
+    board_fingerprint_tiles_only_from_fp,
     board_tiles_fingerprint_suffix,
+    cursedle_guess_suffix_from_board_fp,
     fingerprints_from_run_state,
 )
 
@@ -68,10 +70,38 @@ def f8_export_catchup_grace_sec(search_budget_sec: float | None = None) -> float
     return F8_EXPORT_CATCHUP_GRACE_SEC
 
 
-def _board_tiles_match(saved_board_fp: str, cur_board_fp: str) -> bool:
+def _board_tiles_match(
+    saved_board_fp: str,
+    cur_board_fp: str,
+    *,
+    cursedle: bool = False,
+) -> bool:
+    if cursedle:
+        saved_tiles = board_fingerprint_tiles_only_from_fp(saved_board_fp)
+        cur_tiles = board_fingerprint_tiles_only_from_fp(cur_board_fp)
+        return bool(saved_tiles and cur_tiles and saved_tiles == cur_tiles)
     saved_tiles = board_tiles_fingerprint_suffix(saved_board_fp)
     cur_tiles = board_tiles_fingerprint_suffix(cur_board_fp)
     return bool(saved_tiles and cur_tiles and saved_tiles == cur_tiles)
+
+
+def _cursedle_guesses_advanced_since_f8(
+    embed_extras: dict[str, Any],
+    live_extras: dict[str, Any],
+) -> bool:
+    try:
+        saved_used = int(str(embed_extras.get("cursedle_guesses_used") or "0"))
+        cur_used = int(str(live_extras.get("cursedle_guesses_used") or "0"))
+    except (TypeError, ValueError):
+        saved_used = 0
+        cur_used = 0
+    if cur_used > saved_used:
+        return True
+    from cursed_words_solver.cursedle_solver import parse_cursedle_guesses
+
+    return len(parse_cursedle_guesses(live_extras)) > len(
+        parse_cursedle_guesses(embed_extras)
+    )
 
 
 def _parse_board_fp_tiles(fp: str) -> dict[tuple[int, int], str]:
@@ -332,6 +362,12 @@ def fingerprint_invalidate_suppressed_for_suggested_board_change(
     )
 
 
+def _last_suggestion_is_cursedle(data: dict[str, Any] | None) -> bool:
+    if not isinstance(data, dict):
+        return False
+    return str(data.get("mode") or "").strip().lower() == "cursedle"
+
+
 def stale_suggestion_warning(
     current_board_fp: str,
     *,
@@ -345,12 +381,21 @@ def stale_suggestion_warning(
         data = json.loads(LAST_SUGGESTION_PATH.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
+    cursedle_mode = _last_suggestion_is_cursedle(data)
     previous_board = str(data.get("board_fingerprint") or "").strip()
     loadout = (current_loadout_fp or "").strip()
     previous_loadout = str(data.get("loadout_fingerprint") or "").strip()
-    same_board = previous_board == current or _board_tiles_match(previous_board, current)
+    same_board = (
+        previous_board == current
+        or _board_tiles_match(previous_board, current, cursedle=cursedle_mode)
+    )
     if previous_board and same_board:
-        if loadout and previous_loadout and previous_loadout != loadout:
+        if (
+            not cursedle_mode
+            and loadout
+            and previous_loadout
+            and previous_loadout != loadout
+        ):
             return (
                 "Note: loadout changed since last F8 (e.g. Bicycle acc) — "
                 "press F8 again before submitting."
@@ -358,7 +403,12 @@ def stale_suggestion_warning(
         return None
     if not previous_board:
         return None
-    if loadout and previous_loadout and previous_loadout != loadout:
+    if (
+        not cursedle_mode
+        and loadout
+        and previous_loadout
+        and previous_loadout != loadout
+    ):
         return (
             "Note: last F8 was for a different run — "
             "press F8 to refresh before submitting."
@@ -684,7 +734,11 @@ def workflow_invalidate_suppressed_for_export_catchup(
         return False
     f8_board = str(data.get("board_fingerprint") or "").strip()
     cur_board = (current_board_fp or "").strip()
-    if not f8_board or not cur_board or not _board_tiles_match(f8_board, cur_board):
+    if not f8_board or not cur_board or not _board_tiles_match(
+        f8_board,
+        cur_board,
+        cursedle=_last_suggestion_is_cursedle(data),
+    ):
         return False
     return is_disk_catchup_drift(f8_extras, cur_extras)
 
@@ -1127,8 +1181,14 @@ def poll_invalidate_last_suggestion(
         return None
 
     data = _last_suggestion_fingerprint_data()
+    cursedle_mode = _last_suggestion_is_cursedle(data)
     saved_board = str((data or {}).get("board_fingerprint") or "").strip()
-    if not _board_tiles_match(saved_board, current_board_fp):
+    tiles_match = _board_tiles_match(
+        saved_board,
+        current_board_fp,
+        cursedle=cursedle_mode,
+    )
+    if not tiles_match:
         fp_reason = clear_stale_last_suggestion_if_fingerprint_changed(
             current_board_fp,
             current_loadout_fp=current_loadout_fp,
@@ -1138,14 +1198,19 @@ def poll_invalidate_last_suggestion(
 
     previous_loadout = str((data or {}).get("loadout_fingerprint") or "").strip()
     current_loadout = (current_loadout_fp or "").strip()
-    if current_loadout and previous_loadout and previous_loadout != current_loadout:
+    if (
+        not cursedle_mode
+        and current_loadout
+        and previous_loadout
+        and previous_loadout != current_loadout
+    ):
         if clear_stale_last_suggestion_if_fingerprint_changed(
             current_board_fp,
             current_loadout_fp=current_loadout_fp,
         ):
             return "loadout changed"
 
-    if data is not None and saved_board and _board_tiles_match(saved_board, current_board_fp):
+    if data is not None and saved_board and tiles_match:
         extras = run_state_extras if isinstance(run_state_extras, dict) else {}
         embed_extras = _f8_snapshot_extras(data)
         if workflow_invalidate_suppressed_for_export_catchup(
@@ -1154,21 +1219,32 @@ def poll_invalidate_last_suggestion(
             search_budget_sec=search_budget_sec,
         ):
             return None
-        bike_reason = _poll_bicycle_drift_reason(
-            data,
-            current_loadout_fp=current_loadout_fp,
-            run_state_extras=extras,
-        )
-        if bike_reason and clear_last_suggestion():
-            return bike_reason
-        if not has_played_word_since_f8_embed(extras, embed_extras):
+        if cursedle_mode:
+            saved_suffix = cursedle_guess_suffix_from_board_fp(saved_board)
+            cur_suffix = cursedle_guess_suffix_from_board_fp(current_board_fp)
+            if (
+                saved_suffix != cur_suffix
+                and _cursedle_guesses_advanced_since_f8(embed_extras, extras)
+                and clear_last_suggestion()
+            ):
+                return "cursedle guess submitted"
             return None
-        workflow_reason = workflow_stale_vs_f8_snapshot(
-            extras,
-            embed_extras,
-        )
-        if workflow_reason and clear_last_suggestion():
-            return f"workflow drift ({workflow_reason})"
+        if not cursedle_mode:
+            bike_reason = _poll_bicycle_drift_reason(
+                data,
+                current_loadout_fp=current_loadout_fp,
+                run_state_extras=extras,
+            )
+            if bike_reason and clear_last_suggestion():
+                return bike_reason
+            if not has_played_word_since_f8_embed(extras, embed_extras):
+                return None
+            workflow_reason = workflow_stale_vs_f8_snapshot(
+                extras,
+                embed_extras,
+            )
+            if workflow_reason and clear_last_suggestion():
+                return f"workflow drift ({workflow_reason})"
 
     return None
 

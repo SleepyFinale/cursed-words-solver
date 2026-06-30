@@ -95,7 +95,14 @@ def michael_summoned_bosses_defeated(loadout: Loadout) -> bool:
 
 
 def michael_puzzle_grid_active(loadout: Loadout) -> bool:
-    return _extra_bool(loadout, "michael_puzzle_grid")
+    """Deprecated: Cursedle used to set michael_puzzle_grid via PuzzleController."""
+    return False
+
+
+def cursedle_active(loadout: Loadout) -> bool:
+    from cursed_words_solver.cursedle_solver import cursedle_active as _active
+
+    return _active(loadout)
 
 
 def _michael_min_word_length_value(loadout: Loadout) -> int:
@@ -198,11 +205,6 @@ def michael_finale_export_expected(loadout: Loadout, *, default_max_len: int = 0
     if 1 <= phase <= 3 and _parse_boss_modifier_ids(loadout):
         return False
 
-    if michael_puzzle_grid_active(loadout):
-        return True
-    if str(extras.get("encounter_mode") or "").strip().lower() == "puzzle":
-        return True
-
     if michael_summoned_bosses_defeated(loadout):
         return True
     if probe_defeated is True:
@@ -223,15 +225,9 @@ def michael_finale_export_expected(loadout: Loadout, *, default_max_len: int = 0
 
 def michael_finale_active(loadout: Loadout, *, default_max_len: int = 0) -> bool:
     """Michael phase 4 / wordsmith finale: no stacked draft bosses, 25-tile word."""
-    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
     probe_defeated = _michael_probe_summoned_defeated(loadout)
     if probe_defeated is False:
         return False
-
-    if michael_puzzle_grid_active(loadout):
-        return True
-    if str(extras.get("encounter_mode") or "").strip().lower() == "puzzle":
-        return True
 
     if michael_summoned_bosses_defeated(loadout):
         return True
@@ -242,9 +238,9 @@ def michael_finale_active(loadout: Loadout, *, default_max_len: int = 0) -> bool
 
 
 def _michael_context(loadout: Loadout) -> bool:
+    if cursedle_active(loadout):
+        return False
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
-    if michael_puzzle_grid_active(loadout):
-        return True
     if str(extras.get("encounter_mode") or "").strip().lower() == "puzzle":
         return True
     if _extra_int(loadout, "boss_area_number", 0) >= 6:

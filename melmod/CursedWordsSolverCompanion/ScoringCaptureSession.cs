@@ -184,6 +184,11 @@ namespace CursedWordsSolverCompanion
 
         public static void BeginPuzzleSubmit(List<TileSelection> selections)
         {
+            if (CursedleExporter.IsCursedleActive())
+            {
+                _submitInFlight = false;
+                return;
+            }
             BeginSubmit("PuzzleController.SubmitWord", selections, null);
         }
 
