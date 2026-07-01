@@ -577,6 +577,12 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
                 pass
         if entry.get("is_crossed_out") in (True, "true", "True", "1", 1):
             meta["is_crossed_out"] = True
+        if is_active:
+            meta["melmod_fp_letter"] = str(entry.get("letter") or "")
+            meta["melmod_fp_curse"] = str(entry.get("curse") or "")
+            meta["melmod_fp_color"] = str(entry.get("color") or "")
+            if meta.get("is_crossed_out"):
+                meta["melmod_fp_crossed_out"] = True
         if entry.get("is_up_and_up_center") in (True, "true", "True", "1", 1):
             meta["is_up_and_up_center"] = True
         void_steps = entry.get("void_penalty_steps")
@@ -738,6 +744,19 @@ def board_tile_to_melmod_dict(
     color_key = tile.color.value if tile.color != TileColor.UNKNOWN else "unknown"
     char_display = str(tile.char or tile.letter or "?")
     letter = str(tile.letter or tile.char or "?")
+    fp_letter = meta.get("melmod_fp_letter")
+    fp_curse = meta.get("melmod_fp_curse")
+    fp_color = meta.get("melmod_fp_color")
+    if (
+        fp_letter is not None
+        and not meta.get("consumable")
+        and str(fp_letter).strip()
+    ):
+        letter = str(fp_letter)
+        if fp_curse is not None and str(fp_curse).strip():
+            curse_key = str(fp_curse).strip().lower()
+        if fp_color is not None and str(fp_color).strip():
+            color_key = str(fp_color).strip().lower()
     entry.update(
         {
             "char_display": char_display,
@@ -759,6 +778,8 @@ def board_tile_to_melmod_dict(
     if meta.get("was_glitch"):
         entry["was_glitch"] = True
     if meta.get("is_crossed_out"):
+        entry["is_crossed_out"] = True
+    elif meta.get("melmod_fp_crossed_out"):
         entry["is_crossed_out"] = True
     if meta.get("is_up_and_up_center"):
         entry["is_up_and_up_center"] = True
@@ -818,9 +839,47 @@ def board_to_run_state_board(
     }
     if template.get("row_order"):
         board_data["row_order"] = template["row_order"]
-    tiles: list[dict[str, Any]] = []
+    source_tiles = (
+        template.get("tiles") if isinstance(template.get("tiles"), list) else []
+    )
+    solver_at: dict[tuple[int, int], Tile] = {}
+    active_at: dict[tuple[int, int], bool] = {}
     for idx in range(board.cell_count):
         row, col = board.coords_at(idx)
+        solver_at[(row, col)] = board.tiles[row][col]
+        active_at[(row, col)] = board.is_active_index(idx)
+
+    tiles: list[dict[str, Any]] = []
+    seen_solver: set[tuple[int, int]] = set()
+    if source_tiles:
+        for src in source_tiles:
+            if not isinstance(src, dict):
+                continue
+            try:
+                game_row = int(src.get("row", -1))
+                col = int(src.get("col", -1))
+            except (TypeError, ValueError):
+                continue
+            if game_row < 0 or col < 0:
+                continue
+            solver_row = _melmod_row_to_solver(board_data, game_row)
+            key = (solver_row, col)
+            tile = solver_at.get(key)
+            if tile is None:
+                continue
+            seen_solver.add(key)
+            tiles.append(
+                board_tile_to_melmod_dict(
+                    tile,
+                    board_data=board_data,
+                    storage=storage,
+                    active=active_at.get(key, True),
+                )
+            )
+    for idx in range(board.cell_count):
+        row, col = board.coords_at(idx)
+        if (row, col) in seen_solver:
+            continue
         tile = board.tiles[row][col]
         tiles.append(
             board_tile_to_melmod_dict(

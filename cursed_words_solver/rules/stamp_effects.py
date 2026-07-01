@@ -277,7 +277,7 @@ def apply_sticker_with_orchestration(
         )
 
         eff_level = tombstone_inventory_scoring_level(
-            sticker, loadout, board, base_level=eff_level
+            sticker, loadout, board, base_level=eff_level, path=path
         )
     state = apply_rule(
         rule,

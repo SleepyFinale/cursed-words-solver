@@ -1595,6 +1595,32 @@ def dusty_coffin_scattered_on_path(board: Board, path: list[int]) -> bool:
     return False
 
 
+_GRID_PATH_SCATTER_SLUGS = frozenset(
+    {"tombstone", "down_under", "dusty_coffin", "deep_sea_horror"}
+)
+
+
+def path_includes_grid_scatter(
+    board: Board, path: list[int] | None, slug: str
+) -> bool:
+    """True when a scattered grid sticker of ``slug`` sits on the word path."""
+    if path is None:
+        return False
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    want = slugify_name(slug)
+    for idx in path:
+        if not board.is_active_index(idx):
+            continue
+        tile = board.get_by_index(idx)
+        if tile.curse != CurseType.ITEM:
+            continue
+        raw = str((tile.metadata or {}).get("scattered_item_id") or "").strip()
+        if slugify_name(raw) == want:
+            return True
+    return False
+
+
 def _dusty_floor_mod_capped(loadout: Loadout | None) -> bool:
     if loadout is None:
         return False
@@ -1794,6 +1820,35 @@ def dusty_coffin_void_units(
         if path is not None
         else None
     )
+    if (
+        from_grid_scatter
+        and path is not None
+        and dusty_coffin_scattered_on_path(board, path)
+        and not _dusty_coffin_equipped_in_loadout(loadout)
+    ):
+        letters_in_word = set((word or "").lower())
+        void_letter_faces: set[str] = set()
+        count = 0
+        for tile in board.flat:
+            if tile.color != TileColor.VOID or tile.curse != CurseType.LETTER:
+                continue
+            count += 1
+            face = void_tile_face_for_dusty_coffin(tile) or path_letter_for_count(tile)
+            if face:
+                void_letter_faces.add(face.lower())
+        for idx in path:
+            tile = board.get_by_index(idx)
+            slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
+            if slug != "dusty_coffin" or tile.color == TileColor.VOID:
+                continue
+            face = path_letter_for_count(tile)
+            if (
+                face
+                and face.lower() not in letters_in_word
+                and face.lower() not in void_letter_faces
+            ):
+                count += 1
+        return count
     if from_grid_scatter and scatter_tile is None and path is not None:
         scatter_tile = _dusty_coffin_scatter_tile_off_path(board, path)
     if (
@@ -4847,18 +4902,18 @@ def tombstone_inventory_scoring_level(
     board: Board | None,
     *,
     base_level: int | None = None,
+    path: list[int] | None = None,
 ) -> int:
     """Equipped Tombstone level when a grid scatter Tombstone is on the board."""
-    from cursed_words_solver.rules.rule_lookup import slugify_name
-
     level = max(1, int(base_level if base_level is not None else sticker.level))
     if (
         board is not None
         and "tombstone" in grid_scatter_sticker_slugs(board)
         and level > 1
+        and not path_includes_grid_scatter(board, path, "tombstone")
     ):
         return 1
-    del loadout, slugify_name
+    del loadout
     return level
 
 
@@ -5574,6 +5629,18 @@ def grid_path_sticker_level(
         and loadout.stickers
         and is_grid_path_tile
         and tile_level_known
+        and path is not None
+        and path_tile_index is not None
+        and path_tile_index == len(path) - 1
+        and path_includes_grid_scatter(board, path, "down_under")
+    ):
+        level = max(level, encounter_level + 1)
+    elif (
+        slug_norm == "down_under"
+        and loadout is not None
+        and loadout.stickers
+        and is_grid_path_tile
+        and tile_level_known
     ):
         level = max(
             level,
@@ -5583,14 +5650,20 @@ def grid_path_sticker_level(
         slug_norm == "deep_sea_horror"
         and loadout is not None
         and loadout.stickers
+        and is_grid_path_tile
     ):
-        max_equipped = 1
-        for sticker in loadout.stickers:
-            try:
-                max_equipped = max(max_equipped, max(1, int(sticker.level)))
-            except (TypeError, ValueError):
-                pass
-        level = max(level, max_equipped)
+        eq_dsh = _equipped_sticker_level_for_slug(loadout, "deep_sea_horror")
+        if eq_dsh is not None:
+            level = eq_dsh
+        elif floor_mod_capped or _active_boss_modifier_slugs(loadout):
+            level = max(level, encounter_level + 1)
+        else:
+            level = max(
+                level,
+                _max_equipped_sticker_level_excluding(
+                    loadout, "dusty_coffin", "down_under"
+                ),
+            )
 
     if slug_norm == "tombstone" and loadout is not None and loadout.stickers:
         pool = grid_scatter_sticker_slugs(board) if board is not None else set()
@@ -5606,6 +5679,22 @@ def grid_path_sticker_level(
         if batch_tombstone:
             max_equipped = max(max(1, int(s.level)) for s in loadout.stickers)
             level = max(level, max_equipped)
+    if (
+        slug_norm == "tombstone"
+        and is_grid_path_tile
+        and board is not None
+        and path is not None
+        and path_includes_grid_scatter(board, path, "tombstone")
+        and loadout is not None
+    ):
+        eq_tomb = _equipped_sticker_level_for_slug(loadout, "tombstone")
+        bleed = False
+        if tile_level_known and exported_tile_level is not None and eq_tomb is not None:
+            bleed = _tombstone_export_is_inventory_bleed(
+                exported_tile_level, eq_tomb, encounter_level
+            )
+        if eq_tomb is not None and eq_tomb > level and not bleed:
+            level = eq_tomb
     if (
         slug_norm == "tombstone"
         and board is not None
@@ -5679,7 +5768,12 @@ def grid_path_sticker_level(
         and not (
             is_grid_path_tile
             and tile_level_known
-            and slug_norm in ("dusty_coffin", "tombstone")
+            and slug_norm in (
+                "dusty_coffin",
+                "tombstone",
+                "deep_sea_horror",
+                "down_under",
+            )
         )
     ):
         for sticker in loadout.stickers:

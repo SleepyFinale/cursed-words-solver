@@ -141,3 +141,98 @@ def test_round_log_fixture_embed_dna_pattern():
     trace = (data.get("solver") or {}).get("predicted_trace") or []
     dna_rules = [e for e in trace if e.get("rule_id") == "mutating_dna" and e.get("applied")]
     assert dna_rules, "fixture should show DNA applied in prediction"
+
+
+def _melmod_board_run_state(*, letter_overrides: dict[tuple[int, int], dict] | None = None) -> dict:
+    tiles = []
+    for r in range(5):
+        for c in range(5):
+            entry: dict = {
+                "row": r,
+                "col": c,
+                "char": "A",
+                "letter": "A",
+                "base_score": 1,
+                "color": "colorless",
+                "curse": "letter",
+                "active": True,
+            }
+            if letter_overrides and (r, c) in letter_overrides:
+                entry.update(letter_overrides[(r, c)])
+            tiles.append(entry)
+    return {
+        "board": {"money": 10, "rows": 5, "cols": 5, "tiles": tiles},
+        "character": "Test",
+        "money": 10,
+        "stickers": [],
+        "stamps": [],
+        "extras": {"grid_number": "1"},
+    }
+
+
+def test_board_roundtrip_preserves_melmod_fingerprint():
+    """Parse → board_to_run_state_board must not drift melmod fingerprint fields."""
+    from cursed_words_solver.fingerprints import fingerprints_from_run_state
+    from cursed_words_solver.loadout import (
+        board_to_run_state_board,
+        parse_board_from_run_state,
+    )
+
+    run_state = _melmod_board_run_state(
+        letter_overrides={
+            (4, 3): {
+                "char": "🐙",
+                "letter": "🐙",
+                "curse": "void",
+                "color": "void",
+                "base_score": -10,
+            },
+            (2, 2): {
+                "char": "?",
+                "letter": "?",
+                "curse": "wildcard",
+                "color": "red",
+                "is_joker": True,
+            },
+            (0, 0): {
+                "char": "$",
+                "letter": "$",
+                "curse": "currency",
+                "color": "yellow",
+            },
+        }
+    )
+    original_fp, _ = fingerprints_from_run_state(run_state)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    roundtrip = {"board": board_to_run_state_board(board, source_run_state=run_state)}
+    roundtrip_fp, _ = fingerprints_from_run_state(roundtrip)
+    assert roundtrip_fp == original_fp
+
+
+def test_save_last_suggestion_uses_melmod_fingerprint_override(tmp_path, monkeypatch):
+    from cursed_words_solver.loadout import parse_board_from_run_state
+    from cursed_words_solver.models import Loadout, WordResult
+    from cursed_words_solver.suggestion import save_last_suggestion
+
+    monkeypatch.setattr(
+        "cursed_words_solver.suggestion.LAST_SUGGESTION_PATH",
+        tmp_path / "last_suggestion.json",
+    )
+    run_state = _melmod_board_run_state()
+    melmod_fp = "10|4,0:A/letter/colorless;4,1:A/letter/colorless;"
+    embed_fp = "10|4,0:Z/letter/colorless;4,1:A/letter/colorless;"
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    save_last_suggestion(
+        board=board,
+        loadout=Loadout(),
+        result=WordResult(word="aaa", path=[0, 1, 2], score=1),
+        predicted_trace=[],
+        run_state_snapshot=run_state,
+        melmod_board_fingerprint=melmod_fp,
+        melmod_loadout_fingerprint="Test|10|||boss|-|pin:left",
+    )
+    data = json.loads((tmp_path / "last_suggestion.json").read_text(encoding="utf-8"))
+    assert data["board_fingerprint"] == melmod_fp
+    assert data["board_fingerprint"] != embed_fp

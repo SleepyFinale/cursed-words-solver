@@ -5663,6 +5663,145 @@ class WordSearcher:
         finally:
             self._active_deadline = prev_deadline
 
+    def _extend_onto_grid_scatter_neighbors(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        deadline: float | None,
+    ) -> None:
+        """Swap/append path endings onto scattered grid item neighbors (hiatus tombstone)."""
+        from cursed_words_solver.rules.rule_lookup import slugify_name
+        from cursed_words_solver.rules.scoring_conditions import (
+            _GRID_PATH_SCATTER_SLUGS,
+        )
+        from cursed_words_solver.suggestion import (
+            _valid_dictionary_words_for_path,
+            path_is_submittable,
+        )
+
+        scatter_indices: list[int] = []
+        for idx in _active_indices(board):
+            tile = board.get_by_index(idx)
+            if tile.curse != CurseType.ITEM:
+                continue
+            slug = slugify_name(
+                str((tile.metadata or {}).get("scattered_item_id") or "")
+            )
+            if slug in _GRID_PATH_SCATTER_SLUGS:
+                scatter_indices.append(idx)
+        if not scatter_indices:
+            return
+        if deadline is not None and time.monotonic() >= deadline:
+            return
+        ctx = self._search_ctx(loadout)
+        base_flags = ctx.search_flags
+
+        def try_path(path: list[int]) -> None:
+            if len(path) < self.min_len or len(path) > self.max_len:
+                return
+            path_flags = path_scattered_search_flags_mask(
+                board, path, base_flags, self.scoring.rules
+            )
+            if not path_movement_ok(board, path, flags=path_flags, loadout=loadout):
+                return
+            search_word = search_word_from_path(
+                board, path, flags=path_flags
+            )
+            valid = _valid_dictionary_words_for_path(
+                board,
+                path,
+                search_word,
+                loadout,
+                self.dictionary,
+                min_len=self.min_len,
+                limit=1,
+            )
+            if not valid:
+                return
+            score_word = valid[0]
+            if not path_is_submittable(
+                board,
+                path,
+                score_word,
+                loadout,
+                self.dictionary,
+                min_len=self.min_len,
+            ):
+                return
+            rank_sc = self._rank_score_for_candidate(
+                board,
+                path,
+                score_word,
+                loadout,
+                prune_heap=candidates,
+                resolved_word=score_word,
+            )
+            if rank_sc is not None:
+                candidates.consider(rank_sc, score_word, path)
+
+        prev_deadline = self._active_deadline
+        if deadline is not None:
+            self._active_deadline = deadline
+        try:
+            seen: set[tuple[int, ...]] = set()
+            graph_ctx = self._board_graph(board)
+            for _score, _word, path_tuple in list(candidates.best_sorted()[:48]):
+                if deadline is not None and time.monotonic() >= deadline:
+                    break
+                path = list(path_tuple)
+                if len(path) < 2:
+                    continue
+                prefix = path[:-1]
+                prefix_mask = sum(1 << idx for idx in prefix)
+                prefix_flags = path_scattered_search_flags_mask(
+                    board, prefix, base_flags, self.scoring.rules
+                )
+                anchor = prefix[-1]
+                nbr_mask = neighbors_mask(
+                    board,
+                    prefix_mask,
+                    cell_id=anchor,
+                    flags=prefix_flags,
+                    graph_ctx=graph_ctx,
+                    loadout=loadout,
+                )
+                for item_idx in scatter_indices:
+                    if item_idx in path or not (nbr_mask & (1 << item_idx)):
+                        continue
+                    trial = prefix + [item_idx]
+                    key = tuple(trial)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    try_path(trial)
+                if len(path) >= self.max_len or path[-1] in scatter_indices:
+                    continue
+                tail = path[-1]
+                tail_mask = sum(1 << idx for idx in path)
+                tail_flags = path_scattered_search_flags_mask(
+                    board, path, base_flags, self.scoring.rules
+                )
+                nbr_mask = neighbors_mask(
+                    board,
+                    tail_mask,
+                    cell_id=tail,
+                    flags=tail_flags,
+                    graph_ctx=graph_ctx,
+                    loadout=loadout,
+                )
+                for item_idx in scatter_indices:
+                    if item_idx in path or not (nbr_mask & (1 << item_idx)):
+                        continue
+                    trial = path + [item_idx]
+                    key = tuple(trial)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    try_path(trial)
+        finally:
+            self._active_deadline = prev_deadline
+
     def _refine_candidates_with_extension(
         self,
         board: Board,
@@ -7461,6 +7600,13 @@ class WordSearcher:
                     loadout,
                     candidates,
                     deadline=resolve_deadline,
+                )
+            if time.monotonic() < phase_extend_deadline:
+                self._extend_onto_grid_scatter_neighbors(
+                    board,
+                    loadout,
+                    candidates,
+                    deadline=phase_extend_deadline,
                 )
             if (
                 item_count >= _SCATTERED_ITEM_DENSE_MIN

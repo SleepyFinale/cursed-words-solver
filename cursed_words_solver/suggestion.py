@@ -546,7 +546,7 @@ def scatter_level_below_equipped_warning(
 
     mismatches: list[str] = []
     for tile in board.flat:
-        if tile.curse != CurseType.ITEM:
+        if tile is None or tile.curse != CurseType.ITEM:
             continue
         slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
         if not slug or slug not in equipped:
@@ -1163,6 +1163,25 @@ def _active_session_same_board_tiles(
     return bool(session_tiles and cur_tiles and session_tiles == cur_tiles)
 
 
+def _active_session_live_board_matches(active_session: Any, current_board_fp: str) -> bool:
+    """True when live melmod board tiles still match the active F8 gather session."""
+    return _active_session_same_board_tiles(active_session, current_board_fp)
+
+
+def _active_session_suppresses_workflow_drift(
+    embed_extras: dict[str, Any],
+    live_extras: dict[str, Any],
+) -> bool:
+    """Suppress post-F8 workflow poll clear when export catchup filled empty historic."""
+    hist_embed = str(embed_extras.get("historic_words", "") or "").strip()
+    hist_live = str(live_extras.get("historic_words", "") or "").strip()
+    count_embed = _historic_words_count(hist_embed)
+    count_live = _historic_words_count(hist_live)
+    if count_live > count_embed and count_embed == 0:
+        return True
+    return False
+
+
 def poll_invalidate_last_suggestion(
     run_state_extras: dict[str, Any] | None,
     *,
@@ -1188,7 +1207,28 @@ def poll_invalidate_last_suggestion(
         current_board_fp,
         cursedle=cursedle_mode,
     )
+    session_live_match = _active_session_live_board_matches(
+        active_session, current_board_fp
+    )
+
     if not tiles_match:
+        if fingerprint_invalidate_suppressed_for_post_f8_export(
+            current_board_fp,
+            search_budget_sec=search_budget_sec,
+        ):
+            return None
+        if session_live_match:
+            return None
+        fp_reason = clear_stale_last_suggestion_if_fingerprint_changed(
+            current_board_fp,
+            current_loadout_fp=current_loadout_fp,
+        )
+        if fp_reason:
+            return fp_reason
+    elif (
+        active_session is not None
+        and not session_live_match
+    ):
         fp_reason = clear_stale_last_suggestion_if_fingerprint_changed(
             current_board_fp,
             current_loadout_fp=current_loadout_fp,
@@ -1210,7 +1250,8 @@ def poll_invalidate_last_suggestion(
         ):
             return "loadout changed"
 
-    if data is not None and saved_board and tiles_match:
+    board_stable = bool(saved_board and (tiles_match or session_live_match))
+    if data is not None and board_stable:
         extras = run_state_extras if isinstance(run_state_extras, dict) else {}
         embed_extras = _f8_snapshot_extras(data)
         if workflow_invalidate_suppressed_for_export_catchup(
@@ -1238,6 +1279,10 @@ def poll_invalidate_last_suggestion(
             if bike_reason and clear_last_suggestion():
                 return bike_reason
             if not has_played_word_since_f8_embed(extras, embed_extras):
+                return None
+            if session_live_match and _active_session_suppresses_workflow_drift(
+                embed_extras, extras
+            ):
                 return None
             workflow_reason = workflow_stale_vs_f8_snapshot(
                 extras,
@@ -1875,6 +1920,9 @@ def f8_should_block_save(
     del grid_adv_warn, grid_one_hist_warn
     if grid_bleed_warn:
         return True, "workflow_bleed"
+    if loadout is not None and board is not None:
+        if scatter_level_below_equipped_warning(loadout, board):
+            return True, "scatter_level_lag"
     if not gather_succeeded:
         from cursed_words_solver.f8_messages import gather_block_reason
 
@@ -2229,6 +2277,8 @@ def save_last_suggestion(
     predicted_score_max: int | None = None,
     capybara_perm_count: int | None = None,
     capybara_exhaustive: bool | None = None,
+    melmod_board_fingerprint: str | None = None,
+    melmod_loadout_fingerprint: str | None = None,
 
 ) -> None:
 
@@ -2254,13 +2304,18 @@ def save_last_suggestion(
 
     LAST_SUGGESTION_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    board_fp = ""
+    board_fp = (melmod_board_fingerprint or "").strip()
+    loadout_fp = (melmod_loadout_fingerprint or "").strip()
 
-    loadout_fp = ""
-
-    if run_state_snapshot is not None:
-
-        board_fp, loadout_fp = fingerprints_from_run_state(run_state_snapshot)
+    if not board_fp or not loadout_fp:
+        if run_state_snapshot is not None:
+            snap_board_fp, snap_loadout_fp = fingerprints_from_run_state(
+                run_state_snapshot
+            )
+            if not board_fp:
+                board_fp = snap_board_fp
+            if not loadout_fp:
+                loadout_fp = snap_loadout_fp
 
 
 

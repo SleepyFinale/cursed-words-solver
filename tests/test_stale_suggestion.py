@@ -1867,6 +1867,44 @@ def test_poll_suppresses_board_money_drift_within_grace(tmp_path, monkeypatch):
     assert suggestion_path.exists()
 
 
+def test_poll_suppresses_stale_embed_fp_when_active_session_matches_live(
+    tmp_path, monkeypatch,
+):
+    """Post-F8 poll must not clear when live melmod tiles match session but saved fp drifted."""
+    from cursed_words_solver.f8_snapshot import F8SuggestionSession
+    from cursed_words_solver.fingerprints import board_tiles_fingerprint_suffix
+
+    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
+    tiles = "4,0:A/letter/colorless;4,1:B/letter/colorless;"
+    melmod_fp = f"10|{tiles}"
+    stale_embed_fp = f"10|4,0:Z/letter/colorless;4,1:B/letter/colorless;"
+    created = datetime.now(timezone.utc).isoformat()
+    suggestion_path.write_text(
+        json.dumps(
+            {
+                "created_at": created,
+                "board_fingerprint": stale_embed_fp,
+                "loadout_fingerprint": "same-loadout",
+            }
+        ),
+        encoding="utf-8",
+    )
+    session = F8SuggestionSession(
+        board_fingerprint=melmod_fp,
+        loadout_fingerprint="same-loadout",
+        board_tiles_fingerprint=board_tiles_fingerprint_suffix(melmod_fp),
+        grid_number=1,
+    )
+    reason = poll_invalidate_last_suggestion(
+        {},
+        current_board_fp=melmod_fp,
+        current_loadout_fp="same-loadout",
+        active_session=session,
+    )
+    assert reason is None
+    assert suggestion_path.exists()
+
+
 def test_poll_suppresses_letter_drift_when_historic_same_count_refreshed(
     tmp_path, monkeypatch
 ):
@@ -4156,4 +4194,51 @@ def test_fleece_kierie_mutating_dna_was_stale_before_authoritative_fix():
     extras_diff = data.get("extras_diff") or {}
     assert _stale_f8_extras_note(extras_diff) is not None
     assert "mutating_dna_letter_counts changed" in _stale_f8_extras_note(extras_diff)
+
+
+def test_f8_should_block_when_scatter_level_below_equipped() -> None:
+    from cursed_words_solver.models import (
+        Board,
+        CurseType,
+        Loadout,
+        LoadoutItem,
+        Tile,
+        TileColor,
+    )
+
+    tile = Tile(
+        row=0,
+        col=2,
+        char="?",
+        letter="?",
+        base_score=0.0,
+        color=TileColor.COLORLESS,
+        curse=CurseType.ITEM,
+        metadata={"scattered_item_id": "tombstone", "scattered_item_level": 1},
+    )
+    tiles: list[list[Tile | None]] = []
+    for r in range(5):
+        row: list[Tile | None] = []
+        for c in range(5):
+            row.append(
+                Tile(
+                    row=r,
+                    col=c,
+                    char="a",
+                    letter="a",
+                    base_score=1.0,
+                )
+            )
+        tiles.append(row)
+    tiles[0][2] = tile
+    board = Board(tiles=tiles, money=10)
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="tombstone", name="Tombstone", level=2)]
+    )
+    blocked, reason = f8_should_block_save(
+        loadout=loadout,
+        board=board,
+    )
+    assert blocked
+    assert reason == "scatter_level_lag"
 

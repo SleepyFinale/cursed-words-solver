@@ -48,6 +48,7 @@ from cursed_words_solver.f8_snapshot import (
     historic_words_gather_pending,
     historic_workflow_catchup_needed,
     session_from_snapshot,
+    session_from_run_state,
     sole_gather_miss_is_historic,
     write_f8_export_request,
 )
@@ -208,6 +209,7 @@ class _SolveUIUpdate:
     shop_advice_html: str | None = None
     trusted_suggestion: bool = True
     block_reason: str | None = None
+    active_session: F8SuggestionSession | None = None
 
 
 class _HotkeyBridge(QObject):
@@ -751,6 +753,11 @@ class SolverApp:
 
     def _apply_solve_ui(self, update: _SolveUIUpdate) -> None:
         """Show overlay and board highlights on the Qt GUI thread."""
+        if update.active_session is not None:
+            self._active_suggestion_session = update.active_session
+            self._last_invalidation_reason = None
+        elif not update.results:
+            self._active_suggestion_session = None
         if update.shop_advice_html:
             self._clear_highlight_state()
             self.overlay.show_shop_advice(
@@ -2253,6 +2260,18 @@ class SolverApp:
                             export_warnings.append(sample_warn)
                 session_extras = solver_session_extras_from_loadout(f8_loadout)
                 fresh_embed_run_state = load_run_state_raw()
+                commit_run_state = (
+                    fresh_embed_run_state
+                    if isinstance(fresh_embed_run_state, dict)
+                    else score_run_state
+                )
+                if isinstance(commit_run_state, dict):
+                    melmod_board_fp, melmod_loadout_fp = fingerprints_from_run_state(
+                        commit_run_state
+                    )
+                    f8_active_session = session_from_run_state(commit_run_state)
+                else:
+                    f8_active_session = None
                 embed_state = embed_f8_snapshot(
                     snapshot,
                     scoring_loadout=score_loadout,
@@ -2398,23 +2417,10 @@ class SolverApp:
                         capybara_exhaustive=(
                             capybara_stats.exhaustive if capybara_stats else None
                         ),
+                        melmod_board_fingerprint=melmod_board_fp,
+                        melmod_loadout_fingerprint=melmod_loadout_fp,
                     )
                     saved_suggestion = True
-                    self._last_invalidation_reason = None
-                    self._active_suggestion_session = session_from_snapshot(snapshot)
-                    if self._active_suggestion_session is None and isinstance(
-                        score_run_state, dict
-                    ):
-                        from cursed_words_solver.f8_snapshot import F8Snapshot
-
-                        self._active_suggestion_session = session_from_snapshot(
-                            F8Snapshot(
-                                run_state=score_run_state,
-                                board=search_board,
-                                loadout=f8_loadout,
-                                board_available=True,
-                            )
-                        )
                 else:
                     save_blocked_suggestion(
                         board=search_board,
@@ -2428,20 +2434,6 @@ class SolverApp:
                         consumable_placements=placement_records or None,
                         twinkle_toes_swap=twinkle_swap_record,
                     )
-                    self._active_suggestion_session = session_from_snapshot(snapshot)
-                    if self._active_suggestion_session is None and isinstance(
-                        score_run_state, dict
-                    ):
-                        from cursed_words_solver.f8_snapshot import F8Snapshot
-
-                        self._active_suggestion_session = session_from_snapshot(
-                            F8Snapshot(
-                                run_state=score_run_state,
-                                board=search_board,
-                                loadout=f8_loadout,
-                                board_available=True,
-                            )
-                        )
                 for warn in export_warnings:
                     print(f"  Export warning: {warn}", flush=True)
 
@@ -2521,7 +2513,6 @@ class SolverApp:
                     )
             else:
                 clear_last_suggestion()
-                self._active_suggestion_session = None
                 print(
                     f"Done in {search_elapsed:.1f}s. No valid words found.",
                     flush=True,
@@ -2586,6 +2577,7 @@ class SolverApp:
                     trusted_suggestion=trusted,
                     block_reason=block_f8_reason,
                     loadout=loadout,
+                    active_session=f8_active_session if results else None,
                 )
             )
         except Exception as exc:

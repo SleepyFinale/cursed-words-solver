@@ -150,6 +150,9 @@ def encounter_grid_scatter_refs(
         slug_norm = slugify_name(slug)
         if slug_norm in path_slugs or slug_norm in seen_off_path:
             continue
+        # Off-path Deep Sea Horror does not penalize path void tiles (leggiero).
+        if slug_norm == "deep_sea_horror":
+            continue
         _key, rule = get_rule(rules, "stickers", slug, slug)
         if not rule:
             _key, rule = get_rule(rules, "stamps", slug, slug)

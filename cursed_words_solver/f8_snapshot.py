@@ -883,6 +883,27 @@ def catchup_historic_gather_after_search(
     return snapshot, catchup_note, None, None
 
 
+def session_from_run_state(run_state: dict[str, Any] | None) -> F8SuggestionSession | None:
+    """Build active-session metadata from a live melmod run_state export."""
+    if not isinstance(run_state, dict):
+        return None
+    board_fp, loadout_fp = fingerprints_from_run_state(run_state)
+    tiles_fp = board_tiles_fingerprint_suffix(board_fp)
+    gn = 0
+    extras = run_state.get("extras")
+    if isinstance(extras, dict):
+        try:
+            gn = int(str(extras.get("grid_number") or "0"))
+        except (TypeError, ValueError):
+            gn = 0
+    return F8SuggestionSession(
+        board_fingerprint=board_fp,
+        loadout_fingerprint=loadout_fp,
+        board_tiles_fingerprint=tiles_fp,
+        grid_number=gn,
+    )
+
+
 def session_from_snapshot(snapshot: F8Snapshot) -> F8SuggestionSession | None:
     """Build active-session metadata from a gathered snapshot."""
     if snapshot.run_state is None or snapshot.board is None:

@@ -1326,6 +1326,8 @@ namespace CursedWordsSolverCompanion
             if (curse != "letter")
                 return null;
 
+            var face = ScrabbleFaceValue(letter);
+
             if (color == "colorless")
             {
                 try
@@ -1333,10 +1335,9 @@ namespace CursedWordsSolverCompanion
                     var packet = tile.GetValue();
                     if (packet != null)
                     {
-                        var face = ScrabbleFaceValue(letter);
                         if (packet.Score < face)
                         {
-                            var steps = (face - (int)Math.Round(packet.Score) + 9) / 10;
+                            var steps = (face - (int)Math.Round((double)packet.Score) + 9) / 10;
                             if (steps >= 1)
                                 return steps;
                         }
@@ -1351,8 +1352,6 @@ namespace CursedWordsSolverCompanion
 
             if (color != "void")
                 return null;
-
-            var face = ScrabbleFaceValue(letter);
 
             foreach (var name in new[]
             {
