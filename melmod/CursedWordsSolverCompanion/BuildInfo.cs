@@ -7,7 +7,7 @@ namespace CursedWordsSolverCompanion
             "Exports run loadout to run_state.json for the Cursed Words Screenshot Solver.";
         public const string Author = "cursed_words_solver";
         public const string Company = null;
-        public const string Version = "1.2.2";
+        public const string Version = "1.2.3";
         public const string DownloadLink = null;
     }
 }

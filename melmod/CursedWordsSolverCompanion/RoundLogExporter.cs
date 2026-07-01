@@ -419,11 +419,14 @@ namespace CursedWordsSolverCompanion
                     staleF8Reason = mismatchExportStale;
             }
             var scoringExtrasForStale = ResolveScoringExtrasForStaleCheck(ctx);
+            var skipPostSubmitStaleReason =
+                matchStatus == "path_mismatch" || matchStatus == "path_extension";
             if (
                 ctx.Suggestion != null
                 && scoringExtrasForStale != null
                 && !ctx.Suggestion.capture_blocked
                 && string.IsNullOrEmpty(staleF8Reason)
+                && !skipPostSubmitStaleReason
             )
             {
                 var f8ExtrasForReason = ExtrasDiffHelper.ExtrasFromRunStateObject(

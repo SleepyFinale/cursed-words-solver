@@ -113,7 +113,7 @@ namespace CursedWordsSolverCompanion
                     _f8ExportRequestId
                 );
                 WriteSnapshot(snapshot);
-                TryClearLastSuggestionIfWorkflowStale(snapshot, player);
+                TryClearLastSuggestionIfWorkflowStale(snapshot, player, trigger);
                 DictionaryExporter.TryExport(logSuccess);
                 if (logSuccess)
                 {
@@ -185,10 +185,15 @@ namespace CursedWordsSolverCompanion
         /// </summary>
         private static void TryClearLastSuggestionIfWorkflowStale(
             RunStateSnapshot snapshot,
-            Player player
+            Player player,
+            string exportTrigger = null
         )
         {
             if (snapshot?.extras == null)
+                return;
+
+            // Submit exports refresh historic for the next F8; F8 embed is always behind.
+            if (string.Equals(exportTrigger, "submit", StringComparison.OrdinalIgnoreCase))
                 return;
 
             if (

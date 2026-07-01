@@ -593,10 +593,16 @@ def _wildcard_branch_letters(
     position: int,
     *,
     flags: SearchFlagsMask = 0,
+    segment: str | None = None,
 ) -> tuple[str, ...]:
     """Letters to try when a tile resolves to wildcard '?' during trie DFS."""
+    flags = coerce_search_flags(flags)
     token = resolve_letter(tile, position, flags=flags)
     if "?" not in token:
+        if tile.curse == CurseType.NUMBER and is_numeric_wildcard(
+            tile, position, flags=flags, segment=segment
+        ):
+            return _WILDCARD_LETTERS
         return ()
     options = resolve_letter_options(tile, position, flags=flags)
     if len(options) == 1 and options[0] == "?":
@@ -4041,18 +4047,28 @@ class WordSearcher:
                         if need is None or need > remaining_after:
                             continue
                 token = resolve_letter(tile, prefix_len, flags=path_flags)
+                partial_seg = "".join(chars).lower()
                 next_has_digit = has_digit or any(c.isdigit() for c in token)
                 letter_options = resolve_letter_options(tile, prefix_len, flags=path_flags)
                 multi_letter = (
                     len(letter_options) > 1
                     and all(len(o) == 1 and o.isalpha() for o in letter_options)
                 )
+                num_wildcard_letters = (
+                    _wildcard_branch_letters(
+                        tile, prefix_len, flags=path_flags, segment=partial_seg
+                    )
+                    if tile.curse == CurseType.NUMBER
+                    else ()
+                )
                 branch_letters = (
                     tuple(letter_options)
                     if multi_letter
-                    else _wildcard_branch_letters(tile, prefix_len, flags=path_flags)
+                    else _wildcard_branch_letters(
+                        tile, prefix_len, flags=path_flags, segment=partial_seg
+                    )
                     if "?" in token and not next_has_digit
-                    else ()
+                    else num_wildcard_letters
                 )
 
                 if branch_letters:
@@ -4073,14 +4089,59 @@ class WordSearcher:
                     )
                     for ch in branch_letters:
                         child = _step_token_cursor(prefix_cursor, ch)
+                        letter_pat_active = (
+                            has_wildcard
+                            or has_digit
+                            or (
+                                tile.curse == CurseType.NUMBER
+                                and bool(num_wildcard_letters)
+                            )
+                        )
                         next_pat = _pattern_after_token(
-                            pattern_prefix, ch, active=has_wildcard or has_digit
+                            pattern_prefix, ch, active=letter_pat_active
                         )
                         next_pat_cursor = _step_pattern_cursor(
-                            pattern_cursor, ch, active=pat_active or True
+                            pattern_cursor, ch, active=pat_active or letter_pat_active
+                        )
+                        use_wildcard = (
+                            tile.curse == CurseType.NUMBER
+                            and bool(num_wildcard_letters)
                         )
                         extensions.append(
-                            (ch, child, next_pat_cursor, False, next_pat)
+                            (ch, child, next_pat_cursor, use_wildcard, next_pat)
+                        )
+                    if (
+                        tile.curse == CurseType.NUMBER
+                        and token.isdigit()
+                        and num_wildcard_letters
+                    ):
+                        next_has_wildcard = has_wildcard or ("?" in token)
+                        pattern_active = (
+                            has_digit
+                            or next_has_digit
+                            or next_has_wildcard
+                            or pattern_prefix is not None
+                            or pattern_cursor is not None
+                        )
+                        next_pat = _pattern_after_token(
+                            pattern_prefix, token, active=pattern_active
+                        )
+                        next_pat_cursor = _step_pattern_cursor(
+                            pattern_cursor, token, active=pattern_active
+                        )
+                        mixed = self.dictionary.mixed_step_cursor(
+                            prefix_cursor if letter_trie else pattern_cursor, token
+                        )
+                        if timing is not None:
+                            timing.trie_steps += len(token)
+                        extensions.append(
+                            (
+                                token,
+                                mixed,
+                                next_pat_cursor,
+                                next_has_wildcard,
+                                next_pat,
+                            )
                         )
                 else:
                     next_has_wildcard = has_wildcard or ("?" in token)
@@ -6738,6 +6799,7 @@ class WordSearcher:
         self._active_timing = timing
         has_number_tiles = any(is_number_like_tile(t) for t in board.flat)
         self._board_has_number_tiles = has_number_tiles
+        has_digit_tiles = any(t.curse == CurseType.NUMBER for t in board.flat)
         has_fraction_tiles = any(is_fraction_tile(t) for t in board.flat)
         void_letter_starts = [
             i
@@ -6770,7 +6832,7 @@ class WordSearcher:
             number_reserve = 0.0
             void_reserve = 0.0
             fraction_cluster_reserve = 0.0
-        elif has_number_tiles:
+        elif has_digit_tiles:
             # Tight budgets need more time reserved for digit passes; otherwise
             # the cap progression (7 -> 8) can time out before reaching cap=8.
             if self.time_budget < 2.0 and (placement_screen or required_placement):
@@ -6793,6 +6855,10 @@ class WordSearcher:
                 number_reserve *= scale
                 void_reserve *= scale
                 fraction_cluster_reserve *= scale
+        elif has_fraction_tiles:
+            number_reserve = 0.0
+            void_reserve = 0.0
+            fraction_cluster_reserve = min(10.0, self.time_budget * 0.18)
         else:
             number_reserve = 0.0
             void_reserve = 0.0
@@ -6965,7 +7031,7 @@ class WordSearcher:
         main_dfs_floor = search_begin + self.time_budget * MAIN_DFS_FLOOR_FRAC
         if main_deadline < main_dfs_floor:
             main_deadline = main_dfs_floor
-        if use_parallel and self.min_len > 3 and self.max_len > self.min_len:
+        if use_parallel and self.min_len >= 3 and self.max_len > self.min_len:
             parallel_cap = search_begin + min(
                 self.time_budget * 0.45,
                 max(12.0, self.time_budget - 18.0),
@@ -7214,8 +7280,6 @@ class WordSearcher:
                     )
                     post_dfs_budget = (
                         number_reserve + void_reserve + fraction_cluster_reserve
-                        if has_number_tiles
-                        else 0.0
                     )
                     fallback_deadline = pre_extend_deadline
                     if post_dfs_budget > 0.0:

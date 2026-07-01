@@ -1425,13 +1425,6 @@ namespace CursedWordsSolverCompanion
         {
             try
             {
-                if (
-                    _suggestion != null
-                    && _path != null
-                    && SuggestionMatcher.PathsEqual(_suggestion.path, _path)
-                )
-                    MarkOverlaySubmitCompleted();
-
                 var actualScore = ComputeActualScore();
                 var submitPlayer = RunStateExporter.GetPlayerForUpdate();
                 var runState = RunStateExporter.CaptureRunState(submitPlayer);
@@ -1507,6 +1500,11 @@ namespace CursedWordsSolverCompanion
 
                 PersistLastSubmittedWordFirstLetter();
                 RunStateExporter.TryMergeTelescopeEncounterExtrasAfterScore();
+                if (_suggestion != null)
+                {
+                    MarkOverlaySubmitCompleted();
+                    SuggestionMatcher.TryClearLastSuggestionAfterSubmit();
+                }
                 RunStateExporter.TryExportAfterWordSubmit();
 
                 ConsumablePlacementTracker.ResetAfterSubmit(_boardAtSubmit);

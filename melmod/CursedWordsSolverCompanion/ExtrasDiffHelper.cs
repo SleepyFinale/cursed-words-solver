@@ -2158,9 +2158,15 @@ namespace CursedWordsSolverCompanion
 
 
 
-            if (liveCount != f8Count + 1 || f8Count <= 0)
+            if (liveCount != f8Count + 1)
 
                 return false;
+
+
+
+            if (f8Count == 0)
+
+                return !string.IsNullOrWhiteSpace(liveHist) && liveHist.Trim() != "[]";
 
 
 

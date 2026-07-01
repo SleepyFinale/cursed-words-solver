@@ -114,13 +114,24 @@ def _path_grid_item_refs(
     return refs
 
 
+# EncounterController.GetItemsForWordSubmission only adds scattered items on the path.
+# Tombstone and dusty_coffin are exceptions: their effects read void tiles grid-wide.
+_OFF_PATH_GRID_SCATTER_SLUGS = frozenset({"tombstone", "dusty_coffin"})
+
+
 def encounter_grid_scatter_refs(
     board: Board,
     path: list[int],
     rules: dict,
     loadout: Loadout | None = None,
 ) -> list[ScoringItemRef]:
-    """Scattered grid stickers not on the word path (game scores before pin)."""
+    """Off-path scattered grid stickers that still affect scoring (before pin).
+
+    Game ``GetItemsForWordSubmission`` only includes scattered items on the
+    submitted path plus inventory. Only tombstone (void-adjacent tile bonus) and
+    dusty_coffin (per-void-unused word penalty) have grid-wide mechanics that
+    fire when their scatter tile is not on the path.
+    """
     from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
 
     path_set = set(path)
@@ -152,6 +163,22 @@ def encounter_grid_scatter_refs(
             continue
         # Off-path Deep Sea Horror does not penalize path void tiles (leggiero).
         if slug_norm == "deep_sea_horror":
+            continue
+        if slug_norm == "dusty_coffin" and loadout is not None:
+            from cursed_words_solver.loadout import (
+                _scoring_previous_words_count_from_extras,
+            )
+            from cursed_words_solver.rules.scoring_conditions import (
+                _dusty_coffin_equipped_in_loadout,
+            )
+
+            extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+            if (
+                not _dusty_coffin_equipped_in_loadout(loadout)
+                and _scoring_previous_words_count_from_extras(extras) > 0
+            ):
+                continue
+        if slug_norm not in _OFF_PATH_GRID_SCATTER_SLUGS:
             continue
         _key, rule = get_rule(rules, "stickers", slug, slug)
         if not rule:

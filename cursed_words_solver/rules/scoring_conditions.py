@@ -2039,6 +2039,29 @@ def dusty_coffin_void_units(
             if face and face.lower() not in letters_in_word:
                 count += 1
                 break
+    if (
+        from_grid_scatter
+        and path is not None
+        and not dusty_coffin_scattered_on_path(board, path)
+        and _dusty_coffin_scatter_tile_off_path(board, path) is not None
+    ):
+        letters_in_word = set((word or "").lower())
+        for idx in path:
+            tile = board.get_by_index(idx)
+            if tile.color != TileColor.VOID:
+                continue
+            face = void_tile_face_for_dusty_coffin(tile) or path_letter_for_count(tile)
+            if not face:
+                continue
+            if (
+                tile.curse == CurseType.CURRENCY
+                and (face.lower() == "b" or face == "฿")
+                and "b" in letters_in_word
+            ):
+                continue
+            if face.lower() in letters_in_word:
+                continue
+            count += 1
     return count
 
 
@@ -5626,15 +5649,20 @@ def grid_path_sticker_level(
     if (
         slug_norm == "down_under"
         and loadout is not None
-        and loadout.stickers
         and is_grid_path_tile
         and tile_level_known
-        and path is not None
-        and path_tile_index is not None
-        and path_tile_index == len(path) - 1
-        and path_includes_grid_scatter(board, path, "down_under")
+        and exported_tile_level is not None
     ):
-        level = max(level, encounter_level + 1)
+        if _dusty_coffin_equipped_in_loadout(loadout) and loadout.stickers:
+            level = max(
+                level,
+                exported_tile_level,
+                _max_equipped_sticker_level_excluding(loadout, "dusty_coffin"),
+            )
+        elif exported_tile_level <= 1:
+            level = max(level, exported_tile_level + 1)
+        else:
+            level = max(level, exported_tile_level)
     elif (
         slug_norm == "down_under"
         and loadout is not None

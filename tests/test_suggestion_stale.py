@@ -44,6 +44,8 @@ def test_workflow_stale_spc_forward_advance_only():
 
 
 def test_has_played_word_since_f8_embed_mirrors_melmod():
+    from cursed_words_solver.suggestion import is_expected_post_overlay_submit_drift
+
     embed = {"scoring_previous_words_count": "0", "historic_words": "[]"}
     live = {"scoring_previous_words_count": "1", "historic_words": "[]"}
     assert not has_played_word_since_f8_embed(live, embed)
@@ -53,6 +55,15 @@ def test_has_played_word_since_f8_embed_mirrors_melmod():
     }
     assert has_played_word_since_f8_embed(live_with_hist, embed)
     assert not has_played_word_since_f8_embed(embed, live_with_hist)
+
+    grid1_embed = {"scoring_previous_words_count": "0", "historic_words": ""}
+    grid1_live = {
+        "scoring_previous_words_count": "1",
+        "historic_words": '[{"word":"TH3W5LS","score":132}]',
+    }
+    assert is_expected_post_overlay_submit_drift(grid1_embed, grid1_live)
+    assert has_played_word_since_f8_embed(grid1_live, grid1_embed)
+    assert workflow_stale_vs_f8_snapshot(grid1_live, grid1_embed) is None
 
 
 def test_describe_f8_prediction_historic_stale_spc_only_same_historic():

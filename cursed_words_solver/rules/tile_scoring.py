@@ -236,21 +236,14 @@ def initial_tile_scores(
             and tile.color != TileColor.VOID
         ):
             contrib = float(tile.base_score)
+        elif (
+            tile.metadata.get("source") == "melmod"
+            and tile.curse == CT.LETTER
+            and tile.color in (TileColor.COLORLESS, TileColor.VOID)
+        ):
+            contrib = float(tile.base_score)
         else:
-            from cursed_words_solver.rules.base_scoring import (
-                milmod_colorless_void_scatter_init_contribution,
-            )
-
-            colorless_void = milmod_colorless_void_scatter_init_contribution(
-                tile,
-                loadout=loadout,
-                path_index=i,
-                path_len=len(path),
-            )
-            if colorless_void is not None:
-                contrib = colorless_void
-            else:
-                contrib = float(tile_base_contribution(tile, money, loadout))
+            contrib = float(tile_base_contribution(tile, money, loadout))
         scores.append(contrib)
         total += contrib
     return scores, total

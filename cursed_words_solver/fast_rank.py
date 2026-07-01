@@ -760,7 +760,10 @@ def loadout_allows_dfs_bb(
     score_fn=None,
 ) -> bool:
     """True when in-tree DFS branch-and-bound is safe."""
-    del has_number_tiles, has_chess_pieces
+    del has_chess_pieces
+    if has_number_tiles:
+        # Letter prefixes before a NUMBER wildcard/digit branch are under-estimated.
+        return False
     return loadout_allows_tier2_screen(
         ctx,
         loadout,

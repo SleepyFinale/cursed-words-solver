@@ -1383,6 +1383,12 @@ namespace CursedWordsSolverCompanion
                         if (steps >= 1)
                             return steps;
                     }
+                    if (score < 0 && (-score) > face)
+                    {
+                        var steps = (-score - face + 9) / 10;
+                        if (steps >= 1)
+                            return steps;
+                    }
                 }
             }
             catch

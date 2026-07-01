@@ -375,6 +375,22 @@ def test_post_overlay_submit_historic_prefix_matches():
     assert len(json.loads(submit_hist)) == len(json.loads(f8_hist)) + 1
 
 
+def test_post_overlay_submit_grid1_word1_expected_drift():
+    """Grid 1 word 1: historic 0→1 after submit is expected, not stale."""
+    from cursed_words_solver.suggestion import (
+        is_expected_post_overlay_submit_drift,
+        workflow_stale_vs_f8_snapshot,
+    )
+
+    f8 = {"scoring_previous_words_count": "0", "historic_words": ""}
+    live = {
+        "scoring_previous_words_count": "1",
+        "historic_words": '[{"word":"TH3W5LS","score":132}]',
+    }
+    assert is_expected_post_overlay_submit_drift(f8, live)
+    assert workflow_stale_vs_f8_snapshot(live, f8) is None
+
+
 def test_gather_incomplete_disables_board_highlight():
     """gather_incomplete preview must not enable on-game path highlight."""
     block_f8_save = True

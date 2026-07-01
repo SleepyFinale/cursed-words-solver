@@ -93,6 +93,8 @@ MelonPreference **Round log enabled** (default on). Startup logs the round log d
 
 ## Export diagnostics (v1.2.0+)
 
+**v1.2.3** — skip workflow-stale suggestion clearing on submit exports; clear `last_suggestion.json` before post-submit `run_state` export; recognize grid-1 word-1 historic drift (`0→1`) as expected after submit; omit misleading `stale_f8_reason` on path-mismatch round logs.
+
 **v1.2.2** — submit path capture uses Unity bottom-origin `GetCoordinates().y` for melmod index (`y * cols + col`), matching `last_suggestion.json` and fixing false `path_mismatch` on 5×5 boards when tracing the F8 overlay.
 
 **v1.2.1** — submit path capture uses `board.cols` for coordinate→index conversion (fixes false `path_mismatch` on 6×6 Call of the Void grids).

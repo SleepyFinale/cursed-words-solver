@@ -26,31 +26,34 @@ def milmod_colorless_void_scatter_init_contribution(
     path_index: int,
     path_len: int,
 ) -> float | None:
-    """Milky Way void grids: colorless letters use void-generation init, not packet face."""
-    if not _is_melmod_tile(tile):
-        return None
-    if tile.curse != CurseType.LETTER or tile.color != TileColor.COLORLESS:
-        return None
-    if loadout is None:
-        return None
-    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
-    pin = str(extras.get("pin_effect") or "").strip().lower().replace(" ", "_")
-    if pin != "milky_way":
-        return None
-    from cursed_words_solver.rules.scoring_conditions import grid_number
+    """Deprecated: melmod packet base_score is authoritative (see MapBaseScore)."""
+    _ = (tile, loadout, path_index, path_len)
+    return None
 
-    if (grid_number(loadout) or 1) < 2:
+
+def _infer_void_penalty_steps_from_packet(tile: Tile) -> int | None:
+    """Infer void penalty steps from signed packet.Score (BoardExporter.MapVoidPenaltySteps)."""
+    if tile.curse != CurseType.LETTER:
         return None
     try:
-        raw_base = float(tile.base_score)
+        score = int(round(float(tile.base_score)))
     except (TypeError, ValueError):
         return None
     face = _scrabble_value(tile.letter)
-    if raw_base != float(face) or face <= 0 or face >= 4:
+    if tile.color == TileColor.COLORLESS:
+        if score < face:
+            steps = (face - score + 9) // 10
+            return steps if steps >= 1 else None
         return None
-    if path_index == path_len - 1 and face == 1:
-        return 0.0
-    return -float(face)
+    if tile.color != TileColor.VOID:
+        return None
+    if score > face:
+        steps = (score - face + 9) // 10
+        return steps if steps >= 1 else None
+    if score < 0 and abs(score) > face:
+        steps = (abs(score) - face + 9) // 10
+        return steps if steps >= 1 else None
+    return None
 
 
 _CHESS_VOID_VALUES: dict[CurseType, int] = {
@@ -64,13 +67,24 @@ _CHESS_VOID_VALUES: dict[CurseType, int] = {
 
 
 def _void_penalty_steps_for_tile(tile: Tile, loadout: Loadout | None) -> int:
-    """Per-tile void penalty steps from melmod export, else encounter-effective grid."""
+    """Per-tile void penalty steps from melmod export or packet inference."""
     raw = (tile.metadata or {}).get("void_penalty_steps")
     if raw is not None and raw != "":
         try:
             return max(1, int(raw))
         except (TypeError, ValueError):
             pass
+    if _is_melmod_tile(tile):
+        inferred = _infer_void_penalty_steps_from_packet(tile)
+        if inferred is not None:
+            return max(1, inferred)
+        if tile.color == TileColor.VOID and tile.curse == CurseType.LETTER:
+            try:
+                score = int(round(float(tile.base_score)))
+            except (TypeError, ValueError):
+                score = 0
+            if score != 0:
+                return 1
     if loadout is None:
         return 1
     from cursed_words_solver.models import CurseType, TileColor
@@ -305,6 +319,12 @@ def tile_base_contribution(
             return 50
     if color == TileColor.VOID:
         if _is_melmod_tile(tile):
+            # Melmod exports signed packet.Score for void letters (MapBaseScore).
+            if (
+                tile.curse == CurseType.LETTER
+                and letter_base != 0
+            ):
+                return float(letter_base)
             # packet.Score 0 on void letters/numbers/chess is pre-negation;
             # wildcards and currency stay 0 (melmod export is final for currency).
             if (

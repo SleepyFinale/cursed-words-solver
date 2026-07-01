@@ -167,6 +167,8 @@ from cursed_words_solver.ui.loadout_dialog import LoadoutDialog
 from cursed_words_solver.ui.overlay import ResultOverlay
 
 RACK_RESERVE_FRAC = 0.35
+# Wall-clock slice reserved after search for dictionary resolve, scoring, and save.
+POST_SEARCH_RESERVE_SEC = 4.0
 
 
 def twinkle_swap_time_budget(
@@ -1239,6 +1241,11 @@ class SolverApp:
             search_budget = self.config.search_time_budget_sec
             search_started = time.monotonic()
             solve_deadline = search_started + search_budget
+            post_reserve = min(
+                POST_SEARCH_RESERVE_SEC,
+                max(0.0, search_budget * 0.10),
+            )
+            search_deadline = solve_deadline - post_reserve
             search_call_mono = search_started
             search_end_mono = search_started
             dict_resolve_truncated = False
@@ -1518,7 +1525,7 @@ class SolverApp:
                         time_budget=phase_budget(search_budget),
                         top_n=self.config.top_n_results,
                         rules=rules,
-                        solve_deadline=solve_deadline,
+                        solve_deadline=search_deadline,
                     )
                 )
                 _accumulate_placement_timing()
@@ -1576,7 +1583,7 @@ class SolverApp:
                 )
                 twinkle_deadline = twinkle_swap_deadline(
                     search_started=search_started,
-                    solve_deadline=solve_deadline,
+                    solve_deadline=search_deadline,
                     twinkle_budget=twinkle_budget,
                 )
                 search_board, twinkle_swap_record, results = (
@@ -1630,7 +1637,7 @@ class SolverApp:
                     board,
                     loadout=loadout,
                     top_n=self.config.top_n_results,
-                    deadline=solve_deadline,
+                    deadline=search_deadline,
                     cancel_check=cancel_check,
                 )
             else:
@@ -1666,7 +1673,7 @@ class SolverApp:
                             time_budget=phase_budget(rack_fallback_budget),
                             top_n=self.config.top_n_results,
                             rules=rules,
-                            solve_deadline=solve_deadline,
+                            solve_deadline=search_deadline,
                         )
                     )
                     _accumulate_placement_timing()
@@ -1749,7 +1756,7 @@ class SolverApp:
                             top_n=self.config.top_n_results,
                             rules=rules,
                             variant_gen_budget=boost_gen_budget,
-                            solve_deadline=solve_deadline,
+                            solve_deadline=search_deadline,
                         )
                     )
                     _accumulate_placement_timing()
@@ -1866,7 +1873,7 @@ class SolverApp:
                             top_n=self.config.top_n_results,
                             rules=rules,
                             variant_gen_budget=variant_gen_budget(),
-                            solve_deadline=solve_deadline,
+                            solve_deadline=search_deadline,
                         )
                     )
                     _accumulate_placement_timing()
@@ -1942,7 +1949,7 @@ class SolverApp:
                             top_n=self.config.top_n_results,
                             rules=rules,
                             variant_gen_budget=variant_gen_budget(),
-                            solve_deadline=solve_deadline,
+                            solve_deadline=search_deadline,
                         )
                     )
                     _accumulate_placement_timing()
@@ -2097,6 +2104,8 @@ class SolverApp:
             block_f8_reason: str | None = None
             if results and self._dictionary is not None:
                 raw_count = len(results)
+                # find_best_words finalize already enforces path_is_submittable;
+                # do not re-filter with a deadline (post-search reserve is for enrich).
                 results = filter_submittable_results(
                     search_board,
                     results,
@@ -2104,7 +2113,6 @@ class SolverApp:
                     self._dictionary,
                     min_len=effective_min,
                     pipeline=self._scoring,
-                    deadline_check=_post_deadline_reached,
                 )
                 if raw_count and not results:
                     print(

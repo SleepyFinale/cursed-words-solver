@@ -885,6 +885,31 @@ def has_played_word_since_f8_embed(
     return False
 
 
+def is_expected_post_overlay_submit_drift(
+    f8_extras: dict[str, Any] | None,
+    live_extras: dict[str, Any] | None,
+) -> bool:
+    """True when live historic is exactly one word ahead of F8 embed (post-submit)."""
+    f8 = f8_extras if isinstance(f8_extras, dict) else {}
+    live = live_extras if isinstance(live_extras, dict) else {}
+    hist_f8 = str(f8.get("historic_words", "") or "").strip()
+    hist_live = str(live.get("historic_words", "") or "").strip()
+    count_f8 = _historic_words_count(hist_f8)
+    count_live = _historic_words_count(hist_live)
+
+    if count_live == count_f8 and count_f8 > 0:
+        from cursed_words_solver.loadout import historic_metadata_matches_json
+
+        return historic_metadata_matches_json(hist_f8, hist_live)
+
+    if count_live == count_f8 + 1:
+        if count_f8 == 0:
+            return bool(hist_live and hist_live.strip() != "[]")
+        return False
+
+    return False
+
+
 def describe_f8_prediction_historic_stale_note(
     f8_extras: dict[str, Any] | None,
     authoritative_extras: dict[str, Any] | None,
@@ -1028,6 +1053,10 @@ def workflow_stale_vs_f8_snapshot(
     """Human-readable reason when workflow extras drifted since F8 (mirrors melmod)."""
     extras = run_state_extras if isinstance(run_state_extras, dict) else {}
     f8_extras = f8_snapshot_extras if isinstance(f8_snapshot_extras, dict) else {}
+
+    if is_expected_post_overlay_submit_drift(f8_extras, extras):
+        return None
+
     notes: list[str] = []
 
     prev_letter_f8 = str(f8_extras.get("previous_word_first_letter", "") or "").strip()
@@ -1173,6 +1202,8 @@ def _active_session_suppresses_workflow_drift(
     live_extras: dict[str, Any],
 ) -> bool:
     """Suppress post-F8 workflow poll clear when export catchup filled empty historic."""
+    if is_expected_post_overlay_submit_drift(embed_extras, live_extras):
+        return True
     hist_embed = str(embed_extras.get("historic_words", "") or "").strip()
     hist_live = str(live_extras.get("historic_words", "") or "").strip()
     count_embed = _historic_words_count(hist_embed)

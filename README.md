@@ -41,6 +41,12 @@ python -m cursed_words_solver.app
 cursed-solver [--calibrate] [--hotkey f8]
 ```
 
+```bash
+.\melmod\build.ps1
+pip install -e .
+cursed-solver
+```
+
 ### MelonLoader + companion mod (required)
 
 Close Cursed Words, then from the repo root in PowerShell:

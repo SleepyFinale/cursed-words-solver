@@ -42,6 +42,7 @@ def _load(stem: str) -> dict:
         ("20260629_142001", "tombstone", 6, 2),
         ("20260629_142306", "tombstone", 0, 2),
         ("20260629_143611", "down_under", 4, 2),
+        ("20260701_113327", "down_under", 6, 2),
     ],
 )
 def test_grid_path_sticker_level_on_session_captures(
@@ -311,3 +312,74 @@ def test_dusty_colorless_path_void_in_word_caps_units_incave() -> None:
         )
         == 3
     )
+
+
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        ("20260701_113044", 434),
+        ("20260701_113117", 4076),
+        ("20260701_113238", 4708),
+        ("20260701_113327", 1900),
+    ],
+)
+def test_20260701_milky_way_session_replay_scores(stem: str, expected: int) -> None:
+    """Submit-time replay (submit board + trace extras) for 2026-07-01 Nina session."""
+    from tests.regression import test_scoring_mismatches as tsm
+
+    data = _load(stem)
+    run_state = tsm._run_state_for_replay(data)
+    word = data["word"]
+    path = data["path"]
+    tsm._adjust_previous_word_letter_extras(run_state, data)
+    tsm._adjust_bento_previous_word_extras(run_state, data)
+    tsm._adjust_neapolitan_percent_extras(run_state, data)
+    tsm._adjust_ruler_distance_extras(run_state, data)
+    tsm._adjust_rare_item_count_extras(run_state, data)
+    tsm._adjust_steak_percent_extras(run_state, data)
+    tsm._adjust_cursed_bosses_defeated_from_trace(run_state, data)
+    tsm._adjust_tile_ninja_bonus_from_trace(run_state, data)
+    tsm._adjust_green_tile_count_from_trace(run_state, data)
+    board_for_lucky = parse_board_from_run_state(run_state)
+    if board_for_lucky is not None:
+        path = tsm._replay_path(board_for_lucky, path)
+        tsm._adjust_lucky_dice_target_extras(run_state, data, board_for_lucky, path)
+    board = parse_board_from_run_state(run_state)
+    tsm._adjust_movie_camera_telescope_extras(run_state, data, board, path)
+    board = parse_board_from_run_state(run_state)
+    tsm._adjust_void_penalty_from_trace(run_state, data, board, path)
+    tsm._adjust_scattered_item_level_from_trace(run_state, data, board, path)
+    tsm._adjust_nat_h4_session_extras(run_state, data, stem)
+    tsm._adjust_snapshot_copy_from_trace(
+        run_state, data, board, path, word, case_stem=stem
+    )
+    board = parse_board_from_run_state(run_state)
+    tsm._adjust_nat_h4_post_cocktail_extras(run_state, data, board, path, word, stem)
+    loadout = parse_run_state(run_state)
+    apply_snapshot_phased_session_extras(loadout, board)
+    tsm._adjust_bicycle_pre_word_extras(run_state, data, board, path, loadout)
+    loadout = parse_run_state(run_state)
+    replay_money = tsm._bank_money_for_replay(data, board, path, loadout)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    if replay_money is not None:
+        board.money = max(board.money, replay_money)
+        loadout.money = max(loadout.money, replay_money)
+    score, _ = ScoringPipeline().score(board, path, word, loadout)
+    assert int(score) == expected
+
+
+def test_dusty_off_path_skipped_after_first_encounter_word() -> None:
+    """linnets: off-path grid Dusty does not fire once encounter has scored words."""
+    from cursed_words_solver.rules.scoring_order import encounter_grid_scatter_refs
+
+    data = _load("20260701_113238")
+    run_state = __import__(
+        "tests.regression.test_scoring_mismatches", fromlist=["_run_state_for_replay"]
+    )._run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    loadout.extras["scoring_previous_words_count"] = "3"
+    rules = ScoringPipeline().rules
+    refs = encounter_grid_scatter_refs(board, data["path"], rules, loadout)
+    assert not any(r.rule_id == "dusty_coffin" for r in refs)
