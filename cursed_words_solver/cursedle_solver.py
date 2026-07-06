@@ -14,13 +14,17 @@ from cursed_words_solver.fingerprints import (
     fingerprints_from_run_state,
 )
 from cursed_words_solver.graph_bitboard import build_board_graph_context
-from cursed_words_solver.models import Board, Loadout
+from cursed_words_solver.models import CHESS_CURSES, Board, CurseType, Loadout
 from cursed_words_solver.rules.scoring_conditions import is_poker_card_tile
-from cursed_words_solver.rules.stamp_behaviors import FLAG_CARD_SUIT_FIRST_LETTER
+from cursed_words_solver.rules.stamp_behaviors import (
+    FLAG_CARD_SUIT_FIRST_LETTER,
+    path_scattered_search_flags_mask,
+)
 from cursed_words_solver.search import (
+    coerce_search_flags,
     neighbors_mask,
-    path_movement_ok,
     physical_word_for_path,
+    resolve_letter,
     search_word_from_path,
 )
 from cursed_words_solver.suggestion import SOLVER_VERSION, _next_f8_sequence
@@ -209,6 +213,34 @@ def solution_matches_all_guesses(
     return all(solution_matches_guess(board, solution_path, g) for g in guesses)
 
 
+def _cursedle_step_flags(board: Board, path_prefix: list[int]) -> int:
+    """Search flags after walking ``path_prefix`` (Hungry Snake wrap from path items)."""
+    return path_scattered_search_flags_mask(board, path_prefix, base_flags=0)
+
+
+def _cursedle_path_movement_ok(board: Board, path: list[int]) -> bool:
+    """Path validity using scattered-item movement (e.g. snake horizontal wrap)."""
+    if len(path) < 2:
+        return True
+    graph_ctx = build_board_graph_context(board)
+    visited = 0
+    for i in range(len(path) - 1):
+        a, b = path[i], path[i + 1]
+        visited |= 1 << a
+        step_flags = _cursedle_step_flags(board, path[: i + 1])
+        mask = neighbors_mask(
+            board,
+            visited,
+            cell_id=a,
+            flags=step_flags,
+            graph_ctx=graph_ctx,
+        )
+        if not (mask & (1 << b)):
+            return False
+        visited |= 1 << b
+    return True
+
+
 def enumerate_candidate_paths(
     board: Board,
     *,
@@ -228,11 +260,12 @@ def enumerate_candidate_paths(
                 paths.append(list(path))
             if len(path) >= max_len:
                 continue
+            step_flags = _cursedle_step_flags(board, path)
             mask = neighbors_mask(
                 board,
                 visited,
                 cell_id=cell,
-                flags=0,
+                flags=step_flags,
                 graph_ctx=graph_ctx,
             )
             bit = 0
@@ -273,6 +306,93 @@ def _primary_cursedle_flags(board: Board) -> int:
     return 0
 
 
+def _cursedle_tile_is_wildcard(tile: Any) -> bool:
+    """True when the game treats a path tile as a dictionary wildcard."""
+    if tile.curse in CHESS_CURSES:
+        return True
+    if tile.curse in (CurseType.WILDCARD, CurseType.BLANK, CurseType.ARROW):
+        return True
+    if tile.curse == CurseType.CARD and getattr(tile, "is_joker", False):
+        return True
+    if tile.curse == CurseType.ITEM:
+        face = (tile.char or "").strip()
+        return bool(face and not face.isalpha())
+    return False
+
+
+def _cursedle_word_from_path(
+    board: Board,
+    path: list[int],
+    *,
+    flags: int = 0,
+) -> str:
+    """Spell a path for Cursedle dictionary checks.
+
+    Theme scattered items on solution letters use the underlying face letter
+    when the tile face is alphabetic; emoji overlays (e.g. Hungry Snake) use
+    ``?`` so longer dictionary words can be resolved via pattern matching.
+    """
+    flags = coerce_search_flags(flags)
+    parts: list[str] = []
+    char_pos = 0
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if _cursedle_tile_is_wildcard(tile):
+            parts.append("?")
+            char_pos += 1
+        elif tile.curse == CurseType.ITEM:
+            face = (tile.char or "").strip()
+            if face and not face.isalpha():
+                parts.append("?")
+            else:
+                ch = (tile.letter or "").strip()
+                if len(ch) == 1 and ch.isalpha():
+                    parts.append(ch.lower())
+                else:
+                    parts.append("?")
+            char_pos += 1
+        else:
+            token = resolve_letter(tile, char_pos, flags=flags)
+            parts.append(token)
+            char_pos += len(token)
+    return "".join(parts).lower()
+
+
+def _pattern_dictionary_word(
+    board: Board,
+    path: list[int],
+    pattern: str,
+    dictionary: WordDictionary,
+) -> str | None:
+    if "?" not in pattern:
+        return pattern if dictionary.contains(pattern) else None
+    letter_hints: dict[int, str] = {}
+    for i, idx in enumerate(path):
+        if i >= len(pattern) or pattern[i] != "?":
+            continue
+        tile = board.get_by_index(idx)
+        if tile.curse == CurseType.ITEM:
+            ch = (tile.letter or "").strip()
+            if len(ch) == 1 and ch.isalpha():
+                letter_hints[i] = ch.lower()
+    matches = [
+        word
+        for word in dictionary.enumerate_pattern_matches(pattern, limit=64)
+        if len(word) == len(path)
+    ]
+    if letter_hints:
+        constrained = [
+            word
+            for word in matches
+            if all(word[pos] == ch for pos, ch in letter_hints.items())
+        ]
+        if constrained:
+            matches = constrained
+    if matches:
+        return matches[0]
+    return None
+
+
 def _path_dictionary_word(
     board: Board,
     path: list[int],
@@ -280,11 +400,11 @@ def _path_dictionary_word(
     *,
     flags: int | None = None,
 ) -> str | None:
-    if not path_movement_ok(board, path):
+    if not _cursedle_path_movement_ok(board, path):
         return None
     if flags is None:
         flags = _primary_cursedle_flags(board)
-    word = search_word_from_path(board, path, flags=flags)
+    word = _cursedle_word_from_path(board, path, flags=flags)
     if not word or "?" in word:
         return None
     if dictionary.contains(word):
@@ -301,7 +421,18 @@ def _path_dictionary_word_any_resolution(
         word = _path_dictionary_word(board, path, dictionary, flags=flags)
         if word:
             return word
-    phys = physical_word_for_path(board, path, flags=_primary_cursedle_flags(board))
+        if not _cursedle_path_movement_ok(board, path):
+            continue
+        pattern = _cursedle_word_from_path(board, path, flags=flags)
+        if pattern and "?" in pattern:
+            word = _pattern_dictionary_word(board, path, pattern, dictionary)
+            if word:
+                return word
+    phys = _cursedle_word_from_path(
+        board, path, flags=_primary_cursedle_flags(board)
+    )
+    if not phys:
+        phys = physical_word_for_path(board, path, flags=_primary_cursedle_flags(board))
     if phys and "?" not in phys and dictionary.contains(phys.lower()):
         return phys.lower()
     return None
@@ -353,6 +484,139 @@ def _paths_share_prefix_walk(a: list[int], b: list[int]) -> bool:
     if len(shorter) >= len(longer):
         return False
     return longer[: len(shorter)] == shorter
+
+
+def _all_green_guesses(guesses: list[CursedleGuess]) -> list[CursedleGuess]:
+    """Guesses where every tile received green feedback."""
+    out: list[CursedleGuess] = []
+    for guess in guesses:
+        if not guess.feedback:
+            continue
+        if all(fb == "green" for fb in guess.feedback):
+            out.append(guess)
+    return out
+
+
+def _all_green_prefix_paths(
+    board: Board,
+    guesses: list[CursedleGuess],
+) -> list[list[int]]:
+    return [
+        _guess_storage_path(board, guess.path, guess)
+        for guess in _all_green_guesses(guesses)
+    ]
+
+
+def _paths_extending_prefix(
+    board: Board,
+    prefix: list[int],
+    *,
+    extra_steps: int = 2,
+    min_len: int = CURSEDLE_SOLUTION_MIN_LEN,
+    max_len: int = CURSEDLE_SOLUTION_MAX_LEN,
+) -> list[list[int]]:
+    """Walk extensions that continue a guessed prefix by ``extra_steps`` tiles."""
+    if not prefix or extra_steps < 1:
+        return []
+    graph_ctx = build_board_graph_context(board)
+    results: list[list[int]] = []
+    visited = sum(1 << idx for idx in prefix)
+
+    def extend(path: list[int], cell: int, vis: int, steps_left: int) -> None:
+        if steps_left == 0:
+            if min_len <= len(path) <= max_len and _cursedle_path_movement_ok(board, path):
+                results.append(list(path))
+            return
+        mask = neighbors_mask(
+            board,
+            vis,
+            cell_id=cell,
+            flags=_cursedle_step_flags(board, path),
+            graph_ctx=graph_ctx,
+        )
+        for bit in range(board.cell_count):
+            if (
+                mask & (1 << bit)
+                and board.is_active_index(bit)
+                and not (vis & (1 << bit))
+            ):
+                extend(path + [bit], bit, vis | (1 << bit), steps_left - 1)
+
+    endpoint = prefix[-1]
+    for steps in range(1, extra_steps + 1):
+        extend(list(prefix), endpoint, visited, steps)
+    return results
+
+
+def _path_exactly_guessed(
+    board: Board,
+    path: list[int],
+    *,
+    guessed_paths: set[tuple[int, ...]],
+    guessed_melmod_paths: set[tuple[int, ...]],
+) -> bool:
+    path_tuple = tuple(path)
+    if path_tuple in guessed_paths:
+        return True
+    melmod_path = tuple(path_to_melmod_indices(board, path))
+    return melmod_path in guessed_melmod_paths
+
+
+def _filter_final_guess_candidates(
+    board: Board,
+    candidates: list[list[int]],
+    dictionary: WordDictionary,
+    guesses: list[CursedleGuess],
+    *,
+    excluded_words: set[str],
+) -> list[list[int]]:
+    """Drop exact repeats; keep strict extensions of failed all-green prefixes."""
+    guessed_paths = _guessed_path_keys(board, guesses)
+    guessed_melmod_paths = _guessed_melmod_path_keys(board, guesses)
+    filtered: list[list[int]] = []
+    for path in candidates:
+        if _path_exactly_guessed(
+            board,
+            path,
+            guessed_paths=guessed_paths,
+            guessed_melmod_paths=guessed_melmod_paths,
+        ):
+            continue
+        word = _path_dictionary_word_any_resolution(board, path, dictionary)
+        if word and word.lower() in excluded_words:
+            continue
+        filtered.append(path)
+    return filtered
+
+
+def _prefer_extension_candidates(
+    board: Board,
+    candidates: list[list[int]],
+    guesses: list[CursedleGuess],
+) -> list[list[int]]:
+    """Prefer solution paths strictly longer than a failed all-green prefix."""
+    prefixes = _all_green_prefix_paths(board, guesses)
+    if not prefixes:
+        return candidates
+    extensions = [
+        path
+        for path in candidates
+        if any(_paths_share_prefix_walk(prefix, path) for prefix in prefixes)
+    ]
+    return extensions if extensions else candidates
+
+
+def _should_block_same_length_commit(
+    board: Board,
+    candidates: list[list[int]],
+    guesses: list[CursedleGuess],
+) -> bool:
+    """Block early commit when a failed all-green guess shares candidate length."""
+    prefixes = _all_green_prefix_paths(board, guesses)
+    if not prefixes:
+        return False
+    prefix_lengths = {len(prefix) for prefix in prefixes}
+    return any(len(path) in prefix_lengths for path in candidates)
 
 
 def _word_from_path(
@@ -602,6 +866,8 @@ def _pick_solution_path(
     board: Board,
     candidates: list[list[int]],
     dictionary: WordDictionary,
+    *,
+    prefer_longer_paths: bool = False,
 ) -> tuple[list[int], str] | None:
     scored: list[tuple[str, list[int]]] = []
     for path in candidates:
@@ -610,7 +876,10 @@ def _pick_solution_path(
             scored.append((word, path))
     if not scored:
         return None
-    scored.sort(key=lambda row: (-len(row[0]), row[0]))
+    if prefer_longer_paths:
+        scored.sort(key=lambda row: (-len(row[1]), -len(row[0]), row[0]))
+    else:
+        scored.sort(key=lambda row: (-len(row[0]), row[0]))
     word, path = scored[0]
     return path, word
 
@@ -621,7 +890,7 @@ def _pick_best_raw_candidate(
 ) -> tuple[list[int], str] | None:
     scored: list[tuple[str, list[int]]] = []
     for path in candidates:
-        if not path_movement_ok(board, path):
+        if not _cursedle_path_movement_ok(board, path):
             continue
         raw = _raw_word_from_path(board, path)
         if raw:
@@ -642,15 +911,54 @@ def _pick_final_guess(
     tiles_only_fp: str = "",
     guesses_used: int = 0,
 ) -> tuple[list[int], str] | None:
-    pick = _pick_solution_path(board, candidates, dictionary)
+    excluded_words = _probe_excluded_words(
+        board,
+        guesses,
+        dictionary,
+        tiles_only_fp=tiles_only_fp,
+        guesses_used=guesses_used,
+    )
+    pool = _filter_final_guess_candidates(
+        board,
+        candidates,
+        dictionary,
+        guesses,
+        excluded_words=excluded_words,
+    )
+    pool = _prefer_extension_candidates(board, pool, guesses)
+    prefer_longer = bool(_all_green_prefix_paths(board, guesses))
+
+    if not pool and _all_green_prefix_paths(board, guesses):
+        extended: list[list[int]] = []
+        for prefix in _all_green_prefix_paths(board, guesses):
+            for path in _paths_extending_prefix(board, prefix):
+                if not solution_matches_all_guesses(board, path, guesses):
+                    continue
+                if not _is_valid_cursedle_solution_path(board, path, dictionary):
+                    continue
+                extended.append(path)
+        pool = _filter_final_guess_candidates(
+            board,
+            extended,
+            dictionary,
+            guesses,
+            excluded_words=excluded_words,
+        )
+
+    pick = _pick_solution_path(
+        board,
+        pool,
+        dictionary,
+        prefer_longer_paths=prefer_longer,
+    )
     if pick is not None:
         return pick
-    pick = _pick_best_raw_candidate(board, candidates)
+    pick = _pick_best_raw_candidate(board, pool)
     if pick is not None:
         return pick
     pick = _pick_probe_path(
         board,
-        candidates,
+        pool or candidates,
         dictionary,
         guesses,
         tiles_only_fp=tiles_only_fp,
@@ -658,8 +966,8 @@ def _pick_final_guess(
     )
     if pick is not None:
         return pick
-    if candidates:
-        path = candidates[0]
+    if pool:
+        path = pool[0]
         word = _raw_word_from_path(board, path) or physical_word_for_path(
             board, path, flags=_primary_cursedle_flags(board)
         )
@@ -697,7 +1005,7 @@ def _enumerate_dictionary_probe_paths(
     def dfs(cell: int, path: list[int], visited: int) -> None:
         if len(by_word) >= max_collected:
             return
-        if not path_movement_ok(board, path):
+        if not _cursedle_path_movement_ok(board, path):
             return
         partial = search_word_from_path(board, path, flags=flags)
         if not partial or "?" in partial or not dictionary.has_prefix(partial):
@@ -901,22 +1209,46 @@ def run_cursedle_solver(
         candidates = feedback_candidates
 
     if on_progress:
-        on_progress(f"{len(candidates)} valid word(s) match feedback")
+        if (
+            len(feedback_candidates) > 0
+            and len(candidates) == 0
+            and len(feedback_candidates) <= CURSEDLE_DICT_FILTER_MAX_CANDIDATES
+        ):
+            on_progress(
+                f"{len(feedback_candidates)} path(s) match feedback; "
+                f"0 spell valid dictionary words"
+            )
+        else:
+            on_progress(f"{len(candidates)} valid word(s) match feedback")
 
     tiles_only_fp = board_fingerprint(board)
+    block_commit = _should_block_same_length_commit(board, candidates, guesses)
 
     pick: tuple[list[int], str] | None = None
     reason = ""
     if len(candidates) == 1:
-        pick = _pick_final_guess(
-            board,
-            candidates,
-            dictionary,
-            guesses,
-            tiles_only_fp=tiles_only_fp,
-            guesses_used=guesses_used,
-        )
-        reason = "Unique solution path from feedback"
+        if block_commit:
+            if on_progress:
+                on_progress("Collecting probe words…")
+            pick = _pick_final_guess(
+                board,
+                candidates,
+                dictionary,
+                guesses,
+                tiles_only_fp=tiles_only_fp,
+                guesses_used=guesses_used,
+            )
+            reason = "All-green prefix failed; seeking longer solution"
+        else:
+            pick = _pick_final_guess(
+                board,
+                candidates,
+                dictionary,
+                guesses,
+                tiles_only_fp=tiles_only_fp,
+                guesses_used=guesses_used,
+            )
+            reason = "Unique solution path from feedback"
     elif len(candidates) > 1:
         if guesses_remaining == 1:
             pick = _pick_final_guess(
@@ -930,7 +1262,7 @@ def run_cursedle_solver(
             reason = (
                 f"Final guess; best match among {len(candidates)} candidates"
             )
-        elif len(candidates) <= CURSEDLE_SOLUTION_COMMIT_THRESHOLD:
+        elif len(candidates) <= CURSEDLE_SOLUTION_COMMIT_THRESHOLD and not block_commit:
             pick = _pick_final_guess(
                 board,
                 candidates,
@@ -945,23 +1277,41 @@ def run_cursedle_solver(
         else:
             if on_progress:
                 on_progress("Collecting probe words…")
-            pick = _pick_probe_path(
-                board,
-                candidates,
-                dictionary,
-                guesses,
-                tiles_only_fp=tiles_only_fp,
-                guesses_used=guesses_used,
-            )
-            if pick is not None:
+            if block_commit:
+                pick = _pick_final_guess(
+                    board,
+                    candidates,
+                    dictionary,
+                    guesses,
+                    tiles_only_fp=tiles_only_fp,
+                    guesses_used=guesses_used,
+                )
+                if pick is not None:
+                    reason = "All-green prefix failed; seeking longer solution"
+            if pick is None:
+                pick = _pick_probe_path(
+                    board,
+                    candidates,
+                    dictionary,
+                    guesses,
+                    tiles_only_fp=tiles_only_fp,
+                    guesses_used=guesses_used,
+                )
+            if pick is not None and not reason:
                 reason = _probe_reason(pick[1], len(candidates))
     else:
-        warnings.append("No paths satisfy guess feedback — check export/history.")
+        if len(feedback_candidates) > 0:
+            warnings.append(
+                "Paths match guess feedback but none spell a valid dictionary word "
+                "— check theme-tile resolution or Hungry Snake wrap on path."
+            )
+        else:
+            warnings.append("No paths satisfy guess feedback — check export/history.")
         if on_progress:
             on_progress("Collecting probe words…")
         pick = _pick_probe_path(
             board,
-            [],
+            feedback_candidates,
             dictionary,
             guesses,
             tiles_only_fp=tiles_only_fp,
@@ -1023,7 +1373,7 @@ def save_cursedle_suggestion(
 ) -> None:
     if not advice.path or not advice.word:
         return
-    if not path_movement_ok(board, advice.path):
+    if not _cursedle_path_movement_ok(board, advice.path):
         return
 
     board_fp = ""
