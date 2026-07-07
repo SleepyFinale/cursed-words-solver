@@ -665,7 +665,16 @@ def is_disk_catchup_drift(
             pass
         prev_f8 = str(f8.get("previous_word_first_letter", "") or "").strip().lower()
         prev_cur = str(cur.get("previous_word_first_letter", "") or "").strip().lower()
-        return bool(prev_f8 and prev_cur and prev_f8 != prev_cur)
+        if prev_f8 and prev_cur and prev_f8 != prev_cur:
+            return True
+        try:
+            bday_f8 = int(str(f8.get("birthday_cake_bonus") or "0"))
+            bday_cur = int(str(cur.get("birthday_cake_bonus") or "0"))
+            if bday_cur > bday_f8 or bday_f8 > bday_cur:
+                return True
+        except (TypeError, ValueError):
+            pass
+        return False
     count_f8 = _historic_words_count(hist_f8)
     count_cur = _historic_words_count(hist_cur)
     if count_cur > count_f8:
@@ -682,6 +691,8 @@ def is_disk_catchup_drift(
         bday_f8 = int(str(f8.get("birthday_cake_bonus") or "0"))
         bday_cur = int(str(cur.get("birthday_cake_bonus") or "0"))
         if bday_cur > bday_f8:
+            return True
+        if bday_f8 > bday_cur:
             return True
     except (TypeError, ValueError):
         pass
@@ -1960,6 +1971,24 @@ def f8_should_block_save(
         return True, gather_block_reason(gather_missing)
     if isinstance(f8_extras, dict) and loadout is not None:
         from cursed_words_solver.f8_snapshot import _has_mutating_dna_stamp
+        from cursed_words_solver.loadout import loadout_has_birthday_cake
+
+        if loadout_has_birthday_cake(loadout):
+            try:
+                bday_f8 = int(str(f8_extras.get("birthday_cake_bonus") or "0"))
+            except (TypeError, ValueError):
+                bday_f8 = 0
+            live_extras = (
+                scoring_extras
+                if isinstance(scoring_extras, dict)
+                else (loadout.extras if isinstance(loadout.extras, dict) else {})
+            )
+            try:
+                bday_live = int(str(live_extras.get("birthday_cake_bonus") or "0"))
+            except (TypeError, ValueError):
+                bday_live = 0
+            if bday_f8 > bday_live and bday_live > 0:
+                return True, "birthday_cake_inflated"
 
         if _has_mutating_dna_stamp(loadout):
             f8_dna = str(f8_extras.get("mutating_dna_letter_counts", "") or "").strip()

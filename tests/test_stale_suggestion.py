@@ -4242,3 +4242,35 @@ def test_f8_should_block_when_scatter_level_below_equipped() -> None:
     assert blocked
     assert reason == "scatter_level_lag"
 
+
+def test_align_embed_caps_inflated_birthday_cake_bonus() -> None:
+    from cursed_words_solver.loadout import align_embed_with_scoring_loadout
+
+    embed = {"birthday_cake_bonus": "74"}
+    scoring = {"birthday_cake_bonus": "92"}
+    align_embed_with_scoring_loadout(embed, scoring)
+    assert embed["birthday_cake_bonus"] == "74"
+
+
+def test_f8_should_block_when_birthday_cake_inflated() -> None:
+    from cursed_words_solver.models import LoadoutItem
+
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="birthday_cake", name="Birthday Cake", level=3)],
+        extras={"birthday_cake_bonus": "74"},
+    )
+    blocked, reason = f8_should_block_save(
+        loadout=loadout,
+        f8_extras={"birthday_cake_bonus": "92"},
+        scoring_extras={"birthday_cake_bonus": "74"},
+    )
+    assert blocked
+    assert reason == "birthday_cake_inflated"
+
+
+def test_disk_catchup_drift_detects_inflated_birthday_cake() -> None:
+    assert is_disk_catchup_drift(
+        {"birthday_cake_bonus": "92"},
+        {"birthday_cake_bonus": "74"},
+    )
+

@@ -1016,7 +1016,6 @@ namespace CursedWordsSolverCompanion
 
         private static readonly string[] ExtrasPreserveFromDisk =
         {
-            "birthday_cake_bonus",
             "ruler_distance_last_known",
             "rare_item_count_last_known",
             "steak_word_bonus_percent",
@@ -1205,7 +1204,7 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
-        /// Birthday Cake only increases within a run — prefer max(live, disk, snapshot).
+        /// Pre-word F8 export: live RAM only (no disk max-merge).
         /// </summary>
         private static void ResolveBirthdayCakeBonusForExport(
             RunStateSnapshot snapshot,
@@ -1218,32 +1217,9 @@ namespace CursedWordsSolverCompanion
             if (!HasBirthdayCakeInRun(player))
                 return;
 
-            var best = -1;
-            var live = TryGetBirthdayCakeBonus(player);
+            var live = TryGetBirthdayCakeBonusForScoring(player);
             if (live >= 0)
-                best = live;
-
-            if (onDisk != null)
-            {
-                string diskRaw;
-                if (onDisk.TryGetValue("birthday_cake_bonus", out diskRaw))
-                {
-                    int diskVal;
-                    if (int.TryParse((diskRaw ?? "").Trim(), out diskVal) && diskVal >= 0)
-                        best = best >= 0 ? Math.Max(best, diskVal) : diskVal;
-                }
-            }
-
-            string snapRaw;
-            if (snapshot.extras.TryGetValue("birthday_cake_bonus", out snapRaw))
-            {
-                int snapVal;
-                if (int.TryParse((snapRaw ?? "").Trim(), out snapVal) && snapVal >= 0)
-                    best = best >= 0 ? Math.Max(best, snapVal) : snapVal;
-            }
-
-            if (best >= 0)
-                snapshot.extras["birthday_cake_bonus"] = best.ToString();
+                snapshot.extras["birthday_cake_bonus"] = live.ToString();
         }
 
         public static bool TryParseTileNinjaAdditiveForExport(string raw, out double additive)
@@ -2127,41 +2103,18 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
-        /// Keep birthday_cake_bonus aligned with live RAM pin_memory (F8 prediction baseline).
+        /// Keep birthday_cake_bonus aligned with live RAM (pre-word scoring read).
         /// </summary>
         private static void ReconcileBirthdayCakeExtrasFromPinMemory(RunStateSnapshot snapshot)
         {
             if (snapshot?.extras == null)
                 return;
-            if (!snapshot.extras.TryGetValue("pin_memory", out var raw)
-                || string.IsNullOrWhiteSpace(raw))
+            var player = GetPlayer();
+            if (player == null || !HasBirthdayCakeInRun(player))
                 return;
-
-            try
-            {
-                var items = JsonConvert.DeserializeObject<List<RunStateItem>>(raw);
-                if (items == null)
-                    return;
-                var best = -1;
-                foreach (var item in items)
-                {
-                    if (item == null)
-                        continue;
-                    var slug = Slugify(item.id ?? "", item.name ?? "");
-                    var name = item.name ?? "";
-                    if (!string.Equals(slug, "birthday_cake", StringComparison.OrdinalIgnoreCase)
-                        && name.IndexOf("birthday", StringComparison.OrdinalIgnoreCase) < 0)
-                        continue;
-                    if (item.birthday_cake_bonus.HasValue && item.birthday_cake_bonus.Value > best)
-                        best = item.birthday_cake_bonus.Value;
-                }
-                if (best >= 0)
-                    snapshot.extras["birthday_cake_bonus"] = best.ToString();
-            }
-            catch
-            {
-                // pin_memory parse failure — leave existing extras
-            }
+            var live = TryGetBirthdayCakeBonusForScoring(player);
+            if (live >= 0)
+                snapshot.extras["birthday_cake_bonus"] = live.ToString();
         }
 
         /// <summary>Random Access Memory pin (Nat-H4).</summary>
@@ -2786,7 +2739,7 @@ namespace CursedWordsSolverCompanion
             if (michaelBonus >= 0)
                 snapshot.extras["michael_book_bonus"] = michaelBonus.ToString();
 
-            var birthdayBonus = TryGetBirthdayCakeBonus(player);
+            var birthdayBonus = TryGetBirthdayCakeBonusForScoring(player);
             if (birthdayBonus >= 0)
                 snapshot.extras["birthday_cake_bonus"] = birthdayBonus.ToString();
 
@@ -2898,6 +2851,41 @@ namespace CursedWordsSolverCompanion
             );
         }
 
+        /// <summary>
+        /// Pre-word accumulated bonus for F8 prediction and score-prefix capture.
+        /// </summary>
+        public static int TryGetBirthdayCakeBonusForScoring(Player player)
+        {
+            if (player == null)
+                return -1;
+
+            var fromItems = TryGetBirthdayCakeBonusFromItemList(
+                TryEnumerateBirthdayCakeItems(player)
+            );
+            var fromPlayer = TryGetIntProperty(
+                player,
+                "BirthdayCakeBonus",
+                "BirthdayCakeWordBonus",
+                "BirthdayCakeAccumulatedBonus"
+            );
+
+            // Item WordScoreBonus can lead player scalar by one word — prefer player at score time.
+            if (fromItems >= 0 && fromPlayer >= 0)
+            {
+                if (fromItems > fromPlayer)
+                    return fromPlayer;
+                return Math.Min(fromItems, fromPlayer);
+            }
+            if (fromItems >= 0)
+                return fromItems;
+            if (fromPlayer >= 0)
+                return fromPlayer;
+            return -1;
+        }
+
+        /// <summary>
+        /// Post-submit / next-word baseline (item can lead player by one word).
+        /// </summary>
         public static int TryGetBirthdayCakeBonus(Player player)
         {
             if (player == null)
@@ -2913,7 +2901,6 @@ namespace CursedWordsSolverCompanion
                 "BirthdayCakeAccumulatedBonus"
             );
 
-            // Live item WordScoreBonus (RAM pin / equipped) can lead player scalar by one word.
             if (fromItems >= 0 && fromPlayer >= 0)
                 return Math.Max(fromItems, fromPlayer);
             if (fromItems >= 0)

@@ -154,6 +154,16 @@ def test_birthday_cake_accumulated_from_ram_pin_memory_export():
     assert score > 7
 
 
+def test_align_embed_caps_birthday_cake_from_scoring_loadout() -> None:
+    from cursed_words_solver.loadout import align_embed_with_scoring_loadout
+
+    embed = {"birthday_cake_bonus": "62", "movie_camera_word_score_bonus": "10"}
+    scoring = {"birthday_cake_bonus": "89", "movie_camera_word_score_bonus": "12"}
+    align_embed_with_scoring_loadout(embed, scoring)
+    assert embed["birthday_cake_bonus"] == "62"
+    assert embed["movie_camera_word_score_bonus"] == "10"
+
+
 def test_bordonua_fraction_improve_rounds_to_match_game():
     """Regression: 0.875×3 must round to 3, not stay 2.625 (1602 not 1601)."""
     fixture = (

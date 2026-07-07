@@ -3004,17 +3004,37 @@ namespace CursedWordsSolverCompanion
 
                 int submitVal;
 
-                if (
+                var f8Parsed = int.TryParse(f8Raw, out f8Val);
 
-                    int.TryParse(f8Raw, out f8Val)
+                var submitParsed = int.TryParse(submitRaw, out submitVal);
 
-                    && int.TryParse(submitRaw, out submitVal)
+                if (f8Parsed && submitParsed && f8Val != submitVal)
 
-                    && submitVal > f8Val
-
-                )
+                {
 
                     notes.Add("birthday_cake_bonus f8=" + f8Val + " submit=" + submitVal);
+
+                    return;
+
+                }
+
+                if (f8Parsed != submitParsed)
+
+                {
+
+                    notes.Add(
+
+                        "birthday_cake_bonus f8="
+
+                            + (f8Parsed ? f8Val.ToString() : (f8Raw ?? ""))
+
+                            + " submit="
+
+                            + (submitParsed ? submitVal.ToString() : (submitRaw ?? ""))
+
+                    );
+
+                }
 
                 return;
 

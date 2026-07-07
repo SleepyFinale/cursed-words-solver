@@ -1529,6 +1529,12 @@ namespace CursedWordsSolverCompanion
             }
 
             RunStateExporter.AppendTileNinjaLiveExtras(player, projected);
+            if (player != null && RunStateExporter.HasBirthdayCakeInRun(player))
+            {
+                var birthday = RunStateExporter.TryGetBirthdayCakeBonusForScoring(player);
+                if (birthday >= 0)
+                    projected["birthday_cake_bonus"] = birthday.ToString();
+            }
             return projected;
         }
 

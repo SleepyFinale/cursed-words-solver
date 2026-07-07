@@ -22,7 +22,7 @@ From the **repository root** (the folder that contains `pyproject.toml` and `req
 Use **Python 3.11 or 3.12** (3.14 is not supported yet — native deps like NumPy lack compatible wheels). On Windows with multiple Pythons installed: `py -3.11 -m venv .venv`.
 
 ```bash
-python -m venv .venv
+py -3.11 -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 pip install -e ".[dev]"   # pytest — only needed for running tests

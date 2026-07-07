@@ -1434,7 +1434,8 @@ def _ram_birthday_word_bonus_from_actual_trace(data: dict) -> int | None:
     for step in trace:
         if not isinstance(step, dict):
             continue
-        if str(step.get("item_id", "") or "").lower() != "random_access_memory":
+        item_id = str(step.get("item_id", "") or "").lower()
+        if item_id not in ("birthday_cake", "random_access_memory"):
             continue
         if step.get("word_bonus_multiplicative"):
             continue

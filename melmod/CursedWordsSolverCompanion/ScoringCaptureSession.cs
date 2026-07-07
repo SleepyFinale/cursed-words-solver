@@ -120,7 +120,7 @@ namespace CursedWordsSolverCompanion
             _rackBefore = ConsumableRackExporter.Export(player);
             _consumablePlacements = ConsumablePlacementTracker.DrainPlacementsSinceLastSubmit();
 
-            var birthdayBonus = RunStateExporter.TryGetBirthdayCakeBonus(player);
+            var birthdayBonus = RunStateExporter.TryGetBirthdayCakeBonusForScoring(player);
             if (birthdayBonus >= 0)
                 _scoringContextExtras["birthday_cake_bonus"] = birthdayBonus.ToString();
 

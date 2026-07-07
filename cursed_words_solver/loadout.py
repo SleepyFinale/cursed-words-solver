@@ -1927,6 +1927,9 @@ def reconcile_historic_after_grid_advance(extras: dict[str, Any]) -> bool:
     grid = _grid_number_from_extras(extras)
 
     if source == "grid1_no_scoring_cache":
+        if spc > 0:
+            extras.pop("encounter_historic_source", None)
+            return False
         return clear_grid_one_stale_encounter_historic(extras)
 
     if source in ("grid_advanced", "grid_advanced_disk"):
@@ -2096,6 +2099,10 @@ def reconcile_encounter_historic_for_scoring(
 
 def reconcile_grid_one_no_scoring_cache_sentinel(extras: dict[str, Any]) -> bool:
     """Grid 1 word 1: mark empty historic as intentionally cleared (not stale bleed)."""
+    source = str(extras.get("encounter_historic_source", "") or "").strip()
+    if source == "grid1_no_scoring_cache" and _scoring_previous_words_count_from_extras(extras) > 0:
+        extras.pop("encounter_historic_source", None)
+        return False
     if _grid_number_from_extras(extras) != 1:
         return False
     if _scoring_previous_words_count_from_extras(extras) != 0:
@@ -2403,6 +2410,21 @@ F8_EMBED_WORKFLOW_EXTRA_KEYS = (
 )
 
 
+def loadout_has_birthday_cake(loadout: Loadout | None) -> bool:
+    """True when Birthday Cake is equipped or present in RAM pin memory."""
+    if loadout is None:
+        return False
+    if any(
+        (s.id or "").lower() == "birthday_cake"
+        or "birthday" in (s.name or "").lower()
+        for s in loadout.stickers
+    ):
+        return True
+    from cursed_words_solver.rules.ram_memory import pin_memory_has_birthday_cake
+
+    return pin_memory_has_birthday_cake(loadout)
+
+
 def merge_f8_workflow_extras_into(
     dest: dict[str, Any],
     loadout_extras: dict[str, Any] | None,
@@ -2482,8 +2504,11 @@ def align_embed_with_scoring_loadout(
             "encounter_historic_source",
             "red_tiles_used_encounter",
             "mutating_dna_letter_counts",
+            "birthday_cake_bonus",
+            "movie_camera_word_score_bonus",
         }
     )
+    cap_keys = ("birthday_cake_bonus", "movie_camera_word_score_bonus")
     for key in F8_EMBED_WORKFLOW_EXTRA_KEYS:
         if key in skip:
             continue
@@ -2491,6 +2516,26 @@ def align_embed_with_scoring_loadout(
         if val is None or str(val).strip() == "":
             continue
         extras[key] = str(val) if not isinstance(val, str) else val
+
+    for cap_key in cap_keys:
+        rec_val = reconciled.get(cap_key)
+        if rec_val is None or str(rec_val).strip() == "":
+            continue
+        try:
+            rec_i = int(str(rec_val).strip())
+        except (TypeError, ValueError):
+            extras[cap_key] = str(rec_val) if not isinstance(rec_val, str) else rec_val
+            continue
+        embed_i: int | None = None
+        if cap_key in extras:
+            try:
+                embed_i = int(str(extras[cap_key]).strip())
+            except (TypeError, ValueError):
+                embed_i = None
+        if embed_i is not None:
+            extras[cap_key] = str(min(rec_i, embed_i))
+        else:
+            extras[cap_key] = str(rec_i)
 
 
 def merge_tile_ninja_extras_into(
