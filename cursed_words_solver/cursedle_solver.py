@@ -306,6 +306,26 @@ def _primary_cursedle_flags(board: Board) -> int:
     return 0
 
 
+def _cursedle_path_flags(board: Board, path: list[int]) -> int:
+    """Board-wide theme flags plus scattered-item effects along ``path``."""
+    return path_scattered_search_flags_mask(
+        board, path, _primary_cursedle_flags(board)
+    )
+
+
+def _cursedle_flag_variants(board: Board, path: list[int]) -> tuple[int, ...]:
+    """Distinct flag masks to try when resolving a path to a dictionary word."""
+    primary = _primary_cursedle_flags(board)
+    path_flags = path_scattered_search_flags_mask(board, path, primary)
+    seen: set[int] = set()
+    out: list[int] = []
+    for flags in (0, primary, path_flags):
+        if flags not in seen:
+            seen.add(flags)
+            out.append(flags)
+    return tuple(out)
+
+
 def _cursedle_tile_is_wildcard(tile: Any) -> bool:
     """True when the game treats a path tile as a dictionary wildcard."""
     if tile.curse in CHESS_CURSES:
@@ -417,7 +437,8 @@ def _path_dictionary_word_any_resolution(
     path: list[int],
     dictionary: WordDictionary,
 ) -> str | None:
-    for flags in (0, _primary_cursedle_flags(board)):
+    path_flags = _cursedle_path_flags(board, path)
+    for flags in _cursedle_flag_variants(board, path):
         word = _path_dictionary_word(board, path, dictionary, flags=flags)
         if word:
             return word
@@ -428,11 +449,9 @@ def _path_dictionary_word_any_resolution(
             word = _pattern_dictionary_word(board, path, pattern, dictionary)
             if word:
                 return word
-    phys = _cursedle_word_from_path(
-        board, path, flags=_primary_cursedle_flags(board)
-    )
+    phys = _cursedle_word_from_path(board, path, flags=path_flags)
     if not phys:
-        phys = physical_word_for_path(board, path, flags=_primary_cursedle_flags(board))
+        phys = physical_word_for_path(board, path, flags=path_flags)
     if phys and "?" not in phys and dictionary.contains(phys.lower()):
         return phys.lower()
     return None
@@ -627,7 +646,7 @@ def _word_from_path(
     word = _path_dictionary_word_any_resolution(board, path, dictionary)
     if word:
         return word.lower()
-    raw = search_word_from_path(board, path, flags=_primary_cursedle_flags(board))
+    raw = search_word_from_path(board, path, flags=_cursedle_path_flags(board, path))
     if not raw:
         return None
     raw = raw.lower()
@@ -661,7 +680,7 @@ def _guessed_melmod_path_keys(
 
 
 def _raw_word_from_path(board: Board, path: list[int]) -> str | None:
-    flags = _primary_cursedle_flags(board)
+    flags = _cursedle_path_flags(board, path)
     raw = search_word_from_path(board, path, flags=flags)
     if not raw:
         raw = physical_word_for_path(board, path, flags=flags)
@@ -681,16 +700,16 @@ def _guessed_words(
     dictionary: WordDictionary,
 ) -> set[str]:
     words: set[str] = set()
-    flags = _primary_cursedle_flags(board)
     for guess in guesses:
         path = _guess_storage_path(board, guess.path, guess)
+        path_flags = _cursedle_path_flags(board, path)
         word = _word_from_path(board, path, dictionary)
         if word:
             words.add(word)
         raw = _raw_word_from_path(board, path)
         if raw:
             words.add(raw)
-        phys = physical_word_for_path(board, path, flags=flags)
+        phys = physical_word_for_path(board, path, flags=path_flags)
         if phys and "?" not in phys:
             words.add(phys.lower())
     return words
