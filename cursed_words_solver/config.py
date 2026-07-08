@@ -152,6 +152,15 @@ def resolve_wordlist(wordlist: str = "game") -> Path:
     return ensure_wordlist()
 
 
+def wordlist_signature(path: Path) -> tuple[str, int, int]:
+    """Stable signature for detecting on-disk wordlist refreshes."""
+    try:
+        st = path.stat()
+        return (str(path), int(st.st_size), int(st.st_mtime_ns))
+    except OSError:
+        return (str(path), 0, 0)
+
+
 def wordlist_count(path: Path) -> int | None:
     """Approximate word count from meta file or line count."""
     if path == GAME_WORDLIST_PATH and GAME_WORDLIST_META_PATH.exists():

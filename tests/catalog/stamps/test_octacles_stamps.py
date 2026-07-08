@@ -1079,6 +1079,42 @@ def test_birthday_improve_uses_fraction_ceil():
     assert birthday_cake_improve_for_path(board, [1], level=1, rule=rule) == 1
 
 
+def test_birthday_improve_counts_playing_card_number_tile():
+    """Mismatch 20260708_131219: spades-8 NUMBER on path counts toward Birthday improve."""
+    from cursed_words_solver.models import Board, CurseType, Tile, TileColor
+    from cursed_words_solver.rules.scoring_conditions import birthday_cake_improve_for_path
+
+    pipeline = ScoringPipeline()
+    _key, rule = get_rule(pipeline.rules, "stickers", "birthday_cake", "Birthday Cake")
+
+    board = _empty_board()
+    board.tiles[3][4] = Tile(
+        3,
+        4,
+        "8",
+        "8",
+        9,
+        TileColor.BLUE,
+        CurseType.NUMBER,
+        number_value=8,
+        metadata={"card_suit": "spades", "card_rank": "8", "source": "melmod"},
+    )
+    board.tiles[4][2] = Tile(
+        4,
+        2,
+        "6",
+        "6",
+        7,
+        TileColor.BLUE,
+        CurseType.NUMBER,
+        number_value=6,
+        metadata={"source": "melmod"},
+    )
+    # Path uses spades 8 (index 19) and blue 6 (index 22) on a 5x5 board.
+    path = [19, 22]
+    assert birthday_cake_improve_for_path(board, path, level=3, rule=rule) == 24
+
+
 def test_oden_ippon_path_three_categories():
     """Mismatch 20260607_134340: suited NUMBER/FRACTION tiles use number bucket only → ×3."""
     from cursed_words_solver.loadout import (

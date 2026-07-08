@@ -2533,9 +2533,58 @@ def align_embed_with_scoring_loadout(
             except (TypeError, ValueError):
                 embed_i = None
         if embed_i is not None:
-            extras[cap_key] = str(min(rec_i, embed_i))
+            # Prefer live F8 export when melmod is ahead of a lagging scoring loadout.
+            extras[cap_key] = str(max(rec_i, embed_i))
         else:
             extras[cap_key] = str(rec_i)
+
+
+def birthday_cake_embed_post_word_stale_note(
+    embed_extras: dict[str, Any] | None,
+    scoring_loadout: Loadout | None,
+    board: Board | None,
+    path: list[int] | None,
+    word: str | None,
+) -> str | None:
+    """Warn when F8 embed birthday_cake_bonus is post-word total, not pre-word accumulated."""
+    if not isinstance(embed_extras, dict) or scoring_loadout is None:
+        return None
+    if not loadout_has_birthday_cake(scoring_loadout):
+        return None
+    if board is None or not path:
+        return None
+    try:
+        embed_val = int(str(embed_extras.get("birthday_cake_bonus") or "0"))
+    except (TypeError, ValueError):
+        return None
+    if embed_val <= 0:
+        return None
+    from cursed_words_solver.rules.pipeline import ScoringPipeline
+
+    from cursed_words_solver.rules.scoring_conditions import (
+        birthday_cake_accumulated,
+        birthday_cake_improve_for_path,
+    )
+
+    acc = birthday_cake_accumulated(scoring_loadout)
+    if embed_val <= acc:
+        return None
+    pipeline = ScoringPipeline()
+    rule = pipeline.rules.get("stickers", {}).get("birthday_cake") or {}
+    level = 1
+    for sticker in scoring_loadout.stickers or []:
+        if (sticker.id or "").lower() == "birthday_cake":
+            level = max(1, int(sticker.level))
+            break
+    improve = birthday_cake_improve_for_path(
+        board, list(path), level, rule, word or ""
+    )
+    if improve > 0 and embed_val == acc + improve:
+        return (
+            f"birthday_cake_bonus embed ({embed_val}) equals pre-word {acc} + "
+            f"improve {improve} — export is post-word; press F8 again"
+        )
+    return None
 
 
 def merge_tile_ninja_extras_into(

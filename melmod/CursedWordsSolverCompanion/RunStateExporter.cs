@@ -1002,7 +1002,26 @@ namespace CursedWordsSolverCompanion
             ShopExporter.FillShopState(snapshot, player);
             if (snapshot.board != null)
                 ConsumablePlacementTracker.OnBoardSnapshot(snapshot.board);
+            StripStaleBicycleWorkflowExtras(snapshot, player);
             return snapshot;
+        }
+
+        /// <summary>
+        /// Drop bicycle-only workflow keys when the equipped pin is not Bicycle.
+        /// </summary>
+        private static void StripStaleBicycleWorkflowExtras(
+            RunStateSnapshot snapshot,
+            Player player
+        )
+        {
+            if (snapshot?.extras == null || player == null)
+                return;
+            var pin = player.MyCharacter?.CharacterItem;
+            if (pin != null && IsBicyclePin(pin))
+                return;
+            snapshot.extras.Remove("bicycle_suited_on_path");
+            snapshot.extras.Remove("bicycle_word_score_bonus");
+            snapshot.extras.Remove("cards_submitted");
         }
 
         private static readonly string[] WorkflowExtrasFromDisk =

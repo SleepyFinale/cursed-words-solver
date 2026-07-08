@@ -340,6 +340,8 @@ namespace CursedWordsSolverCompanion
 
             RewindSubmitBicycleToPreWord(merged, f8Extras, suitedOnPath, perCard);
 
+            RewindSubmitBirthdayCakeToPreWord(merged, f8Extras, workflowExtras);
+
             return merged;
 
         }
@@ -417,6 +419,86 @@ namespace CursedWordsSolverCompanion
                 }
 
             }
+
+        }
+
+
+
+        /// <summary>
+
+        /// When submit extras hold post-word Birthday Cake total, rewind to pre-word for F8 compare.
+
+        /// </summary>
+
+        public static void RewindSubmitBirthdayCakeToPreWord(
+
+            Dictionary<string, string> submitExtras,
+
+            Dictionary<string, string> f8Extras,
+
+            Dictionary<string, string> preWordExtras
+
+        )
+
+        {
+
+            if (submitExtras == null)
+
+                return;
+
+
+
+            string preRaw;
+
+            if (
+
+                preWordExtras != null
+
+                && preWordExtras.TryGetValue("birthday_cake_bonus", out preRaw)
+
+                && !string.IsNullOrEmpty(preRaw)
+
+            )
+
+            {
+
+                submitExtras["birthday_cake_bonus"] = preRaw;
+
+                return;
+
+            }
+
+
+
+            if (f8Extras == null)
+
+                return;
+
+
+
+            string f8Raw;
+
+            string submitRaw;
+
+            f8Extras.TryGetValue("birthday_cake_bonus", out f8Raw);
+
+            submitExtras.TryGetValue("birthday_cake_bonus", out submitRaw);
+
+
+
+            int f8Val;
+
+            int submitVal;
+
+            if (!int.TryParse(f8Raw, out f8Val) || !int.TryParse(submitRaw, out submitVal))
+
+                return;
+
+
+
+            if (submitVal > f8Val)
+
+                submitExtras["birthday_cake_bonus"] = f8Val.ToString();
 
         }
 
@@ -1012,7 +1094,7 @@ namespace CursedWordsSolverCompanion
 
                 ? new List<string>()
 
-                : CollectWorkflowDriftNotes(extrasDiff, ctx);
+                : CollectWorkflowDriftNotes(extrasDiff, ctx, scoreMatched);
 
             var bicycle = CollectBicycleDriftNotes(extrasDiff, ctx, scoreMatched);
 
@@ -2246,7 +2328,9 @@ namespace CursedWordsSolverCompanion
 
             Dictionary<string, object> extrasDiff,
 
-            StaleF8Context ctx
+            StaleF8Context ctx,
+
+            bool scoreMatched = false
 
         )
 
@@ -2268,7 +2352,7 @@ namespace CursedWordsSolverCompanion
 
                     continue;
 
-                TryAddStaleStringDriftNote(extrasDiff, key, notes);
+                TryAddStaleStringDriftNote(extrasDiff, key, notes, scoreMatched);
 
             }
 
@@ -2898,7 +2982,9 @@ namespace CursedWordsSolverCompanion
 
             string key,
 
-            List<string> notes
+            List<string> notes,
+
+            bool scoreMatched = false
 
         )
 
@@ -3011,6 +3097,10 @@ namespace CursedWordsSolverCompanion
                 if (f8Parsed && submitParsed && f8Val != submitVal)
 
                 {
+
+                    if (scoreMatched && submitVal > f8Val)
+
+                        return;
 
                     notes.Add("birthday_cake_bonus f8=" + f8Val + " submit=" + submitVal);
 

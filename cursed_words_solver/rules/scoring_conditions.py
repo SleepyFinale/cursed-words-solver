@@ -4104,11 +4104,14 @@ def birthday_cake_improve_high_on_path(
 ) -> float:
     """Highest value driving Birthday Cake improve (NUMBER face or ceil of fraction).
 
-    Wiki: improved by highest number in word. Unit fractions with denominator >= 8
-    (e.g. 1/8 on morat) do not contribute; num >= 2 or den <= 7 still use ceil(num/den).
+    Game (BirthdayCake.ApplyWordBonus): max GetNumberFloat among path tiles where
+    IsNumber() — includes playing-card NUMBER tiles (e.g. spades 8 on zareebas).
 
-    NUMBER tiles used to spell letters (wildcard-style) do not contribute; neither do
-    playing-card NUMBER tiles (ippon/caparison mismatches 20260607_134340/134640).
+    Unit fractions with denominator >= 8 (e.g. 1/8 on morat) do not contribute;
+    num >= 2 or den <= 7 still use ceil(num/den).
+
+    NUMBER tiles used to spell letters (wildcard-style) do not contribute when a
+    qualifying fraction is on the path.
     """
     import math
 
@@ -4128,8 +4131,6 @@ def birthday_cake_improve_high_on_path(
     for pos, idx in enumerate(steps):
         tile = board.get_by_index(idx)
         if is_number_tile(tile):
-            if card_suit(tile):
-                continue
             if (
                 w
                 and (pos >= len(w) or not w[pos].isdigit())

@@ -931,11 +931,11 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
-        /// Persist post-word accumulated Birthday Cake total (not the in-word RAM step bonus).
+        /// Post-word Birthday Cake total for mismatch replay (not pre-word stale compare).
         /// </summary>
         private static void CaptureBirthdayCakeBonusFromSteps(List<ScoreCalcVizInfo> steps)
         {
-            if (steps == null || _scoringContextExtras == null)
+            if (steps == null)
                 return;
 
             try
@@ -948,7 +948,11 @@ namespace CursedWordsSolverCompanion
                 if (bonus < 0)
                     return;
 
-                _scoringContextExtras["birthday_cake_bonus"] = bonus.ToString();
+                if (_postSubmitScoringExtrasForMismatchDiff == null)
+                    _postSubmitScoringExtrasForMismatchDiff =
+                        new Dictionary<string, string>();
+                _postSubmitScoringExtrasForMismatchDiff["birthday_cake_bonus"] =
+                    bonus.ToString();
             }
             catch
             {

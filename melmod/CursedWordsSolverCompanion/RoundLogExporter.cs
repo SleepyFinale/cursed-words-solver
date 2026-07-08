@@ -332,13 +332,44 @@ namespace CursedWordsSolverCompanion
             {
                 ["word"] = ctx.SubmittedWord ?? "",
                 ["path"] = ctx.SubmittedPath ?? new List<int>(),
+                ["path_index_space"] = "melmod_bottom_origin",
                 ["path_tiles"] = pathTiles,
                 ["score"] = ctx.ActualScore,
                 ["trace"] = ctx.ActualTrace ?? new List<Dictionary<string, object>>(),
             };
+            if (submitBoard != null && ctx.SubmittedPath != null && ctx.SubmittedPath.Count > 0)
+            {
+                block["path_storage"] = SuggestionMatcher.MelmodPathToStorageIndices(
+                    ctx.SubmittedPath,
+                    submitBoard
+                );
+            }
+            var pathFaces = BuildPathFaces(pathTiles);
+            if (!string.IsNullOrEmpty(pathFaces))
+                block["path_faces"] = pathFaces;
             if (!string.IsNullOrEmpty(submittedFirst))
                 block["submitted_word_first_letter"] = submittedFirst;
             return block;
+        }
+
+        private static string BuildPathFaces(List<Dictionary<string, object>> pathTiles)
+        {
+            if (pathTiles == null || pathTiles.Count == 0)
+                return "";
+            var sb = new System.Text.StringBuilder();
+            foreach (var step in pathTiles)
+            {
+                if (step == null)
+                    continue;
+                var face = "";
+                if (step.TryGetValue("char", out var chObj) && chObj != null)
+                    face = chObj.ToString();
+                if (string.IsNullOrEmpty(face) && step.TryGetValue("letter", out var letterObj))
+                    face = letterObj?.ToString() ?? "";
+                if (!string.IsNullOrEmpty(face))
+                    sb.Append(face.Trim());
+            }
+            return sb.ToString();
         }
 
         private static Dictionary<string, object> BuildConsumablesBlock(RoundCaptureContext ctx)
@@ -474,25 +505,44 @@ namespace CursedWordsSolverCompanion
                 return result;
 
             var cols = board.cols > 0 ? board.cols : 5;
-            var byIndex = new Dictionary<int, BoardTileSnapshot>();
+            var byRowCol = new Dictionary<string, BoardTileSnapshot>();
             foreach (var t in board.tiles)
             {
                 if (t == null || !t.active)
                     continue;
-                var idx = t.row * cols + t.col;
-                byIndex[idx] = t;
+                byRowCol[t.row + "," + t.col] = t;
             }
 
-            foreach (var idx in submittedPath)
+            foreach (var melmodIdx in submittedPath)
             {
-                if (!byIndex.TryGetValue(idx, out var tile) || tile == null)
+                if (
+                    !SuggestionMatcher.TryMelmodIndexToTopFirstRowCol(
+                        melmodIdx,
+                        board,
+                        out var row,
+                        out var col
+                    )
+                )
                 {
                     result.Add(
                         new Dictionary<string, object>
                         {
-                            ["path_index"] = idx,
-                            ["row"] = idx / cols,
-                            ["col"] = idx % cols,
+                            ["path_index"] = melmodIdx,
+                            ["row"] = melmodIdx / cols,
+                            ["col"] = melmodIdx % cols,
+                        }
+                    );
+                    continue;
+                }
+
+                if (!byRowCol.TryGetValue(row + "," + col, out var tile) || tile == null)
+                {
+                    result.Add(
+                        new Dictionary<string, object>
+                        {
+                            ["path_index"] = melmodIdx,
+                            ["row"] = row,
+                            ["col"] = col,
                         }
                     );
                     continue;
@@ -501,7 +551,7 @@ namespace CursedWordsSolverCompanion
                 result.Add(
                     new Dictionary<string, object>
                     {
-                        ["path_index"] = idx,
+                        ["path_index"] = melmodIdx,
                         ["row"] = tile.row,
                         ["col"] = tile.col,
                         ["letter"] = tile.letter,

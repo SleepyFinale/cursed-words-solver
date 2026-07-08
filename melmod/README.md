@@ -80,6 +80,8 @@ After **every** word submit (encounter or puzzle), the mod writes a structured r
 
 Each log includes: full `run_state` at submit, solver block (when `last_suggestion.json` exists), actual word/path/score/trace, consumable rack before/after, and `consumables.placements_this_round` (board-diff detections between submits).
 
+`actual.path` uses **melmod bottom-origin** indices (`path_index_space`: `melmod_bottom_origin`), matching `last_suggestion.json` / overlay. `actual.path_storage` lists solver storage indices (top-first row 0 = top) derived from the submit-time board snapshot — not cached across runs. `actual.path_faces` is a compact tile-face string in path order (e.g. `123EITE`). `actual.path_tiles` resolves each step via melmod→storage row/col conversion (not raw melmod index lookup).
+
 **Mismatch bundles unchanged** — `scoring_mismatches/` still only when F8 path + board fingerprint match and scores differ.
 
 | File | Path |

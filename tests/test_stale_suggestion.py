@@ -119,6 +119,29 @@ def _rewind_submit_bicycle_to_pre_word(
             submit_extras["cards_submitted"] = str(pre)
 
 
+def _rewind_submit_birthday_cake_to_pre_word(
+    submit_extras: dict[str, str],
+    f8_extras: dict[str, str],
+    pre_word_extras: dict[str, str] | None,
+) -> None:
+    """Mirror melmod RewindSubmitBirthdayCakeToPreWord."""
+    if not submit_extras:
+        return
+    pre_raw = str((pre_word_extras or {}).get("birthday_cake_bonus", "") or "").strip()
+    if pre_raw:
+        submit_extras["birthday_cake_bonus"] = pre_raw
+        return
+    if not f8_extras:
+        return
+    try:
+        f8_val = int(str(f8_extras.get("birthday_cake_bonus", "") or "0"))
+        submit_val = int(str(submit_extras.get("birthday_cake_bonus", "") or "0"))
+    except ValueError:
+        return
+    if submit_val > f8_val:
+        submit_extras["birthday_cake_bonus"] = str(f8_val)
+
+
 def _merge_mutating_dna_for_stale_compare(
     merged: dict[str, str] | None,
     scoring_extras: dict[str, str] | None,
@@ -157,6 +180,7 @@ def _prepare_extras_for_bicycle_stale_compare(
     if per_card <= 0:
         per_card = 1
     _rewind_submit_bicycle_to_pre_word(merged, f8_extras, suited_on_path, per_card)
+    _rewind_submit_birthday_cake_to_pre_word(merged, f8_extras, workflow_extras)
     return merged
 
 
@@ -164,6 +188,10 @@ _PIN_DERIVED_STALE_KEYS = (
     "bicycle_word_score_bonus",
     "cards_submitted",
     "bicycle_suited_on_path",
+)
+
+_SCORING_AUTHORITY_STALE_KEYS = (
+    "birthday_cake_bonus",
 )
 
 
@@ -183,6 +211,13 @@ def _merge_pin_derived_for_stale_check(
     for key in _PIN_DERIVED_STALE_KEYS:
         if key in scoring_extras:
             merged[key] = scoring_extras[key] or ""
+    for key in _SCORING_AUTHORITY_STALE_KEYS:
+        workflow_val = str(merged.get(key, "") or "").strip()
+        if not workflow_val:
+            continue
+        scoring_val = str(scoring_extras.get(key, "") or "").strip()
+        if scoring_val:
+            merged[key] = scoring_val
     return merged
 
 
@@ -266,6 +301,25 @@ def _stale_f8_extras_note(
             if not _mutating_dna_letter_counts_equal(f8_raw, submit_raw):
                 notes.append("mutating_dna_letter_counts changed")
 
+    if entry := extras_diff.get("birthday_cake_bonus"):
+        f8_raw = str(entry.get("f8", "") or "").strip()
+        submit_raw = str(entry.get("submit", "") or "").strip()
+        if f8_raw != submit_raw and f8_raw and submit_raw:
+            try:
+                f8_val = int(f8_raw)
+                submit_val = int(submit_raw)
+            except ValueError:
+                notes.append(
+                    f"birthday_cake_bonus f8={f8_raw} submit={submit_raw}"
+                )
+            else:
+                if f8_val != submit_val and not (
+                    score_matched and submit_val > f8_val
+                ):
+                    notes.append(
+                        f"birthday_cake_bonus f8={f8_val} submit={submit_val}"
+                    )
+
     if entry := extras_diff.get("previous_word_first_letter"):
         f8_raw = str(entry.get("f8", "") or "").strip()
         submit_raw = str(entry.get("submit", "") or "").strip()
@@ -289,6 +343,46 @@ def test_tile_ninja_extras_drift_is_stale_f8():
     assert note is not None
     assert "tile_ninja_consumables_used f8=21 submit=23" in note
     assert "tile_ninja_word_bonus_percent f8=162 submit=166" in note
+
+
+def test_birthday_cake_post_submit_rewind_avoids_false_stale_f8():
+    """20260708 oppos: post-submit bonus 119 is pre-word 104 + improve 15, not stale F8."""
+    f8_extras = {"birthday_cake_bonus": "104"}
+    pre_word = {"birthday_cake_bonus": "104"}
+    scoring_extras = {"birthday_cake_bonus": "119"}
+    merged = _prepare_extras_for_bicycle_stale_compare(
+        pre_word,
+        scoring_extras,
+        f8_extras,
+    )
+    assert merged["birthday_cake_bonus"] == "104"
+    extras_diff = {
+        "birthday_cake_bonus": {
+            "f8": "104",
+            "submit": merged["birthday_cake_bonus"],
+        }
+    }
+    note = _stale_f8_extras_note(
+        extras_diff,
+        has_bicycle_pin=False,
+        has_mutating_dna_stamp=False,
+        score_matched=True,
+    )
+    assert note is None
+
+
+def test_birthday_cake_post_submit_drift_still_stale_when_score_mismatches():
+    extras_diff = {
+        "birthday_cake_bonus": {"f8": "104", "submit": "119"},
+    }
+    note = _stale_f8_extras_note(
+        extras_diff,
+        has_bicycle_pin=False,
+        has_mutating_dna_stamp=False,
+        score_matched=False,
+    )
+    assert note is not None
+    assert "birthday_cake_bonus f8=104 submit=119" in note
 
 
 def _patch_suggestion_path(tmp_path: Path, monkeypatch) -> Path:

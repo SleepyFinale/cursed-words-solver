@@ -18,6 +18,33 @@ from tests.integration.test_run_state_board import _bat_4x3_run_state
 from tests.test_ui_layout import _bat_3x3_ui_layout_run_state
 
 
+def test_melmod_jadeite_path_storage_indices():
+    """Melmod path [2,7,13,8,9,14,19] maps to tiles 1,2,3,E,I,T,E on 5x5."""
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "round_logs"
+        / "20260707_jadeite_board.json"
+    )
+    if not fixture.exists():
+        import pytest
+
+        pytest.skip("jadeite round-log fixture required")
+
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data["run_state"])
+    assert board is not None
+    melmod_path = [2, 7, 13, 8, 9, 14, 19]
+    storage_path = path_from_melmod_indices(board, melmod_path)
+    assert storage_path == [22, 17, 13, 18, 19, 14, 9]
+    faces = []
+    for idx in storage_path:
+        tile = board.get_by_index(idx)
+        face = getattr(tile, "char", None) or tile.letter
+        faces.append(str(face).strip())
+    assert "".join(faces).lower() == "123eite"
+
+
 def test_path_geometry_cell_centers_within_region():
     region = Region(x=100, y=200, width=500, height=500)
     steps = path_geometry(region, [0, 1, 2])

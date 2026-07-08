@@ -143,6 +143,7 @@ CENOBITISMS_FIXTURE = (
     / "round_logs"
     / "20260625_cenobitisms_path_mismatch.json"
 )
+ROUND_20260708_PATH_MISMATCH = Path.home() / ".cursed_words_solver" / "round_logs" / "20260708_113716_684.json"
 INTERMEASURED_PATH = [20, 17, 11, 5, 0, 1, 6, 12, 8, 4, 9, 13, 18]
 INTERMEASURED_WORD = "intermeasured"
 INTERMEASURED_F8_SCORE = 10_511
@@ -183,6 +184,35 @@ ITEM_HEAVY_SEARCH_FIXTURES = [
         90.0,
     ),
 ]
+
+
+@pytest.mark.skipif(
+    not ROUND_20260708_PATH_MISMATCH.exists(),
+    reason="20260708 path-mismatch round log required",
+)
+def test_20260708_path_mismatch_search_beats_logged_f8():
+    data = json.loads(ROUND_20260708_PATH_MISMATCH.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=3)
+    assert results, "search should produce suggestions on 20260708 grid-2 board"
+    top_score = int(results[0].score)
+    f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
+    actual_score = int((data.get("actual") or {}).get("score", 0))
+    assert top_score >= f8_score
+    assert top_score >= actual_score
 
 
 @pytest.mark.parametrize(
@@ -933,6 +963,19 @@ TREENS_FIXTURE = (
 TREENS_PATH = [11, 5, 9, 3, 2, 1]
 TREENS_F8_SCORE = 4445
 
+NUMBER_START_ALT_PATH_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260708_number_start_path_mismatch.json"
+)
+DIVOTS_PATH_MISMATCH_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260708_divots_path_mismatch.json"
+)
+
 
 @pytest.mark.skipif(not TREENS_FIXTURE.exists(), reason="treens fixture required")
 def test_treens_submitted_path_beats_f8_suggestion():
@@ -978,6 +1021,88 @@ def test_treens_parallel_search_beats_f8_suggestion():
         board, TREENS_PATH, "treens", loadout
     )
     assert int(treens_score) > TREENS_F8_SCORE
+
+
+@pytest.mark.skipif(
+    not NUMBER_START_ALT_PATH_FIXTURE.exists(),
+    reason="20260708 number-start fixture required",
+)
+def test_number_start_alternate_path_replay_is_reachable():
+    from cursed_words_solver.suggestion import path_is_submittable
+
+    data = json.loads(NUMBER_START_ALT_PATH_FIXTURE.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state"])
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    dictionary = WordDictionary(GAME_WORDLIST_PATH)
+    searcher = WordSearcher(
+        dictionary=dictionary,
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=5)
+    assert results, "search should produce suggestions on number-start mismatch board"
+
+    top_score = int(results[0].score)
+    f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
+    submitted_score = int((data.get("actual") or {}).get("score", 0))
+    assert top_score > f8_score
+    assert top_score >= submitted_score - 200
+    assert submitted_score > f8_score
+    assert any(r.word and r.word[0].isdigit() for r in results[:5])
+    best = results[0]
+    assert path_is_submittable(
+        board,
+        best.path,
+        best.word,
+        loadout,
+        dictionary,
+        min_len=constraints.min_len,
+    )
+
+
+@pytest.mark.skipif(
+    not DIVOTS_PATH_MISMATCH_FIXTURE.exists(),
+    reason="20260708 divots path-mismatch fixture required",
+)
+def test_divots_number_start_path_mismatch_is_recovered():
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    data = json.loads(DIVOTS_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    run_state = prepare_run_state_dict_for_scoring(data["run_state"])
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=5)
+    assert results, "search should produce suggestions on divots mismatch board"
+    top_score = int(results[0].score)
+    f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
+    submitted_score = int((data.get("actual") or {}).get("score", 0))
+    submitted_storage = path_from_melmod_indices(board, data["actual"]["path"])
+    flags = stamp_search_flags_mask(loadout)
+    submitted_solver_legal = path_movement_ok(
+        board, submitted_storage, flags=flags, loadout=loadout
+    )
+    assert not submitted_solver_legal
+    assert submitted_score > f8_score
+    assert top_score > f8_score
+    assert top_score >= f8_score + 300
 
 
 DILUTES_FIXTURE = (

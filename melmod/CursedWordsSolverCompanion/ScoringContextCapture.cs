@@ -566,12 +566,18 @@ namespace CursedWordsSolverCompanion
             if (string.IsNullOrEmpty(wordFirst))
                 return "";
 
-            var pathCols = board.cols > 0 ? board.cols : 5;
             var idx = path[0];
             if (idx < 0)
                 return "";
-            var row = idx / pathCols;
-            var col = idx % pathCols;
+            if (
+                !SuggestionMatcher.TryMelmodIndexToTopFirstRowCol(
+                    idx,
+                    board,
+                    out var row,
+                    out var col
+                )
+            )
+                return "";
             foreach (var tile in board.tiles)
             {
                 if (tile == null || tile.row != row || tile.col != col)
@@ -642,13 +648,19 @@ namespace CursedWordsSolverCompanion
             if (path == null || board?.tiles == null)
                 return "";
 
-            var pathCols = board.cols > 0 ? board.cols : 5;
-            foreach (var idx in path)
+            foreach (var melmodIdx in path)
             {
-                if (idx < 0)
+                if (melmodIdx < 0)
                     continue;
-                var row = idx / pathCols;
-                var col = idx % pathCols;
+                if (
+                    !SuggestionMatcher.TryMelmodIndexToTopFirstRowCol(
+                        melmodIdx,
+                        board,
+                        out var row,
+                        out var col
+                    )
+                )
+                    continue;
                 foreach (var tile in board.tiles)
                 {
                     if (tile == null || tile.row != row || tile.col != col)

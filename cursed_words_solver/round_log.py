@@ -210,10 +210,15 @@ def last_submit_effective_first_letter() -> str | None:
                 from cursed_words_solver.rules.scoring_conditions import (
                     _effective_word_start_letter,
                 )
+                from cursed_words_solver.ui.board_geometry import (
+                    path_from_melmod_indices,
+                )
 
                 board = parse_board_from_run_state(run_state)
                 if board is not None:
-                    first = _effective_word_start_letter(board, path, word)
+                    melmod_path = [int(x) for x in path]
+                    storage_path = path_from_melmod_indices(board, melmod_path)
+                    first = _effective_word_start_letter(board, storage_path, word)
                     if first:
                         return first.lower()[:1]
             except Exception:

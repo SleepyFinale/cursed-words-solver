@@ -876,6 +876,15 @@ def _f8_snapshot_extras(data: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _normalize_wordlist_signature(raw: Any) -> str:
+    """Stable text form for comparing saved vs active dictionary signatures."""
+    if raw is None:
+        return ""
+    if isinstance(raw, (list, tuple)):
+        return "|".join(str(part) for part in raw)
+    return str(raw).strip()
+
+
 def has_played_word_since_f8_embed(
     live_extras: dict[str, Any] | None,
     embed_extras: dict[str, Any] | None,
@@ -1229,6 +1238,7 @@ def poll_invalidate_last_suggestion(
     *,
     current_board_fp: str = "",
     current_loadout_fp: str | None = None,
+    current_wordlist_sig: tuple[str, int, int] | str | None = None,
     search_budget_sec: float | None = None,
     active_session: Any = None,
 ) -> str | None:
@@ -1242,6 +1252,14 @@ def poll_invalidate_last_suggestion(
         return None
 
     data = _last_suggestion_fingerprint_data()
+    saved_wordlist_sig = _normalize_wordlist_signature(
+        (data or {}).get("wordlist_signature")
+    )
+    active_wordlist_sig = _normalize_wordlist_signature(current_wordlist_sig)
+    if saved_wordlist_sig and active_wordlist_sig and saved_wordlist_sig != active_wordlist_sig:
+        if clear_last_suggestion():
+            return "wordlist changed"
+
     cursedle_mode = _last_suggestion_is_cursedle(data)
     saved_board = str((data or {}).get("board_fingerprint") or "").strip()
     tiles_match = _board_tiles_match(
@@ -1989,6 +2007,24 @@ def f8_should_block_save(
                 bday_live = 0
             if bday_f8 > bday_live and bday_live > 0:
                 return True, "birthday_cake_inflated"
+            if (
+                board is not None
+                and path
+                and scoring_word
+            ):
+                from cursed_words_solver.loadout import (
+                    birthday_cake_embed_post_word_stale_note,
+                )
+
+                post_word_note = birthday_cake_embed_post_word_stale_note(
+                    f8_extras,
+                    loadout,
+                    board,
+                    list(path),
+                    scoring_word,
+                )
+                if post_word_note:
+                    return True, "birthday_cake_post_word_embed"
 
         if _has_mutating_dna_stamp(loadout):
             f8_dna = str(f8_extras.get("mutating_dna_letter_counts", "") or "").strip()
@@ -2339,6 +2375,7 @@ def save_last_suggestion(
     capybara_exhaustive: bool | None = None,
     melmod_board_fingerprint: str | None = None,
     melmod_loadout_fingerprint: str | None = None,
+    wordlist_signature: tuple[str, int, int] | str | None = None,
 
 ) -> None:
 
@@ -2436,6 +2473,9 @@ def save_last_suggestion(
         "predicted_trace": predicted_trace,
 
     }
+    sig_text = _normalize_wordlist_signature(wordlist_signature)
+    if sig_text:
+        payload["wordlist_signature"] = sig_text
 
     if dict_word and dict_word != scoring_word.lower():
 

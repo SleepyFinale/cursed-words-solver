@@ -164,6 +164,88 @@ namespace CursedWordsSolverCompanion
             return coords.y * cols + coords.x;
         }
 
+        /// <summary>
+        /// True when the playable grid does not fill the exported storage frame (Bat, etc.).
+        /// </summary>
+        public static bool IsShrunkPlayableGrid(BoardSnapshot board)
+        {
+            if (board == null)
+                return false;
+            if (
+                !string.Equals(
+                    board.playable_origin ?? "full",
+                    "full",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+                return true;
+            var rows = board.rows > 0 ? board.rows : 5;
+            var cols = board.cols > 0 ? board.cols : 5;
+            if (board.playable_min_row > 0 || board.playable_min_col > 0)
+                return true;
+            if (board.playable_max_row >= 0 && board.playable_max_row < rows - 1)
+                return true;
+            if (board.playable_max_col >= 0 && board.playable_max_col < cols - 1)
+                return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Melmod submit index (bottom-origin) to solver storage row/col (top-first).
+        /// Mirrors Python board_geometry.storage_index_from_melmod / path_from_melmod_indices.
+        /// </summary>
+        public static bool TryMelmodIndexToTopFirstRowCol(
+            int melmodIndex,
+            BoardSnapshot board,
+            out int row,
+            out int col
+        )
+        {
+            row = 0;
+            col = 0;
+            if (board == null || melmodIndex < 0)
+                return false;
+
+            var cols = board.cols > 0 ? board.cols : 5;
+            var displayRow = cols - 1 - (melmodIndex / cols);
+            var displayCol = melmodIndex % cols;
+            if (IsShrunkPlayableGrid(board))
+            {
+                row = board.playable_max_row - displayRow;
+                col = board.playable_min_col + displayCol;
+            }
+            else
+            {
+                row = displayRow;
+                col = displayCol;
+            }
+
+            return true;
+        }
+
+        /// <summary>Convert melmod submit index to solver storage grid index (top-first).</summary>
+        public static int MelmodIndexToStorageIndex(int melmodIndex, BoardSnapshot board)
+        {
+            if (!TryMelmodIndexToTopFirstRowCol(melmodIndex, board, out var row, out var col))
+                return melmodIndex;
+            var cols = board.cols > 0 ? board.cols : 5;
+            return row * cols + col;
+        }
+
+        /// <summary>Convert melmod submit path to solver storage indices.</summary>
+        public static List<int> MelmodPathToStorageIndices(
+            List<int> melmodPath,
+            BoardSnapshot board
+        )
+        {
+            var result = new List<int>();
+            if (melmodPath == null)
+                return result;
+            foreach (var idx in melmodPath)
+                result.Add(MelmodIndexToStorageIndex(idx, board));
+            return result;
+        }
+
         public static List<int> PathFromSelections(List<TileSelection> selections, int cols = 5)
         {
             var path = new List<int>();

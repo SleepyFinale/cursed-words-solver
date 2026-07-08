@@ -37,6 +37,7 @@ from cursed_words_solver.config import (
     Region,
     describe_wordlist,
     resolve_wordlist,
+    wordlist_signature,
 )
 from cursed_words_solver.f8_snapshot import (
     F8_HISTORIC_CATCHUP_REEXPORT_POLL_SEC,
@@ -65,6 +66,7 @@ from cursed_words_solver.suggestion import (
     format_suggestion_word,
     format_result_score_display,
     grid_transition_workflow_bleed_warning,
+    loadout_needs_previous_word_letter,
     poll_invalidate_last_suggestion,
     run_state_historic_stale_warnings,
     save_last_suggestion,
@@ -91,6 +93,7 @@ from cursed_words_solver.loadout import (
     parse_encounter_grid_reroll,
     parse_run_state,
     parse_shop_from_run_state,
+    project_previous_word_first_letter_from_round_log,
     solver_session_extras_from_loadout,
     validate_run_state_for_scoring,
     loadout_fingerprint_stale_warning,
@@ -243,6 +246,7 @@ class SolverApp:
         self._scoring = ScoringPipeline()
         self._dictionary: WordDictionary | None = None
         self._searcher: WordSearcher | None = None
+        self._wordlist_sig: tuple[str, int, int] | None = None
         self._busy = False
         self._solve_active = False
         self._solve_generation = 0
@@ -270,9 +274,15 @@ class SolverApp:
         atexit.register(self._shutdown_search_pool)
 
     def _ensure_dictionary(self) -> bool:
-        if self._dictionary is None:
-            wl_path = resolve_wordlist(self.config.wordlist)
+        wl_path = resolve_wordlist(self.config.wordlist)
+        sig = wordlist_signature(wl_path)
+        if self._dictionary is None or self._wordlist_sig != sig:
             self._dictionary = WordDictionary(wl_path)
+            self._wordlist_sig = sig
+            if self._searcher is not None:
+                # Rebuild solver/pool whenever the active dictionary source refreshes.
+                self._shutdown_search_pool()
+                self._searcher = None
         return True
 
     def _ensure_solver(self) -> bool:
@@ -588,6 +598,7 @@ class SolverApp:
         """Clear suggestion on word submit; guard active session from export lag."""
         from cursed_words_solver.round_log import (
             poll_round_log_submits,
+            round_log_entries_are_word_submits,
             round_log_entries_after,
         )
 
@@ -597,7 +608,7 @@ class SolverApp:
             self._round_log_index_offset
         )
         entries = round_log_entries_after(entries, self._solver_started_at)
-        if entries:
+        if entries and round_log_entries_are_word_submits(entries):
             clear_last_suggestion()
             self._active_suggestion_session = None
             self._last_invalidation_reason = "word_submitted"
@@ -664,6 +675,7 @@ class SolverApp:
                 extras if isinstance(extras, dict) else None,
                 current_board_fp=board_fp,
                 current_loadout_fp=loadout_fp,
+                current_wordlist_sig=getattr(self, "_wordlist_sig", None),
                 active_session=self._active_suggestion_session,
             )
             if reason and reason != self._last_invalidation_reason:
@@ -1092,6 +1104,17 @@ class SolverApp:
             run_state_data = snapshot.run_state
             board = snapshot.board
             loadout = snapshot.loadout
+            if isinstance(run_state_data, dict):
+                extras = run_state_data.get("extras")
+                if (
+                    isinstance(extras, dict)
+                    and loadout is not None
+                    and loadout_needs_previous_word_letter(loadout)
+                    and not str(extras.get("previous_word_first_letter") or "").strip()
+                ):
+                    run_state_data = project_previous_word_first_letter_from_round_log(
+                        run_state_data
+                    )
             board_img = None
             gather_succeeded = (
                 snapshot.board_available
@@ -2309,6 +2332,22 @@ class SolverApp:
                             f"F8 embed replay mismatch: predicted {int(pred_score)} "
                             f"vs embed replay {replay_score}"
                         ]
+                if isinstance(embed_state, dict) and capybara_stats is None:
+                    from cursed_words_solver.loadout import (
+                        birthday_cake_embed_post_word_stale_note,
+                    )
+
+                    embed_extras_warn = embed_state.get("extras")
+                    bday_post_word = birthday_cake_embed_post_word_stale_note(
+                        embed_extras_warn if isinstance(embed_extras_warn, dict) else None,
+                        score_loadout,
+                        search_board,
+                        list(top.path),
+                        score_word,
+                    )
+                    if bday_post_word:
+                        export_warnings = list(export_warnings) + [bday_post_word]
+                        workflow_warnings = list(workflow_warnings) + [bday_post_word]
                 f8_extras = (
                     embed_state.get("extras")
                     if isinstance(embed_state, dict)
@@ -2427,6 +2466,7 @@ class SolverApp:
                         ),
                         melmod_board_fingerprint=melmod_board_fp,
                         melmod_loadout_fingerprint=melmod_loadout_fp,
+                        wordlist_signature=self._wordlist_sig,
                     )
                     saved_suggestion = True
                 else:
