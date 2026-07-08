@@ -354,6 +354,40 @@ def _bones_round_card_metadata_missing(board: Board | None) -> bool:
     return False
 
 
+def _bicycle_pin_active(loadout: Loadout) -> bool:
+    pin = str((loadout.extras or {}).get("pin_effect", "") or "").strip().lower()
+    return pin in ("bicycle", "bones_the_dog", "bones")
+
+
+def _bicycle_rack_card_metadata_missing(loadout: Loadout) -> bool:
+    """True when Bicycle pin rack export lacks card_suit metadata melmod should provide."""
+    if not _bicycle_pin_active(loadout):
+        return False
+    from cursed_words_solver.consumable_placement import _parse_consumable_rack_raw
+
+    rack = _parse_consumable_rack_raw(loadout)
+    if not rack:
+        return False
+    for entry in rack:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("is_joker") in (True, "true", "True", 1, "1"):
+            continue
+        suit_raw = str(entry.get("card_suit") or "").strip().lower()
+        rank_raw = str(entry.get("card_rank") or "").strip()
+        if "card_suit" not in entry:
+            return True
+        if suit_raw in ("", "none") and rank_raw:
+            return True
+        if suit_raw and suit_raw != "joker" and not rank_raw:
+            letter = str(
+                entry.get("letter") or entry.get("char_display") or ""
+            ).strip()
+            if letter and letter != "?":
+                return True
+    return False
+
+
 def _extras_missing_for_loadout(
     loadout: Loadout,
     board: Board,
@@ -417,6 +451,8 @@ def _extras_missing_for_loadout(
     missing.extend(_boss_extras_missing(loadout, board, extras))
     if bones_round_active(loadout) and _bones_round_card_metadata_missing(board):
         missing.append("bones_card_suit_export")
+    if _bicycle_rack_card_metadata_missing(loadout):
+        missing.append("bicycle_rack_card_suit_export")
     missing.extend(_cursedle_extras_missing(loadout, extras))
     return missing
 

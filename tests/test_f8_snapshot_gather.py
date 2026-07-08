@@ -11,6 +11,7 @@ from cursed_words_solver.config import AppConfig, LAST_SUGGESTION_PATH
 from cursed_words_solver.f8_snapshot import (
     F8Snapshot,
     F8SuggestionSession,
+    _bicycle_rack_card_metadata_missing,
     _build_snapshot_from_run_state,
     _extras_missing_for_loadout,
     _f8_export_acknowledged,
@@ -890,3 +891,59 @@ def test_gather_reexports_f8_when_movie_camera_historic_missing(tmp_path, monkey
     assert snap.extras_ready
     assert snap.loadout is not None
     assert snap.loadout.extras.get("historic_words") == one_word
+
+
+def test_bicycle_rack_card_metadata_missing_flags_stale_export():
+    loadout = Loadout(
+        character="Bones The Dog",
+        extras={
+            "pin_effect": "bicycle",
+            "consumable_rack": json.dumps(
+                [
+                    {
+                        "rack_index": 0,
+                        "letter": "N",
+                        "char_display": "n",
+                        "color": "colorless",
+                        "curse": "letter",
+                        "base_score": 1.0,
+                    },
+                    {
+                        "rack_index": 1,
+                        "letter": "R",
+                        "char_display": "r",
+                        "color": "colorless",
+                        "curse": "letter",
+                        "base_score": 1.0,
+                    },
+                ]
+            ),
+        },
+    )
+    assert _bicycle_rack_card_metadata_missing(loadout)
+
+    loadout.extras["consumable_rack"] = json.dumps(
+        [
+            {
+                "rack_index": 0,
+                "letter": "N",
+                "char_display": "n",
+                "color": "colorless",
+                "curse": "letter",
+                "base_score": 1.0,
+                "card_suit": "",
+                "card_rank": "",
+            },
+            {
+                "rack_index": 1,
+                "letter": "R",
+                "char_display": "r",
+                "color": "colorless",
+                "curse": "letter",
+                "base_score": 1.0,
+                "card_suit": "hearts",
+                "card_rank": "R",
+            },
+        ]
+    )
+    assert not _bicycle_rack_card_metadata_missing(loadout)

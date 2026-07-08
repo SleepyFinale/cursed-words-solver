@@ -11,6 +11,9 @@ namespace CursedWordsSolverCompanion
         public string curse = "letter";
         public double base_score;
         public int? cactus_growth;
+        public string card_suit = "";
+        public string card_rank = "";
+        public bool is_joker;
     }
 
     public static class ConsumableRackExporter
@@ -41,6 +44,9 @@ namespace CursedWordsSolverCompanion
                         curse = mapped.curse,
                         base_score = mapped.base_score,
                         cactus_growth = mapped.cactus_growth,
+                        card_suit = mapped.card_suit ?? "",
+                        card_rank = mapped.card_rank ?? "",
+                        is_joker = mapped.is_joker,
                     }
                 );
             }

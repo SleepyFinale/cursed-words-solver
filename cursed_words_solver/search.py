@@ -4906,7 +4906,6 @@ class WordSearcher:
                             resolved,
                             loadout,
                             stamp_flags,
-                            resolved_word=resolved,
                         )
                         resolved_word = resolved
                 if accepted:

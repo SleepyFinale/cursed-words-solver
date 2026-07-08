@@ -152,3 +152,51 @@ def test_grid11_consumable_boost_beats_plain_sequoia():
     assert records
     assert _result_rank_score(boost[0]) > baseline_rank
     assert len(placed_consumable_indices(sim_board)) == len(records)
+
+
+_BONES_LAB_COAT_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "run_states"
+    / "20260708_bones_lab_coat_consumables.json"
+)
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_bones_lab_coat_consumable_search_no_crash():
+    """Two lab_coat scattered items + consumable rack must not crash scattered-item retry."""
+    if not _BONES_LAB_COAT_FIXTURE.is_file():
+        pytest.skip("fixture 20260708_bones_lab_coat_consumables not installed")
+    data = json.loads(_BONES_LAB_COAT_FIXTURE.read_text(encoding="utf-8"))
+    loadout = parse_run_state(data)
+    board = parse_board_from_run_state(data)
+    assert loadout is not None
+    assert board is not None
+    rules = ScoringPipeline().rules
+    d = WordDictionary(GAME_WORDLIST_PATH)
+    searcher = WordSearcher(
+        dictionary=d,
+        min_len=3,
+        max_len=25,
+        time_budget=8.0,
+        setup_weight=0.4,
+        search_workers=1,
+    )
+    baseline = searcher.find_best_words(board, loadout=loadout, top_n=1)
+    assert baseline
+    rack = remaining_rack_tiles(loadout, board)
+    assert len(rack) == 2
+    search_consumable_score_boost(
+        searcher,
+        board,
+        loadout,
+        rack,
+        baseline_score=baseline[0].score,
+        baseline_rank_score=baseline[0].rank_score or baseline[0].score,
+        time_budget=8.0,
+        top_n=3,
+        rules=rules,
+    )

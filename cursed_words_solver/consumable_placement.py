@@ -229,6 +229,14 @@ def rack_tile_from_entry(entry: dict[str, Any]) -> Tile | None:
             meta["cactus_growth"] = int(cactus_growth)
         except (TypeError, ValueError):
             pass
+    card_suit_raw = entry.get("card_suit")
+    if card_suit_raw:
+        meta["card_suit"] = str(card_suit_raw).strip().lower()
+    card_rank_raw = entry.get("card_rank")
+    if card_rank_raw is not None:
+        meta["card_rank"] = str(card_rank_raw).strip().upper()[:1]
+    if entry.get("is_joker") in (True, "true", "True", "1", 1):
+        meta["is_joker"] = True
     fraction_value = entry.get("fraction_value")
     try:
         frac_val = float(fraction_value) if fraction_value is not None else None

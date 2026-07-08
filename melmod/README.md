@@ -288,7 +288,7 @@ Run context extras (default-unlocked stickers):
 | `movie_camera_word_score_bonus` | Movie Camera encounter running `WordScoreBonus` (exported on **F7** and merged after each score). If the solver shows `Movie Camera: 0 + …`, press **F7** in-game; until then set `"movie_camera_word_score_bonus": "20"` in `run_state.json` → `extras` to match the sticker UI. |
 | `historic_words` | Prior words: `word`, `path`, `score`, `red_tile_count`, `chess_take_value` |
 | `consumable_rack_count` | Hi Vis Jacket (tiles on consumable rack) |
-| `consumable_rack` | JSON array of rack tile snapshots (letters, colors, `cactus_growth`) for solver placement simulation |
+| `consumable_rack` | JSON array of rack tile snapshots (letters, colors, `cactus_growth`, `card_suit`, `card_rank`, `is_joker`) for solver placement simulation |
 | `grid_number` | Current grid index in the encounter (1-based; also updated from `CalculateOverallScore`) |
 | `twinkle_toes_swap_available` | `true` when Twinkle Toes stamp is equipped and the player has not yet swapped tiles this grid (`EncounterController.TwinkleToesSwapAvailable`). Press **F7** before **F8** on a fresh grid so the solver can recommend which pair to swap. |
 | `run_seed` | Run RNG seed when readable from player/progress |

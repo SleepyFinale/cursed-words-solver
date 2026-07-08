@@ -815,3 +815,113 @@ def test_bicycle_ass_joker_two_spades_scores_1980():
     assert bd["pipeline"]["word_score"] == 55.0
     assert int(score) == 1980
     assert any("word_starts_ends_different_suit" in e for e in bd["pipeline"]["effects"])
+
+
+def test_rack_tile_from_entry_preserves_card_suit():
+    from cursed_words_solver.consumable_placement import rack_tile_from_entry
+    from cursed_words_solver.rules.scoring_conditions import card_rank, card_suit
+
+    tile = rack_tile_from_entry(
+        {
+            "rack_index": 1,
+            "letter": "R",
+            "char_display": "r",
+            "color": "colorless",
+            "curse": "letter",
+            "base_score": 1.0,
+            "card_suit": "hearts",
+            "card_rank": "R",
+        }
+    )
+    assert tile is not None
+    assert card_suit(tile) == "hearts"
+    assert card_rank(tile) == "R"
+
+
+def test_bicycle_consumable_placement_rack_card_suit_bizarre():
+    """Regression bizarre f8#1628: placed rack R must carry hearts for Bicycle credit."""
+    from cursed_words_solver.consumable_placement import (
+        apply_consumable_placements,
+        rack_tile_from_entry,
+    )
+    from cursed_words_solver.rules.scoring_conditions import (
+        bicycle_suited_credit_on_path,
+        card_suit,
+    )
+
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    configs = [
+        (3, 2, "B", 3, {"card_suit": "hearts", "card_rank": "B"}),
+        (2, 1, "I", 1, {}),
+        (3, 0, "Z", 10, {}),
+        (2, 0, "A", 1, {}),
+        (1, 1, "R", 1, {}),
+        (1, 2, "L", 1, {}),
+        (0, 3, "E", 1, {"card_suit": "diamonds", "card_rank": "E"}),
+    ]
+    path: list[int] = []
+    for row, col, ch, sc, meta in configs:
+        grid[row][col] = _tile(row, col, ch, sc, metadata=meta)
+        path.append(row * 5 + col)
+    board = Board(tiles=grid, money=0)
+    placement_index = 7
+
+    rack_plain = rack_tile_from_entry(
+        {
+            "rack_index": 1,
+            "letter": "R",
+            "char_display": "r",
+            "color": "colorless",
+            "curse": "letter",
+            "base_score": 1.0,
+            "card_suit": "",
+            "card_rank": "",
+        }
+    )
+    rack_suited = rack_tile_from_entry(
+        {
+            "rack_index": 1,
+            "letter": "R",
+            "char_display": "r",
+            "color": "colorless",
+            "curse": "letter",
+            "base_score": 1.0,
+            "card_suit": "hearts",
+            "card_rank": "R",
+        }
+    )
+    assert rack_plain is not None and rack_suited is not None
+
+    plain_board = apply_consumable_placements(board, [(placement_index, rack_plain)])
+    suited_board = apply_consumable_placements(board, [(placement_index, rack_suited)])
+
+    placed_plain = plain_board.get_by_index(placement_index)
+    placed_suited = suited_board.get_by_index(placement_index)
+    assert card_suit(placed_plain) is None
+    assert card_suit(placed_suited) == "hearts"
+
+    suited_plain = bicycle_suited_credit_on_path(plain_board, path)
+    suited_hearts = bicycle_suited_credit_on_path(suited_board, path)
+    assert suited_hearts == suited_plain + 1
+
+    lo = Loadout(
+        character="Bones The Dog",
+        stamps=[
+            LoadoutItem(id="golden_record", name="Golden Record", level=1),
+            LoadoutItem(id="tile_ninja", name="Tile Ninja", level=1),
+        ],
+        boss_id="robo_monkey",
+        extras={
+            "pin_effect": "bicycle",
+            "pin_right_level": "1",
+            "pin_right_variable": "1",
+            "bicycle_word_score_bonus": "3",
+            "tile_ninja_word_bonus_percent": "122",
+            "tile_ninja_consumables_used": "1",
+        },
+    )
+    pipeline = ScoringPipeline()
+    score_plain, bd_plain = pipeline.score(plain_board, path, "bizarre", lo)
+    score_suited, bd_suited = pipeline.score(suited_board, path, "bizarre", lo)
+    assert bd_suited["pipeline"]["word_score"] == bd_plain["pipeline"]["word_score"] + 1.0
+    assert int(score_suited) > int(score_plain)
