@@ -548,3 +548,54 @@ def test_melmod_void_non_dollar_currency_top_row_path_start_penalty():
     path_fegs = [10, 11, 12, 13]
     scores_f, _ = initial_tile_scores(board3, path_fegs, money=5)
     assert scores_f[0] == 0.0
+
+
+def _void_init_from_mismatch(stem: str) -> list[float]:
+    import json
+    from pathlib import Path
+
+    from tests.regression.test_scoring_mismatches import (
+        _replay_path,
+        _run_state_for_replay,
+    )
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from cursed_words_solver.rules.tile_scoring import initial_tile_scores
+
+    data = json.loads(
+        (
+            Path(__file__).resolve().parent / "fixtures" / "mismatches" / f"{stem}.json"
+        ).read_text(encoding="utf-8")
+    )
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    path = _replay_path(board, data["path"])
+    loadout = parse_run_state(run_state)
+    scores, _ = initial_tile_scores(
+        board, path, money=board.money, loadout=loadout, word=data["word"]
+    )
+    return scores
+
+
+def test_void_currency_midpath_tone_replay():
+    """July 8 tone: melmod void ₮ mid-path matching t init 0."""
+    scores = _void_init_from_mismatch("20260708_184425")
+    assert scores[0] == 0.0
+
+
+def test_void_currency_midpath_fin_replay():
+    """July 8 fin: first void currency mid-path init 0."""
+    scores = _void_init_from_mismatch("20260708_185209")
+    assert scores[0] == 0.0
+
+
+def test_void_currency_edge_pheese_bottom_penalty_capped():
+    """July 8 pheese: void ₱ cv≥3 at bottom row path start → -10."""
+    scores = _void_init_from_mismatch("20260708_184300")
+    assert scores[0] == -10.0
+
+
+def test_void_currency_edge_net_low_cv_no_penalty():
+    """July 8 net: void ₦ cv=1 at top row path start → 0."""
+    scores = _void_init_from_mismatch("20260708_185231")
+    assert scores[0] == 0.0

@@ -1,4 +1,4 @@
-"""Telescope running-red count: first-word gap bonus and multi-word historic prior."""
+"""Telescope running-red count: historic prior plus path-prefix reds (game parity)."""
 
 import json
 from pathlib import Path
@@ -18,6 +18,7 @@ from cursed_words_solver.rules.scoring_conditions import (
 )
 from cursed_words_solver.rules.rule_lookup import get_rule
 from cursed_words_solver.models import TileColor
+from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "mismatches"
 CELLULATED = FIXTURES / "20260530_175032.json"
@@ -28,6 +29,7 @@ VENIREMEN = FIXTURES / "20260608_142113.json"
 AXMAKER = FIXTURES / "20260608_142438.json"
 EYESTRIPE = FIXTURES / "20260608_155545.json"
 RECTIFIES = FIXTURES / "20260609_122845.json"
+IGAPOS = FIXTURES / "20260708_213827.json"
 
 
 def _replay_score(fixture_path: Path) -> tuple[int, dict, list[int], object, object]:
@@ -75,7 +77,7 @@ def test_cellulated_telescope_gap_path_score():
 
 
 def test_eyestripe_telescope_gap_path_score():
-    """Grid 1 word 1: single non-red separator must not award Telescope gap bonus."""
+    """Grid 1 word 1: seven reds on path with historic prefix counts only."""
     data = json.loads(EYESTRIPE.read_text(encoding="utf-8"))
     run_state = _run_state_for_replay(data)
     board = parse_board_from_run_state(run_state)
@@ -109,7 +111,7 @@ def test_eyestripe_telescope_running_counts():
     assert telescope_running_red_count(loadout, board, path, red_indices[-1]) == 7
 
 
-def test_telescope_gap_running_count_on_second_red():
+def test_telescope_running_count_on_second_red():
     data = json.loads(CELLULATED.read_text(encoding="utf-8"))
     board = parse_board_from_run_state(data["run_state_snapshot"])
     loadout = parse_run_state(data["run_state_snapshot"])
@@ -273,7 +275,7 @@ def test_equipped_scatter_matches_inventory_level():
 
 
 def test_rectifies_telescope_running_counts():
-    """Two non-red separators between reds must not award Telescope gap bonus."""
+    """Two non-red separators between reds: prefix count only (no gap bonus)."""
     data = json.loads(RECTIFIES.read_text(encoding="utf-8"))
     run_state = _run_state_for_replay(data)
     board = parse_board_from_run_state(run_state)
@@ -288,6 +290,50 @@ def test_rectifies_telescope_running_counts():
 def test_rectifies_replay_score():
     score, data, *_ = _replay_score(RECTIFIES)
     assert score == int(data["actual_score"]) == 60
+
+
+def _igapos_f8_run_state(data: dict) -> dict:
+    """F8-time extras for igapos: grid word 1, no encounter historic."""
+    payload = dict(data.get("run_state_snapshot") or {})
+    if data.get("submit_board_tiles") is not None:
+        payload["submit_board_tiles"] = data.get("submit_board_tiles")
+    extras = dict(payload.get("extras") or {})
+    extras["scoring_previous_words_count"] = "0"
+    extras.pop("historic_words", None)
+    extras["encounter_historic_source"] = "grid1_no_scoring_cache"
+    payload["extras"] = extras
+    return prepare_run_state_dict_for_scoring(payload)
+
+
+def test_igapos_telescope_running_count_on_scattered_tile():
+    """Scattered Telescope on path: prefix reds only (no invented gap bonus)."""
+    data = json.loads(IGAPOS.read_text(encoding="utf-8"))
+    run_state = _igapos_f8_run_state(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = path_from_melmod_indices(board, data["path"])
+    red_indices = _red_path_indices(board, path)
+    assert red_indices == [0, 4]
+    assert telescope_running_red_count(loadout, board, path, red_indices[0]) == 1
+    scattered = (board.get_by_index(path[red_indices[1]]).metadata or {}).get(
+        "scattered_item_id"
+    )
+    assert scattered == "telescope"
+    assert telescope_running_red_count(loadout, board, path, red_indices[1]) == 2
+
+
+def test_igapos_telescope_f8_score():
+    """igapos 20260708: F8 predicted 444; game actual 440 after gap fix."""
+    data = json.loads(IGAPOS.read_text(encoding="utf-8"))
+    run_state = _igapos_f8_run_state(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = path_from_melmod_indices(board, data["path"])
+    apply_snapshot_phased_session_extras(loadout, board)
+    score, _, _ = ScoringPipeline().score_with_trace(
+        board, path, data["word"], loadout
+    )
+    assert int(score) == int(data["actual_score"]) == 440
 
 
 def test_toolbox_boosts_cherry_pie_grid_multiplier():

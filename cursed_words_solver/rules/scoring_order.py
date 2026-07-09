@@ -115,7 +115,9 @@ def _path_grid_item_refs(
 
 
 # EncounterController.GetItemsForWordSubmission only adds scattered items on the path.
-# Tombstone and dusty_coffin are exceptions: their effects read void tiles grid-wide.
+# Off-path grid Tombstone requires an equipped Tombstone sticker (grid-wide void-adjacent
+# bonus piggybacks on inventory). Off-path dusty_coffin can fire without equip on the
+# first word of a grid; see encounter_grid_scatter_refs dusty guard below.
 _OFF_PATH_GRID_SCATTER_SLUGS = frozenset({"tombstone", "dusty_coffin"})
 
 
@@ -128,11 +130,14 @@ def encounter_grid_scatter_refs(
     """Off-path scattered grid stickers that still affect scoring (before pin).
 
     Game ``GetItemsForWordSubmission`` only includes scattered items on the
-    submitted path plus inventory. Only tombstone (void-adjacent tile bonus) and
-    dusty_coffin (per-void-unused word penalty) have grid-wide mechanics that
-    fire when their scatter tile is not on the path.
+    submitted path plus inventory. Tombstone off-path requires an equipped
+    Tombstone sticker. Dusty Coffin off-path can score without equip when
+    ``scoring_previous_words_count`` is 0 (first word on the grid).
     """
-    from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
+    from cursed_words_solver.rules.scoring_conditions import (
+        _equipped_sticker_level_for_slug,
+        grid_path_sticker_level,
+    )
 
     path_set = set(path)
     path_slugs: set[str] = set()
@@ -164,6 +169,9 @@ def encounter_grid_scatter_refs(
         # Off-path Deep Sea Horror does not penalize path void tiles (leggiero).
         if slug_norm == "deep_sea_horror":
             continue
+        if slug_norm == "tombstone":
+            if _equipped_sticker_level_for_slug(loadout, "tombstone") is None:
+                continue
         if slug_norm == "dusty_coffin" and loadout is not None:
             from cursed_words_solver.loadout import (
                 _scoring_previous_words_count_from_extras,
@@ -173,6 +181,8 @@ def encounter_grid_scatter_refs(
             )
 
             extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+            # Grid-only dusty on later grids must not bleed from stale historic state.
+            # First word on a grid (count 0) still scores off-path without equip.
             if (
                 not _dusty_coffin_equipped_in_loadout(loadout)
                 and _scoring_previous_words_count_from_extras(extras) > 0

@@ -1581,8 +1581,7 @@ def _infer_encounter_reds_before_word(
 ) -> int:
     """Infer encounter RED count before this word from Telescope trace deltas.
 
-    Unreliable when reds on the path are separated by non-red tiles (gap bonus)
-    or when historic was cleared after Snapshot grid-start; prefer live export.
+    Unreliable when historic was cleared after Snapshot grid-start; prefer live export.
     """
     trace = data.get("actual_trace") or []
     init_tiles: list | None = None
@@ -1693,17 +1692,22 @@ def _adjust_movie_camera_telescope_extras(
     if not _has_telescope_for_replay(run_state, data, board, path):
         return
     extras = dict(run_state.get("extras") or {})
-    if not extras.get("historic_words"):
+    level = _telescope_level_for_replay(run_state, board, path)
+    inferred_prior = _infer_encounter_reds_before_word(data, board, path, level)
+    if inferred_prior == 0:
+        if extras.get("historic_words"):
+            extras.pop("historic_words", None)
+            extras.pop("red_tiles_used_encounter", None)
+        extras["scoring_previous_words_count"] = "0"
+    elif not extras.get("historic_words"):
         if _snapshot_grid_start_historic_reset(run_state):
             run_state["extras"] = extras
             return
-        level = _telescope_level_for_replay(run_state, board, path)
-        prior_reds = _infer_encounter_reds_before_word(data, board, path, level)
-        if prior_reds > 0:
+        if inferred_prior > 0:
             extras["historic_words"] = json.dumps(
-                [{"word": "_encounter_prior_", "red_tile_count": prior_reds}]
+                [{"word": "_encounter_prior_", "red_tile_count": inferred_prior}]
             )
-            extras["red_tiles_used_encounter"] = str(prior_reds)
+            extras["red_tiles_used_encounter"] = str(inferred_prior)
     run_state["extras"] = extras
 
 
@@ -1772,11 +1776,19 @@ def _adjust_bicycle_pre_word_extras(
         data, extras, board, path, loadout
     )
     if inferred is not None:
-        pin_acc = bicycle_pin_accumulator_from_fingerprint(
-            str(extras.get("loadout_fingerprint", "") or "")
-        )
-        if pin_acc is not None and pin_acc > inferred:
-            inferred = pin_acc
+        f8_fp = ""
+        diff = data.get("extras_diff")
+        if isinstance(diff, dict):
+            entry = diff.get("loadout_fingerprint")
+            if isinstance(entry, dict):
+                f8_fp = str(entry.get("f8") or "").strip()
+        if not f8_fp:
+            snap = data.get("extras_snapshot") or {}
+            if isinstance(snap, dict):
+                f8_fp = str(snap.get("loadout_fingerprint") or "").strip()
+        f8_acc = bicycle_pin_accumulator_from_fingerprint(f8_fp)
+        if f8_acc is not None and f8_acc > inferred:
+            inferred = f8_acc
         extras = dict(run_state.get("extras") or {})
         extras["bicycle_word_score_bonus"] = str(inferred)
         extras["cards_submitted"] = str(inferred)

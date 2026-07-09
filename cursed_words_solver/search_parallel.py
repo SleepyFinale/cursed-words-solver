@@ -327,6 +327,137 @@ def parallel_collect_fair_starts(
         fut.cancel()
 
 
+def _mp_hamiltonian_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[int, ...]]]:
+    from cursed_words_solver.graph_bitboard import build_board_graph_context
+    from cursed_words_solver.search import WordSearcher, _CandidateHeap, _active_indices
+    from cursed_words_solver.solve_context import build_solve_context
+
+    if _mp_dictionary is None:
+        raise RuntimeError("parallel hamiltonian worker: dictionary not initialized")
+    board: Board = payload["board"]
+    loadout: Loadout = payload["loadout"]
+    starts: list[int] = payload["starts"]
+    budget_sec: float = float(payload["budget_sec"])
+    pass_deadline: float = float(payload["pass_deadline"])
+    target_len: int = payload["target_len"]
+    score_all: bool = payload.get("score_all", False)
+    heap_k: int = payload["heap_k"]
+    setup_weight: float = payload["setup_weight"]
+    setup_discount: float = payload["setup_discount"]
+    use_fast_rank: bool = payload["use_fast_rank"]
+
+    now = time.monotonic()
+    local_deadline = min(pass_deadline, now + budget_sec)
+    if local_deadline <= now or not starts:
+        return []
+    searcher = WordSearcher(
+        dictionary=_mp_dictionary,
+        min_len=target_len,
+        max_len=target_len,
+        time_budget=max(0.0, local_deadline - now),
+        setup_weight=setup_weight,
+        setup_discount=setup_discount,
+        use_fast_rank=use_fast_rank,
+        search_workers=1,
+    )
+    searcher.validator.quest_loadout = loadout
+    active = _active_indices(board)
+    searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
+    searcher._graph_ctx = build_board_graph_context(board)
+    mini = _CandidateHeap(heap_k)
+    try:
+        searcher._collect_trie_guided_hamiltonian_candidates(
+            board,
+            loadout,
+            mini,
+            local_deadline,
+            target_len=target_len,
+            score_all=score_all,
+            start_indices=starts,
+        )
+        return mini.best_sorted()
+    finally:
+        searcher.validator.quest_loadout = None
+
+
+def parallel_collect_hamiltonian_starts(
+    *,
+    executor: ProcessPoolExecutor,
+    workers: int,
+    board: Board,
+    loadout: Loadout,
+    candidates: Any,
+    deadline: float,
+    target_len: int,
+    starts: list[int],
+    score_all: bool,
+    setup_weight: float,
+    setup_discount: float,
+    use_fast_rank: bool,
+    cancel_check: Callable[[], bool] | None = None,
+) -> None:
+    """Run Hamiltonian start slices on a reused process pool."""
+    if cancel_check is not None and cancel_check():
+        return
+    if time.monotonic() >= deadline:
+        return
+    if workers <= 1 or len(starts) <= 1:
+        return
+
+    n = min(workers, len(starts))
+    chunk_size = (len(starts) + n - 1) // n
+    chunks = [starts[i : i + chunk_size] for i in range(0, len(starts), chunk_size)]
+    remaining = max(0.0, deadline - time.monotonic())
+    if remaining <= 0:
+        return
+
+    base_payload = {
+        "board": board,
+        "loadout": loadout,
+        "budget_sec": remaining,
+        "pass_deadline": deadline,
+        "target_len": target_len,
+        "score_all": score_all,
+        "heap_k": candidates._k,
+        "setup_weight": setup_weight,
+        "setup_discount": setup_discount,
+        "use_fast_rank": use_fast_rank,
+    }
+    payloads = [{**base_payload, "starts": chunk} for chunk in chunks]
+
+    collect_timeout = remaining + min(5.0, max(1.0, remaining * 0.15))
+    collect_end = time.monotonic() + collect_timeout
+    try:
+        futures = [executor.submit(_mp_hamiltonian_chunk, p) for p in payloads]
+    except RuntimeError:
+        return
+    pending = set(futures)
+    while pending and time.monotonic() < collect_end:
+        if cancel_check is not None and cancel_check():
+            break
+        if not score_all and len(candidates) > 0:
+            break
+        wait_sec = max(0.01, collect_end - time.monotonic())
+        done, pending = wait(pending, timeout=wait_sec, return_when=FIRST_COMPLETED)
+        for fut in done:
+            try:
+                entries = fut.result()
+            except Exception as exc:
+                global _worker_errors
+                if len(_worker_errors) < 3:
+                    _worker_errors.append(f"{type(exc).__name__}: {exc}")
+                    traceback.print_exc(file=sys.stderr)
+                continue
+            for score, word, path in entries:
+                candidates.consider(score, word, list(path))
+            if not score_all and entries:
+                break
+        if not score_all and len(candidates) > 0:
+            break
+    for fut in pending:
+        fut.cancel()
+
+
 def _mp_extend_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[int, ...]]]:
     from cursed_words_solver.search import WordSearcher, _CandidateHeap
     from cursed_words_solver.solve_context import build_solve_context

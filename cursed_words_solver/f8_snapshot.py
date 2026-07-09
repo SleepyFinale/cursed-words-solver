@@ -989,7 +989,14 @@ def embed_f8_snapshot(
     export_fp = ""
     src_extras = source.get("extras")
     if isinstance(src_extras, dict):
-        export_fp = str(src_extras.get("loadout_fingerprint", "") or "").strip()
+        diag = src_extras.get("export_diagnostics")
+        if isinstance(diag, dict):
+            export_fp = str(diag.get("fingerprint") or "").strip()
+        if not export_fp:
+            export_fp = str(src_extras.get("loadout_fingerprint", "") or "").strip()
+    diag = source.get("export_diagnostics")
+    if not export_fp and isinstance(diag, dict):
+        export_fp = str(diag.get("fingerprint") or "").strip()
     sanitized = sanitize_run_state_snapshot_for_f8(
         run_state,
         loadout,

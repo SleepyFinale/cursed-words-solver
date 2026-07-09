@@ -187,33 +187,7 @@ def initial_tile_scores(
         if tile.curse == CT.ITEM:
             scores.append(0.0)
             continue
-        void_currency_in_word = False
-        if (
-            tile.color == TileColor.VOID
-            and tile.curse == CT.CURRENCY
-            and i < len(word_lower)
-        ):
-            glyph = normalize_tile_glyph(tile.char or tile.letter or "")
-            mapped = CURRENCY_MAP.get(glyph, "").lower()
-            if not mapped and len(glyph) == 1 and glyph.isalpha():
-                mapped = glyph.lower()
-            face = path_letter_for_count(tile)
-            if mapped and mapped == word_lower[i]:
-                void_currency_in_word = True
-            elif face and face.lower() == word_lower[i]:
-                void_currency_in_word = True
-        # Row-0 path-start void currency still gets melmod_void_currency_init (gyrene).
-        if void_currency_in_word and not (
-            i == 0
-            and tile.row == 0
-            and tile.metadata.get("source") == "melmod"
-        ):
-            from cursed_words_solver.rules.base_scoring import (
-                _void_currency_path_init_penalty,
-            )
-
-            contrib = -float(_void_currency_path_init_penalty(tile, loadout))
-        elif microscope_base:
+        if microscope_base:
             contrib = microscope_init_contribution(tile, money, loadout)
         elif tile.color == TileColor.BLUE and blue_base_override is not None:
             contrib = float(blue_base_override)
@@ -229,21 +203,46 @@ def initial_tile_scores(
                 ),
                 path_index=i,
                 loadout=loadout,
+                word=word,
+                board_rows=board.rows,
             )
-        elif (
-            tile.curse == CT.CURRENCY
-            and tile.metadata.get("source") == "melmod"
-            and tile.color != TileColor.VOID
-        ):
-            contrib = float(tile.base_score)
-        elif (
-            tile.metadata.get("source") == "melmod"
-            and tile.curse == CT.LETTER
-            and tile.color in (TileColor.COLORLESS, TileColor.VOID)
-        ):
-            contrib = float(tile.base_score)
         else:
-            contrib = float(tile_base_contribution(tile, money, loadout))
+            void_currency_in_word = False
+            if (
+                tile.color == TileColor.VOID
+                and tile.curse == CT.CURRENCY
+                and tile.metadata.get("source") != "melmod"
+                and i < len(word_lower)
+            ):
+                glyph = normalize_tile_glyph(tile.char or tile.letter or "")
+                mapped = CURRENCY_MAP.get(glyph, "").lower()
+                if not mapped and len(glyph) == 1 and glyph.isalpha():
+                    mapped = glyph.lower()
+                face = path_letter_for_count(tile)
+                if mapped and mapped == word_lower[i]:
+                    void_currency_in_word = True
+                elif face and face.lower() == word_lower[i]:
+                    void_currency_in_word = True
+            if void_currency_in_word:
+                from cursed_words_solver.rules.base_scoring import (
+                    _void_currency_path_init_penalty,
+                )
+
+                contrib = -float(_void_currency_path_init_penalty(tile, loadout))
+            elif (
+                tile.curse == CT.CURRENCY
+                and tile.metadata.get("source") == "melmod"
+                and tile.color != TileColor.VOID
+            ):
+                contrib = float(tile.base_score)
+            elif (
+                tile.metadata.get("source") == "melmod"
+                and tile.curse == CT.LETTER
+                and tile.color in (TileColor.COLORLESS, TileColor.VOID)
+            ):
+                contrib = float(tile.base_score)
+            else:
+                contrib = float(tile_base_contribution(tile, money, loadout))
         scores.append(contrib)
         total += contrib
     return scores, total

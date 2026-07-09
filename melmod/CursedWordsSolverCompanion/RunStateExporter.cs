@@ -2280,6 +2280,9 @@ namespace CursedWordsSolverCompanion
             foreach (var kv in bicycleExtras)
                 snapshot.extras[kv.Key] = kv.Value;
 
+            snapshot.extras["loadout_fingerprint"] =
+                FingerprintUtil.ComputeLoadoutFingerprint(player);
+
             if (live > prior && prior >= 0)
             {
                 CompanionDiagnostics.LogVerbose(

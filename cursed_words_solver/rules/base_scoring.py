@@ -202,8 +202,10 @@ def melmod_void_currency_init_contribution(
     first_void_currency_on_path: bool,
     path_index: int = 0,
     loadout: Loadout | None = None,
+    word: str = "",
+    board_rows: int = 5,
 ) -> float:
-    """Melmod void currency path init: $ waived at word start; non-$ row 0 penalized."""
+    """Melmod void currency path init: $ waived at word start; bottom-row match penalized."""
     if not first_void_currency_on_path:
         return 0.0
     glyph = normalize_tile_glyph(tile.char or tile.letter or "")
@@ -214,8 +216,27 @@ def melmod_void_currency_init_contribution(
         if path_index == 1:
             return -float(_void_currency_path_init_penalty(tile, loadout))
         return 0.0
-    if path_index <= 0 and tile.row == 0:
-        return -float(_void_currency_top_row_path_start_penalty(tile, loadout))
+    bottom_row = max(0, board_rows - 1)
+    word_lower = (word or "").lower()
+    if path_index <= 0 and path_index < len(word_lower):
+        from cursed_words_solver.models import CURRENCY_MAP
+        from cursed_words_solver.rules.scoring_conditions import (
+            currency_letter_value,
+            path_letter_for_count,
+        )
+
+        mapped = CURRENCY_MAP.get(glyph, "").lower()
+        if not mapped and len(glyph) == 1 and glyph.isalpha():
+            mapped = glyph.lower()
+        face = path_letter_for_count(tile)
+        letter = word_lower[path_index]
+        in_word = (mapped and mapped == letter) or (face and face.lower() == letter)
+        if in_word and tile.row in (0, bottom_row):
+            cv = currency_letter_value(tile)
+            penalty = _void_currency_path_init_penalty(tile, loadout)
+            # cv=1 void currency at board edge → 0 (net ₦); cv≥2 caps at -10 (pheese ₱).
+            if cv >= 2 and penalty > 0:
+                return -float(min(penalty, 10))
     return 0.0
 
 

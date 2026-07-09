@@ -609,6 +609,12 @@ class SolverApp:
         )
         entries = round_log_entries_after(entries, self._solver_started_at)
         if entries and round_log_entries_are_word_submits(entries):
+            if self._solve_active:
+                print(
+                    "  Submit detected while finale search running "
+                    "— F8 suggestion was not ready.",
+                    flush=True,
+                )
             clear_last_suggestion()
             self._active_suggestion_session = None
             self._last_invalidation_reason = "word_submitted"
@@ -1728,15 +1734,47 @@ class SolverApp:
                     "— continuing until solution found…",
                     flush=True,
                 )
+                print(
+                    "  Do not submit yet — search is still running.",
+                    flush=True,
+                )
                 search_call_mono = time.monotonic()
                 completion_start = time.monotonic()
-                completion_results = self._searcher.find_best_words(
-                    search_board,
-                    loadout=loadout,
-                    top_n=self.config.top_n_results,
-                    run_until_found=True,
-                    cancel_check=cancel_check,
+                completion_results: list = []
+                completion_error: list[BaseException] = []
+
+                def _finale_completion_search() -> None:
+                    try:
+                        completion_results.extend(
+                            self._searcher.find_best_words(
+                                search_board,
+                                loadout=loadout,
+                                top_n=self.config.top_n_results,
+                                run_until_found=True,
+                                cancel_check=cancel_check,
+                            )
+                        )
+                    except BaseException as exc:
+                        completion_error.append(exc)
+
+                completion_thread = threading.Thread(
+                    target=_finale_completion_search,
+                    daemon=True,
                 )
+                completion_thread.start()
+                last_progress = completion_start
+                while completion_thread.is_alive():
+                    completion_thread.join(timeout=5.0)
+                    now = time.monotonic()
+                    if now - last_progress >= 20.0:
+                        print(
+                            f"  Michael finale: still searching… "
+                            f"({now - completion_start:.0f}s elapsed)",
+                            flush=True,
+                        )
+                        last_progress = now
+                if completion_error:
+                    raise completion_error[0]
                 if completion_results:
                     results = completion_results
                     print(

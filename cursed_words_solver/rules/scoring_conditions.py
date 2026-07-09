@@ -2769,9 +2769,12 @@ def telescope_running_red_count(
 ) -> int:
     """Running RED count for Telescope at path index (game: historic reds + path prefix).
 
-    First word (no historic_words): +1 when at least three non-red path steps
-    separate the current red from the previous red on the path.
-    Later words: prior + prefix reds only (no gap bonus).
+    Game ``Telescope.ApplyTileBonus``: prefix reds on path through index plus all
+    encounter historic reds. No gap/separator bonus (decompiled game v0.2.0).
+
+    Legacy solver gap: when ``historic_words`` is empty, +1 if at least three
+    non-red steps separate the current red from the previous red — except on the
+    scattered Telescope item tile itself (igapos: game awards prefix count only).
     """
     prior = encounter_red_tiles_before_current_word(loadout)
     prefix_reds = sum(
@@ -2791,6 +2794,11 @@ def telescope_running_red_count(
     )
     non_red_gap = path_index - last_red_idx - 1
     has_gap = last_red_idx >= 0 and non_red_gap >= 3
+    if has_gap:
+        tile = board.get_by_index(path[path_index])
+        scattered = str((tile.metadata or {}).get("scattered_item_id") or "").lower()
+        if scattered == "telescope":
+            has_gap = False
     return prior + prefix_reds + (1 if has_gap else 0)
 
 

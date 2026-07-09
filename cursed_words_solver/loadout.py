@@ -509,16 +509,20 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
                 treat_as_joker = True
             else:
                 # VOID + base_score 0 joker-glyph tiles behave like wildcards in scoring
-                # (e.g. Wrestlers endpoint shortcut).
+                # (e.g. Wrestlers endpoint shortcut). Currency tiles keep curse= currency.
                 try:
                     base_score = float(entry.get("base_score", 0) or 0)
                 except (TypeError, ValueError):
                     base_score = 0.0
-                if color_key == "void" or base_score == 0.0:
+                if curse_key != "currency" and (color_key == "void" or base_score == 0.0):
                     treat_as_joker = True
                 # Some joker-glyph tiles export with a letter face but behave as
                 # wildcards; empirically these tend to be low-score non-red tiles.
-                elif base_score == 1.0 and color_key != "red":
+                elif (
+                    curse_key != "currency"
+                    and base_score == 1.0
+                    and color_key != "red"
+                ):
                     treat_as_joker = True
         if treat_as_joker and is_active and curse_key != "inactive":
             curse_key = "wildcard"
@@ -2873,29 +2877,71 @@ def loadout_fingerprint_stale_warning(
     )
 
 
+def _bicycle_acc_from_extras(extras: dict[str, Any]) -> int | None:
+    for key in ("bicycle_word_score_bonus", "cards_submitted"):
+        raw = extras.get(key)
+        if raw in (None, ""):
+            continue
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _best_bicycle_fingerprint(
+    extras: dict[str, Any],
+    loadout: Loadout,
+    *,
+    export_fingerprint: str | None = None,
+) -> str:
+    candidates: list[str] = []
+    if export_fingerprint:
+        candidates.append(str(export_fingerprint).strip())
+    diag = extras.get("export_diagnostics")
+    if isinstance(diag, dict):
+        fp = str(diag.get("fingerprint") or "").strip()
+        if fp:
+            candidates.append(fp)
+    fp = str(extras.get("export_diagnostics_fingerprint") or "").strip()
+    if fp:
+        candidates.append(fp)
+    fp = str(extras.get("loadout_fingerprint", "") or "").strip()
+    if fp:
+        candidates.append(fp)
+    if isinstance(loadout.extras, dict):
+        fp = str(loadout.extras.get("loadout_fingerprint", "") or "").strip()
+        if fp:
+            candidates.append(fp)
+    return candidates[0] if candidates else ""
+
+
 def align_bicycle_extras_from_fingerprint(
     extras: dict[str, Any],
     loadout: Loadout,
     *,
     export_fingerprint: str | None = None,
 ) -> None:
-    """Prefer live pin acc from melmod loadout_fingerprint over lagging export fields."""
+    """Align Bicycle pin acc from melmod fingerprint without downgrading fresher extras."""
     if not isinstance(extras, dict) or not _is_bicycle_pin(loadout):
         return
     from cursed_words_solver.rules.scoring_conditions import (
         bicycle_pin_accumulator_from_fingerprint,
     )
 
-    fp = str(export_fingerprint or "").strip()
-    if not fp:
-        fp = str(extras.get("loadout_fingerprint", "") or "").strip()
-    if not fp and isinstance(loadout.extras, dict):
-        fp = str(loadout.extras.get("loadout_fingerprint", "") or "").strip()
+    fp = _best_bicycle_fingerprint(
+        extras, loadout, export_fingerprint=export_fingerprint
+    )
     pin_acc = bicycle_pin_accumulator_from_fingerprint(fp)
-    if pin_acc is None:
+    current = _bicycle_acc_from_extras(extras)
+    if current is not None:
+        resolved = current
+    elif pin_acc is not None:
+        resolved = pin_acc
+    else:
         return
-    extras["bicycle_word_score_bonus"] = str(pin_acc)
-    extras["cards_submitted"] = str(pin_acc)
+    extras["bicycle_word_score_bonus"] = str(resolved)
+    extras["cards_submitted"] = str(resolved)
 
 
 def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:
@@ -2932,9 +2978,14 @@ def bicycle_extras_stale_warning(loadout: Loadout | None) -> str | None:
         bicycle_pin_accumulator_from_fingerprint,
     )
 
-    fp = str(extras.get("loadout_fingerprint", "") or "")
+    fp = _best_bicycle_fingerprint(extras, loadout)
     pin_acc = bicycle_pin_accumulator_from_fingerprint(fp)
     acc = bonus if bonus >= 0 else cards
+    if pin_acc is not None and acc >= 0 and pin_acc < acc:
+        return (
+            f"Bicycle pin: loadout fingerprint has {pin_acc} but run_state bonus={acc} — "
+            "press F8 again or wait for melmod refresh."
+        )
     if pin_acc is not None and acc >= 0 and pin_acc != acc:
         return (
             f"Bicycle pin: run_state bonus={acc} but loadout fingerprint has {pin_acc} — "

@@ -80,11 +80,21 @@ Solver parity requirement:
 
 ## Telescope (`Telescope.ApplyTileBonus`)
 
+Decompiled from `Assembly-CSharp.dll` (game v0.2.0):
+
+```csharp
+// collection = RED tiles in tiles[0..index]
+// list = collection + RED tiles from each HistoricWord in previousWords
+step.TileScores[index] += level * list.Count;
+```
+
 - Only applies on RED path tiles.
 - Per path index `i` that is red: `bonus = level × list.Count`, where `list` is every RED tile in `tiles[0..i]` plus every RED tile from each `HistoricWord.Tiles` in the encounter.
+- **No gap/separator bonus** in game code — non-red tiles between reds on the path do not add extra count.
+- Solver legacy: when `historic_words` is empty, some captures still needed a gap bonus on non-telescope reds separated by ≥3 non-red steps; the scattered Telescope item tile itself never receives that bonus (see `telescope_running_red_count` in `scoring_conditions.py`).
 - The multiplier increases for each red tile played on the path (3rd red on path with 2 prior encounter reds → `level × 3`).
 - Does not reset across Michael boss phases (encounter-wide historic list).
-- Solver: sum `red_tile_count` from `historic_words` extras for prior encounter reds; melmod should export per-word `red_tile_count` and `chess_take_value` on historic entries.
+- Solver: `telescope_running_red_count()` = `encounter_red_tiles_before_current_word()` + prefix reds on path; melmod should export per-word `red_tile_count` and `chess_take_value` on historic entries.
 
 ## Tile-value implications
 

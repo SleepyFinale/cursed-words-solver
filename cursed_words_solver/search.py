@@ -203,6 +203,19 @@ def _order_number_wildcard_branch_letters(
     return ordered + _shuffled_wildcard_letters(tuple(dropped), seed=shuffle_seed)
 
 
+def _number_wildcard_probe_lengths(min_len: int, max_len: int) -> tuple[int, ...]:
+    """Path lengths to probe for number-wildcard first-letter viability."""
+    if max_len < 2:
+        return ()
+    caps: list[int] = []
+    if min_len >= 2:
+        caps.append(min_len)
+    for cap in (11, 15, max_len):
+        if min_len <= cap <= max_len and cap not in caps:
+            caps.append(cap)
+    return tuple(caps)
+
+
 def _number_wildcard_promising_first_letters(
     board: Board,
     start: int,
@@ -211,15 +224,18 @@ def _number_wildcard_promising_first_letters(
     stamp_flags: SearchFlagsMask,
     graph_ctx: BoardGraphContext,
     *,
+    min_len: int = 1,
     rules: dict | None = None,
     max_expansions_per_letter: int = 120_000,
 ) -> tuple[str, ...]:
-    """First letters on a NUMBER wildcard start that reach a length-target_len word on board.
+    """First letters on a NUMBER wildcard start that reach a viable word on board.
 
-    Returns letters sorted by probe cost (hardest first) so dedicated NW passes try
-    expensive deep branches before easy branches consume the full slice.
+    Probes boss min_len and a short cap ladder (not only max_len) so chess-heavy
+    boards still get letter-first NW passes. Returns letters sorted by probe cost
+    (hardest first) so dedicated NW passes try expensive branches before easy ones.
     """
-    if target_len < 2:
+    probe_lengths = _number_wildcard_probe_lengths(min_len, target_len)
+    if not probe_lengths:
         return ()
 
     def _path_flags(path: list[int]) -> SearchFlagsMask:
@@ -227,7 +243,7 @@ def _number_wildcard_promising_first_letters(
             return stamp_flags
         return path_scattered_search_flags_mask(board, path, stamp_flags, rules)
 
-    def _probe(first_letter: str) -> int | None:
+    def _probe_at_length(first_letter: str, probe_len: int) -> int | None:
         cursor = dictionary.step_cursor(dictionary.root_cursor(), first_letter)
         if cursor is None:
             return None
@@ -239,11 +255,11 @@ def _number_wildcard_promising_first_letters(
             if expansions >= max_expansions_per_letter:
                 return None
             path, chars, visited, prefix_len, prefix_cursor = stack.pop()
-            if len(path) == target_len:
+            if len(path) == probe_len:
                 if prefix_cursor is not None and dictionary.cursor_is_word(prefix_cursor):
                     return expansions
                 continue
-            if len(path) > target_len or prefix_cursor is None:
+            if len(path) > probe_len or prefix_cursor is None:
                 continue
             expansions += 1
             path_flags = _path_flags(path)
@@ -281,7 +297,7 @@ def _number_wildcard_promising_first_letters(
                         prefix_cursor=prefix_cursor,
                         partial_seg=partial_seg,
                         shuffle_seed=nbr * 31 + len(partial_seg) + board.cols,
-                        min_remaining=max(0, target_len - len(chars)),
+                        min_remaining=max(0, probe_len - len(chars)),
                     )
                     for ch in ordered:
                         child = dictionary.step_cursor(prefix_cursor, ch)
@@ -330,9 +346,13 @@ def _number_wildcard_promising_first_letters(
 
     ranked: list[tuple[int, str]] = []
     for ch in _WILDCARD_LETTERS:
-        cost = _probe(ch)
-        if cost is not None:
-            ranked.append((cost, ch))
+        best_cost: int | None = None
+        for probe_len in probe_lengths:
+            cost = _probe_at_length(ch, probe_len)
+            if cost is not None and (best_cost is None or cost < best_cost):
+                best_cost = cost
+        if best_cost is not None:
+            ranked.append((best_cost, ch))
     ranked.sort()
     return tuple(ch for _, ch in reversed(ranked))
 
@@ -6988,6 +7008,595 @@ class WordSearcher:
                 break
             dfs([start], 1 << start)
 
+    def _collect_trie_guided_hamiltonian_candidates(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        deadline: float,
+        *,
+        target_len: int,
+        score_all: bool = False,
+        start_indices: list[int] | None = None,
+    ) -> bool:
+        """Hamiltonian path DFS with trie pruning; True when a candidate was found."""
+        from cursed_words_solver.suggestion import path_tiles_need_dictionary_resolve
+
+        active = _active_indices(board)
+        n = len(active)
+        if n < 1 or target_len != n:
+            return bool(candidates)
+
+        ctx = self._search_ctx(loadout)
+        stamp_flags = ctx.search_flags
+        graph_ctx = self._board_graph(board)
+        required_mask = sum(1 << i for i in active)
+        check_interval = self._time_check_interval(loadout)
+        timing = self._active_timing
+        expansions = 0
+        found = False
+
+        def score_path(
+            path: list[int],
+            word: str,
+            *,
+            resolved_word: str | None = None,
+        ) -> float | None:
+            return self._rank_score_for_candidate(
+                board,
+                path,
+                word,
+                loadout,
+                prune_heap=candidates,
+                resolved_word=resolved_word,
+            )
+
+        def _step_token_cursor(
+            cursor: TrieCursor | None, token: str
+        ) -> TrieCursor | None:
+            node = cursor
+            for c in token:
+                if timing is not None:
+                    timing.trie_steps += 1
+                node = self.dictionary.step_cursor(node, c)
+                if node is None:
+                    return None
+            return node
+
+        def _pattern_after_token(
+            pattern_prefix: str | None, token: str, *, active: bool
+        ) -> str | None:
+            if not active and pattern_prefix is None:
+                return None
+            out = pattern_prefix or ""
+            for ch in token.lower():
+                if ch.isdigit():
+                    out += "?"
+                elif ch.isalpha():
+                    out += ch
+            return out
+
+        def _step_pattern_cursor(
+            cursor: TrieCursor | None, token: str, *, active: bool
+        ) -> TrieCursor | None:
+            if not active:
+                return cursor
+            mixed = self.dictionary.mixed_step_cursor(cursor, token)
+            if timing is not None:
+                timing.trie_steps += len(token)
+            return mixed
+
+        def _path_flags_for(path: list[int]) -> SearchFlagsMask:
+            return path_scattered_search_flags_mask(
+                board, path, stamp_flags, self.scoring.rules
+            )
+
+        def _prefix_can_continue(
+            letter_trie: bool,
+            prefix_cursor: TrieCursor | None,
+            pattern_prefix: str | None,
+            pattern_cursor: TrieCursor | None,
+            has_digit: bool,
+            *,
+            path: list[int],
+            steps_left: int,
+        ) -> bool:
+            if letter_trie and prefix_cursor is not None:
+                return True
+            if has_digit and pattern_cursor is not None:
+                return True
+            if has_digit and pattern_prefix is not None:
+                return self.dictionary.pattern_has_prefix(pattern_prefix)
+            if (
+                steps_left > 0
+                and path_tiles_need_dictionary_resolve(
+                    board, path, flags=_path_flags_for(path)
+                )
+            ):
+                return True
+            return False
+
+        def dfs(
+            path: list[int],
+            chars: list[str],
+            visited_mask: int,
+            *,
+            prefix_cursor: TrieCursor | None,
+            has_wildcard: bool,
+            has_digit: bool,
+            prefix_len: int,
+            pattern_prefix: str | None = None,
+            pattern_cursor: TrieCursor | None = None,
+        ) -> None:
+            nonlocal expansions, found
+            if found and not score_all:
+                return
+            if self._time_expired() or time.monotonic() >= deadline:
+                return
+            expansions += 1
+            if timing is not None:
+                timing.dfs_expansions += 1
+            if expansions % check_interval == 0 and time.monotonic() >= deadline:
+                return
+
+            if len(path) == n:
+                if visited_mask != required_mask:
+                    return
+                word = "".join(chars).lower()
+                path_flags = _path_flags_for(path)
+                trie_compatible = (
+                    prefix_cursor is not None and not has_digit and not has_wildcard
+                )
+                ok, score_word = self._accept_path_for_search(
+                    board,
+                    path,
+                    word,
+                    loadout,
+                    path_flags,
+                    trie_compatible=trie_compatible,
+                    prefix_cursor=prefix_cursor if not has_digit else None,
+                    pattern_cursor=pattern_cursor,
+                )
+                if ok:
+                    trie_confirmed = (
+                        trie_compatible
+                        and prefix_cursor is not None
+                        and self.dictionary.cursor_is_word(prefix_cursor)
+                    )
+                    resolved_word = (
+                        score_word
+                        if trie_confirmed
+                        and score_word.isalpha()
+                        and "?" not in score_word
+                        else None
+                    )
+                    self._consider_path_candidate(
+                        board,
+                        loadout,
+                        candidates,
+                        path,
+                        score_word,
+                        path_flags,
+                        score_path,
+                        resolved_word=resolved_word,
+                    )
+                    found = True
+                return
+
+            steps_left = n - len(path)
+            letter_trie = not has_digit
+            if not _prefix_can_continue(
+                letter_trie,
+                prefix_cursor,
+                pattern_prefix,
+                pattern_cursor,
+                has_digit,
+                path=path,
+                steps_left=steps_left,
+            ):
+                if timing is not None:
+                    timing.trie_prunes += 1
+                return
+
+            cell_id = path[-1]
+            path_flags = _path_flags_for(path)
+            nbr_mask = neighbors_mask(
+                board,
+                visited_mask,
+                cell_id=cell_id,
+                flags=path_flags,
+                graph_ctx=graph_ctx,
+                loadout=loadout,
+            )
+            for idx in _iter_expansion_neighbors(
+                board,
+                visited_mask,
+                cell_id=cell_id,
+                path=path,
+                path_length=len(path),
+                flags=path_flags,
+                graph_ctx=graph_ctx,
+                loadout=loadout,
+                nbr_mask=nbr_mask,
+            ):
+                if found and not score_all:
+                    return
+                if self._time_expired() or time.monotonic() >= deadline:
+                    return
+                tile = board.get_by_index(idx)
+                if not tile_playable_for_path(tile):
+                    continue
+                if is_fraction_tile(tile) and not fraction_position_valid(
+                    tile, len(path), relaxed=False
+                ):
+                    continue
+                token = resolve_letter(tile, prefix_len, flags=path_flags)
+                partial_seg = "".join(chars).lower()
+                next_has_digit = has_digit or any(c.isdigit() for c in token)
+                letter_options = resolve_letter_options(
+                    tile, prefix_len, flags=path_flags
+                )
+                multi_letter = (
+                    len(letter_options) > 1
+                    and all(len(o) == 1 and o.isalpha() for o in letter_options)
+                )
+                num_wildcard_letters = (
+                    _wildcard_branch_letters(
+                        tile, prefix_len, flags=path_flags, segment=partial_seg
+                    )
+                    if tile.curse == CurseType.NUMBER
+                    else ()
+                )
+                branch_letters = (
+                    tuple(letter_options)
+                    if multi_letter
+                    else _wildcard_branch_letters(
+                        tile, prefix_len, flags=path_flags, segment=partial_seg
+                    )
+                    if "?" in token and not next_has_digit
+                    else num_wildcard_letters
+                )
+                if branch_letters and num_wildcard_letters:
+                    branch_letters = _order_number_wildcard_branch_letters(
+                        self.dictionary,
+                        branch_letters,
+                        prefix_cursor=prefix_cursor,
+                        partial_seg=partial_seg,
+                        shuffle_seed=idx * 31 + len(partial_seg) + board.cols,
+                        min_remaining=max(0, steps_left),
+                    )
+
+                if branch_letters:
+                    extensions: list[
+                        tuple[
+                            str,
+                            TrieCursor | None,
+                            TrieCursor | None,
+                            bool,
+                            str | None,
+                        ]
+                    ] = []
+                    pat_active = (
+                        has_wildcard
+                        or has_digit
+                        or pattern_prefix is not None
+                        or pattern_cursor is not None
+                    )
+                    for ch in branch_letters:
+                        child = _step_token_cursor(prefix_cursor, ch)
+                        letter_pat_active = (
+                            has_wildcard
+                            or has_digit
+                            or (
+                                tile.curse == CurseType.NUMBER
+                                and bool(num_wildcard_letters)
+                            )
+                        )
+                        next_pat = _pattern_after_token(
+                            pattern_prefix, ch, active=letter_pat_active
+                        )
+                        next_pat_cursor = _step_pattern_cursor(
+                            pattern_cursor, ch, active=pat_active or letter_pat_active
+                        )
+                        use_wildcard = (
+                            tile.curse == CurseType.NUMBER
+                            and bool(num_wildcard_letters)
+                        )
+                        extensions.append(
+                            (ch, child, next_pat_cursor, use_wildcard, next_pat)
+                        )
+                    if (
+                        tile.curse == CurseType.NUMBER
+                        and token.isdigit()
+                        and num_wildcard_letters
+                        and not partial_seg.isalpha()
+                    ):
+                        next_has_wildcard = has_wildcard or ("?" in token)
+                        pattern_active = (
+                            has_digit
+                            or next_has_digit
+                            or next_has_wildcard
+                            or pattern_prefix is not None
+                            or pattern_cursor is not None
+                        )
+                        next_pat = _pattern_after_token(
+                            pattern_prefix, token, active=pattern_active
+                        )
+                        next_pat_cursor = _step_pattern_cursor(
+                            pattern_cursor, token, active=pattern_active
+                        )
+                        mixed = self.dictionary.mixed_step_cursor(
+                            prefix_cursor if letter_trie else pattern_cursor, token
+                        )
+                        extensions.append(
+                            (
+                                token,
+                                mixed,
+                                next_pat_cursor,
+                                next_has_wildcard,
+                                next_pat,
+                            )
+                        )
+                else:
+                    next_has_wildcard = has_wildcard or ("?" in token)
+                    pattern_active = (
+                        has_digit
+                        or next_has_digit
+                        or next_has_wildcard
+                        or pattern_prefix is not None
+                        or pattern_cursor is not None
+                    )
+                    next_pat = _pattern_after_token(
+                        pattern_prefix, token, active=pattern_active
+                    )
+                    next_pat_cursor = _step_pattern_cursor(
+                        pattern_cursor, token, active=pattern_active
+                    )
+                    if next_has_digit:
+                        mixed = self.dictionary.mixed_step_cursor(
+                            prefix_cursor if letter_trie else pattern_cursor, token
+                        )
+                        extensions = [
+                            (token, mixed, next_pat_cursor, next_has_wildcard, next_pat)
+                        ]
+                    else:
+                        child = _step_token_cursor(prefix_cursor, token)
+                        extensions = [
+                            (
+                                token,
+                                child,
+                                next_pat_cursor,
+                                next_has_wildcard,
+                                next_pat,
+                            )
+                        ]
+
+                for (
+                    ext_token,
+                    ext_cursor,
+                    ext_pat_cursor,
+                    ext_wildcard,
+                    next_pattern,
+                ) in extensions:
+                    next_ext_has_digit = has_digit or any(
+                        c.isdigit() for c in ext_token
+                    )
+                    next_prefix_len = prefix_len + len(ext_token)
+                    if next_ext_has_digit or (
+                        next_pattern is not None and "?" in next_pattern
+                    ):
+                        if ext_pat_cursor is None and (
+                            next_pattern is None
+                            or not self.dictionary.pattern_has_prefix(next_pattern)
+                        ):
+                            if timing is not None:
+                                timing.trie_prunes += 1
+                            continue
+                    next_prefix_cursor = (
+                        None if next_ext_has_digit and ext_cursor is None else ext_cursor
+                    )
+                    next_has_wildcard = ext_wildcard
+                    if (
+                        not next_ext_has_digit
+                        and next_prefix_cursor is None
+                        and not next_has_wildcard
+                        and path_tiles_need_dictionary_resolve(
+                            board, path + [idx], flags=stamp_flags
+                        )
+                    ):
+                        next_has_wildcard = True
+                        next_prefix_cursor = None
+                    chars.append(ext_token)
+                    path.append(idx)
+                    dfs(
+                        path,
+                        chars,
+                        visited_mask | (1 << idx),
+                        prefix_cursor=next_prefix_cursor,
+                        has_wildcard=next_has_wildcard,
+                        has_digit=next_ext_has_digit,
+                        prefix_len=next_prefix_len,
+                        pattern_prefix=next_pattern,
+                        pattern_cursor=ext_pat_cursor,
+                    )
+                    path.pop()
+                    chars.pop()
+
+        if start_indices is not None:
+            starts = [s for s in start_indices if board.is_active_index(s)]
+        else:
+            starts = _legal_word_start_indices(board)
+        if not starts:
+            starts = list(active)
+        for start in starts:
+            if found and not score_all:
+                break
+            if time.monotonic() >= deadline:
+                break
+            tile = board.get_by_index(start)
+            if not tile_playable_for_path(tile):
+                continue
+            if is_fraction_tile(tile) and not fraction_position_valid(
+                tile, 0, relaxed=False
+            ):
+                continue
+            token = resolve_letter(tile, 0, flags=stamp_flags)
+            has_wildcard = "?" in token
+            has_digit = any(c.isdigit() for c in token)
+            start_options = resolve_letter_options(tile, 0, flags=stamp_flags)
+            multi_letter = (
+                len(start_options) > 1
+                and all(len(o) == 1 and o.isalpha() for o in start_options)
+            )
+            num_wildcard_letters = (
+                _wildcard_branch_letters(tile, 0, flags=stamp_flags)
+                if tile.curse == CurseType.NUMBER
+                else ()
+            )
+            branch_letters = (
+                tuple(start_options)
+                if multi_letter
+                else _wildcard_branch_letters(tile, 0, flags=stamp_flags)
+                if "?" in token and not has_digit
+                else num_wildcard_letters
+            )
+            if branch_letters and num_wildcard_letters:
+                branch_letters = _order_number_wildcard_branch_letters(
+                    self.dictionary,
+                    branch_letters,
+                    prefix_cursor=self.dictionary.root_cursor(),
+                    partial_seg="",
+                    shuffle_seed=start * 31 + board.cols,
+                    min_remaining=n,
+                )
+            if branch_letters:
+                for ch in branch_letters:
+                    if found and not score_all:
+                        break
+                    if time.monotonic() >= deadline:
+                        break
+                    use_wildcard = (
+                        tile.curse == CurseType.NUMBER and bool(num_wildcard_letters)
+                    )
+                    prefix_cursor = _step_token_cursor(
+                        self.dictionary.root_cursor(), ch
+                    )
+                    pat_cursor = self.dictionary.mixed_step_cursor(None, ch)
+                    if timing is not None:
+                        timing.trie_steps += 1
+                    dfs(
+                        [start],
+                        [ch],
+                        1 << start,
+                        prefix_cursor=prefix_cursor,
+                        has_wildcard=use_wildcard,
+                        has_digit=False,
+                        prefix_len=1,
+                        pattern_prefix=ch,
+                        pattern_cursor=pat_cursor,
+                    )
+                if (
+                    tile.curse == CurseType.NUMBER
+                    and token.isdigit()
+                    and num_wildcard_letters
+                ):
+                    if time.monotonic() >= deadline or (found and not score_all):
+                        continue
+                    pat_cursor = self.dictionary.mixed_step_cursor(None, token)
+                    if timing is not None:
+                        timing.trie_steps += len(token)
+                    dfs(
+                        [start],
+                        [token],
+                        1 << start,
+                        prefix_cursor=pat_cursor,
+                        has_wildcard=has_wildcard,
+                        has_digit=True,
+                        prefix_len=len(token),
+                        pattern_prefix=token,
+                        pattern_cursor=pat_cursor,
+                    )
+            elif not has_digit and token.isalpha():
+                prefix_cursor = _step_token_cursor(
+                    self.dictionary.root_cursor(), token
+                )
+                pat_cursor = self.dictionary.mixed_step_cursor(None, token)
+                dfs(
+                    [start],
+                    [token],
+                    1 << start,
+                    prefix_cursor=prefix_cursor,
+                    has_wildcard=has_wildcard,
+                    has_digit=False,
+                    prefix_len=len(token),
+                    pattern_prefix=token.lower(),
+                    pattern_cursor=pat_cursor,
+                )
+            elif has_digit:
+                pat_cursor = self.dictionary.mixed_step_cursor(None, token)
+                dfs(
+                    [start],
+                    [token],
+                    1 << start,
+                    prefix_cursor=None,
+                    has_wildcard=has_wildcard,
+                    has_digit=True,
+                    prefix_len=len(token),
+                    pattern_prefix=token,
+                    pattern_cursor=pat_cursor,
+                )
+
+        return found or bool(candidates)
+
+    def _collect_trie_guided_hamiltonian_fair_starts(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        deadline: float,
+        *,
+        target_len: int,
+        score_all: bool = False,
+    ) -> bool:
+        """Trie-guided Hamiltonian search with fair start slicing."""
+        if start_indices := _legal_word_start_indices(board):
+            starts = list(start_indices)
+        else:
+            starts = list(_active_indices(board))
+        if not starts or time.monotonic() >= deadline:
+            return bool(candidates)
+
+        n = len(starts)
+        pass_start = time.monotonic()
+        pass_duration = max(deadline - pass_start, 0.0)
+        trie_cap = min(12.0, pass_duration * 0.85) if pass_duration > 0 else 0.0
+        trie_deadline = min(deadline, pass_start + trie_cap) if trie_cap > 0 else pass_start
+        base_min = 2.0
+        min_slice = base_min
+        if n > 0 and trie_cap > 0 and n * base_min > trie_cap:
+            min_slice = trie_cap / n
+        for idx, start in enumerate(starts):
+            if bool(candidates) and not score_all:
+                return True
+            now = time.monotonic()
+            if now >= trie_deadline:
+                break
+            left = trie_deadline - now
+            remaining = n - idx
+            per = max(min_slice, left / remaining) if remaining else left
+            sub_deadline = min(trie_deadline, now + per)
+            if self._collect_trie_guided_hamiltonian_candidates(
+                board,
+                loadout,
+                candidates,
+                sub_deadline,
+                target_len=target_len,
+                score_all=score_all,
+                start_indices=[start],
+            ) and not score_all:
+                return True
+        return bool(candidates)
+
     def _collect_full_board_hamiltonian_candidates(
         self,
         board: Board,
@@ -6995,19 +7604,31 @@ class WordSearcher:
         candidates: _CandidateHeap,
         deadline: float,
     ) -> None:
-        """Full-board exact length: try each dictionary word of matching length."""
+        """Full-board exact length: trie-guided Hamiltonian paths, word-first fallback."""
         active = _active_indices(board)
         n = len(active)
         if n < 1 or self.min_len != n or self.max_len != n:
             return
-        self._collect_hamiltonian_word_candidates(
+        if time.monotonic() >= deadline:
+            return
+        if self._collect_trie_guided_hamiltonian_fair_starts(
             board,
             loadout,
             candidates,
             deadline,
             target_len=n,
             score_all=False,
-        )
+        ):
+            return
+        if time.monotonic() < deadline:
+            self._collect_hamiltonian_word_candidates(
+                board,
+                loadout,
+                candidates,
+                deadline,
+                target_len=n,
+                score_all=False,
+            )
 
     def find_best_words(
         self,
@@ -7141,6 +7762,11 @@ class WordSearcher:
             number_reserve = 0.0
             void_reserve = 0.0
             fraction_cluster_reserve = 0.0
+            chess_reserve = 0.0
+            seed_reserve = 0.0
+            extension_reserve = 0.0
+            up_and_up_reserve = 0.0
+            item_seed_reserve = 0.0
         elif has_digit_tiles:
             # Tight budgets need more time reserved for digit passes; otherwise
             # the cap progression (7 -> 8) can time out before reaching cap=8.
@@ -7326,6 +7952,16 @@ class WordSearcher:
                 local_deadline = min(local_deadline, deadline)
             deadline = local_deadline
             self._active_deadline = deadline
+        empty_heap_recovery_likely = (
+            has_number_tiles
+            and has_fraction_tiles
+            and _chess_tile_count(board) >= 3
+        )
+        empty_heap_recovery_reserve = (
+            min(18.0, self.time_budget * 0.30)
+            if empty_heap_recovery_likely
+            else 0.0
+        )
         post_dfs_reserve = (
             number_reserve
             + void_reserve
@@ -7335,6 +7971,7 @@ class WordSearcher:
             + extension_reserve
             + up_and_up_reserve
             + item_seed_reserve
+            + empty_heap_recovery_reserve
         )
         main_deadline = deadline - post_dfs_reserve
         main_dfs_floor = search_begin + self.time_budget * MAIN_DFS_FLOOR_FRAC
@@ -7349,12 +7986,23 @@ class WordSearcher:
         timing.reserve_scaling_applied = reserve_scaled
         timing.main_dfs_slice_sec = max(0.0, main_deadline - search_begin)
         pre_extend_deadline = deadline - extension_reserve if extension_reserve > 0 else deadline
+        if empty_heap_recovery_likely:
+            recovery_cutoff = deadline - empty_heap_recovery_reserve
+            pre_extend_deadline = min(pre_extend_deadline, recovery_cutoff)
         curse_heavy = joker_count >= 2 and _chess_tile_count(board) >= 3
         parallel_dfs_viable = use_parallel and main_deadline > search_begin
         dfs_start = search_begin
         self._parallel_executor = pool
         start_productivity: dict[int, int] = {}
-        if hanafuda_level >= 1 and joker_count >= 2:
+        if self._full_board_exact:
+            ham_deadline = float("inf") if run_until_found else deadline
+            self._collect_full_board_hamiltonian_candidates(
+                board,
+                loadout,
+                candidates,
+                ham_deadline,
+            )
+        if hanafuda_level >= 1 and joker_count >= 2 and not self._full_board_exact:
             self._collect_joker_cluster_candidates(
                 board,
                 loadout,
@@ -7367,6 +8015,7 @@ class WordSearcher:
             flag_test(ctx_for_wrap.search_flags, FLAG_HORIZONTAL_WRAP)
             and joker_count >= 2
             and _chess_tile_count(board) >= 2
+            and not self._full_board_exact
         ):
             wrap_deadline = min(
                 deadline,
@@ -7399,6 +8048,7 @@ class WordSearcher:
             nw_starts
             and has_number_tiles
             and self.min_len >= 7
+            and not self._full_board_exact
             and time.monotonic() < main_deadline
         ):
             short_exact_len = self.min_len == self.max_len and self.max_len <= 8
@@ -7414,11 +8064,15 @@ class WordSearcher:
                     max(0.0, main_deadline - time.monotonic()),
                 )
             if nw_budget >= 8.0:
+                nw_phase_cap = (
+                    main_deadline if empty_heap_recovery_likely else deadline
+                )
                 for nw in sorted(nw_starts, reverse=True):
-                    if time.monotonic() >= deadline:
+                    if time.monotonic() >= nw_phase_cap:
                         break
                     slice_deadline = min(
-                        deadline, time.monotonic() + (50.0 if short_exact_len else nw_budget)
+                        nw_phase_cap,
+                        time.monotonic() + (50.0 if short_exact_len else nw_budget),
                     )
                     slice_window = max(0.0, slice_deadline - time.monotonic())
                     # Reserve time for digit-start exploration so number-leading
@@ -7438,6 +8092,7 @@ class WordSearcher:
                         self.max_len,
                         nw_stamp_flags,
                         self._graph_ctx,
+                        min_len=self.min_len,
                         rules=self.scoring.rules,
                         max_expansions_per_letter=80_000 if short_exact_len else 40_000,
                     )
@@ -7479,23 +8134,46 @@ class WordSearcher:
                                 skip_number_digit_start=False,
                             )
                     else:
-                        self._collect_words(
-                            board,
-                            loadout,
-                            candidates,
-                            slice_deadline,
-                            self.max_len,
-                            start_indices=[nw],
-                            skip_number_digit_start=False,
+                        nw_tile = board.get_by_index(nw)
+                        fallback_letters = _wildcard_branch_letters(
+                            nw_tile, 0, flags=nw_stamp_flags
                         )
-        if self._full_board_exact:
-            ham_deadline = float("inf") if run_until_found else main_deadline
-            self._collect_full_board_hamiltonian_candidates(
-                board,
-                loadout,
-                candidates,
-                ham_deadline,
-            )
+                        if fallback_letters:
+                            ordered = _order_number_wildcard_branch_letters(
+                                self.dictionary,
+                                fallback_letters,
+                                prefix_cursor=self.dictionary.root_cursor(),
+                                partial_seg="",
+                                shuffle_seed=nw * 31 + board.cols,
+                                min_remaining=max(0, self.min_len),
+                            )
+                            letter_cap_hi = min(self.max_len, 12)
+                            for ch in ordered[:8]:
+                                if time.monotonic() >= letter_deadline:
+                                    break
+                                for cap in range(self.min_len, letter_cap_hi + 1):
+                                    if time.monotonic() >= letter_deadline:
+                                        break
+                                    self._collect_words(
+                                        board,
+                                        loadout,
+                                        candidates,
+                                        letter_deadline,
+                                        cap,
+                                        start_indices=[nw],
+                                        number_start_first_letter=ch,
+                                        skip_number_digit_start=True,
+                                    )
+                        if time.monotonic() < slice_deadline:
+                            self._collect_words(
+                                board,
+                                loadout,
+                                candidates,
+                                slice_deadline,
+                                self.max_len,
+                                start_indices=[nw],
+                                skip_number_digit_start=False,
+                            )
         elif self._small_board_hamiltonian:
             ham_slice = min(12.0, self.time_budget * 0.2)
             ham_deadline = min(main_deadline, search_begin + ham_slice)
@@ -7904,7 +8582,15 @@ class WordSearcher:
             resolve_phase_deadline = min(resolve_phase_deadline, f8_deadline)
         skip_post_extend = False
         extend_entry_deadline = resolve_phase_deadline
-        if len(candidates) > 0 and time.monotonic() < extend_entry_deadline:
+        empty_heap_recovery = (
+            len(candidates) == 0
+            and has_number_tiles
+            and _chess_tile_count(board) >= 3
+        )
+        if (
+            (len(candidates) > 0 or empty_heap_recovery)
+            and time.monotonic() < extend_entry_deadline
+        ):
             active_cap = resolve_phase_deadline
             if f8_deadline is not None:
                 active_cap = min(active_cap, f8_deadline)
@@ -7919,11 +8605,23 @@ class WordSearcher:
                     else 5
                 )
             )
+            chess_solve_deadline = (
+                resolve_phase_deadline if empty_heap_recovery else pre_extend_deadline
+            )
+            chess_prefix_cap = (
+                self.max_len if empty_heap_recovery else chess_max_cap
+            )
+            chess_prefix_budget = (
+                min(8.0, max(2.0, self.time_budget * 0.15))
+                if empty_heap_recovery
+                else None
+            )
             chess_seeds = self._chess_prefix_candidates(
                 board,
                 loadout,
-                solve_deadline=pre_extend_deadline,
-                max_cap=chess_max_cap,
+                budget_sec=chess_prefix_budget,
+                solve_deadline=chess_solve_deadline,
+                max_cap=chess_prefix_cap,
             )
             timing.chess_sec = time.monotonic() - chess_start
             extend_start = time.monotonic()
@@ -7938,12 +8636,16 @@ class WordSearcher:
                     extend_deadline, time.monotonic() + extend_cap
                 )
             top_paths = (
-                min(120, len(candidates), heap_k)
-                if chess_seeds
-                else min(
-                    60 if curse_heavy else 30,
-                    len(candidates),
-                    heap_k,
+                min(120, heap_k)
+                if empty_heap_recovery and not candidates
+                else (
+                    min(120, len(candidates), heap_k)
+                    if chess_seeds
+                    else min(
+                        60 if curse_heavy else 30,
+                        len(candidates),
+                        heap_k,
+                    )
                 )
             )
             if curse_heavy and (leader_imm is not None and leader_imm >= 400):
@@ -7977,6 +8679,8 @@ class WordSearcher:
                     max_extend_rounds = round_cap
                 else:
                     max_extend_rounds = min(max_extend_rounds, round_cap)
+            if empty_heap_recovery and max_extend_rounds is None:
+                max_extend_rounds = min(self.max_len - self.min_len, 16)
             parallel_dfs_fast = (
                 parallel_dfs_viable
                 and timing.main_dfs_slice_sec > 0.0
@@ -7996,7 +8700,8 @@ class WordSearcher:
                 else:
                     max_extend_rounds = min(max_extend_rounds, fast_cap)
             if (
-                len(leader_sorted) >= 2
+                not empty_heap_recovery
+                and len(leader_sorted) >= 2
                 and len(leader_sorted[0][2]) >= 10
                 and leader_sorted[0][0] - leader_sorted[1][0]
                 >= leader_sorted[0][0] * 0.15

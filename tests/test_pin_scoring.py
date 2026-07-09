@@ -925,3 +925,20 @@ def test_bicycle_consumable_placement_rack_card_suit_bizarre():
     score_suited, bd_suited = pipeline.score(suited_board, path, "bizarre", lo)
     assert bd_suited["pipeline"]["word_score"] == bd_plain["pipeline"]["word_score"] + 1.0
     assert int(score_suited) > int(score_plain)
+
+
+def test_bicycle_fingerprint_no_downgrade_beefed():
+    """July 8 beefed: fresher extras acc must not be downgraded by stale fingerprint."""
+    from cursed_words_solver.loadout import align_bicycle_extras_from_fingerprint
+
+    fp = "Bones The Dog|0||golden_record:1,tile_ninja:1|robo_monkey|bicycle:left|5"
+    extras = {
+        "pin_effect": "bicycle",
+        "bicycle_word_score_bonus": "6",
+        "cards_submitted": "6",
+        "loadout_fingerprint": fp,
+    }
+    lo = Loadout(character="Bones The Dog", extras=dict(extras))
+    align_bicycle_extras_from_fingerprint(extras, lo)
+    assert extras["bicycle_word_score_bonus"] == "6"
+    assert extras["cards_submitted"] == "6"
