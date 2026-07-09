@@ -4337,6 +4337,62 @@ def test_f8_should_block_when_scatter_level_below_equipped() -> None:
     assert reason == "scatter_level_lag"
 
 
+def test_f8_should_not_block_when_scatter_below_equipped_but_capped() -> None:
+    from cursed_words_solver.models import (
+        Board,
+        CurseType,
+        Loadout,
+        LoadoutItem,
+        Tile,
+        TileColor,
+    )
+    from cursed_words_solver.suggestion import scatter_level_below_equipped_warning
+
+    tile = Tile(
+        row=0,
+        col=2,
+        char="?",
+        letter="?",
+        base_score=0.0,
+        color=TileColor.COLORLESS,
+        curse=CurseType.ITEM,
+        metadata={
+            "scattered_item_id": "mysterious_amulet",
+            "scattered_item_level": 1,
+        },
+    )
+    tiles: list[list[Tile | None]] = []
+    for r in range(5):
+        row: list[Tile | None] = []
+        for c in range(5):
+            row.append(
+                Tile(
+                    row=r,
+                    col=c,
+                    char="a",
+                    letter="a",
+                    base_score=1.0,
+                )
+            )
+        tiles.append(row)
+    tiles[0][2] = tile
+    board = Board(tiles=tiles, money=10)
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="mysterious_amulet", name="Mysterious Amulet", level=3)],
+        extras={
+            "grid_number": "6",
+            "boss_floor_modification": "5",
+        },
+    )
+    assert scatter_level_below_equipped_warning(loadout, board) is None
+    blocked, reason = f8_should_block_save(
+        loadout=loadout,
+        board=board,
+    )
+    assert not blocked
+    assert reason is None
+
+
 def test_align_embed_caps_inflated_birthday_cake_bonus() -> None:
     from cursed_words_solver.loadout import align_embed_with_scoring_loadout
 

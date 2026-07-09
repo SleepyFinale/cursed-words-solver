@@ -4903,6 +4903,27 @@ def scattered_grid_item_level(loadout: Loadout | None) -> int:
     return max(1, grid - floor_mod)
 
 
+def melmod_would_inflate_scatter_to_equipped(
+    loadout: Loadout | None,
+    slug: str,
+    exported: int,
+    equipped: int,
+) -> bool:
+    """Whether melmod ApplyEquippedScatterLevels would raise export toward equipped."""
+    del exported
+    if loadout is None:
+        return True
+    if slug == "dusty_coffin":
+        return False
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    if extras.get("boss_floor_modification") in (None, ""):
+        return True
+    encounter_tier = scattered_grid_item_level(loadout)
+    if encounter_tier > 0 and equipped > encounter_tier:
+        return False
+    return True
+
+
 def grid_path_encounter_level(loadout: Loadout | None) -> int:
     """Sticker level for scattered grid items on the path (not void penalty / inventory)."""
     if loadout is None:
@@ -5538,7 +5559,11 @@ def _level_from_exported_scatter_tier(
         if tile_lv > encounter_level:
             return encounter_level
         return tile_lv
-    return max(tile_lv, equipped)
+    if melmod_would_inflate_scatter_to_equipped(
+        loadout, slug_norm, tile_lv, equipped
+    ):
+        return equipped
+    return tile_lv
 
 
 def grid_path_sticker_level(
@@ -5784,6 +5809,24 @@ def grid_path_sticker_level(
             except (TypeError, ValueError):
                 equipped_level = 1
             break
+    if (
+        is_grid_path_tile
+        and tile_level_known
+        and exported_tile_level is not None
+        and equipped_level is not None
+        and exported_tile_level < equipped_level
+        and not melmod_would_inflate_scatter_to_equipped(
+            loadout, slug_norm, exported_tile_level, equipped_level
+        )
+        and slug_norm
+        not in (
+            "dusty_coffin",
+            "tombstone",
+            "deep_sea_horror",
+            "down_under",
+        )
+    ):
+        skip_equipped_merge = True
     if (
         not skip_equipped_merge
         and is_grid_path_tile

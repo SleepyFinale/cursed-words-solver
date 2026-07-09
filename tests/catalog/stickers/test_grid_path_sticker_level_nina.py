@@ -172,6 +172,50 @@ def test_dusty_void_units_israeli_excludes_down_under_scatter() -> None:
     assert n == 6
 
 
+def test_mysterious_amulet_capped_below_equipped_scores_at_board_tier() -> None:
+    """Boss floor cap: L1 grid amulet scores at L1 despite L3 equipped."""
+    from cursed_words_solver.models import (
+        Board,
+        CurseType,
+        Loadout,
+        LoadoutItem,
+        Tile,
+        TileColor,
+    )
+
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    board.tiles[0][2] = Tile(
+        row=0,
+        col=2,
+        char="?",
+        letter="?",
+        base_score=0,
+        color=TileColor.COLORLESS,
+        curse=CurseType.ITEM,
+        metadata={
+            "scattered_item_id": "mysterious_amulet",
+            "scattered_item_level": 1,
+        },
+    )
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="mysterious_amulet", name="Mysterious Amulet", level=3)],
+        boss_id="michael",
+        extras={
+            "grid_number": "6",
+            "boss_floor_modification": "5",
+            "scoring_previous_words_count": "0",
+        },
+    )
+    level = grid_path_sticker_level(
+        loadout,
+        "mysterious_amulet",
+        board=board,
+        path=[2],
+        path_tile_index=0,
+    )
+    assert level == 1
+
+
 def test_dusty_red_grid_scatter_level_anigh() -> None:
     """anigh: RED dusty grid scatter uses L2; path void units capped at off-path count."""
     data = _load("20260629_143704")

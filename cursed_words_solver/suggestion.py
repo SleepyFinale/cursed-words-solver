@@ -529,10 +529,13 @@ def scatter_level_below_equipped_warning(
     loadout: Loadout | None,
     board: Board | None,
 ) -> str | None:
-    """Warn when a grid scatter tile exports below its equipped sticker tier."""
+    """Warn when melmod export lag leaves grid scatter below equipped sticker tier."""
     if loadout is None or board is None or not loadout.stickers:
         return None
     from cursed_words_solver.rules.rule_lookup import slugify_name
+    from cursed_words_solver.rules.scoring_conditions import (
+        melmod_would_inflate_scatter_to_equipped,
+    )
 
     equipped: dict[str, int] = {}
     for sticker in loadout.stickers:
@@ -548,7 +551,9 @@ def scatter_level_below_equipped_warning(
     for tile in board.flat:
         if tile is None or tile.curse != CurseType.ITEM:
             continue
-        slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
+        slug = slugify_name(
+            str((tile.metadata or {}).get("scattered_item_id") or "").strip()
+        )
         if not slug or slug not in equipped:
             continue
         raw = (tile.metadata or {}).get("scattered_item_level")
@@ -557,12 +562,14 @@ def scatter_level_below_equipped_warning(
         except (TypeError, ValueError):
             exported = 1
         eq = equipped[slug]
-        if eq > exported:
+        if eq > exported and melmod_would_inflate_scatter_to_equipped(
+            loadout, slug, exported, eq
+        ):
             mismatches.append(f"{slug} L{exported}<{eq}")
     if not mismatches:
         return None
     return (
-        "Board scatter level below equipped sticker ("
+        "Board scatter export below equipped sticker ("
         + ", ".join(mismatches)
         + f") — {F8_RETRY_HINT}."
     )

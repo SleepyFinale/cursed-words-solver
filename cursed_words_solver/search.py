@@ -2812,6 +2812,7 @@ def _chess_cap_start_indices(chess_starts: list[int]) -> list[int]:
 _SMALL_BOARD_HAMILTONIAN_MAX = 9
 _SCATTERED_ITEM_COVER_MAX_PATHS = 48
 _SCATTERED_ITEM_DENSE_MIN = 6
+_WILDCARD_DENSE_MIN = 4
 
 
 def _is_shrunk_board(board: Board) -> bool:
@@ -3781,6 +3782,7 @@ class WordSearcher:
         if loadout is None:
             return None
         from cursed_words_solver.suggestion import (
+            _valid_dictionary_words_for_path,
             dictionary_word_for_path,
             path_requires_tile_dictionary_resolve,
         )
@@ -3792,22 +3794,43 @@ class WordSearcher:
 
         path_key = tuple(path)
         cached_valid = self._dict_valid_words_cache.get(path_key)
-        if cached_valid is None:
-            cached_valid = (
-                dictionary_word_for_path(
-                    board,
-                    path,
-                    search_word,
-                    loadout,
-                    self.dictionary,
-                    min_len=self.min_len,
-                    pipeline=self.scoring,
-                    deadline_check=self._deadline_reached,
-                )
-                or ""
-            )
-            self._dict_valid_words_cache[path_key] = cached_valid
-        return cached_valid if cached_valid else None
+        if cached_valid:
+            return cached_valid
+
+        path_flags = path_scattered_search_flags_mask(
+            board, path, stamp_flags, self.scoring.rules
+        )
+        resolve_word = search_word_from_path(board, path, flags=path_flags)
+        fast = _valid_dictionary_words_for_path(
+            board,
+            path,
+            resolve_word,
+            loadout,
+            self.dictionary,
+            min_len=self.min_len,
+            limit=1,
+        )
+        if fast:
+            self._dict_valid_words_cache[path_key] = fast[0]
+            return fast[0]
+
+        if self._deadline_reached():
+            return None
+
+        resolved = dictionary_word_for_path(
+            board,
+            path,
+            search_word,
+            loadout,
+            self.dictionary,
+            min_len=self.min_len,
+            pipeline=self.scoring,
+            deadline_check=self._deadline_reached,
+        )
+        if resolved:
+            self._dict_valid_words_cache[path_key] = resolved
+            return resolved
+        return None
 
     def _accepted_scoring_word(
         self,
@@ -4786,6 +4809,147 @@ class WordSearcher:
                         path,
                         immediate=cached[0] if cached is not None else None,
                     )
+
+    def _collect_lone_scattered_item_endpoint_candidates(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        deadline: float,
+        *,
+        max_len: int,
+    ) -> None:
+        """Seed paths ending on a single scattered grid ITEM tile (e.g. chips)."""
+        if time.monotonic() >= deadline:
+            return
+        item_indices = [
+            i
+            for i in _active_indices(board)
+            if board.get_by_index(i).curse == CurseType.ITEM
+            and str((board.get_by_index(i).metadata or {}).get("scattered_item_id") or "").strip()
+        ]
+        if len(item_indices) != 1:
+            return
+        item_idx = item_indices[0]
+        ctx = self._search_ctx(loadout)
+        stamp_flags = ctx.search_flags
+        graph_ctx = self._board_graph(board)
+        from collections import deque
+
+        from cursed_words_solver.suggestion import path_is_submittable
+
+        item_tile = board.get_by_index(item_idx)
+
+        def start_distance(start: int) -> int:
+            t = board.get_by_index(start)
+            return abs(t.row - item_tile.row) + abs(t.col - item_tile.col)
+
+        starts = _wildcard_start_indices(board)
+        if not starts:
+            starts = _legal_word_start_indices(board)
+        starts = sorted(starts, key=start_distance)[:8]
+
+        prev_deadline = self._active_deadline
+        self._active_deadline = deadline
+        try:
+            seen_paths: set[tuple[int, ...]] = set()
+            max_paths = 96
+
+            def consider_path(path: list[int]) -> None:
+                if len(seen_paths) >= max_paths:
+                    return
+                key = tuple(path)
+                if key in seen_paths:
+                    return
+                seen_paths.add(key)
+                path_flags = path_scattered_search_flags_mask(
+                    board, path, stamp_flags, self.scoring.rules
+                )
+                if not path_movement_ok(
+                    board, path, flags=path_flags, loadout=loadout
+                ):
+                    return
+                search_word = search_word_from_path(
+                    board, path, flags=path_flags
+                )
+                accepted, score_word = self._accept_path_for_search(
+                    board, path, search_word, loadout, path_flags
+                )
+                if not accepted:
+                    return
+                if not path_is_submittable(
+                    board,
+                    path,
+                    score_word,
+                    loadout,
+                    self.dictionary,
+                    min_len=self.min_len,
+                ):
+                    return
+                rank_sc = self._rank_score_for_candidate(
+                    board,
+                    path,
+                    score_word,
+                    loadout,
+                    prune_heap=candidates,
+                    resolved_word=score_word,
+                )
+                if rank_sc is not None:
+                    candidates.consider(rank_sc, score_word, path)
+
+            for start in starts:
+                if time.monotonic() >= deadline or len(seen_paths) >= max_paths:
+                    break
+                queue: deque[tuple[list[int], int]] = deque()
+                queue.append(([start], 1 << start))
+                local_seen: set[tuple[int, int]] = set()
+                expansions = 0
+                while queue and expansions < 80_000:
+                    if time.monotonic() >= deadline or len(seen_paths) >= max_paths:
+                        break
+                    path, visited_mask = queue.popleft()
+                    expansions += 1
+                    state = (path[-1], visited_mask)
+                    if state in local_seen:
+                        continue
+                    local_seen.add(state)
+                    plen = len(path)
+                    if plen >= self.min_len and path[-1] == item_idx:
+                        consider_path(path)
+                    if plen >= max_len or path[-1] == item_idx:
+                        continue
+                    cell = path[-1]
+                    path_flags = path_scattered_search_flags_mask(
+                        board, path, stamp_flags, self.scoring.rules
+                    )
+                    remaining = max_len - plen
+                    need = _min_steps_to_index(
+                        board,
+                        cell,
+                        item_idx,
+                        visited_mask,
+                        flags=path_flags,
+                        graph_ctx=graph_ctx,
+                    )
+                    if need is None or need > remaining:
+                        continue
+                    nbr_mask = neighbors_mask(
+                        board,
+                        visited_mask,
+                        cell_id=cell,
+                        flags=path_flags,
+                        graph_ctx=graph_ctx,
+                        loadout=loadout,
+                    )
+                    for nbr in iter_mask(nbr_mask):
+                        trial = path + [nbr]
+                        if not path_movement_ok(
+                            board, trial, flags=path_flags, loadout=loadout
+                        ):
+                            continue
+                        queue.append((trial, visited_mask | (1 << nbr)))
+        finally:
+            self._active_deadline = prev_deadline
 
     def _collect_scattered_item_covering_candidates(
         self,
@@ -6059,11 +6223,7 @@ class WordSearcher:
         candidates: _CandidateHeap,
         deadline: float | None,
     ) -> None:
-        """Swap/append path endings onto scattered grid item neighbors (hiatus tombstone)."""
-        from cursed_words_solver.rules.rule_lookup import slugify_name
-        from cursed_words_solver.rules.scoring_conditions import (
-            _GRID_PATH_SCATTER_SLUGS,
-        )
+        """Swap/append path endings onto scattered grid item neighbors."""
         from cursed_words_solver.suggestion import (
             _valid_dictionary_words_for_path,
             path_is_submittable,
@@ -6074,10 +6234,7 @@ class WordSearcher:
             tile = board.get_by_index(idx)
             if tile.curse != CurseType.ITEM:
                 continue
-            slug = slugify_name(
-                str((tile.metadata or {}).get("scattered_item_id") or "")
-            )
-            if slug in _GRID_PATH_SCATTER_SLUGS:
+            if str((tile.metadata or {}).get("scattered_item_id") or "").strip():
                 scatter_indices.append(idx)
         if not scatter_indices:
             return
@@ -7869,12 +8026,21 @@ class WordSearcher:
             else 0
         )
         item_seed_reserve = 0.0
+        lone_scatter_item = False
+        if item_count == 1 and not self._full_board_exact and self.max_len > self.min_len:
+            lone_scatter_item = any(
+                str((board.get_by_index(i).metadata or {}).get("scattered_item_id") or "").strip()
+                for i in _active_indices(board)
+                if board.get_by_index(i).curse == CurseType.ITEM
+            )
         if (
             item_count >= 2
             and not self._full_board_exact
             and self.max_len > self.min_len
         ):
             item_seed_reserve = min(12.0, self.time_budget * 0.25)
+        elif lone_scatter_item and joker_count >= _WILDCARD_DENSE_MIN:
+            item_seed_reserve = min(8.0, self.time_budget * 0.15)
         use_parallel = (
             self.search_workers > 1
             and self._wordlist_path is not None
@@ -7990,6 +8156,7 @@ class WordSearcher:
             recovery_cutoff = deadline - empty_heap_recovery_reserve
             pre_extend_deadline = min(pre_extend_deadline, recovery_cutoff)
         curse_heavy = joker_count >= 2 and _chess_tile_count(board) >= 3
+        wildcard_dense = joker_count >= _WILDCARD_DENSE_MIN
         parallel_dfs_viable = use_parallel and main_deadline > search_begin
         dfs_start = search_begin
         self._parallel_executor = pool
@@ -8035,6 +8202,24 @@ class WordSearcher:
             )
             if item_deadline > time.monotonic():
                 self._collect_scattered_item_covering_candidates(
+                    board,
+                    loadout,
+                    candidates,
+                    item_deadline,
+                    max_len=self.max_len,
+                )
+        if (
+            lone_scatter_item
+            and not self._full_board_exact
+            and item_seed_reserve > 0.0
+            and joker_count >= _WILDCARD_DENSE_MIN
+        ):
+            item_deadline = min(
+                main_deadline,
+                search_begin + item_seed_reserve,
+            )
+            if item_deadline > time.monotonic():
+                self._collect_lone_scattered_item_endpoint_candidates(
                     board,
                     loadout,
                     candidates,
@@ -8355,11 +8540,27 @@ class WordSearcher:
                         fallback_caps = [self.max_len]
                     fallback_deadline = pre_extend_deadline
                 else:
-                    fallback_caps = (
-                        list(range(self.min_len, self.max_len + 1))
-                        if self.time_budget >= 6.0 and self.max_len > self.min_len
-                        else [self.max_len]
+                    prefer_long_fallback = (
+                        has_fraction_tiles or has_number_tiles or wildcard_dense
                     )
+                    if (
+                        prefer_long_fallback
+                        and self.time_budget >= 6.0
+                        and self.max_len > self.min_len
+                    ):
+                        fallback_caps = _up_and_up_cap_sequence(
+                            self.min_len,
+                            self.max_len,
+                            prefer_long_first=True,
+                            board=board,
+                            center_idx=center_idx,
+                        )
+                    else:
+                        fallback_caps = (
+                            list(range(self.min_len, self.max_len + 1))
+                            if self.time_budget >= 6.0 and self.max_len > self.min_len
+                            else [self.max_len]
+                        )
                     post_dfs_budget = (
                         number_reserve + void_reserve + fraction_cluster_reserve
                     )
@@ -8679,6 +8880,12 @@ class WordSearcher:
                     max_extend_rounds = round_cap
                 else:
                     max_extend_rounds = min(max_extend_rounds, round_cap)
+            elif wildcard_dense and leader_len > 0 and leader_len <= 4:
+                long_cap = min(self.max_len - self.min_len, 16)
+                if max_extend_rounds is None:
+                    max_extend_rounds = long_cap
+                else:
+                    max_extend_rounds = max(max_extend_rounds, long_cap)
             if empty_heap_recovery and max_extend_rounds is None:
                 max_extend_rounds = min(self.max_len - self.min_len, 16)
             parallel_dfs_fast = (

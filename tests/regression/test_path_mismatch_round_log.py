@@ -975,6 +975,97 @@ DIVOTS_PATH_MISMATCH_FIXTURE = (
     / "round_logs"
     / "20260708_divots_path_mismatch.json"
 )
+AIGRETS_PATH_MISMATCH_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260708_aigrets_path_mismatch.json"
+)
+AIGRETS_F8_SCORE = 38_535
+AIGRETS_SUBMITTED_SCORE = 80_780
+
+
+@pytest.mark.skipif(
+    not AIGRETS_PATH_MISMATCH_FIXTURE.exists(),
+    reason="20260708 aigrets path-mismatch fixture required",
+)
+def test_aigrets_submitted_path_replay_score():
+    data = json.loads(AIGRETS_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    replay = _round_log_to_replay(data)
+    score = _score_submitted(replay)
+    assert replay["word"] == "aigrets"
+    assert score == AIGRETS_SUBMITTED_SCORE
+
+
+@pytest.mark.skipif(
+    not AIGRETS_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="aigrets fixture and game wordlist required",
+)
+def test_aigrets_f8_run_state_search_beats_f8():
+    if GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    data = json.loads(AIGRETS_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=3)
+    assert results, "search should find words on aigrets wildcard+item board"
+    top_score = int(results[0].score)
+    f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
+    assert top_score > f8_score
+    assert top_score >= AIGRETS_SUBMITTED_SCORE
+
+
+@pytest.mark.skipif(
+    not AIGRETS_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="aigrets fixture and game wordlist required",
+)
+def test_dictionary_scoring_word_does_not_cache_timeout():
+    if GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    import time
+
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+    from cursed_words_solver.search import search_word_from_path
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    data = json.loads(AIGRETS_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    path = path_from_melmod_indices(board, data["actual"]["path"])
+    flags = stamp_search_flags_mask(loadout)
+    search_word = search_word_from_path(board, path, flags=flags)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=25,
+    )
+    searcher.validator.quest_loadout = loadout
+    searcher._active_deadline = time.monotonic() + 0.001
+    assert searcher._dictionary_scoring_word(
+        board, path, search_word, loadout, flags
+    ) is None
+    assert path not in searcher._dict_valid_words_cache
+    searcher._active_deadline = time.monotonic() + 120.0
+    resolved = searcher._dictionary_scoring_word(
+        board, path, search_word, loadout, flags
+    )
+    assert resolved
+    assert tuple(path) in searcher._dict_valid_words_cache
 
 
 @pytest.mark.skipif(not TREENS_FIXTURE.exists(), reason="treens fixture required")

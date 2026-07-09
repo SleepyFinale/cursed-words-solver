@@ -283,6 +283,33 @@ def merge_submit_board_take_flags(run_state: dict[str, Any], data: dict[str, Any
     merge_submit_board_tile_state(run_state, data)
 
 
+def reconcile_grid_scattered_items_from_board(
+    extras: dict[str, Any], board: Board | None
+) -> None:
+    """Rebuild grid_scattered_items from live tile metadata (avoids stale extras)."""
+    if board is None:
+        return
+    rows: list[dict[str, Any]] = []
+    for tile in board.flat:
+        if not board.is_active_index(tile.index):
+            continue
+        if tile.curse != CurseType.ITEM:
+            continue
+        slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip()
+        if not slug:
+            continue
+        level_raw = (tile.metadata or {}).get("scattered_item_level")
+        try:
+            level = max(1, int(level_raw)) if level_raw is not None else 1
+        except (TypeError, ValueError):
+            level = 1
+        rows.append({"row": tile.row, "col": tile.col, "id": slug, "level": level})
+    derived = json.dumps(rows, separators=(",", ":")) if rows else ""
+    current = str(extras.get("grid_scattered_items") or "").strip()
+    if derived != current:
+        extras["grid_scattered_items"] = derived
+
+
 def prepare_run_state_dict_for_scoring(data: dict[str, Any]) -> dict[str, Any]:
     """Merge submit-time fields into run_state before scoring (live or replay)."""
     run_state = dict(data)
@@ -295,6 +322,7 @@ def prepare_run_state_dict_for_scoring(data: dict[str, Any]) -> dict[str, Any]:
     merge_submit_board_tile_state(run_state, data)
     if isinstance(run_state.get("extras"), dict):
         board = parse_board_from_run_state(run_state)
+        reconcile_grid_scattered_items_from_board(run_state["extras"], board)
         reconcile_encounter_historic_for_scoring(
             run_state["extras"],
             board=board,
