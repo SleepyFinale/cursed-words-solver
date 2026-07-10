@@ -101,7 +101,14 @@ def _f8_run_state_from_round_log(data: dict) -> dict:
     ex["scoring_previous_words_count"] = diff.get(
         "scoring_previous_words_count", {}
     ).get("f8", "0")
-    ex["historic_words"] = "[]"
+    if "historic_words" in diff:
+        ex["historic_words"] = diff["historic_words"].get("f8", "[]")
+    else:
+        ex["historic_words"] = "[]"
+    if "encounter_historic_source" in diff:
+        ex["encounter_historic_source"] = diff["encounter_historic_source"].get(
+            "f8", ex.get("encounter_historic_source", "")
+        )
     ex["grid_scattered_items"] = diff.get("grid_scattered_items", {}).get("f8", "")
     ex["red_tiles_used_encounter"] = diff.get("red_tiles_used_encounter", {}).get(
         "f8", "0"
@@ -113,6 +120,9 @@ def _f8_run_state_from_round_log(data: dict) -> dict:
         ex["loadout_fingerprint"] = diff["loadout_fingerprint"].get(
             "f8", ex.get("loadout_fingerprint", "")
         )
+    for key, entry in diff.items():
+        if isinstance(entry, dict) and "f8" in entry and entry["f8"] not in (None, ""):
+            ex[key] = entry["f8"]
     return prepare_run_state_dict_for_scoring(rs)
 
 
@@ -144,6 +154,35 @@ CENOBITISMS_FIXTURE = (
     / "20260625_cenobitisms_path_mismatch.json"
 )
 ROUND_20260708_PATH_MISMATCH = Path.home() / ".cursed_words_solver" / "round_logs" / "20260708_113716_684.json"
+UNWIELDY_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260709_unwieldy_path_mismatch.json"
+)
+UNWIELDY_MELMOD_PATH = [22, 21, 16, 15, 10, 11, 12, 6]
+UNWIELDY_STORAGE_PATH = [2, 1, 6, 5, 10, 11, 12, 16]
+UNWIELDY_WORD = "unwieldy"
+UNWIELDY_SUBMITTED_SCORE = 464
+UNWIELDY_F8_SCORE = 220
+NIGHTCAP_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260709_nightcap_path_extension.json"
+)
+LABRADOR_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260709_labrador_path_extension.json"
+)
+AYENBITES_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260709_ayenbites_path_mismatch.json"
+)
 INTERMEASURED_PATH = [20, 17, 11, 5, 0, 1, 6, 12, 8, 4, 9, 13, 18]
 INTERMEASURED_WORD = "intermeasured"
 INTERMEASURED_F8_SCORE = 10_511
@@ -213,6 +252,165 @@ def test_20260708_path_mismatch_search_beats_logged_f8():
     actual_score = int((data.get("actual") or {}).get("score", 0))
     assert top_score >= f8_score
     assert top_score >= actual_score
+
+
+@pytest.mark.skipif(
+    not UNWIELDY_FIXTURE.exists(),
+    reason="unwieldy path-mismatch fixture required",
+)
+def test_unwieldy_replay_submitted_path_scores_464():
+    data = json.loads(UNWIELDY_FIXTURE.read_text(encoding="utf-8"))
+    replay = _round_log_to_replay(data)
+    run_state = _f8_run_state_from_extras_diff(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    path = path_from_melmod_indices(board, replay["path"])
+    score, _ = ScoringPipeline().score(board, path, UNWIELDY_WORD, loadout)
+    assert int(score) == UNWIELDY_SUBMITTED_SCORE
+    assert replay["actual_score"] == UNWIELDY_SUBMITTED_SCORE
+
+
+@pytest.mark.skipif(
+    not UNWIELDY_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="unwieldy fixture and game wordlist required",
+)
+def test_unwieldy_search_beats_logged_f8():
+    data = json.loads(UNWIELDY_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_extras_diff(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=5)
+    assert results, "search should find words on unwieldy grid-2 board"
+    top_score = int(results[0].score)
+    f8_score = int((data.get("solver") or {}).get("predicted_score", UNWIELDY_F8_SCORE))
+    assert top_score > f8_score
+    assert top_score >= UNWIELDY_SUBMITTED_SCORE
+
+
+@pytest.mark.skipif(
+    not NIGHTCAP_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="nightcap fixture and game wordlist required",
+)
+def test_nightcap_search_beats_logged_f8():
+    data = json.loads(NIGHTCAP_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    expected_path = path_from_melmod_indices(board, data["actual"]["path"])
+    expected_word = data["actual"]["word"]
+    submitted_score, _ = ScoringPipeline().score(
+        board, expected_path, expected_word, loadout
+    )
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=10)
+    assert results, "search should find words on nightcap grid-2 board"
+    f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
+    top_score = int(results[0].score)
+    assert top_score > f8_score
+    found_paths = {tuple(r.path) for r in results}
+    assert tuple(expected_path) in found_paths or top_score >= int(submitted_score) - 20
+
+
+@pytest.mark.skipif(
+    not LABRADOR_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="labrador fixture and game wordlist required",
+)
+def test_labrador_search_beats_logged_f8():
+    data = json.loads(LABRADOR_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    expected_path = path_from_melmod_indices(board, data["actual"]["path"])
+    expected_word = data["actual"]["word"]
+    submitted_score, _ = ScoringPipeline().score(
+        board, expected_path, expected_word, loadout
+    )
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=10)
+    assert results, "search should find words on labrador grid-3 board"
+    f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
+    top_score = int(results[0].score)
+    found_paths = {tuple(r.path) for r in results}
+    assert (
+        top_score > f8_score
+        or tuple(expected_path) in found_paths
+        or top_score >= int(submitted_score) - 2
+    )
+
+
+@pytest.mark.skipif(
+    not AYENBITES_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="ayenbites fixture and game wordlist required",
+)
+def test_ayenbites_search_beats_logged_f8():
+    data = json.loads(AYENBITES_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    expected_path = path_from_melmod_indices(board, data["actual"]["path"])
+    expected_word = data["actual"]["word"]
+    submitted_score, _ = ScoringPipeline().score(
+        board, expected_path, expected_word, loadout
+    )
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=10)
+    assert results, "search should find words on ayenbites grid-4 board"
+    f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
+    top_score = int(results[0].score)
+    assert top_score > f8_score
+    found_paths = {tuple(r.path) for r in results}
+    assert tuple(expected_path) in found_paths or top_score >= int(submitted_score)
 
 
 @pytest.mark.parametrize(

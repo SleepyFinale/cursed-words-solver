@@ -1693,6 +1693,154 @@ def _probe_fraction_chess_prefixes(
     return out
 
 
+def _probe_chess_dict_resolve_prefixes(
+    board: Board,
+    loadout: Loadout,
+    *,
+    max_depth: int = 8,
+    max_paths: int = 80,
+    max_visited: int = 2000,
+) -> list[list[int]]:
+    """BFS from legal starts preferring chess tiles (2+ chess, no fraction required)."""
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+    from cursed_words_solver.suggestion import path_tiles_need_dictionary_resolve
+
+    if _chess_tile_count(board) < 2:
+        return []
+    if not _dict_resolve_per_seed_viable(board):
+        return []
+    flags = stamp_search_flags(loadout)
+    graph_ctx = build_board_graph_context(board)
+    chess_indices = [
+        i for i in _active_indices(board) if board.get_by_index(i).curse in CHESS_CURSES
+    ]
+    starts = _legal_word_start_indices(board)
+    if not starts:
+        return []
+
+    def _chess_proximity(idx: int) -> int:
+        if idx in chess_indices:
+            return 0
+        best = 99
+        for ci in chess_indices:
+            nbr_mask = neighbors_mask(
+                board,
+                0,
+                cell_id=ci,
+                flags=flags,
+                graph_ctx=graph_ctx,
+                loadout=loadout,
+            )
+            if idx == ci or (nbr_mask & (1 << idx)):
+                return 1
+        return best
+
+    starts = sorted(starts, key=lambda i: (_chess_proximity(i), -board.get_by_index(i).base_score, i))
+    starts = [i for i in starts if _chess_proximity(i) <= 2] or starts[:8]
+    per_start_visited = max(300, max_visited // max(1, len(starts)))
+    collected: list[list[int]] = []
+    collected_seen: set[tuple[int, ...]] = set()
+    per_start_cap = max(40, max_paths // max(1, len(starts)))
+    for start in starts:
+        seen: set[tuple[int, ...]] = set()
+        queue: list[tuple[list[int], int]] = [([start], 1 << start)]
+        head = 0
+        local_added = 0
+        while head < len(queue):
+            if len(seen) >= per_start_visited or local_added >= per_start_cap:
+                break
+            path, visited_mask = queue[head]
+            head += 1
+            key = tuple(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            if (
+                len(path) >= 3
+                and key not in collected_seen
+                and path_tiles_need_dictionary_resolve(board, path, flags=flags)
+                and path_movement_ok(board, path, flags=flags, loadout=loadout)
+            ):
+                collected_seen.add(key)
+                collected.append(list(path))
+                local_added += 1
+            if len(path) >= max_depth:
+                continue
+            nbr_mask = neighbors_mask(
+                board,
+                visited_mask,
+                cell_id=path[-1],
+                flags=flags,
+                graph_ctx=graph_ctx,
+                loadout=loadout,
+            )
+            nbrs = list(
+                _iter_expansion_neighbors(
+                    board,
+                    visited_mask,
+                    cell_id=path[-1],
+                    path=path,
+                    path_length=len(path),
+                    flags=flags,
+                    graph_ctx=graph_ctx,
+                    nbr_mask=nbr_mask,
+                )
+            )
+            nbrs.sort(
+                key=lambda idx: (
+                    0 if board.get_by_index(idx).curse in CHESS_CURSES else 1,
+                    -float(board.get_by_index(idx).base_score),
+                    idx,
+                )
+            )
+            for idx in nbrs[:12]:
+                if visited_mask & (1 << idx):
+                    continue
+                tile = board.get_by_index(idx)
+                if not tile_playable_for_path(tile):
+                    continue
+                if is_fraction_tile(tile) and not fraction_position_valid(
+                    tile, len(path), relaxed=False
+                ):
+                    continue
+                queue.append((path + [idx], visited_mask | (1 << idx)))
+    def _probe_rank(path: list[int]) -> tuple:
+        chess_hits = sum(
+            1 for idx in path if board.get_by_index(idx).curse in CHESS_CURSES
+        )
+        base = sum(float(board.get_by_index(idx).base_score) for idx in path)
+        return (len(path), -chess_hits, -base, path)
+
+    per_start_bucket: dict[int, list[list[int]]] = {}
+    for path in collected:
+        per_start_bucket.setdefault(path[0], []).append(path)
+    diversified: list[list[int]] = []
+    per_start_take = max(5, max_paths // max(1, len(starts)))
+    for start in starts:
+        paths = sorted(per_start_bucket.get(start, []), key=_probe_rank)
+        diversified.extend(paths[:per_start_take])
+    diversified.sort(key=_probe_rank)
+    return diversified[:max_paths]
+
+
+def _dict_resolve_probe_prefixes(
+    board: Board,
+    loadout: Loadout,
+    *,
+    max_depth: int = 8,
+) -> list[list[int]]:
+    """Probe dict-resolve boundary prefixes for fraction+chess or sparse-chess boards."""
+    if any(is_fraction_tile(t) for t in board.flat) and _chess_tile_count(board) >= 3:
+        return _probe_fraction_chess_prefixes(
+            board, loadout, max_depth=max_depth
+        )
+    if _dict_resolve_per_seed_viable(board) and _chess_tile_count(board) >= 2:
+        return _probe_chess_dict_resolve_prefixes(
+            board, loadout, max_depth=max_depth
+        )
+    return []
+
+
 def neighbors_standard_mask(
     board: Board,
     cell_id: int,
@@ -2382,6 +2530,7 @@ def _shortest_path_between_indices(
     max_len: int,
     *,
     flags: SearchFlagsMask = 0,
+    forbidden_mask: int = 0,
 ) -> list[int] | None:
     """BFS shortest acyclic path from start to end (for joker-pair seeding)."""
     if start == end:
@@ -2397,13 +2546,120 @@ def _shortest_path_between_indices(
         last = path[-1]
         if last == end:
             return path
-        visited_mask = sum(1 << idx for idx in path)
+        visited_mask = sum(1 << idx for idx in path) | forbidden_mask
         for nbr in neighbors_from_tile(board, path, visited_mask, flags=flags):
-            if nbr in visited:
+            if nbr in visited or forbidden_mask & (1 << nbr):
                 continue
             visited.add(nbr)
             queue.append(path + [nbr])
     return None
+
+
+def _bridge_number_run_score(board: Board, path: list[int]) -> int:
+    """Longest run of consecutive integer number tiles along path."""
+    values: list[int] = []
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if is_number_like_tile(tile) and tile.number_value is not None:
+            values.append(int(tile.number_value))
+    if not values:
+        return 0
+    best = cur = 1
+    for i in range(1, len(values)):
+        if values[i] == values[i - 1] + 1:
+            cur += 1
+        else:
+            best = max(best, cur)
+            cur = 1
+    return max(best, cur)
+
+
+def _bridge_rank(
+    board: Board,
+    path: list[int],
+    *,
+    prefer_number_bridges: bool,
+) -> tuple[int, int, int, int]:
+    number_count = sum(
+        1 for idx in path if is_number_like_tile(board.get_by_index(idx))
+    )
+    letter_count = sum(
+        1
+        for idx in path
+        if board.get_by_index(idx).curse == CurseType.LETTER
+    )
+    tile_sum = sum(
+        int(board.get_by_index(idx).base_score)
+        for idx in path
+        if board.get_by_index(idx).curse != CurseType.ITEM
+    )
+    if prefer_number_bridges:
+        return (
+            len(path),
+            letter_count,
+            _bridge_number_run_score(board, path),
+            number_count,
+            tile_sum,
+        )
+    return (len(path), letter_count, number_count, tile_sum)
+
+
+def _bridge_between_indices(
+    board: Board,
+    start: int,
+    end: int,
+    max_len: int,
+    *,
+    flags: SearchFlagsMask,
+    prefer_number_bridges: bool = False,
+    forbidden_mask: int = 0,
+    rich_detour: bool | None = None,
+) -> list[int] | None:
+    """Bridge start→end; optionally prefer richer detours through number/letter tiles."""
+    shortest = _shortest_path_between_indices(
+        board,
+        start,
+        end,
+        max_len,
+        flags=flags,
+        forbidden_mask=forbidden_mask,
+    )
+    if shortest is None:
+        return None
+    use_rich = (
+        prefer_number_bridges
+        if rich_detour is None
+        else rich_detour
+    )
+    if not use_rich:
+        return shortest
+    from collections import deque
+
+    limit = min(max_len, len(shortest) + 1)
+
+    queue: deque[list[int]] = deque([[start]])
+    best = shortest
+    best_rank = _bridge_rank(
+        board, shortest, prefer_number_bridges=prefer_number_bridges
+    )
+    while queue:
+        path = queue.popleft()
+        if len(path) > limit:
+            continue
+        if path[-1] == end:
+            rank = _bridge_rank(
+                board, path, prefer_number_bridges=prefer_number_bridges
+            )
+            if rank > best_rank:
+                best = path
+                best_rank = rank
+            continue
+        visited_mask = sum(1 << idx for idx in path) | forbidden_mask
+        for nbr in neighbors_from_tile(board, path, visited_mask, flags=flags):
+            if forbidden_mask & (1 << nbr):
+                continue
+            queue.append(path + [nbr])
+    return best
 
 
 def _min_steps_to_index(
@@ -2812,6 +3068,7 @@ def _chess_cap_start_indices(chess_starts: list[int]) -> list[int]:
 _SMALL_BOARD_HAMILTONIAN_MAX = 9
 _SCATTERED_ITEM_COVER_MAX_PATHS = 48
 _SCATTERED_ITEM_DENSE_MIN = 6
+_SCATTERED_ITEM_VARY_MIN = 2
 _WILDCARD_DENSE_MIN = 4
 
 
@@ -2890,7 +3147,12 @@ def _scattered_item_cover_paths(
         )
         return sum(1 for nbr in iter_mask(mask) if nbr in item_set)
 
-    starts = sorted(item_indices, key=lambda i: (-item_neighbor_count(i), i))
+    starts = sorted(
+        list(dict.fromkeys(item_indices + _scatter_adjacent_letter_starts(
+            board, item_indices, flags=flags
+        ))),
+        key=lambda i: (-item_neighbor_count(i), i),
+    )
     best_heap: list[tuple[tuple[int, int, int], list[int]]] = []
 
     def maybe_keep(path: list[int], items_hit: int) -> None:
@@ -2930,8 +3192,6 @@ def _scattered_item_cover_paths(
                 maybe_keep(path, items_hit)
             if plen >= max_len:
                 continue
-            if items_mask == item_mask_full and plen >= min_len:
-                continue
             cell = path[-1]
             nbr_mask = neighbors_mask(
                 board,
@@ -2962,6 +3222,84 @@ def _scattered_item_cover_paths(
     return [path for _, path in sorted(best_heap)]
 
 
+def _scatter_adjacent_letter_starts(
+    board: Board,
+    item_indices: list[int],
+    *,
+    flags: SearchFlagsMask,
+) -> list[int]:
+    """Active letter tiles adjacent to scattered grid items (prefix seeds)."""
+    item_set = frozenset(item_indices)
+    starts: list[int] = []
+    seen: set[int] = set()
+    for item_idx in item_indices:
+        for nbr in neighbors_from_tile(board, [item_idx], item_set, flags=flags):
+            if nbr in seen:
+                continue
+            tile = board.get_by_index(nbr)
+            if tile.curse == CurseType.LETTER:
+                seen.add(nbr)
+                starts.append(nbr)
+    return starts
+
+
+def _extend_scatter_tour_path(
+    board: Board,
+    path: list[int],
+    max_len: int,
+    *,
+    flags: SearchFlagsMask,
+) -> list[int]:
+    """Grow an item tour with letter prefixes and number suffixes."""
+    if not path or len(path) >= max_len:
+        return list(path)
+    extended = list(path)
+    visited = set(extended)
+
+    if board.get_by_index(extended[0]).curse == CurseType.ITEM:
+        while len(extended) < max_len:
+            nbrs = neighbors_from_tile(board, [extended[0]], visited, flags=flags)
+            letter_nbrs = [
+                n for n in nbrs if board.get_by_index(n).curse == CurseType.LETTER
+            ]
+            if not letter_nbrs:
+                break
+            extended.insert(0, letter_nbrs[0])
+            visited.add(letter_nbrs[0])
+
+    suffix_numbers = 0
+    had_numbers = any(
+        is_number_like_tile(board.get_by_index(idx)) for idx in extended
+    )
+    while len(extended) < max_len:
+        nbrs = neighbors_from_tile(board, extended, visited, flags=flags)
+        if not nbrs:
+            break
+        next_candidates = [
+            n
+            for n in nbrs
+            if board.get_by_index(n).curse
+            in (CurseType.NUMBER, CurseType.LETTER, CurseType.ITEM)
+        ]
+        if not next_candidates:
+            break
+        next_candidates.sort(
+            key=lambda n: (
+                0 if is_number_like_tile(board.get_by_index(n)) else 1,
+                -int(board.get_by_index(n).base_score),
+            )
+        )
+        nxt = next_candidates[0]
+        extended.append(nxt)
+        visited.add(nxt)
+        if is_number_like_tile(board.get_by_index(nxt)):
+            suffix_numbers += 1
+            if had_numbers and suffix_numbers >= 1:
+                break
+
+    return extended
+
+
 def _greedy_scattered_item_tour_paths(
     board: Board,
     item_indices: list[int],
@@ -2970,10 +3308,13 @@ def _greedy_scattered_item_tour_paths(
     *,
     flags: SearchFlagsMask,
     deadline: float,
+    prefer_number_bridges: bool = False,
 ) -> list[list[int]]:
-    """Fast item tours by chaining shortest paths between scattered tiles."""
+    """Fast item tours by chaining bridges between scattered tiles."""
     if len(item_indices) < 2 or max_len < min_len:
         return []
+    from itertools import permutations
+
     item_set = frozenset(item_indices)
     tours: list[list[int]] = []
     seen_tours: set[tuple[int, ...]] = set()
@@ -2987,39 +3328,66 @@ def _greedy_scattered_item_tour_paths(
         seen_tours.add(key)
         tours.append(path)
 
-    for start in item_indices:
+    start_candidates: list[int] = []
+    seen_starts: set[int] = set()
+    for idx in list(item_indices) + _scatter_adjacent_letter_starts(
+        board, item_indices, flags=flags
+    ):
+        if idx not in seen_starts:
+            seen_starts.add(idx)
+            start_candidates.append(idx)
+
+    def build_tour(start: int, item_order: list[int]) -> list[int] | None:
+        if start in item_set:
+            ordered = [start] + [i for i in item_order if i != start]
+        else:
+            ordered = [start, *item_order]
+        path = [ordered[0]]
+        for step, target in enumerate(ordered[1:], start=1):
+            forbidden = sum(1 << idx for idx in path[:-1])
+            start_tile = board.get_by_index(path[-1])
+            end_tile = board.get_by_index(target)
+            rich = (
+                prefer_number_bridges
+                and start_tile.curse == CurseType.ITEM
+                and end_tile.curse == CurseType.ITEM
+            )
+            bridge = _bridge_between_indices(
+                board,
+                path[-1],
+                target,
+                max_len - len(path) + 1,
+                flags=flags,
+                prefer_number_bridges=prefer_number_bridges,
+                forbidden_mask=forbidden,
+                rich_detour=rich,
+            )
+            if bridge is None or len(bridge) < 2:
+                return None
+            ext = bridge[1:]
+            if any(idx in path for idx in ext):
+                return None
+            if len(path) + len(ext) > max_len:
+                return None
+            path.extend(ext)
+        return path
+
+    for start in start_candidates:
         if time.monotonic() >= deadline:
             break
-        remaining = [i for i in item_indices if i != start]
-        path = [start]
-        cur = start
-        visited_items = {start}
-        while remaining and len(path) < max_len:
-            best_target: int | None = None
-            best_ext: list[int] | None = None
-            for target in remaining:
-                bridge = _shortest_path_between_indices(
-                    board,
-                    cur,
-                    target,
-                    max_len - len(path) + 1,
-                    flags=flags,
-                )
-                if bridge is None or len(bridge) < 2:
-                    continue
-                ext = bridge[1:]
-                if len(path) + len(ext) > max_len:
-                    continue
-                if best_ext is None or len(ext) < len(best_ext):
-                    best_ext = ext
-                    best_target = target
-            if best_target is None or best_ext is None:
+        if start in item_set:
+            others = [i for i in item_indices if i != start]
+            perm_iter = (
+                (start, *perm) for perm in permutations(others, len(others))
+            )
+        else:
+            perm_iter = permutations(item_indices, len(item_indices))
+        for item_order in perm_iter:
+            if time.monotonic() >= deadline:
                 break
-            path.extend(best_ext)
-            cur = path[-1]
-            visited_items.add(cur)
-            remaining = [i for i in remaining if i not in visited_items]
-        add_tour(path)
+            path = build_tour(start, list(item_order))
+            if path is not None:
+                add_tour(path)
 
     return tours
 
@@ -3051,6 +3419,38 @@ def _dfs_starts_for_cap(
 
 def _chess_tile_count(board: Board) -> int:
     return sum(1 for t in board.flat if is_chess_piece(t))
+
+
+def _scattered_grid_item_indices(board: Board) -> list[int]:
+    """Active scattered grid item tile indices."""
+    out: list[int] = []
+    for idx in _active_indices(board):
+        tile = board.get_by_index(idx)
+        if tile.curse != CurseType.ITEM:
+            continue
+        if str((tile.metadata or {}).get("scattered_item_id") or "").strip():
+            out.append(idx)
+    return out
+
+
+def _scattered_grid_item_count(board: Board) -> int:
+    return len(_scattered_grid_item_indices(board))
+
+
+def _dict_resolve_per_seed_viable(board: Board) -> bool:
+    """True when per-seed dict-resolve extend should run (chess + resolve-heavy board)."""
+    has_resolve_board = (
+        any(is_fraction_tile(t) for t in board.flat)
+        or _scattered_grid_item_count(board) > 0
+        or any(is_number_like_tile(t) for t in board.flat)
+    )
+    if not has_resolve_board:
+        return False
+    if any(is_fraction_tile(t) for t in board.flat) and _chess_tile_count(board) >= 3:
+        return True
+    if _chess_tile_count(board) >= 2 and has_resolve_board:
+        return True
+    return False
 
 
 def _chess_prefix_budget_sec(board: Board) -> float:
@@ -3517,7 +3917,7 @@ class WordSearcher:
         if getattr(self, "_run_until_found", False):
             return False
         if deadline is None and self._active_deadline is None:
-            return True
+            return False
         return False
 
     def _remaining_f8_sec(self) -> float:
@@ -4983,10 +5383,13 @@ class WordSearcher:
 
             def add_paths(candidates_paths: list[list[int]]) -> None:
                 for path in candidates_paths:
-                    key = tuple(path)
+                    extended = _extend_scatter_tour_path(
+                        board, path, cover_cap, flags=stamp_flags
+                    )
+                    key = tuple(extended)
                     if key not in seen_paths:
                         seen_paths.add(key)
-                        paths.append(path)
+                        paths.append(extended)
 
             greedy_deadline = min(
                 deadline, gather_start + min(4.0, self.time_budget * 0.1)
@@ -4999,11 +5402,16 @@ class WordSearcher:
                     cover_cap,
                     flags=stamp_flags,
                     deadline=greedy_deadline,
+                    prefer_number_bridges=any(
+                        is_number_like_tile(board.get_by_index(i))
+                        for i in _active_indices(board)
+                    ),
                 )
             )
             if len(item_indices) < _SCATTERED_ITEM_DENSE_MIN:
+                cover_budget = min(3.0, self.time_budget * 0.08)
                 cover_deadline = min(
-                    deadline, gather_start + min(8.0, self.time_budget * 0.15)
+                    deadline, gather_start + cover_budget
                 )
                 if time.monotonic() < cover_deadline:
                     add_paths(
@@ -5017,7 +5425,11 @@ class WordSearcher:
                             deadline=cover_deadline,
                         )
                     )
-            if len(item_indices) >= _SCATTERED_ITEM_DENSE_MIN:
+            prefer_long_paths = len(item_indices) >= _SCATTERED_ITEM_DENSE_MIN or any(
+                is_number_like_tile(board.get_by_index(i))
+                for i in _active_indices(board)
+            )
+            if prefer_long_paths:
                 paths.sort(key=len, reverse=True)
             else:
                 paths.sort(key=len)
@@ -5554,24 +5966,22 @@ class WordSearcher:
         *,
         deadline: float | None = None,
     ) -> None:
-        """Probe fraction→chess branches and seed word-boundary paths into the heap."""
+        """Probe dict-resolve boundary paths and seed them into the heap."""
         if self.max_len <= self.min_len:
             return
         if deadline is not None and time.monotonic() >= deadline:
             return
-        if not any(is_fraction_tile(t) for t in board.flat):
-            return
-        if _chess_tile_count(board) < 3:
-            return
-        stamp_flags = self._search_ctx(loadout).search_flags
         probe_depth = min(8, self.max_len)
-        probe_paths = _probe_fraction_chess_prefixes(
+        probe_paths = _dict_resolve_probe_prefixes(
             board, loadout, max_depth=probe_depth
         )
-        probe_paths.sort(key=len, reverse=True)
+        if not probe_paths:
+            return
+        stamp_flags = self._search_ctx(loadout).search_flags
+        add_cap = 40 if _dict_resolve_per_seed_viable(board) else 20
         added = 0
         for path in probe_paths:
-            if added >= 20:
+            if added >= add_cap:
                 break
             if deadline is not None and time.monotonic() >= deadline:
                 break
@@ -5613,9 +6023,7 @@ class WordSearcher:
         long_seeds = [entry for entry in seeds if len(entry[2]) >= 4]
         if long_seeds:
             seeds = long_seeds
-        use_per_seed = any(
-            is_fraction_tile(t) for t in board.flat
-        ) and _chess_tile_count(board) >= 3
+        use_per_seed = _dict_resolve_per_seed_viable(board)
         if use_per_seed:
             # Shortest resolve boundaries extend furthest; prefer them over
             # longer heap leaders that cannot reach buzzsaw-length paths.
@@ -5626,7 +6034,7 @@ class WordSearcher:
             probe_mandatory: list[tuple[float, str, tuple[int, ...]]] = []
             stamp_flags = self._search_ctx(loadout).search_flags
             probe_depth = min(8, self.max_len)
-            for path in _probe_fraction_chess_prefixes(
+            for path in _dict_resolve_probe_prefixes(
                 board, loadout, max_depth=probe_depth
             ):
                 if len(path) < self.min_len or len(path) >= self.max_len:
@@ -5671,7 +6079,12 @@ class WordSearcher:
             )
         remaining = self._remaining_f8_sec()
         if remaining < float("inf"):
-            bounded = time.monotonic() + min(6.0, max(0.0, remaining))
+            resolve_slice = 6.0
+            if _dict_resolve_per_seed_viable(board) and not any(
+                is_fraction_tile(t) for t in board.flat
+            ):
+                resolve_slice = 10.0 if self.time_budget >= 30.0 else 7.0
+            bounded = time.monotonic() + min(resolve_slice, max(0.0, remaining))
             resolve_cap = (
                 min(resolve_cap, bounded) if resolve_cap is not None else bounded
             )
@@ -5679,13 +6092,24 @@ class WordSearcher:
             return
         deadline = resolve_cap
         if use_per_seed:
-            seed_cap = 12 if self.time_budget >= 30.0 else 8
+            seed_cap = 20 if self.time_budget >= 30.0 else 12
+            if _dict_resolve_per_seed_viable(board) and not any(
+                is_fraction_tile(t) for t in board.flat
+            ):
+                seed_cap = 24 if self.time_budget >= 30.0 else 16
             seeds = seeds[:seed_cap]
             per_seed_rounds = min(self.max_len - self.min_len, 16)
             boundaries_budget = min(
                 10.0 if self.time_budget >= 30.0 else 6.0,
                 self.time_budget * 0.18,
             )
+            if _dict_resolve_per_seed_viable(board) and not any(
+                is_fraction_tile(t) for t in board.flat
+            ):
+                boundaries_budget = min(
+                    12.0 if self.time_budget >= 30.0 else 8.0,
+                    self.time_budget * 0.22,
+                )
             boundaries_end = time.monotonic() + boundaries_budget
             if deadline is not None and deadline > time.monotonic():
                 boundaries_end = min(boundaries_end, deadline)
@@ -5776,12 +6200,8 @@ class WordSearcher:
         *,
         deadline: float | None = None,
     ) -> None:
-        """Extend shortest fraction→chess probe paths in isolation (bazz→buzzsaw)."""
+        """Extend shortest dict-resolve probe paths in isolation (bazz→buzzsaw)."""
         if self.max_len <= self.min_len:
-            return
-        if not any(is_fraction_tile(t) for t in board.flat):
-            return
-        if _chess_tile_count(board) < 3:
             return
         budget = min(
             15.0 if self.time_budget >= 30.0 else 7.0,
@@ -5798,7 +6218,7 @@ class WordSearcher:
             stamp_flags = self._search_ctx(loadout).search_flags
             probe_depth = min(8, self.max_len)
             probe_paths = sorted(
-                _probe_fraction_chess_prefixes(
+                _dict_resolve_probe_prefixes(
                     board, loadout, max_depth=probe_depth
                 ),
                 key=len,
@@ -5927,9 +6347,10 @@ class WordSearcher:
                     if key in seen_prefixes:
                         continue
                     seen_prefixes.add(key)
-                    if path_tiles_need_dictionary_resolve(
+                    seed_needs_dict_resolve = path_tiles_need_dictionary_resolve(
                         board, path, flags=stamp_flags
-                    ):
+                    )
+                    if seed_needs_dict_resolve:
                         seed_lower = search_word_from_path(
                             board, path, flags=stamp_flags
                         ).lower()
@@ -5980,6 +6401,48 @@ class WordSearcher:
                         ):
                             continue
                         path.append(idx)
+                        if seed_needs_dict_resolve:
+                            from cursed_words_solver.suggestion import (
+                                _valid_dictionary_words_for_path,
+                                path_is_submittable,
+                            )
+
+                            search_word = search_word_from_path(
+                                board, path, flags=stamp_flags
+                            )
+                            if len(search_word) >= self.min_len:
+                                valid = _valid_dictionary_words_for_path(
+                                    board,
+                                    path,
+                                    search_word,
+                                    loadout,
+                                    self.dictionary,
+                                    min_len=self.min_len,
+                                    limit=1,
+                                )
+                                if valid:
+                                    score_word = valid[0]
+                                    if path_is_submittable(
+                                        board,
+                                        path,
+                                        score_word,
+                                        loadout,
+                                        self.dictionary,
+                                        min_len=self.min_len,
+                                    ):
+                                        if self._consider_path_candidate(
+                                            board,
+                                            loadout,
+                                            candidates,
+                                            path,
+                                            score_word,
+                                            stamp_flags,
+                                            score_path,
+                                            resolved_word=score_word,
+                                        ):
+                                            extended = True
+                            path.pop()
+                            continue
                         token = resolve_letter(tile, prefix_len, flags=stamp_flags)
                         next_has_digit = seed_has_digit or any(
                             c.isdigit() for c in token
@@ -6084,6 +6547,158 @@ class WordSearcher:
         finally:
             self._active_deadline = prev_deadline
 
+    def _augment_scattered_item_leaders(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        deadline: float | None,
+    ) -> None:
+        """Grow short item-path leaders with letter prefixes and number suffixes."""
+        scatter_indices = _scattered_grid_item_indices(board)
+        if len(scatter_indices) < _SCATTERED_ITEM_VARY_MIN:
+            return
+        if deadline is not None and time.monotonic() >= deadline:
+            return
+        scatter_set = frozenset(scatter_indices)
+        ctx = self._search_ctx(loadout)
+        base_flags = ctx.search_flags
+        from cursed_words_solver.suggestion import (
+            _valid_dictionary_words_for_path,
+            path_is_submittable,
+        )
+
+        def touches_scatter(path: list[int]) -> bool:
+            for idx in path:
+                if idx in scatter_set:
+                    return True
+                tile = board.get_by_index(idx)
+                if tile.curse == CurseType.ITEM and str(
+                    (tile.metadata or {}).get("scattered_item_id") or ""
+                ).strip():
+                    return True
+            return False
+
+        def try_path(path: list[int]) -> None:
+            if len(path) < self.min_len or len(path) > self.max_len:
+                return
+            path_flags = path_scattered_search_flags_mask(
+                board, path, base_flags, self.scoring.rules
+            )
+            if not path_movement_ok(board, path, flags=path_flags, loadout=loadout):
+                return
+            search_word = search_word_from_path(
+                board, path, flags=path_flags
+            )
+            valid = _valid_dictionary_words_for_path(
+                board,
+                path,
+                search_word,
+                loadout,
+                self.dictionary,
+                min_len=self.min_len,
+                limit=1,
+            )
+            if not valid:
+                return
+            score_word = valid[0]
+            if not path_is_submittable(
+                board,
+                path,
+                score_word,
+                loadout,
+                self.dictionary,
+                min_len=self.min_len,
+            ):
+                return
+            rank_sc = self._rank_score_for_candidate(
+                board,
+                path,
+                score_word,
+                loadout,
+                prune_heap=candidates,
+                resolved_word=score_word,
+            )
+            if rank_sc is not None:
+                candidates.consider(rank_sc, score_word, path)
+
+        def extend_from_path(path: list[int]) -> None:
+            if len(path) >= self.max_len:
+                try_path(path)
+                return
+            mini = _CandidateHeap(80)
+            path_flags = path_scattered_search_flags_mask(
+                board, path, base_flags, self.scoring.rules
+            )
+            search_word = search_word_from_path(board, path, flags=path_flags)
+            rank_sc = self._rank_score_for_candidate(
+                board, path, search_word, loadout
+            )
+            mini.consider(rank_sc or 0.0, search_word, path)
+            resolve_seeds = self._dictionary_resolve_extension_seeds(
+                board, loadout, mini
+            )
+            extend_rounds = min(
+                8, self.max_len - len(path), self.max_len - self.min_len
+            )
+            self._extend_top_candidates(
+                board,
+                loadout,
+                mini,
+                top_paths=20,
+                max_rounds=extend_rounds,
+                extra_seeds=resolve_seeds or None,
+                deadline=deadline,
+            )
+            for ext_sc, ext_word, ext_path in mini.best_sorted():
+                candidates.consider(ext_sc, ext_word, list(ext_path))
+
+        prev_deadline = self._active_deadline
+        if deadline is not None:
+            self._active_deadline = deadline
+        try:
+            seen: set[tuple[int, ...]] = set()
+            seed_paths: list[list[int]] = []
+            for _score, _word, path_tuple in list(candidates.best_sorted()[:24]):
+                seed_paths.append(list(path_tuple))
+            for _score, _word, path_tuple in self._dictionary_resolve_extension_seeds(
+                board, loadout, candidates
+            )[:12]:
+                seed_paths.append(list(path_tuple))
+            extend_calls = 0
+            max_extend_calls = 6
+            for path in seed_paths:
+                if self._deadline_reached(deadline):
+                    break
+                if not touches_scatter(path):
+                    continue
+                variants: list[list[int]] = [path]
+                item_start = board.get_by_index(path[0]).curse == CurseType.ITEM
+                if item_start and len(path) <= 6:
+                    visited = set(path)
+                    for nbr in neighbors_from_tile(
+                        board, [path[0]], visited, flags=base_flags
+                    ):
+                        tile = board.get_by_index(nbr)
+                        if tile.curse == CurseType.LETTER:
+                            variants.append([nbr] + path)
+                for variant in variants:
+                    key = tuple(variant)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    try_path(variant)
+                    if (
+                        item_start
+                        and len(variant) <= 6
+                        and len(variant) < self.max_len
+                        and extend_calls < max_extend_calls
+                    ):
+                        extend_from_path(variant)
+                        extend_calls += 1
+        finally:
+            self._active_deadline = prev_deadline
+
     def _vary_scattered_item_path_endpoints(
         self,
         board: Board,
@@ -6092,12 +6707,7 @@ class WordSearcher:
         deadline: float | None,
     ) -> None:
         """Prepend/append item-tile variants of strong scattered-item paths."""
-        item_count = (
-            self._graph_ctx.item_mask.bit_count()
-            if self._graph_ctx is not None
-            else 0
-        )
-        if item_count < _SCATTERED_ITEM_DENSE_MIN:
+        if _scattered_grid_item_count(board) < _SCATTERED_ITEM_VARY_MIN:
             return
         if deadline is not None and time.monotonic() >= deadline:
             return
@@ -8950,6 +9560,33 @@ class WordSearcher:
                     candidates,
                     deadline=phase_extend_deadline,
                 )
+            if (
+                not self._f8_expired()
+                and _dict_resolve_per_seed_viable(board)
+                and not any(is_fraction_tile(t) for t in board.flat)
+                and time.monotonic() < phase_extend_deadline
+            ):
+                remaining_f8 = self._remaining_f8_sec()
+                first_budget = min(
+                    10.0 if self.time_budget >= 30.0 else 6.0,
+                    max(4.0, remaining_f8 * 0.5),
+                    max(0.0, phase_extend_deadline - time.monotonic()),
+                )
+                if first_budget >= 2.0:
+                    first_deadline = time.monotonic() + first_budget
+                    self._extend_dictionary_resolve_boundaries(
+                        board,
+                        loadout,
+                        candidates,
+                        deadline=first_deadline,
+                    )
+                    if time.monotonic() < first_deadline:
+                        self._guarantee_fraction_chess_probe_extensions(
+                            board,
+                            loadout,
+                            candidates,
+                            deadline=first_deadline,
+                        )
             if not self._f8_expired():
                 self._extend_top_candidates(
                     board,
@@ -8967,8 +9604,8 @@ class WordSearcher:
                 and not (parallel_dfs_fast and curse_heavy)
             ):
                 resolve_deadline = phase_extend_deadline
-                if extension_reserve > 0 and not (
-                    has_fraction_tiles and _chess_tile_count(board) >= 3
+                if extension_reserve > 0 and not _dict_resolve_per_seed_viable(
+                    board
                 ):
                     resolve_deadline = min(
                         phase_extend_deadline,
@@ -8989,7 +9626,17 @@ class WordSearcher:
                     deadline=phase_extend_deadline,
                 )
             if (
-                item_count >= _SCATTERED_ITEM_DENSE_MIN
+                _scattered_grid_item_count(board) >= _SCATTERED_ITEM_VARY_MIN
+                and time.monotonic() < phase_extend_deadline
+            ):
+                self._augment_scattered_item_leaders(
+                    board,
+                    loadout,
+                    candidates,
+                    deadline=phase_extend_deadline,
+                )
+            if (
+                _scattered_grid_item_count(board) >= _SCATTERED_ITEM_VARY_MIN
                 and time.monotonic() < phase_extend_deadline
             ):
                 self._vary_scattered_item_path_endpoints(
@@ -9084,9 +9731,7 @@ class WordSearcher:
             timing.extend_sec += time.monotonic() - post_extend_start
 
         if self.max_len > self.min_len and len(candidates) > 0 and not self._f8_expired():
-            if any(is_fraction_tile(t) for t in board.flat) and _chess_tile_count(
-                board
-            ) >= 3:
+            if _dict_resolve_per_seed_viable(board):
                 final_resolve_deadline = resolve_phase_deadline
                 if f8_deadline is not None:
                     final_resolve_deadline = min(final_resolve_deadline, f8_deadline)

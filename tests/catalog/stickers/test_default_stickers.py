@@ -15,6 +15,7 @@ from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.rule_lookup import count_scoring_items, slugify_name
 from cursed_words_solver.rules.scoring_conditions import (
     currency_letter_value,
+    dusty_coffin_void_units,
     evaluate_sticker_condition,
     grid_path_sticker_level,
     money_for_scoring,
@@ -311,6 +312,86 @@ def test_dusty_coffin_uses_only_unused_void_tiles_mismatch_shape():
     base, _ = pipeline.score(board, path, "megabyte", Loadout())
     assert bd["word_score"] == 8
     assert score == base + 8
+
+
+def test_dusty_coffin_colorless_grid_scatter_does_not_count_coffin_face_zags():
+    """20260709 zags: grid dusty on path, 2 off-path void letters → 16 word bonus, score 46."""
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from tests.regression.test_scoring_mismatches import (
+        FIXTURES,
+        _replay_path,
+        _run_state_for_replay,
+    )
+
+    data = json.loads((FIXTURES / "20260709_142013.json").read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = _replay_path(board, data["path"])
+    word = data["word"]
+
+    n = dusty_coffin_void_units(
+        board,
+        word,
+        loadout,
+        applying_sticker_id="dusty_coffin",
+        path=path,
+        from_grid_scatter=True,
+    )
+    assert n == 2
+
+    score, _ = ScoringPipeline().score(board, path, word, loadout)
+    assert int(score) == int(data["actual_score"]) == 46
+
+
+def _dusty_colorless_grid_replay(fixture_name: str, *, expected_units: int, expected_score: int):
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from tests.regression.test_scoring_mismatches import (
+        FIXTURES,
+        _replay_path,
+        _run_state_for_replay,
+    )
+
+    data = json.loads((FIXTURES / fixture_name).read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = _replay_path(board, data["path"])
+    word = data["word"]
+
+    n = dusty_coffin_void_units(
+        board,
+        word,
+        loadout,
+        applying_sticker_id="dusty_coffin",
+        path=path,
+        from_grid_scatter=True,
+    )
+    assert n == expected_units
+
+    score, _ = ScoringPipeline().score(board, path, word, loadout)
+    assert int(score) == expected_score == int(data["actual_score"])
+
+
+def test_dusty_coffin_colorless_grid_scatter_effuse_six_units():
+    """20260709 effuse: 3 off-path voids doubled → +48 word, score 118."""
+    _dusty_colorless_grid_replay(
+        "20260709_144215.json", expected_units=6, expected_score=118
+    )
+
+
+def test_dusty_coffin_colorless_grid_scatter_opts_six_units():
+    """20260709 opts: 3 off-path voids doubled → +48 word, score 138."""
+    _dusty_colorless_grid_replay(
+        "20260709_144650.json", expected_units=6, expected_score=138
+    )
+
+
+def test_dusty_coffin_colorless_grid_scatter_pakapoo_coffin_face():
+    """20260709 pakapoo: off-path N + coffin face N → 2 units, score 138."""
+    _dusty_colorless_grid_replay(
+        "20260709_145336.json", expected_units=2, expected_score=138
+    )
 
 
 def test_pneumonia_counts_path_letter_vowels_not_dictionary_or_currency():

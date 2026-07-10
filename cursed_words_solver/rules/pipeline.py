@@ -2449,6 +2449,17 @@ class ScoringPipeline:
                 bonus_each = wad_of_cash_currency_bonus(loadout, rule)
             total_bonus = 0
             if target == "void_adjacent":
+                void_level = level
+                if (
+                    applying_sticker_id == "tombstone"
+                    and state.get("_applying_grid_path_scatter")
+                    and number_tile_count_on_path(board, path) > 0
+                    and loadout is not None
+                ):
+                    from cursed_words_solver.rules.scoring_conditions import grid_number
+
+                    void_level = max(level, grid_number(loadout))
+                void_bonus_each = sticker_rule_int(void_level, rule)
                 for i, idx in enumerate(path):
                     tile = board.get_by_index(idx)
                     n_void = adjacent_void_count(
@@ -2459,7 +2470,7 @@ class ScoringPipeline:
                         search_flags=state.get("_search_flags", 0),
                     )
                     if n_void:
-                        add = bonus_each * n_void
+                        add = void_bonus_each * n_void
                         state["tile_scores"][i] += add
                         total_bonus += add
                 if total_bonus:

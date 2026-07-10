@@ -187,3 +187,58 @@ def test_stamp_album_from_catalog_stamp_prices():
     score_album, _ = pipeline.score(board, [0], "x", with_album)
     score_stamps, _ = pipeline.score(board, [0], "x", stamps_only)
     assert score_album - score_stamps == 20
+
+
+def test_grid_path_tombstone_uses_retro_raider_level_without_equip():
+    """20260709 attend: grid tombstone L1 export scores at Retro Raider L2."""
+    import json
+    from pathlib import Path
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
+    from tests.regression.test_scoring_mismatches import (
+        FIXTURES,
+        _replay_path,
+        _run_state_for_replay,
+    )
+
+    data = json.loads((FIXTURES / "20260709_144945.json").read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = _replay_path(board, data["path"])
+    tomb_idx = next(
+        i
+        for i, idx in enumerate(path)
+        if str((board.get_by_index(idx).metadata or {}).get("scattered_item_id") or "")
+        == "tombstone"
+    )
+    level = grid_path_sticker_level(
+        loadout,
+        "tombstone",
+        board=board,
+        path=path,
+        path_tile_index=tomb_idx,
+    )
+    assert level == 2
+
+
+def test_attend_grid_tombstone_retro_raider_replay_score_151():
+    """20260709 attend: +80 void-adjacent at L2, ×1.5 YG → 151."""
+    import json
+    from pathlib import Path
+
+    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+    from tests.regression.test_scoring_mismatches import (
+        FIXTURES,
+        _replay_path,
+        _run_state_for_replay,
+    )
+
+    data = json.loads((FIXTURES / "20260709_144945.json").read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = _replay_path(board, data["path"])
+    score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 151

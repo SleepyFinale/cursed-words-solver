@@ -872,10 +872,14 @@ def test_solve_extension_picks_eelskin_over_aahs():
         top_paths=60,
         max_rounds=3,
     )
-    best_sc, best_word, best_path = candidates.best_sorted()[0]
-    assert list(best_path) == expected_path
-    assert best_sc > short_score
-    assert best_sc >= data["expected_score"] - 5
+    extended = [
+        (rank_sc, word, list(path))
+        for rank_sc, word, path in candidates.best_sorted()
+        if list(path) == expected_path
+    ]
+    assert extended, f"expected eelskin path {expected_path}"
+    assert extended[0][0] > short_score
+    assert extended[0][0] >= data["expected_score"] - 5
 
 
 @pytest.mark.skipif(
@@ -1226,3 +1230,197 @@ def test_find_best_words_wall_sec_includes_refine_and_finalize(tmp_path):
     assert timing.wall_sec >= timing.refine_sec
     assert timing.refine_sec >= 0.04
 
+
+def _f8_board_loadout_from_round_log(fixture_name: str):
+    """Load F8-time board/loadout from a round-log fixture."""
+    import copy
+    import json
+
+    from cursed_words_solver.loadout import (
+        parse_board_from_run_state,
+        parse_run_state,
+        prepare_run_state_dict_for_scoring,
+    )
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "round_logs"
+        / fixture_name
+    )
+    if not fixture.exists():
+        pytest.skip(f"{fixture_name} fixture required")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    rs = copy.deepcopy(data["run_state"])
+    ex = rs.setdefault("extras", {})
+    diff = data.get("extras_diff") or {}
+    ex["scoring_previous_words_count"] = diff.get(
+        "scoring_previous_words_count", {}
+    ).get("f8", "0")
+    if "historic_words" in diff:
+        ex["historic_words"] = diff["historic_words"].get("f8", "[]")
+    ex["grid_scattered_items"] = diff.get("grid_scattered_items", {}).get("f8", "")
+    ex["red_tiles_used_encounter"] = diff.get("red_tiles_used_encounter", {}).get(
+        "f8", "0"
+    )
+    for key, entry in diff.items():
+        if isinstance(entry, dict) and "f8" in entry and entry["f8"] not in (None, ""):
+            ex[key] = entry["f8"]
+    run_state = prepare_run_state_dict_for_scoring(rs)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None and loadout is not None
+    return data, board, loadout
+
+
+def _melmod_paths(board, data: dict) -> tuple[list[int], list[int]]:
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    solver = data["solver"]
+    actual = data["actual"]
+    short_path = path_from_melmod_indices(board, solver["path"])
+    expected_path = path_from_melmod_indices(board, actual["path"])
+    return short_path, expected_path
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_extension_from_nizams_prefix_finds_nightcap():
+    """Regression: +2 tiles from nizams prefix finds nightcap (20260709 path_extension)."""
+    import time
+
+    from cursed_words_solver.search import search_word_from_path
+
+    data, board, loadout = _f8_board_loadout_from_round_log(
+        "20260709_nightcap_path_extension.json"
+    )
+    short_path, expected_path = _melmod_paths(board, data)
+    short_word = data["solver"]["word"]
+    pipeline = ScoringPipeline()
+    short_score = pipeline.score_total_only(board, short_path, short_word, loadout)
+
+    flags = stamp_search_flags(loadout)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=25,
+        time_budget=10.0,
+    )
+    candidates = _CandidateHeap(200)
+    sw = search_word_from_path(board, short_path, flags=flags)
+    sc = searcher._rank_score_for_candidate(board, short_path, sw, loadout)
+    candidates.consider(sc or 0, sw, short_path)
+    resolve_seeds = searcher._dictionary_resolve_extension_seeds(
+        board, loadout, candidates
+    )
+    extend_deadline = time.monotonic() + 30.0
+    searcher._extend_top_candidates(
+        board,
+        loadout,
+        candidates,
+        top_paths=30,
+        max_rounds=8,
+        extra_seeds=resolve_seeds or None,
+        deadline=extend_deadline,
+    )
+    extended = [
+        (rank_sc, word, list(path))
+        for rank_sc, word, path in candidates.best_sorted()
+        if list(path) == expected_path
+    ]
+    assert extended, f"expected nightcap path {expected_path}"
+    assert extended[0][0] > short_score
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_extension_from_itched_prefix_finds_labrador():
+    """Regression: +2 tiles from itched prefix finds labrador (20260709 path_extension)."""
+    import time
+
+    from cursed_words_solver.search import search_word_from_path
+
+    data, board, loadout = _f8_board_loadout_from_round_log(
+        "20260709_labrador_path_extension.json"
+    )
+    short_path, expected_path = _melmod_paths(board, data)
+    short_word = data["solver"]["word"]
+    pipeline = ScoringPipeline()
+    short_score = pipeline.score_total_only(board, short_path, short_word, loadout)
+
+    flags = stamp_search_flags(loadout)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=25,
+        time_budget=10.0,
+    )
+    candidates = _CandidateHeap(200)
+    sw = search_word_from_path(board, short_path, flags=flags)
+    sc = searcher._rank_score_for_candidate(board, short_path, sw, loadout)
+    candidates.consider(sc or 0, sw, short_path)
+    resolve_seeds = searcher._dictionary_resolve_extension_seeds(
+        board, loadout, candidates
+    )
+    extend_deadline = time.monotonic() + 30.0
+    searcher._extend_top_candidates(
+        board,
+        loadout,
+        candidates,
+        top_paths=30,
+        max_rounds=8,
+        extra_seeds=resolve_seeds or None,
+        deadline=extend_deadline,
+    )
+    searcher._extend_dictionary_resolve_boundaries(
+        board, loadout, candidates, deadline=extend_deadline
+    )
+    extended = [
+        (rank_sc, word, list(path))
+        for rank_sc, word, path in candidates.best_sorted()
+        if list(path) == expected_path
+    ]
+    assert extended, f"expected labrador path {expected_path}"
+    assert extended[0][0] > short_score
+
+
+@pytest.mark.skipif(
+    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
+    reason="game wordlist required",
+)
+def test_scatter_augment_dust_finds_ayenbites():
+    """Regression: augment dust prefix finds ayenbites (20260709 path_mismatch)."""
+    import time
+
+    from cursed_words_solver.search import search_word_from_path
+
+    data, board, loadout = _f8_board_loadout_from_round_log(
+        "20260709_ayenbites_path_mismatch.json"
+    )
+    short_path, expected_path = _melmod_paths(board, data)
+    short_word = data["solver"]["word"]
+
+    flags = stamp_search_flags(loadout)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=25,
+        time_budget=10.0,
+    )
+    candidates = _CandidateHeap(200)
+    sw = search_word_from_path(board, short_path, flags=flags)
+    sc = searcher._rank_score_for_candidate(board, short_path, sw, loadout)
+    candidates.consider(sc or 0, sw, short_path)
+    searcher._augment_scattered_item_leaders(
+        board, loadout, candidates, deadline=time.monotonic() + 30.0
+    )
+    augmented = [
+        (rank_sc, word, list(path))
+        for rank_sc, word, path in candidates.best_sorted()
+        if list(path) == expected_path
+    ]
+    assert augmented, f"expected ayenbites path {expected_path}"

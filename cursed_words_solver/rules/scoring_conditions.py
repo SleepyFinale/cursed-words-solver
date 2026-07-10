@@ -321,7 +321,8 @@ def placed_consumable_indices(board: Board) -> frozenset[int]:
 def is_cursed_tile(tile: Tile) -> bool:
     if tile.curse not in (CurseType.LETTER, CurseType.UNKNOWN):
         return True
-    if is_card_tile(tile):
+    # Go Fish suited letters on colorless tiles are not cursed for amulet-style bonuses.
+    if is_card_tile(tile) and tile.color not in NON_COLOUR_FOR_NUMBER_BONUS:
         return True
     return False
 
@@ -1826,28 +1827,26 @@ def dusty_coffin_void_units(
         and dusty_coffin_scattered_on_path(board, path)
         and not _dusty_coffin_equipped_in_loadout(loadout)
     ):
-        letters_in_word = set((word or "").lower())
-        void_letter_faces: set[str] = set()
-        count = 0
-        for tile in board.flat:
-            if tile.color != TileColor.VOID or tile.curse != CurseType.LETTER:
-                continue
-            count += 1
-            face = void_tile_face_for_dusty_coffin(tile) or path_letter_for_count(tile)
-            if face:
-                void_letter_faces.add(face.lower())
-        for idx in path:
-            tile = board.get_by_index(idx)
-            slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
-            if slug != "dusty_coffin" or tile.color == TileColor.VOID:
-                continue
-            face = path_letter_for_count(tile)
-            if (
-                face
-                and face.lower() not in letters_in_word
-                and face.lower() not in void_letter_faces
-            ):
-                count += 1
+        count = off_path_count
+        if off_path_count < 2:
+            letters_in_word = set((word or "").lower())
+            for idx in path:
+                tile = board.get_by_index(idx)
+                if tile.curse != CurseType.ITEM:
+                    continue
+                slug = (
+                    str((tile.metadata or {}).get("scattered_item_id") or "")
+                    .strip()
+                    .lower()
+                )
+                if slug != "dusty_coffin" or tile.color != TileColor.COLORLESS:
+                    continue
+                face = path_letter_for_count(tile)
+                if face and face.lower() not in letters_in_word:
+                    count += 1
+                break
+        if off_path_count >= 3:
+            count = off_path_count * 2
         return count
     if from_grid_scatter and scatter_tile is None and path is not None:
         scatter_tile = _dusty_coffin_scatter_tile_off_path(board, path)

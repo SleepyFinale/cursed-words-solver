@@ -2609,7 +2609,7 @@ def save_blocked_suggestion(
         "block_reason": block_reason,
         "word": scoring_word,
         "scoring_word": scoring_word,
-        "path": list(result.path),
+        "path": list(path_to_melmod_indices(board, result.path)),
         "predicted_score": int(
             display_score_for_quest(float(result.score), loadout)
         ),

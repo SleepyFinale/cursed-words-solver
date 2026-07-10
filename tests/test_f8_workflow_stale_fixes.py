@@ -13,6 +13,8 @@ from cursed_words_solver.f8_snapshot import (
 from cursed_words_solver.loadout import (
     align_embed_with_scoring_loadout,
     historic_metadata_matches_json,
+    parse_board_from_run_state,
+    parse_run_state,
 )
 from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
 from cursed_words_solver.suggestion import (
@@ -358,6 +360,58 @@ def test_save_blocked_strips_historic_on_gather_incomplete(tmp_path, monkeypatch
     extras = saved["run_state_snapshot"]["extras"]
     assert "historic_words" not in extras
     assert "scoring_previous_words_count" not in extras
+
+
+def test_save_blocked_suggestion_uses_melmod_path_indices(tmp_path, monkeypatch):
+    """Blocked sidecar path must match last_suggestion.json index space."""
+    from cursed_words_solver.config import LAST_SUGGESTION_BLOCKED_PATH
+    from cursed_words_solver.models import WordResult
+    from cursed_words_solver.suggestion import save_blocked_suggestion
+    from cursed_words_solver.ui.board_geometry import path_to_melmod_indices
+
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "round_logs"
+        / "dilling_ram_embed_replay.json"
+    )
+    if not fixture.is_file():
+        import pytest
+
+        pytest.skip("fixture dilling_ram_embed_replay not installed")
+
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    board = parse_board_from_run_state(data["run_state"])
+    assert board is not None
+    loadout = parse_run_state(data["run_state"])
+    storage_path = data["path_storage"]
+    melmod_path = data["path_melmod"]
+
+    monkeypatch.setattr(
+        "cursed_words_solver.suggestion.LAST_SUGGESTION_BLOCKED_PATH",
+        tmp_path / "last_suggestion_blocked.json",
+    )
+    result = WordResult(
+        word=data["word"],
+        path=list(storage_path),
+        score=float(data["expected_score"]),
+        breakdown={},
+    )
+    save_blocked_suggestion(
+        board=board,
+        loadout=loadout,
+        result=result,
+        predicted_trace=None,
+        run_state_snapshot=data["run_state"],
+        scoring_word=data["word"],
+        block_reason="embed_replay_mismatch",
+    )
+    saved = json.loads(
+        (tmp_path / "last_suggestion_blocked.json").read_text(encoding="utf-8")
+    )
+    assert saved["path"] == melmod_path
+    assert saved["path"] == list(path_to_melmod_indices(board, storage_path))
+    assert saved["path"] != storage_path
 
 
 def test_post_overlay_submit_historic_prefix_matches():

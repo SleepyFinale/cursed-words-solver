@@ -519,9 +519,13 @@ def _build_snapshot_from_run_state(
     )
     loadout = hydrate_tile_ninja_loadout_extras(loadout, run_state)
     if isinstance(loadout.extras, dict):
-        from cursed_words_solver.loadout import reconcile_encounter_historic_for_scoring
+        from cursed_words_solver.loadout import (
+            reconcile_encounter_historic_for_scoring,
+            reconcile_grid_scattered_items_from_board,
+        )
 
         reconcile_encounter_historic_for_scoring(loadout.extras, board=board)
+        reconcile_grid_scattered_items_from_board(loadout.extras, board)
     warnings = validate_run_state_for_scoring(
         loadout,
         board=board,

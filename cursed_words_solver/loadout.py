@@ -2457,6 +2457,15 @@ def loadout_has_birthday_cake(loadout: Loadout | None) -> bool:
     return pin_memory_has_birthday_cake(loadout)
 
 
+def _serialize_f8_embed_extra_value(val: Any) -> str:
+    """Melmod-compatible embed extra (JSON string for list/dict, not Python repr)."""
+    if isinstance(val, str):
+        return val
+    if isinstance(val, (list, dict)):
+        return json.dumps(val, separators=(",", ":"))
+    return str(val)
+
+
 def merge_f8_workflow_extras_into(
     dest: dict[str, Any],
     loadout_extras: dict[str, Any] | None,
@@ -2468,7 +2477,7 @@ def merge_f8_workflow_extras_into(
         val = loadout_extras.get(key)
         if val is None or str(val).strip() == "":
             continue
-        dest[key] = str(val) if not isinstance(val, str) else val
+        dest[key] = _serialize_f8_embed_extra_value(val)
 
 
 def align_embed_with_scoring_loadout(
@@ -2494,7 +2503,7 @@ def align_embed_with_scoring_loadout(
         for key in ("encounter_historic_source", "red_tiles_used_encounter"):
             val = reconciled.get(key)
             if val is not None and str(val).strip() != "":
-                extras[key] = str(val) if not isinstance(val, str) else val
+                extras[key] = _serialize_f8_embed_extra_value(val)
         embed_hist = rec_hist
         embed_count = rec_count
 
@@ -2504,7 +2513,7 @@ def align_embed_with_scoring_loadout(
             for key in ("encounter_historic_source", "red_tiles_used_encounter"):
                 val = reconciled.get(key)
                 if val is not None and str(val).strip() != "":
-                    extras[key] = str(val) if not isinstance(val, str) else val
+                    extras[key] = _serialize_f8_embed_extra_value(val)
         elif _scoring_previous_words_count_from_extras(reconciled) <= 0:
             extras.pop("historic_words", None)
             extras.pop("red_tiles_used_encounter", None)
@@ -2547,7 +2556,7 @@ def align_embed_with_scoring_loadout(
         val = reconciled.get(key)
         if val is None or str(val).strip() == "":
             continue
-        extras[key] = str(val) if not isinstance(val, str) else val
+        extras[key] = _serialize_f8_embed_extra_value(val)
 
     for cap_key in cap_keys:
         rec_val = reconciled.get(cap_key)
