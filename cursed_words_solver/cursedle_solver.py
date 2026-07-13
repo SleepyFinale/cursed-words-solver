@@ -15,13 +15,20 @@ from cursed_words_solver.fingerprints import (
 )
 from cursed_words_solver.graph_bitboard import build_board_graph_context
 from cursed_words_solver.models import CHESS_CURSES, Board, CurseType, Loadout
+from cursed_words_solver.rules.fraction_tiles import (
+    fraction_is_numeric_wildcard,
+    is_fraction_tile,
+)
 from cursed_words_solver.rules.scoring_conditions import is_poker_card_tile
 from cursed_words_solver.rules.stamp_behaviors import (
     FLAG_CARD_SUIT_FIRST_LETTER,
+    FLAG_NUMBER_PLUS_MINUS_ONE,
+    flag_test,
     path_scattered_search_flags_mask,
 )
 from cursed_words_solver.search import (
     coerce_search_flags,
+    is_numeric_wildcard,
     neighbors_mask,
     physical_word_for_path,
     resolve_letter,
@@ -371,6 +378,26 @@ def _cursedle_word_from_path(
                 else:
                     parts.append("?")
             char_pos += 1
+        elif tile.curse == CurseType.NUMBER and is_numeric_wildcard(
+            tile, char_pos, flags=flags
+        ):
+            # Test Tube / position-matched numbers stand for any letter (game
+            # IsNumericWildcard); digits must not appear in the dict pattern.
+            parts.append("?")
+            char_pos += 1
+        elif is_fraction_tile(tile):
+            # Same IsNumericWildcard rule as numbers (incl. Test Tube ±1).
+            if fraction_is_numeric_wildcard(
+                tile,
+                char_pos,
+                number_plus_minus_one=flag_test(
+                    flags, FLAG_NUMBER_PLUS_MINUS_ONE
+                ),
+            ):
+                parts.append("?")
+            else:
+                parts.append((tile.char or "#").strip() or "#")
+            char_pos += 1
         else:
             token = resolve_letter(tile, char_pos, flags=flags)
             parts.append(token)
@@ -391,23 +418,28 @@ def _pattern_dictionary_word(
         if i >= len(pattern) or pattern[i] != "?":
             continue
         tile = board.get_by_index(idx)
-        if tile.curse == CurseType.ITEM:
-            ch = (tile.letter or "").strip()
-            if len(ch) == 1 and ch.isalpha():
-                letter_hints[i] = ch.lower()
+        if tile.curse != CurseType.ITEM:
+            continue
+        # Game IsWildcard: GlyphType.ScatteredItem is always a wildcard.
+        # Only alphabetic item faces (not emoji overlays) fix a letter.
+        face = (tile.char or "").strip()
+        if not face.isalpha():
+            continue
+        ch = (tile.letter or face).strip()
+        if len(ch) == 1 and ch.isalpha():
+            letter_hints[i] = ch.lower()
     matches = [
         word
         for word in dictionary.enumerate_pattern_matches(pattern, limit=64)
         if len(word) == len(path)
     ]
     if letter_hints:
-        constrained = [
+        # Alphabetic item faces are hard constraints — do not fall back.
+        matches = [
             word
             for word in matches
             if all(word[pos] == ch for pos, ch in letter_hints.items())
         ]
-        if constrained:
-            matches = constrained
     if matches:
         return matches[0]
     return None
@@ -516,14 +548,47 @@ def _all_green_guesses(guesses: list[CursedleGuess]) -> list[CursedleGuess]:
     return out
 
 
+def _leading_green_count(feedback: list[Feedback]) -> int:
+    """Count consecutive greens from the start of a guess."""
+    n = 0
+    for fb in feedback:
+        if fb != "green":
+            break
+        n += 1
+    return n
+
+
 def _all_green_prefix_paths(
     board: Board,
     guesses: list[CursedleGuess],
 ) -> list[list[int]]:
-    return [
-        _guess_storage_path(board, guess.path, guess)
-        for guess in _all_green_guesses(guesses)
-    ]
+    """Storage paths that were all-green, or a leading-green prefix before a miss.
+
+    Fully green guesses may still be the wrong length (game win requires exact
+    path length). Leading greens then a red/yellow/grey mean that prefix is on
+    the solution and longer extensions should be preferred.
+    """
+    out: list[list[int]] = []
+    seen: set[tuple[int, ...]] = set()
+    for guess in guesses:
+        if not guess.feedback:
+            continue
+        storage = _guess_storage_path(board, guess.path, guess)
+        if all(fb == "green" for fb in guess.feedback):
+            key = tuple(storage)
+            if key not in seen:
+                seen.add(key)
+                out.append(storage)
+            continue
+        n_green = _leading_green_count(guess.feedback)
+        if n_green < CURSEDLE_SOLUTION_MIN_LEN:
+            continue
+        prefix = storage[:n_green]
+        key = tuple(prefix)
+        if key not in seen:
+            seen.add(key)
+            out.append(prefix)
+    return out
 
 
 def _paths_extending_prefix(
@@ -701,6 +766,15 @@ def _guessed_words(
 ) -> set[str]:
     words: set[str] = set()
     for guess in guesses:
+        if guess.feedback:
+            n_green = _leading_green_count(guess.feedback)
+            # Near-miss (green prefix then a miss): the spelled word may still
+            # be the solution on a different path (e.g. SHADY via another Y).
+            if (
+                n_green >= CURSEDLE_SOLUTION_MIN_LEN
+                and n_green < len(guess.feedback)
+            ):
+                continue
         path = _guess_storage_path(board, guess.path, guess)
         path_flags = _cursedle_path_flags(board, path)
         word = _word_from_path(board, path, dictionary)
@@ -881,6 +955,22 @@ def _probe_entropy_score(
     return entropy
 
 
+def _path_extends_via_plain_letter(
+    board: Board,
+    shorter: list[int],
+    longer: list[int],
+) -> bool:
+    """True when ``longer`` continues ``shorter`` through at least one LETTER tile."""
+    if not _paths_share_prefix_walk(shorter, longer):
+        return False
+    if len(longer) <= len(shorter):
+        return False
+    return any(
+        board.get_by_index(idx).curse == CurseType.LETTER
+        for idx in longer[len(shorter) :]
+    )
+
+
 def _pick_solution_path(
     board: Board,
     candidates: list[list[int]],
@@ -896,9 +986,31 @@ def _pick_solution_path(
     if not scored:
         return None
     if prefer_longer_paths:
+        # Failed all-green prefix: must extend beyond that length.
         scored.sort(key=lambda row: (-len(row[1]), -len(row[0]), row[0]))
     else:
-        scored.sort(key=lambda row: (-len(row[0]), row[0]))
+        # Drop speculative letter-suffix extensions (e.g. VEINS→VACANT via T).
+        # Theme tiles (number/fraction/item) may still extend a shorter path.
+        without_letter_ext = [
+            (word, path)
+            for word, path in scored
+            if not any(
+                _path_extends_via_plain_letter(board, shorter, path)
+                for _, shorter in scored
+            )
+        ]
+        scored = without_letter_ext or scored
+        # Exact-length win: prefer maximal paths over proper prefixes (VAIL⊂VEINS).
+        maximal = [
+            (word, path)
+            for word, path in scored
+            if not any(
+                len(other) > len(path) and _paths_share_prefix_walk(path, other)
+                for _, other in scored
+            )
+        ]
+        scored = maximal or scored
+        scored.sort(key=lambda row: (len(row[1]), len(row[0]), row[0]))
     word, path = scored[0]
     return path, word
 

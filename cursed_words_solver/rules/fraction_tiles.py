@@ -164,6 +164,21 @@ def _position_matches_fraction_values(position: int, values: list[int]) -> bool:
     return pos in values
 
 
+def _position_matches_fraction_values_with_flags(
+    position: int,
+    values: list[int],
+    *,
+    number_plus_minus_one: bool = False,
+) -> bool:
+    """Match game Tile.IsNumericWildcard for fractions (optional Test Tube ±1)."""
+    if not values:
+        return False
+    pos = position + 1
+    if number_plus_minus_one:
+        return any(pos in (v - 1, v, v + 1) and v >= 1 for v in values)
+    return pos in values
+
+
 def fraction_position_valid(tile: Tile, position: int, relaxed: bool = False) -> bool:
     """Fraction wildcards are valid at numerator or denominator position only (1-based)."""
     if relaxed or not is_fraction_tile(tile):
@@ -172,3 +187,20 @@ def fraction_position_valid(tile: Tile, position: int, relaxed: bool = False) ->
     if not values:
         return False
     return _position_matches_fraction_values(position, values)
+
+
+def fraction_is_numeric_wildcard(
+    tile: Tile,
+    path_index: int,
+    *,
+    number_plus_minus_one: bool = False,
+) -> bool:
+    """True when a fraction is a letter wildcard at path_index (game IsNumericWildcard)."""
+    if not is_fraction_tile(tile):
+        return False
+    values = tile_fraction_position_values(tile)
+    return _position_matches_fraction_values_with_flags(
+        path_index,
+        values,
+        number_plus_minus_one=number_plus_minus_one,
+    )

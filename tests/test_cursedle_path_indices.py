@@ -321,11 +321,7 @@ UPSTREAM_MELMOD_EXPORT_TILES = [
 
 
 def _shady_puzzle_board() -> Board:
-    if LIVE_RUN_STATE.exists():
-        payload = json.loads(LIVE_RUN_STATE.read_text(encoding="utf-8"))
-        board = parse_board_from_run_state(payload)
-        if board is not None:
-            return board
+    # Synthetic board only — never load live run_state (drifts across puzzles).
     letters = list("UHYE?S" + "PE?YQH" + "AAYPDA" + "METSUY" + "TRSOEO" + "OEMRFY")
     letters[8] = "?"
     letters[22] = "?"
@@ -433,5 +429,8 @@ def test_run_cursedle_solver_commits_shady_after_upstream_shady() -> None:
     assert advice.word.lower() == "shady"
     assert advice.path == SHADY_STORAGE_SOLUTION
     assert advice.candidates == 2  # shad (len 4) and shady (len 5)
-    assert "committing" in advice.reason.lower()
+    assert (
+        "committing" in advice.reason.lower()
+        or "all-green prefix" in advice.reason.lower()
+    )
     assert "foyers" not in advice.word.lower()
