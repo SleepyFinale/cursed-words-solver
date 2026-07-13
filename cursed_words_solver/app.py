@@ -2603,6 +2603,20 @@ class SolverApp:
                     f"Done in {search_elapsed:.1f}s. No valid words found.",
                     flush=True,
                 )
+                if timing is not None and timing.number_board_empty_diag:
+                    caps_note = (
+                        f"caps={list(timing.dfs_caps)}"
+                        if timing.dfs_caps
+                        else "caps=?"
+                    )
+                    print(
+                        f"  Number-board empty diag: {caps_note}, "
+                        f"letter_dfs_added={timing.letter_dfs_added}, "
+                        f"trie_prunes={timing.trie_prunes}, "
+                        f"number_position_prunes={timing.number_position_prunes}, "
+                        f"serial_fallback={timing.parallel_serial_fallback}",
+                        flush=True,
+                    )
 
             warnings = self._overlay_warnings(board, unmapped, loadout=loadout)
             if results and encounter_mode_from_run_state(run_state_data) == "encounter":

@@ -413,6 +413,9 @@ class SearchTiming:
     dfs_bb_calls: int = 0
     grid_refs_cache_hits: int = 0
     grid_refs_cache_misses: int = 0
+    dfs_caps: tuple[int, ...] = ()
+    number_position_prunes: int = 0
+    number_board_empty_diag: bool = False
 
     @property
     def score_pct(self) -> float:
@@ -646,7 +649,8 @@ def resolve_letter(
     """Letter used in word at 0-based position."""
     flags = coerce_search_flags(flags)
     if tile.curse == CurseType.CURRENCY:
-        return tile.letter
+        glyph = normalize_tile_glyph(tile.letter or tile.char or "")
+        return CURRENCY_MAP.get(glyph, glyph or "?")
     if tile.curse == CurseType.WILDCARD:
         return "?"
     if tile.curse in CHESS_CURSES:
@@ -1304,7 +1308,9 @@ class PathValidator:
             board is not None
             and path
             and steps_remaining > 0
-            and self._may_extend_to_number_word(board, path, steps_remaining)
+            and self._may_extend_to_number_word(
+                board, path, steps_remaining, flags=stamp_flags
+            )
         ):
             return True
         if self.extra_valid_words:
@@ -1397,26 +1403,46 @@ class PathValidator:
         path: list[int],
         max_steps: int,
         _cache: dict | None = None,
+        *,
+        flags: SearchFlagsMask = 0,
     ) -> bool:
-        """Letter prefix not in trie may still reach a NUMBER tile within max_steps."""
+        """Letter prefix not in trie may still reach a position-legal NUMBER.
+
+        Game Tile.IsNumericWildcard: face must equal 1-based path index (plus
+        Test Tube ±1). Do not keep dead prefixes alive merely because some
+        number tile is reachable within max_steps.
+        """
+        if not path or max_steps <= 0:
+            return False
+        flags = coerce_search_flags(flags)
+        path_len = len(path)
+        end_idx = path[-1]
         if _cache is not None:
-            key = (frozenset(path), max_steps)
+            key = (end_idx, path_len, frozenset(path), max_steps)
             cached = _cache.get(key)
             if cached is not None:
                 return cached
         visited = set(path)
-        frontier = [path[-1]]
+        frontier = [end_idx]
         result = False
-        for _ in range(max_steps):
+        for step in range(1, max_steps + 1):
+            landing_pos = path_len + step - 1
             next_frontier: list[int] = []
             for idx in frontier:
                 for nbr in neighbors_from_tile(board, [idx], visited):
                     if nbr in visited:
                         continue
                     tile = board.get_by_index(nbr)
-                    if is_number_like_tile(tile):
-                        result = True
-                        break
+                    if is_fraction_tile(tile):
+                        if fraction_position_valid(tile, landing_pos, relaxed=False):
+                            result = True
+                            break
+                        continue
+                    if tile.curse == CurseType.NUMBER:
+                        if number_position_valid(tile, landing_pos, flags=flags):
+                            result = True
+                            break
+                        continue
                     next_frontier.append(nbr)
                 if result:
                     break
@@ -2707,6 +2733,10 @@ def _is_wildcard_tile(tile: Tile) -> bool:
     # Chess faces often use letter "?" for dict-resolve; they are not joker/blank hubs.
     if is_chess_piece(tile):
         return False
+    # Fraction/number/currency may export letter "?" for dict-resolve; they are not
+    # blank/joker hubs (Full Moon joker-cluster seeding must not treat them as such).
+    if tile.curse in (CurseType.FRACTION, CurseType.NUMBER, CurseType.CURRENCY):
+        return False
     return (
         tile.curse == CurseType.WILDCARD
         or tile.letter == "?"
@@ -2757,6 +2787,22 @@ def _up_and_up_cap_sequence(
             caps = [center_nv] + [c for c in caps if c != center_nv]
         return caps
     return list(range(min_len, max_len + 1))
+
+
+def _number_board_cap_sequence(min_len: int, max_len: int) -> list[int]:
+    """Short-first caps for number/fraction boards (e.g. cursed Bison, Hyena ⅖).
+
+    Number/fraction tiles become 26-way wildcards at their face position; starting
+    at max_len=25 burns the F8 budget before trivial letter words are found.
+    Prefer 3–8 first, then deepen. Computed fresh from min/max each solve.
+    """
+    if max_len <= min_len:
+        return [max_len]
+    short_top = min(8, max_len)
+    caps = list(range(min_len, short_top + 1))
+    for n in range(short_top + 1, max_len + 1):
+        caps.append(n)
+    return caps
 
 
 def _enumerate_paths_including_index(
@@ -3991,7 +4037,11 @@ class WordSearcher:
         self._provisional_candidates: dict[tuple[tuple[int, ...], str], float] = {}
         self._dict_path_cache: dict[tuple[int, ...], str] = {}
         self._dict_valid_words_cache: dict[tuple[int, ...], str] = {}
-        self._number_extend_cache: dict[tuple[frozenset[int], int], bool] = {}
+        # Key: (end_idx, path_len, frozenset(path), max_steps) — path order matters
+        # for position-locked number landings; never reuse across solves.
+        self._number_extend_cache: dict[
+            tuple[int, int, frozenset[int], int], bool
+        ] = {}
         self._prune_heap: _CandidateHeap | None = None
         self._parallel_executor: ProcessPoolExecutor | None = None
         self._active_deadline: float | None = None
@@ -4955,7 +5005,11 @@ class WordSearcher:
                         if not (
                             steps_left > 0
                             and self.validator._may_extend_to_number_word(
-                                board, path, steps_left, _num_extend_cache
+                                board,
+                                path,
+                                steps_left,
+                                _num_extend_cache,
+                                flags=stamp_flags,
                             )
                         ):
                             _record_trie_prune()
@@ -4964,7 +5018,11 @@ class WordSearcher:
                     if not (
                         steps_left > 0
                         and self.validator._may_extend_to_number_word(
-                            board, path, steps_left, _num_extend_cache
+                            board,
+                            path,
+                            steps_left,
+                            _num_extend_cache,
+                            flags=stamp_flags,
                         )
                     ):
                         _record_trie_prune()
@@ -5132,6 +5190,19 @@ class WordSearcher:
                 if is_fraction_tile(tile) and not fraction_position_valid(
                     tile, len(path), relaxed=False
                 ):
+                    continue
+                # Letter DFS: skip NUMBER tiles that cannot land as wildcards here.
+                # Digit-only pass handles face-as-digit paths separately.
+                if (
+                    tile.curse == CurseType.NUMBER
+                    and not digits_only
+                    and not has_digit
+                    and not number_position_valid(
+                        tile, len(path), flags=path_flags
+                    )
+                ):
+                    if timing is not None:
+                        timing.number_position_prunes += 1
                     continue
                 if must_include_index is not None and must_include_index not in path:
                     remaining_after = max_len - len(path) - 1
@@ -9598,6 +9669,9 @@ class WordSearcher:
                 and self.max_len > 8
             ):
                 caps = [8, self.max_len]
+            elif has_number_tiles and self.max_len > self.min_len:
+                # Number/fraction boards: short letter words before wildcard thrash.
+                caps = _number_board_cap_sequence(self.min_len, self.max_len)
             elif self.min_len > 3 and self.max_len > self.min_len:
                 caps = [self.min_len]
                 if self.min_len < 8 <= self.max_len:
@@ -9615,10 +9689,18 @@ class WordSearcher:
                 caps = _cartwheeler_cap_sequence(self.min_len, self.max_len)
         elif chess_reserve > 0.0 and self.max_len > self.min_len:
             caps = _chess_serial_cap_sequence(self.min_len, self.max_len)
+        elif (
+            has_number_tiles
+            and self.time_budget >= 6.0
+            and self.max_len > self.min_len
+        ):
+            caps = _number_board_cap_sequence(self.min_len, self.max_len)
         elif self.time_budget >= 6.0 and self.max_len > self.min_len:
             caps = range(self.min_len, self.max_len + 1)
         else:
             caps = [self.max_len]
+
+        timing.dfs_caps = tuple(caps)
 
         from cursed_words_solver.search_parallel import get_search_pool
 
@@ -9650,6 +9732,11 @@ class WordSearcher:
             and has_fraction_tiles
             and _chess_tile_count(board) >= 3
         )
+        # Number/fraction boards: if the heap is still empty after main DFS
+        # (+ digit pass when applicable), spend remaining wall on short letter caps.
+        # Do not reserve up-front (that starves main DFS on boards that already
+        # find words, e.g. number-start letter words).
+        number_short_recovery_likely = has_number_tiles
         empty_heap_recovery_reserve = (
             min(18.0, self.time_budget * 0.30)
             if empty_heap_recovery_likely
@@ -10122,13 +10209,18 @@ class WordSearcher:
                     fallback_deadline = pre_extend_deadline
                 else:
                     prefer_long_fallback = (
-                        has_fraction_tiles
-                        or has_number_tiles
-                        or wildcard_dense
-                        or has_cartwheeler
-                        or has_full_moon
+                        wildcard_dense or has_cartwheeler or has_full_moon
                     )
-                    if has_cartwheeler and self.time_budget >= 6.0 and self.max_len > self.min_len:
+                    if (
+                        has_number_tiles
+                        and self.time_budget >= 6.0
+                        and self.max_len > self.min_len
+                    ):
+                        # Number and fraction boards: short-first (same as Bison).
+                        fallback_caps = _number_board_cap_sequence(
+                            self.min_len, self.max_len
+                        )
+                    elif has_cartwheeler and self.time_budget >= 6.0 and self.max_len > self.min_len:
                         if joker_count >= _WILDCARD_DENSE_MIN:
                             fallback_caps = _cartwheeler_wildcard_dense_cap_sequence(
                                 self.min_len, self.max_len
@@ -10155,6 +10247,7 @@ class WordSearcher:
                             if self.time_budget >= 6.0 and self.max_len > self.min_len
                             else [self.max_len]
                         )
+                    timing.dfs_caps = tuple(fallback_caps)
                     post_dfs_budget = (
                         number_reserve + void_reserve + fraction_cluster_reserve
                     )
@@ -10166,12 +10259,17 @@ class WordSearcher:
                             time.monotonic()
                             + max(0.0, remaining - post_dfs_budget),
                         )
-                    if time.monotonic() >= fallback_deadline:
-                        fallback_deadline = deadline
+                    # Do not reopen past F8/solve deadline when the shrunk
+                    # fallback window is already gone.
+                    if self._f8_expired() or time.monotonic() >= deadline:
+                        fallback_caps = []
                     fallback_starts = letter_starts
                 try:
                     for i, cap in enumerate(fallback_caps):
-                        if time.monotonic() >= fallback_deadline:
+                        if (
+                            self._f8_expired()
+                            or time.monotonic() >= fallback_deadline
+                        ):
                             break
                         cap_deadline = fallback_deadline
                         if center_missing:
@@ -10203,7 +10301,7 @@ class WordSearcher:
                     self.search_workers = saved_workers
                     self._parallel_executor = pool
 
-            if standard_search and has_number_tiles:
+            if standard_search and has_digit_tiles:
                 self._seed_single_number_tile_words(board, loadout, candidates)
 
             improve_words = equipped_improve_words(loadout)
@@ -10212,7 +10310,7 @@ class WordSearcher:
                     board, loadout, candidates, improve_words
                 )
 
-            if standard_search and has_number_tiles:
+            if standard_search and has_digit_tiles:
                 self._parallel_executor = None
                 if (
                     not self._full_board_exact
@@ -10311,10 +10409,39 @@ class WordSearcher:
                         and self.time_budget >= 6.0
                     ):
                         break
+
+            if (
+                standard_search
+                and number_short_recovery_likely
+                and len(candidates) == 0
+                and time.monotonic() < deadline
+            ):
+                remaining = max(0.0, deadline - time.monotonic())
+                recovery_slice = min(12.0, max(4.0, remaining))
+                recovery_deadline = min(deadline, time.monotonic() + recovery_slice)
+                short_max = min(8, self.max_len)
+                recovery_caps = _number_board_cap_sequence(self.min_len, short_max)
+                timing.dfs_caps = tuple(recovery_caps)
+                self._parallel_executor = None
+                for cap in recovery_caps:
+                    if time.monotonic() >= recovery_deadline or candidates:
+                        break
+                    self._collect_words_fair_starts(
+                        board,
+                        loadout,
+                        candidates,
+                        recovery_deadline,
+                        cap,
+                        letter_starts,
+                        min_slice_override=self._adaptive_min_slice(candidates, 0),
+                        start_productivity=start_productivity,
+                    )
         finally:
             self._parallel_executor = None
 
         timing.dfs_sec = time.monotonic() - dfs_start
+        if has_digit_tiles and len(candidates) == 0:
+            timing.number_board_empty_diag = True
 
         if (
             center_idx is not None
