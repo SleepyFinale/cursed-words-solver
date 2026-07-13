@@ -87,6 +87,74 @@ CHESS_CURSES = {
     CurseType.CHESS_KING,
 }
 
+
+def _tile_is_joker_for_full_moon(tile: Tile) -> bool:
+    """True when the tile is a Suit.Joker / joker glyph (GlyphType.BespokeCard in game)."""
+    meta = tile.metadata or {}
+    val = meta.get("is_joker")
+    if val is True or val == "true" or val == 1 or val == "1":
+        return True
+    suit = str(meta.get("card_suit") or "").strip().lower()
+    if suit == "joker":
+        return True
+    ch = str(tile.char or "")
+    return "🃏" in ch
+
+
+def full_moon_symbol_key(tile: Tile) -> str:
+    """Full Moon match key from live tile fields only (no caches).
+
+    Game ``GridUtilitySingleton`` allows Full Moon steps when
+    ``GetStringRepresentation()`` and ``GetGlyphType()`` both match. Chess is
+    handled separately via identical piece+colour masks; this key covers the
+    non-chess glyph classes (letter, blank, joker, number, currency, item, …).
+    """
+    if tile.curse in CHESS_CURSES:
+        return ""
+    if _tile_is_joker_for_full_moon(tile):
+        # BespokeCard + Suit.Joker → emoji string; distinct from GlyphType.Blank "?"
+        return "joker"
+    if tile.curse in (CurseType.WILDCARD, CurseType.BLANK):
+        return "blank:?"
+    if tile.curse == CurseType.NUMBER:
+        if tile.number_value is not None:
+            return f"number:{int(tile.number_value)}"
+        glyph = normalize_tile_glyph(tile.char or tile.letter or "")
+        if glyph.isdigit():
+            return f"number:{glyph}"
+        return ""
+    if tile.curse == CurseType.FRACTION:
+        meta = tile.metadata or {}
+        nums = meta.get("fraction_numbers")
+        if isinstance(nums, (list, tuple)) and len(nums) >= 2:
+            return f"fraction:{int(nums[0])}/{int(nums[1])}"
+        if tile.fraction_value is not None:
+            return f"fraction:{tile.fraction_value}"
+        return ""
+    if tile.curse == CurseType.CURRENCY:
+        glyph = normalize_tile_glyph(tile.char or "")
+        return f"currency:{glyph}" if glyph in CURRENCY_MAP else ""
+    if tile.curse == CurseType.ITEM:
+        meta = tile.metadata or {}
+        item_id = str(meta.get("scattered_item_id") or "").strip().lower()
+        if item_id:
+            return f"item:{item_id}"
+        glyph = normalize_tile_glyph(tile.char or "")
+        return f"item:{glyph}" if glyph else ""
+    if tile.curse == CurseType.ARROW:
+        glyph = normalize_tile_glyph(tile.char or tile.letter or "")
+        if len(glyph) == 1 and glyph.isalpha():
+            return f"arrow:{glyph.upper()}"
+        return f"arrow:{glyph}" if glyph else ""
+    glyph = normalize_tile_glyph(tile.char or "")
+    if len(glyph) == 1 and glyph.isalpha():
+        return glyph.upper()
+    letter = (tile.letter or "").strip()
+    if len(letter) == 1 and letter.isalpha():
+        return letter.upper()
+    return ""
+
+
 _MELMOD_CURSE_ALIASES: dict[str, CurseType] = {
     "letter": CurseType.LETTER,
     "wildcard": CurseType.WILDCARD,

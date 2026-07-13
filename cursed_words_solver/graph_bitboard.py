@@ -25,6 +25,7 @@ from cursed_words_solver.models import (
     CurseType,
     Tile,
     TileColor,
+    full_moon_symbol_key,
     normalize_tile_glyph,
 )
 
@@ -336,16 +337,8 @@ def _chess_side_known(tile: Tile) -> bool:
 
 
 def _physical_letter(tile: Tile) -> str:
-    if _is_chess_piece(tile):
-        return ""
-    if tile.curse in (CurseType.WILDCARD, CurseType.FRACTION):
-        return ""
-    glyph = normalize_tile_glyph(tile.char or "")
-    if tile.curse == CurseType.CURRENCY:
-        return glyph if glyph in CURRENCY_MAP else ""
-    if len(glyph) == 1 and glyph.isalpha():
-        return glyph.upper()
-    return ""
+    """Full Moon match key; must stay aligned with ``search._physical_letter``."""
+    return full_moon_symbol_key(tile)
 
 
 @dataclass(frozen=True)
@@ -376,6 +369,7 @@ class BoardGraphContext:
     is_fraction: tuple[bool, ...] = field(default_factory=lambda: (False,) * CELL_COUNT)
     number_like: tuple[bool, ...] = field(default_factory=lambda: (False,) * CELL_COUNT)
     letter_masks: dict[str, int] = field(default_factory=dict)
+    full_moon_masks: dict[str, int] = field(default_factory=dict)
     identical_chess_masks: dict[tuple[str, str], int] = field(default_factory=dict)
     black_piece_mask: int = 0
     white_piece_mask: int = 0
@@ -545,6 +539,7 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
     chess_curse: list[int] = [0] * cell_count
     chess_side_code: list[int] = [0] * cell_count
     letter_masks: dict[str, int] = defaultdict(int)
+    full_moon_masks: dict[str, int] = defaultdict(int)
     identical_chess: dict[tuple[str, str], int] = defaultdict(int)
     hanafuda_suit_mask = 0
     grid_base_score = 0
@@ -582,9 +577,18 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
                 chess_side_code[idx] = 2
                 if _is_chess_piece(tile):
                     white_piece_mask |= 1 << idx
-        letter = _physical_letter(tile)
-        if letter:
-            letter_masks[letter] |= 1 << idx
+        fm_key = _physical_letter(tile)
+        if fm_key:
+            full_moon_masks[fm_key] |= 1 << idx
+        # A–Z letter masks for scoring targets (not Full Moon symbol keys).
+        if tile.curse == CurseType.LETTER:
+            glyph = normalize_tile_glyph(tile.char or "")
+            if len(glyph) == 1 and glyph.isalpha():
+                letter_masks[glyph.upper()] |= 1 << idx
+            else:
+                letter = (tile.letter or "").strip()
+                if len(letter) == 1 and letter.isalpha():
+                    letter_masks[letter.upper()] |= 1 << idx
         if _is_chess_piece(tile) and _chess_side_known(tile):
             key = (tile.curse.value, _chess_side(tile))
             identical_chess[key] |= 1 << idx
@@ -646,6 +650,7 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
         is_fraction=tuple(is_fraction),
         number_like=tuple(number_like),
         letter_masks=dict(letter_masks),
+        full_moon_masks=dict(full_moon_masks),
         identical_chess_masks=dict(identical_chess),
         black_piece_mask=black_piece_mask,
         white_piece_mask=white_piece_mask,

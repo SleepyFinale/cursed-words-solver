@@ -1061,6 +1061,108 @@ def test_full_moon_teleport_between_same_color_knights():
     assert 9 in nbrs
 
 
+def test_full_moon_joker_teleports_to_joker_not_blank():
+    """Game: BespokeCard+Joker emoji ≠ GlyphType.Blank '?' (GridUtility Full Moon)."""
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    grid[0][0] = Tile(
+        row=0,
+        col=0,
+        char="🃏",
+        letter="?",
+        base_score=0,
+        curse=CurseType.WILDCARD,
+        metadata={"is_joker": True, "card_suit": "joker"},
+    )
+    grid[4][4] = Tile(
+        row=4,
+        col=4,
+        char="🃏",
+        letter="?",
+        base_score=0,
+        curse=CurseType.WILDCARD,
+        metadata={"is_joker": True, "card_suit": "joker"},
+    )
+    grid[0][4] = Tile(
+        row=0,
+        col=4,
+        char="?",
+        letter="?",
+        base_score=0,
+        curse=CurseType.WILDCARD,
+        metadata={"card_suit": "hearts"},
+    )
+    board = Board(tiles=grid)
+    loadout = _stamp_loadout("full_moon", "Full Moon")
+    flags = stamp_search_flags(loadout)
+    nbrs = neighbors_from_tile(board, [0], {1 << 0}, flags=flags)
+    assert 24 in nbrs
+    assert 4 not in nbrs
+
+
+def test_full_moon_blank_teleports_to_blank():
+    """Game GlyphType.Blank GetStringRepresentation is '?'."""
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    grid[0][0] = Tile(
+        row=0,
+        col=0,
+        char="?",
+        letter="?",
+        base_score=0,
+        curse=CurseType.WILDCARD,
+    )
+    grid[4][0] = Tile(
+        row=4,
+        col=0,
+        char="?",
+        letter="?",
+        base_score=0,
+        curse=CurseType.WILDCARD,
+    )
+    board = Board(tiles=grid)
+    loadout = _stamp_loadout("full_moon", "Full Moon")
+    flags = stamp_search_flags(loadout)
+    nbrs = neighbors_from_tile(board, [0], {1 << 0}, flags=flags)
+    assert 20 in nbrs
+
+
+def test_full_moon_number_teleports_to_same_number():
+    """Game Number glyph uses Number.ToString() for Full Moon matching."""
+    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
+    grid[0][0] = Tile(
+        row=0,
+        col=0,
+        char="2",
+        letter="2",
+        base_score=2,
+        curse=CurseType.NUMBER,
+        number_value=2,
+    )
+    grid[4][4] = Tile(
+        row=4,
+        col=4,
+        char="2",
+        letter="2",
+        base_score=2,
+        curse=CurseType.NUMBER,
+        number_value=2,
+    )
+    grid[0][4] = Tile(
+        row=0,
+        col=4,
+        char="7",
+        letter="7",
+        base_score=7,
+        curse=CurseType.NUMBER,
+        number_value=7,
+    )
+    board = Board(tiles=grid)
+    loadout = _stamp_loadout("full_moon", "Full Moon")
+    flags = stamp_search_flags(loadout)
+    nbrs = neighbors_from_tile(board, [0], {1 << 0}, flags=flags)
+    assert 24 in nbrs
+    assert 4 not in nbrs
+
+
 def test_red_envelope_finds_word_with_red_as_e(tmp_path):
     words = ["the", "tee"]
     wl = _make_wordlist(tmp_path, words)

@@ -22,6 +22,7 @@ from cursed_words_solver.models import (
     Tile,
     TileColor,
     WordResult,
+    full_moon_symbol_key,
     normalize_tile_glyph,
 )
 from cursed_words_solver.encounter_board import effective_board_for_loadout
@@ -2142,17 +2143,12 @@ def neighbors_standard(
 
 
 def _physical_letter(tile: Tile) -> str:
-    """Glyph on tile for Full Moon matching (not word-position transforms like Flamingo)."""
-    if is_chess_piece(tile):
-        return ""
-    if tile.curse in (CurseType.WILDCARD, CurseType.FRACTION):
-        return ""
-    glyph = normalize_tile_glyph(tile.char or "")
-    if tile.curse == CurseType.CURRENCY:
-        return glyph if glyph in CURRENCY_MAP else ""
-    if len(glyph) == 1 and glyph.isalpha():
-        return glyph.upper()
-    return ""
+    """Full Moon match key (game: equal GetStringRepresentation + GetGlyphType).
+
+    Chess pieces return "" here; identical chess teleport uses ``identical_chess_piece``.
+    Not word-position transforms (Flamingo / Card Shark).
+    """
+    return full_moon_symbol_key(tile)
 
 
 def _double_letter_teleport_mask(
@@ -2162,14 +2158,14 @@ def _double_letter_teleport_mask(
     *,
     graph_ctx: BoardGraphContext | None = None,
 ) -> int:
-    """Full Moon: jump to another unused tile with the same letter or identical chess piece."""
+    """Full Moon: jump to unused tile with same symbol+glyph type, or identical chess piece."""
     last_tile = board.get_by_index(cell_id)
     letter = _physical_letter(last_tile)
     mask = 0
     if graph_ctx is not None:
         if letter:
             mask |= get_valid_extensions(
-                graph_ctx.letter_masks.get(letter, 0),
+                graph_ctx.full_moon_masks.get(letter, 0),
                 visited_mask,
             ) & ~(1 << cell_id)
         if is_chess_piece(last_tile) and chess_side_known(last_tile):
@@ -2357,23 +2353,31 @@ def _teleport_letter_neighbor_tier(
     flags: SearchFlagsMask = 0,
     graph_ctx: BoardGraphContext | None = None,
 ) -> int:
-    """0 when neighbor letter can Full Moon teleport to another tile; else 1."""
+    """0 when neighbor can Full Moon teleport onward; else 1."""
     flags = coerce_search_flags(flags)
     if not flag_test(flags, FLAG_DOUBLE_LETTER_TELEPORT):
         return 1
-    letter = _physical_letter(board.get_by_index(neighbor_idx))
-    if not letter:
-        return 1
+    tile = board.get_by_index(neighbor_idx)
+    letter = _physical_letter(tile)
     block = visited_mask | (1 << neighbor_idx)
     if graph_ctx is not None:
-        group = graph_ctx.letter_masks.get(letter, 0)
-        if get_valid_extensions(group, block) & ~(1 << neighbor_idx):
-            return 0
+        if letter:
+            group = graph_ctx.full_moon_masks.get(letter, 0)
+            if get_valid_extensions(group, block) & ~(1 << neighbor_idx):
+                return 0
+        if is_chess_piece(tile) and chess_side_known(tile):
+            key = (tile.curse.value, chess_side(tile))
+            group = graph_ctx.identical_chess_masks.get(key, 0)
+            if get_valid_extensions(group, block) & ~(1 << neighbor_idx):
+                return 0
         return 1
     for j in _active_indices(board):
         if j == neighbor_idx or block & (1 << j):
             continue
-        if _physical_letter(board.get_by_index(j)) == letter:
+        other = board.get_by_index(j)
+        if letter and _physical_letter(other) == letter:
+            return 0
+        if identical_chess_piece(tile, other):
             return 0
     return 1
 
@@ -2700,6 +2704,9 @@ def _number_tile_start_indices(board: Board) -> list[int]:
 
 
 def _is_wildcard_tile(tile: Tile) -> bool:
+    # Chess faces often use letter "?" for dict-resolve; they are not joker/blank hubs.
+    if is_chess_piece(tile):
+        return False
     return (
         tile.curse == CurseType.WILDCARD
         or tile.letter == "?"
@@ -3198,11 +3205,17 @@ def _joker_pair_paths(
     *,
     flags: SearchFlagsMask = 0,
 ) -> list[list[int]]:
-    """Paths connecting two jokers (both directions) for Hanafuda multi-joker hands."""
+    """Paths connecting two jokers (both directions) for Hanafuda / Full Moon hubs."""
+    cap = max_len
+    # Full Moon links identical jokers directly; avoid combinatorial path floods.
+    # Dense boards (many jokers/blanks) still explode if path_cap is generous.
     jokers = _wildcard_start_indices(board)
+    if flag_test(flags, FLAG_DOUBLE_LETTER_TELEPORT):
+        path_cap = 6 if len(jokers) >= 4 else 12
+    else:
+        path_cap = 128
     out: list[list[int]] = []
     seen: set[tuple[int, ...]] = set()
-    cap = max_len
     for i, a in enumerate(jokers):
         for b in jokers[i + 1 :]:
             for start_idx, end_idx in ((a, b), (b, a)):
@@ -3232,13 +3245,67 @@ def _joker_pair_paths(
                         end_idx,
                         cap,
                         flags=flags,
-                        path_cap=128,
+                        path_cap=path_cap,
                     )
                 ):
                     key = tuple(path)
                     if key not in seen:
                         seen.add(key)
                         out.append(path)
+    return out
+
+
+def _identical_chess_pair_paths(
+    board: Board,
+    max_len: int,
+    *,
+    flags: SearchFlagsMask = 0,
+) -> list[list[int]]:
+    """Paths linking identical chess pieces (Full Moon teleport hubs).
+
+    Includes pairwise shorts/rich paths and full hub tours (any order of the
+    identical group — Full Moon makes them a complete teleport graph).
+    """
+    from collections import defaultdict
+    from itertools import permutations
+
+    groups: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for idx in _active_indices(board):
+        tile = board.get_by_index(idx)
+        if not is_chess_piece(tile) or not chess_side_known(tile):
+            continue
+        groups[(tile.curse.value, chess_side(tile))].append(idx)
+    out: list[list[int]] = []
+    seen: set[tuple[int, ...]] = set()
+
+    def _emit(path: list[int]) -> None:
+        if not path or len(path) > max_len:
+            return
+        key = tuple(path)
+        if key not in seen:
+            seen.add(key)
+            out.append(path)
+
+    for indices in groups.values():
+        if len(indices) < 2:
+            continue
+        # Full Moon: any permutation of the hub group is a legal path.
+        if 2 <= len(indices) <= 4:
+            for order in permutations(indices):
+                _emit(list(order))
+        for i, a in enumerate(indices):
+            for b in indices[i + 1 :]:
+                for start_idx, end_idx in ((a, b), (b, a)):
+                    short = _shortest_path_between_indices(
+                        board, start_idx, end_idx, max_len, flags=flags
+                    )
+                    if short is not None:
+                        _emit(short)
+                    rich = _high_value_path_between_indices(
+                        board, start_idx, end_idx, max_len, flags=flags
+                    )
+                    if rich is not None:
+                        _emit(rich)
     return out
 
 
@@ -3345,9 +3412,63 @@ def _chess_cap_start_indices(chess_starts: list[int]) -> list[int]:
 
 _SMALL_BOARD_HAMILTONIAN_MAX = 9
 _SCATTERED_ITEM_COVER_MAX_PATHS = 48
-_SCATTERED_ITEM_DENSE_MIN = 6
+_SCATTERED_ITEM_DENSE_MIN = 5
 _SCATTERED_ITEM_VARY_MIN = 2
 _WILDCARD_DENSE_MIN = 4
+
+
+def _loadout_has_stamp_slug(loadout: Loadout, slug: str) -> bool:
+    """True when a stamp with this slug is equipped (live loadout only)."""
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    return any(
+        slugify_name(str(s.id or s.name or "")) == slug for s in (loadout.stamps or [])
+    )
+
+
+def _cartwheeler_cap_sequence(min_len: int, max_len: int) -> list[int]:
+    """Length caps for Cartwheeler: game applies (-1.1)^n per tile (even n positive).
+
+    Prefer the 8–12 sweet spot first (even lengths ahead of odds), then longer,
+    then shorter — derived only from min/max for this solve.
+    """
+    if max_len <= min_len:
+        return [max_len]
+    # 8 before 10/12: mid even words (rook/queen Full Moon tours) must not wait
+    # behind longer caps that thrash on wildcard boards.
+    sweet_even = [n for n in (8, 10, 12) if min_len <= n <= max_len]
+    sweet_odd = [n for n in (9, 11) if min_len <= n <= max_len]
+    longer = [
+        n
+        for n in range(min(max_len, 14), 12, -1)
+        if n >= min_len and n not in sweet_even and n not in sweet_odd
+    ]
+    shorter = [
+        n
+        for n in range(7, min_len - 1, -1)
+        if n not in sweet_even and n not in sweet_odd
+    ]
+    caps = sweet_even + sweet_odd + longer + shorter
+    if max_len not in caps:
+        caps.append(max_len)
+    return caps
+
+
+def _cartwheeler_wildcard_dense_cap_sequence(min_len: int, max_len: int) -> list[int]:
+    """Cartwheeler caps when many blanks/jokers: anchor short words before long DFS.
+
+    Long-first (10+) from a blank/joker start burns the budget on unresolved
+    wildcard branches; 6–8 first finds Card Shark letter anchors, then deepen.
+    """
+    if max_len <= min_len:
+        return [max_len]
+    prefer = [n for n in (6, 8, 7, 10, 9, 12, 11) if min_len <= n <= max_len]
+    rest = [
+        n
+        for n in _cartwheeler_cap_sequence(min_len, max_len)
+        if n not in prefer
+    ]
+    return prefer + rest
 
 
 def _is_shrunk_board(board: Board) -> bool:
@@ -5314,6 +5435,19 @@ class WordSearcher:
                         per_letter_deadline = max(
                             min_slice, pass_left / letter_branch_count
                         )
+                elif (
+                    has_wildcard
+                    and not has_digit
+                    and letter_branch_count > 8
+                    and not dedicated_start
+                ):
+                    # Blank/joker starts: don't let letter 'a' at long caps burn the
+                    # whole slice before other branches (Card Shark / Full Moon boards).
+                    pass_left = max(0.0, deadline - time.monotonic())
+                    if pass_left > 0.0:
+                        per_letter_deadline = max(
+                            0.25, min(2.0, pass_left / letter_branch_count)
+                        )
                 for ch in branch_letters:
                     if time.monotonic() >= deadline:
                         break
@@ -5869,9 +6003,11 @@ class WordSearcher:
         deadline: float,
         max_len: int,
     ) -> None:
-        """Seed paths that connect two jokers (Hanafuda three-of-a-kind with L2+)."""
+        """Seed paths that connect jokers (Hanafuda and/or Full Moon teleports)."""
         ctx = self._search_ctx(loadout)
-        if ctx.hanafuda_level < 1:
+        if ctx.hanafuda_level < 1 and not flag_test(
+            ctx.search_flags, FLAG_DOUBLE_LETTER_TELEPORT
+        ):
             return
         if time.monotonic() >= deadline:
             return
@@ -5880,6 +6016,50 @@ class WordSearcher:
         self._active_deadline = deadline
         try:
             for path in _joker_pair_paths(board, max_len, flags=stamp_flags):
+                if time.monotonic() >= deadline:
+                    break
+                if len(path) < self.min_len:
+                    continue
+                phys = physical_word_for_path(board, path, flags=stamp_flags)
+                if not self.validator.word_ok(board, path, phys, stamp_flags):
+                    continue
+                sc = self._rank_score_for_candidate(
+                    board, path, phys, loadout
+                )
+                if sc is not None:
+                    cached = self._score_cache.get(
+                        self._score_cache_key(path, phys)
+                    )
+                    candidates.consider(
+                        sc,
+                        phys,
+                        path,
+                        immediate=cached[0] if cached is not None else None,
+                    )
+        finally:
+            self._active_deadline = prev_deadline
+
+    def _collect_full_moon_chess_hub_candidates(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        deadline: float,
+        max_len: int,
+    ) -> None:
+        """Seed paths through Full Moon identical-chess teleports (live board only)."""
+        ctx = self._search_ctx(loadout)
+        if not flag_test(ctx.search_flags, FLAG_DOUBLE_LETTER_TELEPORT):
+            return
+        if time.monotonic() >= deadline:
+            return
+        stamp_flags = ctx.search_flags
+        prev_deadline = self._active_deadline
+        self._active_deadline = deadline
+        try:
+            for path in _identical_chess_pair_paths(
+                board, max_len, flags=stamp_flags
+            ):
                 if time.monotonic() >= deadline:
                     break
                 if len(path) < self.min_len:
@@ -9307,7 +9487,29 @@ class WordSearcher:
                 min(10.0, self.time_budget * 0.28),
             )
 
+        has_cartwheeler = _loadout_has_stamp_slug(loadout, "cartwheeler")
+        has_full_moon = flag_test(
+            self._search_ctx(loadout).search_flags, FLAG_DOUBLE_LETTER_TELEPORT
+        )
         letter_starts = _balanced_start_indices(board)
+        if (
+            has_cartwheeler
+            and has_full_moon
+            and joker_count >= _WILDCARD_DENSE_MIN
+        ):
+            # Wildcard-first DFS burns budget on blank→number→joker explosions; prefer
+            # letter/chess roots so Card Shark anchors (and long even tours) surface.
+            def _cw_start_key(i: int) -> tuple[int, float, int]:
+                tile = board.get_by_index(i)
+                if tile.curse == CurseType.LETTER:
+                    return (0, -float(tile.base_score), i)
+                if is_chess_piece(tile):
+                    return (1, -float(tile.base_score), i)
+                if _is_wildcard_tile(tile):
+                    return (3, 0.0, i)
+                return (2, -float(tile.base_score), i)
+
+            letter_starts = sorted(letter_starts, key=_cw_start_key)
         chess_starts = _chess_start_indices(board) if chess_reserve > 0.0 else []
         if chess_starts:
             # Prefer higher indices first for short chess-cap passes, so we don't
@@ -9332,7 +9534,10 @@ class WordSearcher:
             and not self._full_board_exact
             and self.max_len > self.min_len
         ):
-            item_seed_reserve = min(12.0, self.time_budget * 0.25)
+            if has_cartwheeler or item_count >= _SCATTERED_ITEM_DENSE_MIN:
+                item_seed_reserve = min(16.0, self.time_budget * 0.35)
+            else:
+                item_seed_reserve = min(12.0, self.time_budget * 0.25)
         elif lone_scatter_item and joker_count >= _WILDCARD_DENSE_MIN:
             item_seed_reserve = min(8.0, self.time_budget * 0.15)
         use_parallel = (
@@ -9358,14 +9563,35 @@ class WordSearcher:
                 active_count=active_count if _is_shrunk_board(board) else None,
                 item_count=item_count,
             )
+            if has_cartwheeler and self.max_len > self.min_len:
+                # Merge Cartwheeler even-length preference without dropping item caps.
+                for c in _cartwheeler_cap_sequence(self.min_len, self.max_len):
+                    if c not in caps:
+                        caps.append(c)
         elif use_parallel:
-            # One pool round at max_len; add cap=8 when jokers need hub-bridge paths.
+            # One pool round at max_len; add mid caps for hub / Cartwheeler paths.
             if (
                 hanafuda_level >= 1
                 and joker_count >= 2
                 and self.max_len > 8
             ):
                 caps = [8, self.max_len]
+            elif (
+                has_cartwheeler
+                and (has_full_moon or joker_count >= 2)
+                and self.max_len > 8
+            ):
+                if joker_count >= _WILDCARD_DENSE_MIN:
+                    caps = [6, 8, 10, 12]
+                else:
+                    # Even lengths first (Cartwheeler); include 8 before 10 so
+                    # rook/queen Full Moon boards still surface mid even words.
+                    caps = [8, 10, 12, self.max_len]
+                caps = [c for c in caps if self.min_len <= c <= self.max_len]
+                if self.max_len not in caps:
+                    caps.append(self.max_len)
+                if not caps:
+                    caps = [self.max_len]
             elif (
                 has_fraction_tiles
                 and _chess_tile_count(board) >= 3
@@ -9380,6 +9606,13 @@ class WordSearcher:
                     caps.append(self.max_len)
             else:
                 caps = [self.max_len]
+        elif has_cartwheeler and self.max_len > self.min_len and self.time_budget >= 6.0:
+            if joker_count >= _WILDCARD_DENSE_MIN:
+                caps = _cartwheeler_wildcard_dense_cap_sequence(
+                    self.min_len, self.max_len
+                )
+            else:
+                caps = _cartwheeler_cap_sequence(self.min_len, self.max_len)
         elif chess_reserve > 0.0 and self.max_len > self.min_len:
             caps = _chess_serial_cap_sequence(self.min_len, self.max_len)
         elif self.time_budget >= 6.0 and self.max_len > self.min_len:
@@ -9471,6 +9704,42 @@ class WordSearcher:
                 deadline,
                 self.max_len,
             )
+        elif (
+            has_full_moon
+            and joker_count >= 2
+            and not self._full_board_exact
+        ):
+            # Full Moon makes jokers a complete teleport graph; keep this seed brief
+            # so letter DFS still gets the main budget.
+            joker_deadline = min(
+                deadline,
+                search_begin + min(2.5, self.time_budget * 0.06),
+            )
+            if joker_deadline > time.monotonic():
+                self._collect_joker_cluster_candidates(
+                    board,
+                    loadout,
+                    candidates,
+                    joker_deadline,
+                    self.max_len,
+                )
+        if (
+            has_full_moon
+            and _chess_tile_count(board) >= 2
+            and not self._full_board_exact
+        ):
+            chess_hub_deadline = min(
+                deadline,
+                search_begin + min(2.5, self.time_budget * 0.06),
+            )
+            if chess_hub_deadline > time.monotonic():
+                self._collect_full_moon_chess_hub_candidates(
+                    board,
+                    loadout,
+                    candidates,
+                    chess_hub_deadline,
+                    self.max_len,
+                )
         ctx_for_wrap = self._search_ctx(loadout)
         if (
             flag_test(ctx_for_wrap.search_flags, FLAG_HORIZONTAL_WRAP)
@@ -9665,10 +9934,14 @@ class WordSearcher:
                     target_len=active_count,
                 )
         try:
+            # Specialty seeds (Full Moon hubs, jokers, items) must not suppress the
+            # main letter DFS — Cartwheeler / Full Moon boards need long-path coverage.
             standard_search = (
                 len(candidates) == 0
                 or self._small_board_hamiltonian
                 or item_count >= 2
+                or has_cartwheeler
+                or has_full_moon
             )
             if (
                 standard_search
@@ -9804,6 +10077,13 @@ class WordSearcher:
                 and (loadout.stickers or loadout.stamps)
                 and candidates.all_paths_max_len(3)
             )
+            shallow_cartwheeler_heap = (
+                use_parallel
+                and candidates
+                and has_cartwheeler
+                and self.max_len >= 10
+                and candidates.all_paths_max_len(8)
+            )
             needs_serial_fallback = use_parallel and (
                 not parallel_dfs_viable
                 or not candidates
@@ -9811,13 +10091,18 @@ class WordSearcher:
                 or candidates.all_paths_max_len(1)
                 or center_missing
                 or shallow_parallel_heap
+                or shallow_cartwheeler_heap
             )
             if standard_search and needs_serial_fallback:
                 timing.parallel_serial_fallback = True
                 self._parallel_executor = None
                 saved_workers = self.search_workers
                 self.search_workers = 1
-                if shallow_parallel_heap:
+                # Only clear junk heaps (len<=3). Keep mid-length Cartwheeler seeds
+                # (e.g. length-8) while serial long-first search runs.
+                if shallow_parallel_heap and not shallow_cartwheeler_heap:
+                    candidates.reset()
+                elif shallow_parallel_heap and shallow_cartwheeler_heap:
                     candidates.reset()
                 if center_missing:
                     fallback_starts = _up_and_up_center_adjacent_starts(
@@ -9837,9 +10122,22 @@ class WordSearcher:
                     fallback_deadline = pre_extend_deadline
                 else:
                     prefer_long_fallback = (
-                        has_fraction_tiles or has_number_tiles or wildcard_dense
+                        has_fraction_tiles
+                        or has_number_tiles
+                        or wildcard_dense
+                        or has_cartwheeler
+                        or has_full_moon
                     )
-                    if (
+                    if has_cartwheeler and self.time_budget >= 6.0 and self.max_len > self.min_len:
+                        if joker_count >= _WILDCARD_DENSE_MIN:
+                            fallback_caps = _cartwheeler_wildcard_dense_cap_sequence(
+                                self.min_len, self.max_len
+                            )
+                        else:
+                            fallback_caps = _cartwheeler_cap_sequence(
+                                self.min_len, self.max_len
+                            )
+                    elif (
                         prefer_long_fallback
                         and self.time_budget >= 6.0
                         and self.max_len > self.min_len

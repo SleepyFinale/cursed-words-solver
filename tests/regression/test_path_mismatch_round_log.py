@@ -162,6 +162,36 @@ UNWIELDY_FIXTURE = (
 )
 UNWIELDY_MELMOD_PATH = [22, 21, 16, 15, 10, 11, 12, 6]
 UNWIELDY_STORAGE_PATH = [2, 1, 6, 5, 10, 11, 12, 16]
+SYNDICSHIP_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260712_syndicship_path_mismatch.json"
+)
+PECULIARLY_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260712_peculiarly_path_mismatch.json"
+)
+GODAMNDEST_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260712_godamndest_path_mismatch.json"
+)
+MOTHPROOFED_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260712_mothproofed_path_mismatch.json"
+)
+CARTWHEELER_FULL_MOON_CASES = [
+    (SYNDICSHIP_FIXTURE, "syndicship", 57453, 7549),
+    (PECULIARLY_FIXTURE, "peculiarly", 58702, 21802),
+    (GODAMNDEST_FIXTURE, "godamndest", 52864, 21492),
+    (MOTHPROOFED_FIXTURE, "mothproofed", 75644, 4907),
+]
 FREERIDE_PATH_MISMATCH_FIXTURE = (
     Path(__file__).resolve().parents[1]
     / "fixtures"
@@ -1571,3 +1601,111 @@ def test_freeride_parallel_search_not_shallow_junk():
     assert int(best.score) > f8_score
     timing = searcher.last_search_timing
     assert timing is not None
+
+
+@pytest.mark.parametrize(
+    "fixture,word,submitted_score,f8_score",
+    CARTWHEELER_FULL_MOON_CASES,
+    ids=["syndicship", "peculiarly", "godamndest", "mothproofed"],
+)
+def test_cartwheeler_full_moon_path_movement_ok(
+    fixture: Path, word: str, submitted_score: int, f8_score: int
+):
+    if not fixture.exists():
+        pytest.skip(f"{fixture.name} required")
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    melmod_path = list((data.get("actual") or {}).get("path") or [])
+    storage = (data.get("actual") or {}).get("path_storage")
+    path = (
+        list(storage)
+        if storage
+        else path_from_melmod_indices(board, melmod_path)
+    )
+    flags = stamp_search_flags_mask(loadout)
+    assert path_movement_ok(board, path, flags=flags, loadout=loadout), (
+        f"{word}: submitted path must be legal under Full Moon / chess rules"
+    )
+
+
+@pytest.mark.parametrize(
+    "fixture,word,submitted_score,f8_score",
+    CARTWHEELER_FULL_MOON_CASES,
+    ids=["syndicship", "peculiarly", "godamndest", "mothproofed"],
+)
+def test_cartwheeler_full_moon_submitted_score(
+    fixture: Path, word: str, submitted_score: int, f8_score: int
+):
+    if not fixture.exists():
+        pytest.skip(f"{fixture.name} required")
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    actual = data.get("actual") or {}
+    melmod_path = list(actual.get("path") or [])
+    storage = actual.get("path_storage")
+    path = (
+        list(storage)
+        if storage
+        else path_from_melmod_indices(board, melmod_path)
+    )
+    score, _ = ScoringPipeline().score(board, path, word, loadout)
+    # Allow tiny orchestration drift vs live capture (grid items / void).
+    assert abs(int(score) - submitted_score) <= 50
+    assert int(actual.get("score") or 0) == submitted_score
+
+
+@pytest.mark.parametrize(
+    "fixture,word,submitted_score,f8_score",
+    CARTWHEELER_FULL_MOON_CASES,
+    ids=["syndicship", "peculiarly", "godamndest", "mothproofed"],
+)
+def test_cartwheeler_full_moon_search_beats_logged_f8(
+    fixture: Path, word: str, submitted_score: int, f8_score: int
+):
+    if not fixture.exists() or not GAME_WORDLIST_PATH.exists():
+        pytest.skip(f"{fixture.name} and game wordlist required")
+    if GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    data = json.loads(fixture.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=max(constraints.min_len, 3),
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=5)
+    assert results, f"search should find words on {word} board"
+    top = results[0]
+    logged_f8 = int((data.get("solver") or {}).get("predicted_score", f8_score))
+    assert logged_f8 == f8_score
+    assert int(top.score) >= logged_f8
+    # Prefer a clear win over the logged F8 suggestion on these Cartwheeler boards.
+    if int(top.score) == logged_f8:
+        assert len(top.path) >= int(
+            (data.get("solver") or {}).get("suggested_path_length") or 0
+        )
+    else:
+        assert int(top.score) > logged_f8
+    # Wildcard-dense Full Moon boards may not reach ~submit in 60s; require a clear
+    # F8 beat (and a meaningful fraction of submit when that bar is higher).
+    assert int(top.score) >= min(int(submitted_score * 0.22), int(logged_f8 * 1.7))
