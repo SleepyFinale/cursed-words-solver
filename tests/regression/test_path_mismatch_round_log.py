@@ -162,6 +162,16 @@ UNWIELDY_FIXTURE = (
 )
 UNWIELDY_MELMOD_PATH = [22, 21, 16, 15, 10, 11, 12, 6]
 UNWIELDY_STORAGE_PATH = [2, 1, 6, 5, 10, 11, 12, 16]
+FREERIDE_PATH_MISMATCH_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260710_144308_675_freeride_path_mismatch.json"
+)
+FREERIDE_MELMOD_PATH = [1, 6, 7, 11, 15, 16, 12, 17]
+FREERIDE_WORD = "freeride"
+FREERIDE_SUBMITTED_SCORE = 8228
+FREERIDE_F8_SCORE = 623
 UNWIELDY_WORD = "unwieldy"
 UNWIELDY_SUBMITTED_SCORE = 464
 UNWIELDY_F8_SCORE = 220
@@ -1454,3 +1464,110 @@ def test_dilutes_parallel_search_finds_words_with_cobra_min_len():
         board, DILUTES_PATH, DILUTES_WORD, loadout
     )
     assert int(dilutes_score) >= 1500
+
+
+@pytest.mark.skipif(
+    not FREERIDE_PATH_MISMATCH_FIXTURE.exists(),
+    reason="freeride path-mismatch fixture required",
+)
+def test_freeride_submitted_path_scores():
+    data = json.loads(FREERIDE_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    replay = _round_log_to_replay(data)
+    score = _score_submitted(replay)
+    assert replay["word"] == FREERIDE_WORD
+    assert replay["path"] == FREERIDE_MELMOD_PATH
+    assert replay["actual_score"] == FREERIDE_SUBMITTED_SCORE
+    assert score >= 8000
+
+
+@pytest.mark.skipif(
+    not FREERIDE_PATH_MISMATCH_FIXTURE.exists(),
+    reason="freeride path-mismatch fixture required",
+)
+def test_freeride_path_movement_and_word_ok():
+    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    data = json.loads(FREERIDE_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    storage_path = path_from_melmod_indices(board, FREERIDE_MELMOD_PATH)
+    flags = stamp_search_flags_mask(loadout)
+    validator = PathValidator(WordDictionary(GAME_WORDLIST_PATH))
+    validator.quest_loadout = loadout
+    assert validator.word_ok(board, storage_path, FREERIDE_WORD, flags)
+    assert path_movement_ok(board, storage_path, flags=flags, loadout=loadout)
+
+
+@pytest.mark.skipif(
+    not FREERIDE_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="freeride fixture and game wordlist required",
+)
+def test_freeride_f8_run_state_search_beats_f8():
+    if GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    data = json.loads(FREERIDE_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=5)
+    assert results, "search should find words on freeride board"
+    top = results[0]
+    f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
+    assert f8_score == FREERIDE_F8_SCORE
+    assert int(top.score) > f8_score
+    assert int(top.score) >= 8000
+    # freeride (8228) or another legal long resolve word (e.g. freakout 9373)
+    freeride_hits = [r for r in results if r.word == FREERIDE_WORD]
+    if freeride_hits:
+        assert int(freeride_hits[0].score) >= FREERIDE_SUBMITTED_SCORE - 50
+    else:
+        assert int(top.score) >= FREERIDE_SUBMITTED_SCORE - 50
+        assert len(top.path) >= len(FREERIDE_MELMOD_PATH)
+
+
+@pytest.mark.skipif(
+    not FREERIDE_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="freeride fixture and game wordlist required",
+)
+def test_freeride_parallel_search_not_shallow_junk():
+    if GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    data = json.loads(FREERIDE_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=3)
+    assert results
+    best = results[0]
+    f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
+    assert len(best.path) > 2
+    assert int(best.score) > f8_score
+    timing = searcher.last_search_timing
+    assert timing is not None

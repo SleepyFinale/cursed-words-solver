@@ -208,7 +208,11 @@ def test_cartwheeler_negative_per_tile():
     pipeline = ScoringPipeline()
     loadout = Loadout(stamps=[LoadoutItem(id="cartwheeler", name="Cartwheeler", kind="stamp")])
     score, bd = pipeline.score(board, [0, 2], "ab", loadout)
+    base, _ = pipeline.score(board, [0, 2], "ab", Loadout())
     assert abs(bd["multiplier"] - 1.21) < 0.01
+    # Game stores ×1.21 as word_bonus 121 and floors total * 121 / 100.
+    assert score == 24
+    assert score < base * 1.21
 
 
 def test_empty_jar_zero_money_doubles_word():

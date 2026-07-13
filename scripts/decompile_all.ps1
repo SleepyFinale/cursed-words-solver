@@ -45,7 +45,7 @@ Invoke-Decompile (Join-Path $project "out_shop") @(
 
 Write-Host "Stamps / curses -> scripts/decompile_type/out_stamps/"
 Invoke-Decompile (Join-Path $project "out_stamps") @(
-    "Oden", "CurseType", "TileSelection", "Footprints"
+    "Oden", "CurseType", "TileSelection", "Footprints", "Cartwheeler"
 )
 
 Write-Host "UI helpers -> scripts/decompile_type/out2/"

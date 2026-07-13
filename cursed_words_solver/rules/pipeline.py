@@ -2854,7 +2854,12 @@ class ScoringPipeline:
             per_tile = float(rule.get("factor", -1.1))
             if path:
                 factor = per_tile ** len(path)
-                _queue_word_multiplier(state, factor, rule_id)
+                percent = word_percent_bonus_from_multiplier(
+                    factor, rule, level=level
+                )
+                _queue_word_percent_bonus(
+                    state, percent, rule_id, wiki_factor=factor
+                )
                 state["effects"].append(
                     f"×{factor} word ({len(path)} tile(s) @ {per_tile})"
                 )

@@ -631,6 +631,10 @@ class _CandidateHeap:
             return False
         return all(len(entry[4]) <= max_len for entry in self._heap)
 
+    def reset(self) -> None:
+        """Drop all candidates (e.g. before serial fallback after shallow parallel)."""
+        self._heap.clear()
+
 
 def resolve_letter(
     tile: Tile,
@@ -821,6 +825,49 @@ def _wildcard_branch_letters(
         o.lower() for o in options if len(o) == 1 and o.isalpha()
     )
     return letters if letters else _WILDCARD_LETTERS
+
+
+def _order_alpha_branch_options(tile: Tile, options: tuple[str, ...]) -> tuple[str, ...]:
+    """Prefer the tile face letter when Card Shark offers multiple branches."""
+    if len(options) <= 1:
+        return options
+    face = (tile.letter or tile.char or "").strip().lower()
+    if len(face) == 1 and face.isalpha() and face in options:
+        return (face,) + tuple(o for o in options if o != face)
+    return options
+
+
+def _alpha_letter_branch_options(letter_options: list[str]) -> tuple[str, ...] | None:
+    """Trie branch letters from resolve_letter_options (one or more single-alpha)."""
+    if not letter_options:
+        return None
+    if not all(len(o) == 1 and o.isalpha() for o in letter_options):
+        return None
+    return tuple(letter_options)
+
+
+def _trie_branch_letters(
+    tile: Tile,
+    position: int,
+    letter_options: list[str],
+    token: str,
+    *,
+    has_digit: bool,
+    flags: SearchFlagsMask = 0,
+    segment: str | None = None,
+) -> tuple[str, ...]:
+    """DFS trie extensions: alpha options, wildcards, or numeric-wildcard letters."""
+    alpha = _alpha_letter_branch_options(letter_options)
+    if alpha is not None:
+        return _order_alpha_branch_options(tile, alpha)
+    num_wildcard_letters = (
+        _wildcard_branch_letters(tile, position, flags=flags, segment=segment)
+        if tile.curse == CurseType.NUMBER
+        else ()
+    )
+    if "?" in token and not has_digit:
+        return _wildcard_branch_letters(tile, position, flags=flags, segment=segment)
+    return num_wildcard_letters
 
 
 def _tile_word_token(tile: Tile, char_pos: int, *, flags: SearchFlagsMask = 0) -> str:
@@ -1823,6 +1870,208 @@ def _probe_chess_dict_resolve_prefixes(
     return diversified[:max_paths]
 
 
+def _probe_fraction_number_dict_resolve_prefixes(
+    board: Board,
+    loadout: Loadout,
+    *,
+    max_depth: int = 12,
+    max_paths: int = 120,
+    max_visited: int = 4000,
+) -> list[list[int]]:
+    """BFS from letter starts on fraction+number boards (no chess required)."""
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+    from cursed_words_solver.suggestion import path_tiles_need_dictionary_resolve
+
+    if not any(is_fraction_tile(t) for t in board.flat):
+        return []
+    if not any(is_number_like_tile(t) for t in board.flat):
+        return []
+    flags = stamp_search_flags(loadout)
+    graph_ctx = build_board_graph_context(board)
+    starts = _balanced_start_indices(board)
+    if not starts:
+        return []
+
+    def _wildcard_adjacent(idx: int) -> int:
+        score = 0
+        for nbr in neighbors_standard(board, [idx], {idx}, flags=flags):
+            t = board.get_by_index(nbr)
+            if is_fraction_tile(t) or is_number_like_tile(t) or t.curse == CurseType.WILDCARD:
+                score += 1
+        return -score
+
+    number_idxs = [
+        i
+        for i in _active_indices(board)
+        if is_number_like_tile(board.get_by_index(i))
+    ]
+
+    def _dist_to_number(idx: int) -> int:
+        if not number_idxs:
+            return 99
+        r, c = divmod(idx, board.cols)
+        return min(
+            abs(r - nr) + abs(c - nc)
+            for nidx in number_idxs
+            for nr, nc in [divmod(nidx, board.cols)]
+        )
+
+    starts = sorted(
+        starts,
+        key=lambda i: (
+            _dist_to_number(i),
+            _wildcard_adjacent(i),
+            -float(board.get_by_index(i).base_score),
+            i,
+        ),
+    )
+    per_start_visited = max(800, max_visited // max(1, len(starts)))
+    collected: list[list[int]] = []
+    collected_seen: set[tuple[int, ...]] = set()
+    per_start_cap = max(80, max_paths // max(1, len(starts)))
+
+    def _path_wild_count(path: list[int]) -> int:
+        return sum(
+            1
+            for idx in path
+            if is_fraction_tile(board.get_by_index(idx))
+            or is_number_like_tile(board.get_by_index(idx))
+            or board.get_by_index(idx).curse == CurseType.WILDCARD
+        )
+
+    def _probe_rank(path: list[int]) -> tuple:
+        base = sum(float(board.get_by_index(idx).base_score) for idx in path)
+        ends_number = int(is_number_like_tile(board.get_by_index(path[-1])))
+        # Prefer short first-touch-number paths (free/crd4) over long wild chains.
+        return (
+            ends_number,
+            -len(path) if ends_number else _path_wild_count(path),
+            _path_wild_count(path) if ends_number else len(path),
+            -base,
+            path,
+        )
+
+    for start in starts:
+        seen: set[tuple[int, ...]] = set()
+        pq: list[tuple[tuple[int, int, int], list[int], int]] = []
+        heapq.heappush(pq, ((-1, 0, 0), [start], 1 << start))
+        start_paths: list[list[int]] = []
+        while pq:
+            if len(seen) >= per_start_visited:
+                break
+            _, path, visited_mask = heapq.heappop(pq)
+            key = tuple(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            if (
+                len(path) >= 3
+                and key not in collected_seen
+                and path_tiles_need_dictionary_resolve(board, path, flags=flags)
+                and path_movement_ok(board, path, flags=flags, loadout=loadout)
+            ):
+                collected_seen.add(key)
+                start_paths.append(list(path))
+            if len(path) >= max_depth:
+                continue
+            nbr_mask = neighbors_mask(
+                board,
+                visited_mask,
+                cell_id=path[-1],
+                flags=flags,
+                graph_ctx=graph_ctx,
+                loadout=loadout,
+            )
+            nbrs = list(
+                _iter_expansion_neighbors(
+                    board,
+                    visited_mask,
+                    cell_id=path[-1],
+                    path=path,
+                    path_length=len(path),
+                    flags=flags,
+                    graph_ctx=graph_ctx,
+                    nbr_mask=nbr_mask,
+                )
+            )
+            nbrs.sort(
+                key=lambda idx: (
+                    # Before touching a number, prefer letter continuations so
+                    # fre→4 is found; after a digit, prefer wild/number growth.
+                    (
+                        0
+                        if (
+                            (
+                                any(
+                                    is_number_like_tile(board.get_by_index(p))
+                                    for p in path
+                                )
+                                and (
+                                    is_fraction_tile(board.get_by_index(idx))
+                                    or is_number_like_tile(board.get_by_index(idx))
+                                    or board.get_by_index(idx).curse
+                                    == CurseType.WILDCARD
+                                )
+                            )
+                            or (
+                                not any(
+                                    is_number_like_tile(board.get_by_index(p))
+                                    for p in path
+                                )
+                                and board.get_by_index(idx).curse == CurseType.LETTER
+                            )
+                        )
+                        else 1
+                    ),
+                    -float(board.get_by_index(idx).base_score),
+                    idx,
+                )
+            )
+            for idx in nbrs[:12]:
+                if visited_mask & (1 << idx):
+                    continue
+                tile = board.get_by_index(idx)
+                if not tile_playable_for_path(tile):
+                    continue
+                if is_fraction_tile(tile) and not fraction_position_valid(
+                    tile, len(path), relaxed=False
+                ):
+                    continue
+                next_path = path + [idx]
+                wild = _path_wild_count(next_path)
+                has_num = any(
+                    is_number_like_tile(board.get_by_index(p)) for p in next_path
+                )
+                # Before the first number, prefer letter-heavy short paths
+                # (free) over wild-first detours.
+                if has_num:
+                    prio = (-wild, -len(next_path), idx)
+                else:
+                    prio = (wild, -len(next_path), idx)
+                heapq.heappush(
+                    pq,
+                    (
+                        prio,
+                        next_path,
+                        visited_mask | (1 << idx),
+                    ),
+                )
+
+        start_paths.sort(key=_probe_rank, reverse=True)
+        collected.extend(start_paths[:per_start_cap])
+
+    per_start_bucket: dict[int, list[list[int]]] = {}
+    for path in collected:
+        per_start_bucket.setdefault(path[0], []).append(path)
+    diversified: list[list[int]] = []
+    per_start_take = max(12, max_paths // max(1, len(starts)))
+    for start in starts:
+        paths = sorted(per_start_bucket.get(start, []), key=_probe_rank, reverse=True)
+        diversified.extend(paths[:per_start_take])
+    diversified.sort(key=_probe_rank, reverse=True)
+    return diversified[:max_paths]
+
+
 def _dict_resolve_probe_prefixes(
     board: Board,
     loadout: Loadout,
@@ -1837,6 +2086,13 @@ def _dict_resolve_probe_prefixes(
     if _dict_resolve_per_seed_viable(board) and _chess_tile_count(board) >= 2:
         return _probe_chess_dict_resolve_prefixes(
             board, loadout, max_depth=max_depth
+        )
+    if (
+        any(is_fraction_tile(t) for t in board.flat)
+        and any(is_number_like_tile(t) for t in board.flat)
+    ):
+        return _probe_fraction_number_dict_resolve_prefixes(
+            board, loadout, max_depth=max(max_depth, 12)
         )
     return []
 
@@ -2120,6 +2376,28 @@ def _teleport_letter_neighbor_tier(
         if _physical_letter(board.get_by_index(j)) == letter:
             return 0
     return 1
+
+
+def _wildcard_zone_score(board: Board, idx: int) -> int:
+    """Higher when a cell is near number/fraction/wildcard tiles (dict-resolve routes)."""
+    score = 0
+    for nbr in neighbors_standard(board, [idx], {idx}):
+        tile = board.get_by_index(nbr)
+        if (
+            is_number_like_tile(tile)
+            or is_fraction_tile(tile)
+            or tile.curse == CurseType.WILDCARD
+        ):
+            score += 4
+        for nbr2 in neighbors_standard(board, [nbr], {idx, nbr}):
+            tile2 = board.get_by_index(nbr2)
+            if (
+                is_number_like_tile(tile2)
+                or is_fraction_tile(tile2)
+                or tile2.curse == CurseType.WILDCARD
+            ):
+                score += 2
+    return score
 
 
 def _iter_expansion_neighbors(
@@ -3450,6 +3728,11 @@ def _dict_resolve_per_seed_viable(board: Board) -> bool:
         return True
     if _chess_tile_count(board) >= 2 and has_resolve_board:
         return True
+    if (
+        any(is_fraction_tile(t) for t in board.flat)
+        and any(is_number_like_tile(t) for t in board.flat)
+    ):
+        return True
     return False
 
 
@@ -4200,19 +4483,14 @@ class WordSearcher:
         path_flags = path_scattered_search_flags_mask(
             board, path, stamp_flags, self.scoring.rules
         )
-        resolve_word = search_word_from_path(board, path, flags=path_flags)
-        fast = _valid_dictionary_words_for_path(
-            board,
-            path,
-            resolve_word,
-            loadout,
-            self.dictionary,
-            min_len=self.min_len,
-            limit=1,
-        )
-        if fast:
-            self._dict_valid_words_cache[path_key] = fast[0]
-            return fast[0]
+        lowered_search = search_word.lower()
+        if (
+            lowered_search.isalpha()
+            and len(lowered_search) >= self.min_len
+            and self.validator.word_ok(board, path, lowered_search, stamp_flags)
+        ):
+            self._dict_valid_words_cache[path_key] = lowered_search
+            return lowered_search
 
         if self._deadline_reached():
             return None
@@ -4266,6 +4544,10 @@ class WordSearcher:
         has_number_tiles = any(
             is_number_like_tile(board.get_by_index(i)) for i in _active_indices(board)
         )
+        has_fraction_tiles = any(
+            is_fraction_tile(board.get_by_index(i)) for i in _active_indices(board)
+        )
+        prefer_wildcard_neighbors = has_number_tiles and has_fraction_tiles
         use_tier2 = self._use_tier2_screen_for(loadout)
         use_heap = use_prune or use_tier2
         prev_heap = self._prune_heap
@@ -4658,7 +4940,7 @@ class WordSearcher:
                 graph_ctx=graph_ctx,
                 loadout=loadout,
             )
-            for idx in _iter_expansion_neighbors(
+            nbr_iter = _iter_expansion_neighbors(
                 board,
                 visited_mask,
                 cell_id=cell_id,
@@ -4669,7 +4951,57 @@ class WordSearcher:
                 graph_ctx=graph_ctx,
                 loadout=loadout,
                 nbr_mask=nbr_mask,
-            ):
+            )
+            if prefer_wildcard_neighbors and len(path) < 3 and not has_digit:
+                # Prefer letter neighbors that continue the current trie prefix
+                # (fr→fre→free) before dead branches or early number jumps.
+                nbrs = list(nbr_iter)
+                partial = "".join(chars).lower()
+
+                def _nbr_key(idx: int) -> tuple[int, int, int, int]:
+                    tile = board.get_by_index(idx)
+                    if tile.curse != CurseType.LETTER:
+                        return (1, 0, 0, idx)
+                    opts = resolve_letter_options(tile, prefix_len, flags=path_flags)
+                    continues = 0
+                    for opt in opts:
+                        if len(opt) != 1 or not opt.isalpha():
+                            continue
+                        ch = opt.lower()
+                        if prefix_cursor is not None:
+                            if self.dictionary.step_cursor(prefix_cursor, ch) is not None:
+                                continues = 1
+                                break
+                        elif self.dictionary.pattern_has_prefix(partial + ch):
+                            continues = 1
+                            break
+                    return (
+                        0,
+                        -continues,
+                        -_wildcard_zone_score(board, idx),
+                        idx,
+                    )
+
+                nbrs.sort(key=_nbr_key)
+                nbr_iter = iter(nbrs)
+            elif prefer_wildcard_neighbors and len(path) >= 3 and not has_digit:
+                # After a letter prefix, prefer number/fraction/wildcard tiles
+                # (fre→4) over mult-hint letter detours (fre→A).
+                nbrs = list(nbr_iter)
+                nbrs.sort(
+                    key=lambda i: (
+                        0
+                        if (
+                            is_number_like_tile(board.get_by_index(i))
+                            or is_fraction_tile(board.get_by_index(i))
+                            or board.get_by_index(i).curse == CurseType.WILDCARD
+                        )
+                        else 1,
+                        i,
+                    )
+                )
+                nbr_iter = iter(nbrs)
+            for idx in nbr_iter:
                 if timed_out or self._time_expired():
                     timed_out = True
                     break
@@ -4699,10 +5031,6 @@ class WordSearcher:
                 partial_seg = "".join(chars).lower()
                 next_has_digit = has_digit or any(c.isdigit() for c in token)
                 letter_options = resolve_letter_options(tile, prefix_len, flags=path_flags)
-                multi_letter = (
-                    len(letter_options) > 1
-                    and all(len(o) == 1 and o.isalpha() for o in letter_options)
-                )
                 num_wildcard_letters = (
                     _wildcard_branch_letters(
                         tile, prefix_len, flags=path_flags, segment=partial_seg
@@ -4710,14 +5038,14 @@ class WordSearcher:
                     if tile.curse == CurseType.NUMBER
                     else ()
                 )
-                branch_letters = (
-                    tuple(letter_options)
-                    if multi_letter
-                    else _wildcard_branch_letters(
-                        tile, prefix_len, flags=path_flags, segment=partial_seg
-                    )
-                    if "?" in token and not next_has_digit
-                    else num_wildcard_letters
+                branch_letters = _trie_branch_letters(
+                    tile,
+                    prefix_len,
+                    letter_options,
+                    token,
+                    has_digit=next_has_digit,
+                    flags=path_flags,
+                    segment=partial_seg,
                 )
 
                 if branch_letters and num_wildcard_letters:
@@ -4943,21 +5271,18 @@ class WordSearcher:
             has_digit = any(c.isdigit() for c in token)
             prefix_len = len(token)
             start_options = resolve_letter_options(tile, 0, flags=stamp_flags)
-            multi_letter = (
-                len(start_options) > 1
-                and all(len(o) == 1 and o.isalpha() for o in start_options)
-            )
             num_wildcard_letters = (
                 _wildcard_branch_letters(tile, 0, flags=stamp_flags)
                 if tile.curse == CurseType.NUMBER
                 else ()
             )
-            branch_letters = (
-                tuple(start_options)
-                if multi_letter
-                else _wildcard_branch_letters(tile, 0, flags=stamp_flags)
-                if "?" in token and not has_digit
-                else num_wildcard_letters
+            branch_letters = _trie_branch_letters(
+                tile,
+                0,
+                start_options,
+                token,
+                has_digit=has_digit,
+                flags=stamp_flags,
             )
             if number_start_first_letter is not None and num_wildcard_letters:
                 branch_letters = (number_start_first_letter.lower(),)
@@ -5971,7 +6296,10 @@ class WordSearcher:
             return
         if deadline is not None and time.monotonic() >= deadline:
             return
-        probe_depth = min(8, self.max_len)
+        probe_depth = min(12, self.max_len) if (
+            any(is_fraction_tile(t) for t in board.flat)
+            and any(is_number_like_tile(t) for t in board.flat)
+        ) else min(8, self.max_len)
         probe_paths = _dict_resolve_probe_prefixes(
             board, loadout, max_depth=probe_depth
         )
@@ -6001,8 +6329,151 @@ class WordSearcher:
                 board, path, scoring_word, loadout
             )
             if rank_sc is not None:
-                candidates.consider(rank_sc, scoring_word, path)
+                mini = _CandidateHeap(max(80, self.max_len * 8))
+                mini.consider(rank_sc, scoring_word, path)
+                if deadline is not None and len(path) < self.max_len:
+                    remain = deadline - time.monotonic()
+                    if remain > 0.25:
+                        ext_deadline = time.monotonic() + min(
+                            8.0 if self.time_budget >= 30.0 else 4.0,
+                            remain,
+                        )
+                        self._extend_top_candidates(
+                            board,
+                            loadout,
+                            mini,
+                            top_paths=24,
+                            max_rounds=min(12, self.max_len - len(path)),
+                            deadline=ext_deadline,
+                        )
+                for ext_sc, ext_word, ext_path in mini.best_sorted():
+                    candidates.consider(ext_sc, ext_word, list(ext_path))
                 added += 1
+
+        if (
+            added < add_cap
+            and any(is_fraction_tile(t) for t in board.flat)
+            and any(is_number_like_tile(t) for t in board.flat)
+            and deadline is not None
+            and deadline > time.monotonic()
+        ):
+            self._supplement_fraction_number_start_passes(
+                board,
+                loadout,
+                candidates,
+                stamp_flags=stamp_flags,
+                deadline=deadline,
+                add_cap=add_cap - added,
+            )
+
+    def _supplement_fraction_number_start_passes(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        *,
+        stamp_flags: SearchFlagsMask,
+        deadline: float,
+        add_cap: int,
+    ) -> None:
+        """Short per-start DFS+extend on fraction+number boards (freeride-class paths)."""
+        if add_cap <= 0:
+            return
+        starts = _balanced_start_indices(board)
+        number_idxs = [
+            i
+            for i in _active_indices(board)
+            if is_number_like_tile(board.get_by_index(i))
+        ]
+
+        def _dist_to_number(i: int) -> int:
+            if not number_idxs:
+                return 99
+            r, c = divmod(i, board.cols)
+            return min(
+                abs(r - nr) + abs(c - nc)
+                for nidx in number_idxs
+                for nr, nc in [divmod(nidx, board.cols)]
+            )
+
+        def _start_priority(i: int) -> tuple:
+            opts = [
+                o
+                for o in resolve_letter_options(
+                    board.get_by_index(i), 0, flags=stamp_flags
+                )
+                if len(o) == 1 and o.isalpha()
+            ]
+            multi = int(len(opts) > 1)
+            zone = _wildcard_zone_score(board, i)
+            nbr_zone = 0
+            for n in neighbors_standard(board, [i], {i}, flags=stamp_flags):
+                nbr_zone = max(nbr_zone, _wildcard_zone_score(board, n))
+            dist = _dist_to_number(i)
+            near_number = int(dist <= 3)
+            return (-multi, -near_number, dist, -nbr_zone, -zone, i)
+
+        ranked = sorted(starts, key=_start_priority)
+        remaining = max(0.0, deadline - time.monotonic())
+        if remaining < 0.5:
+            return
+        # Always include close letter starts (freeride begins 2 steps from the 4).
+        focus: list[int] = []
+        close_multi = [
+            s
+            for s in ranked
+            if _dist_to_number(s) <= 2
+            and len(
+                [
+                    o
+                    for o in resolve_letter_options(
+                        board.get_by_index(s), 0, flags=stamp_flags
+                    )
+                    if len(o) == 1 and o.isalpha()
+                ]
+            )
+            >= 1
+        ]
+        for s in ranked[:3] + close_multi:
+            if s not in focus:
+                focus.append(s)
+            if len(focus) >= 8:
+                break
+        slice_budget = min(
+            6.0 if self.time_budget >= 30.0 else 2.5,
+            max(1.2, remaining / max(1, len(focus))),
+        )
+        for start in focus:
+            if time.monotonic() >= deadline:
+                break
+            mini = _CandidateHeap(max(120, self.max_len * 10))
+            # Cap initial DFS depth so free-class prefixes survive; deep extend
+            # grows them to freeride/freakout length without mid-score eviction.
+            collect_cap = min(self.max_len, 8)
+            mini_deadline = time.monotonic() + slice_budget * 0.55
+            self._collect_words(
+                board,
+                loadout,
+                mini,
+                mini_deadline,
+                collect_cap,
+                start_indices=[start],
+            )
+            if not mini:
+                continue
+            ext_deadline = min(deadline, time.monotonic() + slice_budget * 0.45)
+            self._extend_top_candidates(
+                board,
+                loadout,
+                mini,
+                top_paths=32,
+                max_rounds=min(12, self.max_len - self.min_len),
+                deadline=ext_deadline,
+            )
+            for rank_sc, word, path in mini.best_sorted():
+                if rank_sc is None:
+                    continue
+                candidates.consider(rank_sc, word, list(path))
 
     def _extend_dictionary_resolve_boundaries(
         self,
@@ -6273,6 +6744,120 @@ class WordSearcher:
         finally:
             self._active_deadline = prev_deadline
 
+    def _deep_extend_dict_resolve_path(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        path: list[int],
+        *,
+        stamp_flags: SearchFlagsMask,
+        graph_ctx: BoardGraphContext,
+        score_path,
+        deadline: float | None,
+        depth_left: int,
+    ) -> bool:
+        """Grow a dict-resolve path a few tiles even when mid scores are weak."""
+        if depth_left <= 0 or len(path) >= self.max_len:
+            return False
+        if self._deadline_reached(deadline):
+            return False
+        from cursed_words_solver.suggestion import (
+            _valid_dictionary_words_for_path,
+            path_is_submittable,
+        )
+
+        extended = False
+        visited_mask = sum(1 << idx for idx in path)
+        nbr_mask = neighbors_mask(
+            board,
+            visited_mask,
+            cell_id=path[-1],
+            flags=stamp_flags,
+            graph_ctx=graph_ctx,
+            loadout=loadout,
+        )
+        nbrs = list(
+            _neighbors_sorted_for_loadout(
+                board,
+                path,
+                visited_mask,
+                flags=stamp_flags,
+                graph_ctx=graph_ctx,
+                loadout=loadout,
+                nbr_mask=nbr_mask,
+            )
+        )
+        nbrs.sort(
+            key=lambda i: (
+                0
+                if (
+                    is_fraction_tile(board.get_by_index(i))
+                    or board.get_by_index(i).curse == CurseType.WILDCARD
+                )
+                else 1
+                if board.get_by_index(i).curse == CurseType.LETTER
+                else 2,
+                i,
+            )
+        )
+        for idx in nbrs[:8]:
+            if self._deadline_reached(deadline):
+                break
+            tile = board.get_by_index(idx)
+            if not tile_playable_for_path(tile):
+                continue
+            if is_fraction_tile(tile) and not fraction_position_valid(
+                tile, len(path), relaxed=False
+            ):
+                continue
+            path.append(idx)
+            search_word = search_word_from_path(board, path, flags=stamp_flags)
+            if len(search_word) >= self.min_len:
+                valid = _valid_dictionary_words_for_path(
+                    board,
+                    path,
+                    search_word,
+                    loadout,
+                    self.dictionary,
+                    min_len=self.min_len,
+                    limit=1,
+                )
+                if valid and path_is_submittable(
+                    board,
+                    path,
+                    valid[0],
+                    loadout,
+                    self.dictionary,
+                    min_len=self.min_len,
+                ):
+                    if self._consider_path_candidate(
+                        board,
+                        loadout,
+                        candidates,
+                        path,
+                        valid[0],
+                        stamp_flags,
+                        score_path,
+                        resolved_word=valid[0],
+                    ):
+                        extended = True
+                    if len(path) < self.max_len and depth_left > 1:
+                        if self._deep_extend_dict_resolve_path(
+                            board,
+                            loadout,
+                            candidates,
+                            path,
+                            stamp_flags=stamp_flags,
+                            graph_ctx=graph_ctx,
+                            score_path=score_path,
+                            deadline=deadline,
+                            depth_left=depth_left - 1,
+                        ):
+                            extended = True
+            path.pop()
+        return extended
+
     def _extend_top_candidates(
         self,
         board: Board,
@@ -6337,6 +6922,69 @@ class WordSearcher:
                 seed_entries = list(candidates.best_sorted()[:top_paths])
                 if extra_seeds:
                     seed_entries.extend(extra_seeds)
+                # Fraction+number boards: also extend longest resolve paths so
+                # mid-score prefixes (e.g. free→freaked→freeride) are not starved
+                # by shorter high-scoring heap leaders.
+                if any(is_fraction_tile(t) for t in board.flat) and any(
+                    is_number_like_tile(t) for t in board.flat
+                ):
+                    by_len = sorted(
+                        candidates.best_sorted(),
+                        key=lambda e: (len(e[2]), e[0]),
+                        reverse=True,
+                    )
+                    seen_seed = {e[2] for e in seed_entries}
+                    for entry in by_len[: max(8, top_paths // 2)]:
+                        if entry[2] in seen_seed:
+                            continue
+                        if not path_tiles_need_dictionary_resolve(
+                            board, list(entry[2]), flags=stamp_flags
+                        ):
+                            continue
+                        seen_seed.add(entry[2])
+                        seed_entries.append(entry)
+                # Prefer short letter→number resolve seeds (free/crd4) before
+                # sterile high-score clones (dcd4×N) that burn the deadline.
+                if any(is_fraction_tile(t) for t in board.flat) and any(
+                    is_number_like_tile(t) for t in board.flat
+                ):
+                    def _extend_seed_priority(
+                        entry: tuple[float, str, tuple[int, ...]],
+                    ) -> tuple:
+                        sc, word, path_t = entry
+                        end_tile = board.get_by_index(path_t[-1])
+                        ends_number = int(is_number_like_tile(end_tile))
+                        alpha_prefix = 0
+                        for ch in word.lower():
+                            if ch.isalpha():
+                                alpha_prefix += 1
+                            else:
+                                break
+                        unused_wild = 0
+                        visited = sum(1 << i for i in path_t)
+                        for nbr in neighbors_standard(
+                            board,
+                            list(path_t),
+                            {i for i in path_t},
+                            flags=stamp_flags,
+                        ):
+                            if visited & (1 << nbr):
+                                continue
+                            nt = board.get_by_index(nbr)
+                            if (
+                                is_fraction_tile(nt)
+                                or nt.curse == CurseType.WILDCARD
+                            ):
+                                unused_wild += 1
+                        return (
+                            -ends_number,
+                            -unused_wild,
+                            -alpha_prefix,
+                            len(path_t),
+                            -sc,
+                        )
+
+                    seed_entries.sort(key=_extend_seed_priority)
                 for _score, seed_word, path_tuple in seed_entries:
                     if self._deadline_reached(effective_deadline):
                         return
@@ -6350,6 +6998,43 @@ class WordSearcher:
                     seed_needs_dict_resolve = path_tiles_need_dictionary_resolve(
                         board, path, flags=stamp_flags
                     )
+                    fraction_number_board = any(
+                        is_fraction_tile(t) for t in board.flat
+                    ) and any(is_number_like_tile(t) for t in board.flat)
+                    if (
+                        fraction_number_board
+                        and seed_needs_dict_resolve
+                        and len(path) < self.max_len
+                    ):
+                        def _score_no_prune(
+                            p: list[int],
+                            w: str,
+                            *,
+                            resolved_word: str | None = None,
+                        ) -> float | None:
+                            if self._deadline_reached(effective_deadline):
+                                return None
+                            return self._rank_score_for_candidate(
+                                board,
+                                p,
+                                w,
+                                loadout,
+                                prune_heap=None,
+                                resolved_word=resolved_word,
+                            )
+
+                        if self._deep_extend_dict_resolve_path(
+                            board,
+                            loadout,
+                            candidates,
+                            list(path),
+                            stamp_flags=stamp_flags,
+                            graph_ctx=graph_ctx,
+                            score_path=_score_no_prune,
+                            deadline=effective_deadline,
+                            depth_left=min(4, self.max_len - len(path)),
+                        ):
+                            extended = True
                     if seed_needs_dict_resolve:
                         seed_lower = search_word_from_path(
                             board, path, flags=stamp_flags
@@ -8003,10 +8688,6 @@ class WordSearcher:
                 letter_options = resolve_letter_options(
                     tile, prefix_len, flags=path_flags
                 )
-                multi_letter = (
-                    len(letter_options) > 1
-                    and all(len(o) == 1 and o.isalpha() for o in letter_options)
-                )
                 num_wildcard_letters = (
                     _wildcard_branch_letters(
                         tile, prefix_len, flags=path_flags, segment=partial_seg
@@ -8014,14 +8695,14 @@ class WordSearcher:
                     if tile.curse == CurseType.NUMBER
                     else ()
                 )
-                branch_letters = (
-                    tuple(letter_options)
-                    if multi_letter
-                    else _wildcard_branch_letters(
-                        tile, prefix_len, flags=path_flags, segment=partial_seg
-                    )
-                    if "?" in token and not next_has_digit
-                    else num_wildcard_letters
+                branch_letters = _trie_branch_letters(
+                    tile,
+                    prefix_len,
+                    letter_options,
+                    token,
+                    has_digit=next_has_digit,
+                    flags=path_flags,
+                    segment=partial_seg,
                 )
                 if branch_letters and num_wildcard_letters:
                     branch_letters = _order_number_wildcard_branch_letters(
@@ -8211,21 +8892,18 @@ class WordSearcher:
             has_wildcard = "?" in token
             has_digit = any(c.isdigit() for c in token)
             start_options = resolve_letter_options(tile, 0, flags=stamp_flags)
-            multi_letter = (
-                len(start_options) > 1
-                and all(len(o) == 1 and o.isalpha() for o in start_options)
-            )
             num_wildcard_letters = (
                 _wildcard_branch_letters(tile, 0, flags=stamp_flags)
                 if tile.curse == CurseType.NUMBER
                 else ()
             )
-            branch_letters = (
-                tuple(start_options)
-                if multi_letter
-                else _wildcard_branch_letters(tile, 0, flags=stamp_flags)
-                if "?" in token and not has_digit
-                else num_wildcard_letters
+            branch_letters = _trie_branch_letters(
+                tile,
+                0,
+                start_options,
+                token,
+                has_digit=has_digit,
+                flags=stamp_flags,
             )
             if branch_letters and num_wildcard_letters:
                 branch_letters = _order_number_wildcard_branch_letters(
@@ -8597,6 +9275,12 @@ class WordSearcher:
                 extension_reserve = min(8.0, extension_reserve * 1.4)
             if branch <= 2:
                 extension_reserve *= 0.85
+            # Fraction+number boards need long resolve growth (free→freeride).
+            if has_number_tiles and has_fraction_tiles:
+                extension_reserve = min(
+                    18.0,
+                    max(extension_reserve, self.time_budget * 0.30),
+                )
 
         (
             number_reserve,
@@ -9133,6 +9817,8 @@ class WordSearcher:
                 self._parallel_executor = None
                 saved_workers = self.search_workers
                 self.search_workers = 1
+                if shallow_parallel_heap:
+                    candidates.reset()
                 if center_missing:
                     fallback_starts = _up_and_up_center_adjacent_starts(
                         board, center_idx
@@ -9441,8 +10127,21 @@ class WordSearcher:
             leader_len = len(leader_sorted[0][2]) if leader_sorted else 0
             leader_rank = leader_sorted[0][0] if leader_sorted else 0.0
             leader_imm = candidates.max_immediate_score()
+            fraction_number_board = has_number_tiles and has_fraction_tiles
             if leader_imm is not None and leader_imm >= 400:
-                extend_cap = min(3.0, extension_reserve or 3.0)
+                if fraction_number_board and leader_len <= 5:
+                    # Short mid-score leaders must not starve multi-tile resolve
+                    # growth (e.g. free→freakout). Keep a real wall-time slice.
+                    extend_cap = min(
+                        22.0,
+                        max(
+                            float(extension_reserve or 0.0),
+                            self.time_budget * 0.35,
+                            12.0,
+                        ),
+                    )
+                else:
+                    extend_cap = min(3.0, extension_reserve or 3.0)
                 extend_deadline = min(
                     extend_deadline, time.monotonic() + extend_cap
                 )
@@ -9553,6 +10252,22 @@ class WordSearcher:
                     )
                     default_cap = time.monotonic() + default_extend_budget
                     phase_extend_deadline = min(phase_extend_deadline, default_cap)
+            # Fraction+number: grow heap resolve seeds (free→freeride) before
+            # probe supplement can consume the phase budget on sterile prefixes.
+            if (
+                fraction_number_board
+                and not self._f8_expired()
+                and time.monotonic() < phase_extend_deadline
+            ):
+                self._extend_top_candidates(
+                    board,
+                    loadout,
+                    candidates,
+                    top_paths=top_paths,
+                    max_rounds=max_extend_rounds,
+                    extra_seeds=deduped_extra or None,
+                    deadline=phase_extend_deadline,
+                )
             if not self._f8_expired() and time.monotonic() < phase_extend_deadline:
                 self._supplement_fraction_chess_word_boundaries(
                     board,
@@ -9587,7 +10302,7 @@ class WordSearcher:
                             candidates,
                             deadline=first_deadline,
                         )
-            if not self._f8_expired():
+            if not self._f8_expired() and not fraction_number_board:
                 self._extend_top_candidates(
                     board,
                     loadout,

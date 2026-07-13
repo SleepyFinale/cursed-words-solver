@@ -1519,12 +1519,24 @@ def _alignment_pattern_for_path(
     flags: SearchFlagsMask,
 ) -> str:
     """Wildcard pattern for dictionary resolve (face letters fixed; true wildcards '?')."""
+    from cursed_words_solver.rules.stamp_behaviors import (
+        FLAG_CARD_SUIT_FIRST_LETTER,
+        coerce_search_flags,
+        flag_test,
+    )
+    from cursed_words_solver.search import resolve_letter_options
+
+    mask = coerce_search_flags(flags)
     parts: list[str] = []
     char_pos = 0
     for idx in path:
         tile = board.get_by_index(idx)
-        token = resolve_letter(tile, char_pos, flags=flags)
-        if token == "?":
+        token = resolve_letter(tile, char_pos, flags=mask)
+        options = resolve_letter_options(tile, char_pos, flags=mask)
+        alpha_opts = [o for o in options if len(o) == 1 and o.isalpha()]
+        if flag_test(mask, FLAG_CARD_SUIT_FIRST_LETTER) and len(alpha_opts) > 1:
+            parts.append("?")
+        elif token == "?":
             parts.append("?")
         elif token == "qu":
             parts.append("?")
@@ -1707,10 +1719,15 @@ def _pick_best_dictionary_word(
         top = [c for c, sc in scored if sc >= best_score - 1e-6]
         myrrh_family = [c for c in top if "myrrh" in c]
         pick_from = myrrh_family or top
-        return max(
-            pick_from,
-            key=lambda c: (_physical_letter_overlap(board, path, c), c),
+        best_overlap = max(
+            _physical_letter_overlap(board, path, c) for c in pick_from
         )
+        tied = [
+            c
+            for c in pick_from
+            if _physical_letter_overlap(board, path, c) >= best_overlap
+        ]
+        return min(tied)
 
     return max(pool, key=lambda c: (_physical_letter_overlap(board, path, c), c))
 
@@ -2202,17 +2219,43 @@ def _valid_dictionary_words_for_path(
     deadline_check: Callable[[], bool] | None = None,
 ) -> list[str]:
     flags = stamp_search_flags(loadout)
+    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
+    lowered = scoring_word.lower()
+    if (
+        lowered.isalpha()
+        and len(lowered) >= min_len
+        and validator.word_ok(board, path, lowered, flags)
+    ):
+        out = [lowered]
+        return out[:limit] if limit is not None else out
+    phys = physical_word_for_path(board, path, flags=flags)
+    if (
+        phys.isalpha()
+        and len(phys) >= min_len
+        and validator.word_ok(board, path, phys, flags)
+    ):
+        out = [phys.lower()]
+        return out[:limit] if limit is not None else out
     pattern = _alignment_pattern_for_path(board, path, flags)
-    return _collect_dictionary_matches_for_path(
+    # Scan enough pattern hits to prefer physical-letter overlap (freeride over
+    # credenda) without walking the entire dictionary on every DFS extension.
+    scan_limit = None if limit is None else max(2000, limit * 128)
+    matches = _collect_dictionary_matches_for_path(
         board,
         path,
         pattern,
         loadout,
         dictionary,
         min_len=min_len,
-        limit=limit,
+        limit=scan_limit,
         deadline_check=deadline_check,
     )
+    if not matches:
+        return []
+    matches.sort(
+        key=lambda c: (-_physical_letter_overlap(board, path, c), c)
+    )
+    return matches[:limit] if limit is not None else matches
 
 
 def path_is_submittable(

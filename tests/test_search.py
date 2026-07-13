@@ -27,10 +27,12 @@ from cursed_words_solver.search import (
     WordSearcher,
     _CandidateHeap,
     _balanced_start_indices,
+    _trie_branch_letters,
     _wildcard_start_indices,
     neighbors_from_tile,
     neighbors_standard,
     resolve_letter,
+    resolve_letter_options,
 )
 
 
@@ -57,6 +59,30 @@ def test_resolve_letter_scattered_item_is_wildcard():
         metadata={"scattered_item_id": "cherry_pie"},
     )
     assert resolve_letter(tile, 0) == "?"
+
+
+def test_trie_branch_letters_single_uppercase_letter_option():
+    """Regression: R face with one lowercase option must still trie-branch (freeride path)."""
+    tile = Tile(0, 0, "R", "r", 1.0, TileColor.COLORLESS, CurseType.LETTER)
+    flags = stamp_search_flags(Loadout())
+    token = resolve_letter(tile, 0, flags=flags)
+    opts = resolve_letter_options(tile, 0, flags=flags)
+    branch = _trie_branch_letters(
+        tile, 0, opts, token, has_digit=False, flags=flags
+    )
+    assert branch == ("r",)
+
+
+def test_trie_branch_letters_fraction_after_digit():
+    """Fraction/wildcard after a digit still use single-token trie extension (not a-z)."""
+    frac = Tile(0, 0, "?", "?", 1.0, TileColor.COLORLESS, CurseType.FRACTION)
+    flags = stamp_search_flags(Loadout())
+    opts = resolve_letter_options(frac, 1, flags=flags)
+    token = resolve_letter(frac, 1, flags=flags)
+    branch = _trie_branch_letters(
+        frac, 1, opts, token, has_digit=True, flags=flags
+    )
+    assert branch == ()
 
 
 def test_finds_cat(tmp_path):
