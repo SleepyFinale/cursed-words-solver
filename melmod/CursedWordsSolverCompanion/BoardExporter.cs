@@ -677,9 +677,8 @@ namespace CursedWordsSolverCompanion
                     continue;
 
                 var tile = sel.SelectedTile;
+                // Strict only — matches MapTile / card-scoring.md (no display heuristics).
                 var suit = MapCardSuitStrict(tile);
-                if (string.IsNullOrEmpty(suit))
-                    suit = MapCardSuit(tile);
                 if (string.IsNullOrEmpty(suit))
                     continue;
 
@@ -1191,17 +1190,9 @@ namespace CursedWordsSolverCompanion
                 snap.letter = "?";
             }
 
-            // Strict suit first (avoids false positives on plain letters). For blanks /
-            // wildcards Fall back to MapCardSuit — wrestlers etc. need end-tile suits
-            // on F8 boards, and Strict alone often misses blank packet fields.
+            // Strict CardSuit only (packet / GetCardSuit). Loose MapCardSuit heuristics
+            // invent suits on blanks and falsely proc Wrestlers (see stomatocytes).
             var cardSuit = MapCardSuitStrict(tile);
-            if (
-                string.IsNullOrEmpty(cardSuit)
-                && (isJoker || curse == "wildcard" || letter == "?")
-            )
-            {
-                cardSuit = MapCardSuit(tile);
-            }
             if (cardSuit == "joker")
             {
                 // Void letter tiles can mis-read as Joker suit; game uses CardSuit == 0 for Hanafuda unused.

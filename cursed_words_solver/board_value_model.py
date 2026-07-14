@@ -7,6 +7,7 @@ Does not replace ScoringPipeline — only guides expansion order / beam priority
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from cursed_words_solver.board_scoring_context import BoardScoringContext
 from cursed_words_solver.graph_bitboard import (
@@ -21,6 +22,9 @@ from cursed_words_solver.rules.stamp_behaviors import (
     flag_test,
 )
 from cursed_words_solver.solve_context import SolveContext
+
+if TYPE_CHECKING:
+    from cursed_words_solver.loadout_affordances import LoadoutAffordances
 
 # Color code from graph_bitboard._COLOR_TO_CODE (WHITE)
 _WHITE_COLOR_CODE = 6
@@ -40,6 +44,11 @@ class BoardValueModel:
     wildcard_density: float
     item_count: int
     chess_count: int
+    soft_must_include: bool = False
+    needs_suit_diverse_ends: bool = False
+    rewards_long_word: bool = False
+    rewards_chess_takes: bool = False
+    suit_endpoint_mask: int = 0
 
     def cell_score(self, idx: int) -> float:
         if 0 <= idx < len(self.cell_potential):
@@ -75,6 +84,13 @@ class BoardValueModel:
     def missing_must_include(self, visited_mask: int) -> int:
         return (self.must_include_mask & ~visited_mask).bit_count()
 
+    def soft_must_pressure(self, visited_mask: int) -> float:
+        """Soft must-include pressure for beam (does not hard-skip scoring)."""
+        if not self.soft_must_include or not self.must_include_mask:
+            return 0.0
+        missing = self.must_include_mask & ~visited_mask
+        return 12.0 * float(missing.bit_count())
+
     def start_priority(self, idx: int) -> float:
         """Higher is better for seeding the frontier."""
         pot = self.cell_score(idx)
@@ -82,15 +98,16 @@ class BoardValueModel:
         cover = 40.0 if self.is_must_include(idx) else (
             18.0 if self.is_soft_cover(idx) else 0.0
         )
-        # Soft penalty for blanks so they don't monopolize starts on dense boards
         penalty = self.branch_penalty(idx)
         if self.wildcard_density >= 0.16:
             penalty *= 1.35
-        # NUMBER starts are high-branch but must remain competitive seeds —
-        # otherwise beam starves digit-leading faces (comitadji-style misses).
         if self.is_number(idx):
             penalty *= 0.35
             pot += 8.0
+        if self.needs_suit_diverse_ends and (self.suit_endpoint_mask & (1 << idx)):
+            pot += 14.0
+        if self.rewards_chess_takes and self.is_hub(idx):
+            pot += 6.0
         return pot + hub + cover - penalty
 
     def expand_priority(
@@ -109,7 +126,6 @@ class BoardValueModel:
         next_visited = visited_mask | (1 << next_idx)
         cover_after = self.coverage_progress(next_visited)
         cover_delta = (cover_after - cover_before) * 80.0
-        # Prefer covering remaining must-includes before max length
         must_left = self.missing_must_include(visited_mask)
         must_bonus = 0.0
         if must_left and self.is_must_include(next_idx):
@@ -117,9 +133,22 @@ class BoardValueModel:
         length_pull = 0.0
         if prefix_len + 1 >= min_len:
             length_pull = 2.0 * (prefix_len + 1)
-        # Soft length preference when items need long covering tours
         if self.item_count >= 2 and cover_after < 1.0:
             length_pull += 4.0
+        if self.rewards_long_word and prefix_len + 1 >= min_len:
+            length_pull += 3.0
+        if self.needs_suit_diverse_ends and path:
+            start_suited = bool(self.suit_endpoint_mask & (1 << path[0]))
+            next_suited = bool(self.suit_endpoint_mask & (1 << next_idx))
+            if start_suited and next_suited:
+                pot += 18.0
+            elif next_suited:
+                pot += 8.0
+        if self.rewards_chess_takes and self.is_hub(next_idx):
+            pot += 10.0
+        pot -= self.soft_must_pressure(visited_mask) * 0.15
+        if self.soft_must_include and self.is_must_include(next_idx):
+            pot += self.soft_must_pressure(visited_mask)
         penalty = self.branch_penalty(next_idx)
         if self.wildcard_density >= 0.16 and prefix_len < min_len:
             penalty *= 1.25
@@ -140,9 +169,10 @@ def build_board_value_model(
     mult_hints: MultNeighborHints | None = None,
     required_consumable_indices: frozenset[int] | None = None,
     search_flags: SearchFlagsMask | None = None,
+    affordances: LoadoutAffordances | None = None,
 ) -> BoardValueModel:
     """Pure function of live board/loadout/contexts — call once per solve."""
-    del loadout  # reserved for future condition affinity; hints cover mults today
+    del loadout  # affordances / hints cover inventory geometry today
     n = graph_ctx.cell_count
     flags = (
         search_flags
@@ -161,6 +191,7 @@ def build_board_value_model(
     soft_cover = 0
     must_include = 0
     number_mask = 0
+    suit_endpoint_mask = 0
 
     wildcard_count = graph_ctx.wildcard_mask.bit_count()
     chess_count = graph_ctx.chess_piece_mask.bit_count()
@@ -169,6 +200,15 @@ def build_board_value_model(
     wildcard_density = wildcard_count / active_count
 
     full_moon = flag_test(flags, FLAG_DOUBLE_LETTER_TELEPORT)
+    needs_suit = bool(affordances and affordances.needs_suit_diverse_ends)
+    rewards_long = bool(affordances and affordances.rewards_long_word) or (
+        mult_hints is not None and mult_hints.prefer_length
+    )
+    rewards_chess = bool(affordances and affordances.rewards_chess_takes)
+    soft_must = bool(
+        affordances
+        and (affordances.needs_item_cover or affordances.rewards_long_word)
+    )
 
     for idx in range(n):
         if not graph_ctx.is_active(idx):
@@ -177,9 +217,14 @@ def build_board_value_model(
         add = float(static_adds[idx]) if idx < len(static_adds) else 0.0
         pot = base + add
 
-        # Mult affinity from neighbor hints (condition colors / jokers / cards)
+        tile = board.get_by_index(idx)
+        suit = str((tile.metadata or {}).get("card_suit") or "").strip().lower()
+        if suit and suit not in ("none", ""):
+            suit_endpoint_mask |= 1 << idx
+            if needs_suit:
+                pot += 12.0
+
         if mult_hints is not None:
-            tile = board.get_by_index(idx)
             if mult_hints.prefer_joker and (
                 tile.curse == CurseType.WILDCARD
                 or (tile.metadata or {}).get("is_joker")
@@ -193,13 +238,11 @@ def build_board_value_model(
                     pot += 10.0
 
         if mult_rules:
-            # Lightweight boost for cells that often unlock word mults
             if graph_ctx.number_like[idx]:
                 pot += 6.0
             if graph_ctx.is_fraction[idx]:
                 pot += 8.0
 
-        # Movement hubs (wiki: WHITE teleports; chess pieces; Full Moon doubles)
         is_white = graph_ctx.tile_color_code[idx] == _WHITE_COLOR_CODE
         is_chess = bool(graph_ctx.chess_piece_mask & (1 << idx))
         is_wild = bool(graph_ctx.wildcard_mask & (1 << idx))
@@ -207,27 +250,26 @@ def build_board_value_model(
             hub_mask |= 1 << idx
             pot += 8.0 if is_chess or is_white else 3.0
 
-        # Branch cost: wildcards / digits explode the frontier
         cost = 0.0
         if is_wild:
-            # Wildcards are high-branch but often high-value (Hanafuda / blank mults)
             cost += 6.0 + 4.0 * wildcard_density
             if mult_hints is not None and mult_hints.prefer_joker:
                 pot += 35.0
                 cost *= 0.5
+            if affordances is not None and affordances.prefer_joker:
+                pot += 10.0
+                cost *= 0.85
         if graph_ctx.curse_code[idx] == CURSE_CODE_NUMBER:
             number_mask |= 1 << idx
             cost += 6.0
         if graph_ctx.is_fraction[idx]:
             cost += 5.0
         if is_white:
-            # Teleport hubs are valuable but also high branching
             cost += 4.0
 
         cell_potential[idx] = pot
         branch_cost[idx] = cost
 
-    # Hard covers: Up-and-Up center + required cactus / consumable placements
     center = solve_ctx.quest_ctx.require_center_index
     if center is not None and 0 <= center < n and graph_ctx.is_active(center):
         must_include |= 1 << center
@@ -239,12 +281,13 @@ def build_board_value_model(
                 must_include |= 1 << idx
                 cell_potential[idx] += 45.0
 
-    # Soft cover: scattered items (path-order sensitive scoring; encourage cover)
     soft_cover = graph_ctx.item_mask & graph_ctx.active_mask
     if soft_cover:
         for idx in range(n):
             if soft_cover & (1 << idx):
                 cell_potential[idx] += 30.0 + float(graph_ctx.item_tile_base[idx])
+                if affordances and affordances.rewards_high_letter_count:
+                    cell_potential[idx] += 10.0
 
     return BoardValueModel(
         cell_potential=tuple(cell_potential),
@@ -257,4 +300,9 @@ def build_board_value_model(
         wildcard_density=wildcard_density,
         item_count=item_count,
         chess_count=chess_count,
+        soft_must_include=soft_must or bool(must_include),
+        needs_suit_diverse_ends=needs_suit,
+        rewards_long_word=rewards_long,
+        rewards_chess_takes=rewards_chess,
+        suit_endpoint_mask=suit_endpoint_mask,
     )

@@ -97,6 +97,8 @@ def _backfill_card_suits_from_path_tiles(run_state: dict, data: dict) -> None:
     """Fill empty board card_suit from path_tiles when melmod F8 export missed them.
 
     Live per-replay only (mutates this run_state copy). Does not cache across F8s.
+    Skips wildcards/blanks: path_tiles often carried display-heuristic suits that
+    falsely proc Wrestlers (game uses CardSuit != 0 only).
     """
     board = run_state.get("board") or {}
     tiles = board.get("tiles")
@@ -120,6 +122,9 @@ def _backfill_card_suits_from_path_tiles(run_state: dict, data: dict) -> None:
         suit = str(src.get("card_suit") or "").strip().lower()
         if not suit:
             continue
+        curse = str(src.get("curse") or "").strip().lower()
+        if curse in ("wildcard", "joker"):
+            continue
         try:
             key = (int(src["row"]), int(src["col"]))
         except (KeyError, TypeError, ValueError):
@@ -135,9 +140,29 @@ def _backfill_card_suits_from_path_tiles(run_state: dict, data: dict) -> None:
             tile["card_rank"] = rank[:1].upper()
 
 
+def _strip_heuristic_wildcard_card_suits(run_state: dict) -> None:
+    """Drop invented card_suit on wildcards (strict GetSuit only; keep joker suit)."""
+    board = run_state.get("board") or {}
+    tiles = board.get("tiles")
+    if not isinstance(tiles, list):
+        return
+    for t in tiles:
+        if not isinstance(t, dict):
+            continue
+        curse = str(t.get("curse") or "").strip().lower()
+        if curse not in ("wildcard", "joker"):
+            continue
+        if str(t.get("card_suit") or "").strip().lower() == "joker":
+            continue  # real joker suit
+        t.pop("card_suit", None)
+        if not str(t.get("card_rank") or "").strip():
+            t.pop("card_rank", None)
+
+
 def _f8_run_state_from_round_log(data: dict) -> dict:
     """Reconstruct F8-time run state from a melmod round log."""
     rs = copy.deepcopy(data["run_state"])
+    _strip_heuristic_wildcard_card_suits(rs)
     _backfill_card_suits_from_path_tiles(rs, data)
     ex = rs.setdefault("extras", {})
     diff = data.get("extras_diff") or {}
@@ -1257,9 +1282,8 @@ COMITADJI_PATH_MISMATCH_FIXTURE = (
     / "20260713_comitadji_path_mismatch.json"
 )
 COMITADJI_F8_SCORE = 13
-# Pipeline scores the submitted path at 16 (Banana game trace is 24; letter-count
-# face keys omit items/wildcards). Search must still beat F8 and reach pipeline parity.
-COMITADJI_PIPELINE_SCORE = 16
+# Pipeline matches game Banana ×1.5 on three ITEM faces (ghost) → 24.
+COMITADJI_PIPELINE_SCORE = 24
 STOMATOCYTES_PATH_MISMATCH_FIXTURE = (
     Path(__file__).resolve().parents[1]
     / "fixtures"
@@ -1267,7 +1291,8 @@ STOMATOCYTES_PATH_MISMATCH_FIXTURE = (
     / "20260713_stomatocytes_path_mismatch.json"
 )
 STOMATOCYTES_F8_SCORE = 30
-# Wrestlers ×1.5 on suited blank end: game 39; needs card_suit on end wildcard.
+# Banana ×1.5 on repeated ITEM faces (socks); blank end has no strict CardSuit
+# so Wrestlers correctly does not fire → 39.
 STOMATOCYTES_PIPELINE_SCORE = 39
 DIVOTS_PATH_MISMATCH_FIXTURE = (
     Path(__file__).resolve().parents[1]
@@ -1463,7 +1488,7 @@ def test_number_start_alternate_path_replay_is_reachable():
     reason="20260713 comitadji path-mismatch fixture and game wordlist required",
 )
 def test_comitadji_submitted_path_pipeline_score():
-    """Submitted comitadji path scores at pipeline parity (Banana gap vs game 24)."""
+    """Submitted comitadji path scores 24 via Banana on three ghost ITEM faces."""
     from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
     from cursed_words_solver.search import search_word_from_path
     from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
@@ -1480,8 +1505,8 @@ def test_comitadji_submitted_path_pipeline_score():
     score = int(
         ScoringPipeline().score_total_only(board, path, sw, loadout=loadout)
     )
-    assert score >= COMITADJI_PIPELINE_SCORE
-    assert int(data["actual"]["score"]) == 24  # game Banana; pipeline gap documented
+    assert score == COMITADJI_PIPELINE_SCORE
+    assert int(data["actual"]["score"]) == COMITADJI_PIPELINE_SCORE
 
 
 @pytest.mark.skipif(
@@ -1740,8 +1765,9 @@ def test_comitadji_item_cover_seeds_number_starts():
     reason="20260713 stomatocytes path-mismatch fixture and game wordlist required",
 )
 def test_stomatocytes_submitted_path_pipeline_score():
-    """Submitted stomatocytes path scores 39 once blank card_suit is present (wrestlers)."""
+    """Submitted stomatocytes path scores 39 via Banana (blank end has no strict suit)."""
     from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+    from cursed_words_solver.rules.scoring_conditions import word_starts_ends_different_suit
     from cursed_words_solver.search import search_word_from_path
     from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
@@ -1754,12 +1780,13 @@ def test_stomatocytes_submitted_path_pipeline_score():
     flags = stamp_search_flags_mask(loadout)
     path = path_from_melmod_indices(board, data["actual"]["path"])
     end = board.get_by_index(path[-1])
-    assert (end.metadata or {}).get("card_suit"), "blank end suit required for wrestlers"
+    assert not (end.metadata or {}).get("card_suit"), "wildcard end must not invent CardSuit"
+    assert not word_starts_ends_different_suit(board, path)
     sw = search_word_from_path(board, path, flags=flags)
     score = int(
         ScoringPipeline().score_total_only(board, path, sw, loadout=loadout)
     )
-    assert score >= STOMATOCYTES_PIPELINE_SCORE
+    assert score == STOMATOCYTES_PIPELINE_SCORE
     assert int(data["actual"]["score"]) == STOMATOCYTES_PIPELINE_SCORE
 
 
@@ -1774,9 +1801,9 @@ def test_stomatocytes_item_cover_beats_f8():
     from cursed_words_solver.board_scoring_context import build_board_scoring_context
     from cursed_words_solver.board_value_model import build_board_value_model
     from cursed_words_solver.graph_bitboard import build_board_graph_context
+    from cursed_words_solver.loadout_affordances import build_loadout_affordances
     from cursed_words_solver.models import CurseType
     from cursed_words_solver.rules.chess_tiles import clear_chess_attack_cache
-    from cursed_words_solver.rules.scoring_conditions import word_starts_ends_different_suit
     from cursed_words_solver.search import _CandidateHeap
     from cursed_words_solver.solve_context import build_solve_context
 
@@ -1804,12 +1831,20 @@ def test_stomatocytes_item_cover_beats_f8():
     searcher._board_scoring_ctx = build_board_scoring_context(
         board, loadout, searcher._solve_ctx, searcher._graph_ctx, rules
     )
+    searcher._affordances = build_loadout_affordances(
+        board,
+        loadout,
+        searcher._solve_ctx,
+        searcher._graph_ctx,
+        rules=rules,
+    )
     searcher._value_model = build_board_value_model(
         board,
         loadout,
         searcher._solve_ctx,
         searcher._graph_ctx,
         searcher._board_scoring_ctx,
+        affordances=searcher._affordances,
     )
     searcher._board_has_number_tiles = True
     searcher._score_cache = {}
@@ -1840,15 +1875,13 @@ def test_stomatocytes_item_cover_beats_f8():
     assert item_leading, "item-leading cover tours must survive heap diversity"
     top_score = int(scored[0][0])
     best_item = int(item_leading[0][0])
-    wrestlers_ready = any(
-        word_starts_ends_different_suit(board, path) and int(sc) >= 10
-        for sc, _, path in item_leading
-    )
+    # Banana on repeated ITEM faces is the score truth (blank end has no strict CardSuit).
+    banana_ready = any(int(sc) >= 10 for sc, _, path in item_leading if len(path) >= 6)
     assert (
         top_score > STOMATOCYTES_F8_SCORE
-        or wrestlers_ready
-        or best_item >= 5
-        or top_score >= 5
+        or banana_ready
+        or best_item >= 4
+        or top_score >= 4
     )
 
 

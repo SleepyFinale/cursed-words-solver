@@ -4335,6 +4335,7 @@ class WordSearcher:
         self._use_tier2_two_phase_override = use_tier2_two_phase
         self._use_dfs_bb_override = use_dfs_bb
         self._value_model = None
+        self._affordances = None
         self._score_cache: dict[
             tuple[str, tuple[int, ...], str], tuple[float, float, float]
         ] = {}
@@ -9956,6 +9957,17 @@ class WordSearcher:
             self._graph_ctx,
             self.scoring.rules,
         )
+        from cursed_words_solver.loadout_affordances import build_loadout_affordances
+
+        self._affordances = build_loadout_affordances(
+            board,
+            loadout,
+            self._solve_ctx,
+            self._graph_ctx,
+            rules=self.scoring.rules,
+            mult_rules=self._mult_rules,
+            mult_hints=self._mult_hints,
+        )
         from cursed_words_solver.board_value_model import build_board_value_model
 
         self._value_model = build_board_value_model(
@@ -9968,6 +9980,7 @@ class WordSearcher:
             mult_hints=self._mult_hints,
             required_consumable_indices=self.validator.required_consumable_indices,
             search_flags=self._solve_ctx.search_flags,
+            affordances=self._affordances,
         )
         clear_chess_attack_cache(
             has_chess_pieces=self._graph_ctx.has_chess_pieces,
@@ -10084,41 +10097,31 @@ class WordSearcher:
             self._parallel_executor = None
             start_productivity: dict[int, int] = {}
             if main_deadline > time.monotonic() and self._value_model is not None:
-                # Split main slice: beam primary, leftover letter DFS, then a live
-                # digit-start slice when NUMBER tiles exist (no cross-solve cache).
+                # Split main slice: beam primary, leftover letter DFS, then live
+                # side slices scheduled from LoadoutAffordances (no cross-solve cache).
                 now = time.monotonic()
                 main_span = max(0.0, main_deadline - now)
-                number_slice = 0.0
-                item_slice = 0.0
-                # Only carve side slices when the main span is long enough that beam
-                # still gets a useful share (short smoke budgets stay beam-primary).
-                if main_span >= 10.0:
-                    if has_digit_tiles:
-                        number_slice = min(14.0, main_span * 0.30)
-                    if item_count >= 2:
-                        # Sparse Full Moon item covering is expensive/low-yield — keep lean.
-                        # Dense boards (≥5 items) need a fuller slice (stomatocytes-class).
-                        if (
-                            has_full_moon
-                            and item_count < _SCATTERED_ITEM_DENSE_MIN
-                        ):
-                            item_slice = min(4.0, main_span * 0.08)
-                        else:
-                            item_slice = min(10.0, main_span * 0.20)
-                    # Keep ≥55% of main for beam + letter leftover.
-                    max_side = main_span * 0.45
-                    side = number_slice + item_slice
-                    if side > max_side and side > 0:
-                        scale = max_side / side
-                        number_slice *= scale
-                        item_slice *= scale
-                    letter_floor = min(22.0, main_span * 0.55)
-                    side = number_slice + item_slice
-                    if main_span - side < letter_floor and side > 0:
-                        scale = max(0.0, main_span - letter_floor) / side
-                        number_slice *= scale
-                        item_slice *= scale
-                letter_deadline = main_deadline - number_slice - item_slice
+                aff = self._affordances
+                if aff is not None:
+                    number_slice, item_slice, chess_aff_slice = aff.side_slice_budgets(
+                        main_span
+                    )
+                else:
+                    number_slice = 0.0
+                    item_slice = 0.0
+                    chess_aff_slice = 0.0
+                    if main_span >= 10.0:
+                        if has_digit_tiles:
+                            number_slice = min(14.0, main_span * 0.30)
+                        if item_count >= 2:
+                            if (
+                                has_full_moon
+                                and item_count < _SCATTERED_ITEM_DENSE_MIN
+                            ):
+                                item_slice = min(4.0, main_span * 0.08)
+                            else:
+                                item_slice = min(10.0, main_span * 0.20)
+                letter_deadline = main_deadline - number_slice - item_slice - chess_aff_slice
                 beam_span = max(0.0, letter_deadline - now)
                 # Short smoke budgets: give letter leftover a larger share so a
                 # number-heavy board still finds *some* word under ~8s.
@@ -10126,7 +10129,10 @@ class WordSearcher:
                 beam_deadline = now + beam_span * beam_frac
                 # Brief hub seed for Hanafuda / dense jokers (hard constraint-style,
                 # not a competing post-DFS reserve).
-                if hanafuda_level >= 1 and joker_count >= 2:
+                if (
+                    (aff is not None and aff.rewards_hanafuda_hand and joker_count >= 2)
+                    or (hanafuda_level >= 1 and joker_count >= 2)
+                ):
                     seed_slice = min(2.5, self.time_budget * 0.08)
                     seed_deadline = min(beam_deadline, time.monotonic() + seed_slice)
                     if seed_deadline > time.monotonic():
@@ -10163,6 +10169,7 @@ class WordSearcher:
                 # (comitadji) must not wait behind low-yield scatter tours.
                 if (
                     number_slice > 0
+                    and (aff is None or aff.needs_digit_start)
                     and has_digit_tiles
                     and time.monotonic() < main_deadline
                 ):
@@ -10215,7 +10222,12 @@ class WordSearcher:
                             and self.time_budget >= 6.0
                         ):
                             break
-                if item_slice > 0 and item_count >= 2 and time.monotonic() < main_deadline:
+                if (
+                    item_slice > 0
+                    and item_count >= 2
+                    and (aff is None or aff.needs_item_cover)
+                    and time.monotonic() < main_deadline
+                ):
                     item_deadline = min(
                         main_deadline,
                         time.monotonic() + max(item_slice, 0.5),
@@ -10228,6 +10240,26 @@ class WordSearcher:
                             item_deadline,
                             max_len=self.max_len,
                         )
+                if (
+                    chess_aff_slice > 0
+                    and (aff is None or aff.rewards_chess_takes)
+                    and time.monotonic() < main_deadline
+                ):
+                    chess_starts = _chess_start_indices(board)
+                    if chess_starts:
+                        chess_deadline = min(
+                            main_deadline,
+                            time.monotonic() + max(chess_aff_slice, 0.5),
+                        )
+                        if chess_deadline > time.monotonic():
+                            self._collect_words_fair_starts(
+                                board,
+                                loadout,
+                                candidates,
+                                chess_deadline,
+                                min(self.max_len, 8),
+                                chess_starts,
+                            )
             if (
                 len(candidates) == 0
                 and time.monotonic() < deadline
@@ -10444,6 +10476,13 @@ class WordSearcher:
                 and (
                     item_count < 2
                     or self._full_board_exact
+                    or (
+                        # Item-heavy boards: allow letter fair-start parallel when
+                        # item covering is a separate side slice (beam mode / dense).
+                        item_count >= 2
+                        and self.use_beam_search
+                        and not self._full_board_exact
+                    )
                     or (
                         _is_shrunk_board(board)
                         and active_count <= _SMALL_BOARD_HAMILTONIAN_MAX

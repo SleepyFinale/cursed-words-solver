@@ -164,12 +164,14 @@ def collect_beam_candidates(
         if len(chars) < searcher.min_len:
             return
         if hard_must and (hard_must & _path_mask(path)) != hard_must:
-            # Incomplete hard cover — still allow if more tiles can be added later
-            # only when scoring at max length; otherwise skip candidate.
-            if len(path) >= max_len:
+            # Soft must-include: still score; expand_priority pressures unfinished hubs.
+            if not value_model.soft_must_include:
                 return
-            # Soft: don't score incomplete must-include paths as finalists
-            return
+            if must_include_index is not None and must_include_index not in path:
+                # Quest center (Up-and-Up) stays a hard constraint.
+                return
+            if len(path) >= max_len and must_include_index is not None:
+                return
         letter_trie = not has_digit
         is_alpha_path = not has_wildcard and not has_digit
         trie_fast_end = (
@@ -658,6 +660,24 @@ def collect_beam_candidates(
                     # Prefer trie-continuing letter children slightly
                     if next_cursor is not None and not next_ext_has_digit:
                         pri += 3.0
+                    aff = getattr(searcher, "_affordances", None)
+                    if aff is not None and next_prefix_len >= searcher.min_len:
+                        from cursed_words_solver.path_rank_model import (
+                            approximate_path_rank,
+                        )
+
+                        approx = approximate_path_rank(
+                            board,
+                            path + [idx],
+                            graph_ctx,
+                            aff,
+                            value_hub_mask=value_model.hub_mask,
+                            must_soft_mask=(
+                                value_model.must_include_mask
+                                | value_model.soft_cover_mask
+                            ),
+                        )
+                        pri += 0.08 * approx
                     child = _BeamState(
                         path=path + [idx],
                         chars=state.chars + [ext_token],

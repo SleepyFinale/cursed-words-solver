@@ -110,9 +110,7 @@ def test_trie_cache_roundtrip_array_pickle(tmp_path: Path):
     assert loaded.contains("cat")
 
 
-def test_auto_backend_prefers_marisa_when_installed():
-    try:
-        import marisa_trie  # noqa: F401
-    except ImportError:
-        pytest.skip("marisa-trie not installed")
-    assert resolve_trie_backend("auto") == "marisa"
+def test_auto_backend_prefers_array_for_hot_path():
+    """Single-thread F8 prefers array cursor steps; set CWS_TRIE_BACKEND=marisa for workers."""
+    assert resolve_trie_backend("auto") == "array"
+    assert resolve_trie_backend("marisa") == "marisa"

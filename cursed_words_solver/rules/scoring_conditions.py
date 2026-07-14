@@ -319,10 +319,14 @@ def placed_consumable_indices(board: Board) -> frozenset[int]:
 
 
 def is_cursed_tile(tile: Tile) -> bool:
+    """Mirror game Tile.IsCursed(): non-letter glyphs, any CardSuit, or wobbly letters."""
     if tile.curse not in (CurseType.LETTER, CurseType.UNKNOWN):
         return True
-    # Go Fish suited letters on colorless tiles are not cursed for amulet-style bonuses.
-    if is_card_tile(tile) and tile.color not in NON_COLOUR_FOR_NUMBER_BONUS:
+    # CardSuit != 0 (including joker) counts regardless of color.
+    if is_poker_card_tile(tile):
+        return True
+    # IsDisplayingAsVariableLetter parity when melmod already set live is_wobbly.
+    if tile.metadata.get("is_wobbly"):
         return True
     return False
 
@@ -4601,10 +4605,11 @@ def word_percent_bonus_from_multiplier(factor: float, rule: dict, *, level: int 
 
 
 def path_letter_for_count(tile: Tile) -> str:
-    """Lowercase face letter for Bubble Tea / Banana same-letter counts.
+    """Face key for Bubble Tea / Banana same-letter counts.
 
-    Matches game face strings (stripped GetStringRepresentation / currency map),
-    not dictionary fill letters on chess tiles.
+    Matches game GetStringRepresentation grouping: A–Z faces, chess face chars,
+    currency map, and non-alpha display glyphs (ITEM emoji, ``?``, etc.).
+    NUMBER faces are excluded (they do not count as letter keys).
     """
     if tile.curse == CurseType.NUMBER:
         return ""
@@ -4620,10 +4625,17 @@ def path_letter_for_count(tile: Tile) -> str:
     ch = (tile.letter or "").strip().lower()
     if len(ch) == 1 and ch.isalpha():
         return ch
-    raw = (tile.char or "").strip().lower()
+    # ITEM / blank / other faces: keep full display glyph (👻, 🧦, ?, …)
+    raw = normalize_tile_glyph(tile.char or tile.letter or "").strip()
+    if not raw:
+        return ""
     if len(raw) == 1 and raw.isalpha():
-        return raw
-    return ""
+        return raw.lower()
+    return raw
+
+
+def _is_alpha_face_key(ch: str) -> bool:
+    return len(ch) == 1 and ch.isalpha()
 
 
 def word_first_letter(word: str) -> str:
@@ -4633,13 +4645,13 @@ def word_first_letter(word: str) -> str:
 
 
 def first_letter_on_path(board: Board, path: list[int]) -> str:
-    """First A–Z letter tile along the path (skips currency, numbers, symbols)."""
+    """First A–Z letter tile along the path (skips currency, numbers, emoji faces)."""
     for idx in path:
         tile = board.get_by_index(idx)
         if tile.curse == CurseType.CURRENCY:
             continue
         ch = path_letter_for_count(tile)
-        if ch:
+        if ch and _is_alpha_face_key(ch):
             return ch
     return ""
 
@@ -4652,7 +4664,8 @@ def _wildcard_before_first_letter_tile(board: Board, path: list[int]) -> bool:
         if tile.curse == CurseType.WILDCARD:
             seen_wildcard = True
             continue
-        if path_letter_for_count(tile):
+        ch = path_letter_for_count(tile)
+        if ch and _is_alpha_face_key(ch):
             return seen_wildcard
     return False
 

@@ -19,9 +19,7 @@ from cursed_words_solver.rules.fraction_tiles import (
     fraction_is_numeric_wildcard,
     is_fraction_tile,
 )
-from cursed_words_solver.rules.scoring_conditions import is_poker_card_tile
 from cursed_words_solver.rules.stamp_behaviors import (
-    FLAG_CARD_SUIT_FIRST_LETTER,
     FLAG_NUMBER_PLUS_MINUS_ONE,
     flag_test,
     path_scattered_search_flags_mask,
@@ -304,12 +302,14 @@ def filter_candidates(
 
 
 def _primary_cursedle_flags(board: Board) -> int:
-    """Search flags for fairy-grid theme tiles (e.g. Card Shark suit letters)."""
-    for idx in range(board.cell_count):
-        if not board.is_active_index(idx):
-            continue
-        if is_poker_card_tile(board.get_by_index(idx)):
-            return FLAG_CARD_SUIT_FIRST_LETTER
+    """Board-wide Cursedle search flags (none).
+
+    Theme letter effects (e.g. Card Shark suit letters) are not inferred from
+    poker cards on the grid. Game ``Tile.IsDisplayingAsVariableLetter`` enables
+    Card Shark only when a ``CardShark`` is in player items — including scattered
+    items on the current selection. Fairy Grid places a live ``card_shark`` ITEM;
+    derive the flag per path via ``path_scattered_search_flags_mask`` only.
+    """
     return 0
 
 

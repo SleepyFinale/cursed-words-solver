@@ -115,6 +115,42 @@ def test_mysterious_amulet_counts_suited_letter():
     assert score == base + 8
 
 
+def test_mysterious_amulet_counts_colorless_suited_letter():
+    """Colorless Go Fish / Postal Horn suited letters are cursed (Tile.IsCursed)."""
+    board = _empty_board()
+    suited = _tile(0, 0, "A", 1, color=TileColor.COLORLESS)
+    suited.metadata["card_suit"] = "spades"
+    suited.metadata["card_rank"] = "A"
+    board.tiles[0][0] = suited
+    board.tiles[0][1] = _tile(0, 1, "B", 3, color=TileColor.COLORLESS)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="mysterious_amulet", name="Mysterious Amulet", level=1)]
+    )
+    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
+    base, base_bd = pipeline.score(board, [0, 1], "ab", Loadout())
+    assert bd["pipeline"]["tile_scores"][0] == base_bd["pipeline"]["tile_scores"][0] + 8
+    assert bd["pipeline"]["tile_scores"][1] == base_bd["pipeline"]["tile_scores"][1]
+    assert score == base + 8
+
+
+def test_broom_colorless_suited_letter_start_counts_as_cursed():
+    """Colorless suited start unlocks broom when end has a different curse type."""
+    board = _empty_board()
+    start = _tile(0, 0, "E", 1, color=TileColor.COLORLESS)
+    start.metadata["card_suit"] = "clubs"
+    start.metadata["card_rank"] = "E"
+    board.tiles[0][0] = start
+    board.tiles[0][1] = _tile(0, 1, "A", 2)
+    board.tiles[0][2] = _tile(0, 2, "?", 0, curse=CurseType.WILDCARD)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="broom", name="Broom", level=1)])
+    score, bd = pipeline.score(board, [0, 1, 2], "ean", loadout)
+    base, _ = pipeline.score(board, [0, 1, 2], "ean", Loadout())
+    assert bd["multiplier"] == 1.5
+    assert score == int(base * 1.5)
+
+
 def test_moai_sticker_colourless_cursed_only():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "4", 4, curse=CurseType.NUMBER)

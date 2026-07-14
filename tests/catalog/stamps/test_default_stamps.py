@@ -507,6 +507,40 @@ def test_bubble_tea_banana_chess_knight_faces():
     assert score == 69
 
 
+def test_banana_counts_item_emoji_faces():
+    """ITEM display glyphs group for Banana (comitadji ghosts → ×1.5)."""
+    board = _empty_board()
+    # a(1) + 👻×3 (0) + b(3) = 4 base; three ghosts → Banana ×1.5 → 6
+    specs = [
+        ("a", "A", CurseType.LETTER, 1),
+        ("👻", "?", CurseType.ITEM, 0),
+        ("👻", "?", CurseType.ITEM, 0),
+        ("👻", "?", CurseType.ITEM, 0),
+        ("b", "B", CurseType.LETTER, 3),
+    ]
+    path = []
+    for i, (char, letter, curse, score) in enumerate(specs):
+        row, col = divmod(i, 5)
+        board.tiles[row][col] = Tile(
+            row=row,
+            col=col,
+            char=char,
+            letter=letter,
+            base_score=score,
+            color=TileColor.COLORLESS,
+            curse=curse,
+            metadata={"source": "melmod"},
+        )
+        path.append(row * 5 + col)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="banana", name="Banana", level=1, kind="stamp")]
+    )
+    score, bd = pipeline.score(board, path, "a???b", loadout)
+    assert bd["multiplier"] == 1.5
+    assert score == 6
+
+
 def test_bubble_tea_banana_currency_and_chess_rook_faces():
     """Currency maps via CURRENCY_MAP; rooks use char=r (cippus 24→46 math)."""
     board = _empty_board()

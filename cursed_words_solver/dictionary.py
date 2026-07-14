@@ -116,12 +116,38 @@ class WordDictionary:
             return True
         if "?" not in pattern and pattern.isalpha():
             return self.has_prefix(pattern)
-        return self._pattern_prefix_ok(pattern, 0)
+        # Cursor-native: walk mixed/letter trie without string concatenations.
+        return self._pattern_prefix_ok_cursor(pattern)
 
     def pattern_from_chars(self, chars: list[str]) -> str:
         return _chars_to_pattern(chars)
 
+    def _pattern_prefix_ok_cursor(self, pattern: str) -> bool:
+        """True if some letter assignment of ``?`` slots is a live trie prefix."""
+
+        def dfs(pos: int, cursor) -> bool:
+            if pos == len(pattern):
+                return cursor is not None
+            ch = pattern[pos]
+            if ch == "?":
+                for letter in "abcdefghijklmnopqrstuvwxyz":
+                    child = self.step_cursor(cursor, letter)
+                    if child is None:
+                        continue
+                    if dfs(pos + 1, child):
+                        return True
+                return False
+            if not ch.isalpha():
+                return False
+            child = self.step_cursor(cursor, ch)
+            if child is None:
+                return False
+            return dfs(pos + 1, child)
+
+        return dfs(0, self.root_cursor())
+
     def _pattern_prefix_ok(self, pattern: str, pos: int) -> bool:
+        """Legacy string-based walker (tests / fallback)."""
         if pos == len(pattern):
             return True
         ch = pattern[pos]

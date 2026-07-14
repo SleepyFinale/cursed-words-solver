@@ -34,6 +34,22 @@ flowchart TB
 
 **Default:** `WordSearcher(use_beam_search=True)`. Set `use_beam_search=False` to restore the legacy reserve/seed DFS scheduler (tests / A/B). Tier-2 / DFS-BB overrides remain: `use_tier2_screen=False`, `use_dfs_bb=False`.
 
+### LoadoutAffordances — [`loadout_affordances.py`](../cursed_words_solver/loadout_affordances.py)
+
+Compiled once per F8 from inventory rule types + board masks. Search (beam, side slices, `BoardValueModel`) reacts to tags — not per-sticker if-ladders:
+
+| Tag | Steers |
+| --- | --- |
+| `needs_digit_start` | Live digit-start side slice |
+| `needs_item_cover` | Item-cover side slice + soft cover pressure |
+| `needs_suit_diverse_ends` | Suit-endpoint boosts (Wrestlers-class) |
+| `rewards_chess_takes` | Chess-start side slice + hub bias |
+| `rewards_hanafuda_hand` | Joker cluster seed |
+| `rewards_long_word` / `rewards_high_letter_count` | Length / ITEM face pressure |
+| `bounds_unsafe` | Tier-2 likelihood hint |
+
+Exact scores always come from [`ScoringPipeline`](../cursed_words_solver/rules/pipeline.py). Optional [`path_rank_model.py`](../cursed_words_solver/path_rank_model.py) blends a tiny CPU heuristic into beam priority only; survivors are still fully scored.
+
 ### BoardValueModel — [`board_value_model.py`](../cursed_words_solver/board_value_model.py)
 
 Rebuilt every solve from live board + loadout contexts (no cross-F8 cache):
@@ -42,16 +58,17 @@ Rebuilt every solve from live board + loadout contexts (no cross-F8 cache):
 | ------ | ---- |
 | Cell potential | Tile base + static tile-adds |
 | Hubs | WHITE teleport, chess, Full Moon |
-| Must-include | Up-and-Up center, required consumables |
+| Must-include | Up-and-Up center, required consumables (soft pressure when affordances ask) |
 | Soft cover | Scattered items |
 | Branch cost | Wildcard / number / fraction density |
 | Number mask | Softens `start_priority` so NUMBER seeds stay competitive |
+| Suit endpoints | Affordance-driven Wrestlers geometry |
 
 Guidance only — final ranking still uses [`ScoringPipeline`](../cursed_words_solver/rules/pipeline.py) immediate score.
 
 ### Beam search — [`search_beam.py`](../cursed_words_solver/search_beam.py)
 
-Best-first frontier ordered by `BoardValueModel.expand_priority`. Hard must-include cells are expansion filters (not time-steal reserves). When NUMBER tiles exist, [`search.py`](../cursed_words_solver/search.py) carves a live digit-start / number-wildcard slice after beam + letter leftover (before item covering). Item covering reuses the legacy helpers with no cross-solve cache; dense boards (≥5 items) keep a fuller item slice even under Full Moon, always run BFS cover, and reserve item-leading tours alongside number-leading. Sparse Full Moon boards keep a lean item slice. Quality harness: `python scripts/search_quality.py --ab`.
+Best-first frontier ordered by `BoardValueModel.expand_priority` (+ light path-rank blend). Side slices (digit / item / chess) are scheduled from `LoadoutAffordances.side_slice_budgets`. Quality harness: `python scripts/search_quality.py --ab`.
 
 ---
 

@@ -194,41 +194,48 @@ def path_has_scattered_grid_items(board: Board, path: list[int]) -> bool:
     return any(board.get_by_index(idx).curse == CurseType.ITEM for idx in path)
 
 
-# Tier-1 bounds skip item tiles in tile-base sums; without this guard they prune
-# high-scoring routes that pick up cherry pie / fire extinguisher etc. on path.
-_TIER2_SCATTERED_ITEM_UB_SENTINEL = 1e15
+# Tier-1 bounds skip item tiles in tile-base sums; without a finite item UB they
+# prune high-scoring scatter routes. Use a finite optimistic add+scale instead of
+# a 1e15 sentinel so tier-2 can still skip hopeless candidates.
+
+
+def _scattered_item_optimistic_add(
+    board: Board,
+    path: list[int],
+    graph_ctx: BoardGraphContext | None,
+) -> tuple[float, int]:
+    """Optimistic additive value from ITEM faces on the path (+ count)."""
+    total = 0.0
+    n_items = 0
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.curse != CurseType.ITEM:
+            continue
+        n_items += 1
+        if graph_ctx is not None and 0 <= idx < len(graph_ctx.item_tile_base):
+            total += abs(float(graph_ctx.item_tile_base[idx]))
+        else:
+            total += abs(float(tile.base_score or 0.0))
+            total += abs(tile_base_contribution(tile, board.money))
+        # Scatter inventory effects can add more than tile base; keep loose headroom.
+        total += 80.0
+    return total, n_items
 
 
 def tier2_tile_base_sum(board: Board, path: list[int], ctx: SolveContext) -> float:
-
     """Per-tile init sum respecting SolveContext microscope/shield overrides."""
-
     total = 0.0
-
     for idx in path:
-
         tile = board.get_by_index(idx)
-
         if tile.curse == CurseType.ITEM:
-
             continue
-
         if ctx.microscope_base:
-
             total += microscope_init_contribution(tile, board.money)
-
         elif tile.color == TileColor.BLUE and ctx.shield_blue_base is not None:
-
             total += float(ctx.shield_blue_base)
-
         else:
-
             total += tile_base_contribution(tile, board.money)
-
     return total
-
-
-
 
 
 def _tier2_additive_bonuses(
@@ -329,13 +336,21 @@ def tier2_immediate_upper_bound(
         graph_ctx=graph_ctx,
         board_scoring_ctx=board_scoring_ctx,
     )
+    item_add, n_items = _scattered_item_optimistic_add(board, path, graph_ctx)
     subtotal = (
-        base + word_bonus + path_bonus + red_bonus + hanafuda_bonus + static_tile_add
+        base
+        + word_bonus
+        + path_bonus
+        + red_bonus
+        + hanafuda_bonus
+        + static_tile_add
+        + item_add
     )
     mult = optimistic_mult_upper_bound(mult_rules, loadout, path)
     result = subtotal * mult
-    if path_has_scattered_grid_items(board, path):
-        return max(result, _TIER2_SCATTERED_ITEM_UB_SENTINEL)
+    if n_items > 0:
+        # Path-order item stickers can further scale; finite but loose ceiling.
+        result *= max(2.0, 1.0 + 2.5 * n_items)
     return result
 
 
@@ -761,9 +776,9 @@ def loadout_allows_dfs_bb(
 ) -> bool:
     """True when in-tree DFS branch-and-bound is safe."""
     del has_chess_pieces
-    if has_number_tiles:
-        # Letter prefixes before a NUMBER wildcard/digit branch are under-estimated.
-        return False
+    # Number tiles previously blocked BB entirely. Prefix UBs are slightly loose
+    # on digit branches but still useful — keep BB on when tier-2 is enabled.
+    del has_number_tiles
     return loadout_allows_tier2_screen(
         ctx,
         loadout,

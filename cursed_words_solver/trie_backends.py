@@ -314,18 +314,8 @@ def resolve_backend_name(requested: str) -> str:
         return name
     if name != "auto":
         return "array"
-    try:
-        import marisa_trie  # noqa: F401
-
-        return "marisa"
-    except ImportError:
-        pass
-    try:
-        import datrie  # noqa: F401
-
-        return "datrie"
-    except ImportError:
-        pass
+    # Prefer array for O(1) cursor steps on the F8 hot path. Multiprocess workers
+    # that want mmap sharing should set CWS_TRIE_BACKEND=marisa explicitly.
     return "array"
 
 

@@ -188,6 +188,10 @@ def _boss_blocks_tier2_screen(loadout: Loadout, rules: dict) -> bool:
             continue
         return True
     if loadout.boss_effect and str(loadout.boss_effect).strip():
+        effect = str(loadout.boss_effect).strip().lower().replace(" ", "_")
+        if effect in _SAFE_BOSS_EFFECTS or effect in EARLY_BOSS_TYPES:
+            return False
+        # Unknown / scoring-unsafe boss effect string — keep tier-2 off.
         return True
     return False
 
