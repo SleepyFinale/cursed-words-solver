@@ -132,6 +132,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     red_tiles_used_encounter,
     letter_counts_on_path,
     max_qualifying_letter_half_multiplier,
+    path_letter_for_count,
     neapolitan_base_percent_from_loadout,
     neapolitan_has_live_percent,
     scaled_word_multiplier,
@@ -2828,8 +2829,8 @@ class ScoringPipeline:
             counts = letter_counts_on_path(board, path)
             applied = 0
             for i, idx in enumerate(path):
-                ch = (board.get_by_index(idx).letter or "").strip().lower()
-                mult = counts.get(ch, 1)
+                ch = path_letter_for_count(board.get_by_index(idx))
+                mult = counts.get(ch, 1) if ch else 1
                 if mult > 1:
                     state["tile_scores"][i] *= mult
                     applied += 1

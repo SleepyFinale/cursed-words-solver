@@ -2516,6 +2516,9 @@ def _iter_expansion_neighbors(
                     return (mult_pri, 0, -base, idx)
                 return (mult_pri, 2, -base, idx)
             if last_number:
+                # Fraction / number chain first. Non-numbers must not use a
+                # leading tele=0 key that sorts ahead of number neighbors
+                # (comitadji-style 1→2 digit runs).
                 n_frac = (
                     nbr_fraction[idx] if graph_ctx is not None else nbr_fraction(idx)
                 )
@@ -2524,10 +2527,18 @@ def _iter_expansion_neighbors(
                     if graph_ctx is not None
                     else nbr_number_like(idx)
                 )
+                tele = _teleport_letter_neighbor_tier(
+                    board,
+                    idx,
+                    visited_mask,
+                    flags=flags,
+                    graph_ctx=graph_ctx,
+                )
                 if n_frac:
                     return (mult_pri, 0, -base, idx)
                 if n_num:
                     return (mult_pri, 1, -base, idx)
+                return (mult_pri, 2 + tele, -base, idx)
             tele = _teleport_letter_neighbor_tier(
                 board,
                 idx,
@@ -2563,10 +2574,20 @@ def _iter_expansion_neighbors(
                     if graph_ctx is not None
                     else nbr_number_like(idx)
                 )
+                tele = _teleport_letter_neighbor_tier(
+                    board,
+                    idx,
+                    visited_mask,
+                    flags=flags,
+                    graph_ctx=graph_ctx,
+                )
                 if n_frac:
                     return (0, -base, idx)
                 if n_num:
                     return (1, -base, idx)
+                # Keep digit chains ahead of blank/letter teleports (tele=0
+                # used to sort before tier-1 numbers and starve 1→2→…).
+                return (2 + tele, -base, idx)
             tele = _teleport_letter_neighbor_tier(
                 board,
                 idx,
@@ -2910,7 +2931,8 @@ def _bridge_rank(
     path: list[int],
     *,
     prefer_number_bridges: bool,
-) -> tuple[int, int, int, int]:
+    prefer_value_hubs: bool = False,
+) -> tuple:
     number_count = sum(
         1 for idx in path if is_number_like_tile(board.get_by_index(idx))
     )
@@ -2924,6 +2946,23 @@ def _bridge_rank(
         for idx in path
         if board.get_by_index(idx).curse != CurseType.ITEM
     )
+    chess_count = sum(1 for idx in path if is_chess_piece(board.get_by_index(idx)))
+    high_hub = sum(
+        int(board.get_by_index(idx).base_score)
+        for idx in path
+        if is_chess_piece(board.get_by_index(idx))
+        and float(board.get_by_index(idx).base_score) >= 10.0
+    )
+    if prefer_value_hubs:
+        # Prefer corridors through high-value hubs (king); otherwise stay short.
+        # Counting any chess piece made knight detours steal later item hops.
+        return (
+            high_hub,
+            tile_sum if high_hub else 0,
+            -len(path),
+            letter_count,
+            number_count,
+        )
     if prefer_number_bridges:
         return (
             len(path),
@@ -2945,6 +2984,7 @@ def _bridge_between_indices(
     prefer_number_bridges: bool = False,
     forbidden_mask: int = 0,
     rich_detour: bool | None = None,
+    prefer_value_hubs: bool = False,
 ) -> list[int] | None:
     """Bridge start→end; optionally prefer richer detours through number/letter tiles."""
     shortest = _shortest_path_between_indices(
@@ -2958,7 +2998,7 @@ def _bridge_between_indices(
     if shortest is None:
         return None
     use_rich = (
-        prefer_number_bridges
+        prefer_number_bridges or prefer_value_hubs
         if rich_detour is None
         else rich_detour
     )
@@ -2966,20 +3006,103 @@ def _bridge_between_indices(
         return shortest
     from collections import deque
 
+    if prefer_value_hubs:
+        # Explicit high-value hub waypoints only — a full rich BFS on Full Moon
+        # boards explodes via teleports and can burn the whole cover deadline.
+        hubs = [
+            i
+            for i in _active_indices(board)
+            if is_chess_piece(board.get_by_index(i))
+            and float(board.get_by_index(i).base_score) >= 10.0
+            and i != start
+            and i != end
+            and not (forbidden_mask & (1 << i))
+        ]
+        best = shortest
+        best_rank = _bridge_rank(
+            board,
+            shortest,
+            prefer_number_bridges=prefer_number_bridges,
+            prefer_value_hubs=True,
+        )
+        start_nbrs = set(neighbors_from_tile(board, [start], set(), flags=flags))
+        end_nbrs = set(neighbors_from_tile(board, [end], set(), flags=flags))
+        for hub in hubs:
+            # Only detour when the hub is adjacent to either endpoint — otherwise
+            # early item hops steal the king and block the real high-score tour.
+            if hub not in start_nbrs and hub not in end_nbrs:
+                continue
+            first = _shortest_path_between_indices(
+                board,
+                start,
+                hub,
+                max_len,
+                flags=flags,
+                forbidden_mask=forbidden_mask,
+            )
+            if first is None or len(first) < 2:
+                continue
+            mid_forbid = forbidden_mask | sum(1 << idx for idx in first[:-1])
+            # Don't steal other items on the second leg.
+            for i in _active_indices(board):
+                if (
+                    i != end
+                    and i != hub
+                    and board.get_by_index(i).curse == CurseType.ITEM
+                ):
+                    mid_forbid |= 1 << i
+            second = _shortest_path_between_indices(
+                board,
+                hub,
+                end,
+                max_len - len(first) + 1,
+                flags=flags,
+                forbidden_mask=mid_forbid,
+            )
+            if second is None or len(second) < 2:
+                continue
+            cand = first + second[1:]
+            if len(cand) > max_len:
+                continue
+            if len(set(cand)) != len(cand):
+                continue
+            rank = _bridge_rank(
+                board,
+                cand,
+                prefer_number_bridges=prefer_number_bridges,
+                prefer_value_hubs=True,
+            )
+            if rank > best_rank:
+                best = cand
+                best_rank = rank
+        return best
+
+    # Full Moon / teleport boards: +1 rich BFS branches explosively. Stay on
+    # shortest bridges (value hubs handled above; digit runs use fair-start DFS).
+    if flag_test(flags, FLAG_DOUBLE_LETTER_TELEPORT):
+        return shortest
+
     limit = min(max_len, len(shortest) + 1)
 
     queue: deque[list[int]] = deque([[start]])
     best = shortest
     best_rank = _bridge_rank(
-        board, shortest, prefer_number_bridges=prefer_number_bridges
+        board,
+        shortest,
+        prefer_number_bridges=prefer_number_bridges,
+        prefer_value_hubs=False,
     )
+    seen_states: set[tuple[int, int]] = {(start, 1)}
     while queue:
         path = queue.popleft()
         if len(path) > limit:
             continue
         if path[-1] == end:
             rank = _bridge_rank(
-                board, path, prefer_number_bridges=prefer_number_bridges
+                board,
+                path,
+                prefer_number_bridges=prefer_number_bridges,
+                prefer_value_hubs=False,
             )
             if rank > best_rank:
                 best = path
@@ -2989,6 +3112,10 @@ def _bridge_between_indices(
         for nbr in neighbors_from_tile(board, path, visited_mask, flags=flags):
             if forbidden_mask & (1 << nbr):
                 continue
+            state = (nbr, len(path) + 1)
+            if state in seen_states:
+                continue
+            seen_states.add(state)
             queue.append(path + [nbr])
     return best
 
@@ -3598,7 +3725,62 @@ def _scattered_item_cover_paths(
         ))),
         key=lambda i: (-item_neighbor_count(i), i),
     )
-    best_heap: list[tuple[tuple[int, int, int], list[int]]] = []
+    # Prefer ITEM starts whose suit differs from a suited blank (wrestlers).
+    from cursed_words_solver.rules.grid_effects import card_suit as _card_suit
+
+    blank_suits = {
+        _card_suit(board.get_by_index(i))
+        for i in _active_indices(board)
+        if board.get_by_index(i).curse == CurseType.WILDCARD
+        and _card_suit(board.get_by_index(i))
+    }
+    if blank_suits:
+        starts = sorted(
+            starts,
+            key=lambda i: (
+                0
+                if board.get_by_index(i).curse == CurseType.ITEM
+                and _card_suit(board.get_by_index(i))
+                and _card_suit(board.get_by_index(i)) not in blank_suits
+                else 1,
+                -item_neighbor_count(i),
+                i,
+            ),
+        )
+    # Dense item boards: explore ITEM starts fully before NUMBER seeds so BFS
+    # can deepen king+blank tours. Sparse / comitadji boards interleave.
+    number_starts = [
+        i
+        for i in _number_tile_start_indices(board)
+        if board.is_active_index(i)
+    ]
+    if number_starts:
+        if total_items >= _SCATTERED_ITEM_DENSE_MIN:
+            starts = list(dict.fromkeys(list(starts) + number_starts))
+        else:
+            interleaved: list[int] = []
+            a, b = list(starts), list(number_starts)
+            while a or b:
+                if a:
+                    interleaved.append(a.pop(0))
+                if b:
+                    interleaved.append(b.pop(0))
+            starts = list(dict.fromkeys(interleaved))
+    item_lead_cap = max(8, max_paths // 2)
+    other_cap = max(8, max_paths - item_lead_cap)
+    item_lead_heap: list[tuple[tuple[int, int, int], list[int]]] = []
+    other_heap: list[tuple[tuple[int, int, int], list[int]]] = []
+
+    def _push(
+        heap: list[tuple[tuple[int, int, int], list[int]]],
+        cap: int,
+        rank_key: tuple[int, int, int],
+        path: list[int],
+    ) -> None:
+        if len(heap) < cap:
+            heapq.heappush(heap, (rank_key, list(path)))
+        elif rank_key < heap[0][0]:
+            heapq.heapreplace(heap, (rank_key, list(path)))
 
     def maybe_keep(path: list[int], items_hit: int) -> None:
         if len(path) < min_len:
@@ -3608,23 +3790,43 @@ def _scattered_item_cover_paths(
             for i in path
             if board.get_by_index(i).curse != CurseType.ITEM
         )
-        rank_key = (-items_hit, len(path), -letter_sum)
-        if len(best_heap) < max_paths:
-            heapq.heappush(best_heap, (rank_key, list(path)))
-        elif rank_key < best_heap[0][0]:
-            heapq.heapreplace(best_heap, (rank_key, list(path)))
+        chess_hit = sum(
+            1 for i in path if is_chess_piece(board.get_by_index(i))
+        )
+        wrestlers_end = 0
+        if (
+            path
+            and board.get_by_index(path[0]).curse == CurseType.ITEM
+            and board.get_by_index(path[-1]).curse == CurseType.WILDCARD
+        ):
+            start_s = _card_suit(board.get_by_index(path[0]))
+            end_s = _card_suit(board.get_by_index(path[-1]))
+            if start_s and end_s and start_s != end_s:
+                wrestlers_end = 1
+        # Prefer item cover, value hubs (king), wrestlers blank end, then longer.
+        rank_key = (-items_hit, -chess_hit, -wrestlers_end, -letter_sum, -len(path))
+        if path and board.get_by_index(path[0]).curse == CurseType.ITEM:
+            _push(item_lead_heap, item_lead_cap, rank_key, path)
+        else:
+            _push(other_heap, other_cap, rank_key, path)
 
     def items_mask_for(path: list[int]) -> int:
         return sum(1 << i for i in path if i in item_set)
 
-    for start in starts:
+    for si, start in enumerate(starts):
         if time.monotonic() >= deadline:
             break
+        remaining = len(starts) - si
+        start_deadline = min(
+            deadline,
+            time.monotonic()
+            + max(0.08, (deadline - time.monotonic()) / max(1, remaining)),
+        )
         queue: deque[tuple[list[int], int, int]] = deque()
         queue.append(([start], 1 << start, 1 << start))
         seen: set[tuple[int, int, int]] = set()
         while queue:
-            if time.monotonic() >= deadline:
+            if time.monotonic() >= start_deadline:
                 break
             path, visited_mask, items_mask = queue.popleft()
             state = (path[-1], visited_mask, items_mask)
@@ -3664,7 +3866,8 @@ def _scattered_item_cover_paths(
                     )
                 )
 
-    return [path for _, path in sorted(best_heap)]
+    merged = sorted(item_lead_heap + other_heap)
+    return [path for _, path in merged]
 
 
 def _scatter_adjacent_letter_starts(
@@ -3698,10 +3901,17 @@ def _extend_scatter_tour_path(
     """Grow an item tour with letter prefixes and number suffixes."""
     if not path or len(path) >= max_len:
         return list(path)
+    # Number-leading tours already encode digit faces; growing them with letter
+    # suffixes breaks dictionary resolve (e.g. 1???l? → 1???l?deno).
+    if is_number_like_tile(board.get_by_index(path[0])):
+        return list(path)
     extended = list(path)
     visited = set(extended)
 
-    if board.get_by_index(extended[0]).curse == CurseType.ITEM:
+    # Do not prepend letters onto ITEM-leading tours — that steals the start away
+    # from scattered items (stomatocytes) and breaks Card Shark first-letter faces.
+    # Number-leading already returned above; letter-leading may grow prefixes.
+    if board.get_by_index(extended[0]).curse == CurseType.LETTER:
         while len(extended) < max_len:
             nbrs = neighbors_from_tile(board, [extended[0]], visited, flags=flags)
             letter_nbrs = [
@@ -3716,6 +3926,13 @@ def _extend_scatter_tour_path(
     had_numbers = any(
         is_number_like_tile(board.get_by_index(idx)) for idx in extended
     )
+    from cursed_words_solver.rules.grid_effects import card_suit as _card_suit
+
+    start_suit = (
+        _card_suit(board.get_by_index(extended[0]))
+        if board.get_by_index(extended[0]).curse == CurseType.ITEM
+        else None
+    )
     while len(extended) < max_len:
         nbrs = neighbors_from_tile(board, extended, visited, flags=flags)
         if not nbrs:
@@ -3724,20 +3941,39 @@ def _extend_scatter_tour_path(
             n
             for n in nbrs
             if board.get_by_index(n).curse
-            in (CurseType.NUMBER, CurseType.LETTER, CurseType.ITEM)
+            in (
+                CurseType.NUMBER,
+                CurseType.LETTER,
+                CurseType.ITEM,
+                CurseType.WILDCARD,
+            )
+            or is_chess_piece(board.get_by_index(n))
         ]
         if not next_candidates:
             break
+        # Prefer high base (chess king etc.) then numbers — item tours need value
+        # hubs before digit suffixes (stomatocytes via king + blank).
         next_candidates.sort(
             key=lambda n: (
+                0 if is_chess_piece(board.get_by_index(n)) else 1,
+                0 if board.get_by_index(n).curse == CurseType.WILDCARD else 1,
                 0 if is_number_like_tile(board.get_by_index(n)) else 1,
-                -int(board.get_by_index(n).base_score),
+                -float(board.get_by_index(n).base_score),
             )
         )
         nxt = next_candidates[0]
         extended.append(nxt)
         visited.add(nxt)
-        if is_number_like_tile(board.get_by_index(nxt)):
+        nxt_tile = board.get_by_index(nxt)
+        # Stop on a differently-suited blank so wrestlers can ×1.5 (do not walk past).
+        if (
+            start_suit
+            and nxt_tile.curse == CurseType.WILDCARD
+            and _card_suit(nxt_tile)
+            and _card_suit(nxt_tile) != start_suit
+        ):
+            break
+        if is_number_like_tile(nxt_tile):
             suffix_numbers += 1
             if had_numbers and suffix_numbers >= 1:
                 break
@@ -3775,12 +4011,58 @@ def _greedy_scattered_item_tour_paths(
 
     start_candidates: list[int] = []
     seen_starts: set[int] = set()
-    for idx in list(item_indices) + _scatter_adjacent_letter_starts(
+    seed_starts = list(item_indices) + _scatter_adjacent_letter_starts(
         board, item_indices, flags=flags
-    ):
-        if idx not in seen_starts:
+    )
+    from cursed_words_solver.rules.grid_effects import card_suit as _card_suit
+
+    blank_suits = {
+        _card_suit(board.get_by_index(i))
+        for i in _active_indices(board)
+        if board.get_by_index(i).curse == CurseType.WILDCARD
+        and _card_suit(board.get_by_index(i))
+    }
+    if blank_suits:
+        seed_starts = sorted(
+            seed_starts,
+            key=lambda i: (
+                0
+                if board.get_by_index(i).curse == CurseType.ITEM
+                and _card_suit(board.get_by_index(i))
+                and _card_suit(board.get_by_index(i)) not in blank_suits
+                else 1,
+                i,
+            ),
+        )
+    if prefer_number_bridges:
+        nums = _number_tile_start_indices(board)
+        if len(item_indices) >= _SCATTERED_ITEM_DENSE_MIN:
+            # Dense: items first so value+blank tours aren't starved by digits.
+            seed_starts = list(dict.fromkeys(list(seed_starts) + nums))
+        else:
+            # Interleave numbers with items (append would starve digit seeds under
+            # short greedy deadlines; prepend starved item-leading tours).
+            interleaved: list[int] = []
+            a, b = list(seed_starts), list(nums)
+            while a or b:
+                if a:
+                    interleaved.append(a.pop(0))
+                if b:
+                    interleaved.append(b.pop(0))
+            seed_starts = interleaved
+    for idx in seed_starts:
+        if idx not in seen_starts and board.is_active_index(idx):
             seen_starts.add(idx)
             start_candidates.append(idx)
+
+    # Chess kings need slightly richer bridges; apply only when a hub sits near an
+    # item–item hop so greedy can't stall on every +4 BFS (stomatocytes dense).
+    chess_hubs = [
+        i
+        for i in _active_indices(board)
+        if is_chess_piece(board.get_by_index(i))
+        and float(board.get_by_index(i).base_score) >= 10.0
+    ]
 
     def build_tour(start: int, item_order: list[int]) -> list[int] | None:
         if start in item_set:
@@ -3797,6 +4079,24 @@ def _greedy_scattered_item_tour_paths(
                 and start_tile.curse == CurseType.ITEM
                 and end_tile.curse == CurseType.ITEM
             )
+            use_value = False
+            if (
+                chess_hubs
+                and start_tile.curse == CurseType.ITEM
+                and end_tile.curse == CurseType.ITEM
+            ):
+                end_nbrs = set(
+                    neighbors_from_tile(board, [target], set(), flags=flags)
+                )
+                start_nbrs = set(
+                    neighbors_from_tile(board, path, set(path), flags=flags)
+                )
+                for hub in chess_hubs:
+                    if hub in path or forbidden & (1 << hub):
+                        continue
+                    if hub in start_nbrs or hub in end_nbrs:
+                        use_value = True
+                        break
             bridge = _bridge_between_indices(
                 board,
                 path[-1],
@@ -3805,7 +4105,8 @@ def _greedy_scattered_item_tour_paths(
                 flags=flags,
                 prefer_number_bridges=prefer_number_bridges,
                 forbidden_mask=forbidden,
-                rich_detour=rich,
+                rich_detour=rich or use_value,
+                prefer_value_hubs=use_value,
             )
             if bridge is None or len(bridge) < 2:
                 return None
@@ -3833,6 +4134,8 @@ def _greedy_scattered_item_tour_paths(
             path = build_tour(start, list(item_order))
             if path is not None:
                 add_tour(path)
+                if len(tours) >= 48:
+                    return tours
 
     return tours
 
@@ -4004,6 +4307,7 @@ class WordSearcher:
         use_tier2_screen: bool | None = None,
         use_tier2_two_phase: bool | None = None,
         use_dfs_bb: bool | None = None,
+        use_beam_search: bool = True,
     ) -> None:
         self.dictionary = dictionary or WordDictionary()
         self.validator = PathValidator(self.dictionary, min_len)
@@ -4020,6 +4324,7 @@ class WordSearcher:
         self.mult_search_weight = mult_search_weight
         self.mult_search_passes = mult_search_passes
         self.search_workers = max(1, int(search_workers))
+        self.use_beam_search = bool(use_beam_search)
         self._mult_rules: list = []
         self._mult_hints: MultNeighborHints | None = None
         self._wordlist_path = wordlist_path or getattr(
@@ -4029,6 +4334,7 @@ class WordSearcher:
         self._use_tier2_screen_override = use_tier2_screen
         self._use_tier2_two_phase_override = use_tier2_two_phase
         self._use_dfs_bb_override = use_dfs_bb
+        self._value_model = None
         self._score_cache: dict[
             tuple[str, tuple[int, ...], str], tuple[float, float, float]
         ] = {}
@@ -5487,7 +5793,15 @@ class WordSearcher:
                     shuffle_seed=start * 31 + board.cols,
                     min_remaining=max(0, self.min_len),
                 )
-            if branch_letters:
+            # digits_only must explore the digit face, not 26 letter-wildcard
+            # branches that burn the slice and then get filtered at accept time.
+            skip_letter_branches_for_digits_only = (
+                digits_only
+                and tile.curse == CurseType.NUMBER
+                and token.isdigit()
+                and not skip_number_digit_start
+            )
+            if branch_letters and not skip_letter_branches_for_digits_only:
                 letter_trie_start = not has_digit
                 letter_branch_count = len(branch_letters)
                 per_letter_deadline: float | None = None
@@ -5910,20 +6224,37 @@ class WordSearcher:
             paths: list[list[int]] = []
             seen_paths: set[tuple[int, ...]] = set()
             gather_start = time.monotonic()
+            greedy_deadline = min(
+                deadline, gather_start + min(3.5, self.time_budget * 0.08)
+            )
+            # Leave headroom for scoring on ALL boards (not only dense) — Full Moon
+            # face resolve must not start after gather ate the whole deadline.
+            gather_cap = min(
+                deadline,
+                gather_start
+                + min(9.0, max(0.0, deadline - gather_start) * 0.55),
+            )
+            greedy_deadline = min(greedy_deadline, gather_cap)
 
             def add_paths(candidates_paths: list[list[int]]) -> None:
-                for path in candidates_paths:
-                    extended = _extend_scatter_tour_path(
-                        board, path, cover_cap, flags=stamp_flags
-                    )
-                    key = tuple(extended)
+                for i, path in enumerate(candidates_paths):
+                    if time.monotonic() >= gather_cap:
+                        break
+                    key = tuple(path)
                     if key not in seen_paths:
                         seen_paths.add(key)
-                        paths.append(extended)
+                        paths.append(path)
+                    # Extend only a prefix — Full Moon suffix growth is costly.
+                    if i >= 16:
+                        continue
+                    grown = _extend_scatter_tour_path(
+                        board, path, cover_cap, flags=stamp_flags
+                    )
+                    gkey = tuple(grown)
+                    if gkey not in seen_paths:
+                        seen_paths.add(gkey)
+                        paths.append(grown)
 
-            greedy_deadline = min(
-                deadline, gather_start + min(4.0, self.time_budget * 0.1)
-            )
             add_paths(
                 _greedy_scattered_item_tour_paths(
                     board,
@@ -5938,12 +6269,15 @@ class WordSearcher:
                     ),
                 )
             )
-            if len(item_indices) < _SCATTERED_ITEM_DENSE_MIN:
-                cover_budget = min(3.0, self.time_budget * 0.08)
-                cover_deadline = min(
-                    deadline, gather_start + cover_budget
+            if time.monotonic() < gather_cap:
+                # Dense boards still need BFS cover — greedy alone misses item-leading
+                # stomatocytes-class tours (number-bridge greedy floods the heap).
+                cover_budget = min(
+                    5.0 if len(item_indices) >= _SCATTERED_ITEM_DENSE_MIN else 5.0,
+                    self.time_budget * (0.12 if len(item_indices) >= _SCATTERED_ITEM_DENSE_MIN else 0.12),
                 )
-                if time.monotonic() < cover_deadline:
+                cover_deadline = min(gather_cap, time.monotonic() + cover_budget)
+                if cover_deadline > time.monotonic():
                     add_paths(
                         _scattered_item_cover_paths(
                             board,
@@ -5959,26 +6293,170 @@ class WordSearcher:
                 is_number_like_tile(board.get_by_index(i))
                 for i in _active_indices(board)
             )
+            from cursed_words_solver.rules.grid_effects import card_suit as _card_suit
+
             if prefer_long_paths:
-                paths.sort(key=len, reverse=True)
+                # Quality first within each lead class, then round-robin so ITEM-
+                # leading (stomatocytes) and NUMBER-leading (comitadji) both get
+                # scoring time — never let one seed family monopolize the queue.
+                def _lead_bucket(p: list[int]) -> int:
+                    if not p:
+                        return 2
+                    curse = board.get_by_index(p[0]).curse
+                    if curse == CurseType.ITEM:
+                        return 0
+                    if curse == CurseType.NUMBER:
+                        return 1
+                    return 2
+
+                def _est_key(p: list[int]) -> tuple:
+                    items_hit = sum(
+                        1
+                        for i in p
+                        if board.get_by_index(i).curse == CurseType.ITEM
+                    )
+                    chess_hit = sum(
+                        1 for i in p if is_chess_piece(board.get_by_index(i))
+                    )
+                    non_item_base = sum(
+                        float(board.get_by_index(i).base_score)
+                        for i in p
+                        if board.get_by_index(i).curse != CurseType.ITEM
+                    )
+                    start_suit = (
+                        _card_suit(board.get_by_index(p[0]))
+                        if p and board.get_by_index(p[0]).curse == CurseType.ITEM
+                        else None
+                    )
+                    end_suit = _card_suit(board.get_by_index(p[-1])) if p else None
+                    wrestlers = (
+                        1
+                        if start_suit
+                        and end_suit
+                        and start_suit != end_suit
+                        else 0
+                    )
+                    # Prefer fewer wild/item/chess letter-holes early so accept
+                    # finds dictionary words before resolve budget expires.
+                    holes = sum(
+                        1
+                        for i in p
+                        if board.get_by_index(i).curse
+                        in (
+                            CurseType.ITEM,
+                            CurseType.WILDCARD,
+                        )
+                        or is_chess_piece(board.get_by_index(i))
+                    )
+                    return (
+                        -items_hit,
+                        -chess_hit,
+                        -wrestlers,
+                        holes,
+                        -non_item_base,
+                        -len(p),
+                    )
+
+                buckets: dict[int, list[list[int]]] = {0: [], 1: [], 2: []}
+                for path in paths:
+                    buckets[_lead_bucket(path)].append(path)
+                for bucket in buckets.values():
+                    bucket.sort(key=_est_key)
+                ordered: list[list[int]] = []
+                while any(buckets.values()):
+                    for lead in (0, 1, 2):
+                        if buckets[lead]:
+                            ordered.append(buckets[lead].pop(0))
+                paths = ordered
             else:
                 paths.sort(key=len)
 
             from cursed_words_solver.suggestion import path_is_submittable
 
-            vary_reserve = (
-                8.0
-                if len(item_indices) >= _SCATTERED_ITEM_DENSE_MIN
-                else 0.0
-            )
-            score_deadline = (
-                min(
-                    deadline,
-                    gather_start + max(0.0, (deadline - gather_start) - vary_reserve),
-                )
-                if vary_reserve > 0.0
-                else deadline
-            )
+            # Reserve scoring (+ optional vary) *before* blank-attach bridges so
+            # dense Full Moon boards still accept dictionary words.
+            now = time.monotonic()
+            left_before_hook = max(0.0, deadline - now)
+            vary_reserve = 0.0
+            if (
+                len(item_indices) >= _SCATTERED_ITEM_DENSE_MIN
+                and left_before_hook > 4.0
+            ):
+                vary_reserve = min(3.0, left_before_hook * 0.2)
+            score_deadline = deadline - vary_reserve
+            # Cap blank-attach so it cannot consume the score window.
+            hook_budget = min(1.25, max(0.0, left_before_hook - vary_reserve) * 0.15)
+            hook_deadline = min(now + hook_budget, score_deadline)
+
+            # Cheap wrestlers boost: attach a differently-suited blank onto strong
+            # item-leading covers when the path does not already end on a blank.
+            blank_idxs = [
+                i
+                for i in _active_indices(board)
+                if board.get_by_index(i).curse == CurseType.WILDCARD
+                and _card_suit(board.get_by_index(i))
+            ]
+            if blank_idxs and paths and time.monotonic() < hook_deadline:
+                extra: list[list[int]] = []
+                for path in paths[:12]:
+                    if time.monotonic() >= hook_deadline:
+                        break
+                    if not path or board.get_by_index(path[0]).curse != CurseType.ITEM:
+                        continue
+                    if board.get_by_index(path[-1]).curse == CurseType.WILDCARD:
+                        continue
+                    start_suit = _card_suit(board.get_by_index(path[0]))
+                    items_hit = sum(
+                        1
+                        for i in path
+                        if board.get_by_index(i).curse == CurseType.ITEM
+                    )
+                    if items_hit < max(2, len(item_indices) - 1):
+                        continue
+                    for blank in blank_idxs:
+                        if time.monotonic() >= hook_deadline:
+                            break
+                        if blank in path:
+                            continue
+                        end_suit = _card_suit(board.get_by_index(blank))
+                        if start_suit and end_suit and start_suit == end_suit:
+                            continue
+                        room = min(4, cover_cap - len(path) + 1)
+                        if room < 2:
+                            continue
+                        forbidden = sum(1 << idx for idx in path[:-1])
+                        bridge = _bridge_between_indices(
+                            board,
+                            path[-1],
+                            blank,
+                            room,
+                            flags=stamp_flags,
+                            forbidden_mask=forbidden,
+                        )
+                        if bridge and len(bridge) >= 2:
+                            grown = path + bridge[1:]
+                            if len(grown) <= cover_cap:
+                                extra.append(grown)
+                if extra:
+                    paths.extend(extra)
+
+            # Cap scoring queue — Full Moon face resolve is expensive.
+            # Round-robin lead classes so ITEM (stomatocytes) and NUMBER
+            # (comitadji) starts are not drowned by short letter faces.
+            if prefer_long_paths:
+                buckets = {0: [], 1: [], 2: []}
+                for path in paths:
+                    buckets[_lead_bucket(path)].append(path)
+                for bucket in buckets.values():
+                    bucket.sort(key=lambda p: (len(p) > 7, len(p)))
+                ordered = []
+                while any(buckets.values()) and len(ordered) < 48:
+                    for lead in (0, 1, 2):
+                        if buckets[lead] and len(ordered) < 48:
+                            ordered.append(buckets[lead].pop(0))
+                paths = ordered
+            elif len(paths) > 48:
+                paths = paths[:48]
 
             def path_submittable(path: list[int], word: str) -> bool:
                 return path_is_submittable(
@@ -6005,14 +6483,29 @@ class WordSearcher:
                     resolved_word=resolved_word,
                 )
 
-            for path in paths:
+            for path_i, path in enumerate(paths):
                 if time.monotonic() >= score_deadline:
                     break
+                self._active_deadline = score_deadline
                 search_word = search_word_from_path(
                     board, path, flags=stamp_flags
                 )
                 if time.monotonic() >= score_deadline:
                     break
+                # Skip heavy pattern faces when little time remains — prefer
+                # faces that are already dictionary words / digit forms.
+                # Always attempt NUMBER-leading digit faces (comitadji).
+                starts_number = (
+                    path
+                    and board.get_by_index(path[0]).curse == CurseType.NUMBER
+                )
+                if (
+                    "?" in search_word
+                    and not starts_number
+                    and time.monotonic() + 0.4 >= score_deadline
+                    and path_i >= 4
+                ):
+                    continue
                 accepted, score_word = self._accept_path_for_search(
                     board,
                     path,
@@ -6021,10 +6514,22 @@ class WordSearcher:
                     stamp_flags,
                 )
                 resolved_word: str | None = None
-                if not accepted and time.monotonic() < score_deadline:
-                    resolved = self._resolved_word_for_path(
-                        board, path, search_word, loadout
+                # Heavy dictionary resolve only for early (high-est) paths with time.
+                if (
+                    not accepted
+                    and path_i < 8
+                    and time.monotonic() + 1.0 < score_deadline
+                ):
+                    saved_deadline = self._active_deadline
+                    self._active_deadline = min(
+                        score_deadline, time.monotonic() + 0.75
                     )
+                    try:
+                        resolved = self._resolved_word_for_path(
+                            board, path, search_word, loadout
+                        )
+                    finally:
+                        self._active_deadline = saved_deadline
                     if resolved:
                         accepted, score_word = self._accept_path_for_search(
                             board,
@@ -6034,6 +6539,8 @@ class WordSearcher:
                             stamp_flags,
                         )
                         resolved_word = resolved
+                if time.monotonic() >= score_deadline:
+                    break
                 if accepted:
                     if (
                         resolved_word is None
@@ -6053,15 +6560,58 @@ class WordSearcher:
                         score_path,
                         resolved_word=resolved_word,
                     )
+
+            # Diversity salvage: ensure ITEM/NUMBER starts can appear in the heap
+            # when letter faces monopolized the score window.
+            def _heap_has_lead(curse: CurseType) -> bool:
+                for _sc, _w, p in candidates.best_sorted():
+                    if p and board.get_by_index(p[0]).curse == curse:
+                        return True
+                return False
+
+            salvage_deadline = min(deadline, time.monotonic() + 1.5)
+            for need_curse in (CurseType.ITEM, CurseType.NUMBER):
+                if _heap_has_lead(need_curse):
+                    continue
+                for path in paths:
+                    if time.monotonic() >= salvage_deadline:
+                        break
+                    if not path or board.get_by_index(path[0]).curse != need_curse:
+                        continue
+                    self._active_deadline = salvage_deadline
+                    sw = search_word_from_path(board, path, flags=stamp_flags)
+                    if "?" in sw and need_curse == CurseType.ITEM and len(path) > 5:
+                        continue
+                    ok, word = self._accept_path_for_search(
+                        board, path, sw, loadout, stamp_flags
+                    )
+                    if not ok:
+                        continue
+                    if not path_submittable(path, word):
+                        continue
+                    self._consider_path_candidate(
+                        board,
+                        loadout,
+                        candidates,
+                        path,
+                        word,
+                        stamp_flags,
+                        score_path,
+                    )
+                    if _heap_has_lead(need_curse):
+                        break
+
             if (
                 len(item_indices) >= _SCATTERED_ITEM_DENSE_MIN
                 and time.monotonic() < deadline
+                and len(candidates) > 0
             ):
+                vary_deadline = min(deadline, time.monotonic() + max(0.5, vary_reserve))
                 self._vary_scattered_item_path_endpoints(
                     board,
                     loadout,
                     candidates,
-                    deadline,
+                    vary_deadline,
                 )
         finally:
             self._active_deadline = prev_deadline
@@ -9345,6 +9895,7 @@ class WordSearcher:
         from cursed_words_solver.models import reset_board_flat_call_count
 
         self._run_until_found = run_until_found
+        loadout = loadout or Loadout(money=board.money)
         self._scoring_cache_tag = (
             f"{loadout_fingerprint(loadout)}|{board_fingerprint(board)}"
         )
@@ -9357,7 +9908,6 @@ class WordSearcher:
         self._tier2_adaptive_mode = None
         self._solve_start_mono = None
         reset_board_flat_call_count()
-        loadout = loadout or Loadout(money=board.money)
         quest_target: float | None = None
         if bullseye_active(loadout):
             remaining = encounter_remaining_from_loadout(loadout)
@@ -9406,6 +9956,19 @@ class WordSearcher:
             self._graph_ctx,
             self.scoring.rules,
         )
+        from cursed_words_solver.board_value_model import build_board_value_model
+
+        self._value_model = build_board_value_model(
+            board,
+            loadout,
+            self._solve_ctx,
+            self._graph_ctx,
+            self._board_scoring_ctx,
+            mult_rules=self._mult_rules,
+            mult_hints=self._mult_hints,
+            required_consumable_indices=self.validator.required_consumable_indices,
+            search_flags=self._solve_ctx.search_flags,
+        )
         clear_chess_attack_cache(
             has_chess_pieces=self._graph_ctx.has_chess_pieces,
             board_fingerprint=(
@@ -9434,519 +9997,769 @@ class WordSearcher:
             and board.get_by_index(i).curse == CurseType.LETTER
         ]
         center_idx = self._solve_ctx.quest_ctx.require_center_index
-        up_and_up_reserve = 0.0
-        if center_idx is not None:
-            center_tile = board.get_by_index(center_idx)
-            if is_number_like_tile(center_tile):
-                up_and_up_reserve = min(18.0, self.time_budget * 0.35)
-            else:
-                up_and_up_reserve = min(15.0, self.time_budget * 0.30)
-            if has_fraction_tiles:
-                up_and_up_reserve = max(
-                    up_and_up_reserve, min(20.0, self.time_budget * 0.42)
-                )
-            if is_number_like_tile(center_tile):
-                center_nv = tile_number_value(center_tile)
-                if center_nv is not None and center_nv >= 13:
-                    up_and_up_reserve = max(
-                        up_and_up_reserve,
-                        min(22.0, self.time_budget * 0.45),
-                    )
-        placement_screen = bool(getattr(self, "_placement_screen_pass", False))
-        required_placement = bool(self.validator.required_consumable_indices)
-        if self._full_board_exact:
-            number_reserve = 0.0
-            void_reserve = 0.0
-            fraction_cluster_reserve = 0.0
-            chess_reserve = 0.0
-            seed_reserve = 0.0
-            extension_reserve = 0.0
-            up_and_up_reserve = 0.0
-            item_seed_reserve = 0.0
-        elif has_digit_tiles:
-            # Tight budgets need more time reserved for digit passes; otherwise
-            # the cap progression (7 -> 8) can time out before reaching cap=8.
-            if self.time_budget < 2.0 and (placement_screen or required_placement):
-                number_reserve = min(0.5, self.time_budget * 0.25)
-            else:
-                number_reserve = min(
-                    10.0,
-                    self.time_budget * (0.6 if self.time_budget < 3.0 else 0.45),
-                )
-            fraction_cluster_reserve = (
-                min(15.0, self.time_budget * 0.35) if has_fraction_tiles else 0.0
-            )
-            void_reserve = (
-                min(3.0, self.time_budget * 0.35) if void_letter_starts else 0.0
-            )
-            reserved = number_reserve + void_reserve + fraction_cluster_reserve
-            cap = self.time_budget * 0.85
-            if reserved > cap and reserved > 0:
-                scale = cap / reserved
-                number_reserve *= scale
-                void_reserve *= scale
-                fraction_cluster_reserve *= scale
-        elif has_fraction_tiles:
-            number_reserve = 0.0
-            void_reserve = 0.0
-            fraction_cluster_reserve = min(10.0, self.time_budget * 0.18)
-        else:
-            number_reserve = 0.0
-            void_reserve = 0.0
-            fraction_cluster_reserve = 0.0
-
-        chess_reserve = 0.0
-        if not self._full_board_exact and _chess_tile_count(board) >= 3:
-            # DFS cap progression can consume the whole budget on chess-heavy
-            # boards. Reserve some time so the chess prefix extension phase
-            # still runs.
-            chess_reserve = min(8.0, self.time_budget * 0.35)
-
+        use_beam = (
+            self.use_beam_search
+            and not self._full_board_exact
+            and not self._small_board_hamiltonian
+        )
         joker_count = len(_wildcard_start_indices(board))
         hanafuda_level = self._solve_ctx.hanafuda_level
-        if f8_cap is not None and joker_count >= 2 and _chess_tile_count(board) >= 3:
-            presearch_allowance = min(18.0, self.time_budget * 0.22)
-            self.time_budget = min(
-                self.time_budget,
-                max(0.0, f8_cap - solve_start - presearch_allowance),
-            )
-        seed_reserve = 0.0
-        if hanafuda_level >= 1 and joker_count >= 2:
-            seed_reserve = min(5.0, self.time_budget * 0.12)
-
-        extension_reserve = 0.0
-        if self.max_len > self.min_len:
-            extension_reserve = min(5.0, self.time_budget * 0.12)
-            branch = (
-                self._graph_ctx.wildcard_mask.bit_count()
-                + self._graph_ctx.chess_piece_mask.bit_count()
-                + self._graph_ctx.item_mask.bit_count()
-            )
-            if branch >= 5:
-                extension_reserve = min(8.0, extension_reserve * 1.4)
-            if branch <= 2:
-                extension_reserve *= 0.85
-            # Fraction+number boards need long resolve growth (free→freeride).
-            if has_number_tiles and has_fraction_tiles:
-                extension_reserve = min(
-                    18.0,
-                    max(extension_reserve, self.time_budget * 0.30),
-                )
-
-        (
-            number_reserve,
-            void_reserve,
-            fraction_cluster_reserve,
-            chess_reserve,
-            seed_reserve,
-            extension_reserve,
-            up_and_up_reserve,
-            reserve_scaled,
-        ) = _scale_post_dfs_reserves(
-            time_budget=self.time_budget,
-            number_reserve=number_reserve,
-            void_reserve=void_reserve,
-            fraction_cluster_reserve=fraction_cluster_reserve,
-            chess_reserve=chess_reserve,
-            seed_reserve=seed_reserve,
-            extension_reserve=extension_reserve,
-            up_and_up_reserve=up_and_up_reserve,
-        )
-        if center_idx is not None:
-            up_and_up_reserve = max(
-                up_and_up_reserve,
-                min(10.0, self.time_budget * 0.28),
-            )
-
         has_cartwheeler = _loadout_has_stamp_slug(loadout, "cartwheeler")
         has_full_moon = flag_test(
             self._search_ctx(loadout).search_flags, FLAG_DOUBLE_LETTER_TELEPORT
         )
-        letter_starts = _balanced_start_indices(board)
-        if (
-            has_cartwheeler
-            and has_full_moon
-            and joker_count >= _WILDCARD_DENSE_MIN
-        ):
-            # Wildcard-first DFS burns budget on blank→number→joker explosions; prefer
-            # letter/chess roots so Card Shark anchors (and long even tours) surface.
-            def _cw_start_key(i: int) -> tuple[int, float, int]:
-                tile = board.get_by_index(i)
-                if tile.curse == CurseType.LETTER:
-                    return (0, -float(tile.base_score), i)
-                if is_chess_piece(tile):
-                    return (1, -float(tile.base_score), i)
-                if _is_wildcard_tile(tile):
-                    return (3, 0.0, i)
-                return (2, -float(tile.base_score), i)
-
-            letter_starts = sorted(letter_starts, key=_cw_start_key)
-        chess_starts = _chess_start_indices(board) if chess_reserve > 0.0 else []
-        if chess_starts:
-            # Prefer higher indices first for short chess-cap passes, so we don't
-            # starve the specific chess start tiles needed for capture-chain
-            # regressions under fair-start time slicing.
-            chess_starts = sorted(chess_starts, key=lambda i: i, reverse=True)
         item_count = (
             self._graph_ctx.item_mask.bit_count()
             if self._graph_ctx is not None
             else 0
         )
-        item_seed_reserve = 0.0
-        lone_scatter_item = False
-        if item_count == 1 and not self._full_board_exact and self.max_len > self.min_len:
-            lone_scatter_item = any(
-                str((board.get_by_index(i).metadata or {}).get("scattered_item_id") or "").strip()
-                for i in _active_indices(board)
-                if board.get_by_index(i).curse == CurseType.ITEM
-            )
-        if (
-            item_count >= 2
-            and not self._full_board_exact
-            and self.max_len > self.min_len
-        ):
-            if has_cartwheeler or item_count >= _SCATTERED_ITEM_DENSE_MIN:
-                item_seed_reserve = min(16.0, self.time_budget * 0.35)
-            else:
-                item_seed_reserve = min(12.0, self.time_budget * 0.25)
-        elif lone_scatter_item and joker_count >= _WILDCARD_DENSE_MIN:
-            item_seed_reserve = min(8.0, self.time_budget * 0.15)
-        use_parallel = (
-            self.search_workers > 1
-            and self._wordlist_path is not None
-            and (
-                item_count < 2
-                or self._full_board_exact
-                or (
-                    _is_shrunk_board(board)
-                    and active_count <= _SMALL_BOARD_HAMILTONIAN_MAX
-                )
-            )
-        )
-        # Short budgets: one pass at max_len. Longer budgets: deepen so DFS does not
-        # exhaust the first high-base-score branch to max_len before shorter words.
-        # Parallel mode uses one pass at max_len to avoid repeated pool scheduling.
-        item_heavy_caps = item_count >= 2 and self.max_len > self.min_len
-        if item_heavy_caps:
-            caps = _scattered_item_cap_sequence(
-                self.min_len,
-                self.max_len,
-                active_count=active_count if _is_shrunk_board(board) else None,
-                item_count=item_count,
-            )
-            if has_cartwheeler and self.max_len > self.min_len:
-                # Merge Cartwheeler even-length preference without dropping item caps.
-                for c in _cartwheeler_cap_sequence(self.min_len, self.max_len):
-                    if c not in caps:
-                        caps.append(c)
-        elif use_parallel:
-            # One pool round at max_len; add mid caps for hub / Cartwheeler paths.
-            if (
-                hanafuda_level >= 1
-                and joker_count >= 2
-                and self.max_len > 8
-            ):
-                caps = [8, self.max_len]
-            elif (
-                has_cartwheeler
-                and (has_full_moon or joker_count >= 2)
-                and self.max_len > 8
-            ):
-                if joker_count >= _WILDCARD_DENSE_MIN:
-                    caps = [6, 8, 10, 12]
-                else:
-                    # Even lengths first (Cartwheeler); include 8 before 10 so
-                    # rook/queen Full Moon boards still surface mid even words.
-                    caps = [8, 10, 12, self.max_len]
-                caps = [c for c in caps if self.min_len <= c <= self.max_len]
-                if self.max_len not in caps:
-                    caps.append(self.max_len)
-                if not caps:
-                    caps = [self.max_len]
-            elif (
-                has_fraction_tiles
-                and _chess_tile_count(board) >= 3
-                and self.max_len > 8
-            ):
-                caps = [8, self.max_len]
-            elif has_number_tiles and self.max_len > self.min_len:
-                # Number/fraction boards: short letter words before wildcard thrash.
-                caps = _number_board_cap_sequence(self.min_len, self.max_len)
-            elif self.min_len > 3 and self.max_len > self.min_len:
-                caps = [self.min_len]
-                if self.min_len < 8 <= self.max_len:
-                    caps.append(8)
-                if self.max_len not in caps:
-                    caps.append(self.max_len)
-            else:
-                caps = [self.max_len]
-        elif has_cartwheeler and self.max_len > self.min_len and self.time_budget >= 6.0:
-            if joker_count >= _WILDCARD_DENSE_MIN:
-                caps = _cartwheeler_wildcard_dense_cap_sequence(
-                    self.min_len, self.max_len
-                )
-            else:
-                caps = _cartwheeler_cap_sequence(self.min_len, self.max_len)
-        elif chess_reserve > 0.0 and self.max_len > self.min_len:
-            caps = _chess_serial_cap_sequence(self.min_len, self.max_len)
-        elif (
-            has_number_tiles
-            and self.time_budget >= 6.0
-            and self.max_len > self.min_len
-        ):
-            caps = _number_board_cap_sequence(self.min_len, self.max_len)
-        elif self.time_budget >= 6.0 and self.max_len > self.min_len:
-            caps = range(self.min_len, self.max_len + 1)
-        else:
-            caps = [self.max_len]
-
-        timing.dfs_caps = tuple(caps)
-
-        from cursed_words_solver.search_parallel import get_search_pool
-
-        pool = (
-            get_search_pool(self._wordlist_path, self.search_workers)
-            if use_parallel
-            else None
-        )
-        # Budget starts after pool handle exists (workers should already be warm).
-        search_begin = time.monotonic()
-        f8_deadline = f8_cap
-        self._f8_deadline = f8_deadline
-        if run_until_found:
-            deadline = float("inf")
-            self._active_deadline = None
-        else:
-            local_deadline = search_begin + self.time_budget
-            if f8_cap is not None:
-                remaining_at_search = max(0.0, f8_cap - search_begin)
-                if joker_count >= 2 and _chess_tile_count(board) >= 3:
-                    self.time_budget = min(self.time_budget, remaining_at_search)
-                local_deadline = min(local_deadline, search_begin + self.time_budget, f8_cap)
-            elif deadline is not None:
-                local_deadline = min(local_deadline, deadline)
-            deadline = local_deadline
-            self._active_deadline = deadline
-        empty_heap_recovery_likely = (
-            has_number_tiles
-            and has_fraction_tiles
-            and _chess_tile_count(board) >= 3
-        )
-        # Number/fraction boards: if the heap is still empty after main DFS
-        # (+ digit pass when applicable), spend remaining wall on short letter caps.
-        # Do not reserve up-front (that starves main DFS on boards that already
-        # find words, e.g. number-start letter words).
-        number_short_recovery_likely = has_number_tiles
-        empty_heap_recovery_reserve = (
-            min(18.0, self.time_budget * 0.30)
-            if empty_heap_recovery_likely
-            else 0.0
-        )
-        post_dfs_reserve = (
-            number_reserve
-            + void_reserve
-            + fraction_cluster_reserve
-            + chess_reserve
-            + seed_reserve
-            + extension_reserve
-            + up_and_up_reserve
-            + item_seed_reserve
-            + empty_heap_recovery_reserve
-        )
-        main_deadline = deadline - post_dfs_reserve
-        main_dfs_floor = search_begin + self.time_budget * MAIN_DFS_FLOOR_FRAC
-        if main_deadline < main_dfs_floor:
-            main_deadline = main_dfs_floor
-        if use_parallel and self.min_len >= 3 and self.max_len > self.min_len:
-            parallel_cap = search_begin + min(
-                self.time_budget * 0.45,
-                max(12.0, self.time_budget - 18.0),
-            )
-            main_deadline = min(main_deadline, parallel_cap)
-        timing.reserve_scaling_applied = reserve_scaled
-        timing.main_dfs_slice_sec = max(0.0, main_deadline - search_begin)
-        pre_extend_deadline = deadline - extension_reserve if extension_reserve > 0 else deadline
-        if empty_heap_recovery_likely:
-            recovery_cutoff = deadline - empty_heap_recovery_reserve
-            pre_extend_deadline = min(pre_extend_deadline, recovery_cutoff)
         curse_heavy = joker_count >= 2 and _chess_tile_count(board) >= 3
         wildcard_dense = joker_count >= _WILDCARD_DENSE_MIN
-        parallel_dfs_viable = use_parallel and main_deadline > search_begin
-        dfs_start = search_begin
-        self._parallel_executor = pool
-        start_productivity: dict[int, int] = {}
-        if self._full_board_exact:
-            ham_deadline = float("inf") if run_until_found else deadline
-            self._collect_full_board_hamiltonian_candidates(
-                board,
-                loadout,
-                candidates,
-                ham_deadline,
+        letter_starts = _balanced_start_indices(board)
+        if use_beam and self._value_model is not None:
+            # Score-aware order, but keep NUMBER starts after letters/items for the
+            # beam + letter leftover pass. Digit-leading faces are explored in the
+            # dedicated live number_slice (start_priority softening still applies
+            # there via expand/seed helpers — not by starving letter roots).
+            vm = self._value_model
+            letter_starts = sorted(
+                letter_starts,
+                key=lambda i: (
+                    1 if vm.is_number(i) else 0,
+                    -vm.start_priority(i),
+                    i,
+                ),
             )
-        if hanafuda_level >= 1 and joker_count >= 2 and not self._full_board_exact:
-            self._collect_joker_cluster_candidates(
-                board,
-                loadout,
-                candidates,
-                deadline,
-                self.max_len,
-            )
-        elif (
-            has_full_moon
-            and joker_count >= 2
-            and not self._full_board_exact
-        ):
-            # Full Moon makes jokers a complete teleport graph; keep this seed brief
-            # so letter DFS still gets the main budget.
-            joker_deadline = min(
-                deadline,
-                search_begin + min(2.5, self.time_budget * 0.06),
-            )
-            if joker_deadline > time.monotonic():
-                self._collect_joker_cluster_candidates(
-                    board,
-                    loadout,
-                    candidates,
-                    joker_deadline,
-                    self.max_len,
-                )
-        if (
-            has_full_moon
-            and _chess_tile_count(board) >= 2
-            and not self._full_board_exact
-        ):
-            chess_hub_deadline = min(
-                deadline,
-                search_begin + min(2.5, self.time_budget * 0.06),
-            )
-            if chess_hub_deadline > time.monotonic():
-                self._collect_full_moon_chess_hub_candidates(
-                    board,
-                    loadout,
-                    candidates,
-                    chess_hub_deadline,
-                    self.max_len,
-                )
-        ctx_for_wrap = self._search_ctx(loadout)
-        if (
-            flag_test(ctx_for_wrap.search_flags, FLAG_HORIZONTAL_WRAP)
-            and joker_count >= 2
-            and _chess_tile_count(board) >= 2
-            and not self._full_board_exact
-        ):
-            wrap_deadline = min(
-                deadline,
-                search_begin + min(2.0, self.time_budget * 0.05),
-            )
-            self._collect_wrap_wildcard_chess_path_seeds(
-                board,
-                loadout,
-                candidates,
-                wrap_deadline,
-                self.max_len,
-            )
-        if item_count >= 2 and not self._full_board_exact and item_seed_reserve > 0.0:
-            item_deadline = min(
-                main_deadline,
-                search_begin + item_seed_reserve,
-            )
-            if item_deadline > time.monotonic():
-                self._collect_scattered_item_covering_candidates(
-                    board,
-                    loadout,
-                    candidates,
-                    item_deadline,
-                    max_len=self.max_len,
-                )
-        if (
-            lone_scatter_item
-            and not self._full_board_exact
-            and item_seed_reserve > 0.0
-            and joker_count >= _WILDCARD_DENSE_MIN
-        ):
-            item_deadline = min(
-                main_deadline,
-                search_begin + item_seed_reserve,
-            )
-            if item_deadline > time.monotonic():
-                self._collect_lone_scattered_item_endpoint_candidates(
-                    board,
-                    loadout,
-                    candidates,
-                    item_deadline,
-                    max_len=self.max_len,
-                )
-        heap_before_letter = len(candidates)
-        nw_stamp_flags = ctx_for_wrap.search_flags
-        nw_starts = _number_wildcard_start_indices(board, nw_stamp_flags)
-        if (
-            nw_starts
-            and has_number_tiles
-            and self.min_len >= 7
-            and not self._full_board_exact
-            and time.monotonic() < main_deadline
-        ):
-            short_exact_len = self.min_len == self.max_len and self.max_len <= 8
-            if short_exact_len:
-                nw_budget = min(
-                    50.0,
-                    max(30.0, max(0.0, main_deadline - time.monotonic())),
-                )
+
+        if use_beam:
+            from cursed_words_solver.search_beam import collect_beam_candidates
+
+            number_reserve = 0.0
+            void_reserve = 0.0
+            fraction_cluster_reserve = 0.0
+            chess_reserve = 0.0
+            seed_reserve = 0.0
+            up_and_up_reserve = 0.0
+            item_seed_reserve = 0.0
+            empty_heap_recovery_reserve = 0.0
+            reserve_scaled = False
+            extension_reserve = 0.0
+            if self.max_len > self.min_len:
+                extension_reserve = min(4.0, self.time_budget * 0.08)
+                if has_number_tiles and has_fraction_tiles:
+                    extension_reserve = min(10.0, self.time_budget * 0.15)
+            caps = [self.max_len]
+            timing.dfs_caps = tuple(caps)
+            chess_starts: list[int] = []
+            lone_scatter_item = False
+            use_parallel = False
+            pool = None
+            search_begin = time.monotonic()
+            f8_deadline = f8_cap
+            self._f8_deadline = f8_deadline
+            if run_until_found:
+                deadline = float("inf")
+                self._active_deadline = None
             else:
-                nw_budget = min(
-                    30.0,
-                    max(12.0, number_reserve if number_reserve > 0 else 12.0),
-                    max(0.0, main_deadline - time.monotonic()),
+                local_deadline = search_begin + self.time_budget
+                if f8_cap is not None:
+                    local_deadline = min(
+                        local_deadline, search_begin + self.time_budget, f8_cap
+                    )
+                elif deadline is not None:
+                    local_deadline = min(local_deadline, deadline)
+                deadline = local_deadline
+                self._active_deadline = deadline
+            main_deadline = deadline - extension_reserve
+            main_dfs_floor = search_begin + self.time_budget * MAIN_DFS_FLOOR_FRAC
+            if main_deadline < main_dfs_floor:
+                main_deadline = main_dfs_floor
+            timing.reserve_scaling_applied = False
+            timing.main_dfs_slice_sec = max(0.0, main_deadline - search_begin)
+            pre_extend_deadline = (
+                deadline - extension_reserve if extension_reserve > 0 else deadline
+            )
+            parallel_dfs_viable = False
+            dfs_start = search_begin
+            self._parallel_executor = None
+            start_productivity: dict[int, int] = {}
+            if main_deadline > time.monotonic() and self._value_model is not None:
+                # Split main slice: beam primary, leftover letter DFS, then a live
+                # digit-start slice when NUMBER tiles exist (no cross-solve cache).
+                now = time.monotonic()
+                main_span = max(0.0, main_deadline - now)
+                number_slice = 0.0
+                item_slice = 0.0
+                # Only carve side slices when the main span is long enough that beam
+                # still gets a useful share (short smoke budgets stay beam-primary).
+                if main_span >= 10.0:
+                    if has_digit_tiles:
+                        number_slice = min(14.0, main_span * 0.30)
+                    if item_count >= 2:
+                        # Sparse Full Moon item covering is expensive/low-yield — keep lean.
+                        # Dense boards (≥5 items) need a fuller slice (stomatocytes-class).
+                        if (
+                            has_full_moon
+                            and item_count < _SCATTERED_ITEM_DENSE_MIN
+                        ):
+                            item_slice = min(4.0, main_span * 0.08)
+                        else:
+                            item_slice = min(10.0, main_span * 0.20)
+                    # Keep ≥55% of main for beam + letter leftover.
+                    max_side = main_span * 0.45
+                    side = number_slice + item_slice
+                    if side > max_side and side > 0:
+                        scale = max_side / side
+                        number_slice *= scale
+                        item_slice *= scale
+                    letter_floor = min(22.0, main_span * 0.55)
+                    side = number_slice + item_slice
+                    if main_span - side < letter_floor and side > 0:
+                        scale = max(0.0, main_span - letter_floor) / side
+                        number_slice *= scale
+                        item_slice *= scale
+                letter_deadline = main_deadline - number_slice - item_slice
+                beam_span = max(0.0, letter_deadline - now)
+                # Short smoke budgets: give letter leftover a larger share so a
+                # number-heavy board still finds *some* word under ~8s.
+                beam_frac = 0.55 if main_span < 10.0 else 0.72
+                beam_deadline = now + beam_span * beam_frac
+                # Brief hub seed for Hanafuda / dense jokers (hard constraint-style,
+                # not a competing post-DFS reserve).
+                if hanafuda_level >= 1 and joker_count >= 2:
+                    seed_slice = min(2.5, self.time_budget * 0.08)
+                    seed_deadline = min(beam_deadline, time.monotonic() + seed_slice)
+                    if seed_deadline > time.monotonic():
+                        self._collect_joker_cluster_candidates(
+                            board,
+                            loadout,
+                            candidates,
+                            seed_deadline,
+                            self.max_len,
+                        )
+                collect_beam_candidates(
+                    self,
+                    board,
+                    loadout,
+                    candidates,
+                    beam_deadline,
+                    max_len=self.max_len,
+                    value_model=self._value_model,
+                    start_indices=letter_starts,
+                    must_include_index=center_idx,
                 )
-            if nw_budget >= 8.0:
-                nw_phase_cap = (
-                    main_deadline if empty_heap_recovery_likely else deadline
-                )
-                for nw in sorted(nw_starts, reverse=True):
-                    if time.monotonic() >= nw_phase_cap:
-                        break
-                    slice_deadline = min(
-                        nw_phase_cap,
-                        time.monotonic() + (50.0 if short_exact_len else nw_budget),
-                    )
-                    slice_window = max(0.0, slice_deadline - time.monotonic())
-                    # Reserve time for digit-start exploration so number-leading
-                    # candidates cannot be starved by letter-branch probes.
-                    digit_pass_budget = (
-                        min(6.0, max(2.0, slice_window * 0.25))
-                        if not short_exact_len
-                        else min(10.0, max(3.0, slice_window * 0.20))
-                    )
-                    letter_deadline = max(
-                        time.monotonic(), slice_deadline - digit_pass_budget
-                    )
-                    promising = _number_wildcard_promising_first_letters(
+                # Competitive leftover: letter DFS until item/number slices.
+                if time.monotonic() < letter_deadline:
+                    self._collect_words_fair_starts(
                         board,
-                        nw,
-                        self.dictionary,
+                        loadout,
+                        candidates,
+                        letter_deadline,
                         self.max_len,
-                        nw_stamp_flags,
-                        self._graph_ctx,
-                        min_len=self.min_len,
-                        rules=self.scoring.rules,
-                        max_expansions_per_letter=80_000 if short_exact_len else 40_000,
+                        letter_starts,
+                        min_slice_override=self._adaptive_min_slice(candidates, 0),
                     )
-                    if promising:
-                        if short_exact_len:
+                # Live digit-start slice before item covering — number-leading faces
+                # (comitadji) must not wait behind low-yield scatter tours.
+                if (
+                    number_slice > 0
+                    and has_digit_tiles
+                    and time.monotonic() < main_deadline
+                ):
+                    number_starts = _interleaved_number_starts(board)
+                    if self.time_budget <= 2.0 and number_starts:
+                        number_starts = number_starts[:1]
+                    digit_start = max(self.min_len, 1)
+                    max_number_face = _max_number_face_on_board(board)
+                    min_cap_for_numbers = max(8, max_number_face)
+                    number_pass_deadline = min(
+                        main_deadline - item_slice,
+                        time.monotonic() + number_slice,
+                    )
+                    if number_starts and time.monotonic() < number_pass_deadline:
+                        lead_deadline = min(
+                            number_pass_deadline,
+                            time.monotonic() + max(1.0, number_slice * 0.35),
+                        )
+                        if lead_deadline > time.monotonic():
                             self._collect_words(
                                 board,
                                 loadout,
                                 candidates,
-                                letter_deadline,
-                                self.max_len,
-                                start_indices=[nw],
-                                number_start_first_letter=promising[0],
-                                skip_number_digit_start=True,
+                                lead_deadline,
+                                min_cap_for_numbers,
+                                digits_only=True,
+                                start_indices=[number_starts[0]],
                             )
-                        else:
-                            for ch in promising[:8]:
-                                if time.monotonic() >= letter_deadline:
-                                    break
+                    for cap in range(
+                        digit_start, min(self.max_len, min_cap_for_numbers) + 1
+                    ):
+                        if (
+                            time.monotonic() >= number_pass_deadline
+                            or not number_starts
+                        ):
+                            break
+                        before = len(candidates)
+                        self._collect_words_fair_starts(
+                            board,
+                            loadout,
+                            candidates,
+                            number_pass_deadline,
+                            cap,
+                            number_starts,
+                            digits_only=True,
+                        )
+                        if (
+                            cap >= min_cap_for_numbers
+                            and len(candidates) == before
+                            and self.time_budget >= 6.0
+                        ):
+                            break
+                if item_slice > 0 and item_count >= 2 and time.monotonic() < main_deadline:
+                    item_deadline = min(
+                        main_deadline,
+                        time.monotonic() + max(item_slice, 0.5),
+                    )
+                    if item_deadline > time.monotonic():
+                        self._collect_scattered_item_covering_candidates(
+                            board,
+                            loadout,
+                            candidates,
+                            item_deadline,
+                            max_len=self.max_len,
+                        )
+            if (
+                len(candidates) == 0
+                and time.monotonic() < deadline
+            ):
+                # Empty-heap recovery: letter first (cheap wins), then digits_only.
+                recover_deadline = min(deadline, time.monotonic() + max(1.5, self.time_budget * 0.25))
+                if time.monotonic() < recover_deadline:
+                    self._collect_words_fair_starts(
+                        board,
+                        loadout,
+                        candidates,
+                        recover_deadline,
+                        self.max_len,
+                        letter_starts,
+                        min_slice_override=self._adaptive_min_slice(candidates, 0),
+                    )
+                if (
+                    len(candidates) == 0
+                    and has_digit_tiles
+                    and time.monotonic() < deadline
+                ):
+                    self._collect_words(
+                        board,
+                        loadout,
+                        candidates,
+                        deadline,
+                        self.max_len,
+                        digits_only=True,
+                    )
+            timing.dfs_sec = time.monotonic() - dfs_start
+            number_short_recovery_likely = False
+            empty_heap_recovery_likely = False
+        else:
+            up_and_up_reserve = 0.0
+            if center_idx is not None:
+                center_tile = board.get_by_index(center_idx)
+                if is_number_like_tile(center_tile):
+                    up_and_up_reserve = min(18.0, self.time_budget * 0.35)
+                else:
+                    up_and_up_reserve = min(15.0, self.time_budget * 0.30)
+                if has_fraction_tiles:
+                    up_and_up_reserve = max(
+                        up_and_up_reserve, min(20.0, self.time_budget * 0.42)
+                    )
+                if is_number_like_tile(center_tile):
+                    center_nv = tile_number_value(center_tile)
+                    if center_nv is not None and center_nv >= 13:
+                        up_and_up_reserve = max(
+                            up_and_up_reserve,
+                            min(22.0, self.time_budget * 0.45),
+                        )
+            placement_screen = bool(getattr(self, "_placement_screen_pass", False))
+            required_placement = bool(self.validator.required_consumable_indices)
+            if self._full_board_exact:
+                number_reserve = 0.0
+                void_reserve = 0.0
+                fraction_cluster_reserve = 0.0
+                chess_reserve = 0.0
+                seed_reserve = 0.0
+                extension_reserve = 0.0
+                up_and_up_reserve = 0.0
+                item_seed_reserve = 0.0
+            elif has_digit_tiles:
+                # Tight budgets need more time reserved for digit passes; otherwise
+                # the cap progression (7 -> 8) can time out before reaching cap=8.
+                if self.time_budget < 2.0 and (placement_screen or required_placement):
+                    number_reserve = min(0.5, self.time_budget * 0.25)
+                else:
+                    number_reserve = min(
+                        10.0,
+                        self.time_budget * (0.6 if self.time_budget < 3.0 else 0.45),
+                    )
+                fraction_cluster_reserve = (
+                    min(15.0, self.time_budget * 0.35) if has_fraction_tiles else 0.0
+                )
+                void_reserve = (
+                    min(3.0, self.time_budget * 0.35) if void_letter_starts else 0.0
+                )
+                reserved = number_reserve + void_reserve + fraction_cluster_reserve
+                cap = self.time_budget * 0.85
+                if reserved > cap and reserved > 0:
+                    scale = cap / reserved
+                    number_reserve *= scale
+                    void_reserve *= scale
+                    fraction_cluster_reserve *= scale
+            elif has_fraction_tiles:
+                number_reserve = 0.0
+                void_reserve = 0.0
+                fraction_cluster_reserve = min(10.0, self.time_budget * 0.18)
+            else:
+                number_reserve = 0.0
+                void_reserve = 0.0
+                fraction_cluster_reserve = 0.0
+
+            chess_reserve = 0.0
+            if not self._full_board_exact and _chess_tile_count(board) >= 3:
+                # DFS cap progression can consume the whole budget on chess-heavy
+                # boards. Reserve some time so the chess prefix extension phase
+                # still runs.
+                chess_reserve = min(8.0, self.time_budget * 0.35)
+
+            joker_count = len(_wildcard_start_indices(board))
+            hanafuda_level = self._solve_ctx.hanafuda_level
+            if f8_cap is not None and joker_count >= 2 and _chess_tile_count(board) >= 3:
+                presearch_allowance = min(18.0, self.time_budget * 0.22)
+                self.time_budget = min(
+                    self.time_budget,
+                    max(0.0, f8_cap - solve_start - presearch_allowance),
+                )
+            seed_reserve = 0.0
+            if hanafuda_level >= 1 and joker_count >= 2:
+                seed_reserve = min(5.0, self.time_budget * 0.12)
+
+            extension_reserve = 0.0
+            if self.max_len > self.min_len:
+                extension_reserve = min(5.0, self.time_budget * 0.12)
+                branch = (
+                    self._graph_ctx.wildcard_mask.bit_count()
+                    + self._graph_ctx.chess_piece_mask.bit_count()
+                    + self._graph_ctx.item_mask.bit_count()
+                )
+                if branch >= 5:
+                    extension_reserve = min(8.0, extension_reserve * 1.4)
+                if branch <= 2:
+                    extension_reserve *= 0.85
+                # Fraction+number boards need long resolve growth (free→freeride).
+                if has_number_tiles and has_fraction_tiles:
+                    extension_reserve = min(
+                        18.0,
+                        max(extension_reserve, self.time_budget * 0.30),
+                    )
+
+            (
+                number_reserve,
+                void_reserve,
+                fraction_cluster_reserve,
+                chess_reserve,
+                seed_reserve,
+                extension_reserve,
+                up_and_up_reserve,
+                reserve_scaled,
+            ) = _scale_post_dfs_reserves(
+                time_budget=self.time_budget,
+                number_reserve=number_reserve,
+                void_reserve=void_reserve,
+                fraction_cluster_reserve=fraction_cluster_reserve,
+                chess_reserve=chess_reserve,
+                seed_reserve=seed_reserve,
+                extension_reserve=extension_reserve,
+                up_and_up_reserve=up_and_up_reserve,
+            )
+            if center_idx is not None:
+                up_and_up_reserve = max(
+                    up_and_up_reserve,
+                    min(10.0, self.time_budget * 0.28),
+                )
+
+            has_cartwheeler = _loadout_has_stamp_slug(loadout, "cartwheeler")
+            has_full_moon = flag_test(
+                self._search_ctx(loadout).search_flags, FLAG_DOUBLE_LETTER_TELEPORT
+            )
+            letter_starts = _balanced_start_indices(board)
+            if (
+                has_cartwheeler
+                and has_full_moon
+                and joker_count >= _WILDCARD_DENSE_MIN
+            ):
+                # Wildcard-first DFS burns budget on blank→number→joker explosions; prefer
+                # letter/chess roots so Card Shark anchors (and long even tours) surface.
+                def _cw_start_key(i: int) -> tuple[int, float, int]:
+                    tile = board.get_by_index(i)
+                    if tile.curse == CurseType.LETTER:
+                        return (0, -float(tile.base_score), i)
+                    if is_chess_piece(tile):
+                        return (1, -float(tile.base_score), i)
+                    if _is_wildcard_tile(tile):
+                        return (3, 0.0, i)
+                    return (2, -float(tile.base_score), i)
+
+                letter_starts = sorted(letter_starts, key=_cw_start_key)
+            chess_starts = _chess_start_indices(board) if chess_reserve > 0.0 else []
+            if chess_starts:
+                # Prefer higher indices first for short chess-cap passes, so we don't
+                # starve the specific chess start tiles needed for capture-chain
+                # regressions under fair-start time slicing.
+                chess_starts = sorted(chess_starts, key=lambda i: i, reverse=True)
+            item_count = (
+                self._graph_ctx.item_mask.bit_count()
+                if self._graph_ctx is not None
+                else 0
+            )
+            item_seed_reserve = 0.0
+            lone_scatter_item = False
+            if item_count == 1 and not self._full_board_exact and self.max_len > self.min_len:
+                lone_scatter_item = any(
+                    str((board.get_by_index(i).metadata or {}).get("scattered_item_id") or "").strip()
+                    for i in _active_indices(board)
+                    if board.get_by_index(i).curse == CurseType.ITEM
+                )
+            if (
+                item_count >= 2
+                and not self._full_board_exact
+                and self.max_len > self.min_len
+            ):
+                if has_cartwheeler or item_count >= _SCATTERED_ITEM_DENSE_MIN:
+                    item_seed_reserve = min(16.0, self.time_budget * 0.35)
+                else:
+                    item_seed_reserve = min(12.0, self.time_budget * 0.25)
+            elif lone_scatter_item and joker_count >= _WILDCARD_DENSE_MIN:
+                item_seed_reserve = min(8.0, self.time_budget * 0.15)
+            use_parallel = (
+                self.search_workers > 1
+                and self._wordlist_path is not None
+                and (
+                    item_count < 2
+                    or self._full_board_exact
+                    or (
+                        _is_shrunk_board(board)
+                        and active_count <= _SMALL_BOARD_HAMILTONIAN_MAX
+                    )
+                )
+            )
+            # Short budgets: one pass at max_len. Longer budgets: deepen so DFS does not
+            # exhaust the first high-base-score branch to max_len before shorter words.
+            # Parallel mode uses one pass at max_len to avoid repeated pool scheduling.
+            item_heavy_caps = item_count >= 2 and self.max_len > self.min_len
+            if item_heavy_caps:
+                caps = _scattered_item_cap_sequence(
+                    self.min_len,
+                    self.max_len,
+                    active_count=active_count if _is_shrunk_board(board) else None,
+                    item_count=item_count,
+                )
+                if has_cartwheeler and self.max_len > self.min_len:
+                    # Merge Cartwheeler even-length preference without dropping item caps.
+                    for c in _cartwheeler_cap_sequence(self.min_len, self.max_len):
+                        if c not in caps:
+                            caps.append(c)
+            elif use_parallel:
+                # One pool round at max_len; add mid caps for hub / Cartwheeler paths.
+                if (
+                    hanafuda_level >= 1
+                    and joker_count >= 2
+                    and self.max_len > 8
+                ):
+                    caps = [8, self.max_len]
+                elif (
+                    has_cartwheeler
+                    and (has_full_moon or joker_count >= 2)
+                    and self.max_len > 8
+                ):
+                    if joker_count >= _WILDCARD_DENSE_MIN:
+                        caps = [6, 8, 10, 12]
+                    else:
+                        # Even lengths first (Cartwheeler); include 8 before 10 so
+                        # rook/queen Full Moon boards still surface mid even words.
+                        caps = [8, 10, 12, self.max_len]
+                    caps = [c for c in caps if self.min_len <= c <= self.max_len]
+                    if self.max_len not in caps:
+                        caps.append(self.max_len)
+                    if not caps:
+                        caps = [self.max_len]
+                elif (
+                    has_fraction_tiles
+                    and _chess_tile_count(board) >= 3
+                    and self.max_len > 8
+                ):
+                    caps = [8, self.max_len]
+                elif has_number_tiles and self.max_len > self.min_len:
+                    # Number/fraction boards: short letter words before wildcard thrash.
+                    caps = _number_board_cap_sequence(self.min_len, self.max_len)
+                elif self.min_len > 3 and self.max_len > self.min_len:
+                    caps = [self.min_len]
+                    if self.min_len < 8 <= self.max_len:
+                        caps.append(8)
+                    if self.max_len not in caps:
+                        caps.append(self.max_len)
+                else:
+                    caps = [self.max_len]
+            elif has_cartwheeler and self.max_len > self.min_len and self.time_budget >= 6.0:
+                if joker_count >= _WILDCARD_DENSE_MIN:
+                    caps = _cartwheeler_wildcard_dense_cap_sequence(
+                        self.min_len, self.max_len
+                    )
+                else:
+                    caps = _cartwheeler_cap_sequence(self.min_len, self.max_len)
+            elif chess_reserve > 0.0 and self.max_len > self.min_len:
+                caps = _chess_serial_cap_sequence(self.min_len, self.max_len)
+            elif (
+                has_number_tiles
+                and self.time_budget >= 6.0
+                and self.max_len > self.min_len
+            ):
+                caps = _number_board_cap_sequence(self.min_len, self.max_len)
+            elif self.time_budget >= 6.0 and self.max_len > self.min_len:
+                caps = range(self.min_len, self.max_len + 1)
+            else:
+                caps = [self.max_len]
+
+            timing.dfs_caps = tuple(caps)
+
+            from cursed_words_solver.search_parallel import get_search_pool
+
+            pool = (
+                get_search_pool(self._wordlist_path, self.search_workers)
+                if use_parallel
+                else None
+            )
+            # Budget starts after pool handle exists (workers should already be warm).
+            search_begin = time.monotonic()
+            f8_deadline = f8_cap
+            self._f8_deadline = f8_deadline
+            if run_until_found:
+                deadline = float("inf")
+                self._active_deadline = None
+            else:
+                local_deadline = search_begin + self.time_budget
+                if f8_cap is not None:
+                    remaining_at_search = max(0.0, f8_cap - search_begin)
+                    if joker_count >= 2 and _chess_tile_count(board) >= 3:
+                        self.time_budget = min(self.time_budget, remaining_at_search)
+                    local_deadline = min(local_deadline, search_begin + self.time_budget, f8_cap)
+                elif deadline is not None:
+                    local_deadline = min(local_deadline, deadline)
+                deadline = local_deadline
+                self._active_deadline = deadline
+            empty_heap_recovery_likely = (
+                has_number_tiles
+                and has_fraction_tiles
+                and _chess_tile_count(board) >= 3
+            )
+            # Number/fraction boards: if the heap is still empty after main DFS
+            # (+ digit pass when applicable), spend remaining wall on short letter caps.
+            # Do not reserve up-front (that starves main DFS on boards that already
+            # find words, e.g. number-start letter words).
+            number_short_recovery_likely = has_number_tiles
+            empty_heap_recovery_reserve = (
+                min(18.0, self.time_budget * 0.30)
+                if empty_heap_recovery_likely
+                else 0.0
+            )
+            post_dfs_reserve = (
+                number_reserve
+                + void_reserve
+                + fraction_cluster_reserve
+                + chess_reserve
+                + seed_reserve
+                + extension_reserve
+                + up_and_up_reserve
+                + item_seed_reserve
+                + empty_heap_recovery_reserve
+            )
+            main_deadline = deadline - post_dfs_reserve
+            main_dfs_floor = search_begin + self.time_budget * MAIN_DFS_FLOOR_FRAC
+            if main_deadline < main_dfs_floor:
+                main_deadline = main_dfs_floor
+            if use_parallel and self.min_len >= 3 and self.max_len > self.min_len:
+                parallel_cap = search_begin + min(
+                    self.time_budget * 0.45,
+                    max(12.0, self.time_budget - 18.0),
+                )
+                main_deadline = min(main_deadline, parallel_cap)
+            timing.reserve_scaling_applied = reserve_scaled
+            timing.main_dfs_slice_sec = max(0.0, main_deadline - search_begin)
+            pre_extend_deadline = deadline - extension_reserve if extension_reserve > 0 else deadline
+            if empty_heap_recovery_likely:
+                recovery_cutoff = deadline - empty_heap_recovery_reserve
+                pre_extend_deadline = min(pre_extend_deadline, recovery_cutoff)
+            curse_heavy = joker_count >= 2 and _chess_tile_count(board) >= 3
+            wildcard_dense = joker_count >= _WILDCARD_DENSE_MIN
+            parallel_dfs_viable = use_parallel and main_deadline > search_begin
+            dfs_start = search_begin
+            self._parallel_executor = pool
+            start_productivity: dict[int, int] = {}
+            if self._full_board_exact:
+                ham_deadline = float("inf") if run_until_found else deadline
+                self._collect_full_board_hamiltonian_candidates(
+                    board,
+                    loadout,
+                    candidates,
+                    ham_deadline,
+                )
+            if hanafuda_level >= 1 and joker_count >= 2 and not self._full_board_exact:
+                self._collect_joker_cluster_candidates(
+                    board,
+                    loadout,
+                    candidates,
+                    deadline,
+                    self.max_len,
+                )
+            elif (
+                has_full_moon
+                and joker_count >= 2
+                and not self._full_board_exact
+            ):
+                # Full Moon makes jokers a complete teleport graph; keep this seed brief
+                # so letter DFS still gets the main budget.
+                joker_deadline = min(
+                    deadline,
+                    search_begin + min(2.5, self.time_budget * 0.06),
+                )
+                if joker_deadline > time.monotonic():
+                    self._collect_joker_cluster_candidates(
+                        board,
+                        loadout,
+                        candidates,
+                        joker_deadline,
+                        self.max_len,
+                    )
+            if (
+                has_full_moon
+                and _chess_tile_count(board) >= 2
+                and not self._full_board_exact
+            ):
+                chess_hub_deadline = min(
+                    deadline,
+                    search_begin + min(2.5, self.time_budget * 0.06),
+                )
+                if chess_hub_deadline > time.monotonic():
+                    self._collect_full_moon_chess_hub_candidates(
+                        board,
+                        loadout,
+                        candidates,
+                        chess_hub_deadline,
+                        self.max_len,
+                    )
+            ctx_for_wrap = self._search_ctx(loadout)
+            if (
+                flag_test(ctx_for_wrap.search_flags, FLAG_HORIZONTAL_WRAP)
+                and joker_count >= 2
+                and _chess_tile_count(board) >= 2
+                and not self._full_board_exact
+            ):
+                wrap_deadline = min(
+                    deadline,
+                    search_begin + min(2.0, self.time_budget * 0.05),
+                )
+                self._collect_wrap_wildcard_chess_path_seeds(
+                    board,
+                    loadout,
+                    candidates,
+                    wrap_deadline,
+                    self.max_len,
+                )
+            if item_count >= 2 and not self._full_board_exact and item_seed_reserve > 0.0:
+                item_deadline = min(
+                    main_deadline,
+                    search_begin + item_seed_reserve,
+                )
+                if item_deadline > time.monotonic():
+                    self._collect_scattered_item_covering_candidates(
+                        board,
+                        loadout,
+                        candidates,
+                        item_deadline,
+                        max_len=self.max_len,
+                    )
+            if (
+                lone_scatter_item
+                and not self._full_board_exact
+                and item_seed_reserve > 0.0
+                and joker_count >= _WILDCARD_DENSE_MIN
+            ):
+                item_deadline = min(
+                    main_deadline,
+                    search_begin + item_seed_reserve,
+                )
+                if item_deadline > time.monotonic():
+                    self._collect_lone_scattered_item_endpoint_candidates(
+                        board,
+                        loadout,
+                        candidates,
+                        item_deadline,
+                        max_len=self.max_len,
+                    )
+            heap_before_letter = len(candidates)
+            nw_stamp_flags = ctx_for_wrap.search_flags
+            nw_starts = _number_wildcard_start_indices(board, nw_stamp_flags)
+            if (
+                nw_starts
+                and has_number_tiles
+                and self.min_len >= 7
+                and not self._full_board_exact
+                and time.monotonic() < main_deadline
+            ):
+                short_exact_len = self.min_len == self.max_len and self.max_len <= 8
+                if short_exact_len:
+                    nw_budget = min(
+                        50.0,
+                        max(30.0, max(0.0, main_deadline - time.monotonic())),
+                    )
+                else:
+                    nw_budget = min(
+                        30.0,
+                        max(12.0, number_reserve if number_reserve > 0 else 12.0),
+                        max(0.0, main_deadline - time.monotonic()),
+                    )
+                if nw_budget >= 8.0:
+                    nw_phase_cap = (
+                        main_deadline if empty_heap_recovery_likely else deadline
+                    )
+                    for nw in sorted(nw_starts, reverse=True):
+                        if time.monotonic() >= nw_phase_cap:
+                            break
+                        slice_deadline = min(
+                            nw_phase_cap,
+                            time.monotonic() + (50.0 if short_exact_len else nw_budget),
+                        )
+                        slice_window = max(0.0, slice_deadline - time.monotonic())
+                        # Reserve time for digit-start exploration so number-leading
+                        # candidates cannot be starved by letter-branch probes.
+                        digit_pass_budget = (
+                            min(6.0, max(2.0, slice_window * 0.25))
+                            if not short_exact_len
+                            else min(10.0, max(3.0, slice_window * 0.20))
+                        )
+                        letter_deadline = max(
+                            time.monotonic(), slice_deadline - digit_pass_budget
+                        )
+                        promising = _number_wildcard_promising_first_letters(
+                            board,
+                            nw,
+                            self.dictionary,
+                            self.max_len,
+                            nw_stamp_flags,
+                            self._graph_ctx,
+                            min_len=self.min_len,
+                            rules=self.scoring.rules,
+                            max_expansions_per_letter=80_000 if short_exact_len else 40_000,
+                        )
+                        if promising:
+                            if short_exact_len:
                                 self._collect_words(
                                     board,
                                     loadout,
@@ -9954,39 +10767,11 @@ class WordSearcher:
                                     letter_deadline,
                                     self.max_len,
                                     start_indices=[nw],
-                                    number_start_first_letter=ch,
+                                    number_start_first_letter=promising[0],
                                     skip_number_digit_start=True,
                                 )
-                        # Guaranteed digit-start phase for this start index.
-                        if time.monotonic() < slice_deadline:
-                            self._collect_words(
-                                board,
-                                loadout,
-                                candidates,
-                                slice_deadline,
-                                self.max_len,
-                                start_indices=[nw],
-                                skip_number_digit_start=False,
-                            )
-                    else:
-                        nw_tile = board.get_by_index(nw)
-                        fallback_letters = _wildcard_branch_letters(
-                            nw_tile, 0, flags=nw_stamp_flags
-                        )
-                        if fallback_letters:
-                            ordered = _order_number_wildcard_branch_letters(
-                                self.dictionary,
-                                fallback_letters,
-                                prefix_cursor=self.dictionary.root_cursor(),
-                                partial_seg="",
-                                shuffle_seed=nw * 31 + board.cols,
-                                min_remaining=max(0, self.min_len),
-                            )
-                            letter_cap_hi = min(self.max_len, 12)
-                            for ch in ordered[:8]:
-                                if time.monotonic() >= letter_deadline:
-                                    break
-                                for cap in range(self.min_len, letter_cap_hi + 1):
+                            else:
+                                for ch in promising[:8]:
                                     if time.monotonic() >= letter_deadline:
                                         break
                                     self._collect_words(
@@ -9994,123 +10779,124 @@ class WordSearcher:
                                         loadout,
                                         candidates,
                                         letter_deadline,
-                                        cap,
+                                        self.max_len,
                                         start_indices=[nw],
                                         number_start_first_letter=ch,
                                         skip_number_digit_start=True,
                                     )
-                        if time.monotonic() < slice_deadline:
-                            self._collect_words(
-                                board,
-                                loadout,
-                                candidates,
-                                slice_deadline,
-                                self.max_len,
-                                start_indices=[nw],
-                                skip_number_digit_start=False,
+                            # Guaranteed digit-start phase for this start index.
+                            if time.monotonic() < slice_deadline:
+                                self._collect_words(
+                                    board,
+                                    loadout,
+                                    candidates,
+                                    slice_deadline,
+                                    self.max_len,
+                                    start_indices=[nw],
+                                    skip_number_digit_start=False,
+                                )
+                        else:
+                            nw_tile = board.get_by_index(nw)
+                            fallback_letters = _wildcard_branch_letters(
+                                nw_tile, 0, flags=nw_stamp_flags
                             )
-        elif self._small_board_hamiltonian:
-            ham_slice = min(12.0, self.time_budget * 0.2)
-            ham_deadline = min(main_deadline, search_begin + ham_slice)
-            if ham_deadline > time.monotonic():
-                self._collect_small_board_hamiltonian_candidates(
-                    board,
-                    loadout,
-                    candidates,
-                    ham_deadline,
-                    target_len=active_count,
+                            if fallback_letters:
+                                ordered = _order_number_wildcard_branch_letters(
+                                    self.dictionary,
+                                    fallback_letters,
+                                    prefix_cursor=self.dictionary.root_cursor(),
+                                    partial_seg="",
+                                    shuffle_seed=nw * 31 + board.cols,
+                                    min_remaining=max(0, self.min_len),
+                                )
+                                letter_cap_hi = min(self.max_len, 12)
+                                for ch in ordered[:8]:
+                                    if time.monotonic() >= letter_deadline:
+                                        break
+                                    for cap in range(self.min_len, letter_cap_hi + 1):
+                                        if time.monotonic() >= letter_deadline:
+                                            break
+                                        self._collect_words(
+                                            board,
+                                            loadout,
+                                            candidates,
+                                            letter_deadline,
+                                            cap,
+                                            start_indices=[nw],
+                                            number_start_first_letter=ch,
+                                            skip_number_digit_start=True,
+                                        )
+                            if time.monotonic() < slice_deadline:
+                                self._collect_words(
+                                    board,
+                                    loadout,
+                                    candidates,
+                                    slice_deadline,
+                                    self.max_len,
+                                    start_indices=[nw],
+                                    skip_number_digit_start=False,
+                                )
+            elif self._small_board_hamiltonian:
+                ham_slice = min(12.0, self.time_budget * 0.2)
+                ham_deadline = min(main_deadline, search_begin + ham_slice)
+                if ham_deadline > time.monotonic():
+                    self._collect_small_board_hamiltonian_candidates(
+                        board,
+                        loadout,
+                        candidates,
+                        ham_deadline,
+                        target_len=active_count,
+                    )
+            try:
+                # Specialty seeds (Full Moon hubs, jokers, items) must not suppress the
+                # main letter DFS — Cartwheeler / Full Moon boards need long-path coverage.
+                standard_search = (
+                    len(candidates) == 0
+                    or self._small_board_hamiltonian
+                    or item_count >= 2
+                    or has_cartwheeler
+                    or has_full_moon
                 )
-        try:
-            # Specialty seeds (Full Moon hubs, jokers, items) must not suppress the
-            # main letter DFS — Cartwheeler / Full Moon boards need long-path coverage.
-            standard_search = (
-                len(candidates) == 0
-                or self._small_board_hamiltonian
-                or item_count >= 2
-                or has_cartwheeler
-                or has_full_moon
-            )
-            if (
-                standard_search
-                and not self._full_board_exact
-                and has_fraction_tiles
-                and _chess_tile_count(board) >= 3
-                and self.max_len >= 8
-                and time.monotonic() < main_deadline
-            ):
-                fraction_starts = [
-                    i
-                    for i in _legal_word_start_indices(board)
-                    if is_fraction_tile(board.get_by_index(i))
-                ]
-                if fraction_starts:
-                    frac_slice = min(3.0, self.time_budget * 0.08)
-                    frac_deadline = min(
-                        main_deadline, time.monotonic() + frac_slice
-                    )
-                    self._collect_words_fair_starts(
-                        board,
-                        loadout,
-                        candidates,
-                        frac_deadline,
-                        min(8, self.max_len),
-                        fraction_starts,
-                    )
-            if standard_search and center_idx is not None and up_and_up_reserve > 0.0:
-                up_deadline = min(main_deadline, search_begin + up_and_up_reserve)
-                if up_deadline > time.monotonic():
-                    self._collect_up_and_up_center_words(
-                        board,
-                        loadout,
-                        candidates,
-                        up_deadline,
-                        center_idx,
-                        self.max_len,
-                        has_fraction_tiles=has_fraction_tiles,
-                        has_number_tiles=has_number_tiles,
-                    )
-            if standard_search and parallel_dfs_viable:
-                for pass_idx, cap in enumerate(caps):
-                    if time.monotonic() >= main_deadline:
-                        break
-                    starts_for_cap = _dfs_starts_for_cap(
-                        cap, self.min_len, letter_starts, chess_starts
-                    )
-                    if starts_for_cap is letter_starts:
-                        if pass_idx > 0 and start_productivity:
-                            letter_starts = sorted(
-                                letter_starts,
-                                key=lambda s: (-start_productivity.get(s, 0), s),
-                            )
-                            starts_for_cap = letter_starts
-                        min_slice = self._adaptive_min_slice(candidates, pass_idx)
-                    else:
-                        min_slice = None
-                    letter_pass_deadline = main_deadline
-                    if starts_for_cap is letter_starts:
-                        now = time.monotonic()
-                        rem = max(0.0, main_deadline - now)
-                        pass_share = 0.65 if curse_heavy else 0.45
-                        letter_pass_deadline = min(
-                            main_deadline,
-                            now + min(12.0, rem * pass_share),
+                if (
+                    standard_search
+                    and not self._full_board_exact
+                    and has_fraction_tiles
+                    and _chess_tile_count(board) >= 3
+                    and self.max_len >= 8
+                    and time.monotonic() < main_deadline
+                ):
+                    fraction_starts = [
+                        i
+                        for i in _legal_word_start_indices(board)
+                        if is_fraction_tile(board.get_by_index(i))
+                    ]
+                    if fraction_starts:
+                        frac_slice = min(3.0, self.time_budget * 0.08)
+                        frac_deadline = min(
+                            main_deadline, time.monotonic() + frac_slice
                         )
-                    self._collect_words_fair_starts(
-                        board,
-                        loadout,
-                        candidates,
-                        letter_pass_deadline,
-                        cap,
-                        starts_for_cap,
-                        min_slice_override=min_slice,
-                        start_productivity=start_productivity if starts_for_cap is letter_starts else None,
-                    )
-            elif standard_search and not use_parallel:
-                center_still_needed = (
-                    center_idx is not None
-                    and not _candidate_heap_includes_index(candidates, center_idx)
-                )
-                if not center_still_needed:
+                        self._collect_words_fair_starts(
+                            board,
+                            loadout,
+                            candidates,
+                            frac_deadline,
+                            min(8, self.max_len),
+                            fraction_starts,
+                        )
+                if standard_search and center_idx is not None and up_and_up_reserve > 0.0:
+                    up_deadline = min(main_deadline, search_begin + up_and_up_reserve)
+                    if up_deadline > time.monotonic():
+                        self._collect_up_and_up_center_words(
+                            board,
+                            loadout,
+                            candidates,
+                            up_deadline,
+                            center_idx,
+                            self.max_len,
+                            has_fraction_tiles=has_fraction_tiles,
+                            has_number_tiles=has_number_tiles,
+                        )
+                if standard_search and parallel_dfs_viable:
                     for pass_idx, cap in enumerate(caps):
                         if time.monotonic() >= main_deadline:
                             break
@@ -10124,322 +10910,364 @@ class WordSearcher:
                                     key=lambda s: (-start_productivity.get(s, 0), s),
                                 )
                                 starts_for_cap = letter_starts
-                            min_slice = self._adaptive_min_slice(
-                                candidates, pass_idx
-                            )
+                            min_slice = self._adaptive_min_slice(candidates, pass_idx)
                         else:
                             min_slice = None
+                        letter_pass_deadline = main_deadline
+                        if starts_for_cap is letter_starts:
+                            now = time.monotonic()
+                            rem = max(0.0, main_deadline - now)
+                            pass_share = 0.65 if curse_heavy else 0.45
+                            letter_pass_deadline = min(
+                                main_deadline,
+                                now + min(12.0, rem * pass_share),
+                            )
                         self._collect_words_fair_starts(
                             board,
                             loadout,
                             candidates,
-                            main_deadline,
+                            letter_pass_deadline,
                             cap,
                             starts_for_cap,
                             min_slice_override=min_slice,
                             start_productivity=start_productivity if starts_for_cap is letter_starts else None,
                         )
-                elif center_idx is not None and time.monotonic() < main_deadline:
-                    self._collect_up_and_up_center_words(
-                        board,
-                        loadout,
-                        candidates,
-                        main_deadline,
-                        center_idx,
-                        self.max_len,
-                        has_fraction_tiles=has_fraction_tiles,
-                        has_number_tiles=has_number_tiles,
+                elif standard_search and not use_parallel:
+                    center_still_needed = (
+                        center_idx is not None
+                        and not _candidate_heap_includes_index(candidates, center_idx)
                     )
-
-            timing.letter_dfs_added = len(candidates) - heap_before_letter
-            center_missing = (
-                center_idx is not None
-                and not _candidate_heap_includes_index(candidates, center_idx)
-            )
-            shallow_parallel_heap = (
-                use_parallel
-                and candidates
-                and self.max_len >= 5
-                and joker_count >= 2
-                and (loadout.stickers or loadout.stamps)
-                and candidates.all_paths_max_len(3)
-            )
-            shallow_cartwheeler_heap = (
-                use_parallel
-                and candidates
-                and has_cartwheeler
-                and self.max_len >= 10
-                and candidates.all_paths_max_len(8)
-            )
-            needs_serial_fallback = use_parallel and (
-                not parallel_dfs_viable
-                or not candidates
-                or timing.letter_dfs_added == 0
-                or candidates.all_paths_max_len(1)
-                or center_missing
-                or shallow_parallel_heap
-                or shallow_cartwheeler_heap
-            )
-            if standard_search and needs_serial_fallback:
-                timing.parallel_serial_fallback = True
-                self._parallel_executor = None
-                saved_workers = self.search_workers
-                self.search_workers = 1
-                # Only clear junk heaps (len<=3). Keep mid-length Cartwheeler seeds
-                # (e.g. length-8) while serial long-first search runs.
-                if shallow_parallel_heap and not shallow_cartwheeler_heap:
-                    candidates.reset()
-                elif shallow_parallel_heap and shallow_cartwheeler_heap:
-                    candidates.reset()
-                if center_missing:
-                    fallback_starts = _up_and_up_center_adjacent_starts(
-                        board, center_idx
-                    )
-                    prefer_long = has_fraction_tiles or has_number_tiles
-                    if self.time_budget >= 6.0 and self.max_len > self.min_len:
-                        fallback_caps = _up_and_up_cap_sequence(
-                            self.min_len,
-                            self.max_len,
-                            prefer_long_first=prefer_long,
-                            board=board,
-                            center_idx=center_idx,
-                        )
-                    else:
-                        fallback_caps = [self.max_len]
-                    fallback_deadline = pre_extend_deadline
-                else:
-                    prefer_long_fallback = (
-                        wildcard_dense or has_cartwheeler or has_full_moon
-                    )
-                    if (
-                        has_number_tiles
-                        and self.time_budget >= 6.0
-                        and self.max_len > self.min_len
-                    ):
-                        # Number and fraction boards: short-first (same as Bison).
-                        fallback_caps = _number_board_cap_sequence(
-                            self.min_len, self.max_len
-                        )
-                    elif has_cartwheeler and self.time_budget >= 6.0 and self.max_len > self.min_len:
-                        if joker_count >= _WILDCARD_DENSE_MIN:
-                            fallback_caps = _cartwheeler_wildcard_dense_cap_sequence(
-                                self.min_len, self.max_len
-                            )
-                        else:
-                            fallback_caps = _cartwheeler_cap_sequence(
-                                self.min_len, self.max_len
-                            )
-                    elif (
-                        prefer_long_fallback
-                        and self.time_budget >= 6.0
-                        and self.max_len > self.min_len
-                    ):
-                        fallback_caps = _up_and_up_cap_sequence(
-                            self.min_len,
-                            self.max_len,
-                            prefer_long_first=True,
-                            board=board,
-                            center_idx=center_idx,
-                        )
-                    else:
-                        fallback_caps = (
-                            list(range(self.min_len, self.max_len + 1))
-                            if self.time_budget >= 6.0 and self.max_len > self.min_len
-                            else [self.max_len]
-                        )
-                    timing.dfs_caps = tuple(fallback_caps)
-                    post_dfs_budget = (
-                        number_reserve + void_reserve + fraction_cluster_reserve
-                    )
-                    fallback_deadline = pre_extend_deadline
-                    if post_dfs_budget > 0.0:
-                        remaining = max(0.0, pre_extend_deadline - time.monotonic())
-                        fallback_deadline = min(
-                            pre_extend_deadline,
-                            time.monotonic()
-                            + max(0.0, remaining - post_dfs_budget),
-                        )
-                    # Do not reopen past F8/solve deadline when the shrunk
-                    # fallback window is already gone.
-                    if self._f8_expired() or time.monotonic() >= deadline:
-                        fallback_caps = []
-                    fallback_starts = letter_starts
-                try:
-                    for i, cap in enumerate(fallback_caps):
-                        if (
-                            self._f8_expired()
-                            or time.monotonic() >= fallback_deadline
-                        ):
-                            break
-                        cap_deadline = fallback_deadline
-                        if center_missing:
-                            remaining = max(0.0, fallback_deadline - time.monotonic())
-                            caps_left = len(fallback_caps) - i
-                            cap_deadline = min(
-                                fallback_deadline,
-                                time.monotonic() + max(0.5, remaining / caps_left),
-                            )
-                        self._collect_words_fair_starts(
-                            board,
-                            loadout,
-                            candidates,
-                            cap_deadline,
-                            cap,
-                            fallback_starts,
-                            min_slice_override=self._adaptive_min_slice(
-                                candidates, 0
-                            ),
-                            start_productivity=start_productivity,
-                        )
-                        if (
-                            center_missing
-                            and center_idx is not None
-                            and _candidate_heap_includes_index(candidates, center_idx)
-                        ):
-                            break
-                finally:
-                    self.search_workers = saved_workers
-                    self._parallel_executor = pool
-
-            if standard_search and has_digit_tiles:
-                self._seed_single_number_tile_words(board, loadout, candidates)
-
-            improve_words = equipped_improve_words(loadout)
-            if standard_search and improve_words:
-                self._seed_stamp_improve_words(
-                    board, loadout, candidates, improve_words
-                )
-
-            if standard_search and has_digit_tiles:
-                self._parallel_executor = None
-                if (
-                    not self._full_board_exact
-                    and fraction_cluster_reserve > 0
-                    and time.monotonic() < pre_extend_deadline
-                ):
-                    cluster_starts = _fraction_cluster_number_starts(board)
-                    if cluster_starts:
-                        cluster_deadline = min(
-                            pre_extend_deadline,
-                            time.monotonic() + fraction_cluster_reserve,
-                        )
-                        priority_starts = [
-                            i
-                            for i in cluster_starts
-                            if float(board.get_by_index(i).base_score) >= 40.0
-                        ]
-                        if not priority_starts:
-                            priority_starts = cluster_starts[:1]
-                        max_number_face = _max_number_face_on_board(board)
-                        cluster_cap = min(
-                            max(9, max_number_face), self.max_len
-                        )
-                        for cap in range(7, cluster_cap + 1):
-                            if time.monotonic() >= cluster_deadline:
+                    if not center_still_needed:
+                        for pass_idx, cap in enumerate(caps):
+                            if time.monotonic() >= main_deadline:
                                 break
+                            starts_for_cap = _dfs_starts_for_cap(
+                                cap, self.min_len, letter_starts, chess_starts
+                            )
+                            if starts_for_cap is letter_starts:
+                                if pass_idx > 0 and start_productivity:
+                                    letter_starts = sorted(
+                                        letter_starts,
+                                        key=lambda s: (-start_productivity.get(s, 0), s),
+                                    )
+                                    starts_for_cap = letter_starts
+                                min_slice = self._adaptive_min_slice(
+                                    candidates, pass_idx
+                                )
+                            else:
+                                min_slice = None
                             self._collect_words_fair_starts(
                                 board,
                                 loadout,
                                 candidates,
-                                cluster_deadline,
+                                main_deadline,
                                 cap,
-                                priority_starts,
-                                digits_only=True,
+                                starts_for_cap,
+                                min_slice_override=min_slice,
+                                start_productivity=start_productivity if starts_for_cap is letter_starts else None,
                             )
-
-                if void_letter_starts and time.monotonic() < pre_extend_deadline:
-                    void_cap = 7 if self.max_len >= 7 else self.max_len
-                    void_deadline = min(
-                        pre_extend_deadline, time.monotonic() + void_reserve
-                    )
-                    self._collect_words_fair_starts(
-                        board,
-                        loadout,
-                        candidates,
-                        void_deadline,
-                        void_cap,
-                        void_letter_starts,
-                        digits_only=True,
-                    )
-
-                number_starts = _interleaved_number_starts(board)
-                # With very tight budgets, focus on the most important digit
-                # face (the first interleaved start) so we can still reach
-                # the target length-8 word within the time slice.
-                if self.time_budget <= 2.0 and number_starts:
-                    number_starts = number_starts[:1]
-                digit_start = max(self.min_len, 1)
-                max_number_face = _max_number_face_on_board(board)
-                min_cap_for_numbers = max(8, max_number_face)
-                if (
-                    number_starts
-                    and self.time_budget >= 6.0
-                    and time.monotonic() < pre_extend_deadline
-                ):
-                    lead_deadline = min(
-                        pre_extend_deadline,
-                        time.monotonic() + number_reserve,
-                    )
-                    if lead_deadline > time.monotonic():
-                        self._collect_words(
+                    elif center_idx is not None and time.monotonic() < main_deadline:
+                        self._collect_up_and_up_center_words(
                             board,
                             loadout,
                             candidates,
-                            lead_deadline,
-                            min_cap_for_numbers,
-                            digits_only=True,
-                            start_indices=[number_starts[0]],
+                            main_deadline,
+                            center_idx,
+                            self.max_len,
+                            has_fraction_tiles=has_fraction_tiles,
+                            has_number_tiles=has_number_tiles,
                         )
-                for cap in range(digit_start, self.max_len + 1):
-                    if time.monotonic() >= pre_extend_deadline or not number_starts:
-                        break
-                    before = len(candidates)
-                    self._collect_words_fair_starts(
-                        board,
-                        loadout,
-                        candidates,
-                        pre_extend_deadline,
-                        cap,
-                        number_starts,
-                        digits_only=True,
+
+                timing.letter_dfs_added = len(candidates) - heap_before_letter
+                center_missing = (
+                    center_idx is not None
+                    and not _candidate_heap_includes_index(candidates, center_idx)
+                )
+                shallow_parallel_heap = (
+                    use_parallel
+                    and candidates
+                    and self.max_len >= 5
+                    and joker_count >= 2
+                    and (loadout.stickers or loadout.stamps)
+                    and candidates.all_paths_max_len(3)
+                )
+                shallow_cartwheeler_heap = (
+                    use_parallel
+                    and candidates
+                    and has_cartwheeler
+                    and self.max_len >= 10
+                    and candidates.all_paths_max_len(8)
+                )
+                needs_serial_fallback = use_parallel and (
+                    not parallel_dfs_viable
+                    or not candidates
+                    or timing.letter_dfs_added == 0
+                    or candidates.all_paths_max_len(1)
+                    or center_missing
+                    or shallow_parallel_heap
+                    or shallow_cartwheeler_heap
+                )
+                if standard_search and needs_serial_fallback:
+                    timing.parallel_serial_fallback = True
+                    self._parallel_executor = None
+                    saved_workers = self.search_workers
+                    self.search_workers = 1
+                    # Only clear junk heaps (len<=3). Keep mid-length Cartwheeler seeds
+                    # (e.g. length-8) while serial long-first search runs.
+                    if shallow_parallel_heap and not shallow_cartwheeler_heap:
+                        candidates.reset()
+                    elif shallow_parallel_heap and shallow_cartwheeler_heap:
+                        candidates.reset()
+                    if center_missing:
+                        fallback_starts = _up_and_up_center_adjacent_starts(
+                            board, center_idx
+                        )
+                        prefer_long = has_fraction_tiles or has_number_tiles
+                        if self.time_budget >= 6.0 and self.max_len > self.min_len:
+                            fallback_caps = _up_and_up_cap_sequence(
+                                self.min_len,
+                                self.max_len,
+                                prefer_long_first=prefer_long,
+                                board=board,
+                                center_idx=center_idx,
+                            )
+                        else:
+                            fallback_caps = [self.max_len]
+                        fallback_deadline = pre_extend_deadline
+                    else:
+                        prefer_long_fallback = (
+                            wildcard_dense or has_cartwheeler or has_full_moon
+                        )
+                        if (
+                            has_number_tiles
+                            and self.time_budget >= 6.0
+                            and self.max_len > self.min_len
+                        ):
+                            # Number and fraction boards: short-first (same as Bison).
+                            fallback_caps = _number_board_cap_sequence(
+                                self.min_len, self.max_len
+                            )
+                        elif has_cartwheeler and self.time_budget >= 6.0 and self.max_len > self.min_len:
+                            if joker_count >= _WILDCARD_DENSE_MIN:
+                                fallback_caps = _cartwheeler_wildcard_dense_cap_sequence(
+                                    self.min_len, self.max_len
+                                )
+                            else:
+                                fallback_caps = _cartwheeler_cap_sequence(
+                                    self.min_len, self.max_len
+                                )
+                        elif (
+                            prefer_long_fallback
+                            and self.time_budget >= 6.0
+                            and self.max_len > self.min_len
+                        ):
+                            fallback_caps = _up_and_up_cap_sequence(
+                                self.min_len,
+                                self.max_len,
+                                prefer_long_first=True,
+                                board=board,
+                                center_idx=center_idx,
+                            )
+                        else:
+                            fallback_caps = (
+                                list(range(self.min_len, self.max_len + 1))
+                                if self.time_budget >= 6.0 and self.max_len > self.min_len
+                                else [self.max_len]
+                            )
+                        timing.dfs_caps = tuple(fallback_caps)
+                        post_dfs_budget = (
+                            number_reserve + void_reserve + fraction_cluster_reserve
+                        )
+                        fallback_deadline = pre_extend_deadline
+                        if post_dfs_budget > 0.0:
+                            remaining = max(0.0, pre_extend_deadline - time.monotonic())
+                            fallback_deadline = min(
+                                pre_extend_deadline,
+                                time.monotonic()
+                                + max(0.0, remaining - post_dfs_budget),
+                            )
+                        # Do not reopen past F8/solve deadline when the shrunk
+                        # fallback window is already gone.
+                        if self._f8_expired() or time.monotonic() >= deadline:
+                            fallback_caps = []
+                        fallback_starts = letter_starts
+                    try:
+                        for i, cap in enumerate(fallback_caps):
+                            if (
+                                self._f8_expired()
+                                or time.monotonic() >= fallback_deadline
+                            ):
+                                break
+                            cap_deadline = fallback_deadline
+                            if center_missing:
+                                remaining = max(0.0, fallback_deadline - time.monotonic())
+                                caps_left = len(fallback_caps) - i
+                                cap_deadline = min(
+                                    fallback_deadline,
+                                    time.monotonic() + max(0.5, remaining / caps_left),
+                                )
+                            self._collect_words_fair_starts(
+                                board,
+                                loadout,
+                                candidates,
+                                cap_deadline,
+                                cap,
+                                fallback_starts,
+                                min_slice_override=self._adaptive_min_slice(
+                                    candidates, 0
+                                ),
+                                start_productivity=start_productivity,
+                            )
+                            if (
+                                center_missing
+                                and center_idx is not None
+                                and _candidate_heap_includes_index(candidates, center_idx)
+                            ):
+                                break
+                    finally:
+                        self.search_workers = saved_workers
+                        self._parallel_executor = pool
+
+                if standard_search and has_digit_tiles:
+                    self._seed_single_number_tile_words(board, loadout, candidates)
+
+                improve_words = equipped_improve_words(loadout)
+                if standard_search and improve_words:
+                    self._seed_stamp_improve_words(
+                        board, loadout, candidates, improve_words
                     )
+
+                if standard_search and has_digit_tiles:
+                    self._parallel_executor = None
                     if (
-                        cap >= min_cap_for_numbers
-                        and len(candidates) == before
-                        and self.time_budget >= 6.0
+                        not self._full_board_exact
+                        and fraction_cluster_reserve > 0
+                        and time.monotonic() < pre_extend_deadline
                     ):
-                        break
+                        cluster_starts = _fraction_cluster_number_starts(board)
+                        if cluster_starts:
+                            cluster_deadline = min(
+                                pre_extend_deadline,
+                                time.monotonic() + fraction_cluster_reserve,
+                            )
+                            priority_starts = [
+                                i
+                                for i in cluster_starts
+                                if float(board.get_by_index(i).base_score) >= 40.0
+                            ]
+                            if not priority_starts:
+                                priority_starts = cluster_starts[:1]
+                            max_number_face = _max_number_face_on_board(board)
+                            cluster_cap = min(
+                                max(9, max_number_face), self.max_len
+                            )
+                            for cap in range(7, cluster_cap + 1):
+                                if time.monotonic() >= cluster_deadline:
+                                    break
+                                self._collect_words_fair_starts(
+                                    board,
+                                    loadout,
+                                    candidates,
+                                    cluster_deadline,
+                                    cap,
+                                    priority_starts,
+                                    digits_only=True,
+                                )
 
-            if (
-                standard_search
-                and number_short_recovery_likely
-                and len(candidates) == 0
-                and time.monotonic() < deadline
-            ):
-                remaining = max(0.0, deadline - time.monotonic())
-                recovery_slice = min(12.0, max(4.0, remaining))
-                recovery_deadline = min(deadline, time.monotonic() + recovery_slice)
-                short_max = min(8, self.max_len)
-                recovery_caps = _number_board_cap_sequence(self.min_len, short_max)
-                timing.dfs_caps = tuple(recovery_caps)
+                    if void_letter_starts and time.monotonic() < pre_extend_deadline:
+                        void_cap = 7 if self.max_len >= 7 else self.max_len
+                        void_deadline = min(
+                            pre_extend_deadline, time.monotonic() + void_reserve
+                        )
+                        self._collect_words_fair_starts(
+                            board,
+                            loadout,
+                            candidates,
+                            void_deadline,
+                            void_cap,
+                            void_letter_starts,
+                            digits_only=True,
+                        )
+
+                    number_starts = _interleaved_number_starts(board)
+                    # With very tight budgets, focus on the most important digit
+                    # face (the first interleaved start) so we can still reach
+                    # the target length-8 word within the time slice.
+                    if self.time_budget <= 2.0 and number_starts:
+                        number_starts = number_starts[:1]
+                    digit_start = max(self.min_len, 1)
+                    max_number_face = _max_number_face_on_board(board)
+                    min_cap_for_numbers = max(8, max_number_face)
+                    if (
+                        number_starts
+                        and self.time_budget >= 6.0
+                        and time.monotonic() < pre_extend_deadline
+                    ):
+                        lead_deadline = min(
+                            pre_extend_deadline,
+                            time.monotonic() + number_reserve,
+                        )
+                        if lead_deadline > time.monotonic():
+                            self._collect_words(
+                                board,
+                                loadout,
+                                candidates,
+                                lead_deadline,
+                                min_cap_for_numbers,
+                                digits_only=True,
+                                start_indices=[number_starts[0]],
+                            )
+                    for cap in range(digit_start, self.max_len + 1):
+                        if time.monotonic() >= pre_extend_deadline or not number_starts:
+                            break
+                        before = len(candidates)
+                        self._collect_words_fair_starts(
+                            board,
+                            loadout,
+                            candidates,
+                            pre_extend_deadline,
+                            cap,
+                            number_starts,
+                            digits_only=True,
+                        )
+                        if (
+                            cap >= min_cap_for_numbers
+                            and len(candidates) == before
+                            and self.time_budget >= 6.0
+                        ):
+                            break
+
+                if (
+                    standard_search
+                    and number_short_recovery_likely
+                    and len(candidates) == 0
+                    and time.monotonic() < deadline
+                ):
+                    remaining = max(0.0, deadline - time.monotonic())
+                    recovery_slice = min(12.0, max(4.0, remaining))
+                    recovery_deadline = min(deadline, time.monotonic() + recovery_slice)
+                    short_max = min(8, self.max_len)
+                    recovery_caps = _number_board_cap_sequence(self.min_len, short_max)
+                    timing.dfs_caps = tuple(recovery_caps)
+                    self._parallel_executor = None
+                    for cap in recovery_caps:
+                        if time.monotonic() >= recovery_deadline or candidates:
+                            break
+                        self._collect_words_fair_starts(
+                            board,
+                            loadout,
+                            candidates,
+                            recovery_deadline,
+                            cap,
+                            letter_starts,
+                            min_slice_override=self._adaptive_min_slice(candidates, 0),
+                            start_productivity=start_productivity,
+                        )
+            finally:
                 self._parallel_executor = None
-                for cap in recovery_caps:
-                    if time.monotonic() >= recovery_deadline or candidates:
-                        break
-                    self._collect_words_fair_starts(
-                        board,
-                        loadout,
-                        candidates,
-                        recovery_deadline,
-                        cap,
-                        letter_starts,
-                        min_slice_override=self._adaptive_min_slice(candidates, 0),
-                        start_productivity=start_productivity,
-                    )
-        finally:
-            self._parallel_executor = None
 
-        timing.dfs_sec = time.monotonic() - dfs_start
+            timing.dfs_sec = time.monotonic() - dfs_start
+
         if has_digit_tiles and len(candidates) == 0:
             timing.number_board_empty_diag = True
 

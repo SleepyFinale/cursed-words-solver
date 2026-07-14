@@ -6,7 +6,7 @@ For profiling numbers and cache hit rates, see [`DATA_STRUCTURE_ANALYSIS.md`](DA
 
 ## Overview
 
-Each **F8** solve builds three immutable context layers once, then runs DFS with automatic candidate screening:
+Each **F8** solve builds immutable context layers once (including a per-solve [`BoardValueModel`](../cursed_words_solver/board_value_model.py)), then runs **score-aware best-first beam search** as the primary explorer (with a competitive leftover DFS slice). Most feature-specific time reserves and cap-sequence patches are skipped in beam mode; when the board has NUMBER tiles, a **live digit-start slice** still runs after beam + letter leftover (and before the item-cover pass) so number-leading faces are not starved by a non-empty heap. Dense boards (≥5 scattered items) get a **fuller live item-cover slice** even under Full Moon; BFS cover still runs and reserves item-leading tours alongside number-leading. Side slices are budgeted from the live deadline only — no cross-F8 cache.
 
 ```mermaid
 flowchart TB
@@ -14,25 +14,44 @@ flowchart TB
   SC[build_solve_context]
   BG[build_board_graph_context]
   BS[build_board_scoring_context]
+  VM[build_board_value_model]
   CC[clear_chess_attack_cache]
-  DFS[DFS exploration]
+  Beam[Best-first beam]
+  DFS[Leftover letter DFS]
+  Num[Live digit-start slice]
   T2[Tier2 bounds screen]
-  BB[DFS prefix branch-and-bound]
   PIPE[ScoringPipeline._compute_state]
-  STATIC[apply_static_rule]
-  DYN[apply_with_orchestration]
 
-  F8 --> SC --> BG --> BS --> CC --> DFS
-  DFS --> BB
+  F8 --> SC --> BG --> BS --> VM --> CC --> Beam
+  Beam --> DFS --> Num
+  Num --> Items[Live item-cover slice]
+  Beam --> T2
   DFS --> T2
-  T2 -->|skip| DFS
-  T2 -->|defer phase2| PIPE
+  Num --> T2
+  Items --> T2
   T2 -->|pass| PIPE
-  PIPE --> STATIC
-  PIPE --> DYN
 ```
 
-**No user config keys** control these optimizations — they are automatic with gating. Test/dev overrides exist on `WordSearcher(use_tier2_screen=False, use_dfs_bb=False)`.
+**Default:** `WordSearcher(use_beam_search=True)`. Set `use_beam_search=False` to restore the legacy reserve/seed DFS scheduler (tests / A/B). Tier-2 / DFS-BB overrides remain: `use_tier2_screen=False`, `use_dfs_bb=False`.
+
+### BoardValueModel — [`board_value_model.py`](../cursed_words_solver/board_value_model.py)
+
+Rebuilt every solve from live board + loadout contexts (no cross-F8 cache):
+
+| Signal | Role |
+| ------ | ---- |
+| Cell potential | Tile base + static tile-adds |
+| Hubs | WHITE teleport, chess, Full Moon |
+| Must-include | Up-and-Up center, required consumables |
+| Soft cover | Scattered items |
+| Branch cost | Wildcard / number / fraction density |
+| Number mask | Softens `start_priority` so NUMBER seeds stay competitive |
+
+Guidance only — final ranking still uses [`ScoringPipeline`](../cursed_words_solver/rules/pipeline.py) immediate score.
+
+### Beam search — [`search_beam.py`](../cursed_words_solver/search_beam.py)
+
+Best-first frontier ordered by `BoardValueModel.expand_priority`. Hard must-include cells are expansion filters (not time-steal reserves). When NUMBER tiles exist, [`search.py`](../cursed_words_solver/search.py) carves a live digit-start / number-wildcard slice after beam + letter leftover (before item covering). Item covering reuses the legacy helpers with no cross-solve cache; dense boards (≥5 items) keep a fuller item slice even under Full Moon, always run BFS cover, and reserve item-leading tours alongside number-leading. Sparse Full Moon boards keep a lean item slice. Quality harness: `python scripts/search_quality.py --ab`.
 
 ---
 

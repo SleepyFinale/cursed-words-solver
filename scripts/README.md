@@ -40,6 +40,7 @@ Run all commands from the **repository root** (the folder containing `pyproject.
 | `cursed-solver validate-path --round-log <file>` | Path/quest/dictionary acceptance check |
 | `python scripts/profile_solve.py [fixture.json] --budget 8` | cProfile chess-heavy solve; DFS vs scoring breakdown |
 | `python scripts/profile_search.py [--run-state] [--latest N] --budget 12` | SearchTiming: scoring % vs DFS expansions; Tier-2 recommendation |
+| `python scripts/search_quality.py [--ab] [--budget 12] [--long-budget 60]` | Miss-gap harness: budgeted vs long-run (or beam vs DFS A/B) |
 | `python scripts/profile_search.py --round-logs --use-config-budget` | Profile every board from your `round_logs/` play sessions |
 | `python scripts/profile_search.py --round-logs --mismatches-only --budget 12` | Profile only rounds where in-game score differed from solver |
 | `python scripts/analyze_data_structures.py --budget 12` | Full structure analysis: phase timings, caches, tier-2, context precompute, optimization gating; see [`docs/DATA_STRUCTURE_ANALYSIS.md`](../docs/DATA_STRUCTURE_ANALYSIS.md) |

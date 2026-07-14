@@ -467,6 +467,87 @@ def test_bubble_tea_letter_count_multiply():
     assert score == 2 * 2 + 2 * 2 + 2
 
 
+def test_bubble_tea_banana_chess_knight_faces():
+    """Chess knights count by face char (j), not letter=? (zebrinny 28→69 math)."""
+    board = _empty_board()
+    # z(10) j j j i(1) n(1) n(1) y(4) — three knights share face j
+    faces = [
+        ("z", "Z", CurseType.LETTER, 10),
+        ("j", "?", CurseType.CHESS_KNIGHT, 3),
+        ("j", "?", CurseType.CHESS_KNIGHT, 3),
+        ("j", "?", CurseType.CHESS_KNIGHT, 3),
+        ("i", "I", CurseType.LETTER, 1),
+        ("n", "N", CurseType.LETTER, 1),
+        ("n", "N", CurseType.LETTER, 1),
+        ("y", "Y", CurseType.LETTER, 4),
+    ]
+    path = []
+    for i, (char, letter, curse, score) in enumerate(faces):
+        row, col = divmod(i, 5)
+        board.tiles[row][col] = Tile(
+            row=row,
+            col=col,
+            char=char,
+            letter=letter,
+            base_score=score,
+            color=TileColor.COLORLESS,
+            curse=curse,
+            metadata={"source": "melmod"},
+        )
+        path.append(row * 5 + col)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[
+            LoadoutItem(id="bubble_tea", name="Bubble Tea", level=1, kind="stamp"),
+            LoadoutItem(id="banana", name="Banana", level=1, kind="stamp"),
+        ]
+    )
+    score, _ = pipeline.score(board, path, "zebrinny", loadout)
+    # Bubble Tea: 10 + 9+9+9 + 1 + 2+2 + 4 = 46; Banana ×1.5 → 69
+    assert score == 69
+
+
+def test_bubble_tea_banana_currency_and_chess_rook_faces():
+    """Currency maps via CURRENCY_MAP; rooks use char=r (cippus 24→46 math)."""
+    board = _empty_board()
+    # ₱ P, I, ₱ P, ₱ P, rook r, rook r — with Wrestlers ×1.5
+    specs = [
+        ("₱", "₱", CurseType.CURRENCY, 0, {"card_suit": "clubs"}),
+        ("i", "I", CurseType.LETTER, 1, {}),
+        ("₱", "₱", CurseType.CURRENCY, 0, {"card_suit": "clubs"}),
+        ("₱", "₱", CurseType.CURRENCY, 0, {"card_suit": "spades"}),
+        ("r", "?", CurseType.CHESS_ROOK, 5, {"card_suit": "diamonds"}),
+        ("r", "?", CurseType.CHESS_ROOK, 5, {"card_suit": "diamonds"}),
+    ]
+    path = []
+    for i, (char, letter, curse, score, meta) in enumerate(specs):
+        row, col = divmod(i, 5)
+        board.tiles[row][col] = Tile(
+            row=row,
+            col=col,
+            char=char,
+            letter=letter,
+            base_score=score,
+            color=TileColor.COLORLESS,
+            curse=curse,
+            metadata={"source": "melmod", **meta},
+        )
+        path.append(row * 5 + col)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="wrestlers", name="Wrestlers", level=1, kind="sticker"),
+        ],
+        stamps=[
+            LoadoutItem(id="bubble_tea", name="Bubble Tea", level=1, kind="stamp"),
+            LoadoutItem(id="banana", name="Banana", level=1, kind="stamp"),
+        ],
+    )
+    score, _ = pipeline.score(board, path, "cippus", loadout)
+    # Bubble Tea: 0+1+0+0+10+10 = 21; Wrestlers ×1.5 then Banana ×1.5 floors → 46
+    assert score == 46
+
+
 def test_queenie_q_tile_multiply():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "Q", 2)

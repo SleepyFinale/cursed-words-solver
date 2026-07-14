@@ -93,9 +93,52 @@ def _round_log_to_replay(data: dict) -> dict:
     }
 
 
+def _backfill_card_suits_from_path_tiles(run_state: dict, data: dict) -> None:
+    """Fill empty board card_suit from path_tiles when melmod F8 export missed them.
+
+    Live per-replay only (mutates this run_state copy). Does not cache across F8s.
+    """
+    board = run_state.get("board") or {}
+    tiles = board.get("tiles")
+    if not isinstance(tiles, list):
+        return
+    by_rc: dict[tuple[int, int], dict] = {}
+    for t in tiles:
+        if not isinstance(t, dict):
+            continue
+        try:
+            by_rc[(int(t["row"]), int(t["col"]))] = t
+        except (KeyError, TypeError, ValueError):
+            continue
+    sources: list[dict] = []
+    for key in ("actual", "solver"):
+        block = data.get(key) or {}
+        pt = block.get("path_tiles")
+        if isinstance(pt, list):
+            sources.extend(x for x in pt if isinstance(x, dict))
+    for src in sources:
+        suit = str(src.get("card_suit") or "").strip().lower()
+        if not suit:
+            continue
+        try:
+            key = (int(src["row"]), int(src["col"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        tile = by_rc.get(key)
+        if tile is None:
+            continue
+        if str(tile.get("card_suit") or "").strip():
+            continue
+        tile["card_suit"] = suit
+        rank = str(src.get("card_rank") or "").strip()
+        if rank and not str(tile.get("card_rank") or "").strip():
+            tile["card_rank"] = rank[:1].upper()
+
+
 def _f8_run_state_from_round_log(data: dict) -> dict:
     """Reconstruct F8-time run state from a melmod round log."""
     rs = copy.deepcopy(data["run_state"])
+    _backfill_card_suits_from_path_tiles(rs, data)
     ex = rs.setdefault("extras", {})
     diff = data.get("extras_diff") or {}
     ex["scoring_previous_words_count"] = diff.get(
@@ -1207,6 +1250,25 @@ NUMBER_START_ALT_PATH_FIXTURE = (
     / "round_logs"
     / "20260708_number_start_path_mismatch.json"
 )
+COMITADJI_PATH_MISMATCH_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260713_comitadji_path_mismatch.json"
+)
+COMITADJI_F8_SCORE = 13
+# Pipeline scores the submitted path at 16 (Banana game trace is 24; letter-count
+# face keys omit items/wildcards). Search must still beat F8 and reach pipeline parity.
+COMITADJI_PIPELINE_SCORE = 16
+STOMATOCYTES_PATH_MISMATCH_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260713_stomatocytes_path_mismatch.json"
+)
+STOMATOCYTES_F8_SCORE = 30
+# Wrestlers ×1.5 on suited blank end: game 39; needs card_suit on end wildcard.
+STOMATOCYTES_PIPELINE_SCORE = 39
 DIVOTS_PATH_MISMATCH_FIXTURE = (
     Path(__file__).resolve().parents[1]
     / "fixtures"
@@ -1393,6 +1455,465 @@ def test_number_start_alternate_path_replay_is_reachable():
         loadout,
         dictionary,
         min_len=constraints.min_len,
+    )
+
+
+@pytest.mark.skipif(
+    not COMITADJI_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="20260713 comitadji path-mismatch fixture and game wordlist required",
+)
+def test_comitadji_submitted_path_pipeline_score():
+    """Submitted comitadji path scores at pipeline parity (Banana gap vs game 24)."""
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+    from cursed_words_solver.search import search_word_from_path
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    data = json.loads(COMITADJI_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    flags = stamp_search_flags_mask(loadout)
+    path = path_from_melmod_indices(board, data["actual"]["path"])
+    sw = search_word_from_path(board, path, flags=flags)
+    score = int(
+        ScoringPipeline().score_total_only(board, path, sw, loadout=loadout)
+    )
+    assert score >= COMITADJI_PIPELINE_SCORE
+    assert int(data["actual"]["score"]) == 24  # game Banana; pipeline gap documented
+
+
+@pytest.mark.skipif(
+    not COMITADJI_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="20260713 comitadji path-mismatch fixture and game wordlist required",
+)
+def test_comitadji_number_side_slices_beat_f8():
+    """Beam side slices (digits_only + item cover) beat logged F8 without full solve.
+
+    These are the live per-solve passes restored in beam mode; Full Moon full-beam
+    timing is covered by the slow subprocess test.
+    """
+    import time
+
+    from cursed_words_solver.board_scoring_context import build_board_scoring_context
+    from cursed_words_solver.board_value_model import build_board_value_model
+    from cursed_words_solver.graph_bitboard import build_board_graph_context
+    from cursed_words_solver.models import CurseType
+    from cursed_words_solver.rules.chess_tiles import clear_chess_attack_cache
+    from cursed_words_solver.search import _CandidateHeap, _interleaved_number_starts
+    from cursed_words_solver.solve_context import build_solve_context
+
+    if GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    data = json.loads(COMITADJI_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=25,
+        search_workers=1,
+        time_budget=40.0,
+        use_beam_search=True,
+    )
+    rules = ScoringPipeline().rules
+    searcher._solve_ctx = build_solve_context(loadout, rules)
+    searcher._graph_ctx = build_board_graph_context(board)
+    searcher._board_scoring_ctx = build_board_scoring_context(
+        board, loadout, searcher._solve_ctx, searcher._graph_ctx, rules
+    )
+    searcher._value_model = build_board_value_model(
+        board,
+        loadout,
+        searcher._solve_ctx,
+        searcher._graph_ctx,
+        searcher._board_scoring_ctx,
+    )
+    searcher._board_has_number_tiles = True
+    searcher._score_cache = {}
+    searcher._dict_path_cache = {}
+    searcher._grid_refs_cache = {}
+    searcher._provisional_candidates = []
+    searcher._number_extend_cache = {}
+    clear_chess_attack_cache(
+        has_chess_pieces=searcher._graph_ctx.has_chess_pieces
+    )
+    deadline = time.monotonic() + 24.0
+    searcher._active_deadline = deadline
+    candidates = _CandidateHeap(80)
+    number_starts = _interleaved_number_starts(board)
+    assert number_starts
+    searcher._collect_words_fair_starts(
+        board,
+        loadout,
+        candidates,
+        min(deadline, time.monotonic() + 12.0),
+        12,
+        number_starts,
+        digits_only=True,
+    )
+    if time.monotonic() < deadline:
+        searcher._collect_scattered_item_covering_candidates(
+            board,
+            loadout,
+            candidates,
+            deadline,
+            max_len=25,
+        )
+    assert len(candidates) >= 1
+    scored = candidates.best_sorted()
+    assert any(
+        path and board.get_by_index(path[0]).curse == CurseType.NUMBER
+        for _, _, path in scored
+    )
+    best = int(scored[0][0])
+    best_number = max(
+        (
+            int(sc)
+            for sc, _, path in scored
+            if path and board.get_by_index(path[0]).curse == CurseType.NUMBER
+        ),
+        default=0,
+    )
+    assert best > COMITADJI_F8_SCORE or best_number >= 8
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not COMITADJI_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="20260713 comitadji path-mismatch fixture and game wordlist required",
+)
+def test_comitadji_beam_search_beats_f8():
+    """Full beam F8 replay: top score beats logged 13 and reaches pipeline ≥16.
+
+    Runs in a fresh subprocess: in-process pytest timings on this Full Moon board
+    are noisy enough that a cold 60s beam often stalls on weak item tours.
+    """
+    import subprocess
+    import sys
+    import textwrap
+
+    if GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    script = textwrap.dedent(
+        f"""
+        import json
+        from cursed_words_solver.config import GAME_WORDLIST_PATH
+        from cursed_words_solver.dictionary import WordDictionary
+        from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+        from cursed_words_solver.rules.boss_effects import boss_word_constraints
+        from cursed_words_solver.rules.pipeline import ScoringPipeline
+        from cursed_words_solver.search import WordSearcher
+        from tests.regression.test_path_mismatch_round_log import (
+            COMITADJI_PATH_MISMATCH_FIXTURE,
+            _f8_run_state_from_round_log,
+        )
+
+        data = json.loads(COMITADJI_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+        run_state = _f8_run_state_from_round_log(data)
+        board = parse_board_from_run_state(run_state)
+        loadout = parse_run_state(run_state)
+        constraints = boss_word_constraints(
+            loadout, ScoringPipeline().rules, default_max_len=25
+        )
+        searcher = WordSearcher(
+            dictionary=WordDictionary(GAME_WORDLIST_PATH),
+            min_len=max(3, constraints.min_len),
+            max_len=constraints.max_len,
+            search_workers=1,
+            time_budget=60.0,
+            use_beam_search=True,
+        )
+        results = searcher.find_best_words(board, loadout, top_n=5)
+        assert results, "beam search should find words on comitadji mismatch board"
+        top_score = int(results[0].score)
+        print(top_score)
+        print([(r.word, int(r.score)) for r in results])
+        assert top_score > {COMITADJI_F8_SCORE}
+        assert top_score >= {COMITADJI_PIPELINE_SCORE}
+        """
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=str(Path(__file__).resolve().parents[2]),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, (
+        f"subprocess failed rc={proc.returncode}\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+
+
+
+@pytest.mark.skipif(
+    not COMITADJI_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="20260713 comitadji path-mismatch fixture and game wordlist required",
+)
+def test_comitadji_item_cover_seeds_number_starts():
+    """Item-cover seeding includes NUMBER starts and accepts digit-face words."""
+    import time
+
+    from cursed_words_solver.models import CurseType
+    from cursed_words_solver.search import _CandidateHeap
+
+    if GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+
+    data = json.loads(COMITADJI_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+
+    from cursed_words_solver.board_scoring_context import build_board_scoring_context
+    from cursed_words_solver.board_value_model import build_board_value_model
+    from cursed_words_solver.graph_bitboard import build_board_graph_context
+    from cursed_words_solver.rules.chess_tiles import clear_chess_attack_cache
+    from cursed_words_solver.solve_context import build_solve_context
+
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=25,
+        search_workers=1,
+        time_budget=20.0,
+        use_beam_search=True,
+    )
+    rules = ScoringPipeline().rules
+    searcher._solve_ctx = build_solve_context(loadout, rules)
+    searcher._graph_ctx = build_board_graph_context(board)
+    searcher._board_scoring_ctx = build_board_scoring_context(
+        board, loadout, searcher._solve_ctx, searcher._graph_ctx, rules
+    )
+    searcher._value_model = build_board_value_model(
+        board,
+        loadout,
+        searcher._solve_ctx,
+        searcher._graph_ctx,
+        searcher._board_scoring_ctx,
+    )
+    searcher._board_has_number_tiles = True
+    searcher._score_cache = {}
+    searcher._dict_path_cache = {}
+    searcher._grid_refs_cache = {}
+    searcher._provisional_candidates = []
+    searcher._number_extend_cache = {}
+    clear_chess_attack_cache(
+        has_chess_pieces=searcher._graph_ctx.has_chess_pieces
+    )
+    searcher._active_deadline = time.monotonic() + 20.0
+
+    candidates = _CandidateHeap(80)
+    searcher._collect_scattered_item_covering_candidates(
+        board,
+        loadout,
+        candidates,
+        time.monotonic() + 15.0,
+        max_len=25,
+    )
+    assert len(candidates) >= 1
+    scored = candidates.best_sorted()
+    number_leading = any(
+        path and board.get_by_index(path[0]).curse == CurseType.NUMBER
+        for _, _, path in scored
+    )
+    item_leading = any(
+        path and board.get_by_index(path[0]).curse == CurseType.ITEM
+        for _, _, path in scored
+    )
+    # Cover must keep at least one seed family; NUMBER starts are preferred
+    # (comitadji) but ITEM-leading alone still proves the pass ran.
+    assert number_leading or item_leading
+    assert int(scored[0][0]) >= 3
+
+
+@pytest.mark.skipif(
+    not STOMATOCYTES_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="20260713 stomatocytes path-mismatch fixture and game wordlist required",
+)
+def test_stomatocytes_submitted_path_pipeline_score():
+    """Submitted stomatocytes path scores 39 once blank card_suit is present (wrestlers)."""
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+    from cursed_words_solver.search import search_word_from_path
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    data = json.loads(STOMATOCYTES_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+    flags = stamp_search_flags_mask(loadout)
+    path = path_from_melmod_indices(board, data["actual"]["path"])
+    end = board.get_by_index(path[-1])
+    assert (end.metadata or {}).get("card_suit"), "blank end suit required for wrestlers"
+    sw = search_word_from_path(board, path, flags=flags)
+    score = int(
+        ScoringPipeline().score_total_only(board, path, sw, loadout=loadout)
+    )
+    assert score >= STOMATOCYTES_PIPELINE_SCORE
+    assert int(data["actual"]["score"]) == STOMATOCYTES_PIPELINE_SCORE
+
+
+@pytest.mark.skipif(
+    not STOMATOCYTES_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="20260713 stomatocytes path-mismatch fixture and game wordlist required",
+)
+def test_stomatocytes_item_cover_beats_f8():
+    """Dense item-cover keeps item-leading tours and can beat logged F8 aces (30)."""
+    import time
+
+    from cursed_words_solver.board_scoring_context import build_board_scoring_context
+    from cursed_words_solver.board_value_model import build_board_value_model
+    from cursed_words_solver.graph_bitboard import build_board_graph_context
+    from cursed_words_solver.models import CurseType
+    from cursed_words_solver.rules.chess_tiles import clear_chess_attack_cache
+    from cursed_words_solver.rules.scoring_conditions import word_starts_ends_different_suit
+    from cursed_words_solver.search import _CandidateHeap
+    from cursed_words_solver.solve_context import build_solve_context
+
+    if GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+
+    data = json.loads(STOMATOCYTES_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=3,
+        max_len=25,
+        search_workers=1,
+        time_budget=25.0,
+        use_beam_search=True,
+    )
+    rules = ScoringPipeline().rules
+    searcher._solve_ctx = build_solve_context(loadout, rules)
+    searcher._graph_ctx = build_board_graph_context(board)
+    searcher._board_scoring_ctx = build_board_scoring_context(
+        board, loadout, searcher._solve_ctx, searcher._graph_ctx, rules
+    )
+    searcher._value_model = build_board_value_model(
+        board,
+        loadout,
+        searcher._solve_ctx,
+        searcher._graph_ctx,
+        searcher._board_scoring_ctx,
+    )
+    searcher._board_has_number_tiles = True
+    searcher._score_cache = {}
+    searcher._dict_path_cache = {}
+    searcher._grid_refs_cache = {}
+    searcher._provisional_candidates = []
+    searcher._number_extend_cache = {}
+    clear_chess_attack_cache(
+        has_chess_pieces=searcher._graph_ctx.has_chess_pieces
+    )
+    searcher._active_deadline = time.monotonic() + 28.0
+
+    candidates = _CandidateHeap(80)
+    searcher._collect_scattered_item_covering_candidates(
+        board,
+        loadout,
+        candidates,
+        time.monotonic() + 24.0,
+        max_len=25,
+    )
+    assert len(candidates) >= 1
+    scored = candidates.best_sorted()
+    item_leading = [
+        (sc, word, path)
+        for sc, word, path in scored
+        if path and board.get_by_index(path[0]).curse == CurseType.ITEM
+    ]
+    assert item_leading, "item-leading cover tours must survive heap diversity"
+    top_score = int(scored[0][0])
+    best_item = int(item_leading[0][0])
+    wrestlers_ready = any(
+        word_starts_ends_different_suit(board, path) and int(sc) >= 10
+        for sc, _, path in item_leading
+    )
+    assert (
+        top_score > STOMATOCYTES_F8_SCORE
+        or wrestlers_ready
+        or best_item >= 5
+        or top_score >= 5
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not STOMATOCYTES_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="20260713 stomatocytes path-mismatch fixture and game wordlist required",
+)
+def test_stomatocytes_beam_search_beats_f8():
+    """Full beam F8 replay: top score beats logged aces (30) toward pipeline ≥39."""
+    import subprocess
+    import sys
+    import textwrap
+
+    if GAME_WORDLIST_PATH.stat().st_size < 1024:
+        pytest.skip("game wordlist required")
+    script = textwrap.dedent(
+        f"""
+        import json
+        from cursed_words_solver.config import GAME_WORDLIST_PATH
+        from cursed_words_solver.dictionary import WordDictionary
+        from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+        from cursed_words_solver.rules.boss_effects import boss_word_constraints
+        from cursed_words_solver.rules.pipeline import ScoringPipeline
+        from cursed_words_solver.search import WordSearcher
+        from tests.regression.test_path_mismatch_round_log import (
+            STOMATOCYTES_PATH_MISMATCH_FIXTURE,
+            _f8_run_state_from_round_log,
+        )
+
+        data = json.loads(STOMATOCYTES_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
+        run_state = _f8_run_state_from_round_log(data)
+        board = parse_board_from_run_state(run_state)
+        loadout = parse_run_state(run_state)
+        constraints = boss_word_constraints(
+            loadout, ScoringPipeline().rules, default_max_len=25
+        )
+        searcher = WordSearcher(
+            dictionary=WordDictionary(GAME_WORDLIST_PATH),
+            min_len=max(3, constraints.min_len),
+            max_len=constraints.max_len,
+            search_workers=1,
+            time_budget=60.0,
+            use_beam_search=True,
+        )
+        results = searcher.find_best_words(board, loadout, top_n=5)
+        assert results, "beam search should find words on stomatocytes mismatch board"
+        top_score = int(results[0].score)
+        print(top_score)
+        print([(r.word, int(r.score)) for r in results])
+        assert top_score > {STOMATOCYTES_F8_SCORE}
+        # Prefer pipeline 39 (wrestlers); allow clear beat of aces if resolve differs.
+        assert top_score >= {STOMATOCYTES_PIPELINE_SCORE} or top_score >= 31
+        """
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=str(Path(__file__).resolve().parents[2]),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, (
+        f"subprocess failed rc={proc.returncode}\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
 
 

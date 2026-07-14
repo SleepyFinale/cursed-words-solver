@@ -2251,13 +2251,7 @@ def path_letter_for_double_letter(tile: Tile) -> str:
     """Letter for Yellow Glasses path doubles; uses submit char when letter is unresolved."""
     if tile.curse == CurseType.CURRENCY:
         return ""
-    ch = path_letter_for_count(tile)
-    if ch:
-        return ch
-    raw = (tile.char or "").strip().lower()
-    if len(raw) == 1 and raw.isalpha():
-        return raw
-    return ""
+    return path_letter_for_count(tile)
 
 
 def _double_letter_char_at_path_step(
@@ -4607,12 +4601,28 @@ def word_percent_bonus_from_multiplier(factor: float, rule: dict, *, level: int 
 
 
 def path_letter_for_count(tile: Tile) -> str:
-    """Lowercase letter used for Bubble Tea same-letter counts."""
+    """Lowercase face letter for Bubble Tea / Banana same-letter counts.
+
+    Matches game face strings (stripped GetStringRepresentation / currency map),
+    not dictionary fill letters on chess tiles.
+    """
     if tile.curse == CurseType.NUMBER:
         return ""
+    if tile.curse in CHESS_CURSES:
+        raw = (tile.char or "").strip().lower()
+        return raw if len(raw) == 1 and raw.isalpha() else ""
+    if tile.curse == CurseType.CURRENCY:
+        glyph = normalize_tile_glyph(tile.char or tile.letter or "")
+        if glyph in CURRENCY_MAP:
+            return CURRENCY_MAP[glyph].lower()
+        ch = (tile.letter or "").strip().lower()
+        return ch if len(ch) == 1 and ch.isalpha() else ""
     ch = (tile.letter or "").strip().lower()
     if len(ch) == 1 and ch.isalpha():
         return ch
+    raw = (tile.char or "").strip().lower()
+    if len(raw) == 1 and raw.isalpha():
+        return raw
     return ""
 
 
