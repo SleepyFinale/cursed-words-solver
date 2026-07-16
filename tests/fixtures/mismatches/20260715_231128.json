@@ -1,0 +1,2348 @@
+{
+  "word": "broke",
+  "path": [
+    23,
+    24,
+    19,
+    14,
+    13
+  ],
+  "predicted_score": 400,
+  "actual_score": 425,
+  "delta": 25,
+  "score_nondeterministic": false,
+  "predicted_score_min": 0,
+  "predicted_score_max": 0,
+  "board_fingerprint": "2|4,0:Q/letter/void;4,1:E/letter/colorless;4,2:E/letter/colorless;4,3:S/letter/colorless;4,4:D/letter/colorless;3,0:9/number/void;3,1:D/letter/colorless;3,2:A/letter/void;3,3:N/letter/colorless;3,4:R/letter/colorless;2,0:E/letter/colorless;2,1:6/number/void;2,2:G/letter/colorless;2,3:L/item/blue;2,4:K/letter/shiny;1,0:P/letter/void;1,1:I/letter/colorless;1,2:A/letter/void;1,3:E/letter/colorless;1,4:F/item/colorless;0,0:G/letter/void;0,1:I/letter/colorless;0,2:C/letter/void;0,3:U/item/red;0,4:V/item/void;",
+  "loadout_fingerprint": "Nina Nix|2|game_pad:1,retro_raider:1,ladybird:1|dangerous_summit:1,golden_scales:1,filing_cabinet:1,cartwheeler:1|-|milky_way:left",
+  "predicted_trace": [
+    {
+      "phase": "tile_init",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 0.0,
+      "subtotal": 50.0,
+      "phase_detail": "init_scores",
+      "detail": "base tile sum 50.0"
+    },
+    {
+      "phase": "rule",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 0.0,
+      "subtotal": 50.0,
+      "rule_id": "circus_tent",
+      "effect_type": "multiply_word_scaled",
+      "applied": true,
+      "detail": "applied (has_blue_red_and_colourless)",
+      "condition": "has_blue_red_and_colourless",
+      "condition_met": true
+    },
+    {
+      "phase": "grid_item",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 0.0,
+      "subtotal": 50.0,
+      "rule_id": "circus_tent",
+      "detail": "scattered grid item"
+    },
+    {
+      "phase": "rule",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 0.0,
+      "subtotal": 50.0,
+      "rule_id": "circus_tent",
+      "effect_type": "multiply_word_scaled",
+      "applied": true,
+      "detail": "applied (has_blue_red_and_colourless)",
+      "condition": "has_blue_red_and_colourless",
+      "condition_met": true
+    },
+    {
+      "phase": "grid_item",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 0.0,
+      "subtotal": 50.0,
+      "rule_id": "circus_tent",
+      "detail": "scattered grid item"
+    },
+    {
+      "phase": "rule",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 80.0,
+      "subtotal": 130.0,
+      "rule_id": "dusty_coffin",
+      "effect_type": "add_word_score",
+      "applied": true,
+      "detail": "+80 word score (per_void_unused)"
+    },
+    {
+      "phase": "grid_item",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 80.0,
+      "subtotal": 130.0,
+      "rule_id": "dusty_coffin",
+      "detail": "scattered grid item"
+    },
+    {
+      "phase": "rule",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 80.0,
+      "subtotal": 130.0,
+      "rule_id": "circus_tent",
+      "effect_type": "multiply_word_scaled",
+      "applied": true,
+      "detail": "applied (has_blue_red_and_colourless)",
+      "condition": "has_blue_red_and_colourless",
+      "condition_met": true
+    },
+    {
+      "phase": "grid_item",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 80.0,
+      "subtotal": 130.0,
+      "rule_id": "circus_tent",
+      "detail": "scattered grid item"
+    },
+    {
+      "phase": "pin",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 80.0,
+      "subtotal": 130.0,
+      "rule_id": "milky_way",
+      "detail": "pin applied"
+    },
+    {
+      "phase": "rule",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 80.0,
+      "subtotal": 130.0,
+      "rule_id": "cartwheeler",
+      "effect_type": "multiply_word_per_path_tile",
+      "applied": true,
+      "detail": "×-1.6105100000000006 word (5 tile(s) @ -1.1)"
+    },
+    {
+      "phase": "pre_multiply",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 80.0,
+      "subtotal": 130.0,
+      "detail": "tile sum + word score"
+    },
+    {
+      "phase": "multiply",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 80.0,
+      "subtotal": 130.0,
+      "factor": 1.5,
+      "percent": 150,
+      "detail": "×1.5 word (word_bonus:150)",
+      "rule_id": "circus_tent"
+    },
+    {
+      "phase": "multiply",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 80.0,
+      "subtotal": 130.0,
+      "factor": 1.5,
+      "percent": 150,
+      "detail": "×1.5 word (word_bonus:150)",
+      "rule_id": "circus_tent"
+    },
+    {
+      "phase": "multiply",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 80.0,
+      "subtotal": 130.0,
+      "factor": 1.5,
+      "percent": 150,
+      "detail": "×1.5 word (word_bonus:150)",
+      "rule_id": "circus_tent"
+    },
+    {
+      "phase": "multiply",
+      "tile_scores": [
+        0.0,
+        0.0,
+        0.0,
+        50.0,
+        0.0
+      ],
+      "word_score": 80.0,
+      "subtotal": 130.0,
+      "factor": -1.61,
+      "percent": -161,
+      "detail": "×-1.61 word (word_bonus:-161)",
+      "rule_id": "cartwheeler"
+    }
+  ],
+  "run_state_snapshot": {
+    "schema_version": 1,
+    "exported_at": "2026-07-16T04:10:23.9291772Z",
+    "character": "Nina Nix",
+    "pin_branch": "left",
+    "money": 2,
+    "stickers": [
+      {
+        "id": "game_pad",
+        "name": "Game Pad",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "retro_raider",
+        "name": "Retro Raider",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "ladybird",
+        "name": "Ladybird",
+        "level": 1,
+        "kind": "sticker"
+      }
+    ],
+    "stamps": [
+      {
+        "id": "dangerous_summit",
+        "name": "Dangerous Summit",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "golden_scales",
+        "name": "Golden Scales",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "filing_cabinet",
+        "name": "Filing Cabinet",
+        "level": 1,
+        "kind": "sticker"
+      },
+      {
+        "id": "cartwheeler",
+        "name": "Cartwheeler",
+        "level": 1,
+        "kind": "sticker"
+      }
+    ],
+    "boss_id": "",
+    "boss_name": "",
+    "boss_effect": "",
+    "challenge_game_class": "TwoWrongs",
+    "challenge_name": "Two Wrongs",
+    "challenge_elite": false,
+    "extras": {
+      "pin_effect": "milky_way",
+      "pin_left_level": "2",
+      "pin_right_level": "1",
+      "pin_left_variable": "4",
+      "pin_right_variable": "10",
+      "pin_memory_export_note": "empty",
+      "pin_memory": "[]",
+      "pin_memory_count": "0",
+      "scoring_previous_words_count": "1",
+      "challenge_game_class": "TwoWrongs",
+      "challenge_name": "Two Wrongs",
+      "embargoed_item_types": "",
+      "embargoed_item_slugs": "",
+      "character_slug": "nina_nix",
+      "board_from_melmod": "true",
+      "grid_number": "1",
+      "grid_scattered_items": "[{\"row\":2,\"col\":3,\"id\":\"circus_tent\",\"level\":1},{\"row\":1,\"col\":4,\"id\":\"dusty_coffin\",\"level\":1},{\"row\":0,\"col\":3,\"id\":\"circus_tent\",\"level\":1},{\"row\":0,\"col\":4,\"id\":\"circus_tent\",\"level\":1}]",
+      "fairy_count": "0",
+      "animal_stamp_count": "0",
+      "encounter_mode": "encounter",
+      "run_stage": "2",
+      "run_node_type": "EncounterSecond",
+      "cursed_bosses_defeated_count": "0",
+      "game_version": "0.2.0",
+      "sticker_order": "[\"game_pad\",\"retro_raider\",\"ladybird\"]",
+      "stamp_order": "[\"dangerous_summit\",\"golden_scales\",\"filing_cabinet\",\"cartwheeler\"]",
+      "snapshot_copy_export_note": "not_equipped",
+      "loadout_fingerprint": "Nina Nix|2|game_pad:1,retro_raider:1,ladybird:1|dangerous_summit:1,golden_scales:1,filing_cabinet:1,cartwheeler:1|-|milky_way:left",
+      "encounter_total_target": "67",
+      "encounter_remaining_target": "67",
+      "encounter_target_display": "-67",
+      "encounter_score_earned": "0",
+      "encounter_historic_source": "live",
+      "mutating_dna_letter_counts": "{}",
+      "bicycle_suited_on_path": "0",
+      "historic_words": "[{\"word\":\"🎪🎪⚰️K🎪\",\"score\":425,\"path\":[23,24,19,14,13],\"red_tile_count\":1}]",
+      "red_tiles_used_encounter": "1",
+      "previous_word_first_letter": "k",
+      "rare_item_count": "2",
+      "consumable_rack_count_at_submit": "0"
+    },
+    "export_diagnostics": {
+      "companion_version": "1.2.3",
+      "game_version": "0.2.0",
+      "export_trigger": "f8",
+      "f8_request_id": "1784175023893",
+      "fingerprint": "Nina Nix|2|game_pad:1,retro_raider:1,ladybird:1|dangerous_summit:1,golden_scales:1,filing_cabinet:1,cartwheeler:1|-|TwoWrongs|milky_way:left|2|4,0:Q/letter/void;4,1:E/letter/colorless;4,2:E/letter/colorless;4,3:S/letter/colorless;4,4:D/letter/colorless;3,0:9/number/void;3,1:D/letter/colorless;3,2:A/letter/void;3,3:N/letter/colorless;3,4:R/letter/colorless;2,0:E/letter/colorless;2,1:6/number/void;2,2:G/letter/colorless;2,3:L/item/blue;2,4:K/letter/shiny;1,0:P/letter/void;1,1:I/letter/colorless;1,2:A/letter/void;1,3:E/letter/colorless;1,4:F/item/colorless;0,0:G/letter/void;0,1:I/letter/colorless;0,2:C/letter/void;0,3:U/item/red;0,4:V/item/void;|1|0|-1",
+      "fingerprint_changed": false,
+      "missing_keys": [],
+      "merge_errors": [],
+      "pin_memory_count": 0,
+      "snapshot_copy_source": "",
+      "last_export_ms": 29,
+      "ui_layout_status": "ok",
+      "snapshot_copy_export_note": "not_equipped"
+    },
+    "board": {
+      "source": "melmod",
+      "money": 2,
+      "rows": 5,
+      "cols": 5,
+      "playable_origin": "full",
+      "playable_min_row": 0,
+      "playable_max_row": 4,
+      "playable_min_col": 0,
+      "playable_max_col": 4,
+      "row_order": "top_first",
+      "tiles": [
+        {
+          "row": 4,
+          "col": 0,
+          "active": true,
+          "char_display": "q",
+          "char": "q",
+          "letter": "Q",
+          "base_score": -10.0,
+          "color": "void",
+          "curse": "letter",
+          "void_penalty_steps": 1
+        },
+        {
+          "row": 4,
+          "col": 1,
+          "active": true,
+          "char_display": "e",
+          "char": "e",
+          "letter": "E",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter"
+        },
+        {
+          "row": 4,
+          "col": 2,
+          "active": true,
+          "char_display": "e",
+          "char": "e",
+          "letter": "E",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter"
+        },
+        {
+          "row": 4,
+          "col": 3,
+          "active": true,
+          "char_display": "s",
+          "char": "s",
+          "letter": "S",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter"
+        },
+        {
+          "row": 4,
+          "col": 4,
+          "active": true,
+          "char_display": "d",
+          "char": "d",
+          "letter": "D",
+          "base_score": 2.0,
+          "color": "colorless",
+          "curse": "letter"
+        },
+        {
+          "row": 3,
+          "col": 0,
+          "active": true,
+          "char_display": "9",
+          "char": "9",
+          "letter": "9",
+          "base_score": 0.0,
+          "color": "void",
+          "curse": "number",
+          "number_value": 9
+        },
+        {
+          "row": 3,
+          "col": 1,
+          "active": true,
+          "char_display": "d",
+          "char": "d",
+          "letter": "D",
+          "base_score": 2.0,
+          "color": "colorless",
+          "curse": "letter"
+        },
+        {
+          "row": 3,
+          "col": 2,
+          "active": true,
+          "char_display": "a",
+          "char": "a",
+          "letter": "A",
+          "base_score": -1.0,
+          "color": "void",
+          "curse": "letter",
+          "void_penalty_steps": 1
+        },
+        {
+          "row": 3,
+          "col": 3,
+          "active": true,
+          "char_display": "n",
+          "char": "n",
+          "letter": "N",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter"
+        },
+        {
+          "row": 3,
+          "col": 4,
+          "active": true,
+          "char_display": "r",
+          "char": "r",
+          "letter": "R",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter"
+        },
+        {
+          "row": 2,
+          "col": 0,
+          "active": true,
+          "char_display": "e",
+          "char": "e",
+          "letter": "E",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter"
+        },
+        {
+          "row": 2,
+          "col": 1,
+          "active": true,
+          "char_display": "6",
+          "char": "6",
+          "letter": "6",
+          "base_score": 0.0,
+          "color": "void",
+          "curse": "number",
+          "number_value": 6
+        },
+        {
+          "row": 2,
+          "col": 2,
+          "active": true,
+          "char_display": "g",
+          "char": "g",
+          "letter": "G",
+          "base_score": 2.0,
+          "color": "colorless",
+          "curse": "letter"
+        },
+        {
+          "row": 2,
+          "col": 3,
+          "active": true,
+          "char_display": "🎪",
+          "char": "🎪",
+          "letter": "L",
+          "base_score": 0.0,
+          "color": "blue",
+          "curse": "item",
+          "scattered_item_id": "circus_tent",
+          "scattered_item_level": 1
+        },
+        {
+          "row": 2,
+          "col": 4,
+          "active": true,
+          "char_display": "k",
+          "char": "k",
+          "letter": "K",
+          "base_score": 50.0,
+          "color": "shiny",
+          "curse": "letter"
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "active": true,
+          "char_display": "p",
+          "char": "p",
+          "letter": "P",
+          "base_score": -3.0,
+          "color": "void",
+          "curse": "letter",
+          "void_penalty_steps": 1
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "active": true,
+          "char_display": "i",
+          "char": "i",
+          "letter": "I",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter"
+        },
+        {
+          "row": 1,
+          "col": 2,
+          "active": true,
+          "char_display": "a",
+          "char": "a",
+          "letter": "A",
+          "base_score": -1.0,
+          "color": "void",
+          "curse": "letter",
+          "void_penalty_steps": 1
+        },
+        {
+          "row": 1,
+          "col": 3,
+          "active": true,
+          "char_display": "e",
+          "char": "e",
+          "letter": "E",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter"
+        },
+        {
+          "row": 1,
+          "col": 4,
+          "active": true,
+          "char_display": "⚰️",
+          "char": "⚰️",
+          "letter": "F",
+          "base_score": 0.0,
+          "color": "colorless",
+          "curse": "item",
+          "scattered_item_id": "dusty_coffin",
+          "scattered_item_level": 1
+        },
+        {
+          "row": 0,
+          "col": 0,
+          "active": true,
+          "char_display": "g",
+          "char": "g",
+          "letter": "G",
+          "base_score": -2.0,
+          "color": "void",
+          "curse": "letter",
+          "void_penalty_steps": 1
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "active": true,
+          "char_display": "i",
+          "char": "i",
+          "letter": "I",
+          "base_score": 1.0,
+          "color": "colorless",
+          "curse": "letter"
+        },
+        {
+          "row": 0,
+          "col": 2,
+          "active": true,
+          "char_display": "c",
+          "char": "c",
+          "letter": "C",
+          "base_score": -3.0,
+          "color": "void",
+          "curse": "letter",
+          "void_penalty_steps": 1
+        },
+        {
+          "row": 0,
+          "col": 3,
+          "active": true,
+          "char_display": "🎪",
+          "char": "🎪",
+          "letter": "U",
+          "base_score": 0.0,
+          "color": "red",
+          "curse": "item",
+          "scattered_item_id": "circus_tent",
+          "scattered_item_level": 1
+        },
+        {
+          "row": 0,
+          "col": 4,
+          "active": true,
+          "char_display": "🎪",
+          "char": "🎪",
+          "letter": "V",
+          "base_score": 0.0,
+          "color": "void",
+          "curse": "item",
+          "scattered_item_id": "circus_tent",
+          "scattered_item_level": 1
+        }
+      ]
+    },
+    "ui_layout": {
+      "coordinate_space": "screen_top_left",
+      "screen_w": 3440,
+      "screen_h": 1440,
+      "board": {
+        "x": 1156,
+        "y": 47,
+        "width": 1121,
+        "height": 1113,
+        "rows": 5,
+        "cols": 5,
+        "cells": [
+          {
+            "row": 4,
+            "col": 0,
+            "index": 20,
+            "x": 1366,
+            "y": 962
+          },
+          {
+            "row": 3,
+            "col": 0,
+            "index": 15,
+            "x": 1357,
+            "y": 788
+          },
+          {
+            "row": 2,
+            "col": 0,
+            "index": 10,
+            "x": 1360,
+            "y": 604
+          },
+          {
+            "row": 1,
+            "col": 0,
+            "index": 5,
+            "x": 1357,
+            "y": 423
+          },
+          {
+            "row": 0,
+            "col": 0,
+            "index": 0,
+            "x": 1367,
+            "y": 244
+          },
+          {
+            "row": 4,
+            "col": 1,
+            "index": 21,
+            "x": 1545,
+            "y": 962
+          },
+          {
+            "row": 3,
+            "col": 1,
+            "index": 16,
+            "x": 1545,
+            "y": 782
+          },
+          {
+            "row": 2,
+            "col": 1,
+            "index": 11,
+            "x": 1542,
+            "y": 603
+          },
+          {
+            "row": 1,
+            "col": 1,
+            "index": 6,
+            "x": 1546,
+            "y": 423
+          },
+          {
+            "row": 0,
+            "col": 1,
+            "index": 1,
+            "x": 1542,
+            "y": 243
+          },
+          {
+            "row": 4,
+            "col": 2,
+            "index": 22,
+            "x": 1719,
+            "y": 969
+          },
+          {
+            "row": 3,
+            "col": 2,
+            "index": 17,
+            "x": 1720,
+            "y": 787
+          },
+          {
+            "row": 2,
+            "col": 2,
+            "index": 12,
+            "x": 1720,
+            "y": 605
+          },
+          {
+            "row": 1,
+            "col": 2,
+            "index": 7,
+            "x": 1725,
+            "y": 423
+          },
+          {
+            "row": 0,
+            "col": 2,
+            "index": 2,
+            "x": 1724,
+            "y": 243
+          },
+          {
+            "row": 4,
+            "col": 3,
+            "index": 23,
+            "x": 1903,
+            "y": 961
+          },
+          {
+            "row": 3,
+            "col": 3,
+            "index": 18,
+            "x": 1902,
+            "y": 785
+          },
+          {
+            "row": 2,
+            "col": 3,
+            "index": 13,
+            "x": 1901,
+            "y": 605
+          },
+          {
+            "row": 1,
+            "col": 3,
+            "index": 8,
+            "x": 1902,
+            "y": 424
+          },
+          {
+            "row": 0,
+            "col": 3,
+            "index": 3,
+            "x": 1903,
+            "y": 243
+          },
+          {
+            "row": 4,
+            "col": 4,
+            "index": 24,
+            "x": 2080,
+            "y": 960
+          },
+          {
+            "row": 3,
+            "col": 4,
+            "index": 19,
+            "x": 2081,
+            "y": 788
+          },
+          {
+            "row": 2,
+            "col": 4,
+            "index": 14,
+            "x": 2081,
+            "y": 602
+          },
+          {
+            "row": 1,
+            "col": 4,
+            "index": 9,
+            "x": 2081,
+            "y": 423
+          },
+          {
+            "row": 0,
+            "col": 4,
+            "index": 4,
+            "x": 2081,
+            "y": 244
+          }
+        ]
+      },
+      "consumable_rack": {
+        "x": 2986,
+        "y": 709,
+        "width": 374,
+        "height": 65,
+        "slot_count": 5,
+        "rack_slots": [
+          {
+            "rack_index": 0,
+            "x": 3019,
+            "y": 741,
+            "width": 64,
+            "height": 64
+          },
+          {
+            "rack_index": 1,
+            "x": 3096,
+            "y": 741,
+            "width": 64,
+            "height": 64
+          },
+          {
+            "rack_index": 2,
+            "x": 3173,
+            "y": 741,
+            "width": 64,
+            "height": 64
+          },
+          {
+            "rack_index": 3,
+            "x": 3251,
+            "y": 741,
+            "width": 64,
+            "height": 64
+          },
+          {
+            "rack_index": 4,
+            "x": 3328,
+            "y": 741,
+            "width": 64,
+            "height": 64
+          }
+        ]
+      }
+    },
+    "inventory_sell": [
+      {
+        "kind": "sticker",
+        "slot": 0,
+        "id": "game_pad",
+        "name": "Game Pad",
+        "level": 1,
+        "foil": false,
+        "sell_value": 6,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "sticker",
+        "slot": 1,
+        "id": "retro_raider",
+        "name": "Retro Raider",
+        "level": 1,
+        "foil": false,
+        "sell_value": 9,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "sticker",
+        "slot": 2,
+        "id": "ladybird",
+        "name": "Ladybird",
+        "level": 1,
+        "foil": false,
+        "sell_value": 0,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "stamp",
+        "slot": 0,
+        "id": "dangerous_summit",
+        "name": "Dangerous Summit",
+        "level": 1,
+        "foil": false,
+        "sell_value": 0,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "stamp",
+        "slot": 1,
+        "id": "golden_scales",
+        "name": "Golden Scales",
+        "level": 1,
+        "foil": false,
+        "sell_value": 5,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "stamp",
+        "slot": 2,
+        "id": "filing_cabinet",
+        "name": "Filing Cabinet",
+        "level": 1,
+        "foil": false,
+        "sell_value": 8,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      },
+      {
+        "kind": "stamp",
+        "slot": 3,
+        "id": "cartwheeler",
+        "name": "Cartwheeler",
+        "level": 1,
+        "foil": false,
+        "sell_value": 9,
+        "sell_cost": 0,
+        "costs_money_to_sell": false
+      }
+    ],
+    "encounter_grid_reroll": {
+      "remaining": 1,
+      "cost_per_use": 0,
+      "can_reroll": true,
+      "wheel_equipped": false,
+      "fan_equipped": false,
+      "cost": 0,
+      "available": true
+    }
+  },
+  "actual_trace": [
+    {
+      "step_index": 0,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "running_subtotal": 50
+    },
+    {
+      "step_index": 1,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "word_bonus": 150,
+      "word_bonus_multiplicative": true,
+      "word_bonus_poison": false,
+      "running_subtotal": 50,
+      "item_id": "circus_tent",
+      "item_name": "Circus Tent",
+      "item_level": 1
+    },
+    {
+      "step_index": 2,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "word_bonus": 150,
+      "word_bonus_multiplicative": true,
+      "word_bonus_poison": false,
+      "running_subtotal": 50,
+      "item_id": "circus_tent",
+      "item_name": "Circus Tent",
+      "item_level": 1
+    },
+    {
+      "step_index": 3,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "word_bonus": 64,
+      "word_bonus_multiplicative": false,
+      "word_bonus_poison": false,
+      "running_subtotal": 114,
+      "item_id": "dusty_coffin",
+      "item_name": "Dusty Coffin",
+      "item_level": 1
+    },
+    {
+      "step_index": 4,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "word_bonus": 150,
+      "word_bonus_multiplicative": true,
+      "word_bonus_poison": false,
+      "running_subtotal": 50,
+      "item_id": "circus_tent",
+      "item_name": "Circus Tent",
+      "item_level": 1
+    },
+    {
+      "step_index": 5,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "running_subtotal": 50
+    },
+    {
+      "step_index": 6,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "running_subtotal": 50
+    },
+    {
+      "step_index": 7,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "running_subtotal": 50
+    },
+    {
+      "step_index": 8,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "running_subtotal": 50
+    },
+    {
+      "step_index": 9,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "running_subtotal": 50
+    },
+    {
+      "step_index": 10,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "running_subtotal": 50
+    },
+    {
+      "step_index": 11,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "running_subtotal": 50
+    },
+    {
+      "step_index": 12,
+      "money": 2,
+      "is_pulsing_whole_word": false,
+      "is_settling_glitch": false,
+      "poker_hand": "None",
+      "path_tile_indices": [
+        23,
+        24,
+        19,
+        14,
+        13
+      ],
+      "tile_scores": [
+        0,
+        0,
+        0,
+        50,
+        0
+      ],
+      "tile_score_multipliers": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "word_bonus": -161,
+      "word_bonus_multiplicative": true,
+      "word_bonus_poison": false,
+      "running_subtotal": 50,
+      "item_id": "cartwheeler",
+      "item_name": "Cartwheeler",
+      "item_level": 1
+    }
+  ],
+  "extras_snapshot": {
+    "loadout_fingerprint": "Nina Nix|2|game_pad:1,retro_raider:1,ladybird:1|dangerous_summit:1,golden_scales:1,filing_cabinet:1,cartwheeler:1|-|milky_way:left",
+    "mutating_dna_letter_counts": "{}",
+    "bicycle_suited_on_path": "0",
+    "snapshot_copy_export_note": "not_equipped",
+    "pin_effect": "milky_way",
+    "pin_left_level": "2",
+    "pin_right_level": "1",
+    "pin_left_variable": "4",
+    "pin_right_variable": "10",
+    "pin_memory_export_note": "empty",
+    "pin_memory": "[]",
+    "pin_memory_count": "0",
+    "historic_words": "[{\"word\":\"🎪🎪⚰️K🎪\",\"score\":425,\"path\":[23,24,19,14,13],\"red_tile_count\":1}]",
+    "red_tiles_used_encounter": "1",
+    "previous_word_first_letter": "k",
+    "scoring_previous_words_count": "1",
+    "encounter_historic_source": "live",
+    "challenge_game_class": "TwoWrongs",
+    "challenge_name": "Two Wrongs",
+    "embargoed_item_types": "",
+    "embargoed_item_slugs": "",
+    "character_slug": "nina_nix",
+    "board_from_melmod": "true",
+    "grid_number": "1",
+    "rare_item_count": "2",
+    "fairy_count": "0",
+    "animal_stamp_count": "0",
+    "encounter_mode": "encounter",
+    "run_stage": "2",
+    "run_node_type": "EncounterSecond",
+    "cursed_bosses_defeated_count": "0",
+    "game_version": "0.2.0",
+    "sticker_order": "[\"game_pad\",\"retro_raider\",\"ladybird\"]",
+    "stamp_order": "[\"dangerous_summit\",\"golden_scales\",\"filing_cabinet\",\"cartwheeler\"]",
+    "encounter_total_target": "67",
+    "encounter_remaining_target": "67",
+    "encounter_target_display": "-67",
+    "encounter_score_earned": "0",
+    "consumable_rack_count_at_submit": "0",
+    "path_resolved_word": "broke"
+  },
+  "extras_diff": {
+    "pin_effect": {
+      "f8": "milky_way",
+      "submit": ""
+    },
+    "pin_left_level": {
+      "f8": "2",
+      "submit": ""
+    },
+    "pin_right_level": {
+      "f8": "1",
+      "submit": ""
+    },
+    "pin_left_variable": {
+      "f8": "4",
+      "submit": ""
+    },
+    "pin_right_variable": {
+      "f8": "10",
+      "submit": ""
+    },
+    "pin_memory_export_note": {
+      "f8": "empty",
+      "submit": ""
+    },
+    "pin_memory": {
+      "f8": "[]",
+      "submit": ""
+    },
+    "pin_memory_count": {
+      "f8": "0",
+      "submit": ""
+    },
+    "scoring_previous_words_count": {
+      "f8": "0",
+      "submit": "1"
+    },
+    "challenge_game_class": {
+      "f8": "TwoWrongs",
+      "submit": ""
+    },
+    "challenge_name": {
+      "f8": "Two Wrongs",
+      "submit": ""
+    },
+    "character_slug": {
+      "f8": "nina_nix",
+      "submit": ""
+    },
+    "board_from_melmod": {
+      "f8": "true",
+      "submit": ""
+    },
+    "grid_number": {
+      "f8": "1",
+      "submit": ""
+    },
+    "grid_scattered_items": {
+      "f8": "[{\"row\":2,\"col\":3,\"id\":\"circus_tent\",\"level\":1},{\"row\":1,\"col\":4,\"id\":\"dusty_coffin\",\"level\":1},{\"row\":0,\"col\":3,\"id\":\"circus_tent\",\"level\":1},{\"row\":0,\"col\":4,\"id\":\"circus_tent\",\"level\":1}]",
+      "submit": ""
+    },
+    "fairy_count": {
+      "f8": "0",
+      "submit": ""
+    },
+    "animal_stamp_count": {
+      "f8": "0",
+      "submit": ""
+    },
+    "encounter_mode": {
+      "f8": "encounter",
+      "submit": ""
+    },
+    "run_stage": {
+      "f8": "2",
+      "submit": ""
+    },
+    "run_node_type": {
+      "f8": "EncounterSecond",
+      "submit": ""
+    },
+    "cursed_bosses_defeated_count": {
+      "f8": "0",
+      "submit": ""
+    },
+    "game_version": {
+      "f8": "0.2.0",
+      "submit": ""
+    },
+    "sticker_order": {
+      "f8": "[\"game_pad\",\"retro_raider\",\"ladybird\"]",
+      "submit": ""
+    },
+    "stamp_order": {
+      "f8": "[\"dangerous_summit\",\"golden_scales\",\"filing_cabinet\",\"cartwheeler\"]",
+      "submit": ""
+    },
+    "snapshot_copy_export_note": {
+      "f8": "not_equipped",
+      "submit": ""
+    },
+    "loadout_fingerprint": {
+      "f8": "Nina Nix|2|game_pad:1,retro_raider:1,ladybird:1|dangerous_summit:1,golden_scales:1,filing_cabinet:1,cartwheeler:1|-|milky_way:left",
+      "submit": ""
+    },
+    "encounter_total_target": {
+      "f8": "67",
+      "submit": ""
+    },
+    "encounter_remaining_target": {
+      "f8": "67",
+      "submit": ""
+    },
+    "encounter_target_display": {
+      "f8": "-67",
+      "submit": ""
+    },
+    "encounter_score_earned": {
+      "f8": "0",
+      "submit": ""
+    },
+    "encounter_historic_source": {
+      "f8": "grid1_no_scoring_cache",
+      "submit": ""
+    },
+    "boss_modifiers": {
+      "f8": "",
+      "submit": "[]"
+    },
+    "bicycle_suited_on_path": {
+      "f8": "",
+      "submit": "0"
+    }
+  },
+  "submit_board_tiles": [
+    {
+      "row": 4,
+      "col": 0,
+      "char": "q",
+      "letter": "Q",
+      "base_score": -10.0,
+      "color": "void",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 4,
+      "col": 1,
+      "char": "e",
+      "letter": "E",
+      "base_score": 1.0,
+      "color": "colorless",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 4,
+      "col": 2,
+      "char": "e",
+      "letter": "E",
+      "base_score": 1.0,
+      "color": "colorless",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 4,
+      "col": 3,
+      "char": "s",
+      "letter": "S",
+      "base_score": 1.0,
+      "color": "colorless",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 4,
+      "col": 4,
+      "char": "d",
+      "letter": "D",
+      "base_score": 2.0,
+      "color": "colorless",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 3,
+      "col": 0,
+      "char": "9",
+      "letter": "9",
+      "base_score": 0.0,
+      "color": "void",
+      "curse": "number",
+      "number_value": 9,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 3,
+      "col": 1,
+      "char": "d",
+      "letter": "D",
+      "base_score": 2.0,
+      "color": "colorless",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 3,
+      "col": 2,
+      "char": "a",
+      "letter": "A",
+      "base_score": -1.0,
+      "color": "void",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 3,
+      "col": 3,
+      "char": "n",
+      "letter": "N",
+      "base_score": 1.0,
+      "color": "colorless",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 3,
+      "col": 4,
+      "char": "r",
+      "letter": "R",
+      "base_score": 1.0,
+      "color": "colorless",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 2,
+      "col": 0,
+      "char": "e",
+      "letter": "E",
+      "base_score": 1.0,
+      "color": "colorless",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 2,
+      "col": 1,
+      "char": "6",
+      "letter": "6",
+      "base_score": 0.0,
+      "color": "void",
+      "curse": "number",
+      "number_value": 6,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 2,
+      "col": 2,
+      "char": "g",
+      "letter": "G",
+      "base_score": 2.0,
+      "color": "colorless",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 2,
+      "col": 3,
+      "char": "🎪",
+      "letter": "L",
+      "base_score": 0.0,
+      "color": "blue",
+      "curse": "item",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "circus_tent",
+      "scattered_item_level": 1,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 2,
+      "col": 4,
+      "char": "k",
+      "letter": "K",
+      "base_score": 50.0,
+      "color": "shiny",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 1,
+      "col": 0,
+      "char": "p",
+      "letter": "P",
+      "base_score": -3.0,
+      "color": "void",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 1,
+      "col": 1,
+      "char": "i",
+      "letter": "I",
+      "base_score": 1.0,
+      "color": "colorless",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 1,
+      "col": 2,
+      "char": "a",
+      "letter": "A",
+      "base_score": -1.0,
+      "color": "void",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 1,
+      "col": 3,
+      "char": "e",
+      "letter": "E",
+      "base_score": 1.0,
+      "color": "colorless",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 1,
+      "col": 4,
+      "char": "⚰️",
+      "letter": "F",
+      "base_score": 0.0,
+      "color": "colorless",
+      "curse": "item",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "dusty_coffin",
+      "scattered_item_level": 1,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 0,
+      "col": 0,
+      "char": "g",
+      "letter": "G",
+      "base_score": -2.0,
+      "color": "void",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 0,
+      "col": 1,
+      "char": "i",
+      "letter": "I",
+      "base_score": 1.0,
+      "color": "colorless",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 0,
+      "col": 2,
+      "char": "c",
+      "letter": "C",
+      "base_score": -3.0,
+      "color": "void",
+      "curse": "letter",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "",
+      "scattered_item_level": null,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 0,
+      "col": 3,
+      "char": "🎪",
+      "letter": "U",
+      "base_score": 0.0,
+      "color": "red",
+      "curse": "item",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "circus_tent",
+      "scattered_item_level": 1,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    },
+    {
+      "row": 0,
+      "col": 4,
+      "char": "🎪",
+      "letter": "V",
+      "base_score": 0.0,
+      "color": "void",
+      "curse": "item",
+      "number_value": null,
+      "fraction_value": null,
+      "consumable": false,
+      "was_consumable": false,
+      "active": true,
+      "take": false,
+      "chess_color": "",
+      "card_suit": "",
+      "card_rank": "",
+      "is_joker": false,
+      "was_glitch": false,
+      "cactus_growth": null,
+      "scattered_item_id": "circus_tent",
+      "scattered_item_level": 1,
+      "void_penalty_steps": null,
+      "is_crossed_out": false,
+      "is_up_and_up_center": false
+    }
+  ],
+  "path_tiles": [
+    {
+      "path_index": 23,
+      "row": 0,
+      "col": 3,
+      "letter": "U",
+      "char": "🎪",
+      "curse": "item",
+      "color": "red",
+      "base_score": 0.0,
+      "consumable": false,
+      "was_consumable": false,
+      "take": false,
+      "card_suit": "",
+      "card_rank": ""
+    },
+    {
+      "path_index": 24,
+      "row": 0,
+      "col": 4,
+      "letter": "V",
+      "char": "🎪",
+      "curse": "item",
+      "color": "void",
+      "base_score": 0.0,
+      "consumable": false,
+      "was_consumable": false,
+      "take": false,
+      "card_suit": "",
+      "card_rank": ""
+    },
+    {
+      "path_index": 19,
+      "row": 1,
+      "col": 4,
+      "letter": "F",
+      "char": "⚰️",
+      "curse": "item",
+      "color": "colorless",
+      "base_score": 0.0,
+      "consumable": false,
+      "was_consumable": false,
+      "take": false,
+      "card_suit": "",
+      "card_rank": ""
+    },
+    {
+      "path_index": 14,
+      "row": 2,
+      "col": 4,
+      "letter": "K",
+      "char": "k",
+      "curse": "letter",
+      "color": "shiny",
+      "base_score": 50.0,
+      "consumable": false,
+      "was_consumable": false,
+      "take": false,
+      "card_suit": "",
+      "card_rank": ""
+    },
+    {
+      "path_index": 13,
+      "row": 2,
+      "col": 3,
+      "letter": "L",
+      "char": "🎪",
+      "curse": "item",
+      "color": "blue",
+      "base_score": 0.0,
+      "consumable": false,
+      "was_consumable": false,
+      "take": false,
+      "card_suit": "",
+      "card_rank": ""
+    }
+  ],
+  "f8_sequence": 1880,
+  "solver_version": "0.1.0",
+  "stale_f8_extras": false,
+  "stale_f8_reason": "",
+  "export_diagnostics_at_f8": {
+    "companion_version": "1.2.3",
+    "game_version": "0.2.0",
+    "export_trigger": "f8",
+    "f8_request_id": "1784175023893",
+    "fingerprint": "Nina Nix|2|game_pad:1,retro_raider:1,ladybird:1|dangerous_summit:1,golden_scales:1,filing_cabinet:1,cartwheeler:1|-|TwoWrongs|milky_way:left|2|4,0:Q/letter/void;4,1:E/letter/colorless;4,2:E/letter/colorless;4,3:S/letter/colorless;4,4:D/letter/colorless;3,0:9/number/void;3,1:D/letter/colorless;3,2:A/letter/void;3,3:N/letter/colorless;3,4:R/letter/colorless;2,0:E/letter/colorless;2,1:6/number/void;2,2:G/letter/colorless;2,3:L/item/blue;2,4:K/letter/shiny;1,0:P/letter/void;1,1:I/letter/colorless;1,2:A/letter/void;1,3:E/letter/colorless;1,4:F/item/colorless;0,0:G/letter/void;0,1:I/letter/colorless;0,2:C/letter/void;0,3:U/item/red;0,4:V/item/void;|1|0|-1",
+    "fingerprint_changed": false,
+    "missing_keys": [],
+    "merge_errors": [],
+    "pin_memory_count": 0,
+    "snapshot_copy_source": "",
+    "last_export_ms": 29,
+    "ui_layout_status": "ok",
+    "snapshot_copy_export_note": "not_equipped"
+  },
+  "game_types": {
+    "submit_method": "EncounterController.SubmitWord",
+    "score_type": "ScoreCalculation.CalculateOverallScore"
+  },
+  "exported_at": "2026-07-16T04:11:28.2062832Z"
+}

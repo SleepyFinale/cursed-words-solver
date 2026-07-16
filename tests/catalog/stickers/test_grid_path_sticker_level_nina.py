@@ -293,7 +293,7 @@ def test_dusty_wolf_off_path_grid_scatter_level_hoi() -> None:
             path=data["path"],
             from_grid_scatter=True,
         )
-        == 8
+        == 6
     )
 
 

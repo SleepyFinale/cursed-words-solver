@@ -69,7 +69,7 @@ This is exactly what solver `_apply_rule` must emulate.
 
 Solver parity requirement:
 
-- preserve step order and floor semantics for multiplicative word effects.
+- preserve step order and toward-zero integer packet math for multiplicative word effects (`score *= bonus; score /= 100` as C# long division).
 - use post-item tile scores (last step), not initial tile scores.
 
 ## Card-specific rules extracted

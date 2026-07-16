@@ -6,13 +6,13 @@ from tests.catalog.stickers.test_default_stickers import _empty_board, _tile
 
 
 def test_dusty_void_units_axons_shape_nine():
-    """VOID letters not in word + path void letter in word + dusty item face."""
+    """VOID tiles whose faces are not among path GetStringRepresentation faces."""
     board = _empty_board()
     loadout = Loadout(extras={"snapshot_copy_slug": "dusty_coffin"})
-    # VOID letters not in 'axons'
+    # VOID letters not matching path faces
     for r, c, letter in [(0, 0, "R"), (0, 2, "F"), (1, 0, "G"), (2, 0, "R"), (2, 2, "V"), (4, 0, "U"), (4, 4, "Y")]:
         board.tiles[r][c] = _tile(r, c, letter, 0, color=TileColor.VOID)
-    # Path void letter N (in 'axons') when Dusty is on path
+    # Path void letter N — excluded because face is on the path
     board.tiles[3][4] = _tile(3, 4, "N", 0, color=TileColor.VOID)
     board.tiles[0][4] = Tile(
         row=0,
@@ -34,11 +34,12 @@ def test_dusty_void_units_axons_shape_nine():
     n = dusty_coffin_void_units(
         board, "axons", loadout, applying_sticker_id="dusty_coffin", path=path
     )
-    assert n == 9
+    # 7 letter voids + dusty item excluded via item:slug + N excluded via path face
+    assert n == 7
     snap_n = dusty_coffin_void_units(
         board, "axons", loadout, applying_sticker_id="snapshot", path=path
     )
-    assert snap_n == 9
+    assert snap_n == 7
 
 
 def test_burrito_grid_two_does_not_add_level():
@@ -288,5 +289,5 @@ def test_blunge_pipeline_matches_trace_replay_score():
     board = parse_board_from_run_state(run_state)
     loadout = parse_run_state(run_state)
     score, _ = ScoringPipeline().score(board, path, word, loadout)
-    assert int(score) == 3811
+    assert int(score) == 4637
     assert int(data["actual_score"]) == 5141

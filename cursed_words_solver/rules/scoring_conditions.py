@@ -1875,271 +1875,44 @@ def dusty_coffin_void_units(
     from_grid_scatter: bool = False,
     after_tombstone: bool = False,
 ) -> int:
-    """Void units for Dusty Coffin / Snapshot copy (per_void_unused × level factor)."""
-    applying = (applying_sticker_id or "").strip().lower()
-    if loadout is not None:
-        extras = loadout.extras or {}
-        if applying == "dusty_coffin":
-            raw = extras.get("dusty_void_units_override")
-            if raw not in (None, ""):
-                try:
-                    return max(0, int(raw))
-                except (TypeError, ValueError):
-                    pass
-        if applying == "snapshot":
-            raw = extras.get("snapshot_void_units_override")
-            if raw not in (None, ""):
-                try:
-                    return max(0, int(raw))
-                except (TypeError, ValueError):
-                    pass
-    off_path_count = void_tiles_letter_not_in_word(board, word, path=path)
-    scatter_tile = (
-        _dusty_coffin_scatter_tile_on_path(board, path)
-        if path is not None
-        else None
-    )
-    if (
-        from_grid_scatter
-        and path is not None
-        and dusty_coffin_scattered_on_path(board, path)
-        and not _dusty_coffin_equipped_in_loadout(loadout)
-    ):
-        count = off_path_count
-        if off_path_count < 2:
-            letters_in_word = set((word or "").lower())
-            for idx in path:
-                tile = board.get_by_index(idx)
-                if tile.curse != CurseType.ITEM:
-                    continue
-                slug = (
-                    str((tile.metadata or {}).get("scattered_item_id") or "")
-                    .strip()
-                    .lower()
-                )
-                if slug != "dusty_coffin" or tile.color != TileColor.COLORLESS:
-                    continue
-                face = path_letter_for_count(tile)
-                if face and face.lower() not in letters_in_word:
-                    count += 1
-                break
-        if off_path_count >= 3:
-            count = off_path_count * 2
-        return count
-    if from_grid_scatter and scatter_tile is None and path is not None:
-        scatter_tile = _dusty_coffin_scatter_tile_off_path(board, path)
-    if (
-        from_grid_scatter
-        and scatter_tile is not None
-        and scatter_tile.color == TileColor.COLORLESS
-        and not _dusty_coffin_equipped_in_loadout(loadout)
-        and dusty_coffin_scattered_on_path(board, path) is False
-    ):
-        return void_tiles_letter_not_in_word(board, word)
-    if (
-        not from_grid_scatter
-        and applying == "dusty_coffin"
-        and _dusty_equipped_one_above_scatter(loadout)
-        and path is not None
-    ):
-        return max(0, off_path_count * 2)
-    eq_dusty = _equipped_sticker_level_for_slug(loadout, "dusty_coffin")
-    scatter_tier = scattered_grid_item_level(loadout)
-    if (
-        not from_grid_scatter
-        and scatter_tile is not None
-        and _dusty_coffin_equipped_in_loadout(loadout)
-        and dusty_coffin_scattered_on_path(board, path)
-        and eq_dusty is not None
-        and eq_dusty > scatter_tier + 1
-        and scatter_tile.color not in (TileColor.VOID, TileColor.COLORLESS)
-    ):
-        return off_path_count
-    if (
-        not from_grid_scatter
-        and scatter_tile is not None
-        and scatter_tile.color in (TileColor.VOID, TileColor.COLORLESS)
-        and _dusty_coffin_equipped_in_loadout(loadout)
-        and dusty_coffin_scattered_on_path(board, path)
-        and not (
-            after_tombstone
-            and scatter_tile.color == TileColor.COLORLESS
-            and eq_dusty is not None
-            and eq_dusty > scatter_tier + 1
-        )
-    ):
-        return off_path_count
-    if (
-        not from_grid_scatter
-        and applying == "dusty_coffin"
-        and after_tombstone
-        and path is not None
-    ):
-        letters_in_word = set((word or "").lower())
-        if dusty_coffin_scattered_on_path(board, path):
-            if _path_has_void_currency_in_word(board, path, letters_in_word):
-                return off_path_count
-            if scatter_tile is not None and scatter_tile.color == TileColor.COLORLESS:
-                eq_dusty = _equipped_sticker_level_for_slug(loadout, "dusty_coffin")
-                scatter_tier = scattered_grid_item_level(loadout)
-                if eq_dusty is not None and eq_dusty > scatter_tier + 1:
-                    if _path_void_letters_in_word_count(
-                        board, path, letters_in_word
-                    ) >= 1:
-                        return off_path_count + 1
-                    return _dusty_void_units_after_tombstone(
-                        board, word, path, off_path_count
-                    )
-        elif _void_tombstone_scatter_on_path(board, path):
-            eq_dusty = _equipped_sticker_level_for_slug(loadout, "dusty_coffin")
-            scatter_tier = scattered_grid_item_level(loadout)
-            if (
-                eq_dusty is not None
-                and eq_dusty > scatter_tier + 1
-                and _dusty_floor_mod_capped(loadout)
-            ):
-                return _dusty_void_units_after_tombstone(
-                    board, word, path, off_path_count
-                )
-        elif _shiny_colored_tombstone_scatter_on_path(board, path):
-            return off_path_count + min(
-                1,
-                _path_void_letters_in_word_count(board, path, letters_in_word),
-            )
-    if (
-        from_grid_scatter
-        and scatter_tile is not None
-        and scatter_tile.color == TileColor.VOID
-        and _dusty_coffin_equipped_in_loadout(loadout)
-    ):
-        return max(0, off_path_count * 2)
-    if (
-        from_grid_scatter
-        and scatter_tile is not None
-        and scatter_tile.color == TileColor.COLORLESS
-        and _dusty_coffin_equipped_in_loadout(loadout)
-    ):
-        if eq_dusty is not None and eq_dusty > scatter_tier + 1:
-            letters_in_word = set((word or "").lower())
-            pv = (
-                _path_void_letters_in_word_count(board, path, letters_in_word)
-                if path is not None
-                else 0
-            )
-            return off_path_count + (1 if pv >= 1 else 0)
-        return off_path_count
-    if (
-        from_grid_scatter
-        and scatter_tile is not None
-        and scatter_tile.color not in (TileColor.VOID, TileColor.COLORLESS)
-        and _dusty_coffin_equipped_in_loadout(loadout)
-        and eq_dusty is not None
-        and eq_dusty > scatter_tier + 1
-    ):
-        return off_path_count
-    count = off_path_count
-    copy_is_dusty = (
-        loadout is not None
-        and snapshot_copy_slug(loadout) == "dusty_coffin"
-    )
-    if path is not None and dusty_coffin_scattered_on_path(board, path):
-        if applying == "dusty_coffin" or (applying == "snapshot" and copy_is_dusty):
-            letters_in_word = set((word or "").lower())
-            if _path_has_void_currency_in_word(board, path, letters_in_word):
-                return off_path_count
-            void_letters_in_word_on_path = _path_void_letters_in_word_count(
-                board, path, letters_in_word
-            )
-            count_path_void_letters_in_word = _path_void_letter_in_word_counts_for_dusty(
-                board, path, letters_in_word
-            )
-            for idx in path:
-                tile = board.get_by_index(idx)
-                slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
-                if slug == "dusty_coffin":
-                    face = path_letter_for_count(tile)
-                    if face and face.lower() not in letters_in_word:
-                        if (
-                            tile.color != TileColor.VOID
-                            and void_letters_in_word_on_path >= 1
-                        ):
-                            # Non-void scattered dusty (e.g. shiny) when a void
-                            # letter on the path is in the word (bethankit, not blunge).
-                            count += 1
-                        elif (
-                            off_path_count > 0
-                            and void_letters_in_word_on_path == 1
-                        ):
-                            # Void dusty face only with exactly one void letter in word on path.
-                            count += 1
-                    continue
-                if tile.color != TileColor.VOID:
-                    continue
-                face = void_tile_face_for_dusty_coffin(tile)
-                if not face:
-                    face = path_letter_for_count(tile)
-                if not face:
-                    continue
-                if (
-                    tile.curse == CurseType.CURRENCY
-                    and (face.lower() == "b" or face == "฿")
-                    and "b" in letters_in_word
-                ):
-                    continue
-                if face.lower() in letters_in_word:
-                    if (
-                        tile.curse == CurseType.LETTER
-                        and count_path_void_letters_in_word
-                    ):
-                        count += 1
-                    continue
-                if off_path_count == 0:
-                    continue
-                count += 1
-    if (
-        path is not None
-        and not from_grid_scatter
-        and applying == "dusty_coffin"
-        and not dusty_coffin_scattered_on_path(board, path)
-        and _void_tombstone_scatter_on_path(board, path)
-    ):
-        # Void Tombstone scatter on path expands dusty pool; Down Under does not.
-        letters_in_word = set((word or "").lower())
-        for idx in path:
-            tile = board.get_by_index(idx)
-            if tile.curse != CurseType.ITEM or tile.color != TileColor.VOID:
-                continue
-            slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
-            if slug != "tombstone":
-                continue
-            face = path_letter_for_count(tile)
-            if face and face.lower() not in letters_in_word:
-                count += 1
-                break
-    if (
-        from_grid_scatter
-        and path is not None
-        and not dusty_coffin_scattered_on_path(board, path)
-        and _dusty_coffin_scatter_tile_off_path(board, path) is not None
-    ):
-        letters_in_word = set((word or "").lower())
-        for idx in path:
-            tile = board.get_by_index(idx)
-            if tile.color != TileColor.VOID:
-                continue
-            face = void_tile_face_for_dusty_coffin(tile) or path_letter_for_count(tile)
-            if not face:
-                continue
-            if (
-                tile.curse == CurseType.CURRENCY
-                and (face.lower() == "b" or face == "฿")
-                and "b" in letters_in_word
-            ):
-                continue
-            if face.lower() in letters_in_word:
-                continue
+    """Void units for Dusty Coffin / Snapshot copy (per_void_unused × level factor).
+
+    Mirrors ``DustyCoffin.ApplyWordBonus``: count available VOID tiles whose
+    ``GetStringRepresentation()`` is not among the path tiles' representations.
+    Scattered ITEM tiles use emoji faces in game (not their letter); we use a
+    stable ``item:{slug}`` token so they never collide with letter voids.
+    """
+    del word, loadout, applying_sticker_id, from_grid_scatter, after_tombstone
+    path_faces: set[str] = set()
+    for idx in path or []:
+        face = _dusty_string_representation(board.get_by_index(idx))
+        if face:
+            path_faces.add(face)
+    count = 0
+    for tile in board.flat:
+        if not board.is_active_index(tile.index):
+            continue
+        if tile.color != TileColor.VOID:
+            continue
+        face = _dusty_string_representation(tile)
+        if not face:
+            continue
+        if face not in path_faces:
             count += 1
     return count
+
+
+def _dusty_string_representation(tile: Tile) -> str:
+    """Face key for Dusty void matching (mirrors GetStringRepresentation groups)."""
+    if tile.curse == CurseType.ITEM:
+        slug = str((tile.metadata or {}).get("scattered_item_id") or "").strip().lower()
+        if slug:
+            return f"item:{slug}"
+        raw = normalize_tile_glyph(tile.char or tile.letter or "").strip()
+        if raw and raw not in {"?", "??"}:
+            return raw
+        return f"item:{tile.index}"
+    return tile_string_representation(tile)
 
 
 def dusty_coffin_word_score_level(

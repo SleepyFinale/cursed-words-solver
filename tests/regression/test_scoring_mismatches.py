@@ -784,10 +784,8 @@ def _adjust_dusty_coffin_level_from_trace(
                     run_state, board, path, "dusty_coffin", level
                 )
             return
-    if level1 > 0 and bonus % level1 == 0:
-        extras["dusty_void_units_override"] = str(bonus // level1)
     if level1 <= 0 or bonus % (level1 * units) == 0:
-        inferred = max(1, bonus // (level1 * units))
+        inferred = max(1, bonus // (level1 * units)) if level1 > 0 else None
     else:
         inferred = None
         for level in range(1, 25):
@@ -1048,10 +1046,8 @@ def _adjust_nat_h4_session_extras(
                     continue
                 if bonus <= 0:
                     continue
-                if item_id == "dusty_coffin":
-                    extras.setdefault("dusty_void_units_override", str(bonus // 8))
-                elif item_id == "snapshot":
-                    extras.setdefault("snapshot_void_units_override", str(bonus // 8))
+                # Dusty/Snapshot void units come from live path-face counting;
+                # do not inject stale unit overrides from the trace.
 
 
 def _adjust_nat_h4_post_cocktail_extras(
@@ -2282,7 +2278,9 @@ def test_scoring_mismatch(case_path: Path) -> None:
         apply_snapshot_phased_session_extras(loadout, board)
         pipeline = ScoringPipeline()
         score, _ = pipeline.score(board, path, word, loadout)
-        assert int(score) == expected
+        from cursed_words_solver.rules.quest_scoring import effective_submit_score
+
+        assert int(effective_submit_score(score, loadout)) == expected
         return
 
     board = parse_board_from_run_state(run_state)
@@ -2416,7 +2414,9 @@ def test_scoring_mismatch(case_path: Path) -> None:
             ]
     else:
         score, _bd = pipeline.score(board, path, word, loadout)
-    score_i = int(score)
+    from cursed_words_solver.rules.quest_scoring import effective_submit_score
+
+    score_i = int(effective_submit_score(score, loadout))
     if case_path.stem in ("20260528_135214", "20260528_135322"):
         assert abs(score_i - expected) <= 15, (
             f"{case_path.stem}: compound word mult rounding within 15 "

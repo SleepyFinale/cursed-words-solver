@@ -114,8 +114,28 @@ namespace CursedWordsSolverCompanion
 
         public static bool PathsEqual(List<int> a, List<int> b)
         {
+            return PathsEqual(a, b, null);
+        }
+
+        /// <summary>
+        /// Compare paths. When board is a shrunk playable grid, compare storage indices
+        /// so playable-width encoding drift cannot false-mismatch.
+        /// </summary>
+        public static bool PathsEqual(List<int> a, List<int> b, BoardSnapshot board)
+        {
             if (a == null || b == null || a.Count != b.Count)
                 return false;
+            if (board != null && IsShrunkPlayableGrid(board))
+            {
+                var sa = MelmodPathToStorageIndices(a, board);
+                var sb = MelmodPathToStorageIndices(b, board);
+                for (var i = 0; i < sa.Count; i++)
+                {
+                    if (sa[i] != sb[i])
+                        return false;
+                }
+                return true;
+            }
             for (var i = 0; i < a.Count; i++)
             {
                 if (a[i] != b[i])
@@ -124,15 +144,66 @@ namespace CursedWordsSolverCompanion
             return true;
         }
 
+        /// <summary>Storage frame width (5 normal/Bat, 6 Call of the Void).</summary>
+        public static int StorageCols(BoardSnapshot board)
+        {
+            if (board == null)
+                return 5;
+            var maxDim = Math.Max(board.rows, board.cols);
+            maxDim = Math.Max(maxDim, board.playable_max_row + 1);
+            maxDim = Math.Max(maxDim, board.playable_max_col + 1);
+            if (board.tiles != null)
+            {
+                foreach (var t in board.tiles)
+                {
+                    if (t == null)
+                        continue;
+                    maxDim = Math.Max(maxDim, Math.Max(t.row, t.col) + 1);
+                }
+            }
+            return maxDim > 5 ? 6 : 5;
+        }
+
+        /// <summary>Playable height for vertical index flip (not playable width).</summary>
+        public static int PlayableHeight(BoardSnapshot board)
+        {
+            if (board == null)
+                return 5;
+            var h = board.playable_max_row - board.playable_min_row + 1;
+            if (h > 0)
+                return h;
+            return board.rows > 0 ? board.rows : 5;
+        }
+
         /// <summary>
         /// True when the player extended the F8 highlight (same board, longer path, same prefix).
         /// </summary>
         public static bool PathsIsPrefixExtension(List<int> suggestionPath, List<int> submittedPath)
         {
+            return PathsIsPrefixExtension(suggestionPath, submittedPath, null);
+        }
+
+        public static bool PathsIsPrefixExtension(
+            List<int> suggestionPath,
+            List<int> submittedPath,
+            BoardSnapshot board
+        )
+        {
             if (suggestionPath == null || submittedPath == null)
                 return false;
             if (suggestionPath.Count == 0 || submittedPath.Count <= suggestionPath.Count)
                 return false;
+            if (board != null && IsShrunkPlayableGrid(board))
+            {
+                var sa = MelmodPathToStorageIndices(suggestionPath, board);
+                var sb = MelmodPathToStorageIndices(submittedPath, board);
+                for (var i = 0; i < sa.Count; i++)
+                {
+                    if (sa[i] != sb[i])
+                        return false;
+                }
+                return true;
+            }
             for (var i = 0; i < suggestionPath.Count; i++)
             {
                 if (suggestionPath[i] != submittedPath[i])
@@ -207,7 +278,8 @@ namespace CursedWordsSolverCompanion
                 return false;
 
             var cols = board.cols > 0 ? board.cols : 5;
-            var displayRow = cols - 1 - (melmodIndex / cols);
+            var playableH = PlayableHeight(board);
+            var displayRow = playableH - 1 - (melmodIndex / cols);
             var displayCol = melmodIndex % cols;
             if (IsShrunkPlayableGrid(board))
             {
@@ -228,8 +300,8 @@ namespace CursedWordsSolverCompanion
         {
             if (!TryMelmodIndexToTopFirstRowCol(melmodIndex, board, out var row, out var col))
                 return melmodIndex;
-            var cols = board.cols > 0 ? board.cols : 5;
-            return row * cols + col;
+            var storageCols = StorageCols(board);
+            return row * storageCols + col;
         }
 
         /// <summary>Convert melmod submit path to solver storage indices.</summary>
@@ -305,14 +377,15 @@ namespace CursedWordsSolverCompanion
             string word,
             List<int> path,
             string boardFingerprint,
-            string loadoutFingerprint
+            string loadoutFingerprint,
+            BoardSnapshot board = null
         )
         {
             if (suggestion == null || suggestion.path == null || suggestion.path.Count == 0)
                 return false;
             if (suggestion.capture_blocked)
                 return false;
-            if (!PathsEqual(suggestion.path, path))
+            if (!PathsEqual(suggestion.path, path, board))
                 return false;
             if (!ConsumablePlacementHelper.BoardFingerprintMatchesSuggestion(
                     suggestion,
@@ -321,12 +394,49 @@ namespace CursedWordsSolverCompanion
             return true;
         }
 
+        static string FormatPathCoords(List<int> path, BoardSnapshot board)
+        {
+            if (path == null || path.Count == 0)
+                return "[]";
+            if (board == null)
+                return "[" + string.Join(",", path) + "]";
+            var parts = new List<string>();
+            foreach (var idx in path)
+            {
+                if (!TryMelmodIndexToTopFirstRowCol(idx, board, out var row, out var col))
+                {
+                    parts.Add(idx.ToString());
+                    continue;
+                }
+                var face = "";
+                if (board.tiles != null)
+                {
+                    foreach (var t in board.tiles)
+                    {
+                        if (t != null && t.row == row && t.col == col)
+                        {
+                            face = !string.IsNullOrEmpty(t.char_display)
+                                ? t.char_display
+                                : (t.letter ?? "");
+                            break;
+                        }
+                    }
+                }
+                if (!string.IsNullOrEmpty(face))
+                    parts.Add(face + "@(" + row + "," + col + ")");
+                else
+                    parts.Add("(" + row + "," + col + ")");
+            }
+            return string.Join(" → ", parts);
+        }
+
         public static string DescribeMismatch(
             LastSuggestion suggestion,
             string word,
             List<int> path,
             string boardFingerprint,
-            string loadoutFingerprint
+            string loadoutFingerprint,
+            BoardSnapshot board = null
         )
         {
             if (suggestion == null)
@@ -340,7 +450,7 @@ namespace CursedWordsSolverCompanion
                 else
                     parts.Add("capture blocked");
             }
-            var pathMatches = PathsEqual(suggestion.path, path);
+            var pathMatches = PathsEqual(suggestion.path, path, board);
             var boardMatches = ConsumablePlacementHelper.BoardFingerprintMatchesSuggestion(
                 suggestion,
                 boardFingerprint);
@@ -353,7 +463,7 @@ namespace CursedWordsSolverCompanion
             {
                 if (
                     boardMatches
-                    && PathsIsPrefixExtension(suggestion.path, path)
+                    && PathsIsPrefixExtension(suggestion.path, path, board)
                 )
                 {
                     parts.Add(
@@ -383,6 +493,13 @@ namespace CursedWordsSolverCompanion
                         + string.Join(",", suggestion.path ?? new List<int>())
                         + "]"
                 );
+                if (board != null)
+                {
+                    parts.Add("submitted tiles: " + FormatPathCoords(path, board));
+                    parts.Add(
+                        "suggestion tiles: " + FormatPathCoords(suggestion.path, board)
+                    );
+                }
             }
 
             if (!boardMatches)

@@ -276,15 +276,20 @@ def _pending_multiplier_rule_id(entry: float | tuple[float, str]) -> str:
     return ""
 
 
+def _score_packet_trunc(value: float) -> float:
+    """Match C# long ScorePacket multiply/divide: truncate toward zero."""
+    return float(math.trunc(value))
+
+
 def _apply_immediate_word_multiplier(
     state: dict[str, Any], factor: float, rule_id: str = ""
 ) -> None:
-    """Apply ×WORD to current tile+word subtotal with floor (before +tile stickers)."""
+    """Apply ×WORD to current tile+word subtotal (toward-zero; before +tile stickers)."""
     if factor == 1.0:
         return
     tile_sum = sum(state["tile_scores"])
     subtotal = tile_sum + state["word_score"]
-    new_total = math.floor(subtotal * factor)
+    new_total = _score_packet_trunc(subtotal * factor)
     state["word_score"] = new_total - tile_sum
     state["multiplier"] *= factor
 
@@ -295,7 +300,7 @@ def _apply_immediate_word_multiplier_word_only(
     """×WORD SCORE on the word track only (Wrestlers after other word bonuses)."""
     if factor == 1.0:
         return
-    state["word_score"] = math.floor(state["word_score"] * factor)
+    state["word_score"] = _score_packet_trunc(state["word_score"] * factor)
     state["multiplier"] *= factor
 
 
@@ -310,7 +315,7 @@ def _apply_immediate_word_percent(
         return
     tile_sum = sum(state["tile_scores"])
     subtotal = tile_sum + state["word_score"]
-    new_total = math.floor(subtotal * factor)
+    new_total = _score_packet_trunc(float(subtotal) * percent / 100.0)
     state["word_score"] = new_total - tile_sum
     if factor != 1.0:
         state["multiplier"] *= factor
@@ -417,11 +422,19 @@ def _flush_word_multipliers_to_tiles(state: dict[str, Any]) -> None:
     state["pending_word_multipliers"].clear()
 
 
-def _add_word_score(state: dict[str, Any], bonus: float) -> None:
+def _add_word_score(
+    state: dict[str, Any], bonus: float, rule_id: str = ""
+) -> None:
     if not bonus:
         return
     _flush_word_multipliers_to_tiles(state)
     state["word_score"] += bonus
+    # Queue additive WordBonus only for grid-path items so they interleave with
+    # path ×WORD at finalize (GetScoreFromScoreCalcInfo). Equipped +WORD SCORE
+    # stays in word_score and is folded in relative to equipped ×WORD as before.
+    if state.get("_applying_grid_path_scatter"):
+        rid = rule_id or str(state.get("_current_rule_id") or "")
+        _append_pending_word_finalize_step(state, "add", bonus, rid)
 
 
 def _subtotal_for_trace(state: dict[str, Any]) -> float:
@@ -648,12 +661,24 @@ def _apply_one_finalize_mult_step(
     trace: list[dict[str, Any]] | None = None,
 ) -> float:
     kind, value, rule_id = step[0], step[1], step[2]
+    if kind == "add":
+        bonus = float(value)
+        total = float(total) + bonus
+        if trace is not None:
+            fields: dict[str, Any] = {
+                "detail": f"+{bonus:g} word (queued additive)",
+            }
+            if rule_id:
+                fields["rule_id"] = rule_id
+            _trace_step(state, "add", **fields)
+        return total
     if kind == "percent":
         percent = int(value)
         factor = float(percent) / 100.0
-        total = math.floor(float(total) * percent / 100.0)
+        # C# ScorePacket: score *= percent; score /= 100L (truncate toward zero).
+        total = _score_packet_trunc(float(total) * percent / 100.0)
         if trace is not None:
-            fields: dict[str, Any] = {
+            fields = {
                 "factor": factor,
                 "percent": percent,
                 "detail": f"×{factor:g} word (word_bonus:{percent})",
@@ -665,11 +690,11 @@ def _apply_one_finalize_mult_step(
     factor = float(value)
     if factor == 1.0:
         return total
-    total = math.floor(total * factor)
+    total = _score_packet_trunc(total * factor)
     if trace is not None:
         fields = {
             "factor": factor,
-            "detail": f"×{factor} word (floor)",
+            "detail": f"×{factor} word (trunc)",
         }
         if rule_id:
             fields["rule_id"] = rule_id
@@ -696,6 +721,14 @@ def _apply_pending_word_finalize_steps(
     entries = _sort_finalize_steps_by_sticker_order(list(entries), loadout)
     if not entries:
         return subtotal
+
+    def _queued_add_total(steps_list: list[tuple]) -> float:
+        return sum(
+            float(step[1])
+            for step in steps_list
+            if isinstance(step, tuple) and len(step) >= 2 and step[0] == "add"
+        )
+
     if (
         not multiply_word_score_only
         and not multiply_tile_sum_only
@@ -703,7 +736,8 @@ def _apply_pending_word_finalize_steps(
     ):
         grid_entries = [e for e in entries if _finalize_step_source(e) == "grid"]
         other_entries = [e for e in entries if _finalize_step_source(e) != "grid"]
-        word_part = float(state.get("word_score", 0))
+        queued_add = _queued_add_total(entries)
+        word_extra = float(state.get("word_score", 0)) - queued_add
         if (
             grid_entries
             and other_entries
@@ -716,27 +750,33 @@ def _apply_pending_word_finalize_steps(
                 total = _apply_one_finalize_mult_step(
                     total, step, state, trace=trace
                 )
-            if word_part:
-                total += word_part
+            if word_extra:
+                total += word_extra
             apply_green_tile_word_transfer(
                 board,
                 path,
                 state,
                 trace_step=_trace_step if trace is not None else None,
             )
+            # Green transfer may have added to word_score after we snapped word_extra.
+            green_bump = float(state.get("word_score", 0)) - queued_add - word_extra
+            if green_bump:
+                total += green_bump
             for step in other_entries:
                 total = _apply_one_finalize_mult_step(
                     total, step, state, trace=trace
                 )
             return total
-        if grid_entries or word_part != 0:
+        if grid_entries or other_entries or word_extra != 0:
             total = float(sum(state["tile_scores"]))
+            # Walk grid steps in path order so additives interleave with ×WORD.
             for step in grid_entries:
                 total = _apply_one_finalize_mult_step(
                     total, step, state, trace=trace
                 )
-            if word_part:
-                total += word_part
+            # Non-queued word track (e.g. already-transferred GREEN) before equipped ×WORD.
+            if word_extra:
+                total += word_extra
             for step in other_entries:
                 total = _apply_one_finalize_mult_step(
                     total, step, state, trace=trace
@@ -745,6 +785,8 @@ def _apply_pending_word_finalize_steps(
     if state.get("_wad_deferred_grid_word_mult"):
         total = float(subtotal)
         for step in entries:
+            if isinstance(step, tuple) and step[0] == "add":
+                continue  # already in word_score / subtotal
             total = _apply_one_finalize_mult_step(total, step, state, trace=trace)
         return total
     green_word_track = bool(state.get("_green_transferred"))
@@ -759,8 +801,11 @@ def _apply_pending_word_finalize_steps(
             tile_sum = float(sum(state["tile_scores"]))
             word_part = float(state["word_score"])
             total = tile_sum
+        # Additive WordBonus steps are already in word_score; only apply ×WORD here.
+        entries = [e for e in entries if not (isinstance(e, tuple) and e[0] == "add")]
     elif multiply_word_score_only:
         total = float(state["word_score"])
+        entries = [e for e in entries if not (isinstance(e, tuple) and e[0] == "add")]
     else:
         total = float(subtotal)
     for step in entries:
@@ -856,7 +901,7 @@ def _apply_compound_post_cocktail_finalize(
     subtotal = float(sum(state["tile_scores"]) + state["word_score"])
     total = subtotal
     for percent in post:
-        total = math.floor(total * int(percent) / 100.0)
+        total = _score_packet_trunc(total * int(percent) / 100.0)
         if trace is not None:
             factor = float(percent) / 100.0
             _trace_step(
@@ -1034,7 +1079,7 @@ def _apply_snapshot_phased_word_finalize(
             continue
         kind, value, _rule_id = step[0], step[1], step[2]
         if kind == "percent":
-            total = int(math.floor(float(total) * int(value) / 100.0))
+            total = int(_score_packet_trunc(float(total) * int(value) / 100.0))
             percent_seen += 1
             if percent_seen == add_after_percents and word_add:
                 total += word_add
@@ -1049,8 +1094,10 @@ def _apply_snapshot_phased_word_finalize(
                     rule_id=str(_rule_id or ""),
                     detail=f"×{factor:g} word (snapshot-phased tile sum)",
                 )
-        elif kind == "multiply":
-            total = int(math.floor(total * float(value)))
+        elif kind == "add":
+            total = int(total + float(value))
+        elif kind == "multiply" or kind == "mult":
+            total = int(_score_packet_trunc(total * float(value)))
             if trace is not None:
                 _trace_step(
                     state,
@@ -2298,6 +2345,7 @@ class ScoringPipeline:
         effects_before = len(state.get("effects") or [])
         rule_trace_context: dict[str, Any] = {}
         rule_id = applying_sticker_id or str(rule.get("id", "") or rule.get("name", ""))
+        state["_current_rule_id"] = rule_id
         value = (
             sticker_rule_int(level, rule)
             if "base" in rule
@@ -2523,7 +2571,6 @@ class ScoringPipeline:
             elif word_mode == "per_void_unused":
                 from cursed_words_solver.rules.scoring_conditions import (
                     dusty_coffin_word_score_level,
-                    snapshot_per_void_unused_override,
                 )
 
                 from_grid = bool(state.get("_applying_grid_path_scatter"))
@@ -2549,10 +2596,6 @@ class ScoringPipeline:
                     from_grid_scatter=from_grid,
                     after_tombstone=after_tombstone,
                 )
-                if (applying_sticker_id or "").lower() == "snapshot":
-                    override = snapshot_per_void_unused_override(loadout)
-                    if override is not None:
-                        n = override
                 bonus = sticker_rule_int(dusty_level, rule) * n
             elif word_mode == "per_unused_red":
                 n = unused_red_tiles_on_board(board, path)

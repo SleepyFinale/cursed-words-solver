@@ -40,13 +40,15 @@ def melmod_index_from_storage(board: Board, idx: int) -> int:
     """Storage grid index to melmod submit index (SuggestionMatcher.CoordsToSolverIndex)."""
     row, col = board.coords_at(idx)
     cols = board.cols or board.storage_cols
-    return (cols - 1 - row) * cols + col
+    rows = board.rows or board.storage_rows
+    return (rows - 1 - row) * cols + col
 
 
 def storage_index_from_melmod(board: Board, idx: int) -> int:
     """Melmod submit index back to storage grid index."""
     cols = board.cols or board.storage_cols
-    display_row = cols - 1 - (idx // cols)
+    rows = board.rows or board.storage_rows
+    display_row = rows - 1 - (idx // cols)
     col = idx % cols
     return board.index_at(display_row, col)
 
@@ -59,12 +61,14 @@ def path_to_melmod_indices(board: Board, path: list[int]) -> list[int]:
             return list(path)
         min_r, max_r, min_c, _max_c = bounds
         cols = board.cols
+        playable_h = max_r - min_r + 1
         out: list[int] = []
         for idx in path:
             row, col = board.coords_at(idx)
+            # display_row 0 = bottom of playable (Unity y); flip with height not width.
             display_row = max_r - row
             display_col = col - min_c
-            out.append((cols - 1 - display_row) * cols + display_col)
+            out.append((playable_h - 1 - display_row) * cols + display_col)
         return out
     return [melmod_index_from_storage(board, idx) for idx in path]
 
@@ -78,9 +82,10 @@ def path_from_melmod_indices(board: Board, path: list[int]) -> list[int]:
         min_r, max_r, min_c, _max_c = bounds
         cols = board.cols
         storage_cols = board.storage_cols
+        playable_h = max_r - min_r + 1
         out: list[int] = []
         for idx in path:
-            display_row = cols - 1 - (idx // cols)
+            display_row = playable_h - 1 - (idx // cols)
             display_col = idx % cols
             row = max_r - display_row
             col = min_c + display_col

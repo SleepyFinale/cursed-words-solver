@@ -159,7 +159,8 @@ namespace CursedWordsSolverCompanion
                     _word,
                     _path,
                     _boardFingerprint,
-                    _loadoutFingerprint
+                    _loadoutFingerprint,
+                    _boardAtSubmit
                 )
             )
             {
@@ -176,7 +177,8 @@ namespace CursedWordsSolverCompanion
                             _word,
                             _path,
                             _boardFingerprint,
-                            _loadoutFingerprint
+                            _loadoutFingerprint,
+                            _boardAtSubmit
                         )
                 );
             }
