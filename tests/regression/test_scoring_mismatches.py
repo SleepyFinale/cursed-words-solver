@@ -1318,7 +1318,7 @@ def _infer_bicycle_accumulator_from_trace(
 
 
 def _merge_submit_card_metadata(run_state: dict, data: dict) -> None:
-    """Apply submit-time card_suit from capture when F8 board lacked suits."""
+    """Apply submit-time card_suit from capture; empty suit clears stale F8 suits."""
     submit_tiles = data.get("submit_board_tiles")
     if not isinstance(submit_tiles, list):
         return
@@ -1328,16 +1328,15 @@ def _merge_submit_card_metadata(run_state: dict, data: dict) -> None:
     tiles = board.get("tiles")
     if not isinstance(tiles, list):
         return
-    card_at: dict[tuple[int, int], tuple[str, str]] = {}
+    card_at: dict[tuple[int, int], tuple[str, str, bool]] = {}
     for t in submit_tiles:
         if not isinstance(t, dict):
             continue
-        suit = str(t.get("card_suit") or "").strip()
-        if not suit:
-            continue
         key = (int(t["row"]), int(t["col"]))
+        suit = str(t.get("card_suit") or "").strip()
         rank = str(t.get("card_rank") or "").strip()
-        card_at[key] = (suit, rank)
+        is_joker = t.get("is_joker") in (True, "true", "True", 1, "1")
+        card_at[key] = (suit, rank, is_joker)
 
     if not card_at:
         return
@@ -1348,10 +1347,11 @@ def _merge_submit_card_metadata(run_state: dict, data: dict) -> None:
         key = (int(tile.get("row", -1)), int(tile.get("col", -1)))
         if key not in card_at:
             continue
-        suit, rank = card_at[key]
+        suit, rank, is_joker = card_at[key]
+        # Set-or-clear: empty submit suit must wipe stale F8 card_suit.
         tile["card_suit"] = suit
-        if rank:
-            tile["card_rank"] = rank
+        tile["card_rank"] = rank
+        tile["is_joker"] = is_joker
 
 
 def _birthday_accumulated_from_predicted_trace(data: dict) -> int | None:

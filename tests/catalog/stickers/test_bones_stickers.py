@@ -324,6 +324,29 @@ def test_kadomatsu_three_of_a_kind():
     assert score == base + 80
 
 
+def test_kadomatsu_pair_plus_card_suit_joker_without_is_joker_flag():
+    """path_tiles often export card_suit=joker without is_joker; still counts for TOAK."""
+    board = _empty_board()
+    board.tiles[0][0] = _card(0, 0, "O", "diamonds")
+    board.tiles[0][1] = _card(0, 1, "O", "spades")
+    board.tiles[0][2] = Tile(
+        row=0,
+        col=2,
+        char="?",
+        letter="?",
+        base_score=0,
+        color=TileColor.COLORLESS,
+        curse=CurseType.WILDCARD,
+        metadata={"source": "melmod", "card_suit": "joker"},  # no is_joker
+    )
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="kadomatsu", name="Kadomatsu", level=1)])
+    score, bd = pipeline.score(board, [0, 1, 2], "oo?", loadout)
+    base, base_bd = pipeline.score(board, [0, 1, 2], "oo?", Loadout())
+    assert bd["word_score"] == base_bd["word_score"] + 80
+    assert score == base + 80
+
+
 def test_peacock_flush_multiply():
     board = _empty_board()
     path = []

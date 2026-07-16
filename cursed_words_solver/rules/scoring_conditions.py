@@ -29,6 +29,7 @@ from cursed_words_solver.rules.chess_tiles import (
     solve_has_chess_pieces,
 )
 from cursed_words_solver.rules.stamp_behaviors import (
+    FLAG_CARD_SUIT_FIRST_LETTER,
     FLAG_CHESS_ALLIES_CAN_TAKE,
     FLAG_CHESS_KING_QUEEN_ITEM_MOVEMENT,
     FLAG_HORIZONTAL_WRAP,
@@ -386,6 +387,21 @@ def tile_is_wobbly_from_loadout(tile: Tile, loadout: Loadout | None) -> bool:
         return True
     if flag_test(flags, FLAG_J_AS_H_OR_Y) and face == "j":
         return True
+    # Card Shark: suited letter whose face ≠ suit letter is wobbly
+    # (Tile.IsDisplayingAsVariableLetter CardShark branch).
+    if flag_test(flags, FLAG_CARD_SUIT_FIRST_LETTER) and is_card_tile(tile):
+        suit = card_suit(tile)
+        suit_letter = {
+            "clubs": "c",
+            "diamonds": "d",
+            "hearts": "h",
+            "spades": "s",
+        }.get(suit or "")
+        if suit_letter and face and face != suit_letter:
+            # Game: Spades + Letter "$" is not wobbly.
+            if suit == "spades" and (tile.letter or tile.char or "") == "$":
+                return False
+            return True
     return False
 
 
@@ -446,8 +462,21 @@ def cursed_word_played(_board: Board, path: list[int], word: str) -> bool:
 
 
 def is_joker_tile(tile: Tile) -> bool:
+    """True for melmod is_joker flag or live Suit.Joker on non-letter glyphs.
+
+    path_tiles often export card_suit=joker without is_joker on wildcard tiles.
+    Stale card_suit=joker on plain LETTER tiles is cleared in-game (SetGlyphType)
+    and must not count as a joker.
+    """
     val = tile.metadata.get("is_joker")
-    return val is True or val == "true" or val == 1 or val == "1"
+    if val is True or val == "true" or val == 1 or val == "1":
+        return True
+    raw = tile.metadata.get("card_suit")
+    if raw and str(raw).strip().lower() == "joker":
+        if tile.curse in (CurseType.LETTER, CurseType.UNKNOWN):
+            return False
+        return True
+    return False
 
 
 def effective_is_face_card_start(tile: Tile) -> bool:
@@ -467,7 +496,14 @@ def is_card_tile(tile: Tile) -> bool:
         return False
     if tile.curse == CurseType.CARD:
         return True
-    return bool(tile.metadata.get("card_suit"))
+    raw = tile.metadata.get("card_suit")
+    if not raw:
+        return False
+    suit = str(raw).strip().lower()
+    # Stale Suit.Joker on letters is not a real card (game clears to None).
+    if suit in ("", "joker", "none"):
+        return False
+    return True
 
 
 def is_poker_card_tile(tile: Tile) -> bool:

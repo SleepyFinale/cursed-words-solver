@@ -712,6 +712,8 @@ namespace CursedWordsSolverCompanion
 
         /// <summary>
         /// Merge submit-time card metadata into an F8 run_state board snapshot.
+        /// Sets or clears card_suit / card_rank / is_joker from live submit (empty
+        /// suit wipes stale F8 suits — additive-only merge caused phantom suits).
         /// </summary>
         public static void MergeSubmitCardMetadataIntoRunState(
             Dictionary<string, object> runStateSnapshot,
@@ -724,7 +726,7 @@ namespace CursedWordsSolverCompanion
             var cardAt = new Dictionary<string, BoardTileSnapshot>();
             foreach (var tile in submitBoard.tiles)
             {
-                if (tile == null || string.IsNullOrEmpty(tile.card_suit))
+                if (tile == null)
                     continue;
                 cardAt[tile.row + "," + tile.col] = tile;
             }
@@ -752,9 +754,10 @@ namespace CursedWordsSolverCompanion
                 BoardTileSnapshot src;
                 if (!cardAt.TryGetValue(row + "," + col, out src) || src == null)
                     continue;
-                tile["card_suit"] = src.card_suit;
-                if (!string.IsNullOrEmpty(src.card_rank))
-                    tile["card_rank"] = src.card_rank;
+                // Set-or-clear: empty submit suit must wipe stale F8 card_suit.
+                tile["card_suit"] = src.card_suit ?? "";
+                tile["card_rank"] = src.card_rank ?? "";
+                tile["is_joker"] = src.is_joker;
             }
 
             runStateSnapshot["board"] = boardJson.ToObject<Dictionary<string, object>>();
@@ -1881,19 +1884,21 @@ namespace CursedWordsSolverCompanion
         }
 
         /// <summary>
-        /// In-game CardSuit only (packet + GetCardSuit methods). Skips display/field
-        /// heuristics that false-positive on plain letter tiles (Bicycle/Hanafuda).
+        /// Live Tile.CardSuit / GetSuit / GetCardSuit only. Does not read GetValue()
+        /// ScorePacket (false-positives suits on plain letters → amulet overcounts).
         /// </summary>
         private static string MapCardSuitStrict(Tile tile)
         {
             if (tile == null)
                 return "";
 
-            var fromPacket = TryMapCardSuitFromPacket(tile);
-            if (!string.IsNullOrEmpty(fromPacket))
-                return fromPacket;
+            // Prefer GetSuit() / GetCardSuit() — mirrors game IsCursed CardSuit != 0.
+            var fromMethods = TryMapCardSuitFromMethods(tile);
+            if (!string.IsNullOrEmpty(fromMethods))
+                return fromMethods;
 
-            return TryMapCardSuitFromMethods(tile);
+            // Public CardSuit field (decompiled Tile.CardSuit).
+            return MapCardSuitFromFields(tile);
         }
 
         private static string TryMapCardSuitFromMethods(Tile tile)
@@ -2122,6 +2127,7 @@ namespace CursedWordsSolverCompanion
         {
             foreach (var name in new[]
             {
+                "CardSuit",
                 "suit",
                 "cardSuit",
                 "playingCardSuit",
@@ -2134,6 +2140,7 @@ namespace CursedWordsSolverCompanion
                         System.Reflection.BindingFlags.Public
                             | System.Reflection.BindingFlags.NonPublic
                             | System.Reflection.BindingFlags.Instance
+                            | System.Reflection.BindingFlags.IgnoreCase
                     );
                     if (field == null)
                         continue;

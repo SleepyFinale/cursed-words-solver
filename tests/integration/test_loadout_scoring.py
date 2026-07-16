@@ -419,8 +419,8 @@ def test_12sa5_void_number_on_path_no_ending_bonus():
     assert "VOID tile ending path" not in effects
 
 
-def test_n23j5s_void_predecessor_scores_73():
-    """Hayley: Abacus R1, Brain L2, Birthday; tile before void 5 gets +2 base."""
+def test_n23j5s_scores_138_hayley_abacus_brain():
+    """Hayley: Abacus R1, Brain L2, Birthday — no built-in letter-before-void bonus."""
     board = _board_n23j5s_fixture()
     path = [16, 12, 6, 5, 10, 11]
     loadout = Loadout(
@@ -438,8 +438,8 @@ def test_n23j5s_void_predecessor_scores_73():
         },
     )
     score, bd = ScoringPipeline().score(board, path, "n23j5s", loadout)
-    assert score == 73.0
-    assert "+2 tile before VOID on path" in " ".join(bd["pipeline"]["effects"])
+    assert score == 138.0
+    assert "tile before VOID" not in " ".join(bd["pipeline"]["effects"])
 
 
 def test_12ne5_abacus_coloured_number_bonus_scores_52():
@@ -483,8 +483,8 @@ def test_12ne5_abacus_coloured_number_bonus_scores_52():
     assert "+10 coloured number tile" in " ".join(bd["pipeline"]["effects"])
 
 
-def test_a2u4ej7_scores_62_with_void_end_and_abacus():
-    """Path ends on void 7; red 2 gets +10 Abacus; j before void gets +2."""
+def test_a2u4ej7_scores_78_with_void_end_and_abacus():
+    """Path ends on void 7; red 2 gets +10 Abacus. No letter-before-void +2 (Tile.GetValue)."""
     def tile(r, c, ch, score, *, color=TileColor.COLORLESS, curse=CurseType.LETTER, nv=None):
         return Tile(
             row=r,
@@ -530,11 +530,11 @@ def test_a2u4ej7_scores_62_with_void_end_and_abacus():
         },
     )
     score, bd = ScoringPipeline().score(board, path, "a2u4ej7", loadout)
-    assert score == 82.0
-    assert "tile before VOID" in " ".join(bd["pipeline"]["effects"])
+    assert score == 78.0
+    assert "tile before VOID" not in " ".join(bd["pipeline"]["effects"])
 
 
-def test_a2u4ej7_melmod_partial_red2_base_scores_64():
+def test_a2u4ej7_melmod_partial_red2_base_scores_80():
     """Melmod may export red 2 as base 3; Abacus still +10 on coloured number only."""
     def tile(r, c, ch, score, *, color=TileColor.COLORLESS, curse=CurseType.LETTER, nv=None):
         return Tile(
@@ -580,8 +580,9 @@ def test_a2u4ej7_melmod_partial_red2_base_scores_64():
             "pin_right_level": "1",
         },
     )
-    score, _ = ScoringPipeline().score(board, path, "a2u4ej7", loadout)
-    assert score == 84.0
+    score, bd = ScoringPipeline().score(board, path, "a2u4ej7", loadout)
+    assert score == 80.0
+    assert "tile before VOID" not in " ".join(bd["pipeline"]["effects"])
 
 
 def test_c23t5m_melmod_colorless_red2_inferred_scores_90():
@@ -627,8 +628,8 @@ def test_c23t5m_melmod_colorless_red2_inferred_scores_90():
     assert "+20 coloured number tile (2" in effects
 
 
-def test_shiny_letter_before_void_number_no_path_bonus():
-    """Shiny packet base_score (50) must not satisfy void-path threshold; only Scrabble ≥ 8 does."""
+def test_shiny_letter_before_void_number_scores_packet_only():
+    """Shiny packet base_score (50) + void number; no invented letter-before-void +2."""
     def tile(r, c, ch, score, *, color=TileColor.COLORLESS, curse=CurseType.LETTER, nv=None):
         return Tile(
             row=r,
@@ -659,12 +660,12 @@ def test_shiny_letter_before_void_number_no_path_bonus():
     score, bd = ScoringPipeline().score(board, path, "g6", loadout)
     effects = " ".join(bd["pipeline"]["effects"])
     assert "tile before VOID" not in effects
-    # shiny G (50) + void 6 (-6) = 44; wrong +2 on G would yield 46
+    # shiny G (50) + void 6 (-6) = 44
     assert score == 44.0
 
 
-def test_void_path_no_bonus_before_void_run():
-    """Letter before void number gets no +2 when next void is followed by another void number."""
+def test_lexographer_peroxy_no_void_path_bonus():
+    """Mismatch 20260715_160456: Lexographer zeros cursed tiles; X stays 8 (not +2)."""
     def tile(r, c, ch, score, *, color=TileColor.COLORLESS, curse=CurseType.LETTER, nv=None):
         return Tile(
             row=r,
@@ -679,15 +680,30 @@ def test_void_path_no_bonus_before_void_run():
         )
 
     grid = [[tile(r, c, "a", 1) for c in range(5)] for r in range(5)]
-    grid[2][2] = tile(2, 2, "x", 8)
-    grid[3][1] = tile(3, 1, "4", 0, curse=CurseType.NUMBER, nv=4, color=TileColor.VOID)
-    grid[4][2] = tile(4, 2, "5", 0, curse=CurseType.NUMBER, nv=5, color=TileColor.VOID)
+    # path indices for [2,7,13,17,16,11] on 5x5: row-major
+    # 2=(0,2) P, 7=(1,2) E, 13=(2,3) ?, 17=(3,2) O, 16=(3,1) X, 11=(2,1) void6
+    grid[0][2] = tile(0, 2, "P", 3)
+    grid[1][2] = tile(1, 2, "E", 1)
+    grid[2][3] = tile(2, 3, "?", 1, curse=CurseType.WILDCARD, color=TileColor.RED)
+    grid[3][2] = tile(3, 2, "O", 1)
+    grid[3][1] = tile(3, 1, "X", 8)
+    grid[2][1] = tile(2, 1, "6", 0, curse=CurseType.NUMBER, nv=6, color=TileColor.VOID)
     board = Board(tiles=grid, money=0)
-    path = [12, 16, 22]
-    score, bd = ScoringPipeline().score(board, path, "x45", Loadout())
-    effects = " ".join(bd["pipeline"]["effects"])
-    assert "tile before VOID" not in effects
-    assert sum(bd["pipeline"]["tile_scores"]) == 8.0 + (-4) + (-5)
+    path = [2, 7, 13, 17, 16, 11]
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="amphora", name="Amphora", level=2)],
+        stamps=[LoadoutItem(id="haunted_mirror", name="Haunted Mirror", level=1)],
+        extras={
+            "pin_effect": "bucket",
+            "challenge_game_class": "Lexographer",
+            "challenge_name": "Lexographer",
+        },
+    )
+    score, bd = ScoringPipeline().score(board, path, "peroxy", loadout)
+    assert score == 13.0
+    assert "tile before VOID" not in " ".join(bd["pipeline"]["effects"])
+    # P3 + E1 + ?0 + O1 + X8 + void0 = 13
+    assert bd["pipeline"]["tile_scores"] == [3.0, 1.0, 0.0, 1.0, 8.0, 0.0]
 
 
 def test_m23ders_void_letters_no_path_bonus_scores_36():

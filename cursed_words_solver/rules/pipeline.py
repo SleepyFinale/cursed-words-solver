@@ -14,7 +14,6 @@ from cursed_words_solver.models import (
     TileColor,
 )
 from cursed_words_solver.rules.base_scoring import (
-    _scrabble_value,
     microscope_init_contribution,
     tile_base_contribution,
 )
@@ -226,42 +225,7 @@ def _init_state(
     }
 
 
-def _void_number_on_path(tile: Tile) -> bool:
-    """Built-in void path bonuses apply to void-cursed NUMBER tiles only (not void letters)."""
-    return tile.color == TileColor.VOID and tile.curse == CurseType.NUMBER
 
-
-def _apply_void_path_bonuses(
-    board: Board, path: list[int], loadout: Loadout, state: dict[str, Any]
-) -> None:
-    """Built-in void path bonus: +2 TILE SCORE on a letter (Scrabble value ≥ 8) immediately before a void NUMBER.
-    In-game, the bonus does not apply when that void number is immediately followed by another
-    void number on the path (consecutive void-number run).
-    """
-    bonus = 2
-    before_void = 0
-    before_void_bonus_total = 0
-    for i in range(len(path) - 1):
-        next_tile = board.get_by_index(path[i + 1])
-        if not _void_number_on_path(next_tile):
-            continue
-        if i + 2 < len(path) and _void_number_on_path(board.get_by_index(path[i + 2])):
-            continue
-        prev_tile = board.get_by_index(path[i])
-        if prev_tile.curse != CurseType.LETTER or _scrabble_value(prev_tile.letter) < 8:
-            continue
-        state["tile_scores"][i] += bonus
-        before_void += 1
-        before_void_bonus_total += bonus
-    if before_void:
-        state["effects"].append(
-            f"+{before_void_bonus_total} tile before VOID on path ({before_void})"
-        )
-        _trace_step(
-            state,
-            "void_path",
-            detail=f"+{before_void_bonus_total} before void number",
-        )
 
 
 def _pending_multiplier_factor(entry: float | tuple[float, str]) -> float:
@@ -1593,7 +1557,6 @@ class ScoringPipeline:
                 loadout,
                 trace_step=_trace_step if trace is not None else None,
             )
-        _apply_void_path_bonuses(board, path, loadout, state)
         from cursed_words_solver.rules.scoring_conditions import (
             grid_path_word_mult_defer_for_pin,
             grid_path_word_mult_is_immediate,

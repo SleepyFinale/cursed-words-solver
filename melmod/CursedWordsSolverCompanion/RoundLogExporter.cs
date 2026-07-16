@@ -564,6 +564,7 @@ namespace CursedWordsSolverCompanion
                         ["take"] = tile.take,
                         ["card_suit"] = tile.card_suit ?? "",
                         ["card_rank"] = tile.card_rank ?? "",
+                        ["is_joker"] = tile.is_joker,
                     }
                 );
             }
