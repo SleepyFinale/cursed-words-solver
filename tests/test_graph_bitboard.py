@@ -16,7 +16,7 @@ from cursed_words_solver.graph_bitboard import (
     iter_mask,
     mask_from_indices,
 )
-from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile
+from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.rules.chess_tiles import (
     DIRS_8,
     _ray_neighbors_mask,
@@ -100,6 +100,33 @@ def test_ray_lines_exclude_start():
                 if not (0 <= r < 5 and 0 <= c < 5):
                     break
                 assert idx == index_of(r, c)
+
+
+def test_ray_lines_for_board_6x6_bishop_diagonal():
+    """6x6 boards must not reuse 5x5 RAY_LINES indices for sliding pieces."""
+    from cursed_words_solver.graph_bitboard import ray_lines_for_board
+
+    tiles = [
+        [
+            Tile(
+                row=r,
+                col=c,
+                char="a",
+                letter="A",
+                base_score=1.0,
+                curse=CurseType.LETTER,
+                color=TileColor.COLORLESS,
+            )
+            for c in range(6)
+        ]
+        for r in range(6)
+    ]
+    board = Board(rows=6, cols=6, tiles=tiles)
+    lines = ray_lines_for_board(board, horizontal_wrap=False)
+    # DIRS_8 index 7 = (1, 1) southeast
+    assert lines[0][7] == (7, 14, 21, 28, 35)
+    # 5x5 diagonal indices would be (6, 12, 18, 24) — wrong on 6x6
+    assert lines[0][7] != (6, 12, 18, 24)
 
 
 def test_board_graph_context_active_mask():

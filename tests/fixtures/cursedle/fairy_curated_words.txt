@@ -1,0 +1,7 @@
+# Minimal curated fairy lists for Cursedle solution tests (not full game export).
+# Includes binge; excludes ainga. Keep only plausible ?i?g? fills so specificity
+# does not prefer an unrelated unique match (e.g. digit).
+binge
+bingo
+bilge
+hinge

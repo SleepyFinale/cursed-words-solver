@@ -34,6 +34,9 @@ CELL_COUNT = 25
 MAX_GRID_SIZE = 6
 
 _ADJACENCY_CACHE: dict[tuple[int, int, bool, str], tuple[tuple[int, ...], ...]] = {}
+_RAY_LINES_CACHE: dict[
+    tuple[int, int, bool], tuple[tuple[tuple[int, ...], ...], ...]
+] = {}
 
 
 def _adjacency_cache_key(
@@ -127,6 +130,18 @@ def knight_adjacency_for_board(board: Board) -> tuple[int, ...]:
     if rows == GRID_SIZE and cols == GRID_SIZE:
         return KNIGHT_TARGETS
     return _build_knight_targets_for(rows, cols)
+
+
+def ray_lines_for_board(
+    board: Board, *, horizontal_wrap: bool = False
+) -> tuple[tuple[tuple[int, ...], ...], ...]:
+    """Sliding-piece ray lines for ``board`` dimensions (rook/bishop/queen)."""
+    rows, cols = board.storage_rows, board.storage_cols
+    if rows == GRID_SIZE and cols == GRID_SIZE:
+        return RAY_LINES_WRAP if horizontal_wrap else RAY_LINES
+    return _build_ray_lines_for(rows, cols, horizontal_wrap=horizontal_wrap)
+
+
 DIR_COUNT = 8
 
 DIRS_8 = [
@@ -171,17 +186,58 @@ def _ray_step(
     dc: int,
     *,
     horizontal_wrap: bool,
+    rows: int = GRID_SIZE,
+    cols: int = GRID_SIZE,
 ) -> tuple[int, int] | None:
     nr, nc = row + dr, col + dc
-    if 0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE:
+    if 0 <= nr < rows and 0 <= nc < cols:
         return nr, nc
-    if not horizontal_wrap or not (0 <= nr < GRID_SIZE):
+    if not horizontal_wrap or not (0 <= nr < rows):
         return None
-    if col == 4 and dc > 0:
+    last_col = cols - 1
+    if col == last_col and dc > 0:
         return nr, 0
     if col == 0 and dc < 0:
-        return nr, 4
+        return nr, last_col
     return None
+
+
+def _build_ray_lines_for(
+    rows: int, cols: int, *, horizontal_wrap: bool
+) -> tuple[tuple[tuple[int, ...], ...], ...]:
+    key = (rows, cols, horizontal_wrap)
+    cached = _RAY_LINES_CACHE.get(key)
+    if cached is not None:
+        return cached
+    lines: list[tuple[tuple[int, ...], ...]] = []
+    for idx in range(rows * cols):
+        row, col = divmod(idx, cols)
+        cell_lines: list[tuple[int, ...]] = []
+        for dr, dc in DIRS_8:
+            line: list[int] = []
+            r, c = row, col
+            seen: set[tuple[int, int]] = set()
+            while True:
+                nxt = _ray_step(
+                    r,
+                    c,
+                    dr,
+                    dc,
+                    horizontal_wrap=horizontal_wrap,
+                    rows=rows,
+                    cols=cols,
+                )
+                if nxt is None or nxt in seen:
+                    break
+                seen.add(nxt)
+                nr, nc = nxt
+                line.append(index_of_rows_cols(nr, nc, cols))
+                r, c = nr, nc
+            cell_lines.append(tuple(line))
+        lines.append(tuple(cell_lines))
+    result = tuple(lines)
+    _RAY_LINES_CACHE[key] = result
+    return result
 
 
 def _build_neighbors_8(*, horizontal_wrap: bool) -> list[int]:
@@ -217,25 +273,9 @@ def _build_knight_targets_wrap() -> list[int]:
 
 
 def _build_ray_lines(*, horizontal_wrap: bool) -> tuple[tuple[tuple[int, ...], ...], ...]:
-    lines: list[tuple[tuple[int, ...], ...]] = []
-    for idx in range(CELL_COUNT):
-        row, col = divmod(idx, GRID_SIZE)
-        cell_lines: list[tuple[int, ...]] = []
-        for dr, dc in DIRS_8:
-            line: list[int] = []
-            r, c = row, col
-            seen: set[tuple[int, int]] = set()
-            while True:
-                nxt = _ray_step(r, c, dr, dc, horizontal_wrap=horizontal_wrap)
-                if nxt is None or nxt in seen:
-                    break
-                seen.add(nxt)
-                nr, nc = nxt
-                line.append(index_of(nr, nc))
-                r, c = nr, nc
-            cell_lines.append(tuple(line))
-        lines.append(tuple(cell_lines))
-    return tuple(lines)
+    return _build_ray_lines_for(
+        GRID_SIZE, GRID_SIZE, horizontal_wrap=horizontal_wrap
+    )
 
 
 def _build_static_tables() -> tuple[list[int], list[int], list[int], list[int], tuple, tuple]:
@@ -350,6 +390,8 @@ class BoardGraphContext:
     neighbors_8: tuple[int, ...]
     neighbors_8_wrap: tuple[int, ...]
     knight_targets: tuple[int, ...]
+    ray_lines: tuple[tuple[tuple[int, ...], ...], ...]
+    ray_lines_wrap: tuple[tuple[tuple[int, ...], ...], ...]
     active_mask: int
     chess_piece_mask: int
     item_mask: int
@@ -530,6 +572,8 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
     neighbors_8 = adjacency_for_board(board, horizontal_wrap=False)
     neighbors_8_wrap = adjacency_for_board(board, horizontal_wrap=True)
     knight_targets = knight_adjacency_for_board(board)
+    ray_lines = ray_lines_for_board(board, horizontal_wrap=False)
+    ray_lines_wrap = ray_lines_for_board(board, horizontal_wrap=True)
     chess_piece_mask = 0
     black_piece_mask = 0
     white_piece_mask = 0
@@ -633,6 +677,8 @@ def build_board_graph_context(board: Board) -> BoardGraphContext:
         neighbors_8=neighbors_8,
         neighbors_8_wrap=neighbors_8_wrap,
         knight_targets=knight_targets,
+        ray_lines=ray_lines,
+        ray_lines_wrap=ray_lines_wrap,
         active_mask=active_mask,
         chess_piece_mask=chess_piece_mask,
         item_mask=item_mask,

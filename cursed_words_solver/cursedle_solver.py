@@ -33,7 +33,11 @@ from cursed_words_solver.search import (
     search_word_from_path,
 )
 from cursed_words_solver.suggestion import SOLVER_VERSION, _next_f8_sequence
-from cursed_words_solver.config import LAST_SUGGESTION_PATH
+from cursed_words_solver.config import (
+    FAIRY_CURATED_WORDLIST_PATH,
+    LAST_SUGGESTION_PATH,
+    fairy_curated_wordlist_available,
+)
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices, path_to_melmod_indices
 
 from datetime import datetime, timezone
@@ -43,11 +47,39 @@ CURSEDLE_SOLUTION_MAX_LEN = 6
 CURSEDLE_PROBE_MIN_LEN = 3
 CURSEDLE_SOLUTION_COMMIT_THRESHOLD = 3
 CURSEDLE_DICT_FILTER_MAX_CANDIDATES = 10_000
+# Pattern resolution may have many fills; cap enumeration for scoring.
+CURSEDLE_PATTERN_MATCH_LIMIT = 256
 
 # Backward-compatible aliases for solution-length filtering.
 CURSEDLE_MIN_LEN = CURSEDLE_SOLUTION_MIN_LEN
 CURSEDLE_MAX_LEN = CURSEDLE_SOLUTION_MAX_LEN
 
+
+def load_fairy_solution_dictionary(
+    *,
+    fallback: WordDictionary | None = None,
+) -> tuple[WordDictionary, str | None]:
+    """Load curated 4–6 letter fairy words for Cursedle *solution* validation.
+
+    Returns ``(dictionary, warning_or_none)``. Probes should keep using the full
+    game word list. The fairy file is re-read from disk when present (melmod
+    refresh); nothing puzzle-specific is cached.
+    """
+    if fairy_curated_wordlist_available():
+        return (
+            WordDictionary(FAIRY_CURATED_WORDLIST_PATH, use_trie_cache=True),
+            None,
+        )
+    if fallback is not None:
+        return (
+            fallback,
+            "fairy_curated_words.txt missing — solution narrowing using full dictionary; "
+            "rebuild melmod / start a run to export curated fairy words.",
+        )
+    return (
+        WordDictionary(),
+        "fairy_curated_words.txt missing — using default wordlist for solutions.",
+    )
 Feedback = str  # green | yellow | red | grey
 
 _MAX_ENTROPY_CANDIDATES = 2000
@@ -405,14 +437,11 @@ def _cursedle_word_from_path(
     return "".join(parts).lower()
 
 
-def _pattern_dictionary_word(
+def _pattern_letter_hints(
     board: Board,
     path: list[int],
     pattern: str,
-    dictionary: WordDictionary,
-) -> str | None:
-    if "?" not in pattern:
-        return pattern if dictionary.contains(pattern) else None
+) -> dict[int, str]:
     letter_hints: dict[int, str] = {}
     for i, idx in enumerate(path):
         if i >= len(pattern) or pattern[i] != "?":
@@ -428,21 +457,54 @@ def _pattern_dictionary_word(
         ch = (tile.letter or face).strip()
         if len(ch) == 1 and ch.isalpha():
             letter_hints[i] = ch.lower()
+    return letter_hints
+
+
+def _pattern_dictionary_matches(
+    board: Board,
+    path: list[int],
+    pattern: str,
+    dictionary: WordDictionary,
+) -> list[str]:
+    """All dictionary words that fill ``pattern`` on ``path`` (length-matched)."""
+    if "?" not in pattern:
+        return [pattern] if dictionary.contains(pattern) else []
+    letter_hints = _pattern_letter_hints(board, path, pattern)
     matches = [
         word
-        for word in dictionary.enumerate_pattern_matches(pattern, limit=64)
+        for word in dictionary.enumerate_pattern_matches(
+            pattern, limit=CURSEDLE_PATTERN_MATCH_LIMIT
+        )
         if len(word) == len(path)
     ]
     if letter_hints:
-        # Alphabetic item faces are hard constraints — do not fall back.
         matches = [
             word
             for word in matches
             if all(word[pos] == ch for pos, ch in letter_hints.items())
         ]
-    if matches:
+    return matches
+
+
+def _pattern_dictionary_word(
+    board: Board,
+    path: list[int],
+    pattern: str,
+    dictionary: WordDictionary,
+) -> str | None:
+    matches = _pattern_dictionary_matches(board, path, pattern, dictionary)
+    if not matches:
+        return None
+    # Prefer a unique fill; otherwise any match (stable order from enumerator).
+    if len(matches) == 1:
         return matches[0]
-    return None
+    return matches[0]
+
+
+def _wildcard_tile_count(board: Board, path: list[int]) -> int:
+    return sum(
+        1 for idx in path if _cursedle_tile_is_wildcard(board.get_by_index(idx))
+    )
 
 
 def _path_dictionary_word(
@@ -464,29 +526,44 @@ def _path_dictionary_word(
     return None
 
 
+def _path_solution_resolution(
+    board: Board,
+    path: list[int],
+    dictionary: WordDictionary,
+) -> tuple[str, int, int] | None:
+    """Resolve a solution path to ``(display_word, match_count, wildcard_count)``.
+
+    ``match_count`` is how many dictionary fills the path pattern admits (1 is
+    most specific). Used for ranking — not alphabetical word labels.
+    """
+    if not _cursedle_path_movement_ok(board, path):
+        return None
+    wildcards = _wildcard_tile_count(board, path)
+    path_flags = _cursedle_path_flags(board, path)
+    for flags in _cursedle_flag_variants(board, path):
+        exact = _path_dictionary_word(board, path, dictionary, flags=flags)
+        if exact:
+            return exact, 1, wildcards
+        pattern = _cursedle_word_from_path(board, path, flags=flags)
+        if pattern and "?" in pattern:
+            matches = _pattern_dictionary_matches(board, path, pattern, dictionary)
+            if matches:
+                return matches[0], len(matches), wildcards
+    phys = _cursedle_word_from_path(board, path, flags=path_flags)
+    if not phys:
+        phys = physical_word_for_path(board, path, flags=path_flags)
+    if phys and "?" not in phys and dictionary.contains(phys.lower()):
+        return phys.lower(), 1, wildcards
+    return None
+
+
 def _path_dictionary_word_any_resolution(
     board: Board,
     path: list[int],
     dictionary: WordDictionary,
 ) -> str | None:
-    path_flags = _cursedle_path_flags(board, path)
-    for flags in _cursedle_flag_variants(board, path):
-        word = _path_dictionary_word(board, path, dictionary, flags=flags)
-        if word:
-            return word
-        if not _cursedle_path_movement_ok(board, path):
-            continue
-        pattern = _cursedle_word_from_path(board, path, flags=flags)
-        if pattern and "?" in pattern:
-            word = _pattern_dictionary_word(board, path, pattern, dictionary)
-            if word:
-                return word
-    phys = _cursedle_word_from_path(board, path, flags=path_flags)
-    if not phys:
-        phys = physical_word_for_path(board, path, flags=path_flags)
-    if phys and "?" not in phys and dictionary.contains(phys.lower()):
-        return phys.lower()
-    return None
+    resolved = _path_solution_resolution(board, path, dictionary)
+    return resolved[0] if resolved else None
 
 
 def _is_valid_cursedle_solution_path(
@@ -496,7 +573,7 @@ def _is_valid_cursedle_solution_path(
 ) -> bool:
     if not (CURSEDLE_SOLUTION_MIN_LEN <= len(path) <= CURSEDLE_SOLUTION_MAX_LEN):
         return False
-    return _path_dictionary_word_any_resolution(board, path, dictionary) is not None
+    return _path_solution_resolution(board, path, dictionary) is not None
 
 
 def _narrow_candidates_to_dictionary(
@@ -510,7 +587,6 @@ def _narrow_candidates_to_dictionary(
         for path in candidates
         if _is_valid_cursedle_solution_path(board, path, dictionary)
     ]
-
 
 def _guess_storage_path(
     board: Board,
@@ -978,40 +1054,48 @@ def _pick_solution_path(
     *,
     prefer_longer_paths: bool = False,
 ) -> tuple[list[int], str] | None:
-    scored: list[tuple[str, list[int]]] = []
+    # (display_word, path, match_count, wildcard_count)
+    scored: list[tuple[str, list[int], int, int]] = []
     for path in candidates:
-        word = _path_dictionary_word_any_resolution(board, path, dictionary)
-        if word:
-            scored.append((word, path))
+        resolved = _path_solution_resolution(board, path, dictionary)
+        if resolved:
+            word, match_count, wildcards = resolved
+            scored.append((word, path, match_count, wildcards))
     if not scored:
         return None
     if prefer_longer_paths:
         # Failed all-green prefix: must extend beyond that length.
-        scored.sort(key=lambda row: (-len(row[1]), -len(row[0]), row[0]))
+        scored.sort(
+            key=lambda row: (-len(row[1]), row[2], row[3], tuple(row[1]))
+        )
     else:
         # Drop speculative letter-suffix extensions (e.g. VEINS→VACANT via T).
         # Theme tiles (number/fraction/item) may still extend a shorter path.
         without_letter_ext = [
-            (word, path)
-            for word, path in scored
+            row
+            for row in scored
             if not any(
-                _path_extends_via_plain_letter(board, shorter, path)
-                for _, shorter in scored
+                _path_extends_via_plain_letter(board, shorter, row[1])
+                for _, shorter, _, _ in scored
             )
         ]
         scored = without_letter_ext or scored
         # Exact-length win: prefer maximal paths over proper prefixes (VAIL⊂VEINS).
         maximal = [
-            (word, path)
-            for word, path in scored
+            row
+            for row in scored
             if not any(
-                len(other) > len(path) and _paths_share_prefix_walk(path, other)
-                for _, other in scored
+                len(other) > len(row[1]) and _paths_share_prefix_walk(row[1], other)
+                for _, other, _, _ in scored
             )
         ]
         scored = maximal or scored
-        scored.sort(key=lambda row: (len(row[1]), len(row[0]), row[0]))
-    word, path = scored[0]
+        # Prefer fewer pattern fills (specificity), then fewer wildcards, then
+        # shorter path, then stable path indices — never alphabetical word labels.
+        scored.sort(
+            key=lambda row: (row[2], row[3], len(row[1]), tuple(row[1]))
+        )
+    word, path, _match_count, _wildcards = scored[0]
     return path, word
 
 
@@ -1251,6 +1335,7 @@ def _pick_probe_path(
     *,
     tiles_only_fp: str = "",
     guesses_used: int = 0,
+    solution_dictionary: WordDictionary | None = None,
 ) -> tuple[list[int], str] | None:
     candidate_count = len(candidates)
     guessed_paths = _guessed_path_keys(board, guesses)
@@ -1263,6 +1348,7 @@ def _pick_probe_path(
         guesses_used=guesses_used,
     )
     tested = _tested_tile_indices(board, guesses)
+    sol_dict = solution_dictionary or dictionary
 
     probe_options: list[tuple[float, float, float, int, str, list[int]]] = []
     for word, path in _probe_word_options(
@@ -1300,7 +1386,7 @@ def _pick_probe_path(
             return path, _word
 
     if candidates:
-        return _pick_solution_path(board, candidates, dictionary)
+        return _pick_solution_path(board, candidates, sol_dict)
     return None
 
 
@@ -1328,13 +1414,18 @@ def run_cursedle_solver(
             f"Cursedle guess history incomplete ({len(guesses)}/{guesses_used}) — rebuild melmod."
         )
 
+    # Solutions come from curated 4–6 letter fairy lists; probes use full dictionary.
+    solution_dictionary, fairy_warn = load_fairy_solution_dictionary(fallback=dictionary)
+    if fairy_warn:
+        warnings.append(fairy_warn)
+
     if on_progress:
         on_progress("Filtering Cursedle candidates…")
 
     feedback_candidates = filter_candidates(board, guesses)
     if len(feedback_candidates) <= CURSEDLE_DICT_FILTER_MAX_CANDIDATES:
         candidates = _narrow_candidates_to_dictionary(
-            board, feedback_candidates, dictionary
+            board, feedback_candidates, solution_dictionary
         )
     else:
         candidates = feedback_candidates
@@ -1364,7 +1455,7 @@ def run_cursedle_solver(
             pick = _pick_final_guess(
                 board,
                 candidates,
-                dictionary,
+                solution_dictionary,
                 guesses,
                 tiles_only_fp=tiles_only_fp,
                 guesses_used=guesses_used,
@@ -1374,7 +1465,7 @@ def run_cursedle_solver(
             pick = _pick_final_guess(
                 board,
                 candidates,
-                dictionary,
+                solution_dictionary,
                 guesses,
                 tiles_only_fp=tiles_only_fp,
                 guesses_used=guesses_used,
@@ -1385,7 +1476,7 @@ def run_cursedle_solver(
             pick = _pick_final_guess(
                 board,
                 candidates,
-                dictionary,
+                solution_dictionary,
                 guesses,
                 tiles_only_fp=tiles_only_fp,
                 guesses_used=guesses_used,
@@ -1397,7 +1488,7 @@ def run_cursedle_solver(
             pick = _pick_final_guess(
                 board,
                 candidates,
-                dictionary,
+                solution_dictionary,
                 guesses,
                 tiles_only_fp=tiles_only_fp,
                 guesses_used=guesses_used,
@@ -1412,7 +1503,7 @@ def run_cursedle_solver(
                 pick = _pick_final_guess(
                     board,
                     candidates,
-                    dictionary,
+                    solution_dictionary,
                     guesses,
                     tiles_only_fp=tiles_only_fp,
                     guesses_used=guesses_used,
@@ -1427,6 +1518,7 @@ def run_cursedle_solver(
                     guesses,
                     tiles_only_fp=tiles_only_fp,
                     guesses_used=guesses_used,
+                    solution_dictionary=solution_dictionary,
                 )
             if pick is not None and not reason:
                 reason = _probe_reason(pick[1], len(candidates))
@@ -1447,6 +1539,7 @@ def run_cursedle_solver(
             guesses,
             tiles_only_fp=tiles_only_fp,
             guesses_used=guesses_used,
+            solution_dictionary=solution_dictionary,
         )
         reason = "No consistent solution candidates; suggesting exploratory word"
 

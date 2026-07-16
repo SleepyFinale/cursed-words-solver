@@ -27,7 +27,10 @@ DEBUG_DIR = CONFIG_DIR / "debug"
 WORDLIST_PATH = CONFIG_DIR / "enable1.txt"
 GAME_WORDLIST_PATH = CONFIG_DIR / "game_words.txt"
 GAME_WORDLIST_META_PATH = CONFIG_DIR / "game_words_meta.json"
+FAIRY_CURATED_WORDLIST_PATH = CONFIG_DIR / "fairy_curated_words.txt"
+FAIRY_CURATED_WORDLIST_META_PATH = CONFIG_DIR / "fairy_curated_words_meta.json"
 GAME_WORDLIST_MIN_BYTES = 1024
+FAIRY_CURATED_WORDLIST_MIN_BYTES = 64
 WORDLIST_URL = (
     "https://raw.githubusercontent.com/dolph/dictionary/master/enable1.txt"
 )
@@ -213,3 +216,11 @@ def ensure_wordlist() -> Path:
             encoding="utf-8",
         )
     return WORDLIST_PATH
+
+
+def fairy_curated_wordlist_available() -> bool:
+    """True when melmod has exported Cursedle curated 4–6 letter words."""
+    return (
+        FAIRY_CURATED_WORDLIST_PATH.exists()
+        and FAIRY_CURATED_WORDLIST_PATH.stat().st_size >= FAIRY_CURATED_WORDLIST_MIN_BYTES
+    )

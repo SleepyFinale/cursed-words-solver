@@ -29,10 +29,20 @@ Adjacency matches `GridUtility.Singleton.AreAdjacentTiles` (chess-king distance 
 
 ## Generation
 
-`FairyGridGeneration.GenerateRandomFairyGrid` picks a curated word length 4–6, applies one of seven “theme” mutators (Test Tube, Number Go Up, Queenie, Card Shark, Zombie, Jellyfish, Hungry Snake), places the solution path on the grid, then fills remaining cells.
+`FairyGridGeneration.GenerateRandomFairyGrid` picks a curated word length 4–6 (`Vocabulary.GetRandomFairyGridWord` → `Four/Five/SixLetterCuratedWords` from `FourLetterWordsGood` / `FiveLetterWordsGood` / `SixLetterWordsGood`), applies one of seven “theme” mutators (Test Tube, Number Go Up, Queenie, Card Shark, Zombie, Jellyfish, Hungry Snake), places the solution path on the grid, then fills remaining cells.
+
+Chess / scattered-item / number tiles are word-validity wildcards (`GetStringRepresentation(forWordValidity: true)` → `"!"`); winning is still by **tile coordinates** in `PuzzleController.CheckAnswer`.
 
 Decompiled references: [`scripts/decompile_type/out_cursedle/`](../scripts/decompile_type/out_cursedle/).
 
 ## Solver companion
 
-Melmod exports `encounter_mode: cursedle`, live guess history, and remaining tries. The Python solver filters hidden **solution** paths to length 4–6, but may suggest **longer dictionary words** as probes to maximize tile feedback. Scoring capture is disabled in that scene.
+Melmod exports `encounter_mode: cursedle`, live guess history, and remaining tries. It also exports `fairy_curated_words.txt` (curated 4–6 letter lists only) alongside `game_words.txt`.
+
+The Python solver:
+
+- Filters hidden **solution** paths to length 4–6 against **fairy curated** words (game generation lexicon).
+- May suggest **longer full-dictionary words** as probes to maximize tile feedback.
+- Ranks remaining solution paths by pattern specificity (fewer fills, fewer wildcards, stable path order) — not alphabetical word labels.
+
+Scoring capture is disabled in that scene.

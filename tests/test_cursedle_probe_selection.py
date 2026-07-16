@@ -315,16 +315,19 @@ def test_single_length_many_candidates_still_probes(
     assert len(length_five) > CURSEDLE_SOLUTION_COMMIT_THRESHOLD
 
 
-@patch("cursed_words_solver.cursedle_solver._path_dictionary_word_any_resolution")
+@patch("cursed_words_solver.cursedle_solver.load_fairy_solution_dictionary")
+@patch("cursed_words_solver.cursedle_solver._path_solution_resolution")
 @patch("cursed_words_solver.cursedle_solver.filter_candidates")
 def test_final_guess_exploratory_when_no_dict_valid_paths(
     mock_filter,
-    mock_dict_word,
+    mock_resolution,
+    mock_load_fairy,
 ) -> None:
     mock_filter.return_value = [[0, 1, 2, 3], [6, 7, 8, 9]]
-    mock_dict_word.return_value = None
-    board = _word_board()
+    mock_resolution.return_value = None
     dictionary = _FakeDictionary({"test", "best"})
+    mock_load_fairy.return_value = (dictionary, None)
+    board = _word_board()
     loadout = Loadout(
         extras=_cursedle_extras(
             guesses_used=4,

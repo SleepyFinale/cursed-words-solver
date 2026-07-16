@@ -11,8 +11,6 @@ from cursed_words_solver.graph_bitboard import (
     KNIGHT_TARGETS,
     NEIGHBORS_8,
     NEIGHBORS_8_WRAP,
-    RAY_LINES,
-    RAY_LINES_WRAP,
     STRAIGHT_DIR_INDICES,
     get_valid_extensions,
     iter_mask,
@@ -289,7 +287,14 @@ def _ray_neighbors_mask(
     horizontal_wrap: bool = False,
     graph_ctx: BoardGraphContext | None = None,
 ) -> int:
-    lines = RAY_LINES_WRAP if horizontal_wrap else RAY_LINES
+    if graph_ctx is not None:
+        lines = (
+            graph_ctx.ray_lines_wrap if horizontal_wrap else graph_ctx.ray_lines
+        )
+    else:
+        from cursed_words_solver.graph_bitboard import ray_lines_for_board
+
+        lines = ray_lines_for_board(board, horizontal_wrap=horizontal_wrap)
     dir_indices: list[int] = []
     if straight:
         dir_indices.extend(STRAIGHT_DIR_INDICES)
