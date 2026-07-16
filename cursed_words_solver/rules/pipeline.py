@@ -2010,7 +2010,7 @@ class ScoringPipeline:
                 trace_step=_trace_step if trace is not None else None,
             )
         if lexographer_active(loadout):
-            state = apply_lexographer_tile_zero(state, board, path)
+            state = apply_lexographer_tile_zero(state, board, path, loadout)
             if trace is not None:
                 _trace_step(state, "quest_lexographer", detail="cursed tiles zeroed")
         return state
@@ -2893,7 +2893,7 @@ class ScoringPipeline:
                 golden_record_halves_oden_count,
             )
 
-            n = unique_curse_type_count_on_path(board, path)
+            n = unique_curse_type_count_on_path(board, path, loadout)
             # Golden Record halving only mattered when the old per-piece Oden model
             # over-counted (4+ types). Game-parity counts ≤3 must not be halved to 1.
             if golden_record_halves_oden_count(loadout, board, path, state) and n > 2:

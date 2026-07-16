@@ -1258,8 +1258,9 @@ namespace CursedWordsSolverCompanion
                                 scattered.ArtFileName,
                                 scattered.Name
                             );
-                        var scatteredLevel = RunStateExporter.GetUpgradeableLevel(scattered);
-                        snap.scattered_item_level = scatteredLevel >= 1 ? scatteredLevel : 1;
+                        snap.scattered_item_level = RunStateExporter.GetItemStickerLevel(
+                            scattered
+                        );
                     }
                 }
                 catch

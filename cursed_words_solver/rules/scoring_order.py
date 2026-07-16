@@ -116,9 +116,9 @@ def _path_grid_item_refs(
 
 # EncounterController.GetItemsForWordSubmission only adds scattered items on the path.
 # Off-path grid Tombstone requires an equipped Tombstone sticker (grid-wide void-adjacent
-# bonus piggybacks on inventory). Off-path dusty_coffin can fire without equip on the
-# first word of a grid; see encounter_grid_scatter_refs dusty guard below.
-_OFF_PATH_GRID_SCATTER_SLUGS = frozenset({"tombstone", "dusty_coffin"})
+# bonus piggybacks on inventory). Dusty Coffin is path-scattered or inventory only —
+# never off-path without equip (see GetItemsForWordSubmission decompile).
+_OFF_PATH_GRID_SCATTER_SLUGS = frozenset({"tombstone"})
 
 
 def encounter_grid_scatter_refs(
@@ -131,8 +131,7 @@ def encounter_grid_scatter_refs(
 
     Game ``GetItemsForWordSubmission`` only includes scattered items on the
     submitted path plus inventory. Tombstone off-path requires an equipped
-    Tombstone sticker. Dusty Coffin off-path can score without equip when
-    ``scoring_previous_words_count`` is 0 (first word on the grid).
+    Tombstone sticker. Unequipped off-path Dusty Coffin does not score.
     """
     from cursed_words_solver.rules.scoring_conditions import (
         _equipped_sticker_level_for_slug,
@@ -171,22 +170,6 @@ def encounter_grid_scatter_refs(
             continue
         if slug_norm == "tombstone":
             if _equipped_sticker_level_for_slug(loadout, "tombstone") is None:
-                continue
-        if slug_norm == "dusty_coffin" and loadout is not None:
-            from cursed_words_solver.loadout import (
-                _scoring_previous_words_count_from_extras,
-            )
-            from cursed_words_solver.rules.scoring_conditions import (
-                _dusty_coffin_equipped_in_loadout,
-            )
-
-            extras = loadout.extras if isinstance(loadout.extras, dict) else {}
-            # Grid-only dusty on later grids must not bleed from stale historic state.
-            # First word on a grid (count 0) still scores off-path without equip.
-            if (
-                not _dusty_coffin_equipped_in_loadout(loadout)
-                and _scoring_previous_words_count_from_extras(extras) > 0
-            ):
                 continue
         if slug_norm not in _OFF_PATH_GRID_SCATTER_SLUGS:
             continue

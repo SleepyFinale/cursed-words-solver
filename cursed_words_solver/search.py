@@ -784,17 +784,17 @@ def resolve_letter_options(
         flag_test(flags, FLAG_RED_LETTER_PLUS_MINUS_ONE)
         and tile.color == TileColor.RED
         and tile.curse == CurseType.LETTER
-        and ch.isalpha()
     ):
-        expanded: set[str] = set()
-        for letter in alts:
-            if not letter.isalpha() or len(letter) != 1:
-                continue
-            expanded.add(letter)
-            if letter > "a":
-                expanded.add(chr(ord(letter) - 1))
-            if letter < "z":
-                expanded.add(chr(ord(letter) + 1))
+        # Game WordTrie.IsTileMatchingChar (Automobile): ±1 vs face tileStr only.
+        # Do not ±1 Red Envelope / Spicy Pepper substitutes (would invent d/f from e).
+        expanded = set(alts)
+        seed = physical if len(physical) == 1 and physical.isalpha() else ""
+        if seed:
+            expanded.add(seed)
+            if seed > "a":
+                expanded.add(chr(ord(seed) - 1))
+            if seed < "z":
+                expanded.add(chr(ord(seed) + 1))
         alts = expanded
     if tile.metadata.get("is_wobbly") and physical and physical.isalpha():
         alts.add(physical)
@@ -10061,7 +10061,18 @@ class WordSearcher:
                 extension_reserve = min(4.0, self.time_budget * 0.08)
                 if has_number_tiles and has_fraction_tiles:
                     extension_reserve = min(10.0, self.time_budget * 0.15)
-            caps = [self.max_len]
+            # Beam otherwise does one max_len leftover pass which starves short
+            # colorless letter words on number / Chromaphobia boards.
+            from cursed_words_solver.rules.quest_effects import active_quest_game_class
+
+            prefer_short_letter_caps = (
+                has_number_tiles
+                or active_quest_game_class(loadout) == "Chromaphobia"
+            )
+            if prefer_short_letter_caps and self.max_len > self.min_len:
+                caps = _number_board_cap_sequence(self.min_len, self.max_len)
+            else:
+                caps = [self.max_len]
             timing.dfs_caps = tuple(caps)
             chess_starts: list[int] = []
             lone_scatter_item = False
@@ -10155,16 +10166,24 @@ class WordSearcher:
                     must_include_index=center_idx,
                 )
                 # Competitive leftover: letter DFS until item/number slices.
+                # Short-first caps when numbers / Chromaphobia so F8 finds words
+                # before wildcard thrash at max_len.
                 if time.monotonic() < letter_deadline:
-                    self._collect_words_fair_starts(
-                        board,
-                        loadout,
-                        candidates,
-                        letter_deadline,
-                        self.max_len,
-                        letter_starts,
-                        min_slice_override=self._adaptive_min_slice(candidates, 0),
-                    )
+                    letter_caps = caps if prefer_short_letter_caps else [self.max_len]
+                    for pass_idx, cap in enumerate(letter_caps):
+                        if time.monotonic() >= letter_deadline:
+                            break
+                        self._collect_words_fair_starts(
+                            board,
+                            loadout,
+                            candidates,
+                            letter_deadline,
+                            cap,
+                            letter_starts,
+                            min_slice_override=self._adaptive_min_slice(
+                                candidates, pass_idx
+                            ),
+                        )
                 # Live digit-start slice before item covering — number-leading faces
                 # (comitadji) must not wait behind low-yield scatter tours.
                 if (
@@ -10265,14 +10284,24 @@ class WordSearcher:
                 and time.monotonic() < deadline
             ):
                 # Empty-heap recovery: letter first (cheap wins), then digits_only.
-                recover_deadline = min(deadline, time.monotonic() + max(1.5, self.time_budget * 0.25))
-                if time.monotonic() < recover_deadline:
+                recover_deadline = min(
+                    deadline, time.monotonic() + max(1.5, self.time_budget * 0.25)
+                )
+                if prefer_short_letter_caps:
+                    short_max = min(8, self.max_len)
+                    recovery_caps = _number_board_cap_sequence(self.min_len, short_max)
+                    timing.dfs_caps = tuple(recovery_caps)
+                else:
+                    recovery_caps = [self.max_len]
+                for cap in recovery_caps:
+                    if time.monotonic() >= recover_deadline or candidates:
+                        break
                     self._collect_words_fair_starts(
                         board,
                         loadout,
                         candidates,
                         recover_deadline,
-                        self.max_len,
+                        cap,
                         letter_starts,
                         min_slice_override=self._adaptive_min_slice(candidates, 0),
                     )

@@ -151,6 +151,28 @@ def test_broom_colorless_suited_letter_start_counts_as_cursed():
     assert score == int(base * 1.5)
 
 
+def test_mysterious_amulet_ignores_stale_joker_suit_on_letter():
+    """Letter + exported card_suit joker is not cursed (SetGlyphType clears Joker→None)."""
+    board = _empty_board()
+    w = _tile(0, 0, "W", 4)
+    w.metadata["card_suit"] = "joker"
+    w.metadata["card_rank"] = "W"
+    w.metadata["was_consumable"] = True
+    board.tiles[0][0] = w
+    board.tiles[0][1] = _tile(0, 1, "A", 1)
+    board.tiles[0][2] = _tile(0, 2, "?", 0, curse=CurseType.CURRENCY)
+    board.tiles[0][2].letter = "T"
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="mysterious_amulet", name="Mysterious Amulet", level=1)]
+    )
+    score, bd = pipeline.score(board, [0, 1, 2], "wat", loadout)
+    # Only currency is cursed → +8, not W
+    assert bd["pipeline"]["tile_scores"][0] == 4
+    assert bd["pipeline"]["tile_scores"][2] == 8
+    assert score == 4 + 1 + 8
+
+
 def test_moai_sticker_colourless_cursed_only():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "4", 4, curse=CurseType.NUMBER)
@@ -203,6 +225,27 @@ def test_broom_chess_vs_chess_no_mult():
     base, _ = pipeline.score(board, [0, 1, 2], "nan", Loadout())
     assert bd["multiplier"] == 1.0
     assert score == base
+
+
+def test_broom_sluggish_zombie_z_end_counts_as_cursed():
+    """Sluggish Zombie makes end Z wobbly/cursed without melmod is_wobbly metadata."""
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "?", 0, curse=CurseType.ITEM)
+    board.tiles[0][1] = _tile(0, 1, "A", 1)
+    board.tiles[0][2] = _tile(0, 2, "Z", 10)
+    pipeline = ScoringPipeline()
+    with_zombie = Loadout(
+        stickers=[LoadoutItem(id="broom", name="Broom", level=1)],
+        stamps=[LoadoutItem(id="sluggish_zombie", name="Sluggish Zombie", level=1)],
+    )
+    broom_only = Loadout(stickers=[LoadoutItem(id="broom", name="Broom", level=1)])
+    score_z, bd_z = pipeline.score(board, [0, 1, 2], "aaz", with_zombie)
+    base, _ = pipeline.score(board, [0, 1, 2], "aaz", Loadout())
+    score_no, bd_no = pipeline.score(board, [0, 1, 2], "aaz", broom_only)
+    assert bd_z["multiplier"] == 1.5
+    assert score_z == int(base * 1.5)
+    assert bd_no["multiplier"] == 1.0
+    assert score_no == base
 
 
 def test_mischievous_imp_all_cursed_multiply():

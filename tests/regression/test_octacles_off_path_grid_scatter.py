@@ -76,8 +76,8 @@ def test_off_path_tombstone_without_equip_does_not_score() -> None:
     assert int(score) == expected
 
 
-def test_off_path_dusty_coffin_without_equip_first_word_still_refs() -> None:
-    """ocherous: off-path grid dusty without equip still gets a grid ref on first word."""
+def test_off_path_dusty_coffin_without_equip_never_refs() -> None:
+    """ocherous: unequipped off-path Dusty is not in GetItemsForWordSubmission."""
     data = _load("20260528_105530")
     run_state = _run_state_for_replay(data)
     board = parse_board_from_run_state(run_state)
@@ -85,7 +85,7 @@ def test_off_path_dusty_coffin_without_equip_first_word_still_refs() -> None:
     assert board is not None and loadout is not None
     rules = ScoringPipeline().rules
     refs = encounter_grid_scatter_refs(board, data["path"], rules, loadout)
-    assert any(r.rule_id == "dusty_coffin" for r in refs)
+    assert not any(r.rule_id == "dusty_coffin" for r in refs)
 
 
 def test_off_path_dusty_coffin_without_equip_later_grid_skipped() -> None:

@@ -32,6 +32,11 @@ from cursed_words_solver.rules.stamp_behaviors import (
     FLAG_CHESS_ALLIES_CAN_TAKE,
     FLAG_CHESS_KING_QUEEN_ITEM_MOVEMENT,
     FLAG_HORIZONTAL_WRAP,
+    FLAG_J_AS_H_OR_Y,
+    FLAG_RED_AS_E,
+    FLAG_RED_AS_S,
+    FLAG_RED_LETTER_PLUS_MINUS_ONE,
+    FLAG_Z_AS_S,
     SearchFlagsMask,
     flag_set,
     flag_test,
@@ -322,13 +327,73 @@ def is_cursed_tile(tile: Tile) -> bool:
     """Mirror game Tile.IsCursed(): non-letter glyphs, any CardSuit, or wobbly letters."""
     if tile.curse not in (CurseType.LETTER, CurseType.UNKNOWN):
         return True
-    # CardSuit != 0 (including joker) counts regardless of color.
-    if is_poker_card_tile(tile):
+    # CardSuit != 0. Suit.Joker on a letter glyph is cleared to None in
+    # Tile.SetGlyphType; melmod may still export stale joker suit after placing a
+    # letter consumable on a former joker card — ignore that for curse checks.
+    suit = card_suit(tile)
+    if suit and suit not in ("none", "joker"):
+        return True
+    if is_joker_tile(tile):
         return True
     # IsDisplayingAsVariableLetter parity when melmod already set live is_wobbly.
     if tile.metadata.get("is_wobbly"):
         return True
     return False
+
+
+def tile_is_wobbly_from_loadout(tile: Tile, loadout: Loadout | None) -> bool:
+    """Mirror TileSelection.IsWobbly from stamp letter-behavior flags.
+
+    Game ``TileSelection.IsCursed()`` returns true when ``IsWobbly`` (set at
+    selection from ``IsDisplayingAsVariableLetter``). Melmod often omits
+    ``is_wobbly`` metadata, so Lexographer must infer wobbliness from equipped
+    stamps the same way search resolves alternate letters.
+    """
+    if tile.metadata.get("is_wobbly"):
+        return True
+    if not loadout or tile.curse not in (CurseType.LETTER, CurseType.UNKNOWN):
+        return False
+    flags = stamp_search_flags_mask(loadout)
+    if not flags:
+        return False
+    face = (tile.letter or tile.char or "").strip().lower()
+    if len(face) != 1 or not face.isalpha():
+        face = ""
+    # Suspension Bridge: all red letters behave as ±1 → wobbly.
+    if (
+        flag_test(flags, FLAG_RED_LETTER_PLUS_MINUS_ONE)
+        and tile.color == TileColor.RED
+        and tile.curse == CurseType.LETTER
+    ):
+        return True
+    # Red Envelope: non-"e" red letters wobble toward E.
+    if (
+        flag_test(flags, FLAG_RED_AS_E)
+        and tile.color == TileColor.RED
+        and face
+        and face != "e"
+    ):
+        return True
+    # Spicy Pepper: non-"s" red letters wobble toward S.
+    if (
+        flag_test(flags, FLAG_RED_AS_S)
+        and tile.color == TileColor.RED
+        and face
+        and face != "s"
+    ):
+        return True
+    if flag_test(flags, FLAG_Z_AS_S) and face == "z":
+        return True
+    if flag_test(flags, FLAG_J_AS_H_OR_Y) and face == "j":
+        return True
+    return False
+
+
+def tile_is_cursed_for_lexographer(tile: Tile, loadout: Loadout | None) -> bool:
+    """TileSelection.IsCursed for Lexographer: base cursed OR loadout-inferred wobbly."""
+    if is_cursed_tile(tile):
+        return True
+    return tile_is_wobbly_from_loadout(tile, loadout)
 
 
 def is_colourless_cursed_tile(tile: Tile) -> bool:
@@ -339,12 +404,17 @@ def curse_type_key(tile: Tile) -> str:
     return tile.curse.value
 
 
-def word_starts_ends_different_curse_type(board: Board, path: list[int]) -> bool:
+def word_starts_ends_different_curse_type(
+    board: Board, path: list[int], loadout: Loadout | None = None
+) -> bool:
     if len(path) < 2:
         return False
     start = board.get_by_index(path[0])
     end = board.get_by_index(path[-1])
-    if not is_cursed_tile(start) or not is_cursed_tile(end):
+    # TileSelection.IsCursed parity: include loadout-inferred wobbly (e.g. Sluggish Zombie Z).
+    if not tile_is_cursed_for_lexographer(start, loadout) or not tile_is_cursed_for_lexographer(
+        end, loadout
+    ):
         return False
 
     # The game groups related curses into broader categories for this condition.
@@ -360,10 +430,14 @@ def word_starts_ends_different_curse_type(board: Board, path: list[int]) -> bool
     return curse_category(start) != curse_category(end)
 
 
-def word_all_cursed_tiles(board: Board, path: list[int]) -> bool:
+def word_all_cursed_tiles(
+    board: Board, path: list[int], loadout: Loadout | None = None
+) -> bool:
     if not path:
         return False
-    return all(is_cursed_tile(board.get_by_index(idx)) for idx in path)
+    return all(
+        tile_is_cursed_for_lexographer(board.get_by_index(idx), loadout) for idx in path
+    )
 
 
 def cursed_word_played(_board: Board, path: list[int], word: str) -> bool:
@@ -3190,19 +3264,24 @@ def game_curse_types_for_tile(tile: Tile, *, is_wobbly: bool = False) -> set[str
     return types
 
 
-def oden_curse_types_on_path(board: Board, path: list[int]) -> set[str]:
+def oden_curse_types_on_path(
+    board: Board, path: list[int], loadout: Loadout | None = None
+) -> set[str]:
     """Unique curse types on the path (Oden.ApplyWordBonus list2 parity)."""
     unique: set[str] = set()
     for idx in path:
         tile = board.get_by_index(idx)
-        is_wobbly = bool(tile.metadata.get("is_wobbly"))
+        # Infer wobbly from loadout at score time (do not rely on stale is_wobbly metadata).
+        is_wobbly = tile_is_wobbly_from_loadout(tile, loadout)
         unique |= game_curse_types_for_tile(tile, is_wobbly=is_wobbly)
     return unique
 
 
-def unique_curse_type_count_on_path(board: Board, path: list[int]) -> int:
+def unique_curse_type_count_on_path(
+    board: Board, path: list[int], loadout: Loadout | None = None
+) -> int:
     """Distinct curse types on path for Oden ×N word multiplier."""
-    return len(oden_curse_types_on_path(board, path))
+    return len(oden_curse_types_on_path(board, path, loadout))
 
 
 def coloured_tile_count_on_grid(board: Board, *, cached: int | None = None) -> int:
@@ -3500,9 +3579,9 @@ def _evaluate_sticker_condition(
         hand = condition.split(":", 1)[1]
         return detect_card_hand(hand, board, path, loadout)
     if condition == "word_starts_ends_different_curse_type":
-        return word_starts_ends_different_curse_type(board, path)
+        return word_starts_ends_different_curse_type(board, path, loadout)
     if condition == "word_all_cursed":
-        return word_all_cursed_tiles(board, path)
+        return word_all_cursed_tiles(board, path, loadout)
     if condition == "cursed_word":
         return cursed_word_played(board, path, word)
     if condition.startswith("card_count_eq:"):
@@ -3540,7 +3619,7 @@ def _evaluate_sticker_condition(
             n = int(condition.split(":", 1)[1])
         except (ValueError, IndexError):
             return False
-        return unique_curse_type_count_on_path(board, path) >= n
+        return unique_curse_type_count_on_path(board, path, loadout) >= n
     if condition.startswith("distinct_card_suits_gte:"):
         try:
             n = int(condition.split(":", 1)[1])
@@ -4656,18 +4735,31 @@ def first_letter_on_path(board: Board, path: list[int]) -> str:
     return ""
 
 
-def _wildcard_before_first_letter_tile(board: Board, path: list[int]) -> bool:
-    """True when a wildcard tile precedes the first literal letter tile on the path."""
-    seen_wildcard = False
+def _assigned_glyph_before_first_letter_tile(board: Board, path: list[int]) -> bool:
+    """True when wildcard/item/chess precedes the first LETTER curse on the path.
+
+    Those glyphs contribute assigned letters (word spelling), not a path face that
+    chips/bento should treat as the word start. Chess face chars (e.g. king ``l``)
+    must not override the dictionary first letter.
+    """
+    seen_lead = False
     for idx in path:
         tile = board.get_by_index(idx)
-        if tile.curse == CurseType.WILDCARD:
-            seen_wildcard = True
+        if (
+            tile.curse == CurseType.WILDCARD
+            or tile.curse == CurseType.ITEM
+            or tile.curse in CHESS_CURSES
+        ):
+            seen_lead = True
             continue
-        ch = path_letter_for_count(tile)
-        if ch and _is_alpha_face_key(ch):
-            return seen_wildcard
+        if tile.curse == CurseType.LETTER:
+            return seen_lead
     return False
+
+
+def _wildcard_before_first_letter_tile(board: Board, path: list[int]) -> bool:
+    """True when a wildcard tile precedes the first literal letter tile on the path."""
+    return _assigned_glyph_before_first_letter_tile(board, path)
 
 
 def _bento_matches_previous_word_start(
@@ -4710,12 +4802,12 @@ def _effective_word_start_letter(board: Board, path: list[int], word: str) -> st
     """First letter for Bento/Chips-style conditions (melmod path-first parity).
 
     When currency/symbols lead the path but the dictionary word starts elsewhere, the
-    game uses the path's first letter tile (see ScoringContextCapture). Wildcard-leading
-    paths use the submitted word's first letter (wildcard assignment), not the first
-    literal tile after the wildcard.
+    game uses the path's first letter tile (see ScoringContextCapture). Wildcard/item/
+    chess-leading paths use the submitted word's first letter (assigned glyph), not
+    the first literal letter face after those leads.
     """
     word_first = word_first_letter(word)
-    if _wildcard_before_first_letter_tile(board, path):
+    if _assigned_glyph_before_first_letter_tile(board, path):
         return word_first or first_letter_on_path(board, path)
     if path:
         lead = board.get_by_index(path[0])
@@ -5558,9 +5650,21 @@ def _level_from_exported_scatter_tier(
     floor_mod_capped: bool,
     is_grid_path_tile: bool,
 ) -> int:
-    """Map melmod scattered_item_level to scoring tier on a grid-path tile."""
+    """Map melmod scattered_item_level to scoring tier on a grid-path tile.
+
+    Under boss floor mod, trust the live exported Level unless it matches an
+    equipped inventory tier above the encounter cap (old melmod bleed-through).
+    Toolbox-upgraded scatters keep their real Level.
+    """
     if floor_mod_capped and is_grid_path_tile:
-        return encounter_level
+        equipped = _equipped_sticker_level_for_slug(loadout, slug_norm)
+        if (
+            equipped is not None
+            and tile_lv >= equipped
+            and equipped > encounter_level
+        ):
+            return encounter_level
+        return tile_lv
     if is_grid_path_tile and slug_norm == "dusty_coffin":
         return tile_lv
     if is_grid_path_tile and slug_norm == "tombstone":
@@ -5588,6 +5692,19 @@ def _level_from_exported_scatter_tier(
     return tile_lv
 
 
+def cable_car_stamp_count(loadout: Loadout | None) -> int:
+    """Number of Cable Car stamps (each upgrades path stickers once on submit)."""
+    if loadout is None or not loadout.stamps:
+        return 0
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    return sum(
+        1
+        for stamp in loadout.stamps
+        if slugify_name(str(stamp.id or stamp.name or "")) == "cable_car"
+    )
+
+
 def grid_path_sticker_level(
     loadout: Loadout | None,
     slug: str,
@@ -5610,6 +5727,9 @@ def grid_path_sticker_level(
     Down Under on grid 1 often matches max equipped sticker level when export is missing.
     When Snapshot copies Down Under at a higher level than the grid scatter tier, the
     grid path keeps the exported scattered level (copy uses max separately).
+
+    Cable Car stamps upgrade each on-path sticker once per owned copy before scoring
+    (EncounterController.SubmitWord); add that count here from the live loadout.
     """
     from cursed_words_solver.rules.boss_effects import boss_modifier_active
     from cursed_words_solver.rules.rule_lookup import slugify_name
@@ -5786,7 +5906,10 @@ def grid_path_sticker_level(
         and _tombstone_uses_grid_encounter_level(board, path, loadout)
     ):
         # Deep-void paths use at least level 2 (grid_number export can still be 1).
-        return max(2, grid_path_encounter_level(loadout))
+        level = max(2, grid_path_encounter_level(loadout))
+        if is_grid_path_tile:
+            level += cable_car_stamp_count(loadout)
+        return level
     if (
         slug_norm == "tombstone"
         and tile_level_known
@@ -5850,8 +5973,7 @@ def grid_path_sticker_level(
     ):
         skip_equipped_merge = True
     if (
-        not skip_equipped_merge
-        and is_grid_path_tile
+        is_grid_path_tile
         and tile_level_known
         and exported_tile_level is not None
         and equipped_level is not None
@@ -5886,6 +6008,8 @@ def grid_path_sticker_level(
             except (TypeError, ValueError):
                 pass
             break
+    if is_grid_path_tile:
+        level += cable_car_stamp_count(loadout)
     return level
 
 

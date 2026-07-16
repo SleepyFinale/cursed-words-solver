@@ -1606,6 +1606,7 @@
       "name": "Cable Car",
       "type": "custom",
       "effect_class": "meta",
+      "pre_score_upgrade_path_stickers": true,
       "wiki_effect": "Stickers in your word are upgraded when your word is submitted",
       "wiki_page": "Cable_Car",
       "shop_price": 18,

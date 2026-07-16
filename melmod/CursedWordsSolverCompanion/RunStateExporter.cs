@@ -4733,6 +4733,21 @@ namespace CursedWordsSolverCompanion
             return Math.Max(level, variable);
         }
 
+        /// <summary>
+        /// Sticker Level from UpgradeableComponents[0].Level (not VariableValue).
+        /// Item has no Level property; reading Level/VariableValue on the Item itself
+        /// always returns 0 and used to force scattered_item_level to 1.
+        /// Solver reconstructs VariableValue as base + upgrade*(Level-1), so export Level.
+        /// </summary>
+        internal static int GetItemStickerLevel(Item item)
+        {
+            if (item?.UpgradeableComponents == null || item.UpgradeableComponents.Count < 1)
+                return 1;
+
+            var level = GetUpgradeableComponentLevel(item.UpgradeableComponents[0]);
+            return level >= 1 ? level : 1;
+        }
+
         internal static int GetUpgradeableVariableValue(object component)
         {
             if (component == null)
@@ -5030,9 +5045,7 @@ namespace CursedWordsSolverCompanion
                 return;
             }
 
-            var copyLevel = GetUpgradeableLevel(snapshotSticker);
-            if (copyLevel < 1)
-                copyLevel = 1;
+            var copyLevel = GetItemStickerLevel(snapshotSticker);
 
             snapshot.extras["snapshot_copy_slug"] = slug;
             snapshot.extras["snapshot_copy_level"] = copyLevel.ToString();
@@ -5058,9 +5071,7 @@ namespace CursedWordsSolverCompanion
                 if (string.IsNullOrEmpty(slug) || slug == "unknown")
                     return;
 
-                var copyLevel = GetUpgradeableLevel(snapshotSticker);
-                if (copyLevel < 1)
-                    copyLevel = 1;
+                var copyLevel = GetItemStickerLevel(snapshotSticker);
 
                 var keys = new Dictionary<string, string>
                 {

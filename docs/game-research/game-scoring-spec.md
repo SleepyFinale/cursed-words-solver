@@ -32,6 +32,19 @@ Special orchestration inside the item loop:
 - Human Hands favorite: repeats target stamp `level-1` extra times.
 - `Overhand`: replays target item `Overhand level` extra times.
 
+## Cable Car (pre-score upgrade)
+
+`EncounterController.SubmitWord` upgrades path stickers **before** scoring:
+
+```csharp
+int count = player.GetUnpackedItemsOfType(typeof(CableCar)).Count;
+foreach CableCar (count times):
+  foreach path sticker (GetItemsForWordSubmission(tiles, inventory: false)):
+    item.Upgrade(0);  // Level++; VariableValue += increment
+```
+
+Then `CalculateOverallScore` runs with the upgraded `VariableValue`. Solver adds `cable_car_stamp_count(loadout)` inside `grid_path_sticker_level` for on-path scatters. Melmod must export `UpgradeableComponents[0].Level` on scattered items (`GetItemStickerLevel`), not reflection on the Item itself.
+
 ## Base item scoring contract
 
 `Item.ApplyItemToScore`:

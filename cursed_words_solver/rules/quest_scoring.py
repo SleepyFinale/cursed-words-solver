@@ -11,8 +11,8 @@ from cursed_words_solver.rules.quest_effects import (
 )
 from cursed_words_solver.rules.scoring_conditions import (
     card_suit,
-    is_cursed_tile,
     is_poker_card_tile,
+    tile_is_cursed_for_lexographer,
 )
 
 _POKER_SCORES: dict[str, int] = {
@@ -68,12 +68,13 @@ def apply_lexographer_tile_zero(
     state: dict[str, Any],
     board: Board,
     path: list[int],
+    loadout: Loadout | None = None,
 ) -> dict[str, Any]:
     scores = list(state.get("tile_scores", []))
     for i, idx in enumerate(path):
         if i >= len(scores):
             break
-        if is_cursed_tile(board.get_by_index(idx)):
+        if tile_is_cursed_for_lexographer(board.get_by_index(idx), loadout):
             scores[i] = 0.0
     state["tile_scores"] = scores
     return state

@@ -717,6 +717,39 @@ def test_chips_alphabet_progression():
     assert bd["multiplier"] == 1.5
 
 
+def test_chips_skips_when_item_chess_lead_assigns_earlier_letter():
+    """bifids: chips ITEM + chess face 'l' must not override dictionary start 'b'."""
+    from cursed_words_solver.rules.scoring_conditions import explain_sticker_condition
+
+    board = _empty_board()
+    board.tiles[0][0] = _tile(
+        0, 0, "?", 0, curse=CurseType.ITEM, color=TileColor.COLORLESS
+    )
+    board.tiles[0][0].metadata["scattered_item_id"] = "chips"
+    board.tiles[0][1] = _tile(
+        0, 1, "l", 15, curse=CurseType.CHESS_KING, color=TileColor.COLORLESS
+    )
+    board.tiles[0][2] = _tile(0, 2, "F", 4)
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="chips", name="Chips", level=1)],
+        extras={
+            "grid_number": "2",
+            "scoring_previous_words_count": "2",
+            "previous_word_first_letter": "d",
+        },
+    )
+    met, detail = explain_sticker_condition(
+        "word_starts_after_previous",
+        board,
+        [0, 1, 2],
+        "bifids",
+        loadout,
+        applying_sticker_id="chips",
+    )
+    assert met is False
+    assert "starts 'b'" in detail
+
+
 def test_chips_any_later_letter_not_exact_plus_one():
     """owner capture: o > e but not exactly f — Chips applies, Limnophila does not."""
     from cursed_words_solver.rules.scoring_conditions import explain_sticker_condition

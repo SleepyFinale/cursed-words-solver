@@ -21,6 +21,8 @@ These run inside `ScoreCalculation.CalculateOverallScore` after each `ApplyItemT
 | Human Hands | Pin | Favourite stamp scored `right.VariableValue - 1` extra times |
 | Overhand | Sticker | Target sticker scored `Overhand.VariableValue` extra times |
 
+**Cable Car** (stamp) is **not** in the item scoring loop. In `EncounterController.SubmitWord`, **before** `CalculateOverallScore`, each owned `CableCar` upgrades every on-path sticker (`GetItemsForWordSubmission(..., inventory: false)` where `IsSticker()`) via `Upgrade(0)`. Solver: [`cable_car_stamp_count`](cursed_words_solver/rules/scoring_conditions.py) + bump in [`grid_path_sticker_level`](cursed_words_solver/rules/scoring_conditions.py). Melmod exports scattered sticker **Level** from `UpgradeableComponents[0].Level` (not `VariableValue`).
+
 ## Stamp categories (solver)
 
 | Category | Catalog signal | Solver |
@@ -36,6 +38,7 @@ These run inside `ScoreCalculation.CalculateOverallScore` after each `ApplyItemT
 | Slug | Game class | Notes |
 | ---- | ---------- | ----- |
 | `hourglass` | `Hourglass` | Odd count reverses item order |
+| `cable_car` | `CableCar` | Upgrades on-path stickers once per copy before score |
 | `mutating_dna` / similar | Mutating DNA | Historic letter counts → tile/word bonus; melmod `mutating_dna_letter_counts` |
 | `bento_box` | `BentoBox` | ×WORD if word starts with same letter as previous; `previous_word_first_letter` extra |
 | `newspaper` | `Newspaper` | Often paired with word-history conditions |
