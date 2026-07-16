@@ -1518,12 +1518,19 @@ def _alignment_pattern_for_path(
     path: list[int],
     flags: SearchFlagsMask,
 ) -> str:
-    """Wildcard pattern for dictionary resolve (face letters fixed; true wildcards '?')."""
-    from cursed_words_solver.rules.stamp_behaviors import (
-        FLAG_CARD_SUIT_FIRST_LETTER,
-        coerce_search_flags,
-        flag_test,
-    )
+    """Wildcard pattern for dictionary resolve (face letters fixed; true wildcards '?').
+
+    Multi-option tiles fall into two classes:
+
+    - **Face-anchored** (Suspension Bridge ±1): ``resolve_letter`` is the face;
+      extras are only in ``resolve_letter_options``. Lock the face so pattern
+      scans stay narrow; DFS still explores ±1 via options.
+    - **Remapped** (Spicy Pepper red→s, Red Envelope red→e, Card Shark suit,
+      Jellyfish J→H/Y): the stamp substitute differs from (or replaces) the
+      face. Locking to ``resolve_letter`` alone rejects valid game words that
+      use the face (e.g. ``assessable``). Use '?' so resolve can pick either.
+    """
+    from cursed_words_solver.rules.stamp_behaviors import coerce_search_flags
     from cursed_words_solver.search import resolve_letter_options
 
     mask = coerce_search_flags(flags)
@@ -1534,8 +1541,21 @@ def _alignment_pattern_for_path(
         token = resolve_letter(tile, char_pos, flags=mask)
         options = resolve_letter_options(tile, char_pos, flags=mask)
         alpha_opts = [o for o in options if len(o) == 1 and o.isalpha()]
-        if flag_test(mask, FLAG_CARD_SUIT_FIRST_LETTER) and len(alpha_opts) > 1:
-            parts.append("?")
+        physical = (tile.letter or "").strip().lower()
+        token_l = token.lower() if len(token) == 1 and token.isalpha() else ""
+        if len(alpha_opts) > 1:
+            opt_set = {o.lower() for o in alpha_opts}
+            face_anchored = (
+                token_l
+                and token_l in opt_set
+                and len(physical) == 1
+                and physical.isalpha()
+                and token_l == physical
+            )
+            if face_anchored:
+                parts.append(token_l)
+            else:
+                parts.append("?")
         elif token == "?":
             parts.append("?")
         elif token == "qu":

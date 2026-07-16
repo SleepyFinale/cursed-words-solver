@@ -27,3 +27,28 @@ def test_blank_normalizes_to_wildcard() -> None:
 def test_currency_zero_letter_base() -> None:
     t = Tile(0, 0, "$", "S", 0, TileColor.COLORLESS, CurseType.CURRENCY)
     assert tile_base_contribution(t) == 0
+
+
+def test_currency_ocr_red_gets_color_bonus() -> None:
+    """OCR/synthetic: glyph face 0 + red +1 (Tile.GetValue parity)."""
+    t = Tile(0, 0, "₱", "P", 0, TileColor.RED, CurseType.CURRENCY)
+    assert tile_base_contribution(t) == 1
+
+
+def test_currency_ocr_purple_gets_color_bonus() -> None:
+    t = Tile(0, 0, "₱", "P", 0, TileColor.PURPLE, CurseType.CURRENCY)
+    assert tile_base_contribution(t) == 2
+
+
+def test_currency_placed_consumable_uses_packet_base_score() -> None:
+    """Rack/placed packets already include color; do not zero then skip bonus."""
+    t = Tile(0, 0, "₱", "P", 1.0, TileColor.RED, CurseType.CURRENCY)
+    t.metadata["source"] = "consumable_rack"
+    t.metadata["was_consumable"] = True
+    assert tile_base_contribution(t) == 1.0
+
+
+def test_currency_melmod_uses_packet_base_score() -> None:
+    t = Tile(0, 0, "₱", "P", 1.0, TileColor.RED, CurseType.CURRENCY)
+    t.metadata["source"] = "melmod"
+    assert tile_base_contribution(t) == 1.0

@@ -62,3 +62,26 @@ def test_spicy_pepper_plus_suspension_bridge_does_not_plus_minus_s() -> None:
     assert opts == {"s", "u", "v", "w"}
     assert "r" not in opts
     assert "t" not in opts
+
+
+def test_spicy_pepper_alignment_pattern_wildcards_multi_option_reds() -> None:
+    """Dictionary resolve must not lock Spicy Pepper reds to substitute-only 's'."""
+    from cursed_words_solver.models import Board, Loadout, LoadoutItem
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+    from cursed_words_solver.suggestion import _alignment_pattern_for_path
+
+    def letter(r: int, c: int, ch: str, *, color: TileColor = TileColor.RED) -> Tile:
+        return Tile(r, c, ch.lower(), ch.upper(), 1.0, color, CurseType.LETTER)
+
+    tiles = [[letter(r, c, "A") for c in range(5)] for r in range(5)]
+    tiles[0][0] = letter(0, 0, "U")
+    tiles[0][1] = letter(0, 1, "E")
+    board = Board(tiles=tiles)
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="spicy_pepper", name="Spicy Pepper", kind="stamp")]
+    )
+    flags = stamp_search_flags(loadout)
+    pattern = _alignment_pattern_for_path(board, [0, 1], flags)
+    assert pattern == "??"
+    assert "s" not in pattern
+

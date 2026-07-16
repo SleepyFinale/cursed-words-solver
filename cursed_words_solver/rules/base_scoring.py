@@ -325,6 +325,15 @@ def tile_base_contribution(
     if tile.curse == CurseType.ITEM:
         return 0
 
+    # Currency glyph face is 0 in Tile.GetValue, then color/ValueModifier apply.
+    # Melmod/rack/placed packets already include that (e.g. red currency = 1).
+    if tile.curse == CurseType.CURRENCY and _packet_base_is_final(tile):
+        if tile.color == TileColor.VOID:
+            # Void currency uses dedicated init paths in tile_scoring.
+            pass
+        else:
+            return float(tile.base_score)
+
     letter_base = tile.base_score
     if tile.curse == CurseType.CURRENCY:
         letter_base = 0

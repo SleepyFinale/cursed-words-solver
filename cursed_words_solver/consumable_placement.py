@@ -539,6 +539,29 @@ def rack_placement_search_active(
     return len(remaining_rack_tiles(loadout, board)) > 0
 
 
+def rack_placement_requires_path_inclusion(
+    loadout: Loadout,
+    board: Board,
+    rules: dict[str, Any],
+) -> bool:
+    """True when every simulated placement must appear on the submitted path.
+
+    Sandy cactus placements (and already-placed Sandy consumables) are mandatory
+    and must be on the word. Up and Up also needs placements on-path when they
+    are how the center tile is reached. Optional mahjong / score-boost rack tiles
+    may help score when used, but must not reject board-only words that ignore them.
+    """
+    if sandy_placement_search_active(loadout, board, rules):
+        return True
+    if mandatory_consumable_indices(loadout, board, rules):
+        return True
+    from cursed_words_solver.rules.quest_effects import quest_constraints
+
+    if quest_constraints(loadout).require_center_index is not None:
+        return True
+    return False
+
+
 def consumable_investment_active(loadout: Loadout) -> bool:
     """True when loadout rewards placing consumables for future grids (Tile Ninja, Hi Vis)."""
     for item in loadout.stamps:
@@ -1771,7 +1794,9 @@ def search_consumable_placement_fallback(
         rack_tiles,
         time_budget=time_budget,
         top_n=top_n,
-        require_placements_in_path=True,
+        require_placements_in_path=rack_placement_requires_path_inclusion(
+            loadout, board, rules
+        ),
         max_variants=128,
         rules=rules,
         solve_deadline=solve_deadline,
@@ -1887,7 +1912,9 @@ def search_consumable_score_boost(
         top_n=top_n,
         min_rank_score=min_rank,
         prefer_fewest_tiles=prefer_fewest,
-        require_placements_in_path=True,
+        require_placements_in_path=rack_placement_requires_path_inclusion(
+            loadout, board, rules
+        ),
         rules=rules,
         variant_gen_budget=variant_gen_budget,
         max_variants=max_variants,

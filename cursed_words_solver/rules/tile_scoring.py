@@ -230,18 +230,14 @@ def initial_tile_scores(
 
                 contrib = -float(_void_currency_path_init_penalty(tile, loadout))
             elif (
-                tile.curse == CT.CURRENCY
-                and tile.metadata.get("source") == "melmod"
-                and tile.color != TileColor.VOID
-            ):
-                contrib = float(tile.base_score)
-            elif (
                 tile.metadata.get("source") == "melmod"
                 and tile.curse == CT.LETTER
                 and tile.color in (TileColor.COLORLESS, TileColor.VOID)
             ):
                 contrib = float(tile.base_score)
             else:
+                # Non-void currency (melmod / rack / placed) uses packet base_score
+                # via tile_base_contribution (_packet_base_is_final).
                 contrib = float(tile_base_contribution(tile, money, loadout))
         scores.append(contrib)
         total += contrib

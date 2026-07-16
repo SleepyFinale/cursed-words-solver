@@ -155,3 +155,93 @@ def test_f8_embed_replay_matches_scoring_board() -> None:
     )
     assert replay_score is not None
     assert int(replay_score) == int(predicted)
+
+
+def test_f8_embed_replay_placed_red_currency_consumable_mahjong() -> None:
+    """Placed red currency must use GetValue packet (1), not zero — Mahjong ×2 → +2.
+
+    Regression: possesses predicted 14 vs embed replay 16 when rack source zeroed
+    currency and skipped color while melmod re-parse used base_score=1.
+    """
+    from cursed_words_solver.models import Board, CurseType, Tile, TileColor
+
+    pipeline = ScoringPipeline()
+    from cursed_words_solver.f8_snapshot import F8Snapshot
+
+    def _letter(row: int, col: int, ch: str, *, base: float = 1.0) -> Tile:
+        return Tile(
+            row=row,
+            col=col,
+            char=ch,
+            letter=ch,
+            base_score=base,
+            color=TileColor.COLORLESS,
+            curse=CurseType.LETTER,
+            metadata={"source": "melmod"},
+        )
+
+    # Path "cat" on indices 0,1,2 with placed red ₱ as the 'c' (was_consumable).
+    currency = Tile(
+        row=0,
+        col=0,
+        char="₱",
+        letter="P",
+        base_score=1.0,
+        color=TileColor.RED,
+        curse=CurseType.CURRENCY,
+        metadata={
+            "source": "consumable_rack",
+            "was_consumable": True,
+            "consumable": True,
+        },
+    )
+    tiles = [
+        [currency, _letter(0, 1, "a"), _letter(0, 2, "t"), _letter(0, 3, "x"), _letter(0, 4, "x")],
+        [_letter(1, c, "x") for c in range(5)],
+        [_letter(2, c, "x") for c in range(5)],
+        [_letter(3, c, "x") for c in range(5)],
+        [_letter(4, c, "x") for c in range(5)],
+    ]
+    board = Board(tiles=tiles, money=5)
+    run_state = {
+        "character": "Sandy Saguaro",
+        "money": 5,
+        "stickers": [],
+        "stamps": [],
+        "extras": {
+            "pin_effect": "mahjong_red_dragon",
+        },
+        "board": board_to_run_state_board(board),
+    }
+    loadout = parse_run_state(prepare_run_state_dict_for_scoring(run_state))
+    path = [0, 1, 2]
+    word = "pat"
+
+    predicted, detail = pipeline.score(board, path, word, loadout)
+    # Currency init 1 × Mahjong 2 = 2; a=1; t=1 → 4
+    assert int(predicted) == 4
+    effects = (detail.get("pipeline") or detail).get("effects") or detail.get("effects") or []
+    assert any("consumable" in str(e).lower() for e in effects)
+
+    snapshot = F8Snapshot(
+        run_state=deepcopy(run_state),
+        board=board,
+        loadout=loadout,
+        board_available=True,
+    )
+    embed = embed_f8_snapshot(
+        snapshot,
+        scoring_loadout=loadout,
+        scoring_board=board,
+        fresh_run_state=run_state,
+    )
+    assert isinstance(embed, dict)
+    replay_score = f8_embed_replay_score(
+        embed,
+        path=path,
+        word=word,
+        loadout=loadout,
+        pipeline=pipeline,
+    )
+    assert replay_score is not None
+    assert int(replay_score) == int(predicted)

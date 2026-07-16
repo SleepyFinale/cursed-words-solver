@@ -273,6 +273,15 @@ FREERIDE_F8_SCORE = 623
 UNWIELDY_WORD = "unwieldy"
 UNWIELDY_SUBMITTED_SCORE = 464
 UNWIELDY_F8_SCORE = 220
+ASSESSABLE_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "round_logs"
+    / "20260715_215902_assessable_no_suggestion.json"
+)
+ASSESSABLE_MELMOD_PATH = [17, 16, 20, 15, 10, 11, 6, 1, 7, 12]
+ASSESSABLE_STORAGE_PATH = [7, 6, 0, 5, 10, 11, 16, 21, 17, 12]
+ASSESSABLE_WORD = "assessable"
 NIGHTCAP_FIXTURE = (
     Path(__file__).resolve().parents[1]
     / "fixtures"
@@ -408,6 +417,77 @@ def test_unwieldy_search_beats_logged_f8():
     f8_score = int((data.get("solver") or {}).get("predicted_score", UNWIELDY_F8_SCORE))
     assert top_score > f8_score
     assert top_score >= UNWIELDY_SUBMITTED_SCORE
+
+
+def _assessable_board_and_loadout():
+    data = json.loads(ASSESSABLE_FIXTURE.read_text(encoding="utf-8"))
+    # no_suggestion: extras_diff f8 values are empty; use submit-time board/loadout.
+    run_state = prepare_run_state_dict_for_scoring(copy.deepcopy(data["run_state"]))
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    assert board is not None
+    assert loadout is not None
+    return data, board, loadout
+
+
+@pytest.mark.skipif(not ASSESSABLE_FIXTURE.exists(), reason="assessable fixture required")
+def test_assessable_melmod_path_converts_to_storage():
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    _data, board, _loadout = _assessable_board_and_loadout()
+    path = path_from_melmod_indices(board, ASSESSABLE_MELMOD_PATH)
+    assert path == ASSESSABLE_STORAGE_PATH
+
+
+@pytest.mark.skipif(not ASSESSABLE_FIXTURE.exists(), reason="assessable fixture required")
+def test_assessable_path_movement_and_validation_ok():
+    from cursed_words_solver.debug_path import validate_submitted_path
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+    from cursed_words_solver.suggestion import _alignment_pattern_for_path
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    data, board, loadout = _assessable_board_and_loadout()
+    path = path_from_melmod_indices(board, ASSESSABLE_MELMOD_PATH)
+    flags = stamp_search_flags_mask(loadout)
+    assert path_movement_ok(board, path, flags=flags, loadout=loadout)
+    pattern = _alignment_pattern_for_path(board, path, flags)
+    # Spicy Pepper multi-option reds must be wildcards, not locked to "s".
+    assert pattern == "?" * len(path)
+    report = validate_submitted_path(
+        data["run_state"], path, loadout=loadout, board=board, min_len=3
+    )
+    assert report.accepted, report.reject_reasons
+    assert report.dictionary_word.lower() == ASSESSABLE_WORD
+
+
+@pytest.mark.skipif(
+    not ASSESSABLE_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="assessable fixture and game wordlist required",
+)
+def test_assessable_search_finds_word():
+    """Board-only search must find playable words (original F8 returned none).
+
+    Spicy Pepper + item/chess wildcards previously locked dictionary resolve to
+    substitute-only patterns, so every candidate failed. After the fix, search
+    should beat the manually submitted assessable score (760).
+    """
+    _data, board, loadout = _assessable_board_and_loadout()
+    rules = ScoringPipeline().rules
+    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=max(constraints.min_len, 3),
+        max_len=constraints.max_len,
+        search_workers=8,
+        time_budget=60.0,
+    )
+    results = searcher.find_best_words(board, loadout, top_n=10)
+    assert results, "search should find words on assessable Red Pepper Day board"
+    top_score = int(results[0].score)
+    assert top_score >= 760, (
+        f"expected score >= submitted assessable (760), got {top_score} "
+        f"best={results[0].word}"
+    )
 
 
 @pytest.mark.skipif(

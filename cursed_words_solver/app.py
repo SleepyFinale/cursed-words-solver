@@ -1689,6 +1689,18 @@ class SolverApp:
             ):
                 fallback_rack = remaining_rack_tiles(loadout, board)
                 if fallback_rack:
+                    from cursed_words_solver.consumable_placement import (
+                        rack_placement_requires_path_inclusion,
+                    )
+
+                    if not rack_placement_requires_path_inclusion(
+                        loadout, board, rules
+                    ):
+                        print(
+                            "  Optional rack tiles present — placement may "
+                            "improve score but is not required",
+                            flush=True,
+                        )
                     print(
                         "  No board-only word — simulating consumable placements…",
                         flush=True,

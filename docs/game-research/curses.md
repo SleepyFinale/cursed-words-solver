@@ -10,7 +10,7 @@ Source: `GlyphType`, `Tile.GetGlyphType()`, melmod `BoardExporter.MapCurse`, [wi
 | Blank | wildcard | wildcard | 0 |
 | Number | number | number | Tile number value |
 | Fraction | fraction | fraction | Sum of numerator + denominator |
-| Currency | currency | currency | 0; +$1 on submit (Kokeshi: scrabble value) |
+| Currency | currency | currency | Face 0, then color (+1 red/blue, +2 purple); +$1 on submit (Kokeshi: scrabble value) |
 | Chess | chess_* | chess_pawn…king | Chess piece table |
 | BespokeCard | card / wildcard | card | 0 + suit |
 | ScatteredItem | item | item | 0; scored via item pipeline |
