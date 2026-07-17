@@ -838,6 +838,29 @@ def test_rack_tile_from_entry_preserves_card_suit():
     assert card_rank(tile) == "R"
 
 
+def test_rack_tile_from_entry_preserves_currency_base_score_zero():
+    """Colorless currency packet is 0; falsy `or 1` must not coerce it to 1."""
+    from cursed_words_solver.consumable_placement import rack_tile_from_entry
+    from cursed_words_solver.models import CurseType
+    from cursed_words_solver.rules.base_scoring import tile_base_contribution
+
+    tile = rack_tile_from_entry(
+        {
+            "rack_index": 2,
+            "letter": "₱",
+            "char_display": "₱",
+            "color": "colorless",
+            "curse": "currency",
+            "base_score": 0.0,
+        }
+    )
+    assert tile is not None
+    assert tile.curse == CurseType.CURRENCY
+    assert tile.base_score == 0.0
+    tile.metadata["was_consumable"] = True
+    assert tile_base_contribution(tile) == 0.0
+
+
 def test_bicycle_consumable_placement_rack_card_suit_bizarre():
     """Regression bizarre f8#1628: placed rack R must carry hearts for Bicycle credit."""
     from cursed_words_solver.consumable_placement import (

@@ -213,7 +213,9 @@ def rack_tile_from_entry(entry: dict[str, Any]) -> Tile | None:
     color = _COLOR_MAP.get(color_key, TileColor.UNKNOWN)
     curse = curse_type_from_key(curse_key)
     try:
-        base_score = float(entry.get("base_score", 1) or 1)
+        # Preserve explicit 0.0 (colorless currency). `or 1` would coerce 0 → 1.
+        raw_base = entry.get("base_score", 1)
+        base_score = 1.0 if raw_base is None else float(raw_base)
     except (TypeError, ValueError):
         base_score = 1.0
     meta: dict[str, Any] = {"source": "consumable_rack"}

@@ -9,6 +9,7 @@ from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColo
 from cursed_words_solver.rules.rule_lookup import SCORING_INACTIVE_TYPES, get_rule
 from cursed_words_solver.rules.scoring_conditions import (
     VOWELS,
+    VWXYZ,
     card_suit,
     evaluate_sticker_condition,
     first_letter_on_path,
@@ -123,8 +124,25 @@ def _partial_mult_credit(
     if condition == "ends_with_color:blue":
         return tile_counts_as_color(board.get_by_index(path[-1]), TileColor.BLUE)
     if condition == "word_starts_vowel":
-        first = first_letter_on_path(board, path) or word_first_letter(word)
+        # Mirror scoring_conditions / Egg: only path[0] LETTER faces count.
+        if path:
+            tile0 = board.get_by_index(path[0])
+            if tile0.curse != CurseType.LETTER:
+                return False
+            ch = (tile0.letter or tile0.char or "").strip().lower()
+            return len(ch) == 1 and ch.isalpha() and is_vowel_letter(ch)
+        first = word_first_letter(word)
         return bool(first) and is_vowel_letter(first)
+    if condition == "word_starts_vwxyz":
+        # Mirror scoring_conditions / WheezyVixen: only path[0] LETTER faces count.
+        if path:
+            tile0 = board.get_by_index(path[0])
+            if tile0.curse != CurseType.LETTER:
+                return False
+            ch = (tile0.letter or tile0.char or "").strip().lower()
+            return len(ch) == 1 and ch.isalpha() and ch in VWXYZ
+        first = word_first_letter(word)
+        return bool(first) and first in VWXYZ
     if condition == "word_starts_consonant":
         return bool(w) and w[0] not in VOWELS and w[0].isalpha()
     if condition == "word_starts_ends_different_suit" and len(path) >= 2:

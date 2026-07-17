@@ -2690,9 +2690,18 @@ class ScoringPipeline:
                 rule_trace_context["word_first_letter"] = word_first_letter(
                     state["word"]
                 )
-                rule_trace_context["path_first_letter"] = first_letter_on_path(
-                    board, path
-                )
+                # Match WheezyVixen: tiles[0] face only (not CURRENCY_MAP skip-ahead).
+                if path:
+                    tile0 = board.get_by_index(path[0])
+                    if tile0.curse == CurseType.LETTER:
+                        ch = (tile0.letter or tile0.char or "").strip().lower()
+                        rule_trace_context["path_first_letter"] = (
+                            ch if len(ch) == 1 and ch.isalpha() else ""
+                        )
+                    else:
+                        rule_trace_context["path_first_letter"] = ""
+                else:
+                    rule_trace_context["path_first_letter"] = ""
             rid = (rule_id or applying_sticker_id or "").lower()
             if (
                 met

@@ -3218,16 +3218,24 @@ def explain_sticker_condition(
 ) -> tuple[bool, str]:
     """Evaluate a sticker condition and return (met, human-readable reason)."""
     if condition == "word_starts_vwxyz":
+        # WheezyVixen.ApplyWordBonus: tiles[0].GetStringRepresentation() in {v,w,x,y,z}.
+        # Currency/number/wildcard faces never match (youthly/¥OUTHL¥ mismatch 20260717).
+        if path:
+            tile0 = board.get_by_index(path[0])
+            if tile0.curse != CurseType.LETTER:
+                return False, "skipped: path[0] is not a letter tile"
+            ch = (tile0.letter or tile0.char or "").strip().lower()
+            if not (len(ch) == 1 and ch.isalpha()):
+                return False, f"skipped: path[0] face '{ch or '?'}' not a letter"
+            if ch not in VWXYZ:
+                return False, f"skipped: path[0] '{ch}' not in vwxyz"
+            return True, f"applied: path[0] '{ch}' in vwxyz"
         first = word_first_letter(word)
-        path_first = first_letter_on_path(board, path)
         if not first:
             return False, "skipped: no word first letter"
         if first not in VWXYZ:
             return False, f"skipped: word '{first}' not in vwxyz"
-        if first != path_first:
-            path_label = path_first or "?"
-            return False, f"skipped: word '{first}' != path first letter '{path_label}'"
-        return True, f"applied: word '{first}' matches path first letter '{path_first}'"
+        return True, f"applied: word '{first}' in vwxyz"
 
     if condition == "word_starts_same_as_previous":
         return _bento_matches_previous_word_start(board, path, word, loadout)
@@ -3321,7 +3329,16 @@ def _evaluate_sticker_condition(
     if condition == "red_count_gte:3":
         return count_color_on_path(board, path, "red") >= 3
     if condition == "word_starts_vowel":
-        first = first_letter_on_path(board, path) or word_first_letter(word)
+        # Egg.ApplyWordBonus: IsVowel(tiles[0].GetStringRepresentation()).
+        # Currency/number/wildcard/chess faces are never vowels — do not skip
+        # leading currency to the next letter (sughs/$U… mismatch 20260717).
+        if path:
+            tile0 = board.get_by_index(path[0])
+            if tile0.curse != CurseType.LETTER:
+                return False
+            ch = (tile0.letter or tile0.char or "").strip().lower()
+            return len(ch) == 1 and ch.isalpha() and is_vowel_letter(ch)
+        first = word_first_letter(word)
         return bool(first) and is_vowel_letter(first)
     if condition == "word_starts_ends_red":
         if not path:
@@ -3338,10 +3355,16 @@ def _evaluate_sticker_condition(
     if condition == "blue_count_eq:2":
         return count_color_on_path(board, path, "blue") == 2
     if condition == "word_starts_vwxyz":
+        # WheezyVixen.ApplyWordBonus: tiles[0].GetStringRepresentation() in {v,w,x,y,z}.
+        # Currency/number/wildcard faces never match (youthly/¥OUTHL¥ mismatch 20260717).
+        if path:
+            tile0 = board.get_by_index(path[0])
+            if tile0.curse != CurseType.LETTER:
+                return False
+            ch = (tile0.letter or tile0.char or "").strip().lower()
+            return len(ch) == 1 and ch.isalpha() and ch in VWXYZ
         first = word_first_letter(word)
-        if not first or first not in VWXYZ:
-            return False
-        return first == first_letter_on_path(board, path)
+        return bool(first) and first in VWXYZ
     if condition == "word_starts_same_as_previous":
         return _bento_matches_previous_word_start(board, path, word, loadout)[0]
     if condition == "word_starts_after_previous":
@@ -4533,11 +4556,9 @@ def word_first_letter(word: str) -> str:
 
 
 def first_letter_on_path(board: Board, path: list[int]) -> str:
-    """First A–Z letter tile along the path (skips currency, numbers, emoji faces)."""
+    """First A–Z letter along the path (currency via CURRENCY_MAP; skips numbers/emoji)."""
     for idx in path:
         tile = board.get_by_index(idx)
-        if tile.curse == CurseType.CURRENCY:
-            continue
         ch = path_letter_for_count(tile)
         if ch and _is_alpha_face_key(ch):
             return ch
