@@ -1152,17 +1152,30 @@ def is_numeric_wildcard(
     *,
     flags: SearchFlagsMask = 0,
     segment: str | None = None,
+    path_number_values: list[int] | None = None,
 ) -> bool:
     """True when tile is a numeric wildcard at path_index (game Tile.IsNumericWildcard)."""
     flags = coerce_search_flags(flags)
     if tile.curse != CurseType.NUMBER:
         return False
-    if (
-        flag_test(flags, FLAG_NUMBER_ASCENDING_FREE_POSITION)
-        and segment
-        and number_digits_ascending(segment)
-    ):
-        return True
+    if flag_test(flags, FLAG_NUMBER_ASCENDING_FREE_POSITION):
+        if path_number_values is not None:
+            # Authoritative: actual number-tile face values in path order
+            # (matches game's Tile.cs NumberGoUp check).
+            if _path_number_values_ascending(path_number_values):
+                return True
+        elif (
+            segment
+            and any(ch.isdigit() for ch in segment)
+            and number_digits_ascending(segment)
+        ):
+            # Legacy fallback for callers with no path context. Guarded on
+            # "segment actually has digits" -- a resolved letter word like
+            # "aquae" has none, and must NOT be treated as vacuously
+            # ascending (that was the bug: it let Number Go Up bypass
+            # position-locking for every word, letting invalid words like
+            # AQUAE through).
+            return True
     values = tile_number_position_values(tile, flags)
     if not values:
         return False
@@ -1207,7 +1220,11 @@ def number_position_valid(
         and segment[position].isalpha()
     ):
         return is_numeric_wildcard(
-            tile, position, flags=flags, segment=segment
+            tile,
+            position,
+            flags=flags,
+            segment=segment,
+            path_number_values=path_number_values,
         )
     if flag_test(flags, FLAG_NUMBER_ASCENDING_FREE_POSITION):
         if path_number_values is not None:
@@ -1597,7 +1614,11 @@ class PathValidator:
                             continue
                     if ch.isalpha():
                         if is_numeric_wildcard(
-                            tile, i, flags=stamp_flags, segment=word
+                            tile,
+                            i,
+                            flags=stamp_flags,
+                            segment=word,
+                            path_number_values=path_number_values,
                         ):
                             pattern_chars.append("?")
                             char_pos += 1
