@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 
 from cursed_words_solver.models import Loadout
@@ -182,7 +181,6 @@ def flags_from_mask(mask: SearchFlagsMask) -> StampSearchFlags:
     )
 
 
-@lru_cache(maxsize=1)
 def _catalog() -> dict:
     if not _CATALOG_PATH.is_file():
         return {}

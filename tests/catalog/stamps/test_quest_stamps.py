@@ -213,6 +213,24 @@ def test_honeypot_stitched_words_validate(tmp_path):
     assert validator.word_ok(board, path, "catdog", stamp_flags=flags)
     assert not validator.word_ok(board, path, "catdog", stamp_flags=None)
 
+
+def test_number_go_up_uses_path_values_not_word_digits(tmp_path):
+    wl = tmp_path / "words.txt"
+    wl.write_text("123\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    validator = PathValidator(d, min_len=3)
+    board = _empty_board()
+    path = [0, 1, 2]
+    board.tiles[0][0] = _tile(0, 0, "3", 3, curse=CurseType.NUMBER, number_value=3)
+    board.tiles[0][1] = _tile(0, 1, "1", 1, curse=CurseType.NUMBER, number_value=1)
+    board.tiles[0][2] = _tile(0, 2, "2", 2, curse=CurseType.NUMBER, number_value=2)
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="number_go_up", name="Number Go Up", kind="stamp")]
+    )
+    flags = stamp_search_flags(loadout)
+    assert not validator.word_ok(board, path, "123", stamp_flags=flags)
+
+
 def test_honeypot_number_go_up_segment_local_positions():
     board = _empty_board()
     tiles = [

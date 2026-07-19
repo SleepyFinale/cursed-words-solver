@@ -1128,6 +1128,24 @@ def tile_number_position_values(
     return values
 
 
+def _path_number_values(board: Board, path: list[int]) -> list[int]:
+    values: list[int] = []
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if tile.curse != CurseType.NUMBER:
+            continue
+        nv = tile_number_value(tile)
+        if nv is not None and nv >= 1:
+            values.append(nv)
+    return values
+
+
+def _path_number_values_ascending(values: list[int]) -> bool:
+    if len(values) < 2:
+        return True
+    return all(values[i] < values[i + 1] for i in range(len(values) - 1))
+
+
 def is_numeric_wildcard(
     tile: Tile,
     path_index: int,
@@ -1171,6 +1189,7 @@ def number_position_valid(
     *,
     flags: SearchFlagsMask = 0,
     segment: str | None = None,
+    path_number_values: list[int] | None = None,
 ) -> bool:
     flags = coerce_search_flags(flags)
     if (
@@ -1190,12 +1209,12 @@ def number_position_valid(
         return is_numeric_wildcard(
             tile, position, flags=flags, segment=segment
         )
-    if (
-        flag_test(flags, FLAG_NUMBER_ASCENDING_FREE_POSITION)
-        and segment
-        and number_digits_ascending(segment)
-    ):
-        return True
+    if flag_test(flags, FLAG_NUMBER_ASCENDING_FREE_POSITION):
+        if path_number_values is not None:
+            if _path_number_values_ascending(path_number_values):
+                return True
+        elif segment and number_digits_ascending(segment):
+            return True
     if (
         flag_test(flags, FLAG_NUMBER_ROMAN_IVX)
         and segment
@@ -1344,6 +1363,7 @@ class PathValidator:
         ):
             return False
         relaxed_fractions = self.relaxed_numbers
+        path_number_values = _path_number_values(board, path)
         for i, idx in enumerate(path):
             tile = board.get_by_index(idx)
             if not number_position_valid(
@@ -1352,6 +1372,7 @@ class PathValidator:
                 self.relaxed_numbers,
                 flags=stamp_flags,
                 segment=word,
+                path_number_values=path_number_values,
             ):
                 return False
             if not fraction_position_valid(tile, i, relaxed_fractions):
@@ -1483,10 +1504,19 @@ class PathValidator:
         stamp_flags = coerce_search_flags(stamp_flags)
         char_pos = 0
         pattern_chars: list[str] = []
+        path_number_values = _path_number_values(board, path)
         for i, idx in enumerate(path):
             tile = board.get_by_index(idx)
             if char_pos >= len(word):
                 return False
+            if (
+                tile.curse == CurseType.NUMBER
+                and flag_test(stamp_flags, FLAG_NUMBER_ASCENDING_FREE_POSITION)
+                and _path_number_values_ascending(path_number_values)
+            ):
+                pattern_chars.append("?")
+                char_pos += 1
+                continue
             if (
                 tile.curse == CurseType.NUMBER
                 and word[char_pos].isdigit()
