@@ -42,6 +42,7 @@
     {"stem": "20260630_154012", "category": "replay_gap", "reason": "Nina genies: snapshot replay pending full F8 scoring-board embed fidelity"},
     {"stem": "20260630_154233", "category": "replay_gap", "reason": "Nina deepies: snapshot replay pending full F8 scoring-board embed fidelity"},
     {"stem": "20260709_144215", "category": "replay_gap", "reason": "Dusty Coffin: game word_bonus 48 with only 3 voids (path-face decompile yields +24)"},
-    {"stem": "20260709_144650", "category": "replay_gap", "reason": "Dusty Coffin: game word_bonus 48 with only 3 voids (path-face decompile yields +24)"}
+    {"stem": "20260709_144650", "category": "replay_gap", "reason": "Dusty Coffin: game word_bonus 48 with only 3 voids (path-face decompile yields +24)"},
+    {"stem": "20260801_224800", "category": "stale_snapshot", "reason": "unsexed: F8 board lacks Spicy Pepper / Young Cardinal path faces and item curses; purple Telescope covered by test_unsexed_telescope_purple_via_path_tiles"}
   ]
 }

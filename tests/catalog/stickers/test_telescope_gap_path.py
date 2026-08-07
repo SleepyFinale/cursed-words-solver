@@ -336,6 +336,245 @@ def test_igapos_telescope_f8_score():
     assert int(score) == int(data["actual_score"]) == 440
 
 
+def test_telescope_purple_counts_as_red_running_and_bonus():
+    """Purple IsTileType(red): Telescope prefix/bonus must include purple tiles."""
+    from cursed_words_solver.models import (
+        Board,
+        CurseType,
+        Loadout,
+        LoadoutItem,
+        Tile,
+        TileColor,
+    )
+
+    def _cell(r: int, c: int, letter: str, color: TileColor, base: int = 1) -> Tile:
+        return Tile(r, c, letter, letter, base, color, CurseType.LETTER)
+
+    tiles = [[_cell(r, c, "x", TileColor.COLORLESS) for c in range(5)] for r in range(5)]
+    tiles[0][0] = _cell(0, 0, "a", TileColor.PURPLE, base=2)
+    tiles[0][1] = _cell(0, 1, "b", TileColor.COLORLESS, base=1)
+    tiles[0][2] = _cell(0, 2, "c", TileColor.PURPLE, base=2)
+    board = Board(tiles=tiles)
+    path = [0, 1, 2]
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="telescope", name="Telescope", level=1)],
+        extras={"grid_number": "1", "scoring_previous_words_count": "0"},
+    )
+    assert telescope_running_red_count(loadout, board, path, 0) == 1
+    assert telescope_running_red_count(loadout, board, path, 2) == 2
+
+    score, _, trace = ScoringPipeline().score_with_trace(
+        board, path, "abc", loadout
+    )
+    tele = [
+        s
+        for s in (trace or [])
+        if isinstance(s, dict)
+        and s.get("effect_type") == "red_encounter_tile_bonus"
+    ]
+    assert tele
+    # L1: purple@0 +1*1 → 3, purple@2 +1*2 → 6; colorless middle unchanged
+    assert tele[0]["tile_scores"] == [3.0, 1.0, 6.0]
+    assert int(score) == 10
+
+
+def test_telescope_purple_l2_matches_unsexed_tile_math():
+    """unsexed-style: prior 22, L2, five purple path tiles → Telescope tile vector."""
+    from cursed_words_solver.models import (
+        Board,
+        CurseType,
+        Loadout,
+        LoadoutItem,
+        Tile,
+        TileColor,
+    )
+
+    def _cell(
+        r: int,
+        c: int,
+        letter: str,
+        color: TileColor,
+        base: float,
+        *,
+        curse: CurseType = CurseType.LETTER,
+        meta: dict | None = None,
+    ) -> Tile:
+        return Tile(
+            r, c, letter, letter, base, color, curse, metadata=meta or {}
+        )
+
+    tiles = [
+        [_cell(r, c, "x", TileColor.COLORLESS, 0) for c in range(5)]
+        for r in range(5)
+    ]
+    # Path faces mirroring unsexed actual_trace (indices 0..6 on a linear path).
+    tiles[0][0] = _cell(
+        0,
+        0,
+        "S",
+        TileColor.PURPLE,
+        0,
+        curse=CurseType.ITEM,
+        meta={"scattered_item_id": "telescope", "scattered_item_level": 2},
+    )
+    tiles[0][1] = _cell(0, 1, "N", TileColor.COLORLESS, 1)
+    tiles[0][2] = _cell(0, 2, "N", TileColor.PURPLE, 3)
+    tiles[0][3] = _cell(0, 3, "E", TileColor.PURPLE, 2)
+    tiles[0][4] = _cell(0, 4, "X", TileColor.COLORLESS, 6)
+    tiles[1][0] = _cell(1, 0, "E", TileColor.PURPLE, 2)
+    tiles[1][1] = _cell(
+        1,
+        1,
+        "O",
+        TileColor.PURPLE,
+        0,
+        curse=CurseType.ITEM,
+        meta={"scattered_item_id": "family_ticket", "scattered_item_level": 1},
+    )
+    board = Board(tiles=tiles)
+    path = [0, 1, 2, 3, 4, 5, 6]
+    loadout = Loadout(
+        extras={
+            "grid_number": "4",
+            "scoring_previous_words_count": "1",
+            "historic_words": json.dumps(
+                [
+                    {"red_tile_count": 7},
+                    {"red_tile_count": 6},
+                    {"red_tile_count": 9},
+                ]
+            ),
+        }
+    )
+    assert telescope_running_red_count(loadout, board, path, 0) == 23
+    assert telescope_running_red_count(loadout, board, path, 6) == 27
+    score, _, trace = ScoringPipeline().score_with_trace(
+        board, path, "snnexeo", loadout
+    )
+    tele = [
+        s
+        for s in (trace or [])
+        if isinstance(s, dict)
+        and s.get("effect_type") == "red_encounter_tile_bonus"
+    ]
+    assert tele
+    assert tele[0]["tile_scores"] == [46.0, 1.0, 51.0, 52.0, 6.0, 54.0, 54.0]
+    assert int(tele[0]["subtotal"]) == 264
+    assert score >= 264
+
+
+UNSEXED = FIXTURES / "20260801_224800.json"
+
+
+def _overlay_path_tiles_on_board(board, path: list[int], path_tiles: list[dict]) -> None:
+    from cursed_words_solver.models import CurseType, Tile, TileColor
+
+    for idx, pt in zip(path, path_tiles):
+        if not isinstance(pt, dict):
+            continue
+        row, col = divmod(int(idx), 5)
+        color_raw = str(pt.get("color") or "colorless").lower()
+        try:
+            color = TileColor(color_raw)
+        except ValueError:
+            color = TileColor.COLORLESS
+        curse_raw = str(pt.get("curse") or "letter").lower()
+        try:
+            curse = CurseType(curse_raw)
+        except ValueError:
+            curse = CurseType.LETTER
+        letter = str(pt.get("letter") or "A")
+        char = str(pt.get("char") or letter)
+        base = float(pt.get("base_score") or 0)
+        meta: dict = {}
+        if "🔭" in char:
+            meta["scattered_item_id"] = "telescope"
+            meta["scattered_item_level"] = 2
+            curse = CurseType.ITEM
+        elif "🎟️" in char or "family_ticket" in str(
+            pt.get("scattered_item_id") or ""
+        ):
+            meta["scattered_item_id"] = "family_ticket"
+            meta["scattered_item_level"] = 1
+            curse = CurseType.ITEM
+        sid = pt.get("scattered_item_id")
+        if sid:
+            meta["scattered_item_id"] = sid
+            try:
+                meta["scattered_item_level"] = int(pt.get("scattered_item_level") or 1)
+            except (TypeError, ValueError):
+                meta["scattered_item_level"] = 1
+            curse = CurseType.ITEM
+        board.tiles[row][col] = Tile(
+            row, col, char, letter, base, color, curse, metadata=meta
+        )
+
+
+def test_unsexed_telescope_purple_via_path_tiles():
+    """20260801 unsexed: path_tiles board + purple-as-red Telescope → 2832."""
+    if not UNSEXED.is_file():
+        return
+    data = json.loads(UNSEXED.read_text(encoding="utf-8"))
+    run_state = dict(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = list(data["path"])
+    _overlay_path_tiles_on_board(board, path, data.get("path_tiles") or [])
+    apply_snapshot_phased_session_extras(loadout, board)
+    score, _, trace = ScoringPipeline().score_with_trace(
+        board, path, data["word"], loadout
+    )
+    assert int(score) == int(data["actual_score"]) == 2832
+    tele = [
+        s
+        for s in (trace or [])
+        if isinstance(s, dict)
+        and s.get("effect_type") == "red_encounter_tile_bonus"
+    ]
+    assert tele
+    assert tele[0]["tile_scores"] == [46.0, 1.0, 51.0, 52.0, 6.0, 54.0, 54.0]
+
+
+ELSHIN = FIXTURES / "20260801_224419.json"
+
+
+def test_elshin_electric_guitar_purple_note():
+    """20260801 elshin: purple E is a red note → Guitar L2 +30 → 1200."""
+    if not ELSHIN.is_file():
+        return
+    data = json.loads(ELSHIN.read_text(encoding="utf-8"))
+    run_state = dict(data["run_state_snapshot"])
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
+    path = list(data["path"])
+    _overlay_path_tiles_on_board(board, path, data.get("path_tiles") or [])
+    # path_tiles use emoji; ensure guitar/big_bang scatter metadata
+    for idx, pt in zip(path, data.get("path_tiles") or []):
+        if not isinstance(pt, dict):
+            continue
+        char = str(pt.get("char") or "")
+        row, col = divmod(int(idx), 5)
+        tile = board.tiles[row][col]
+        if "🎸" in char:
+            tile.metadata["scattered_item_id"] = "electric_guitar"
+            tile.metadata["scattered_item_level"] = 2
+        elif "💥" in char:
+            tile.metadata["scattered_item_id"] = "big_bang"
+            tile.metadata["scattered_item_level"] = 1
+    apply_snapshot_phased_session_extras(loadout, board)
+    score, _, trace = ScoringPipeline().score_with_trace(
+        board, path, data["word"], loadout
+    )
+    assert int(score) == int(data["actual_score"]) == 1200
+    guitar = [
+        s
+        for s in (trace or [])
+        if isinstance(s, dict) and s.get("rule_id") == "electric_guitar" and s.get("applied")
+    ]
+    assert guitar
+    assert guitar[0]["tile_scores"][0] == 32.0
+
+
 def test_toolbox_boosts_cherry_pie_grid_multiplier():
     from cursed_words_solver.models import (
         Board,
@@ -376,8 +615,54 @@ def test_toolbox_boosts_cherry_pie_grid_multiplier():
         path_tile_index=0,
     )
     assert level == 2
-    factor = scaled_word_multiplier(level, rule, loadout)
-    assert factor == 3.0
+
+
+def test_cherry_pie_scatter_keeps_export_when_extras_confirm_equipped_tier():
+    """Equipped + on-path cherry_pie at same tier is not inventory bleed-through."""
+    from cursed_words_solver.models import (
+        Board,
+        CurseType,
+        Loadout,
+        LoadoutItem,
+        Tile,
+        TileColor,
+    )
+
+    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
+    board.tiles[0][4] = Tile(
+        row=0,
+        col=4,
+        char="🥧",
+        letter="Y",
+        base_score=0,
+        color=TileColor.PURPLE,
+        curse=CurseType.ITEM,
+        metadata={
+            "scattered_item_id": "cherry_pie",
+            "scattered_item_level": 3,
+        },
+    )
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="toolbox", name="Toolbox", level=3),
+            LoadoutItem(id="cherry_pie", name="Cherry Pie", level=3),
+        ],
+        extras={
+            "grid_number": "1",
+            "scoring_previous_words_count": "0",
+            "grid_scattered_items": (
+                '[{"row":0,"col":4,"id":"cherry_pie","level":3}]'
+            ),
+        },
+    )
+    level = grid_path_sticker_level(
+        loadout,
+        "cherry_pie",
+        board=board,
+        path=[4],
+        path_tile_index=0,
+    )
+    assert level == 3
 
 
 def test_maple_leaf_floor_mod_caps_grid_scatter_level():

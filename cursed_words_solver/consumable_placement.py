@@ -546,12 +546,15 @@ def rack_placement_requires_path_inclusion(
     board: Board,
     rules: dict[str, Any],
 ) -> bool:
-    """True when every simulated placement must appear on the submitted path.
+    """True when game rules mandate placed consumables appear on the submitted path.
 
     Sandy cactus placements (and already-placed Sandy consumables) are mandatory
     and must be on the word. Up and Up also needs placements on-path when they
-    are how the center tile is reached. Optional mahjong / score-boost rack tiles
-    may help score when used, but must not reject board-only words that ignore them.
+    are how the center tile is reached.
+
+    Score-boost / target-rescue / board-empty fallback always enforce path
+    inclusion during search separately (see ``require_placements_in_path=True``
+    on those entry points); this helper is for Sandy / quest messaging only.
     """
     if sandy_placement_search_active(loadout, board, rules):
         return True
@@ -1417,6 +1420,22 @@ def _finalize_placement_search(
         )
         return board, [], []
 
+    # Never suggest placements the winning word does not use (defense in depth).
+    if best_results and best_records:
+        path_set = set(best_results[0].path or [])
+        if any(rec.index not in path_set for rec in best_records):
+            _last_placement_search_stats = PlacementSearchStats(
+                variant_gen_sec=variant_gen_sec,
+                variant_screen_sec=variant_screen_sec,
+                variant_refine_sec=variant_refine_sec,
+                variants_screened=variants_screened,
+                rack_slots_screened=_distinct_rack_slots_screened(screened),
+                best_screened_rank=_best_screened_rank(screened),
+                threshold_rank=float(threshold) if threshold is not None else None,
+                adopted=False,
+            )
+            return board, [], []
+
     if best_results:
         _attach_placement_breakdown(best_results, best_records)
         adopted = True
@@ -1796,9 +1815,7 @@ def search_consumable_placement_fallback(
         rack_tiles,
         time_budget=time_budget,
         top_n=top_n,
-        require_placements_in_path=rack_placement_requires_path_inclusion(
-            loadout, board, rules
-        ),
+        require_placements_in_path=True,
         max_variants=128,
         rules=rules,
         solve_deadline=solve_deadline,
@@ -1835,6 +1852,7 @@ def search_target_rescue(
         top_n=top_n,
         min_score=min_score,
         prefer_fewest_tiles=True,
+        require_placements_in_path=True,
         rules=rules,
         variant_gen_budget=variant_gen_budget,
         solve_deadline=solve_deadline,
@@ -1914,9 +1932,7 @@ def search_consumable_score_boost(
         top_n=top_n,
         min_rank_score=min_rank,
         prefer_fewest_tiles=prefer_fewest,
-        require_placements_in_path=rack_placement_requires_path_inclusion(
-            loadout, board, rules
-        ),
+        require_placements_in_path=True,
         rules=rules,
         variant_gen_budget=variant_gen_budget,
         max_variants=max_variants,

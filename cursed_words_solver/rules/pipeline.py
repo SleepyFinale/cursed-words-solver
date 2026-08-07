@@ -12,6 +12,7 @@ from cursed_words_solver.models import (
     LoadoutItem,
     Tile,
     TileColor,
+    tile_counts_as_color,
 )
 from cursed_words_solver.rules.base_scoring import (
     microscope_init_contribution,
@@ -2989,7 +2990,7 @@ class ScoringPipeline:
             if per_level:
                 count = 0
                 for i, idx in enumerate(path):
-                    if board.get_by_index(idx).color.value == "red":
+                    if tile_counts_as_color(board.get_by_index(idx), TileColor.RED):
                         running = telescope_running_red_count(loadout, board, path, i)
                         add = per_level * running
                         state["tile_scores"][i] += add
@@ -3032,10 +3033,12 @@ class ScoringPipeline:
                 state["effects"].append(f"×{factor} word")
         elif effect_type == "red_tile_bonus":
             for i, idx in enumerate(path):
-                if board.get_by_index(idx).color.value == "red":
+                if tile_counts_as_color(board.get_by_index(idx), TileColor.RED):
                     state["tile_scores"][i] += value
             red_count = sum(
-                1 for i in path if board.get_by_index(i).color.value == "red"
+                1
+                for i in path
+                if tile_counts_as_color(board.get_by_index(i), TileColor.RED)
             )
             if red_count:
                 state["effects"].append(f"+{value} per red tile ({red_count})")

@@ -147,6 +147,14 @@ def test_red_note_excludes_scattered_item_tiles():
     assert is_red_note_tile(letter)
 
 
+def test_purple_note_counts_as_red_for_electric_guitar():
+    """Game IsTileType(red): purple A–G notes trigger Electric Guitar."""
+    purple_e = Tile(0, 0, "E", "E", 2, TileColor.PURPLE, CurseType.LETTER)
+    purple_s = Tile(0, 1, "S", "S", 2, TileColor.PURPLE, CurseType.LETTER)
+    assert is_red_note_tile(purple_e)
+    assert not is_red_note_tile(purple_s)
+
+
 def test_red_r_baked_in_base_score_virge():
     """Melmod exports packet.Score; red bonus already included (virge R)."""
     t = Tile(0, 0, "R", "R", 2, TileColor.RED, CurseType.LETTER)
@@ -598,4 +606,10 @@ def test_void_currency_edge_pheese_bottom_penalty_capped():
 def test_void_currency_edge_net_low_cv_no_penalty():
     """July 8 net: void ₦ cv=1 at top row path start → 0."""
     scores = _void_init_from_mismatch("20260708_185231")
+    assert scores[0] == 0.0
+
+
+def test_void_currency_top_row_german_guarani_no_penalty():
+    """Aug 2 german: void ₲ cv=2 at top row path start → 0 (not −10)."""
+    scores = _void_init_from_mismatch("20260802_002533")
     assert scores[0] == 0.0

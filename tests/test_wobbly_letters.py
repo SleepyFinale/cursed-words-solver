@@ -52,16 +52,22 @@ def test_red_envelope_plus_suspension_bridge_does_not_plus_minus_e() -> None:
     assert "f" not in opts
 
 
-def test_spicy_pepper_plus_suspension_bridge_does_not_plus_minus_s() -> None:
-    tile = Tile(0, 0, "V", "V", 1, TileColor.RED, CurseType.LETTER)
+def test_spicy_pepper_plus_red_envelope_allows_face_s_and_e() -> None:
+    """Both remaps stay optional when Spicy Pepper and Red Envelope are active."""
+    tile = Tile(0, 0, "N", "N", 1, TileColor.RED, CurseType.LETTER)
     opts = set(
         resolve_letter_options(
-            tile, 0, flags=FLAG_RED_AS_S | FLAG_RED_LETTER_PLUS_MINUS_ONE
+            tile, 0, flags=FLAG_RED_AS_S | FLAG_RED_AS_E
         )
     )
-    assert opts == {"s", "u", "v", "w"}
-    assert "r" not in opts
-    assert "t" not in opts
+    assert opts == {"e", "n", "s"}
+
+
+def test_purple_spicy_pepper_counts_as_red() -> None:
+    """Game IsTileType(red): purple letters get Spicy Pepper s option."""
+    tile = Tile(0, 0, "W", "W", 1, TileColor.PURPLE, CurseType.LETTER)
+    opts = set(resolve_letter_options(tile, 0, flags=FLAG_RED_AS_S))
+    assert opts == {"s", "w"}
 
 
 def test_spicy_pepper_alignment_pattern_wildcards_multi_option_reds() -> None:

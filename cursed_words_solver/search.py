@@ -682,9 +682,17 @@ def resolve_letter(
     ):
         return "1"
     ch = (tile.letter or "?").lower()
-    if flag_test(flags, FLAG_RED_AS_S) and tile.color == TileColor.RED and tile.curse == CurseType.LETTER:
+    if (
+        flag_test(flags, FLAG_RED_AS_S)
+        and tile_counts_as_color(tile, TileColor.RED)
+        and tile.curse == CurseType.LETTER
+    ):
         return "s"
-    if flag_test(flags, FLAG_RED_AS_E) and tile.color == TileColor.RED and tile.curse == CurseType.LETTER:
+    if (
+        flag_test(flags, FLAG_RED_AS_E)
+        and tile_counts_as_color(tile, TileColor.RED)
+        and tile.curse == CurseType.LETTER
+    ):
         return "e"
     if flag_test(flags, FLAG_Z_AS_S) and ch == "z":
         return "s"
@@ -782,7 +790,7 @@ def resolve_letter_options(
         return ["h", "y"]
     if (
         flag_test(flags, FLAG_RED_LETTER_PLUS_MINUS_ONE)
-        and tile.color == TileColor.RED
+        and tile_counts_as_color(tile, TileColor.RED)
         and tile.curse == CurseType.LETTER
     ):
         # Game WordTrie.IsTileMatchingChar (Automobile): ±1 vs face tileStr only.
@@ -796,14 +804,22 @@ def resolve_letter_options(
             if seed < "z":
                 expanded.add(chr(ord(seed) + 1))
         alts = expanded
+    # Spicy Pepper / Red Envelope: face stays valid; both substitutes apply when
+    # both stamps are active (resolve_letter can only return one primary).
+    if (
+        tile.curse == CurseType.LETTER
+        and tile_counts_as_color(tile, TileColor.RED)
+    ):
+        if flag_test(flags, FLAG_RED_AS_E):
+            alts.add("e")
+        if flag_test(flags, FLAG_RED_AS_S):
+            alts.add("s")
     if tile.metadata.get("is_wobbly") and physical and physical.isalpha():
         alts.add(physical)
-        if flag_test(flags, FLAG_RED_AS_E) and tile.color == TileColor.RED:
-            alts.add("e")
-        if flag_test(flags, FLAG_RED_AS_S) and tile.color == TileColor.RED:
-            alts.add("s")
         if flag_test(flags, FLAG_Z_AS_S) and physical == "z":
             alts.add("s")
+    elif flag_test(flags, FLAG_Z_AS_S) and physical == "z":
+        alts.add("s")
     return sorted(alts)
 
 

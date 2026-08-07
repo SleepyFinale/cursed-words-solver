@@ -231,10 +231,12 @@ def melmod_void_currency_init_contribution(
         face = path_letter_for_count(tile)
         letter = word_lower[path_index]
         in_word = (mapped and mapped == letter) or (face and face.lower() == letter)
-        if in_word and tile.row in (0, bottom_row):
+        # Game waives void non-$ init at path start except bottom-row letter match
+        # (pheese ₱); top-row starts (german ₲, net ₦) contribute 0.
+        if in_word and tile.row == bottom_row:
             cv = currency_letter_value(tile)
             penalty = _void_currency_path_init_penalty(tile, loadout)
-            # cv=1 void currency at board edge → 0 (net ₦); cv≥2 caps at -10 (pheese ₱).
+            # cv=1 void currency at bottom edge → 0; cv≥2 caps at -10 (pheese ₱).
             if cv >= 2 and penalty > 0:
                 return -float(min(penalty, 10))
     return 0.0

@@ -468,6 +468,7 @@ def test_search_consumable_score_boost_uses_non_first_rack_tile(tmp_path):
     assert len(records) == 1
     assert records[0].rack_index == 1
     assert placed_consumable_indices(sim_board) == frozenset({rec.index for rec in records})
+    assert {rec.index for rec in records}.issubset(set(results[0].path))
 
 
 def test_search_target_rescue_adopts_only_when_score_meets_target(tmp_path, monkeypatch):
@@ -864,6 +865,7 @@ def test_search_consumable_score_boost_adopts_when_improved(tmp_path):
     assert len(records) == 1
     assert placed_consumable_indices(sim_board) == frozenset({rec.index for rec in records})
     assert results[0].breakdown.get("consumable_placements")
+    assert {rec.index for rec in records}.issubset(set(results[0].path))
 
 
 def test_search_consumable_score_boost_returns_empty_when_not_improved(
@@ -893,6 +895,114 @@ def test_search_consumable_score_boost_returns_empty_when_not_improved(
     )
     assert not results
     assert not records
+
+
+def test_finalize_rejects_placements_not_on_winning_path(tmp_path, monkeypatch):
+    """Defense-in-depth: never adopt placements the winning path ignores."""
+    from cursed_words_solver.models import WordResult
+
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    rack_tile = Tile(-1, -1, "Z", "Z", 1, metadata={"rack_index": 0})
+    placements = [(24, rack_tile)]  # bottom-right; word path ignores it
+    sim_board = apply_consumable_placements(board, placements)
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=2.0)
+
+    def fake_find(board_arg, loadout=None, top_n=1, **kwargs):
+        return [
+            WordResult(
+                word="cat",
+                path=[0, 1, 2],
+                score=900.0,
+                rank_score=900.0,
+                breakdown={},
+            )
+        ]
+
+    monkeypatch.setattr(searcher, "find_best_words", fake_find)
+    screened = [
+        (900.0, 1, placements, sim_board, fake_find(sim_board)[0]),
+    ]
+    out_board, records, results = _finalize_placement_search(
+        searcher,
+        board,
+        Loadout(
+            stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+            extras={"tile_ninja_consumables_used": "5", "tile_ninja_bonus": "0.1"},
+        ),
+        screened,
+        time_budget=2.0,
+        top_n=1,
+        min_score=None,
+        min_rank_score=None,
+        prefer_fewest_tiles=False,
+        require_placements_in_path=False,
+        base_required=frozenset(),
+        variant_gen_sec=0.0,
+        variant_screen_sec=0.0,
+        variants_screened=1,
+    )
+    assert out_board is board
+    assert not records
+    assert not results
+    assert not cp.last_placement_search_stats().adopted
+
+
+def test_search_consumable_score_boost_placements_must_be_on_path(tmp_path):
+    """Adopted score-boost placements must appear on the winning word path."""
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\nzoo\n", encoding="utf-8")
+    d = WordDictionary(wl)
+    tiles = [[_tile("x", r, c) for c in range(5)] for r in range(5)]
+    tiles[0][0] = _tile("c", 0, 0)
+    tiles[0][1] = _tile("a", 0, 1)
+    board = Board(tiles=tiles)
+    rack = [
+        Tile(
+            -1,
+            -1,
+            "T",
+            "T",
+            5,
+            color=TileColor.RED,
+            curse=CurseType.LETTER,
+            metadata={"rack_index": 0},
+        ),
+    ]
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={
+            "consumable_rack": [
+                {
+                    "rack_index": 0,
+                    "letter": "T",
+                    "color": "red",
+                    "curse": "letter",
+                    "base_score": 5,
+                }
+            ],
+            "consumable_rack_count": "1",
+            "tile_ninja_consumables_used": "10",
+            "tile_ninja_bonus": "0.2",
+        },
+    )
+    rules = ScoringPipeline().rules
+    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
+    sim_board, records, results = search_consumable_score_boost(
+        searcher,
+        board,
+        loadout,
+        rack,
+        baseline_score=10.0,
+        time_budget=4.0,
+        top_n=3,
+        rules=rules,
+    )
+    if results and records:
+        assert {rec.index for rec in records}.issubset(set(results[0].path))
+        assert results[0].word == "cat"
 
 
 def test_rack_requires_export_when_count_without_rack_json():

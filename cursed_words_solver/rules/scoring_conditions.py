@@ -363,14 +363,14 @@ def tile_is_wobbly_from_loadout(tile: Tile, loadout: Loadout | None) -> bool:
     # Suspension Bridge: all red letters behave as ±1 → wobbly.
     if (
         flag_test(flags, FLAG_RED_LETTER_PLUS_MINUS_ONE)
-        and tile.color == TileColor.RED
+        and tile_counts_as_color(tile, TileColor.RED)
         and tile.curse == CurseType.LETTER
     ):
         return True
     # Red Envelope: non-"e" red letters wobble toward E.
     if (
         flag_test(flags, FLAG_RED_AS_E)
-        and tile.color == TileColor.RED
+        and tile_counts_as_color(tile, TileColor.RED)
         and face
         and face != "e"
     ):
@@ -378,7 +378,7 @@ def tile_is_wobbly_from_loadout(tile: Tile, loadout: Loadout | None) -> bool:
     # Spicy Pepper: non-"s" red letters wobble toward S.
     if (
         flag_test(flags, FLAG_RED_AS_S)
-        and tile.color == TileColor.RED
+        and tile_counts_as_color(tile, TileColor.RED)
         and face
         and face != "s"
     ):
@@ -1400,7 +1400,11 @@ def is_consonant_letter(ch: str) -> bool:
 def is_red_note_tile(tile: Tile) -> bool:
     if tile.curse == CurseType.ITEM:
         return False
-    return tile.color == TileColor.RED and tile.letter.lower() in RED_NOTES
+    # Game IsTileType(red): purple counts as red (Electric Guitar notes).
+    return (
+        tile_counts_as_color(tile, TileColor.RED)
+        and tile.letter.lower() in RED_NOTES
+    )
 
 
 def tile_number_value(tile: Tile) -> int:
@@ -2660,7 +2664,7 @@ def telescope_running_red_count(
     prefix_reds = sum(
         1
         for j in range(path_index + 1)
-        if board.get_by_index(path[j]).color == TileColor.RED
+        if tile_counts_as_color(board.get_by_index(path[j]), TileColor.RED)
     )
     if parse_historic_words(loadout):
         return prior + prefix_reds
@@ -2668,7 +2672,7 @@ def telescope_running_red_count(
         (
             j
             for j in range(path_index)
-            if board.get_by_index(path[j]).color == TileColor.RED
+            if tile_counts_as_color(board.get_by_index(path[j]), TileColor.RED)
         ),
         default=-1,
     )
@@ -5811,10 +5815,28 @@ def grid_path_sticker_level(
         and exported_tile_level > encounter_level
         and slug_norm not in _GRID_PATH_INVENTORY_BLEEDTHROUGH_EXCLUDE
     ):
-        # Export matches inventory tier (component bleed-through); grid scores at
-        # encounter scatter tier while equipped sticker still fires separately.
-        level = encounter_level
-        skip_equipped_merge = True
+        # Export matches inventory tier: usually melmod component bleed-through.
+        # Keep the export when grid_scattered_items independently confirms it
+        # (real L3 cherry_pie scatter alongside equipped cherry_pie), or when
+        # Toolbox upgrades start-of-grid scatters on grid 1 word 1.
+        extras_confirmed = _grid_scattered_level_from_extras(
+            loadout,
+            slug_norm,
+            board=board,
+            path=path,
+            path_tile_index=path_tile_index,
+        )
+        toolbox_keeps_export = (
+            loadout is not None
+            and _toolbox_boost_applies_to_scattered(loadout, slug_norm)
+            and exported_tile_level >= _equipped_toolbox_level(loadout)
+        )
+        if extras_confirmed == exported_tile_level or toolbox_keeps_export:
+            level = max(level, exported_tile_level)
+            skip_equipped_merge = True
+        else:
+            level = encounter_level
+            skip_equipped_merge = True
     if (
         loadout is not None
         and loadout.stickers

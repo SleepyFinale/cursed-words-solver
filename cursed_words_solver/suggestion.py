@@ -40,7 +40,11 @@ from cursed_words_solver.models import (
 )
 
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.stamp_behaviors import SearchFlagsMask, stamp_search_flags
+from cursed_words_solver.rules.stamp_behaviors import (
+    SearchFlagsMask,
+    path_scattered_search_flags_mask,
+    stamp_search_flags,
+)
 
 from cursed_words_solver.rules.twinkle_toes import TwinkleToesSwap
 
@@ -62,6 +66,13 @@ _F8_SEQUENCE_PATH = LAST_SUGGESTION_PATH.parent / ".f8_sequence"
 
 # Melmod auto-export can update workflow extras shortly after F8 save.
 F8_EXPORT_CATCHUP_GRACE_SEC = 1.5
+
+
+def _path_search_flags(board: Board, path: list[int], loadout: Loadout) -> SearchFlagsMask:
+    """Equipped stamp flags OR scattered stamp items picked up on ``path``."""
+    return path_scattered_search_flags_mask(
+        board, path, stamp_search_flags(loadout)
+    )
 
 
 def f8_export_catchup_grace_sec(search_budget_sec: float | None = None) -> float:
@@ -1580,7 +1591,7 @@ def _collect_dictionary_matches_for_path(
     deadline_check: Callable[[], bool] | None = None,
 ) -> list[str]:
     """Dictionary spellings matching a path alignment pattern."""
-    flags = stamp_search_flags(loadout)
+    flags = _path_search_flags(board, path, loadout)
     validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
     if len(pattern) < min_len:
         return []
@@ -1765,7 +1776,7 @@ def dictionary_word_for_path(
 ) -> str | None:
     """Best-effort dictionary spelling the game accepts on this path (vs scoring form)."""
     word = scoring_word.lower()
-    flags = stamp_search_flags(loadout)
+    flags = _path_search_flags(board, path, loadout)
     validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
 
     if word.isalpha() and validator.word_ok(board, path, word, flags):
@@ -2238,7 +2249,7 @@ def _valid_dictionary_words_for_path(
     limit: int | None = None,
     deadline_check: Callable[[], bool] | None = None,
 ) -> list[str]:
-    flags = stamp_search_flags(loadout)
+    flags = _path_search_flags(board, path, loadout)
     validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
     lowered = scoring_word.lower()
     if (
@@ -2290,7 +2301,7 @@ def path_is_submittable(
     deadline_check: Callable[[], bool] | None = None,
 ) -> bool:
     """True when the game accepts a dictionary word on this path."""
-    flags = stamp_search_flags(loadout)
+    flags = _path_search_flags(board, path, loadout)
     if not path_movement_ok(board, path, flags=flags, loadout=loadout):
         return False
     lowered = scoring_word.lower()
@@ -2366,7 +2377,7 @@ def game_word_for_path(
     lowered = scoring_word.lower()
     if dictionary is None:
         return lowered
-    flags = stamp_search_flags(loadout)
+    flags = _path_search_flags(board, path, loadout)
     validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
     if lowered.isalpha() and validator.word_ok(board, path, lowered, flags):
         return lowered
