@@ -717,16 +717,16 @@ def _apply_pending_word_finalize_steps(
                 )
             if word_extra:
                 total += word_extra
+            # Wiki bookkeeping: move GREEN onto the word track. Do not add
+            # green_bump into total — those points were already included in the
+            # tile_sum multiplied above. Re-adding them before equipped ×WORD
+            # double-counts green (clogginess/siddhuisms −125 = 50×2.5).
             apply_green_tile_word_transfer(
                 board,
                 path,
                 state,
                 trace_step=_trace_step if trace is not None else None,
             )
-            # Green transfer may have added to word_score after we snapped word_extra.
-            green_bump = float(state.get("word_score", 0)) - queued_add - word_extra
-            if green_bump:
-                total += green_bump
             for step in other_entries:
                 total = _apply_one_finalize_mult_step(
                     total, step, state, trace=trace

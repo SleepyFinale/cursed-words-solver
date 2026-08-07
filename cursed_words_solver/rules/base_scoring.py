@@ -87,7 +87,6 @@ def _void_penalty_steps_for_tile(tile: Tile, loadout: Loadout | None) -> int:
                 return 1
     if loadout is None:
         return 1
-    from cursed_words_solver.models import CurseType, TileColor
     from cursed_words_solver.rules.scoring_conditions import grid_path_encounter_level
 
     if tile.color == TileColor.VOID and tile.curse == CurseType.LETTER:
@@ -218,7 +217,7 @@ def melmod_void_currency_init_contribution(
         return 0.0
     bottom_row = max(0, board_rows - 1)
     word_lower = (word or "").lower()
-    if path_index <= 0 and path_index < len(word_lower):
+    if path_index < len(word_lower):
         from cursed_words_solver.models import CURRENCY_MAP
         from cursed_words_solver.rules.scoring_conditions import (
             currency_letter_value,
@@ -231,14 +230,22 @@ def melmod_void_currency_init_contribution(
         face = path_letter_for_count(tile)
         letter = word_lower[path_index]
         in_word = (mapped and mapped == letter) or (face and face.lower() == letter)
-        # Game waives void non-$ init at path start except bottom-row letter match
-        # (pheese ₱); top-row starts (german ₲, net ₦) contribute 0.
-        if in_word and tile.row == bottom_row:
-            cv = currency_letter_value(tile)
+        if not in_word:
+            return 0.0
+        cv = currency_letter_value(tile)
+        # Bottom-row void non-$ matching the word letter is penalized (capped),
+        # including mid-path (akebia ฿ → -10). Top-row path starts stay 0 for
+        # low cv (german ₲ cv=2); high-cv top-row path starts still pay -10
+        # (waying ₩ cv≥3).
+        if tile.row == bottom_row:
             penalty = _void_currency_path_init_penalty(tile, loadout)
             # cv=1 void currency at bottom edge → 0; cv≥2 caps at -10 (pheese ₱).
             if cv >= 2 and penalty > 0:
                 return -float(min(penalty, 10))
+        if path_index == 0 and tile.row == 0 and cv >= 3:
+            return -float(
+                min(_void_currency_top_row_path_start_penalty(tile, loadout), 10)
+            )
     return 0.0
 
 

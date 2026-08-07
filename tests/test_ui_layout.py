@@ -205,6 +205,7 @@ def test_parse_ui_layout_remaps_shrunk_3x3_cell_centers():
 
 
 def test_parse_ui_layout_filters_collapsed_rack_slots():
+    """slot_count=10 with all slots on one Y band → keep first row only."""
     run_state = {
         "extras": {
             "consumable_rack": '[{"rack_index":0},{"rack_index":1},{"rack_index":2},{"rack_index":3},{"rack_index":4}]',
@@ -215,13 +216,14 @@ def test_parse_ui_layout_filters_collapsed_rack_slots():
                 "x": 2900,
                 "y": 700,
                 "width": 414,
-                "height": 278,
+                "height": 65,
                 "slot_count": 10,
                 "rack_slots": [
                     {"rack_index": 0, "x": 3019, "y": 741},
                     {"rack_index": 4, "x": 3328, "y": 741},
-                    {"rack_index": 5, "x": 2979, "y": 955},
-                    {"rack_index": 9, "x": 2979, "y": 955},
+                    # Degenerate second-row indices snapped onto the first row.
+                    {"rack_index": 5, "x": 3019, "y": 741},
+                    {"rack_index": 9, "x": 3328, "y": 741},
                 ],
             },
         },
@@ -232,6 +234,65 @@ def test_parse_ui_layout_filters_collapsed_rack_slots():
     assert 5 not in parsed.rack_slot_centers
     assert parsed.rack.height >= 80
     assert parsed.rack.width >= 300
+
+
+def test_parse_ui_layout_preserves_stadium_second_row_slots():
+    """Stadium two-row rack: keep indices 5–9 at a distinct Y for overlay markers."""
+    from cursed_words_solver.ui.board_geometry import rack_placement_geometry
+
+    run_state = {
+        "extras": {
+            "consumable_rack": (
+                '[{"rack_index":0},{"rack_index":1},{"rack_index":2},'
+                '{"rack_index":3},{"rack_index":4},{"rack_index":5},'
+                '{"rack_index":6}]'
+            ),
+        },
+        "ui_layout": {
+            "board": {"x": 0, "y": 0, "width": 100, "height": 100},
+            "consumable_rack": {
+                "x": 2900,
+                "y": 700,
+                "width": 414,
+                "height": 278,
+                "slot_count": 10,
+                "rack_slots": [
+                    {"rack_index": 0, "x": 3019, "y": 741, "width": 61, "height": 52},
+                    {"rack_index": 4, "x": 3328, "y": 741, "width": 61, "height": 52},
+                    {"rack_index": 5, "x": 3019, "y": 955, "width": 61, "height": 52},
+                    {"rack_index": 6, "x": 3096, "y": 955, "width": 61, "height": 52},
+                    {"rack_index": 9, "x": 3328, "y": 955, "width": 61, "height": 52},
+                ],
+            },
+        },
+    }
+    parsed = parse_ui_layout(run_state)
+    assert parsed is not None
+    assert parsed.rack_slot_centers is not None
+    assert 5 in parsed.rack_slot_centers
+    assert 6 in parsed.rack_slot_centers
+    assert 9 in parsed.rack_slot_centers
+    y0 = parsed.rack_slot_centers[0][1]
+    y5 = parsed.rack_slot_centers[5][1]
+    assert abs(y5 - y0) > 60
+    assert parsed.rack.height >= 200
+    markers = rack_placement_geometry(
+        parsed.rack,
+        [5, 6],
+        [
+            {"index": 5, "rack_index": 5, "letter": "Y"},
+            {"index": 6, "rack_index": 6, "letter": "A"},
+        ],
+        rack_slot_centers=parsed.rack_slot_centers,
+        slot_count=10,
+    )
+    assert len(markers) == 2
+    # Both on the second Stadium row (same Y band, distinct X).
+    assert abs(markers[0].y - markers[1].y) < 5
+    assert abs(markers[0].x - markers[1].x) > 20
+    first_local_y = parsed.rack_slot_centers[0][1] - parsed.rack.y
+    second_local_y = markers[0].y
+    assert second_local_y > first_local_y + 40
 
 
 def test_rack_region_fits_rightmost_marker():

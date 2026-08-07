@@ -562,7 +562,8 @@ namespace CursedWordsSolverCompanion
 
         private static int CountMultiSuitBicycleCredit(List<Tile> pathTiles)
         {
-            var entries = new List<(int pathIndex, string rankKey, string suit, string letter)>();
+            // Unique suited card ranks; empty rank falls back to path letter.
+            var entries = new List<(int pathIndex, string rankKey, string letter)>();
             for (var i = 0; i < pathTiles.Count; i++)
             {
                 var tile = pathTiles[i];
@@ -574,11 +575,15 @@ namespace CursedWordsSolverCompanion
                     continue;
                 }
                 var rank = MapCardRank(tile, null);
+                var letter = PathLetterForCount(tile);
                 var rankKey = string.IsNullOrEmpty(rank)
                     ? ""
                     : rank.Substring(0, 1).ToUpperInvariant();
-                var letter = PathLetterForCount(tile);
-                entries.Add((i, rankKey, suit.ToLowerInvariant(), letter));
+                if (string.IsNullOrEmpty(rankKey) && !string.IsNullOrEmpty(letter))
+                    rankKey = letter.Substring(0, 1).ToUpperInvariant();
+                if (string.IsNullOrEmpty(rankKey))
+                    continue;
+                entries.Add((i, rankKey, letter ?? ""));
             }
 
             if (entries.Count == 0)
@@ -596,48 +601,23 @@ namespace CursedWordsSolverCompanion
             }
 
             var lastRankIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (pathIndex, rankKey, _, letter) in entries)
-            {
-                if (string.IsNullOrEmpty(rankKey))
-                    continue;
-                if (letterCounts.TryGetValue(letter, out var count) && count > 2)
-                    lastRankIndex[rankKey] = pathIndex;
-            }
+            foreach (var (pathIndex, rankKey, _) in entries)
+                lastRankIndex[rankKey] = pathIndex;
 
-            var credit = 0;
-            var seenPairs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var seenCappedRanks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (pathIndex, rankKey, suit, letter) in entries)
+            var credited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (pathIndex, rankKey, letter) in entries)
             {
                 var letterCount = 0;
                 if (!string.IsNullOrEmpty(letter))
                     letterCounts.TryGetValue(letter, out letterCount);
-
-                if (letterCount > 2)
-                {
-                    if (!string.IsNullOrEmpty(rankKey)
-                        && lastRankIndex.TryGetValue(rankKey, out var lastIdx)
-                        && lastIdx != pathIndex)
-                        continue;
-                    if (!string.IsNullOrEmpty(rankKey))
-                    {
-                        if (seenCappedRanks.Contains(rankKey))
-                            continue;
-                        seenCappedRanks.Add(rankKey);
-                    }
-                    credit++;
-                }
-                else
-                {
-                    var pair = rankKey + "|" + suit;
-                    if (seenPairs.Contains(pair))
-                        continue;
-                    seenPairs.Add(pair);
-                    credit++;
-                }
+                if (letterCount > 2
+                    && lastRankIndex.TryGetValue(rankKey, out var lastIdx)
+                    && lastIdx != pathIndex)
+                    continue;
+                credited.Add(rankKey);
             }
 
-            return credit;
+            return credited.Count;
         }
 
         private static string PathLetterForCount(Tile tile)

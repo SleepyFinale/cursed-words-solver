@@ -498,17 +498,31 @@ namespace CursedWordsSolverCompanion
 
             if (rackSlots.Count > 0)
             {
-                var medianY = MedianSlotCenterY(rackSlots);
+                // Stadium unlocks a second consumable row (slots 5–9). Do not snap
+                // those centers onto the first-row median — that collapses overlay markers.
+                var twoRowRack =
+                    IsSecondConsumableRowActive(ivc) || RackSlotVerticalSpan(rackSlots) > 60f;
                 var outlierCount = 0;
-                for (var i = 0; i < rackSlots.Count; i++)
+                if (!twoRowRack)
                 {
-                    var slot = rackSlots[i];
-                    if (Mathf.Abs(slot.y - medianY) > 60f)
+                    var medianY = MedianSlotCenterY(rackSlots);
+                    for (var i = 0; i < rackSlots.Count; i++)
                     {
-                        slot.y = Mathf.RoundToInt(medianY);
-                        rackSlots[i] = slot;
-                        outlierCount++;
+                        var slot = rackSlots[i];
+                        if (Mathf.Abs(slot.y - medianY) > 60f)
+                        {
+                            slot.y = Mathf.RoundToInt(medianY);
+                            rackSlots[i] = slot;
+                            outlierCount++;
+                        }
                     }
+                }
+                minX = float.MaxValue;
+                minY = float.MaxValue;
+                maxX = float.MinValue;
+                maxY = float.MinValue;
+                foreach (var slot in rackSlots)
+                {
                     minX = Mathf.Min(minX, slot.x);
                     minY = Mathf.Min(minY, slot.y);
                     maxX = Mathf.Max(maxX, slot.x);
@@ -585,6 +599,20 @@ namespace CursedWordsSolverCompanion
                 maxX = Mathf.Max(maxX, slot.x);
             }
             return maxX - minX;
+        }
+
+        private static float RackSlotVerticalSpan(List<UiRackSlotSnapshot> slots)
+        {
+            if (slots == null || slots.Count == 0)
+                return 0f;
+            var minY = float.MaxValue;
+            var maxY = float.MinValue;
+            foreach (var slot in slots)
+            {
+                minY = Mathf.Min(minY, slot.y);
+                maxY = Mathf.Max(maxY, slot.y);
+            }
+            return maxY - minY;
         }
 
         private static bool RebuildRackSlotsFromSlotTransforms(

@@ -504,7 +504,7 @@ def test_upwells_cobra_electric_guitar_scatter_tier():
 
 
 def test_melmod_void_non_dollar_currency_top_row_path_start_penalty():
-    """Void ₲ on row 0 at word start gets -10 init; void $ at word start stays 0."""
+    """High-cv void currency on row 0 at word start gets -10; $ and mid-row stay 0."""
     from cursed_words_solver.models import Board, CurseType, Tile, TileColor
     from cursed_words_solver.rules.tile_scoring import initial_tile_scores
 
@@ -520,42 +520,143 @@ def test_melmod_void_non_dollar_currency_top_row_path_start_penalty():
             metadata={"source": "melmod"},
         )
 
+    # ₩ → W, cv≥3: top-row path start matching word letter → -10
     board = Board(
-        tiles=[[_void_currency_cell(0, c, "₲" if c == 0 else "a") for c in range(5)] for _ in range(5)],
+        tiles=[
+            [_void_currency_cell(0, c, "₩" if c == 0 else "a") for c in range(5)]
+            for _ in range(5)
+        ],
         money=5,
     )
     for r in range(1, 5):
         for c in range(5):
             board.tiles[r][c] = Tile(
-                r, c, "a", "A", 1, TileColor.COLORLESS, CurseType.LETTER,
+                r,
+                c,
+                "a",
+                "A",
+                1,
+                TileColor.COLORLESS,
+                CurseType.LETTER,
                 metadata={"source": "melmod"},
             )
     path_start = [0, 1, 2, 3, 4, 5]
-    scores, _ = initial_tile_scores(board, path_start, money=5)
+    scores, _ = initial_tile_scores(
+        board, path_start, money=5, word="waaaaa"
+    )
     assert scores[0] == -10.0
 
+    # ₲ → G, cv=2: top-row path start stays 0 (german)
+    board_g = Board(
+        tiles=[
+            [_void_currency_cell(0, c, "₲" if c == 0 else "a") for c in range(5)]
+            for _ in range(5)
+        ],
+        money=5,
+    )
+    for r in range(1, 5):
+        for c in range(5):
+            board_g.tiles[r][c] = Tile(
+                r,
+                c,
+                "a",
+                "A",
+                1,
+                TileColor.COLORLESS,
+                CurseType.LETTER,
+                metadata={"source": "melmod"},
+            )
+    scores_g, _ = initial_tile_scores(
+        board_g, path_start, money=5, word="gaaaaa"
+    )
+    assert scores_g[0] == 0.0
+
     board2 = Board(
-        tiles=[[_void_currency_cell(0, c, "$" if c == 0 else "a") for c in range(5)] for _ in range(5)],
+        tiles=[
+            [_void_currency_cell(0, c, "$" if c == 0 else "a") for c in range(5)]
+            for _ in range(5)
+        ],
         money=5,
     )
     for r in range(1, 5):
         for c in range(5):
             board2.tiles[r][c] = Tile(
-                r, c, "a", "A", 1, TileColor.COLORLESS, CurseType.LETTER,
+                r,
+                c,
+                "a",
+                "A",
+                1,
+                TileColor.COLORLESS,
+                CurseType.LETTER,
                 metadata={"source": "melmod"},
             )
-    scores_d, _ = initial_tile_scores(board2, path_start, money=5)
+    scores_d, _ = initial_tile_scores(board2, path_start, money=5, word="saaaaa")
     assert scores_d[0] == 0.0
 
     board3 = Board(
-        tiles=[[Tile(2, c, "a", "A", 1, TileColor.COLORLESS, CurseType.LETTER,
-                   metadata={"source": "melmod"}) for c in range(5)] for _ in range(5)],
+        tiles=[
+            [
+                Tile(
+                    2,
+                    c,
+                    "a",
+                    "A",
+                    1,
+                    TileColor.COLORLESS,
+                    CurseType.LETTER,
+                    metadata={"source": "melmod"},
+                )
+                for c in range(5)
+            ]
+            for _ in range(5)
+        ],
         money=5,
     )
     board3.tiles[2][0] = _void_currency_cell(2, 0, "₣")
     path_fegs = [10, 11, 12, 13]
-    scores_f, _ = initial_tile_scores(board3, path_fegs, money=5)
+    scores_f, _ = initial_tile_scores(board3, path_fegs, money=5, word="faaa")
     assert scores_f[0] == 0.0
+
+
+def test_melmod_void_currency_bottom_row_midpath_capped_penalty():
+    """akebia-style: first void ฿ on bottom row mid-path matching word → -10."""
+    from cursed_words_solver.models import Board, CurseType, Tile, TileColor
+    from cursed_words_solver.rules.tile_scoring import initial_tile_scores
+
+    tiles = [
+        [
+            Tile(
+                r,
+                c,
+                "a",
+                "A",
+                1,
+                TileColor.COLORLESS,
+                CurseType.LETTER,
+                metadata={"source": "melmod"},
+            )
+            for c in range(5)
+        ]
+        for r in range(5)
+    ]
+    tiles[4][0] = Tile(
+        4,
+        0,
+        "฿",
+        "฿",
+        0,
+        TileColor.VOID,
+        CurseType.CURRENCY,
+        metadata={"source": "melmod"},
+    )
+    board = Board(tiles=tiles, money=1)
+    # indices: row4 col0 = 20 in row-major
+    path = [19, 24, 15, 20, 21, 22]
+    # force letters around path to match akebia layout roughly via word only
+    scores, _ = initial_tile_scores(
+        board, [1, 2, 3, 20, 5, 6], money=1, word="aaabaa"
+    )
+    assert scores[3] == -10.0
 
 
 def _void_init_from_mismatch(stem: str) -> list[float]:

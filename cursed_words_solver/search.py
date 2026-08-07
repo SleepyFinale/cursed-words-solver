@@ -4763,6 +4763,12 @@ class WordSearcher:
         leader_sorted = candidates.best_sorted()
         if not leader_sorted:
             return False
+        # Only crown a high-score / high-margin leader once it is near max_len.
+        # Mid-length leaders (e.g. halternecks @ imm>=800) must keep extending
+        # into longer resolutions (pumpernickels) instead of aborting early.
+        leader_path = leader_sorted[0][2]
+        if len(leader_path) < max(1, self.max_len - 1):
+            return False
         leader_rank = leader_sorted[0][0]
         leader_imm = candidates.max_immediate_score() or 0.0
         if leader_imm >= 800:
@@ -11516,6 +11522,7 @@ class WordSearcher:
             leader_rank = leader_sorted[0][0] if leader_sorted else 0.0
             leader_imm = candidates.max_immediate_score()
             fraction_number_board = has_number_tiles and has_fraction_tiles
+            leader_near_max = leader_len >= max(1, self.max_len - 1)
             if leader_imm is not None and leader_imm >= 400:
                 if fraction_number_board and leader_len <= 5:
                     # Short mid-score leaders must not starve multi-tile resolve
@@ -11528,11 +11535,17 @@ class WordSearcher:
                             12.0,
                         ),
                     )
-                else:
+                    extend_deadline = min(
+                        extend_deadline, time.monotonic() + extend_cap
+                    )
+                elif leader_near_max:
+                    # Near max_len: short refine window is enough.
                     extend_cap = min(3.0, extension_reserve or 3.0)
-                extend_deadline = min(
-                    extend_deadline, time.monotonic() + extend_cap
-                )
+                    extend_deadline = min(
+                        extend_deadline, time.monotonic() + extend_cap
+                    )
+                # else: mid-length high-score leaders (halterneck→pumpernickels)
+                # keep the full resolve_phase_deadline so extension can grow.
             top_paths = (
                 min(120, heap_k)
                 if empty_heap_recovery and not candidates
@@ -11605,6 +11618,7 @@ class WordSearcher:
                     max_extend_rounds = min(max_extend_rounds, fast_cap)
             if (
                 not empty_heap_recovery
+                and leader_near_max
                 and len(leader_sorted) >= 2
                 and len(leader_sorted[0][2]) >= 10
                 and leader_sorted[0][0] - leader_sorted[1][0]

@@ -164,11 +164,23 @@ def _consumable_count_from_run_state(run_state: dict[str, Any] | None) -> int | 
     return None
 
 
+def _rack_slot_vertical_span(centers: dict[int, tuple[float, float]]) -> float:
+    if not centers:
+        return 0.0
+    ys = [y for _, y in centers.values()]
+    return max(ys) - min(ys)
+
+
 def _filter_rack_slot_centers(
     block: Any,
     centers: dict[int, tuple[float, float]],
     run_state: dict[str, Any] | None,
 ) -> dict[int, tuple[float, float]]:
+    """Drop bogus slot_count>5 exports that collapsed onto one row.
+
+    Stadium two-row racks (distinct Y bands) keep indices 5–9 so overlay
+    markers can land on the second consumable row.
+    """
     if not centers:
         return centers
     slot_count = 0
@@ -179,14 +191,14 @@ def _filter_rack_slot_centers(
             slot_count = 0
     if slot_count <= 5:
         return centers
+    # Real Stadium layout: two Y bands — keep every exported slot center.
+    if _rack_slot_vertical_span(centers) > 80:
+        return centers
     consumable_count = _consumable_count_from_run_state(run_state)
     if consumable_count is not None and consumable_count <= 5:
         filtered = {k: v for k, v in centers.items() if k < 5}
         if filtered:
             return filtered
-    ys = sorted({y for _, y in centers.values()})
-    if len(ys) >= 2 and ys[-1] - ys[0] > 80:
-        return centers
     filtered = {k: v for k, v in centers.items() if k < 5}
     return filtered or centers
 
@@ -275,7 +287,8 @@ def _tight_rack_region(
         tile_h = max(exported_h, _MIN_RACK_HEIGHT)
         height = tile_h + 2 * vertical_marker_pad
     else:
-        if exported_h > _MAX_SINGLE_ROW_RACK_HEIGHT:
+        # Cap only single-row exports; Stadium two-row span must drive height.
+        if span_h <= _RACK_SLOT_Y_TOLERANCE and exported_h > _MAX_SINGLE_ROW_RACK_HEIGHT:
             exported_h = _MAX_SINGLE_ROW_RACK_HEIGHT
         height = max(span_h + 2 * padding, exported_h, _MIN_RACK_HEIGHT)
         height = height + 2 * _RACK_MARKER_MARGIN
@@ -357,7 +370,11 @@ def _sanitize_rack_slot_centers(
     centers: dict[int, tuple[float, float]],
     rack_block: Any,
 ) -> tuple[dict[int, tuple[float, float]], bool]:
-    """Align rack slot Y to consumable_rack block when export drifts to another row."""
+    """Align rack slot Y to consumable_rack block when export drifts to another row.
+
+    Stadium two-row racks keep both Y bands; only single-row layouts drop
+    median outliers (legacy collapsed exports).
+    """
     if not centers:
         return centers, False
     original = dict(centers)
@@ -365,14 +382,20 @@ def _sanitize_rack_slot_centers(
     ys = [y for _, y in centers.values()]
     median_y = float(statistics.median(ys))
     corrected = False
+    two_row = _rack_slot_vertical_span(centers) > _RACK_SLOT_Y_TOLERANCE
 
     if rack_rect is not None and rack_rect.is_valid():
         rack_center_y = rack_rect.y + rack_rect.height / 2.0
         delta = rack_center_y - median_y
+        # Shift the whole rack (both rows) only when the block mid drifts; never
+        # collapse a second Stadium row onto the first.
         if abs(delta) > _RACK_SLOT_Y_TOLERANCE:
             centers = {idx: (x, y + delta) for idx, (x, y) in centers.items()}
             median_y += delta
             corrected = True
+
+    if two_row:
+        return centers, corrected
 
     post_ys = [y for _, y in centers.values()]
     post_median = float(statistics.median(post_ys))

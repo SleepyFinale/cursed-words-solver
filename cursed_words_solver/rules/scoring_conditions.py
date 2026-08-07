@@ -436,11 +436,16 @@ def word_starts_ends_different_curse_type(
     # The game groups related curses into broader categories for this condition.
     # - All chess pieces count as a single "chess" curse family.
     # - NUMBER + FRACTION are treated as the same "number" family.
+    # - Void currency vs colored currency count as different families (Broom).
     def curse_category(tile: Tile) -> str:
         if tile.curse in CHESS_CURSES:
             return "chess"
         if tile.curse in (CurseType.NUMBER, CurseType.FRACTION):
             return "number"
+        if tile.curse == CurseType.CURRENCY:
+            if tile.color == TileColor.VOID:
+                return "void_currency"
+            return "currency"
         return curse_type_key(tile)
 
     return curse_category(start) != curse_category(end)
@@ -567,11 +572,20 @@ def has_four_of_a_kind(cards: list[Tile]) -> bool:
     return max_matching_rank_count(cards) + jokers >= 4
 
 
-def card_hand_min_size(loadout: Loadout | None) -> int:
+def card_hand_min_size(
+    loadout: Loadout | None,
+    board: Board | None = None,
+    path: list[int] | None = None,
+) -> int:
     from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
 
     if loadout_has_stamp(loadout, "martini"):
         return 3
+    # Grid-scattered Martini on the scored path also lowers the hand size
+    # (prefacers Peacock flush with 3 hearts + cocktail on path).
+    if board is not None and path:
+        if path_includes_grid_scatter(board, path, "martini"):
+            return 3
     return 5
 
 
@@ -891,7 +905,7 @@ def detect_card_hand(
     loadout: Loadout | None = None,
 ) -> bool:
     cards = cards_on_path(board, path)
-    min_size = card_hand_min_size(loadout)
+    min_size = card_hand_min_size(loadout, board, path)
     if hand == "pair":
         return has_pair(cards)
     if hand == "three_of_a_kind":
@@ -3683,7 +3697,13 @@ def bicycle_pin_accumulator_from_fingerprint(fp: str) -> int | None:
 def bicycle_word_score_accumulator_for_submit(
     loadout: Loadout, board: Board, path: list[int], rule: dict
 ) -> int:
-    """Pre-word accumulator; rewinds when extras hold post-submit applied bonus."""
+    """Pre-word accumulator; rewinds only on exact post-submit acc patterns.
+
+    F8 lag often leaves ``bicycle_suited_on_path`` from a prior word. Rewinding
+    ``acc - per_card * suited_extra`` whenever board credit differs was causing
+    under-counts (howdied 88 vs live 92). Only rewind when extras match an
+    exact post-submit pattern for this path's suited credit.
+    """
     acc = bicycle_word_score_accumulator(loadout)
     per_card = bicycle_word_per_card(loadout, rule)
     if per_card <= 0:
@@ -3693,32 +3713,22 @@ def bicycle_word_score_accumulator_for_submit(
     )
     if pin_acc is not None and acc == pin_acc:
         return acc
+    suited_board = bicycle_suited_credit_on_path(board, path)
     suited_extra = bicycle_suited_on_path_from_extras(loadout)
-    if pin_acc is not None and suited_extra > 0:
-        post_pattern = pin_acc + per_card * suited_extra
+    suited = suited_board if suited_board > 0 else suited_extra
+    if pin_acc is not None and suited > 0:
+        post_pattern = pin_acc + per_card * suited
         if acc == post_pattern:
-            suited_board = bicycle_suited_credit_on_path(board, path)
-            if (
-                acc > pin_acc
-                and suited_board > 0
-                and pin_acc + per_card * suited_board
-                < acc + per_card * suited_board
-            ):
-                # Stale pin fingerprint: live pre-word acc equals pin + export lag.
-                return acc
             return pin_acc
-        double_pattern = pin_acc + 2 * per_card * suited_extra
+        double_pattern = pin_acc + 2 * per_card * suited
         if acc == double_pattern and acc > post_pattern:
             # Stale fingerprint (F8 lag): acc is live pre-word, not post-submit.
             return acc
-        if acc > post_pattern:
-            pre = acc - per_card * suited_extra
-            if 0 <= pre <= acc:
-                return pre
-    suited_board = bicycle_suited_credit_on_path(board, path)
-    if suited_extra > 0 and suited_board != suited_extra:
+    if suited_extra > 0 and suited_extra == suited_board and suited_board > 0:
         pre = acc - per_card * suited_extra
-        if 0 <= pre < acc:
+        if 0 <= pre < acc and (
+            pin_acc is None or acc == pin_acc + per_card * suited_extra
+        ):
             return pre
     return acc
 
@@ -3780,13 +3790,6 @@ def _bicycle_suited_path_tile(tile: Tile) -> bool:
     if _is_joker_glyph_char(tile) and not is_joker_tile(tile):
         return True
     return False
-
-
-def suited_tiles_on_path_count(board: Board, path: list[int]) -> int:
-    """Path tiles with ``CardSuit != 0`` (Bicycle.ApplyWordBonus per-tile credit)."""
-    return sum(
-        1 for idx in path if _bicycle_suited_path_tile(board.get_by_index(idx))
-    )
 
 
 def is_last_card_rank_on_path(board: Board, path: list[int], path_index: int) -> bool:
@@ -3905,8 +3908,13 @@ def bicycle_suited_on_path_from_extras(loadout: Loadout) -> int:
 
 
 def _bicycle_multi_suit_suited_credit(board: Board, path: list[int]) -> int:
-    """Multi-suit Bicycle credit: dedupe (rank,suit); cap rank when letter>2 on path."""
-    entries: list[tuple[int, str, str, str]] = []
+    """Multi-suit Bicycle credit: unique suited card ranks (duplicate rank → once).
+
+    Empty ``card_rank`` falls back to the path letter so chess/glyph tiles that
+    share a letter collapse with that letter's rank (howdied W♥ + chess → 1).
+    Melmod submit ``bicycle_suited_on_path`` matches this unique-rank count.
+    """
+    entries: list[tuple[int, str, str]] = []
     for path_index, idx in enumerate(path):
         tile = board.get_by_index(idx)
         if not _bicycle_suited_path_tile(tile):
@@ -3915,47 +3923,34 @@ def _bicycle_multi_suit_suited_credit(board: Board, path: list[int]) -> int:
         if not suit or suit in ("none", "joker"):
             continue
         rank = card_rank(tile)
-        rank_key = (rank or "").strip().upper()[:1]
         letter = path_letter_for_count(tile)
-        entries.append((path_index, rank_key, suit, letter))
+        rank_key = (rank or "").strip().upper()[:1]
+        if not rank_key:
+            rank_key = (letter or "").strip().upper()[:1]
+        if not rank_key:
+            continue
+        entries.append((path_index, rank_key, letter))
 
     if not entries:
         return 0
 
-    last_rank_index: dict[str, int] = {}
-    for path_index, rank_key, _suit, letter in entries:
-        if not rank_key:
-            continue
-        letter_count = _letter_occurrences_on_path(board, path, letter) if letter else 0
-        if letter_count > 2:
-            last_rank_index[rank_key] = path_index
+    last_rank_index: dict[str, int] = {
+        rank_key: path_index for path_index, rank_key, _letter in entries
+    }
 
-    credit = 0
-    seen_pairs: set[tuple[str, str]] = set()
-    seen_capped_ranks: set[str] = set()
-    for path_index, rank_key, suit, letter in entries:
+    credited: set[str] = set()
+    for path_index, rank_key, letter in entries:
         letter_count = (
             _letter_occurrences_on_path(board, path, letter) if letter else 0
         )
-        if letter_count > 2:
-            if rank_key and last_rank_index.get(rank_key) != path_index:
-                continue
-            if rank_key:
-                if rank_key in seen_capped_ranks:
-                    continue
-                seen_capped_ranks.add(rank_key)
-            credit += 1
-        else:
-            pair = (rank_key, suit)
-            if pair in seen_pairs:
-                continue
-            seen_pairs.add(pair)
-            credit += 1
-    return credit
+        if letter_count > 2 and last_rank_index.get(rank_key) != path_index:
+            continue
+        credited.add(rank_key)
+    return len(credited)
 
 
 def bicycle_suited_credit_on_path(board: Board, path: list[int]) -> int:
-    """Bicycle suited credit: mono-suit → 1; multi-suit + non-end joker → per-tile; else pair dedup.
+    """Bicycle suited credit: mono-suit → 1; multi-suit + non-end joker → per-tile; else unique ranks.
 
     Board-only heuristic (see effective_suited_cards_on_path).
     """

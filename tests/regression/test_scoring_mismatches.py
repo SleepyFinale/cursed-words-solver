@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -2080,6 +2081,69 @@ def _merge_extras_diff_submit(extras: dict, data: dict) -> None:
         extras[key] = submit_val
 
 
+def _strip_post_submit_historic_self(run_state: dict, data: dict) -> None:
+    """Drop historic_words row that is the word under replay (post-submit snapshot lag).
+
+    Captures often embed the just-scored word in historic_words; replaying poison
+    from that row double-counts (howdied +74 = 1×740×0.1).
+    """
+    path = data.get("path")
+    actual = data.get("actual_score")
+    extras = dict(run_state.get("extras") or {})
+    raw = extras.get("historic_words")
+    if not raw:
+        return
+    try:
+        rows = json.loads(raw) if isinstance(raw, str) else list(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return
+    if not isinstance(rows, list) or not rows:
+        return
+    path_ints: list[int] | None = None
+    if isinstance(path, list) and path:
+        try:
+            path_ints = [int(x) for x in path]
+        except (TypeError, ValueError):
+            path_ints = None
+    actual_int: int | None = None
+    if actual is not None:
+        try:
+            actual_int = int(actual)
+        except (TypeError, ValueError):
+            actual_int = None
+
+    kept: list[Any] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            kept.append(row)
+            continue
+        row_path = row.get("path")
+        if path_ints is not None and isinstance(row_path, list):
+            try:
+                if [int(x) for x in row_path] == path_ints:
+                    continue
+            except (TypeError, ValueError):
+                pass
+        elif (
+            actual_int is not None
+            and row_path in (None, [])
+            and int(row.get("score") or -1) == actual_int
+            and int(row.get("green_tile_count") or 0) > 0
+        ):
+            # prepare_run_state may strip paths; match by score on poison rows.
+            continue
+        kept.append(row)
+    if len(kept) == len(rows):
+        return
+    extras["historic_words"] = json.dumps(kept, ensure_ascii=False)
+    try:
+        spc = int(str(extras.get("scoring_previous_words_count") or "0").strip())
+    except (TypeError, ValueError):
+        spc = len(rows)
+    extras["scoring_previous_words_count"] = str(max(0, min(spc, len(kept))))
+    run_state["extras"] = extras
+
+
 def _run_state_for_replay(data: dict) -> dict:
     """Merge submit-time extras into the F8 snapshot so replay matches in-game scoring."""
     payload = dict(data.get("run_state_snapshot") or {})
@@ -2091,6 +2155,7 @@ def _run_state_for_replay(data: dict) -> dict:
         payload["submit_board_tiles"] = data.get("submit_board_tiles")
     run_state = prepare_run_state_dict_for_scoring(payload)
     _merge_submit_card_metadata(run_state, data)
+    _strip_post_submit_historic_self(run_state, data)
     return run_state
 
 
