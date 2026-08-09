@@ -294,13 +294,14 @@ def _melmod_number_colour_baked_into_score(tile: Tile) -> bool:
     return float(tile.base_score) - float(nv) == 2.0
 
 
-def is_colored_number_tile(tile: Tile) -> bool:
+def is_colored_number_tile(tile: Tile, *, jokers_as_numbers: bool = False) -> bool:
     """NUMBER/FRACTION curse on a tile that counts as a colour (wiki: colourless is not a colour).
 
     VOID numbers are coloured (void is a tile colour). Only colourless/unknown/white
     number tiles are excluded unless melmod baked +2 implies red scatter.
+    When ``jokers_as_numbers`` (digit word over numbers+jokers), coloured jokers count.
     """
-    if not is_number_like_tile(tile):
+    if not tile_counts_as_number_for_scoring(tile, jokers_as_numbers=jokers_as_numbers):
         return False
     if tile.color not in NON_COLOUR_FOR_NUMBER_BONUS:
         return True
@@ -1437,6 +1438,56 @@ def is_number_like_tile(tile: Tile) -> bool:
     return tile.curse in (CurseType.NUMBER, CurseType.FRACTION)
 
 
+def is_joker_tile(tile: Tile) -> bool:
+    """True for joker wildcards (glyph / metadata / card_suit)."""
+    if tile.metadata.get("is_joker") in (True, "true", "True", "1", 1):
+        return True
+    if str(tile.metadata.get("card_suit") or "").strip().lower() == "joker":
+        return True
+    if tile.curse in (CurseType.WILDCARD, CurseType.BLANK):
+        face = (tile.letter or tile.char or "").strip()
+        return face in ("", "?", "!") or "🃏" in (tile.char or "")
+    return False
+
+
+def scoring_word_is_numeric(word: str | None) -> bool:
+    """Digit (or digit+wildcard-face) words treat path jokers as numbers."""
+    if not word:
+        return False
+    chars = [ch for ch in str(word).lower() if ch not in "?!. "]
+    return bool(chars) and all(ch.isdigit() for ch in chars)
+
+
+def path_is_numbers_and_jokers(board: Board, path: list[int]) -> bool:
+    if not path:
+        return False
+    for idx in path:
+        tile = board.get_by_index(idx)
+        if is_number_like_tile(tile) or is_joker_tile(tile):
+            continue
+        return False
+    return True
+
+
+def jokers_count_as_numbers_for_scoring(
+    board: Board, path: list[int], word: str | None
+) -> bool:
+    """On an all-digit word over numbers+jokers, jokers get number effects.
+
+    Matches Full Battery / Lab Coat / Abacus / Boomerang on ``12345``-class
+    paths. Letter words like ``aah`` keep the joker as a letter.
+    """
+    return scoring_word_is_numeric(word) and path_is_numbers_and_jokers(board, path)
+
+
+def tile_counts_as_number_for_scoring(
+    tile: Tile, *, jokers_as_numbers: bool
+) -> bool:
+    if is_number_like_tile(tile):
+        return True
+    return bool(jokers_as_numbers and is_joker_tile(tile))
+
+
 def tile_numeric_value(tile: Tile) -> float:
     """Face value for sums/ordering: integer for NUMBER, fraction float for FRACTION."""
     if is_fraction_tile(tile):
@@ -1450,15 +1501,32 @@ def tile_numeric_value(tile: Tile) -> float:
     return float(tile_number_value(tile))
 
 
-def word_all_numbers_on_path(board: Board, path: list[int]) -> bool:
+def word_all_numbers_on_path(
+    board: Board,
+    path: list[int],
+    *,
+    word: str | None = None,
+) -> bool:
     if not path:
         return False
+    if jokers_count_as_numbers_for_scoring(board, path, word):
+        return True
     return all(is_number_like_tile(board.get_by_index(idx)) for idx in path)
 
 
-def number_tile_count_on_path(board: Board, path: list[int]) -> int:
+def number_tile_count_on_path(
+    board: Board,
+    path: list[int],
+    *,
+    word: str | None = None,
+) -> int:
+    jokers_as_numbers = jokers_count_as_numbers_for_scoring(board, path, word)
     return sum(
-        1 for idx in path if is_number_like_tile(board.get_by_index(idx))
+        1
+        for idx in path
+        if tile_counts_as_number_for_scoring(
+            board.get_by_index(idx), jokers_as_numbers=jokers_as_numbers
+        )
     )
 
 
@@ -1480,11 +1548,19 @@ def highest_number_on_path(board: Board, path: list[int]) -> float:
     return max(values) if values else 0.0
 
 
-def path_starts_ends_number(board: Board, path: list[int]) -> bool:
+def path_starts_ends_number(
+    board: Board,
+    path: list[int],
+    *,
+    word: str | None = None,
+) -> bool:
     if not path:
         return False
-    return is_number_like_tile(board.get_by_index(path[0])) and is_number_like_tile(
-        board.get_by_index(path[-1])
+    jokers_as_numbers = jokers_count_as_numbers_for_scoring(board, path, word)
+    return tile_counts_as_number_for_scoring(
+        board.get_by_index(path[0]), jokers_as_numbers=jokers_as_numbers
+    ) and tile_counts_as_number_for_scoring(
+        board.get_by_index(path[-1]), jokers_as_numbers=jokers_as_numbers
     )
 
 
@@ -3429,7 +3505,7 @@ def _evaluate_sticker_condition(
             return False
         return len(unique_colours_on_path(board, path)) >= min_n
     if condition == "word_starts_ends_number":
-        return path_starts_ends_number(board, path)
+        return path_starts_ends_number(board, path, word=word)
     if condition == "contains_target_number":
         target = target_number_from_loadout(loadout)
         if target < 0:

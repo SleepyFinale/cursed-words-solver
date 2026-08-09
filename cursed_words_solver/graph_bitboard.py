@@ -119,10 +119,80 @@ def index_of_rows_cols(row: int, col: int, cols: int) -> int:
 def adjacency_for_board(
     board: Board, *, horizontal_wrap: bool = False
 ) -> tuple[int, ...]:
+    """8-way adjacency for board storage; Hungry Snake wraps playable width.
+
+    Game ``GetTilesAdjacentToCoordinates`` wraps ``x==0`` to ``width-1`` using
+    ``gridData.GetDimensions().x``, not a hardcoded 5. Shrunk bat grids (e.g.
+    3×2 playable in 5×5 storage) must wrap playable_min_col ↔ playable_max_col.
+    """
     rows, cols = board.storage_rows, board.storage_cols
-    if rows == GRID_SIZE and cols == GRID_SIZE:
-        return NEIGHBORS_8_WRAP if horizontal_wrap else NEIGHBORS_8
-    return _build_neighbors_8_for(rows, cols, horizontal_wrap=horizontal_wrap)
+    if not horizontal_wrap:
+        if rows == GRID_SIZE and cols == GRID_SIZE:
+            return NEIGHBORS_8
+        return _build_neighbors_8_for(rows, cols, horizontal_wrap=False)
+
+    pmin_c = int(getattr(board, "playable_min_col", 0) or 0)
+    pmax_c = int(getattr(board, "playable_max_col", cols - 1) or (cols - 1))
+    pmin_r = int(getattr(board, "playable_min_row", 0) or 0)
+    pmax_r = int(getattr(board, "playable_max_row", rows - 1) or (rows - 1))
+    pmin_c = max(0, min(cols - 1, pmin_c))
+    pmax_c = max(pmin_c, min(cols - 1, pmax_c))
+    if (
+        rows == GRID_SIZE
+        and cols == GRID_SIZE
+        and pmin_c == 0
+        and pmax_c == cols - 1
+        and pmin_r == 0
+        and pmax_r == rows - 1
+    ):
+        return NEIGHBORS_8_WRAP
+    return _build_neighbors_8_playable_wrap(
+        rows,
+        cols,
+        playable_min_col=pmin_c,
+        playable_max_col=pmax_c,
+    )
+
+
+def _build_neighbors_8_playable_wrap(
+    rows: int,
+    cols: int,
+    *,
+    playable_min_col: int,
+    playable_max_col: int,
+) -> tuple[int, ...]:
+    """8-way adjacency with Hungry Snake wrap on playable column edges only."""
+    key = (
+        rows,
+        cols,
+        True,
+        f"n8_pw:{playable_min_col}:{playable_max_col}",
+    )
+    cached = _ADJACENCY_CACHE.get(key)
+    if cached is not None:
+        return cached  # type: ignore[return-value]
+    out: list[int] = []
+    for idx in range(rows * cols):
+        row, col = divmod(idx, cols)
+        mask = 0
+        for dr, dc in DIRS_8:
+            nr, nc = row + dr, col + dc
+            if 0 <= nr < rows and 0 <= nc < cols:
+                mask |= 1 << index_of_rows_cols(nr, nc, cols)
+        if col == playable_min_col:
+            for dr in (-1, 0, 1):
+                nr = row + dr
+                if 0 <= nr < rows:
+                    mask |= 1 << index_of_rows_cols(nr, playable_max_col, cols)
+        elif col == playable_max_col:
+            for dr in (-1, 0, 1):
+                nr = row + dr
+                if 0 <= nr < rows:
+                    mask |= 1 << index_of_rows_cols(nr, playable_min_col, cols)
+        out.append(mask)
+    result = tuple(out)
+    _ADJACENCY_CACHE[key] = result  # type: ignore[assignment]
+    return result
 
 
 def knight_adjacency_for_board(board: Board) -> tuple[int, ...]:

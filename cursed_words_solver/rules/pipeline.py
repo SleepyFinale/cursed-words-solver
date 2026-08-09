@@ -117,6 +117,8 @@ from cursed_words_solver.rules.scoring_conditions import (
     unused_cards_on_board,
     is_colored_number_tile,
     is_number_like_tile,
+    jokers_count_as_numbers_for_scoring,
+    tile_counts_as_number_for_scoring,
     NON_COLOUR_FOR_NUMBER_BONUS,
     is_consumable_tile,
     is_placed_consumable_tile,
@@ -2326,8 +2328,13 @@ class ScoringPipeline:
         if effect_type == "colored_number_tile_bonus":
             bonus_each = abacus_colored_number_bonus(loadout, rule)
             count = 0
+            jokers_as_numbers = jokers_count_as_numbers_for_scoring(
+                board, path, state.get("word")
+            )
             for i, idx in enumerate(path):
-                if is_colored_number_tile(board.get_by_index(idx)):
+                if is_colored_number_tile(
+                    board.get_by_index(idx), jokers_as_numbers=jokers_as_numbers
+                ):
                     state["tile_scores"][i] += bonus_each
                     count += 1
             if count:
@@ -2408,7 +2415,12 @@ class ScoringPipeline:
                         mult_idx = i - 1 if i > 0 else 0
                         state["tile_scores"][mult_idx] *= factor
                         applied += 1
-                    elif target == "number" and is_number_like_tile(tile):
+                    elif target == "number" and tile_counts_as_number_for_scoring(
+                        tile,
+                        jokers_as_numbers=jokers_count_as_numbers_for_scoring(
+                            board, path, state.get("word")
+                        ),
+                    ):
                         mult = factor
                         if rule.get("scale_by_path_position"):
                             mult = float(i + 1)
@@ -2919,8 +2931,9 @@ class ScoringPipeline:
                 _queue_word_multiplier(state, factor, rule_id)
                 state["effects"].append(f"×{factor} word ({n} unique curse type(s))")
         elif effect_type == "multiply_word_by_number_count":
-            if word_all_numbers_on_path(board, path):
-                n = number_tile_count_on_path(board, path)
+            scoring_word = state.get("word")
+            if word_all_numbers_on_path(board, path, word=scoring_word):
+                n = number_tile_count_on_path(board, path, word=scoring_word)
                 if n >= 1:
                     factor = float(n)
                     _queue_word_multiplier(state, factor, rule_id)

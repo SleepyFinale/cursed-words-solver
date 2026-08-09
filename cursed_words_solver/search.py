@@ -1242,6 +1242,14 @@ def number_position_valid(
             segment=segment,
             path_number_values=path_number_values,
         )
+    # Digit-face words (21435): position lock is the face itself, not 1-based index.
+    if (
+        segment
+        and position < len(segment)
+        and segment[position].isdigit()
+        and _tile_digit_face_matches(segment[position], tile, flags)
+    ):
+        return True
     if flag_test(flags, FLAG_NUMBER_ASCENDING_FREE_POSITION):
         if path_number_values is not None:
             if _path_number_values_ascending(path_number_values):
@@ -1602,6 +1610,15 @@ class PathValidator:
                             pattern_chars.append("?")
                             char_pos += 1
                             continue
+                    # Joker / blank may fill a digit in an otherwise numeric word
+                    # (game historic ``12345`` on numbers+joker paths).
+                    if ch.isdigit() and tile.curse in (
+                        CurseType.WILDCARD,
+                        CurseType.BLANK,
+                    ):
+                        pattern_chars.append("?")
+                        char_pos += 1
+                        continue
                     return False
                 if not self._number_digit_segment_ok(
                     ch, tile, i, word, stamp_flags
@@ -1659,16 +1676,12 @@ class PathValidator:
             return False
         pattern = "".join(pattern_chars)
         if pattern and all(ch == "?" for ch in pattern):
-            if word.isdigit():
-                return True
-            if any(ch.isdigit() for ch in word) and any(ch.isalpha() for ch in word):
-                number_tiles = sum(
-                    1
-                    for idx in path
-                    if is_number_like_tile(board.get_by_index(idx))
-                )
-                if number_tiles >= 2:
-                    return True
+            # Game Vocabulary/WordTrie never accepts digit-face concatenations
+            # (number tiles are "!" wildcards → dictionary *letters* only).
+            # Historic display strings like "12345" are GetSubmittedWordString,
+            # not the matched dictionary word (e.g. "pouks").
+            if not word.isalpha():
+                return False
             return self.dictionary.contains(word.lower())
         return self._wildcard_valid(pattern)
 
@@ -2952,26 +2965,74 @@ def _shortest_path_between_indices(
     forbidden_mask: int = 0,
 ) -> list[int] | None:
     """BFS shortest acyclic path from start to end (for joker-pair seeding)."""
+    found = _all_shortest_paths_between_indices(
+        board,
+        start,
+        end,
+        max_len,
+        flags=flags,
+        forbidden_mask=forbidden_mask,
+        limit=1,
+    )
+    return found[0] if found else None
+
+
+def _all_shortest_paths_between_indices(
+    board: Board,
+    start: int,
+    end: int,
+    max_len: int,
+    *,
+    flags: SearchFlagsMask = 0,
+    forbidden_mask: int = 0,
+    limit: int = 12,
+) -> list[list[int]]:
+    """All acyclic shortest paths from start to end (capped).
+
+    Path-aware neighbor expansion (stamp adjacency) with a hard expansion cap so
+    unreachable pairs cannot explode the simple-path tree.
+    Alternate same-length letter bridges (3→L→4 vs 3→V→4) are both returned.
+    """
     if start == end:
-        return [start]
+        return [[start]]
+    if limit <= 0 or max_len < 1:
+        return []
+    if forbidden_mask & (1 << end):
+        return []
     from collections import deque
 
     queue: deque[list[int]] = deque([[start]])
-    visited: set[int] = {start}
+    found: list[list[int]] = []
+    best_len: int | None = None
+    expansions = 0
+    # ~5x5 grid, max_len≤6: keep this well below combinatorial blow-up.
+    max_expansions = 1200
     while queue:
         path = queue.popleft()
+        if best_len is not None and len(path) > best_len:
+            break
         if len(path) > max_len:
             continue
         last = path[-1]
         if last == end:
-            return path
+            best_len = len(path)
+            found.append(path)
+            if len(found) >= limit:
+                break
+            continue
+        if len(path) >= max_len:
+            continue
+        expansions += 1
+        if expansions > max_expansions:
+            break
         visited_mask = sum(1 << idx for idx in path) | forbidden_mask
         for nbr in neighbors_from_tile(board, path, visited_mask, flags=flags):
-            if nbr in visited or forbidden_mask & (1 << nbr):
+            if forbidden_mask & (1 << nbr):
                 continue
-            visited.add(nbr)
+            if nbr in path:
+                continue
             queue.append(path + [nbr])
-    return None
+    return found
 
 
 def _bridge_number_run_score(board: Board, path: list[int]) -> int:
@@ -3373,38 +3434,6 @@ def _paths_spelling_word(
 
         dfs([start], 1 << start, 1)
     return found
-
-
-def _all_shortest_paths_between_indices(
-    board: Board,
-    start: int,
-    end: int,
-    max_len: int,
-    *,
-    flags: SearchFlagsMask = 0,
-) -> list[list[int]]:
-    """Every minimum-length path from start to end (BFS layer collect)."""
-    from collections import deque
-
-    queue: deque[list[int]] = deque([[start]])
-    found_len: int | None = None
-    paths: list[list[int]] = []
-    while queue:
-        path = queue.popleft()
-        if found_len is not None and len(path) > found_len:
-            break
-        if path[-1] == end:
-            if found_len is None:
-                found_len = len(path)
-            if len(path) == found_len:
-                paths.append(path)
-            continue
-        if len(path) >= max_len:
-            continue
-        visited = sum(1 << idx for idx in path)
-        for nbr in neighbors_from_tile(board, path, visited, flags=flags):
-            queue.append(path + [nbr])
-    return paths
 
 
 def _joker_hub_bridge_paths(
@@ -4949,7 +4978,8 @@ class WordSearcher:
                 stamp_flags,
                 use_hanafuda_physical=use_hanafuda_physical,
             )
-            return True, accepted
+            if accepted:
+                return True, accepted
         if self.validator.word_ok(board, path, search_word, stamp_flags):
             accepted = self._accepted_scoring_word(
                 board,
@@ -4959,7 +4989,8 @@ class WordSearcher:
                 stamp_flags,
                 use_hanafuda_physical=use_hanafuda_physical,
             )
-            return True, accepted
+            if accepted:
+                return True, accepted
         if use_hanafuda_physical:
             phys = physical_word_for_path(board, path, flags=stamp_flags)
             if phys != search_word and self.validator.word_ok(
@@ -4989,7 +5020,8 @@ class WordSearcher:
                     stamp_flags,
                     use_hanafuda_physical=use_hanafuda_physical,
                 )
-                return True, accepted
+                if accepted:
+                    return True, accepted
         if self._path_needs_dictionary_resolve(board, path, search_word):
             if not self.validator._path_constraints_ok(
                 board, path, search_word, stamp_flags
@@ -5000,7 +5032,7 @@ class WordSearcher:
             resolved = self._dictionary_scoring_word(
                 board, path, search_word, loadout, stamp_flags
             )
-            if resolved:
+            if resolved and resolved.isalpha():
                 return True, scoring_word_for_path_local(resolved)
         return False, search_word
 
@@ -5016,24 +5048,15 @@ class WordSearcher:
         if loadout is None:
             return None
         from cursed_words_solver.suggestion import (
-            _valid_dictionary_words_for_path,
             dictionary_word_for_path,
             path_requires_tile_dictionary_resolve,
         )
-
-        if not path_requires_tile_dictionary_resolve(
-            board, path, flags=stamp_flags
-        ):
-            return None
 
         path_key = tuple(path)
         cached_valid = self._dict_valid_words_cache.get(path_key)
         if cached_valid:
             return cached_valid
 
-        path_flags = path_scattered_search_flags_mask(
-            board, path, stamp_flags, self.scoring.rules
-        )
         lowered_search = search_word.lower()
         if (
             lowered_search.isalpha()
@@ -5042,6 +5065,41 @@ class WordSearcher:
         ):
             self._dict_valid_words_cache[path_key] = lowered_search
             return lowered_search
+
+        requires_resolve = path_requires_tile_dictionary_resolve(
+            board, path, flags=stamp_flags
+        )
+        # Pure digit-face strings are not Vocabulary words, but on Number Go Up
+        # ascending / position-locked paths they mark a legal wildcard tour —
+        # resolve any dictionary letter word (tile scoring dominates).
+        if lowered_search and all(ch.isdigit() for ch in lowered_search):
+            from cursed_words_solver.suggestion import (
+                _valid_dictionary_words_for_path,
+                path_number_tiles_can_match_letters,
+            )
+
+            if not path_number_tiles_can_match_letters(
+                board, path, stamp_flags
+            ):
+                return None
+            if self._deadline_reached():
+                return None
+            matches = _valid_dictionary_words_for_path(
+                board,
+                path,
+                "?" * len(path),
+                loadout,
+                self.dictionary,
+                min_len=self.min_len,
+                limit=1,
+                deadline_check=self._deadline_reached,
+            )
+            if matches:
+                self._dict_valid_words_cache[path_key] = matches[0]
+                return matches[0]
+            return None
+        if not requires_resolve:
+            return None
 
         if self._deadline_reached():
             return None
@@ -5070,13 +5128,19 @@ class WordSearcher:
         stamp_flags: SearchFlagsMask,
         *,
         use_hanafuda_physical: bool = False,
-    ) -> str:
+    ) -> str | None:
+        """Dictionary spelling to score, or None when search_word is not playable."""
         if use_hanafuda_physical:
             return physical_word_for_path(board, path, flags=stamp_flags)
         resolved = self._dictionary_scoring_word(
             board, path, search_word, loadout, stamp_flags
         )
-        return resolved if resolved else search_word
+        if resolved and resolved.isalpha():
+            return resolved
+        if search_word.isalpha() or "?" in search_word:
+            return search_word
+        # Digit / mixed face concatenations are not playable spellings.
+        return None
 
     def _collect_words(
         self,
@@ -5325,41 +5389,93 @@ class WordSearcher:
             if len(chars) >= self.min_len and (
                 trie_fast_end or has_wildcard or has_digit or stitch_active
             ):
-                word = "".join(chars).lower()
-                trie_compatible = (
-                    prefix_cursor is not None and not has_digit and is_alpha_path
-                )
-                ok, score_word = path_accepted(
-                    path,
-                    word,
-                    trie_compatible=trie_compatible,
-                    prefix_cursor=prefix_cursor if letter_trie else None,
-                    pattern_cursor=pattern_cursor,
-                )
-                if ok:
-                    if not digits_only or any(ch.isdigit() for ch in score_word):
-                        trie_confirmed = (
-                            trie_compatible
-                            and prefix_cursor is not None
-                            and self.dictionary.cursor_is_word(prefix_cursor)
-                        )
-                        resolved_word = (
-                            score_word
-                            if trie_confirmed
-                            and score_word.isalpha()
-                            and "?" not in score_word
-                            else None
-                        )
-                        self._consider_path_candidate(
-                            board,
-                            loadout,
-                            candidates,
-                            path,
-                            score_word,
-                            _path_flags_for(path),
-                            score_path,
-                            resolved_word=resolved_word,
-                        )
+                # digits_only + Number Go Up: resolve only at ascending leaves so
+                # mid-path prefixes (123, 1234) do not each burn a dictionary scan.
+                skip_mid_digit_accept = False
+                if (
+                    digits_only
+                    and has_digit
+                    and len(path) < max_len
+                    and flag_test(
+                        stamp_flags, FLAG_NUMBER_ASCENDING_FREE_POSITION
+                    )
+                ):
+                    last_nv: int | None = None
+                    for pidx in path:
+                        pt = board.get_by_index(pidx)
+                        if pt.curse != CurseType.NUMBER:
+                            continue
+                        nv = tile_number_value(pt)
+                        if nv is not None:
+                            last_nv = nv
+                    path_flags_leaf = _path_flags_for(path)
+                    leaf_mask = neighbors_mask(
+                        board,
+                        visited_mask,
+                        cell_id=path[-1],
+                        flags=path_flags_leaf,
+                        graph_ctx=graph_ctx,
+                        loadout=loadout,
+                    )
+                    for nidx in iter_mask(leaf_mask):
+                        if visited_mask & (1 << nidx):
+                            continue
+                        nt = board.get_by_index(nidx)
+                        if nt.curse in (CurseType.WILDCARD, CurseType.BLANK):
+                            skip_mid_digit_accept = True
+                            break
+                        if nt.curse != CurseType.NUMBER:
+                            continue
+                        nv = tile_number_value(nt)
+                        if nv is not None and (
+                            last_nv is None or nv > last_nv
+                        ):
+                            skip_mid_digit_accept = True
+                            break
+                if not skip_mid_digit_accept:
+                    word = "".join(chars).lower()
+                    trie_compatible = (
+                        prefix_cursor is not None and not has_digit and is_alpha_path
+                    )
+                    ok, score_word = path_accepted(
+                        path,
+                        word,
+                        trie_compatible=trie_compatible,
+                        prefix_cursor=prefix_cursor if letter_trie else None,
+                        pattern_cursor=pattern_cursor,
+                    )
+                    if ok:
+                        # digits_only explores digit faces then resolves to letters;
+                        # keep alpha resolves from digit tours (has_digit on the path).
+                        if score_word and not score_word.isalpha() and "?" not in score_word:
+                            pass
+                        elif (
+                            not digits_only
+                            or any(ch.isdigit() for ch in word)
+                            or (has_digit and score_word.isalpha())
+                        ):
+                            trie_confirmed = (
+                                trie_compatible
+                                and prefix_cursor is not None
+                                and self.dictionary.cursor_is_word(prefix_cursor)
+                            )
+                            resolved_word = (
+                                score_word
+                                if trie_confirmed
+                                and score_word.isalpha()
+                                and "?" not in score_word
+                                else None
+                            )
+                            self._consider_path_candidate(
+                                board,
+                                loadout,
+                                candidates,
+                                path,
+                                score_word,
+                                _path_flags_for(path),
+                                score_path,
+                                resolved_word=resolved_word,
+                            )
 
             if len(path) >= max_len or timed_out:
                 return
@@ -5560,6 +5676,41 @@ class WordSearcher:
                     )
                 )
                 nbr_iter = iter(nbrs)
+            if digits_only and flag_test(
+                stamp_flags, FLAG_NUMBER_ASCENDING_FREE_POSITION
+            ):
+                # Number Go Up: only keep strictly ascending number faces (plus
+                # joker/blank digit fills). Non-ascending tours cannot wildcard
+                # and were burning the slice on dead digit strings.
+                last_nv: int | None = None
+                for pidx in path:
+                    pt = board.get_by_index(pidx)
+                    if pt.curse != CurseType.NUMBER:
+                        continue
+                    nv = tile_number_value(pt)
+                    if nv is not None:
+                        last_nv = nv
+                asc_nbrs: list[int] = []
+                for nidx in nbr_iter:
+                    nt = board.get_by_index(nidx)
+                    if nt.curse in (CurseType.WILDCARD, CurseType.BLANK):
+                        asc_nbrs.append(nidx)
+                        continue
+                    if nt.curse != CurseType.NUMBER:
+                        continue
+                    nv = tile_number_value(nt)
+                    if nv is None:
+                        continue
+                    if last_nv is not None and nv <= last_nv:
+                        continue
+                    asc_nbrs.append(nidx)
+                asc_nbrs.sort(
+                    key=lambda i: (
+                        tile_number_value(board.get_by_index(i)) or 0,
+                        i,
+                    )
+                )
+                nbr_iter = iter(asc_nbrs)
             for idx in nbr_iter:
                 if timed_out or self._time_expired():
                     timed_out = True
@@ -5619,6 +5770,25 @@ class WordSearcher:
                     flags=path_flags,
                     segment=partial_seg,
                 )
+                # Digits-only pass: joker/blank fills a digit (historic 21435 /
+                # Full Battery number words), not 26 letter branches.
+                if digits_only and tile.curse in (
+                    CurseType.WILDCARD,
+                    CurseType.BLANK,
+                ):
+                    branch_letters = ()
+                    token = "?"  # force digit-fill extensions below
+                    next_has_digit = True
+                # Digits-only: never expand Number Go Up letter-wildcard branches
+                # (vacuous ascending on short prefixes was producing "2haff5").
+                if (
+                    digits_only
+                    and tile.curse == CurseType.NUMBER
+                    and token.isdigit()
+                ):
+                    branch_letters = ()
+                    num_wildcard_letters = ()
+                    next_has_digit = True
 
                 if branch_letters and num_wildcard_letters:
                     branch_letters = _order_number_wildcard_branch_letters(
@@ -5704,40 +5874,69 @@ class WordSearcher:
                             )
                         )
                 else:
-                    next_has_wildcard = has_wildcard or ("?" in token)
-                    pattern_active = (
-                        has_digit
-                        or next_has_digit
-                        or next_has_wildcard
-                        or pattern_prefix is not None
-                        or pattern_cursor is not None
-                    )
-                    next_pat = _pattern_after_token(
-                        pattern_prefix, token, active=pattern_active
-                    )
-                    next_pat_cursor = _step_pattern_cursor(
-                        pattern_cursor, token, active=pattern_active
-                    )
-                    if next_has_digit:
-                        mixed = self.dictionary.mixed_step_cursor(
-                            prefix_cursor if letter_trie else pattern_cursor, token
-                        )
-                        if timing is not None:
-                            timing.trie_steps += len(token)
-                        extensions = [
-                            (token, mixed, next_pat_cursor, next_has_wildcard, next_pat)
-                        ]
-                    else:
-                        child = _step_token_cursor(prefix_cursor, token)
-                        extensions = [
-                            (
-                                token,
-                                child,
-                                next_pat_cursor,
-                                next_has_wildcard,
-                                next_pat,
+                    # Digits-only joker/blank: try each digit fill.
+                    if digits_only and tile.curse in (
+                        CurseType.WILDCARD,
+                        CurseType.BLANK,
+                    ):
+                        extensions = []
+                        for d in "0123456789":
+                            pattern_active = True
+                            next_pat = _pattern_after_token(
+                                pattern_prefix, d, active=pattern_active
                             )
-                        ]
+                            next_pat_cursor = _step_pattern_cursor(
+                                pattern_cursor, d, active=pattern_active
+                            )
+                            mixed = self.dictionary.mixed_step_cursor(
+                                prefix_cursor if letter_trie else pattern_cursor, d
+                            )
+                            if timing is not None:
+                                timing.trie_steps += 1
+                            extensions.append(
+                                (d, mixed, next_pat_cursor, has_wildcard, next_pat)
+                            )
+                    else:
+                        next_has_wildcard = has_wildcard or ("?" in token)
+                        pattern_active = (
+                            has_digit
+                            or next_has_digit
+                            or next_has_wildcard
+                            or pattern_prefix is not None
+                            or pattern_cursor is not None
+                        )
+                        next_pat = _pattern_after_token(
+                            pattern_prefix, token, active=pattern_active
+                        )
+                        next_pat_cursor = _step_pattern_cursor(
+                            pattern_cursor, token, active=pattern_active
+                        )
+                        if next_has_digit:
+                            mixed = self.dictionary.mixed_step_cursor(
+                                prefix_cursor if letter_trie else pattern_cursor, token
+                            )
+                            if timing is not None:
+                                timing.trie_steps += len(token)
+                            extensions = [
+                                (
+                                    token,
+                                    mixed,
+                                    next_pat_cursor,
+                                    next_has_wildcard,
+                                    next_pat,
+                                )
+                            ]
+                        else:
+                            child = _step_token_cursor(prefix_cursor, token)
+                            extensions = [
+                                (
+                                    token,
+                                    child,
+                                    next_pat_cursor,
+                                    next_has_wildcard,
+                                    next_pat,
+                                )
+                            ]
 
                 for (
                     ext_token,
@@ -6266,6 +6465,440 @@ class WordSearcher:
                         ):
                             continue
                         queue.append((trial, visited_mask | (1 << nbr)))
+        finally:
+            self._active_deadline = prev_deadline
+
+    def _collect_number_covering_candidates(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        deadline: float,
+        *,
+        max_len: int,
+    ) -> None:
+        """Letter+number mixed search that soft-covers scored number tiles.
+
+        Builds ascending number tours with letter bridges (Number Go Up + Lab Coat
+        / Abacus), then scores them — so ``F3L4567N`` / falchion can beat short
+        digits_only locals like ``457``. Fresh per solve — no cross-F8 cache.
+        """
+        if time.monotonic() >= deadline:
+            return
+        vm = self._value_model
+        if vm is None:
+            return
+        target_mask = vm.soft_cover_mask & vm.number_mask
+        if target_mask.bit_count() < 3:
+            target_mask = vm.number_mask
+        if target_mask.bit_count() < 3:
+            return
+        graph_ctx = self._board_graph(board)
+        ctx = self._search_ctx(loadout)
+        stamp_flags = ctx.search_flags
+        raw_targets = [
+            i
+            for i in range(graph_ctx.cell_count)
+            if target_mask & (1 << i) and graph_ctx.is_active(i)
+        ]
+        if len(raw_targets) < 3:
+            return
+
+        # Up to 2 tiles per face value. Prefer coloured/high-base, but keep an
+        # alternate (often colorless) when it sits next to other numbers —
+        # orthodox needs colorless 2→4, not the higher-base blue 2 elsewhere.
+        from collections import defaultdict
+
+        by_face_all: dict[int, list[int]] = defaultdict(list)
+        for idx in raw_targets:
+            tile = board.get_by_index(idx)
+            if tile.number_value is None:
+                continue
+            by_face_all[int(tile.number_value)].append(idx)
+
+        def _tile_face_rank(idx: int) -> tuple:
+            tile = board.get_by_index(idx)
+            colored = 0 if str(tile.color.value) != "colorless" else 1
+            return (colored, -float(tile.base_score), idx)
+
+        def _number_neighbor_faces(idx: int) -> set[int]:
+            faces: set[int] = set()
+            for nbr in neighbors_from_tile(
+                board, [idx], 1 << idx, flags=stamp_flags, graph_ctx=graph_ctx
+            ):
+                nt = board.get_by_index(nbr)
+                if nt.curse == CurseType.NUMBER and nt.number_value is not None:
+                    faces.add(int(nt.number_value))
+            return faces
+
+        face_options: dict[int, list[int]] = {}
+        for face, opts in by_face_all.items():
+            ranked = sorted(opts, key=_tile_face_rank)
+            chosen = [ranked[0]]
+            for alt in ranked[1:]:
+                nbr_faces = _number_neighbor_faces(alt)
+                if any(f != face for f in nbr_faces):
+                    chosen.append(alt)
+                    break
+            if len(chosen) < 2 and len(ranked) > 1:
+                chosen.append(ranked[1])
+            face_options[face] = chosen[:2]
+
+        faces_all = sorted(face_options)
+        faces_colored = [
+            f
+            for f in faces_all
+            if any(
+                str(board.get_by_index(i).color.value) != "colorless"
+                for i in face_options[f]
+            )
+        ]
+        face_seqs: list[list[int]] = []
+        if len(faces_colored) >= 3:
+            face_seqs.append(faces_colored)
+        if len(faces_all) >= 3 and faces_all != faces_colored:
+            face_seqs.append(faces_all)
+        if not face_seqs:
+            return
+
+        cover_cap = min(
+            max_len, max(12, max(len(s) for s in face_seqs) + 6)
+        )
+        paths: list[list[int]] = []
+        seen: set[tuple[int, ...]] = set()
+        cores: list[list[int]] = []
+        seen_cores: set[tuple[int, ...]] = set()
+        max_cores = 64
+        max_paths = 220
+
+        def add_path(path: list[int]) -> bool:
+            if len(paths) >= max_paths:
+                return False
+            if len(path) < self.min_len or len(path) > cover_cap:
+                return False
+            key = tuple(path)
+            if key in seen:
+                return False
+            seen.add(key)
+            paths.append(path)
+            return True
+
+        def add_core(path: list[int]) -> None:
+            if len(cores) >= max_cores:
+                return
+            key = tuple(path)
+            if key in seen_cores:
+                return
+            seen_cores.add(key)
+            cores.append(path)
+
+        def _bridge_ok(bridge: list[int], max_bridge: int) -> bool:
+            if bridge is None or len(bridge) < 2:
+                return False
+            if len(bridge) > max_bridge:
+                return False
+            # Intermediates must be letters — number detours (2→6→3→4) poison
+            # ascending tours and starve orthodox / miniatum winners.
+            for mid in bridge[1:-1]:
+                if is_number_like_tile(board.get_by_index(mid)):
+                    return False
+            return True
+
+        def chain_face_variants(face_seq: list[int]) -> list[list[int]]:
+            """Ascending face tours; try alternate tiles per face + letter bridges."""
+            if not face_seq:
+                return []
+            # Compact chains for many faces; allow letter corridors for ≤4 faces.
+            max_bridge = 6 if len(face_seq) <= 4 else 3
+            variants: list[list[int]] = [[t] for t in face_options[face_seq[0]]]
+            for face in face_seq[1:]:
+                if time.monotonic() >= deadline:
+                    return []
+                next_variants: list[list[int]] = []
+                for chain in variants:
+                    # Cap BFS to max_bridge — cover_cap-sized rooms explode on
+                    # visit-unmarked shortest-path search (orthodox hang).
+                    room = min(cover_cap - len(chain) + 1, max_bridge)
+                    if room < 2:
+                        continue
+                    forbidden = sum(1 << i for i in chain[:-1])
+                    for nxt in face_options[face]:
+                        if nxt in chain:
+                            continue
+                        bridges = _all_shortest_paths_between_indices(
+                            board,
+                            chain[-1],
+                            nxt,
+                            room,
+                            flags=stamp_flags,
+                            forbidden_mask=forbidden,
+                            limit=8,
+                        )
+                        for bridge in bridges:
+                            if not _bridge_ok(bridge, max_bridge):
+                                continue
+                            grown = chain + bridge[1:]
+                            if len(grown) <= cover_cap:
+                                next_variants.append(grown)
+                            if len(next_variants) >= 16:
+                                break
+                        if len(next_variants) >= 16:
+                            break
+                    if len(next_variants) >= 16:
+                        break
+                variants = next_variants
+                if not variants:
+                    return []
+            return variants
+
+        def grow_letter_ends(path: list[int], *, max_extra: int = 2) -> None:
+            """Prefix/suffix letter-only growth (miniatum …6UM, falchion F…N).
+
+            Prefix and suffix budgets are independent so M + … + UM needs only
+            max_extra=2, not 3 shared depth steps.
+            """
+            if len(paths) >= max_paths or time.monotonic() >= deadline:
+                return
+            prefixed: list[list[int]] = [path]
+            frontier = [path]
+            for _depth in range(max_extra):
+                if time.monotonic() >= deadline or len(paths) >= max_paths:
+                    break
+                nxt_front: list[list[int]] = []
+                for cur in frontier:
+                    if len(cur) >= cover_cap:
+                        continue
+                    head_nbrs = neighbors_from_tile(
+                        board,
+                        [cur[0]],
+                        1 << cur[0],
+                        flags=stamp_flags,
+                        graph_ctx=graph_ctx,
+                    )
+                    for n in head_nbrs:
+                        if n in cur:
+                            continue
+                        if board.get_by_index(n).curse != CurseType.LETTER:
+                            continue
+                        grown = [n] + cur
+                        if len(grown) > cover_cap:
+                            continue
+                        add_path(grown)
+                        prefixed.append(grown)
+                        nxt_front.append(grown)
+                        if len(nxt_front) >= 12:
+                            break
+                    if len(nxt_front) >= 12:
+                        break
+                frontier = nxt_front
+                if not frontier:
+                    break
+
+            for base in prefixed:
+                if time.monotonic() >= deadline or len(paths) >= max_paths:
+                    break
+                add_path(base)
+                frontier = [base]
+                for _depth in range(max_extra):
+                    if time.monotonic() >= deadline or len(paths) >= max_paths:
+                        break
+                    nxt_front = []
+                    for cur in frontier:
+                        if len(cur) >= cover_cap:
+                            continue
+                        tail_nbrs = neighbors_from_tile(
+                            board,
+                            cur,
+                            sum(1 << i for i in cur),
+                            flags=stamp_flags,
+                            graph_ctx=graph_ctx,
+                        )
+                        for n in tail_nbrs:
+                            if n in cur:
+                                continue
+                            if board.get_by_index(n).curse != CurseType.LETTER:
+                                continue
+                            grown = cur + [n]
+                            if len(grown) > cover_cap:
+                                continue
+                            add_path(grown)
+                            nxt_front.append(grown)
+                            if len(nxt_front) >= 16:
+                                break
+                        if len(nxt_front) >= 16:
+                            break
+                    frontier = nxt_front
+                    if not frontier:
+                        break
+
+        from itertools import combinations
+
+        for faces in face_seqs:
+            if time.monotonic() >= deadline or len(cores) >= max_cores:
+                break
+            n_ord = len(faces)
+            # Full ascending tour first, then leave-outs — otherwise length-4
+            # leave-outs fill max_cores before 3-4-5-6-7 / 2-4-5-6 land.
+            subsets: list[list[int]] = []
+            if n_ord >= 3:
+                subsets.append(list(faces))
+            if n_ord >= 4:
+                for skip in range(n_ord):
+                    subsets.append([faces[i] for i in range(n_ord) if i != skip])
+            for start_i in range(n_ord):
+                for end_i in range(start_i + 2, n_ord):
+                    subsets.append(faces[start_i : end_i + 1])
+            if n_ord >= 5:
+                for skips in combinations(range(n_ord), 2):
+                    skip_set = set(skips)
+                    subset = [faces[i] for i in range(n_ord) if i not in skip_set]
+                    if len(subset) >= 3:
+                        subsets.append(subset)
+
+            seen_sub: set[tuple[int, ...]] = set()
+            uniq_subsets: list[list[int]] = []
+            for sub in subsets:
+                key = tuple(sub)
+                if key in seen_sub:
+                    continue
+                seen_sub.add(key)
+                uniq_subsets.append(sub)
+            for subset in uniq_subsets[:28]:
+                if time.monotonic() >= deadline or len(cores) >= max_cores:
+                    break
+                for core in chain_face_variants(subset)[:8]:
+                    add_core(core)
+                    if len(cores) >= max_cores:
+                        break
+
+        if not cores:
+            return
+
+        cell_masks = (
+            self._board_scoring_ctx.cell_masks
+            if self._board_scoring_ctx is not None
+            else {}
+        )
+        colored_mask = int(cell_masks.get("colored_number", 0)) or target_mask
+
+        def _core_rank(p: list[int]) -> tuple:
+            colored_hit = sum(1 for i in p if colored_mask & (1 << i))
+            letters = sum(
+                1
+                for i in p
+                if board.get_by_index(i).curse == CurseType.LETTER
+            )
+            # Prefer many blues, short letter bridges, compact tours.
+            return (-colored_hit, letters, len(p))
+
+        cores.sort(key=_core_rank)
+        # Grow only the most compact high-cover cores — letter-bloated leave-outs
+        # otherwise flood max_paths and bury m245a6um / o24h5d6x in the sort.
+        for core in cores[:12]:
+            if time.monotonic() >= deadline or len(paths) >= max_paths:
+                break
+            grow_letter_ends(core, max_extra=2)
+
+        if not paths:
+            return
+
+        def _path_rank(p: list[int]) -> tuple:
+            colored_hit = sum(1 for i in p if colored_mask & (1 << i))
+            letters = sum(
+                1
+                for i in p
+                if board.get_by_index(i).curse == CurseType.LETTER
+            )
+            # Prefer coverage, then compact letter use (not bloated corridors),
+            # then longer dictionary bookends among ties.
+            return (-colored_hit, letters, -len(p))
+
+        paths.sort(key=_path_rank)
+        paths = paths[:160]
+
+        from cursed_words_solver.suggestion import path_is_submittable
+
+        prev_deadline = self._active_deadline
+        self._active_deadline = deadline
+
+        def score_path(
+            path: list[int],
+            word: str,
+            *,
+            resolved_word: str | None = None,
+        ) -> float | None:
+            # Do not tier2/mult-prune against a heap already full of short digit
+            # locals — number-cover tours (falchion) must be fully scored so they
+            # can displace weaker 457-class entries via heapreplace.
+            return self._rank_score_for_candidate(
+                board,
+                path,
+                word,
+                loadout,
+                prune_heap=None,
+                resolved_word=resolved_word,
+            )
+
+        try:
+            for path_i, path in enumerate(paths):
+                if time.monotonic() >= deadline:
+                    break
+                search_word = search_word_from_path(
+                    board, path, flags=stamp_flags
+                )
+                accepted, score_word = self._accept_path_for_search(
+                    board,
+                    path,
+                    search_word,
+                    loadout,
+                    stamp_flags,
+                )
+                resolved_word: str | None = None
+                # Resolve is expensive — only try a few high-ranked rejects.
+                if (
+                    not accepted
+                    and path_i < 6
+                    and time.monotonic() + 0.35 < deadline
+                ):
+                    resolved = self._resolved_word_for_path(
+                        board, path, search_word, loadout
+                    )
+                    if resolved:
+                        accepted, score_word = self._accept_path_for_search(
+                            board,
+                            path,
+                            resolved,
+                            loadout,
+                            stamp_flags,
+                        )
+                        resolved_word = resolved
+                if not accepted:
+                    continue
+                if (
+                    resolved_word is None
+                    and search_word.lower() != score_word.lower()
+                ):
+                    resolved_word = score_word
+                scoring_word = resolved_word or score_word
+                if not path_is_submittable(
+                    board,
+                    path,
+                    scoring_word,
+                    loadout,
+                    self.dictionary,
+                    min_len=self.min_len,
+                ):
+                    continue
+                self._consider_path_candidate(
+                    board,
+                    loadout,
+                    candidates,
+                    path,
+                    score_word,
+                    stamp_flags,
+                    score_path,
+                    resolved_word=resolved_word,
+                )
         finally:
             self._active_deadline = prev_deadline
 
@@ -8594,6 +9227,10 @@ class WordSearcher:
         word_norm = score_word.lower()
         canonical = (resolved_word or score_word).lower()
         if alt_norm != word_norm and alt_norm != canonical:
+            # Number-face concatenations are not playable spellings — do not
+            # mirror them into the heap beside the resolved dictionary word.
+            if alt_sw and not alt_sw.isalpha() and "?" not in alt_sw:
+                return added
             alt_key = self._score_cache_key(
                 path, alt_sw, resolved_word=resolved_word
             )
@@ -10187,11 +10824,15 @@ class WordSearcher:
                 main_span = max(0.0, main_deadline - now)
                 aff = self._affordances
                 if aff is not None:
-                    number_slice, item_slice, chess_aff_slice = aff.side_slice_budgets(
-                        main_span
-                    )
+                    (
+                        number_slice,
+                        number_cover_slice,
+                        item_slice,
+                        chess_aff_slice,
+                    ) = aff.side_slice_budgets(main_span)
                 else:
                     number_slice = 0.0
+                    number_cover_slice = 0.0
                     item_slice = 0.0
                     chess_aff_slice = 0.0
                     if main_span >= 10.0:
@@ -10205,7 +10846,13 @@ class WordSearcher:
                                 item_slice = min(4.0, main_span * 0.08)
                             else:
                                 item_slice = min(10.0, main_span * 0.20)
-                letter_deadline = main_deadline - number_slice - item_slice - chess_aff_slice
+                letter_deadline = (
+                    main_deadline
+                    - number_slice
+                    - number_cover_slice
+                    - item_slice
+                    - chess_aff_slice
+                )
                 beam_span = max(0.0, letter_deadline - now)
                 # Short smoke budgets: give letter leftover a larger share so a
                 # number-heavy board still finds *some* word under ~8s.
@@ -10272,7 +10919,7 @@ class WordSearcher:
                     max_number_face = _max_number_face_on_board(board)
                     min_cap_for_numbers = max(8, max_number_face)
                     number_pass_deadline = min(
-                        main_deadline - item_slice,
+                        main_deadline - item_slice - number_cover_slice,
                         time.monotonic() + number_slice,
                     )
                     if number_starts and time.monotonic() < number_pass_deadline:
@@ -10314,6 +10961,27 @@ class WordSearcher:
                             and self.time_budget >= 6.0
                         ):
                             break
+                # Letter-bridged number cover (Lab Coat / Abacus): after digits_only
+                # so short digit locals exist as fallback, but before item cover.
+                if (
+                    number_cover_slice > 0
+                    and aff is not None
+                    and aff.rewards_number_tiles
+                    and has_digit_tiles
+                    and time.monotonic() < main_deadline
+                ):
+                    cover_deadline = min(
+                        main_deadline - item_slice,
+                        time.monotonic() + max(number_cover_slice, 0.5),
+                    )
+                    if cover_deadline > time.monotonic():
+                        self._collect_number_covering_candidates(
+                            board,
+                            loadout,
+                            candidates,
+                            cover_deadline,
+                            max_len=self.max_len,
+                        )
                 if (
                     item_slice > 0
                     and item_count >= 2

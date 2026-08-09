@@ -41,6 +41,8 @@ Compiled once per F8 from inventory rule types + board masks. Search (beam, side
 | Tag | Steers |
 | --- | --- |
 | `needs_digit_start` | Live digit-start side slice |
+| `rewards_number_tiles` | Soft-cover scored numbers + mixed number-cover slice (Lab Coat / Abacus / Full Battery) |
+| Hungry Snake wrap | Playable-width horizontal wrap (`playable_min_col` ↔ `playable_max_col`) |
 | `needs_item_cover` | Item-cover side slice + soft cover pressure |
 | `needs_suit_diverse_ends` | Suit-endpoint boosts (Wrestlers-class) |
 | `rewards_chess_takes` | Chess-start side slice + hub bias |
@@ -68,7 +70,7 @@ Guidance only — final ranking still uses [`ScoringPipeline`](../cursed_words_s
 
 ### Beam search — [`search_beam.py`](../cursed_words_solver/search_beam.py)
 
-Best-first frontier ordered by `BoardValueModel.expand_priority` (+ light path-rank blend). Side slices (digit / item / chess) are scheduled from `LoadoutAffordances.side_slice_budgets`. Quality harness: `python scripts/search_quality.py --ab`.
+Best-first frontier ordered by `BoardValueModel.expand_priority` (+ light path-rank blend). Side slices (digit / number-cover / item / chess) are scheduled from `LoadoutAffordances.side_slice_budgets`. When Lab Coat / Abacus reward numbers, a mixed letter+number cover slice runs after `digits_only` so short digit locals do not starve letter-bridged paths. Quality harness: `python scripts/search_quality.py --ab`.
 
 ---
 

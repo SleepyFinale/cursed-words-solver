@@ -181,10 +181,18 @@ def flags_from_mask(mask: SearchFlagsMask) -> StampSearchFlags:
     )
 
 
+_CATALOG_CACHE: dict | None = None
+
+
 def _catalog() -> dict:
+    global _CATALOG_CACHE
+    if _CATALOG_CACHE is not None:
+        return _CATALOG_CACHE
     if not _CATALOG_PATH.is_file():
-        return {}
-    return json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
+        _CATALOG_CACHE = {}
+        return _CATALOG_CACHE
+    _CATALOG_CACHE = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
+    return _CATALOG_CACHE
 
 
 def stamp_slugs(loadout: Loadout | None) -> frozenset[str]:

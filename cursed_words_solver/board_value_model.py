@@ -135,6 +135,13 @@ class BoardValueModel:
             length_pull = 2.0 * (prefix_len + 1)
         if self.item_count >= 2 and cover_after < 1.0:
             length_pull += 4.0
+        # Number soft-cover (Lab Coat / Abacus): keep expanding until blues are hit.
+        if (
+            (self.soft_cover_mask & self.number_mask)
+            and cover_after < 1.0
+            and self.is_number(next_idx)
+        ):
+            length_pull += 5.0
         if self.rewards_long_word and prefix_len + 1 >= min_len:
             length_pull += 3.0
         if self.needs_suit_diverse_ends and path:
@@ -207,7 +214,11 @@ def build_board_value_model(
     rewards_chess = bool(affordances and affordances.rewards_chess_takes)
     soft_must = bool(
         affordances
-        and (affordances.needs_item_cover or affordances.rewards_long_word)
+        and (
+            affordances.needs_item_cover
+            or affordances.rewards_long_word
+            or affordances.rewards_number_tiles
+        )
     )
 
     for idx in range(n):
@@ -288,6 +299,29 @@ def build_board_value_model(
                 cell_potential[idx] += 30.0 + float(graph_ctx.item_tile_base[idx])
                 if affordances and affordances.rewards_high_letter_count:
                     cell_potential[idx] += 10.0
+
+    # Lab Coat / Abacus / Full Battery: soft-cover scored number tiles so beam
+    # prefers letter-bridged paths through blues (falchion) over short digit runs.
+    # Masks come from this solve's board_scoring_ctx — never cached across F8.
+    if affordances and affordances.rewards_number_tiles:
+        cell_masks = (
+            board_scoring_ctx.cell_masks if board_scoring_ctx is not None else {}
+        )
+        if affordances.rewards_all_number_tiles:
+            num_cover = int(cell_masks.get("number", 0)) or number_mask
+        else:
+            num_cover = int(cell_masks.get("colored_number", 0))
+            if not num_cover:
+                num_cover = number_mask
+        num_cover &= graph_ctx.active_mask
+        soft_cover |= num_cover
+        for idx in range(n):
+            if num_cover & (1 << idx):
+                cell_potential[idx] += 28.0 + float(graph_ctx.tile_base[idx])
+                # Coloured numbers pay Abacus — extra pull when present.
+                colored = int(cell_masks.get("colored_number", 0))
+                if colored & (1 << idx):
+                    cell_potential[idx] += 12.0
 
     return BoardValueModel(
         cell_potential=tuple(cell_potential),

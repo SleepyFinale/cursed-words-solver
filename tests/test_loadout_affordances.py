@@ -62,8 +62,56 @@ def test_affordances_detect_digit_item_and_wrestlers() -> None:
     assert aff.needs_suit_diverse_ends
     assert aff.rewards_high_letter_count
     assert "needs_digit_start" in aff.tags
-    n, i, c = aff.side_slice_budgets(20.0)
+    n, cover, i, c = aff.side_slice_budgets(20.0)
     assert n > 0 and i > 0
+    assert cover == 0.0  # no Lab Coat / Abacus on this loadout
+
+
+def test_affordances_detect_lab_coat_number_tiles() -> None:
+    board = _board_with_number_and_item()
+    # Need ≥3 numbers for number_cover_slice scheduling.
+    tiles = [list(row) for row in board.tiles]
+    tiles[1][0] = Tile(
+        1, 0, "2", "2", 2, TileColor.BLUE, CurseType.NUMBER, number_value=2
+    )
+    tiles[1][1] = Tile(
+        1, 1, "3", "3", 3, TileColor.BLUE, CurseType.NUMBER, number_value=3
+    )
+    board = Board(tiles=tiles)
+    rules = load_rules_catalog()
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="lab_coat", name="Lab Coat", level=1, kind="sticker")],
+        stamps=[
+            LoadoutItem(id="number_go_up", name="Number Go Up", level=1, kind="stamp")
+        ],
+        extras={"pin_effect": "abacus"},
+    )
+    solve_ctx = build_solve_context(loadout, rules)
+    graph_ctx = build_board_graph_context(board)
+    aff = build_loadout_affordances(
+        board, loadout, solve_ctx, graph_ctx, rules=rules
+    )
+    assert aff.rewards_number_tiles
+    assert aff.rewards_all_number_tiles
+    assert "rewards_number_tiles" in aff.tags
+    digit, cover, _item, _chess = aff.side_slice_budgets(40.0)
+    assert digit > 0
+    assert cover > 0
+    scoring = build_board_scoring_context(
+        board, loadout, solve_ctx, graph_ctx, rules
+    )
+    model = build_board_value_model(
+        board,
+        loadout,
+        solve_ctx,
+        graph_ctx,
+        scoring,
+        affordances=aff,
+    )
+    # Blue numbers soft-covered for beam guidance.
+    assert model.soft_cover_mask & model.number_mask
+    blue_idx = board.index_at(1, 0)
+    assert model.is_soft_cover(blue_idx)
 
 
 def test_value_model_reads_affordances() -> None:

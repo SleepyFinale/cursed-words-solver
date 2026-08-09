@@ -22,7 +22,8 @@ from cursed_words_solver.solve_context import SolveContext, hanafuda_sticker_lev
 _AFFORDANCE_TAG_DOC = (
     "needs_digit_start, needs_item_cover, needs_suit_diverse_ends, "
     "rewards_chess_takes, rewards_hanafuda_hand, rewards_long_word, "
-    "rewards_high_letter_count, has_path_order_mult, has_setup_npv, bounds_unsafe"
+    "rewards_high_letter_count, rewards_number_tiles, rewards_all_number_tiles, "
+    "has_path_order_mult, has_setup_npv, bounds_unsafe"
 )
 
 
@@ -37,6 +38,9 @@ class LoadoutAffordances:
     rewards_hanafuda_hand: bool
     rewards_long_word: bool
     rewards_high_letter_count: bool
+    rewards_number_tiles: bool
+    # Lab Coat / Full Battery pay on any number; Abacus alone → coloured only.
+    rewards_all_number_tiles: bool
     has_path_order_mult: bool
     has_setup_npv: bool
     bounds_unsafe: bool
@@ -65,21 +69,33 @@ class LoadoutAffordances:
             "rewards_hanafuda_hand",
             "rewards_long_word",
             "rewards_high_letter_count",
+            "rewards_number_tiles",
+            "rewards_all_number_tiles",
             "has_path_order_mult",
             "has_setup_npv",
             "bounds_unsafe",
         )
         return frozenset(n for n in names if getattr(self, n))
 
-    def side_slice_budgets(self, main_span: float) -> tuple[float, float, float]:
-        """Return (number_slice, item_slice, chess_slice) seconds from main span."""
+    def side_slice_budgets(self, main_span: float) -> tuple[float, float, float, float]:
+        """Return (digit_slice, number_cover_slice, item_slice, chess_slice) seconds.
+
+        Computed fresh from this solve's tags + main_span — no cross-F8 cache.
+        When Lab Coat / Abacus reward numbers, digit_slice shrinks so a mixed
+        letter+number cover pass can compete with short digits_only locals.
+        """
         if main_span < 10.0:
-            return 0.0, 0.0, 0.0
-        number_slice = 0.0
+            return 0.0, 0.0, 0.0, 0.0
+        digit_slice = 0.0
+        number_cover_slice = 0.0
         item_slice = 0.0
         chess_slice = 0.0
         if self.needs_digit_start and self.number_count > 0:
-            number_slice = min(14.0, main_span * 0.30)
+            digit_slice = min(14.0, main_span * 0.30)
+            if self.rewards_number_tiles and self.number_count >= 3:
+                # Split: short digit locals vs letter-bridged number cover.
+                number_cover_slice = min(10.0, main_span * 0.18)
+                digit_slice = min(digit_slice, main_span * 0.16)
         if self.needs_item_cover and self.item_count >= 2:
             if self.full_moon and not self.dense_items:
                 item_slice = min(4.0, main_span * 0.08)
@@ -88,32 +104,36 @@ class LoadoutAffordances:
         if self.rewards_chess_takes and self.chess_count >= 2:
             chess_slice = min(4.0, main_span * 0.08)
         max_side = main_span * 0.45
-        side = number_slice + item_slice + chess_slice
+        side = digit_slice + number_cover_slice + item_slice + chess_slice
         if side > max_side and side > 0:
             scale = max_side / side
-            number_slice *= scale
+            digit_slice *= scale
+            number_cover_slice *= scale
             item_slice *= scale
             chess_slice *= scale
         letter_floor = min(22.0, main_span * 0.55)
-        side = number_slice + item_slice + chess_slice
+        side = digit_slice + number_cover_slice + item_slice + chess_slice
         if main_span - side < letter_floor and side > 0:
             scale = max(0.0, main_span - letter_floor) / side
-            number_slice *= scale
+            digit_slice *= scale
+            number_cover_slice *= scale
             item_slice *= scale
             chess_slice *= scale
-        return number_slice, item_slice, chess_slice
+        return digit_slice, number_cover_slice, item_slice, chess_slice
 
 
 def _scan_inventory_rules(
     loadout: Loadout,
     rules: dict,
-) -> tuple[bool, bool, bool, bool, bool, bool, bool]:
+) -> tuple[bool, bool, bool, bool, bool, bool, bool, bool, bool]:
     """Flags derived from catalog rule types/conditions."""
     needs_suit = False
     rewards_chess = False
     rewards_hanafuda = False
     rewards_long = False
     rewards_letter_count = False
+    rewards_number = False
+    rewards_all_numbers = False
     path_order_mult = False
     setup_npv = False
 
@@ -124,6 +144,7 @@ def _scan_inventory_rules(
                 continue
             effect = str(rule.get("type") or "")
             cond = str(rule.get("condition") or "")
+            target = str(rule.get("target") or "").strip().lower()
             rid = (item.id or "").strip().lower()
             if cond == "word_starts_ends_different_suit" or rid == "wrestlers":
                 needs_suit = True
@@ -142,6 +163,15 @@ def _scan_inventory_rules(
                 "tile_multiply_by_letter_count",
             ) or rid in ("banana", "bubble_tea"):
                 rewards_letter_count = True
+            # Lab Coat: tile_multiply target number; Full Battery: by number count.
+            if effect == "tile_multiply" and target == "number":
+                rewards_number = True
+                rewards_all_numbers = True
+            if effect == "multiply_word_by_number_count":
+                rewards_number = True
+                rewards_all_numbers = True
+            if effect == "colored_number_tile_bonus":
+                rewards_number = True
             if effect in (
                 "multiply_word_scaled",
                 "tile_multiply",
@@ -157,12 +187,31 @@ def _scan_inventory_rules(
                 "tile_ninja",
             ):
                 setup_npv = True
+
+    # Abacus (and similar) live on the pin, not sticker/stamp inventory.
+    pin_effect = str(
+        (loadout.extras or {}).get("pin_effect", "") or ""
+    ).strip()
+    if pin_effect:
+        _pkey, pin_rule = get_rule(rules, "pins", pin_effect, pin_effect)
+        if pin_rule:
+            pin_type = str(pin_rule.get("type") or "")
+            if pin_type == "colored_number_tile_bonus":
+                rewards_number = True
+            right = pin_rule.get("right")
+            if isinstance(right, dict) and str(right.get("type") or "") == (
+                "colored_number_tile_bonus"
+            ):
+                rewards_number = True
+
     return (
         needs_suit,
         rewards_chess,
         rewards_hanafuda,
         rewards_long,
         rewards_letter_count,
+        rewards_number,
+        rewards_all_numbers,
         path_order_mult,
         setup_npv,
     )
@@ -198,6 +247,8 @@ def build_loadout_affordances(
         rewards_hanafuda,
         rewards_long,
         rewards_letter_count,
+        rewards_number,
+        rewards_all_numbers,
         path_order_mult,
         setup_npv,
     ) = _scan_inventory_rules(loadout, rules)
@@ -237,6 +288,8 @@ def build_loadout_affordances(
         rewards_hanafuda_hand=rewards_hanafuda or hanafuda_level > 0,
         rewards_long_word=rewards_long or prefer_length,
         rewards_high_letter_count=rewards_letter_count,
+        rewards_number_tiles=rewards_number,
+        rewards_all_number_tiles=rewards_all_numbers,
         has_path_order_mult=path_order_mult,
         has_setup_npv=setup_npv,
         bounds_unsafe=bounds_unsafe,

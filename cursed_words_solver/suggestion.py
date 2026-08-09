@@ -75,6 +75,51 @@ def _path_search_flags(board: Board, path: list[int], loadout: Loadout) -> Searc
     )
 
 
+def path_number_tiles_can_match_letters(
+    board: Board,
+    path: list[int],
+    flags: SearchFlagsMask,
+) -> bool:
+    """False when a NUMBER/fraction tile cannot act as a letter wildcard.
+
+    Game ``WordTrie`` uses ``GetStringRepresentation(forWordValidity=true)`` →
+    ``!`` for numbers; ``IsTileMatchingChar`` only accepts letters when
+    ``IsWildcard`` (Number Go Up ascending or position-locked) or rare stamp
+    remaps (Bunch of Grapes / Roman). Non-wildcard numbers cannot spell a
+    dictionary word — skip all-``?`` resolve scans.
+    """
+    from cursed_words_solver.rules.stamp_behaviors import (
+        FLAG_NUMBER_ROMAN_IVX,
+        coerce_search_flags,
+        flag_test,
+    )
+    from cursed_words_solver.search import (
+        _path_number_values,
+        fraction_position_valid,
+        is_numeric_wildcard,
+    )
+
+    mask = coerce_search_flags(flags)
+    vals = _path_number_values(board, path)
+    for i, idx in enumerate(path):
+        tile = board.get_by_index(idx)
+        if tile.curse == CurseType.FRACTION:
+            # Game IsNumericWildcard: numerator/denominator vs 1-based index.
+            if fraction_position_valid(tile, i, relaxed=False):
+                continue
+            return False
+        if tile.curse != CurseType.NUMBER:
+            continue
+        if is_numeric_wildcard(
+            tile, i, flags=mask, path_number_values=vals
+        ):
+            continue
+        if flag_test(mask, FLAG_NUMBER_ROMAN_IVX):
+            continue
+        return False
+    return True
+
+
 def f8_export_catchup_grace_sec(search_budget_sec: float | None = None) -> float:
     """Grace period for post-F8 export catch-up (extras-only disk lag)."""
     del search_budget_sec
@@ -1782,10 +1827,8 @@ def dictionary_word_for_path(
     if word.isalpha() and validator.word_ok(board, path, word, flags):
         return word
 
-    if validator.word_ok(board, path, word, flags) and not path_requires_tile_dictionary_resolve(
-        board, path, flags=flags
-    ):
-        return word
+    if not path_number_tiles_can_match_letters(board, path, flags):
+        return None
 
     pattern = _alignment_pattern_for_path(board, path, flags)
     valid = _collect_dictionary_matches_for_path(
@@ -2259,6 +2302,8 @@ def _valid_dictionary_words_for_path(
     ):
         out = [lowered]
         return out[:limit] if limit is not None else out
+    if not path_number_tiles_can_match_letters(board, path, flags):
+        return []
     phys = physical_word_for_path(board, path, flags=flags)
     if (
         phys.isalpha()
@@ -2305,7 +2350,17 @@ def path_is_submittable(
     if not path_movement_ok(board, path, flags=flags, loadout=loadout):
         return False
     lowered = scoring_word.lower()
+    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
+    # Digit-face concatenations are never the submitted spelling (Vocabulary is
+    # letters only). A path may still be playable via resolve — callers that only
+    # have digit faces should resolve first, then call this with the letter word.
+    if lowered and not lowered.isalpha() and "?" not in lowered:
+        return False
+    if lowered.isalpha() and validator.word_ok(board, path, lowered, flags):
+        return True
     if "?" in lowered:
+        if not path_number_tiles_can_match_letters(board, path, flags):
+            return False
         return bool(
             _valid_dictionary_words_for_path(
                 board,
@@ -2318,9 +2373,8 @@ def path_is_submittable(
                 deadline_check=deadline_check,
             )
         )
-    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
-    if validator.word_ok(board, path, lowered, flags):
-        return True
+    if not path_number_tiles_can_match_letters(board, path, flags):
+        return False
     resolved = dictionary_word_for_path(
         board,
         path,
