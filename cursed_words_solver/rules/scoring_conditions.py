@@ -1990,7 +1990,18 @@ def dusty_coffin_word_score_level(
         if scatter_tile is None and board is not None:
             scatter_tile = _dusty_coffin_scatter_tile_off_path(board, path)
         if scatter_tile is not None and scatter_tile.color == TileColor.VOID:
-            return 1
+            # When Dusty is also equipped, void grid scatter stays at encounter L1
+            # (inventory fires separately — unix 130347). Unequipped VOID dusty
+            # trusts live export Level (abye L3; melmod never inflates dusty).
+            if eq is not None:
+                return 1
+            raw = (scatter_tile.metadata or {}).get("scattered_item_level")
+            if raw is not None and raw != "":
+                try:
+                    return max(1, int(raw))
+                except (TypeError, ValueError):
+                    pass
+            return max(1, int(sticker_level))
         if (
             scatter_tile is not None
             and scatter_tile.color == TileColor.COLORLESS
@@ -2008,6 +2019,15 @@ def dusty_coffin_word_score_level(
                         return max(1, max(1, grid - floor) + 1)
                     except (TypeError, ValueError):
                         pass
+        if eq is None and scatter_tile is not None:
+            # Unequipped non-void grid dusty (erosely SHINY L3): trust live export.
+            raw = (scatter_tile.metadata or {}).get("scattered_item_level")
+            if raw is not None and raw != "":
+                try:
+                    return max(1, int(raw))
+                except (TypeError, ValueError):
+                    pass
+            return max(1, int(sticker_level))
         if (
             scatter_tile is not None
             and scatter_tile.color == TileColor.COLORLESS
@@ -4892,6 +4912,25 @@ def _tombstone_export_is_inventory_bleed(
     return exported > equipped + max(1, encounter_level)
 
 
+def _tombstone_level_after_void_combine_export(
+    exported: int,
+    equipped: int | None,
+    encounter_level: int,
+) -> int:
+    """Recover live VOID Tombstone score tier from melmod combined export.
+
+    ``ApplyVoidTombstoneCombinedScatterLevels`` sets export to
+    ``live_level + equipped``. Inventory still scores separately, so undo the
+    add (qin/hesp: 6 → 3). If undo is nonsensical, fall back to encounter tier.
+    """
+    if equipped is None or equipped < 1:
+        return max(1, int(exported))
+    undone = int(exported) - int(equipped)
+    if undone >= 1:
+        return undone
+    return max(1, int(encounter_level))
+
+
 def tombstone_inventory_scoring_level(
     sticker: LoadoutItem,
     loadout: Loadout | None,
@@ -4900,17 +4939,13 @@ def tombstone_inventory_scoring_level(
     base_level: int | None = None,
     path: list[int] | None = None,
 ) -> int:
-    """Equipped Tombstone level when a grid scatter Tombstone is on the board."""
-    level = max(1, int(base_level if base_level is not None else sticker.level))
-    if (
-        board is not None
-        and "tombstone" in grid_scatter_sticker_slugs(board)
-        and level > 1
-        and not path_includes_grid_scatter(board, path, "tombstone")
-    ):
-        return 1
-    del loadout
-    return level
+    """Equipped Tombstone level (full inventory tier).
+
+    Off-path grid Tombstone is not a separate GetItemsForWordSubmission entry;
+    void-adjacent scoring is the equipped sticker at its real level (cinch).
+    """
+    del loadout, board, path
+    return max(1, int(base_level if base_level is not None else sticker.level))
 
 
 def _tombstone_uses_grid_encounter_level(
@@ -5501,13 +5536,17 @@ def _level_from_exported_scatter_tier(
         if equipped is not None and _tombstone_export_is_inventory_bleed(
             tile_lv, equipped, encounter_level
         ):
-            return encounter_level
+            return _tombstone_level_after_void_combine_export(
+                tile_lv, equipped, encounter_level
+            )
         return tile_lv
     equipped = _equipped_sticker_level_for_slug(loadout, slug_norm)
     if slug_norm == "tombstone" and equipped is not None and _tombstone_export_is_inventory_bleed(
         tile_lv, equipped, encounter_level
     ):
-        return encounter_level
+        return _tombstone_level_after_void_combine_export(
+            tile_lv, equipped, encounter_level
+        )
     if equipped is None:
         return tile_lv
     if tile_lv >= equipped:
@@ -5548,6 +5587,10 @@ def grid_path_sticker_level(
     When melmod exports ``scattered_item_level`` on the path tile, that value wins.
     Tombstone on grid ≥2 uses encounter level when path void letters have deep penalty;
     otherwise scattered_grid_item_level (not equipped inventory level).
+
+    VOID path Tombstone may merge equipped inventory tier (live VariableValue /
+    melmod ``ApplyVoidTombstoneCombinedScatterLevels``). SHINY/non-void Tombstone
+    keeps the live export Level; equipped Tombstone still scores separately.
 
     When export tier equals equipped inventory tier on a grid-path tile, treat export
     as component bleed-through: score at encounter scatter tier; equipped sticker still
@@ -5726,7 +5769,16 @@ def grid_path_sticker_level(
             bleed = _tombstone_export_is_inventory_bleed(
                 exported_tile_level, eq_tomb, encounter_level
             )
-        if eq_tomb is not None and eq_tomb > level and not bleed:
+        # VOID grid Tombstone can score with equipped tier merged in (melmod
+        # ApplyVoidTombstoneCombinedScatterLevels / live VariableValue). SHINY and
+        # other non-void scatters keep the live exported Level; inventory Tombstone
+        # still fires separately — do not re-merge equipped (deceit L2+L3).
+        if (
+            eq_tomb is not None
+            and eq_tomb > level
+            and not bleed
+            and _void_tombstone_scatter_on_path(board, path)
+        ):
             level = eq_tomb
     if (
         slug_norm == "tombstone"
@@ -5749,7 +5801,12 @@ def grid_path_sticker_level(
         if _tombstone_export_is_inventory_bleed(
             exported_tile_level, eq_tomb, encounter_level
         ):
-            level = max(level, encounter_level)
+            level = max(
+                level,
+                _tombstone_level_after_void_combine_export(
+                    exported_tile_level, eq_tomb, encounter_level
+                ),
+            )
     if (
         loadout is not None
         and boss_modifier_active(loadout, "badger")

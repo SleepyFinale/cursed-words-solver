@@ -252,14 +252,25 @@ def test_incave_session_capture_score() -> None:
     assert int(score) == 646
 
 
-def test_tombstone_bleed_export_scores_at_encounter_level() -> None:
-    """deepies: void Tombstone L4 export is inventory bleed; grid scatter scores at L1."""
+def test_tombstone_bleed_export_undoes_void_combine() -> None:
+    """deepies: void Tombstone L4 export is live L2 + equipped L2; grid scores at L2."""
+    from tests.regression.test_scoring_mismatches import (
+        _replay_path,
+        _run_state_for_replay,
+    )
+
     data = _load("20260630_154233")
-    board = parse_board_from_run_state(data["run_state_snapshot"])
-    loadout = parse_run_state(data["run_state_snapshot"])
+    run_state = _run_state_for_replay(data)
+    board = parse_board_from_run_state(run_state)
+    loadout = parse_run_state(run_state)
     apply_snapshot_phased_session_extras(loadout, board)
-    path = data["path"]
-    path_pos = path.index(11)
+    path = _replay_path(board, data["path"])
+    path_pos = next(
+        i
+        for i, idx in enumerate(path)
+        if str((board.get_by_index(idx).metadata or {}).get("scattered_item_id") or "")
+        == "tombstone"
+    )
     level = grid_path_sticker_level(
         loadout,
         "tombstone",
@@ -267,7 +278,9 @@ def test_tombstone_bleed_export_scores_at_encounter_level() -> None:
         path=path,
         path_tile_index=path_pos,
     )
-    assert level == 1
+    assert level == 2
+    score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    assert int(score) == int(data["actual_score"]) == 4662
 
 
 def test_dusty_wolf_off_path_grid_scatter_level_hoi() -> None:
@@ -298,6 +311,7 @@ def test_dusty_wolf_off_path_grid_scatter_level_hoi() -> None:
 
 
 def test_off_path_tombstone_grid_ref_ynals() -> None:
+    """Off-path Tombstone is not a separate scoring ref (piggybacks on inventory)."""
     from cursed_words_solver.rules.scoring_order import encounter_grid_scatter_refs
 
     data = _load("20260630_152914")
@@ -305,7 +319,7 @@ def test_off_path_tombstone_grid_ref_ynals() -> None:
     loadout = parse_run_state(data["run_state_snapshot"])
     rules = ScoringPipeline().rules
     refs = encounter_grid_scatter_refs(board, data["path"], rules, loadout)
-    assert any(r.rule_id == "tombstone" for r in refs)
+    assert not any(r.rule_id == "tombstone" for r in refs)
 
 
 def test_dusty_colorless_path_void_in_word_caps_units_incave() -> None:

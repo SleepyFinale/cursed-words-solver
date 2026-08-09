@@ -328,3 +328,239 @@ def test_tombstone_counts_scattered_tombstone_tile_itself():
     score, _ = pipeline.score(board, [19], "navvy", loadout)
     base, _ = pipeline.score(board, [19], "navvy", Loadout())
     assert score == base + 5
+
+
+def test_shiny_grid_tombstone_keeps_export_level_not_equipped():
+    """SHINY grid Tombstone uses live export Level; equipped fires separately.
+
+    Regression (deceit): predicted 727 vs actual 622 — solver merged equipped L3
+    onto SHINY grid L2. Melmod ApplyVoidTombstoneCombinedScatterLevels is void-only.
+    """
+    from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
+
+    board = _empty_board()
+    board.tiles[2][2] = _tile(2, 2, "A", 1)
+    board.tiles[2][1] = _tile(2, 1, "V", 0, color=TileColor.VOID)
+    board.tiles[2][3] = Tile(
+        row=2,
+        col=3,
+        char="🪦",
+        letter="T",
+        base_score=0.0,
+        color=TileColor.SHINY,
+        curse=CurseType.ITEM,
+        metadata={
+            "source": "melmod",
+            "scattered_item_id": "tombstone",
+            "scattered_item_level": 2,
+        },
+    )
+    path = [12, 13]
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="tombstone", name="Tombstone", level=3)],
+        extras={
+            "boss_floor_modification": "6",
+            "grid_number": "1",
+            "boss_modifiers": '["yeti_crab"]',
+            "boss_modifier_floor_mods": '{"yeti_crab":6}',
+        },
+    )
+    level = grid_path_sticker_level(
+        loadout, "tombstone", board=board, path=path, path_tile_index=1
+    )
+    assert level == 2
+    pipeline = ScoringPipeline()
+    score, _ = pipeline.score(board, path, "at", loadout)
+    # L2 grid (+10/void) then L3 inventory (+15/void); A has 1 void neighbor.
+    # Base 1 + 10 + 15 = 26 (tombstone tile itself also counts as adjacent void? no —
+    # shiny item is not void). Only V at (2,1) adjacent to A; tombstone tile on path
+    # counts for its own neighbors.
+    assert int(score) == 26
+
+
+def test_void_grid_tombstone_still_merges_equipped_level():
+    """VOID path Tombstone may use equipped tier (jun10-style under-export)."""
+    from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
+
+    board = _empty_board()
+    board.tiles[2][2] = _tile(2, 2, "A", 1)
+    board.tiles[2][1] = _tile(2, 1, "V", 0, color=TileColor.VOID)
+    board.tiles[2][3] = Tile(
+        row=2,
+        col=3,
+        char="🪦",
+        letter="T",
+        base_score=0.0,
+        color=TileColor.VOID,
+        curse=CurseType.ITEM,
+        metadata={
+            "source": "melmod",
+            "scattered_item_id": "tombstone",
+            "scattered_item_level": 1,
+        },
+    )
+    path = [12, 13]
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="tombstone", name="Tombstone", level=3)],
+        extras={
+            "boss_floor_modification": "3",
+            "grid_number": "3",
+            "boss_modifiers": '["wolf"]',
+            "boss_modifier_floor_mods": '{"wolf":3}',
+        },
+    )
+    level = grid_path_sticker_level(
+        loadout, "tombstone", board=board, path=path, path_tile_index=1
+    )
+    assert level >= 3
+
+
+def test_void_tombstone_combined_export_undoes_to_live_level():
+    """Melmod void combine export (live+equipped) undoes to live tier (qin/hesp)."""
+    from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
+
+    board = _empty_board()
+    board.tiles[2][2] = _tile(2, 2, "A", 1)
+    board.tiles[2][1] = _tile(2, 1, "V", 0, color=TileColor.VOID)
+    board.tiles[2][3] = Tile(
+        row=2,
+        col=3,
+        char="🪦",
+        letter="T",
+        base_score=0.0,
+        color=TileColor.VOID,
+        curse=CurseType.ITEM,
+        metadata={
+            "source": "melmod",
+            "scattered_item_id": "tombstone",
+            "scattered_item_level": 6,  # live 3 + equipped 3
+        },
+    )
+    path = [12, 13]
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="tombstone", name="Tombstone", level=3)],
+        extras={
+            "boss_floor_modification": "8",
+            "grid_number": "2",
+            "boss_modifiers": '["axolotl"]',
+            "boss_modifier_floor_mods": '{"axolotl":8}',
+        },
+    )
+    level = grid_path_sticker_level(
+        loadout, "tombstone", board=board, path=path, path_tile_index=1
+    )
+    assert level == 3
+
+
+def test_void_dusty_grid_uses_exported_level():
+    """VOID dusty grid scatter trusts live export Level (abye L3, not forced L1)."""
+    from cursed_words_solver.rules.scoring_conditions import dusty_coffin_word_score_level
+
+    board = _empty_board()
+    board.tiles[2][2] = Tile(
+        row=2,
+        col=2,
+        char="⚰",
+        letter="E",
+        base_score=0.0,
+        color=TileColor.VOID,
+        curse=CurseType.ITEM,
+        metadata={
+            "source": "melmod",
+            "scattered_item_id": "dusty_coffin",
+            "scattered_item_level": 3,
+        },
+    )
+    # Unused void letter not on path
+    board.tiles[0][0] = _tile(0, 0, "Z", 0, color=TileColor.VOID)
+    path = [12]
+    loadout = Loadout(
+        extras={
+            "boss_floor_modification": "8",
+            "grid_number": "1",
+            "boss_modifiers": '["axolotl"]',
+        }
+    )
+    level = dusty_coffin_word_score_level(
+        loadout,
+        from_grid_scatter=True,
+        sticker_level=3,
+        board=board,
+        path=path,
+    )
+    assert level == 3
+    pipeline = ScoringPipeline()
+    score, _ = pipeline.score(board, path, "e", loadout)
+    # L3 dusty: 24 per unused void; Z unused → +24 on base 0
+    assert int(score) == 24
+
+
+def test_shiny_dusty_grid_uses_exported_level():
+    """SHINY unequipped dusty grid trusts live export (erosely L3 → 12×24 word)."""
+    from cursed_words_solver.rules.scoring_conditions import dusty_coffin_word_score_level
+
+    board = _empty_board()
+    board.tiles[2][2] = Tile(
+        row=2,
+        col=2,
+        char="⚰",
+        letter="E",
+        base_score=0.0,
+        color=TileColor.SHINY,
+        curse=CurseType.ITEM,
+        metadata={
+            "source": "melmod",
+            "scattered_item_id": "dusty_coffin",
+            "scattered_item_level": 3,
+        },
+    )
+    board.tiles[0][0] = _tile(0, 0, "Z", 0, color=TileColor.VOID)
+    path = [12]
+    loadout = Loadout(extras={"grid_number": "2"})
+    level = dusty_coffin_word_score_level(
+        loadout,
+        from_grid_scatter=True,
+        sticker_level=3,
+        board=board,
+        path=path,
+    )
+    assert level == 3
+
+
+def test_off_path_tombstone_uses_full_inventory_level_only():
+    """Off-path grid Tombstone must not double-apply with a nerfed inventory (cinch)."""
+    from cursed_words_solver.rules.scoring_order import encounter_grid_scatter_refs
+    from cursed_words_solver.rules.scoring_conditions import tombstone_inventory_scoring_level
+
+    board = _empty_board()
+    # Path of void letters; tombstone off-path
+    board.tiles[2][0] = _tile(2, 0, "C", 0, color=TileColor.VOID)
+    board.tiles[2][1] = _tile(2, 1, "I", -1, color=TileColor.VOID)
+    board.tiles[3][1] = Tile(
+        row=3,
+        col=1,
+        char="🪦",
+        letter="O",
+        base_score=0.0,
+        color=TileColor.COLORLESS,
+        curse=CurseType.ITEM,
+        metadata={
+            "source": "melmod",
+            "scattered_item_id": "tombstone",
+            "scattered_item_level": 3,
+        },
+    )
+    path = [10, 11]
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="tombstone", name="Tombstone", level=3)],
+        extras={"grid_number": "1"},
+    )
+    rules = ScoringPipeline().rules
+    assert not any(
+        r.rule_id == "tombstone"
+        for r in encounter_grid_scatter_refs(board, path, rules, loadout)
+    )
+    inv = tombstone_inventory_scoring_level(
+        loadout.stickers[0], loadout, board, path=path
+    )
+    assert inv == 3

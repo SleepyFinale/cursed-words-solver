@@ -115,10 +115,10 @@ def _path_grid_item_refs(
 
 
 # EncounterController.GetItemsForWordSubmission only adds scattered items on the path.
-# Off-path grid Tombstone requires an equipped Tombstone sticker (grid-wide void-adjacent
-# bonus piggybacks on inventory). Dusty Coffin is path-scattered or inventory only —
-# never off-path without equip (see GetItemsForWordSubmission decompile).
-_OFF_PATH_GRID_SCATTER_SLUGS = frozenset({"tombstone"})
+# Off-path grid Tombstone is not a separate scoring item — void-adjacent scoring comes
+# from the equipped Tombstone sticker at full inventory level (cinch: one L3 apply).
+# Dusty Coffin is path-scattered or inventory only.
+_OFF_PATH_GRID_SCATTER_SLUGS = frozenset()
 
 
 def encounter_grid_scatter_refs(
@@ -130,13 +130,16 @@ def encounter_grid_scatter_refs(
     """Off-path scattered grid stickers that still affect scoring (before pin).
 
     Game ``GetItemsForWordSubmission`` only includes scattered items on the
-    submitted path plus inventory. Tombstone off-path requires an equipped
-    Tombstone sticker. Unequipped off-path Dusty Coffin does not score.
+    submitted path plus inventory. Off-path Tombstone does not get its own list
+    entry when equipped — the inventory sticker scores at full level.
     """
     from cursed_words_solver.rules.scoring_conditions import (
         _equipped_sticker_level_for_slug,
         grid_path_sticker_level,
     )
+
+    if not _OFF_PATH_GRID_SCATTER_SLUGS:
+        return []
 
     path_set = set(path)
     path_slugs: set[str] = set()

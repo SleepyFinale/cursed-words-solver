@@ -101,4 +101,4 @@ How the Python solver maps the game pipeline above. Full search-side detail: [`.
 
 Path scattered items are resolved via `path_grid_item_refs`, cached per path on `WordSearcher._grid_refs_cache` for the duration of a solve. Hourglass reversal of path items is applied inside `_compute_state`, not in the cache key.
 
-Off-path exceptions in `encounter_grid_scatter_refs`: Tombstone only when a Tombstone sticker is equipped; Dusty Coffin can fire off-path without equip on the first word of a grid (`scoring_previous_words_count == 0`). Levels come from per-tile `scattered_item_id` / `scattered_item_level` on the board, not cached `grid_scattered_items` extras.
+Off-path exceptions in `encounter_grid_scatter_refs`: none currently — off-path Tombstone is **not** a separate list entry (`GetItemsForWordSubmission` is path scatters + inventory only). Equipped Tombstone scores at full inventory level; an off-path grid Tombstone does not add a second apply. Levels for on-path scatters come from per-tile `scattered_item_id` / `scattered_item_level` on the board, not cached `grid_scattered_items` extras.
