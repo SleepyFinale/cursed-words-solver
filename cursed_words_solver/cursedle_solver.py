@@ -883,6 +883,50 @@ def _path_tile_novelty(path: list[int], tested: set[int]) -> float:
     return 1.0 - _path_tile_overlap_fraction(path, tested)
 
 
+# Untested tiles that appear in at least this fraction of remaining candidates are
+# "hot": probes should step on them instead of only walking the red adjacency ring.
+_HOT_TILE_MIN_FRACTION = 0.45
+# When the candidate pool is this small, also score actual solution paths as probes
+# so order among a shared tile set can be tested before the final guess.
+_CANDIDATE_PATH_PROBE_LIMIT = 400
+
+
+def _candidate_tile_frequencies(
+    candidates: list[list[int]],
+) -> dict[int, float]:
+    """Fraction of remaining solution paths that include each tile."""
+    if not candidates:
+        return {}
+    counts: dict[int, int] = {}
+    for path in candidates:
+        for tile in set(path):
+            counts[tile] = counts.get(tile, 0) + 1
+    total = len(candidates)
+    return {tile: count / total for tile, count in counts.items()}
+
+
+def _untested_hot_tiles(
+    candidates: list[list[int]],
+    tested: set[int],
+    *,
+    min_fraction: float = _HOT_TILE_MIN_FRACTION,
+) -> set[int]:
+    """Untested tiles that still appear in many remaining solution candidates."""
+    return {
+        tile
+        for tile, fraction in _candidate_tile_frequencies(candidates).items()
+        if fraction >= min_fraction and tile not in tested
+    }
+
+
+def _probe_hot_tile_hit_score(path: list[int], hot_tiles: set[int]) -> float:
+    """How completely a probe covers the untested high-frequency candidate tiles."""
+    if not path or not hot_tiles:
+        return 0.0
+    hits = sum(1 for tile in path if tile in hot_tiles)
+    return hits / min(len(path), len(hot_tiles))
+
+
 def _common_prefix_length(a: str, b: str) -> int:
     count = 0
     for ca, cb in zip(a, b):
@@ -1327,6 +1371,78 @@ def _probe_reason(word: str, solution_candidate_count: int) -> str:
     return f"Probe among {solution_candidate_count} solution candidates"
 
 
+def _candidate_paths_as_probe_pairs(
+    board: Board,
+    candidates: list[list[int]],
+    dictionary: WordDictionary,
+    guesses: list[CursedleGuess],
+    *,
+    tiles_only_fp: str,
+    guesses_used: int,
+    limit: int = _CANDIDATE_PATH_PROBE_LIMIT,
+) -> list[tuple[str, list[int]]]:
+    """Turn remaining solution paths into probe options (tests tile order directly)."""
+    if not candidates or limit <= 0:
+        return []
+    guessed_paths = _guessed_path_keys(board, guesses)
+    guessed_melmod_paths = _guessed_melmod_path_keys(board, guesses)
+    excluded_words = _probe_excluded_words(
+        board,
+        guesses,
+        dictionary,
+        tiles_only_fp=tiles_only_fp,
+        guesses_used=guesses_used,
+    )
+    tested = _tested_tile_indices(board, guesses)
+    pairs: list[tuple[str, list[int]]] = []
+    seen_paths: set[tuple[int, ...]] = set()
+    # Prefer paths that still cover untested hot tiles.
+    hot = _untested_hot_tiles(candidates, tested)
+    ranked = sorted(
+        candidates,
+        key=lambda path: (
+            -_probe_hot_tile_hit_score(path, hot),
+            -_path_tile_novelty(path, tested),
+            len(path),
+            tuple(path),
+        ),
+    )
+    for path in ranked:
+        if len(pairs) >= limit:
+            break
+        key = tuple(path)
+        if key in seen_paths:
+            continue
+        if not path or any(
+            idx < 0
+            or idx >= board.cell_count
+            or not board.is_active_index(idx)
+            for idx in path
+        ):
+            continue
+        if not _path_not_already_guessed(
+            board,
+            path,
+            guessed_paths=guessed_paths,
+            guessed_melmod_paths=guessed_melmod_paths,
+            excluded_words=excluded_words,
+            dictionary=dictionary,
+        ):
+            continue
+        word = _path_dictionary_word_any_resolution(board, path, dictionary)
+        if not word:
+            word = _raw_word_from_path(board, path)
+        if not word:
+            continue
+        if _is_near_duplicate_word(word, excluded_words):
+            continue
+        if _path_tile_overlap_fraction(path, tested) > _MAX_TILE_OVERLAP_FRACTION:
+            continue
+        seen_paths.add(key)
+        pairs.append((word.lower(), list(path)))
+    return pairs
+
+
 def _pick_probe_path(
     board: Board,
     candidates: list[list[int]],
@@ -1349,26 +1465,53 @@ def _pick_probe_path(
     )
     tested = _tested_tile_indices(board, guesses)
     sol_dict = solution_dictionary or dictionary
+    hot_tiles = _untested_hot_tiles(candidates, tested)
 
-    probe_options: list[tuple[float, float, float, int, str, list[int]]] = []
-    for word, path in _probe_word_options(
-        board,
-        dictionary,
-        guesses,
-        tiles_only_fp=tiles_only_fp,
-        guesses_used=guesses_used,
-        candidate_count=candidate_count,
-    ):
+    probe_pairs = list(
+        _probe_word_options(
+            board,
+            dictionary,
+            guesses,
+            tiles_only_fp=tiles_only_fp,
+            guesses_used=guesses_used,
+            candidate_count=candidate_count,
+        )
+    )
+    # Once feedback concentrates on a small tile set, dictionary periphery walks
+    # often score entropy without ever stepping on the solution cells. Inject
+    # remaining solution paths so probes can hit those hot tiles / orders.
+    if candidate_count <= _CANDIDATE_PATH_PROBE_LIMIT or hot_tiles:
+        existing = {tuple(path) for _word, path in probe_pairs}
+        for word, path in _candidate_paths_as_probe_pairs(
+            board,
+            candidates,
+            sol_dict,
+            guesses,
+            tiles_only_fp=tiles_only_fp,
+            guesses_used=guesses_used,
+        ):
+            key = tuple(path)
+            if key not in existing:
+                existing.add(key)
+                probe_pairs.append((word, path))
+
+    probe_options: list[tuple[float, float, float, float, int, str, list[int]]] = []
+    for word, path in probe_pairs:
         entropy = _probe_entropy_score(board, path, candidates)
+        hot_hits = _probe_hot_tile_hit_score(path, hot_tiles)
         novelty = _path_tile_novelty(path, tested)
         overlap = _path_tile_overlap_fraction(path, tested)
         probe_options.append(
-            (entropy, novelty, -overlap, -len(path), word, path)
+            (hot_hits, entropy, novelty, -overlap, -len(path), word, path)
         )
 
     if probe_options:
-        probe_options.sort(key=lambda row: (-row[0], -row[1], -row[2], row[3], row[4]))
-        _, _, _, _, word, path = probe_options[0]
+        # Hot-tile coverage first when a concentrated untested core exists;
+        # otherwise hot_hits is 0 for everyone and entropy remains primary.
+        probe_options.sort(
+            key=lambda row: (-row[0], -row[1], -row[2], -row[3], row[4], row[5])
+        )
+        _, _, _, _, _, word, path = probe_options[0]
         return path, word
 
     max_collected, _ = _probe_limits(candidate_count)

@@ -141,8 +141,12 @@ def test_last_guess_picks_solution(mock_filter) -> None:
     )
     advice = run_cursedle_solver(board, loadout, dictionary)
     assert advice.word
-    assert "Final guess" in advice.reason
     assert "Probe" not in advice.reason
+    assert (
+        "Final guess" in advice.reason
+        or "Unique solution" in advice.reason
+        or "committing to solution" in advice.reason
+    )
 
 
 def test_pick_probe_excludes_guess_objects() -> None:
@@ -365,3 +369,37 @@ def test_probe_prefers_untested_tiles(mock_enum) -> None:
     path, _word = picked
     overlap = len(set(path) & set(tested_storage)) / len(path)
     assert overlap <= 0.5
+
+
+@patch("cursed_words_solver.cursedle_solver._enumerate_dictionary_probe_paths")
+def test_probe_prefers_untested_hot_candidate_tiles(mock_enum) -> None:
+    """After a red halo, prefer stepping on untested tiles still in most candidates.
+
+    Peripheral dictionary words can score entropy without ever testing the
+    concentrated solution core (ACHE / joker-snake-knight-queen miss).
+    """
+    board = _board_6x6(["A"] * 36)
+    # Ring around the core already tested (red adjacency); core still untested.
+    ring = [8, 9, 13, 16, 19, 20, 25, 26]
+    core = [14, 15, 21, 22]
+    guesses = [
+        CursedleGuess(path=ring, feedback=["red"] * len(ring)),
+    ]
+    candidates = [
+        [14, 22, 15, 21],
+        [15, 21, 14, 22],
+        [21, 15, 14, 22],
+        [22, 15, 21, 14],
+        [14, 22, 15, 21, 1],
+        [15, 21, 14, 22, 1],
+    ]
+    mock_enum.return_value = [
+        ("periph", [0, 1, 2, 3]),
+        ("ringish", [7, 12, 18, 24]),
+        ("coreish", [14, 22, 15, 21]),
+    ]
+    dictionary = _FakeDictionary({"periph", "ringish", "coreish", "aaaa"})
+    picked = _pick_probe_path(board, candidates, dictionary, guesses)
+    assert picked is not None
+    path, _word = picked
+    assert set(path) & set(core), f"probe {path} missed hot core {core}"
