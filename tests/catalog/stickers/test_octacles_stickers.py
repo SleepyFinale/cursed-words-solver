@@ -115,6 +115,52 @@ def test_mysterious_amulet_counts_suited_letter():
     assert score == base + 8
 
 
+def test_mysterious_amulet_grid_path_bleed_uses_encounter_not_equipped():
+    """20260809_200850: melmod L3 scatter export + equipped L3 → grid at L1.
+
+    Live game applies scatter L1 then inventory L3; treating export as real L3
+    double-counts (+24 twice → 940 vs 664).
+    """
+    from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
+
+    board = _empty_board()
+    board.tiles[1][4] = Tile(
+        row=1,
+        col=4,
+        char="N",
+        letter="N",
+        base_score=0.0,
+        color=TileColor.COLORLESS,
+        curse=CurseType.ITEM,
+        metadata={
+            "scattered_item_id": "mysterious_amulet",
+            "scattered_item_level": 3,
+        },
+    )
+    board.tiles[0][0] = _tile(0, 0, "q", 9, curse=CurseType.CHESS_QUEEN)
+    loadout = Loadout(
+        stickers=[
+            LoadoutItem(id="mysterious_amulet", name="Mysterious Amulet", level=3)
+        ],
+        extras={
+            "grid_number": "2",
+            "grid_scattered_items": (
+                '[{"row":1,"col":4,"id":"mysterious_amulet","level":3}]'
+            ),
+        },
+    )
+    assert (
+        grid_path_sticker_level(
+            loadout,
+            "mysterious_amulet",
+            board=board,
+            path=[0, 9],
+            path_tile_index=1,
+        )
+        == 1
+    )
+
+
 def test_mysterious_amulet_counts_colorless_suited_letter():
     """Colorless Go Fish / Postal Horn suited letters are cursed (Tile.IsCursed)."""
     board = _empty_board()

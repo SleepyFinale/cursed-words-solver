@@ -194,6 +194,26 @@ def path_has_scattered_grid_items(board: Board, path: list[int]) -> bool:
     return any(board.get_by_index(idx).curse == CurseType.ITEM for idx in path)
 
 
+def path_has_chess_pieces(board: Board, path: list[int]) -> bool:
+    """True when the path includes at least one chess piece tile."""
+    from cursed_words_solver.rules.chess_tiles import is_chess_piece
+
+    return any(is_chess_piece(board.get_by_index(idx)) for idx in path)
+
+
+def path_underbounded_by_tile_mult_lb(board: Board, path: list[int]) -> bool:
+    """True when base×guaranteed-mult LB can miss real pipeline score on this path.
+
+    Scattered items and chess faces add take bonuses, cursed-tile stickers (amulet),
+    and pin word bonuses that ``mult_aware_lower_bound`` does not include. Applying
+    that LB against a heap filled by exempt item paths incorrectly discards stronger
+    chess-only words (Wolf L3: queen→rook→rook beaten by jack→rook→rook).
+    """
+    return path_has_scattered_grid_items(board, path) or path_has_chess_pieces(
+        board, path
+    )
+
+
 # Tier-1 bounds skip item tiles in tile-base sums; without a finite item UB they
 # prune high-scoring scatter routes. Use a finite optimistic add+scale instead of
 # a 1e15 sentinel so tier-2 can still skip hopeless candidates.

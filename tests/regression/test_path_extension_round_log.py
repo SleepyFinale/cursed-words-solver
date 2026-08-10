@@ -35,6 +35,13 @@ PUMPERNICKELS_FIXTURE = (
 )
 PUMPERNICKELS_F8_SCORE = 1060
 PUMPERNICKELS_SUBMITTED_SCORE = 3442
+FRINGEFREE_FIXTURE = (
+    FIXTURES_DIR
+    / "round_logs"
+    / "20260809_150806_fringefree_path_extension.json"
+)
+FRINGEFREE_F8_SCORE = 205
+FRINGEFREE_SUBMITTED_SCORE = 295
 
 
 def _f8_run_state_from_round_log(data: dict) -> dict:
@@ -167,6 +174,9 @@ def test_round_log_path_extension_replay_submitted_path(round_log_path: Path):
     if "sheernesses" in round_log_path.stem:
         assert replay["word"] == "sheernesses"
         assert score >= 7000
+    if "fringefree" in round_log_path.stem:
+        assert replay["word"] == "fringefree"
+        assert score >= FRINGEFREE_SUBMITTED_SCORE
 
 
 @pytest.mark.skipif(not EELSKIN_FIXTURE.exists(), reason="eelskin fixture required")
@@ -264,3 +274,71 @@ def test_pumpernickels_extension_from_halterneck_prefix():
     assert top_rank > short_score
     # Enough headroom that crowning halternecks (~1060) no longer wins.
     assert top_rank >= min(float(expected_score), float(PUMPERNICKELS_SUBMITTED_SCORE)) - 500
+
+
+@pytest.mark.skipif(
+    not FRINGEFREE_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
+    reason="fringefree path_extension fixture and game wordlist required",
+)
+def test_fringefree_extension_from_aband_prefix():
+    """Chess+amulet+Full Moon: ???n? (aband) must extend to fringefree-class."""
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+    from cursed_words_solver.search import _CandidateHeap, search_word_from_path
+    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
+
+    data = json.loads(FRINGEFREE_FIXTURE.read_text(encoding="utf-8"))
+    run_state = _f8_run_state_from_round_log(data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    loadout = parse_run_state(run_state)
+    assert loadout is not None
+
+    short_path = path_from_melmod_indices(board, data["solver"]["path"])
+    expected_path = path_from_melmod_indices(board, data["actual"]["path"])
+    short_word = data["solver"]["word"]
+    expected_word = data["actual"]["word"]
+    pipeline = ScoringPipeline()
+    short_score = pipeline.score_total_only(board, short_path, short_word, loadout)
+    expected_score = pipeline.score_total_only(
+        board, expected_path, expected_word, loadout
+    )
+    assert int(short_score) == FRINGEFREE_F8_SCORE
+    assert int(expected_score) >= FRINGEFREE_SUBMITTED_SCORE
+
+    flags = stamp_search_flags(loadout)
+    constraints = boss_word_constraints(loadout, pipeline.rules, default_max_len=25)
+    searcher = WordSearcher(
+        dictionary=WordDictionary(GAME_WORDLIST_PATH),
+        min_len=constraints.min_len,
+        max_len=constraints.max_len,
+        time_budget=30.0,
+    )
+    seed_word = search_word_from_path(board, short_path, flags=flags)
+    seed_rank = searcher._rank_score_for_candidate(
+        board, short_path, seed_word, loadout
+    )
+    candidates = _CandidateHeap(200)
+    candidates.consider(
+        seed_rank or float(short_score),
+        seed_word,
+        short_path,
+        immediate=float(short_score),
+    )
+    searcher._extend_top_candidates(
+        board,
+        loadout,
+        candidates,
+        top_paths=40,
+        max_rounds=16,
+        deadline=None,
+    )
+    best = candidates.best_sorted()
+    assert best
+    top_rank, top_word, top_path = best[0]
+    found_paths = {path for _sc, _w, path in best}
+    assert (
+        tuple(expected_path) in found_paths
+        or top_rank >= FRINGEFREE_SUBMITTED_SCORE
+    ), f"extension stalled at {top_word!r} len={len(top_path)} score={top_rank}"
+    assert top_rank > short_score
+    assert len(top_path) > len(short_path)

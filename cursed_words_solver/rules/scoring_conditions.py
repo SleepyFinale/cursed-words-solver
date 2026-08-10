@@ -986,7 +986,7 @@ def is_take_at_path_position(
         allies_can_take=allies_can_take,
         search_flags=search_flags,
     )
-    return is_chess_capture_step(
+    if is_chess_capture_step(
         board,
         path[pos - 1],
         path[pos],
@@ -995,7 +995,22 @@ def is_take_at_path_position(
         visited=set(prefix),
         flags=flags,
         loadout=loadout,
-    )
+    ):
+        return True
+    # White free-move tiles can step onto opponents without a legal chess attack
+    # (e.g. king walking onto a checked square). Super 8 still counts those takes.
+    from_tile = board.get_by_index(path[pos - 1])
+    if (
+        from_tile.color == TileColor.WHITE
+        and is_chess_piece(from_tile)
+        and is_chess_piece(tile)
+        and chess_side_known(from_tile)
+        and chess_side_known(tile)
+    ):
+        if chess_side(from_tile) != chess_side(tile):
+            return True
+        return bool(allies_can_take)
+    return False
 
 
 def chess_take_path_positions(
@@ -4952,7 +4967,7 @@ def melmod_would_inflate_scatter_to_equipped(
     del exported
     if loadout is None:
         return True
-    if slug == "dusty_coffin":
+    if slug in ("dusty_coffin", "mysterious_amulet"):
         return False
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
     if extras.get("boss_floor_modification") in (None, ""):
@@ -5943,10 +5958,11 @@ def grid_path_sticker_level(
         and exported_tile_level > encounter_level
         and slug_norm not in _GRID_PATH_INVENTORY_BLEEDTHROUGH_EXCLUDE
     ):
-        # Export matches inventory tier: usually melmod component bleed-through.
-        # Keep the export when grid_scattered_items independently confirms it
-        # (real L3 cherry_pie scatter alongside equipped cherry_pie), or when
-        # Toolbox upgrades start-of-grid scatters on grid 1 word 1.
+        # Export matches inventory tier: usually melmod component bleed-through
+        # (ApplyEquippedScatterLevels copies equipped into tile + grid_scattered_items).
+        # Do not treat extras as independent confirmation when it equals equipped —
+        # that is the same bleed written twice (amulet L3+L3 vs real L1 scatter + L3
+        # inventory). Toolbox start-of-grid upgrades may still keep the export.
         extras_confirmed = _grid_scattered_level_from_extras(
             loadout,
             slug_norm,
@@ -5959,7 +5975,12 @@ def grid_path_sticker_level(
             and _toolbox_boost_applies_to_scattered(loadout, slug_norm)
             and exported_tile_level >= _equipped_toolbox_level(loadout)
         )
-        if extras_confirmed == exported_tile_level or toolbox_keeps_export:
+        extras_is_independent = (
+            extras_confirmed == exported_tile_level
+            and extras_confirmed is not None
+            and extras_confirmed < equipped_level
+        )
+        if toolbox_keeps_export or extras_is_independent:
             level = max(level, exported_tile_level)
             skip_equipped_merge = True
         else:

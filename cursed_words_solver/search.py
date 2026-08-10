@@ -57,7 +57,7 @@ from cursed_words_solver.fast_rank import (
     loadout_allows_tier2_two_phase,
     mult_aware_lower_bound,
     number_aware_lower_bound,
-    path_has_scattered_grid_items,
+    path_underbounded_by_tile_mult_lb,
     prefix_immediate_upper_bound,
     prefix_rank_upper_bound,
     tier2_immediate_lower_bound,
@@ -2190,6 +2190,12 @@ def _dict_resolve_probe_prefixes(
         return _probe_fraction_chess_prefixes(
             board, loadout, max_depth=max_depth
         )
+    # Chess+item before general chess probe: the latter fills its cap with
+    # chess-only paths and never touches jack (aecial→sequacious miss).
+    if _chess_item_dict_resolve_extend_viable(board):
+        return _probe_chess_item_theme_prefixes(
+            board, loadout, max_depth=max(max_depth, 10)
+        )
     if _dict_resolve_per_seed_viable(board) and _chess_tile_count(board) >= 2:
         return _probe_chess_dict_resolve_prefixes(
             board, loadout, max_depth=max_depth
@@ -2485,6 +2491,30 @@ def _teleport_letter_neighbor_tier(
             return 0
         if identical_chess_piece(tile, other):
             return 0
+    return 1
+
+
+def _cursed_theme_neighbor_tier(
+    board: Board,
+    neighbor_idx: int,
+    *,
+    graph_ctx: BoardGraphContext | None = None,
+) -> int:
+    """0 for chess / grid items (live board); else 1.
+
+    Jack-o'-lantern and other items often have base_score 0, so sorting by
+    base alone starves them behind 1pt letters (fringefree extension miss).
+    """
+    if graph_ctx is not None:
+        bit = 1 << neighbor_idx
+        if graph_ctx.chess_piece_mask & bit:
+            return 0
+        if graph_ctx.item_mask & bit:
+            return 0
+        return 1
+    tile = board.get_by_index(neighbor_idx)
+    if is_chess_piece(tile) or tile.curse == CurseType.ITEM:
+        return 0
     return 1
 
 
@@ -4300,6 +4330,244 @@ def _dict_resolve_per_seed_viable(board: Board) -> bool:
     ):
         return True
     return False
+
+
+def _chess_item_dict_resolve_extend_viable(board: Board) -> bool:
+    """Chess + scattered item: multi-step dict-resolve growth (aecial→sequacious).
+
+    Single-step extend prefers high-base rook neighbors and never deepens the
+    bishop take-chain under F8 budget; deep-extend with theme ordering fixes that.
+    """
+    return _chess_tile_count(board) >= 3 and _scattered_grid_item_count(board) > 0
+
+
+def _loadout_wants_nonadjacent_cursed_chess(loadout: Loadout) -> bool:
+    """Imp/footprints/clouds: long all-chess non-adjacent paths dominate score."""
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    ids = {
+        slugify_name(str(it.id or it.name or ""))
+        for bucket in (loadout.stickers, loadout.stamps)
+        for it in (bucket or [])
+    }
+    nonadj = "footprints" in ids or "head_in_the_clouds" in ids
+    if not nonadj:
+        return False
+    return "mischievous_imp" in ids or "mysterious_amulet" in ids
+
+
+def _nonadjacent_chess_path_viable(board: Board, loadout: Loadout) -> bool:
+    """Enough chess + non-adj cursed mults (aahs→frenne miss)."""
+    return (
+        _chess_tile_count(board) >= 4
+        and _loadout_wants_nonadjacent_cursed_chess(loadout)
+    )
+
+
+def _probe_nonadjacent_chess_paths(
+    board: Board,
+    loadout: Loadout,
+    *,
+    max_depth: int = 12,
+    max_paths: int = 96,
+    max_visited: int = 8000,
+) -> list[list[int]]:
+    """Deep-first all-chess paths that never take a scoring-adjacent step.
+
+    Letter-trie DFS rarely builds long ``?`` chess tours; with Imp + Footprints /
+    Head in the Clouds the score cliff is exactly these non-adjacent chains.
+
+    Breadth-first search starves on white free-move chess hubs (huge branching).
+    Prefer depth-first growth from high-base starts so 10–12 tile tours surface
+    before the node budget is spent on short prefixes.
+
+    Adjacency for the filter matches Footprints/Clouds scoring (no Hungry Snake
+    wrap): wrap-adjacent steps still count as non-adjacent for those mults.
+    """
+    from cursed_words_solver.rules.scoring_conditions import (
+        _path_step_adjacent,
+        path_all_non_adjacent,
+    )
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+
+    if not _nonadjacent_chess_path_viable(board, loadout):
+        return []
+    flags = stamp_search_flags(loadout)
+    graph_ctx = build_board_graph_context(board)
+    chess_mask = graph_ctx.chess_piece_mask
+    chess_indices = [
+        i for i in range(graph_ctx.cell_count) if chess_mask & (1 << i)
+    ]
+    if len(chess_indices) < 4:
+        return []
+    chess_indices.sort(
+        key=lambda i: -float(board.get_by_index(i).base_score or 0.0)
+    )
+
+    collected: list[list[int]] = []
+    nodes = 0
+    collect_cap = max_paths * 5
+
+    def _extend_candidates(path: list[int], visited_mask: int) -> list[int]:
+        nbr_mask = (
+            neighbors_mask(
+                board,
+                visited_mask,
+                cell_id=path[-1],
+                flags=flags,
+                graph_ctx=graph_ctx,
+                loadout=loadout,
+            )
+            & chess_mask
+        )
+        nxts: list[int] = []
+        for idx in range(graph_ctx.cell_count):
+            if not (nbr_mask & (1 << idx)):
+                continue
+            if visited_mask & (1 << idx):
+                continue
+            if _path_step_adjacent(path[-1], idx):
+                continue
+            tile = board.get_by_index(idx)
+            if not tile_playable_for_path(tile):
+                continue
+            nxts.append(idx)
+        nxts.sort(key=lambda i: -float(board.get_by_index(i).base_score or 0.0))
+        return nxts
+
+    def _dfs(path: list[int], visited_mask: int) -> None:
+        nonlocal nodes
+        if nodes >= max_visited or len(collected) >= collect_cap:
+            return
+        nodes += 1
+        if len(path) >= 3 and path_all_non_adjacent(path):
+            collected.append(list(path))
+        if len(path) >= max_depth:
+            return
+        for idx in _extend_candidates(path, visited_mask):
+            if nodes >= max_visited or len(collected) >= collect_cap:
+                return
+            _dfs(path + [idx], visited_mask | (1 << idx))
+
+    for start in chess_indices:
+        if nodes >= max_visited or len(collected) >= collect_cap:
+            break
+        _dfs([start], 1 << start)
+
+    def _rank(path: list[int]) -> tuple:
+        base = sum(float(board.get_by_index(i).base_score) for i in path)
+        return (-len(path), -base, path)
+
+    collected.sort(key=_rank)
+    return collected[:max_paths]
+
+
+def _probe_chess_item_theme_prefixes(
+    board: Board,
+    loadout: Loadout,
+    *,
+    max_depth: int = 10,
+    max_paths: int = 80,
+    max_visited: int = 2500,
+) -> list[list[int]]:
+    """BFS chess→item seeds, theme-only growth (jack + chess take chains).
+
+    Letter-trie DFS cannot walk ITEM/chess ``?`` spellings, so guarantee/extend
+    must be seeded by enumerating geometric chess→item prefixes and growing
+    through chess/item neighbors only (low base first → bishop before rook).
+    """
+    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+    from cursed_words_solver.suggestion import path_tiles_need_dictionary_resolve
+
+    if not _chess_item_dict_resolve_extend_viable(board):
+        return []
+    flags = stamp_search_flags(loadout)
+    graph_ctx = build_board_graph_context(board)
+    theme_mask = graph_ctx.chess_piece_mask | graph_ctx.item_mask
+    item_indices = _scattered_grid_item_indices(board)
+    if not item_indices:
+        return []
+
+    seeds: list[list[int]] = []
+    for item_idx in item_indices:
+        geo = neighbors_standard_mask(
+            board,
+            item_idx,
+            1 << item_idx,
+            flags=flags,
+            graph_ctx=graph_ctx,
+        )
+        for chess_idx in range(graph_ctx.cell_count):
+            if not (geo & (1 << chess_idx)):
+                continue
+            if not (graph_ctx.chess_piece_mask & (1 << chess_idx)):
+                continue
+            seeds.append([chess_idx, item_idx])
+    if not seeds:
+        return []
+
+    collected: list[list[int]] = []
+    collected_seen: set[tuple[int, ...]] = set()
+    seen: set[tuple[int, ...]] = set()
+    queue: list[tuple[list[int], int]] = [
+        (list(seed), sum(1 << i for i in seed)) for seed in seeds
+    ]
+    head = 0
+    while head < len(queue) and len(seen) < max_visited:
+        path, visited_mask = queue[head]
+        head += 1
+        key = tuple(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        if (
+            len(path) >= 3
+            and key not in collected_seen
+            and path_tiles_need_dictionary_resolve(board, path, flags=flags)
+            and path_movement_ok(board, path, flags=flags, loadout=loadout)
+        ):
+            collected_seen.add(key)
+            collected.append(list(path))
+            if len(collected) >= max_paths * 3:
+                # Keep gathering a bit past cap; rank/trim below.
+                pass
+        if len(path) >= max_depth or len(collected) >= max_paths * 4:
+            continue
+        nbr_mask = (
+            neighbors_mask(
+                board,
+                visited_mask,
+                cell_id=path[-1],
+                flags=flags,
+                graph_ctx=graph_ctx,
+                loadout=loadout,
+            )
+            & theme_mask
+        )
+        nbrs = sorted(
+            (i for i in range(graph_ctx.cell_count) if nbr_mask & (1 << i)),
+            key=lambda i: (float(board.get_by_index(i).base_score), i),
+        )
+        for idx in nbrs[:8]:
+            if visited_mask & (1 << idx):
+                continue
+            tile = board.get_by_index(idx)
+            if not tile_playable_for_path(tile):
+                continue
+            queue.append((path + [idx], visited_mask | (1 << idx)))
+
+    def _probe_rank(path: list[int]) -> tuple:
+        chess_hits = sum(
+            1 for idx in path if is_chess_piece(board.get_by_index(idx))
+        )
+        base = sum(float(board.get_by_index(idx).base_score) for idx in path)
+        # Prefer mid-length seeds: full-length all-``?`` resolve is too expensive
+        # for F8; deep-extend grows 5–7 tile prefixes through the take chain.
+        length_penalty = abs(len(path) - 6)
+        return (length_penalty, -chess_hits, -len(path), base, path)
+
+    collected.sort(key=_probe_rank)
+    return collected[:max_paths]
 
 
 def _chess_prefix_budget_sec(board: Board) -> float:
@@ -7791,6 +8059,402 @@ class WordSearcher:
                 break
         return seeds
 
+    def _guarantee_nonadjacent_chess_paths(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        *,
+        deadline: float | None = None,
+    ) -> None:
+        """Seed long all-chess non-adjacent tours (aahs→frenne).
+
+        Imp + Footprints / Head in the Clouds make geometric leaps dominate;
+        trie DFS and adjacent extend growth miss the 6+ tile non-adj chains.
+        """
+        if not _nonadjacent_chess_path_viable(board, loadout):
+            return
+        if self.max_len <= self.min_len:
+            return
+        if deadline is not None and time.monotonic() >= deadline:
+            return
+        stamp_flags = self._search_ctx(loadout).search_flags
+        prev_deadline = self._active_deadline
+        if deadline is not None:
+            self._active_deadline = deadline
+
+        def score_no_prune(
+            path: list[int],
+            word: str,
+            *,
+            resolved_word: str | None = None,
+        ) -> float | None:
+            if self._deadline_reached(deadline):
+                return None
+            return self._rank_score_for_candidate(
+                board,
+                path,
+                word,
+                loadout,
+                prune_heap=None,
+                resolved_word=resolved_word,
+            )
+
+        try:
+            from cursed_words_solver.suggestion import (
+                _alignment_pattern_for_path,
+                _collect_dictionary_matches_for_path,
+                path_is_submittable,
+            )
+
+            probe_paths = _probe_nonadjacent_chess_paths(
+                board,
+                loadout,
+                max_depth=min(12, self.max_len),
+                max_paths=96,
+            )
+            accept_cap = 32
+            accepted_n = 0
+            for path in probe_paths:
+                if self._deadline_reached(deadline):
+                    break
+                if accepted_n >= accept_cap:
+                    break
+                if len(path) < self.min_len or len(path) > self.max_len:
+                    continue
+                # Prefer longer tours — short aahs-class tips already come from DFS.
+                if len(path) < 6:
+                    continue
+                path_key = tuple(path)
+                scoring_word = self._dict_valid_words_cache.get(path_key)
+                if not scoring_word:
+                    pattern = _alignment_pattern_for_path(
+                        board, path, stamp_flags
+                    )
+                    matches = _collect_dictionary_matches_for_path(
+                        board,
+                        path,
+                        pattern,
+                        loadout,
+                        self.dictionary,
+                        min_len=self.min_len,
+                        limit=1,
+                        deadline_check=lambda: self._deadline_reached(deadline),
+                    )
+                    if not matches:
+                        continue
+                    scoring_word = matches[0]
+                    self._dict_valid_words_cache[path_key] = scoring_word
+                if not path_is_submittable(
+                    board,
+                    path,
+                    scoring_word,
+                    loadout,
+                    self.dictionary,
+                    min_len=self.min_len,
+                    deadline_check=lambda: self._deadline_reached(deadline),
+                ):
+                    continue
+                if self._consider_path_candidate(
+                    board,
+                    loadout,
+                    candidates,
+                    path,
+                    scoring_word,
+                    stamp_flags,
+                    score_no_prune,
+                    resolved_word=scoring_word,
+                ):
+                    accepted_n += 1
+                    # Grow chess tours by non-adjacent letter / Full Moon tips
+                    # (abiogenesist→multimegawatt); chess-only probe cannot.
+                    if (
+                        len(path) + 1 <= self.max_len
+                        and not self._deadline_reached(deadline)
+                    ):
+                        self._grow_nonadjacent_letter_tips(
+                            board,
+                            loadout,
+                            candidates,
+                            path,
+                            stamp_flags=stamp_flags,
+                            score_path=score_no_prune,
+                            deadline=deadline,
+                            max_extra=2,
+                        )
+        finally:
+            self._active_deadline = prev_deadline
+
+    def _grow_nonadjacent_letter_tips(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        path: list[int],
+        *,
+        stamp_flags: SearchFlagsMask,
+        score_path,
+        deadline: float | None,
+        max_extra: int = 2,
+    ) -> None:
+        """Append non-adjacent non-chess tips (letters / Full Moon) onto a tour."""
+        from cursed_words_solver.rules.scoring_conditions import (
+            _path_step_adjacent,
+            path_all_non_adjacent,
+        )
+        from cursed_words_solver.suggestion import (
+            _alignment_pattern_for_path,
+            _collect_dictionary_matches_for_path,
+            path_is_submittable,
+        )
+
+        if max_extra <= 0 or len(path) >= self.max_len:
+            return
+        if not path_all_non_adjacent(path):
+            return
+        graph_ctx = self._board_graph(board)
+        frontier = [list(path)]
+        for _ in range(max_extra):
+            if self._deadline_reached(deadline):
+                return
+            next_frontier: list[list[int]] = []
+            for base in frontier:
+                if len(base) >= self.max_len:
+                    continue
+                visited = sum(1 << i for i in base)
+                nbr_mask = neighbors_mask(
+                    board,
+                    visited,
+                    cell_id=base[-1],
+                    flags=stamp_flags,
+                    graph_ctx=graph_ctx,
+                    loadout=loadout,
+                )
+                tips = [
+                    i
+                    for i in range(graph_ctx.cell_count)
+                    if (nbr_mask & (1 << i))
+                    and not (visited & (1 << i))
+                    and not _path_step_adjacent(base[-1], i)
+                    and not is_chess_piece(board.get_by_index(i))
+                    and tile_playable_for_path(board.get_by_index(i))
+                ]
+                tips.sort(
+                    key=lambda i: -float(board.get_by_index(i).base_score or 0.0)
+                )
+                for idx in tips[:6]:
+                    if self._deadline_reached(deadline):
+                        return
+                    grown = base + [idx]
+                    if not path_all_non_adjacent(grown):
+                        continue
+                    path_key = tuple(grown)
+                    scoring_word = self._dict_valid_words_cache.get(path_key)
+                    if not scoring_word:
+                        pattern = _alignment_pattern_for_path(
+                            board, grown, stamp_flags
+                        )
+                        matches = _collect_dictionary_matches_for_path(
+                            board,
+                            grown,
+                            pattern,
+                            loadout,
+                            self.dictionary,
+                            min_len=self.min_len,
+                            limit=1,
+                            deadline_check=lambda: self._deadline_reached(
+                                deadline
+                            ),
+                        )
+                        if not matches:
+                            continue
+                        scoring_word = matches[0]
+                        self._dict_valid_words_cache[path_key] = scoring_word
+                    if not path_is_submittable(
+                        board,
+                        grown,
+                        scoring_word,
+                        loadout,
+                        self.dictionary,
+                        min_len=self.min_len,
+                        deadline_check=lambda: self._deadline_reached(deadline),
+                    ):
+                        continue
+                    if self._consider_path_candidate(
+                        board,
+                        loadout,
+                        candidates,
+                        grown,
+                        scoring_word,
+                        stamp_flags,
+                        score_path,
+                        resolved_word=scoring_word,
+                    ):
+                        next_frontier.append(grown)
+            frontier = next_frontier
+            if not frontier:
+                return
+
+    def _guarantee_chess_item_dict_resolve_extensions(
+        self,
+        board: Board,
+        loadout: Loadout,
+        candidates: _CandidateHeap,
+        *,
+        deadline: float | None = None,
+    ) -> None:
+        """Dedicated deep-extend for jack+chess take chains (aecial→sequacious).
+
+        Letter-trie DFS cannot seed ITEM/chess ``?`` paths; probe theme prefixes
+        (chess→item, low-base growth), accept them, then deep-extend.
+        """
+        if not _chess_item_dict_resolve_extend_viable(board):
+            return
+        if self.max_len <= self.min_len:
+            return
+        if deadline is not None and time.monotonic() >= deadline:
+            return
+        stamp_flags = self._search_ctx(loadout).search_flags
+        graph_ctx = self._board_graph(board)
+
+        prev_deadline = self._active_deadline
+        if deadline is not None:
+            self._active_deadline = deadline
+
+        def score_no_prune(
+            path: list[int],
+            word: str,
+            *,
+            resolved_word: str | None = None,
+        ) -> float | None:
+            if self._deadline_reached(deadline):
+                return None
+            return self._rank_score_for_candidate(
+                board,
+                path,
+                word,
+                loadout,
+                prune_heap=None,
+                resolved_word=resolved_word,
+            )
+
+        try:
+            # Seed mid-length theme prefixes only — resolving length-10 all-``?``
+            # paths can cost tens of seconds each and starve deep-extend.
+            probe_paths = _probe_chess_item_theme_prefixes(
+                board,
+                loadout,
+                max_depth=min(8, self.max_len),
+                max_paths=48,
+            )
+            accept_cap = 12
+            accepted_n = 0
+            from cursed_words_solver.suggestion import (
+                _alignment_pattern_for_path,
+                _collect_dictionary_matches_for_path,
+                path_is_submittable,
+            )
+
+            for path in probe_paths:
+                if self._deadline_reached(deadline):
+                    break
+                if accepted_n >= accept_cap:
+                    break
+                if len(path) < self.min_len or len(path) > min(7, self.max_len):
+                    continue
+                path_key = tuple(path)
+                scoring_word = self._dict_valid_words_cache.get(path_key)
+                if not scoring_word:
+                    pattern = _alignment_pattern_for_path(
+                        board, path, stamp_flags
+                    )
+                    matches = _collect_dictionary_matches_for_path(
+                        board,
+                        path,
+                        pattern,
+                        loadout,
+                        self.dictionary,
+                        min_len=self.min_len,
+                        limit=1,
+                        deadline_check=lambda: self._deadline_reached(deadline),
+                    )
+                    if not matches:
+                        continue
+                    scoring_word = matches[0]
+                    self._dict_valid_words_cache[path_key] = scoring_word
+                if not path_is_submittable(
+                    board,
+                    path,
+                    scoring_word,
+                    loadout,
+                    self.dictionary,
+                    min_len=self.min_len,
+                    deadline_check=lambda: self._deadline_reached(deadline),
+                ):
+                    continue
+                if self._consider_path_candidate(
+                    board,
+                    loadout,
+                    candidates,
+                    path,
+                    scoring_word,
+                    stamp_flags,
+                    score_no_prune,
+                    resolved_word=scoring_word,
+                ):
+                    accepted_n += 1
+
+            seeds: list[list[int]] = []
+            seen: set[tuple[int, ...]] = set()
+
+            def _absorb_item_paths() -> None:
+                for _sc, _word, path_tuple in candidates.best_sorted():
+                    path = list(path_tuple)
+                    if not any(
+                        board.get_by_index(i).curse == CurseType.ITEM for i in path
+                    ):
+                        continue
+                    variants = [path]
+                    if len(path) > self.min_len and is_chess_piece(
+                        board.get_by_index(path[-1])
+                    ):
+                        variants.append(path[:-1])
+                    for pref in variants:
+                        key = tuple(pref)
+                        if key in seen or len(pref) < self.min_len:
+                            continue
+                        seen.add(key)
+                        seeds.append(pref)
+                    if len(seeds) >= 24:
+                        return
+
+            _absorb_item_paths()
+            seeds.sort(
+                key=lambda p: (
+                    -sum(1 for i in p if is_chess_piece(board.get_by_index(i))),
+                    -len(p),
+                )
+            )
+            for seed in seeds:
+                if self._deadline_reached(deadline):
+                    break
+                if len(seed) >= self.max_len:
+                    continue
+                self._deep_extend_dict_resolve_path(
+                    board,
+                    loadout,
+                    candidates,
+                    list(seed),
+                    stamp_flags=stamp_flags,
+                    graph_ctx=graph_ctx,
+                    score_path=score_no_prune,
+                    deadline=deadline,
+                    depth_left=min(6, self.max_len - len(seed)),
+                    prefer_chess_theme=True,
+                )
+        finally:
+            self._active_deadline = prev_deadline
+
     def _supplement_fraction_chess_word_boundaries(
         self,
         board: Board,
@@ -8264,6 +8928,7 @@ class WordSearcher:
         score_path,
         deadline: float | None,
         depth_left: int,
+        prefer_chess_theme: bool = False,
     ) -> bool:
         """Grow a dict-resolve path a few tiles even when mid scores are weak."""
         if depth_left <= 0 or len(path) >= self.max_len:
@@ -8296,20 +8961,39 @@ class WordSearcher:
                 nbr_mask=nbr_mask,
             )
         )
-        nbrs.sort(
-            key=lambda i: (
-                0
-                if (
-                    is_fraction_tile(board.get_by_index(i))
-                    or board.get_by_index(i).curse == CurseType.WILDCARD
+        if prefer_chess_theme:
+            # Chess/item only — letter neighbors thrash dict-resolve and starve
+            # take-chain depth under the F8 extend slice (aecial→sequacious).
+            theme_nbrs = [
+                i
+                for i in nbrs
+                if _cursed_theme_neighbor_tier(board, i, graph_ctx=graph_ctx) == 0
+            ]
+            if theme_nbrs:
+                nbrs = theme_nbrs
+            nbrs.sort(
+                key=lambda i: (
+                    # Low base first so bishop take-chains are not starved behind
+                    # high-base rook tips when the extend slice is short.
+                    float(board.get_by_index(i).base_score),
+                    i,
                 )
-                else 1
-                if board.get_by_index(i).curse == CurseType.LETTER
-                else 2,
-                i,
             )
-        )
-        for idx in nbrs[:8]:
+        else:
+            nbrs.sort(
+                key=lambda i: (
+                    0
+                    if (
+                        is_fraction_tile(board.get_by_index(i))
+                        or board.get_by_index(i).curse == CurseType.WILDCARD
+                    )
+                    else 1
+                    if board.get_by_index(i).curse == CurseType.LETTER
+                    else 2,
+                    i,
+                )
+            )
+        for idx in nbrs[:5 if prefer_chess_theme else 8]:
             if self._deadline_reached(deadline):
                 break
             tile = board.get_by_index(idx)
@@ -8322,15 +9006,57 @@ class WordSearcher:
             path.append(idx)
             search_word = search_word_from_path(board, path, flags=stamp_flags)
             if len(search_word) >= self.min_len:
-                valid = _valid_dictionary_words_for_path(
-                    board,
-                    path,
-                    search_word,
-                    loadout,
-                    self.dictionary,
-                    min_len=self.min_len,
-                    limit=1,
+                from cursed_words_solver.suggestion import (
+                    _alignment_pattern_for_path,
+                    _collect_dictionary_matches_for_path,
                 )
+
+                # Theme (chess/item) paths are all-``?``; a full dictionary scan
+                # per neighbor is tens of seconds. First assignable match is enough
+                # for heap seeding — tile scoring dominates on these boards.
+                if prefer_chess_theme:
+                    if self._deadline_reached(deadline):
+                        path.pop()
+                        return extended
+                    cached = self._dict_valid_words_cache.get(tuple(path))
+                    if cached:
+                        valid = [cached]
+                    else:
+                        pattern = _alignment_pattern_for_path(
+                            board, path, stamp_flags
+                        )
+                        valid = _collect_dictionary_matches_for_path(
+                            board,
+                            path,
+                            pattern,
+                            loadout,
+                            self.dictionary,
+                            min_len=self.min_len,
+                            limit=1,
+                            deadline_check=lambda: self._deadline_reached(
+                                deadline
+                            ),
+                        )
+                        if valid:
+                            self._dict_valid_words_cache[tuple(path)] = valid[0]
+                else:
+                    resolved = self._dictionary_scoring_word(
+                        board, path, search_word, loadout, stamp_flags
+                    )
+                    valid = [resolved] if resolved and resolved.isalpha() else []
+                    if not valid and not self._deadline_reached(deadline):
+                        valid = _valid_dictionary_words_for_path(
+                            board,
+                            path,
+                            search_word,
+                            loadout,
+                            self.dictionary,
+                            min_len=self.min_len,
+                            limit=1,
+                            deadline_check=lambda: self._deadline_reached(
+                                deadline
+                            ),
+                        )
                 if valid and path_is_submittable(
                     board,
                     path,
@@ -8338,6 +9064,7 @@ class WordSearcher:
                     loadout,
                     self.dictionary,
                     min_len=self.min_len,
+                    deadline_check=lambda: self._deadline_reached(deadline),
                 ):
                     if self._consider_path_candidate(
                         board,
@@ -8361,6 +9088,7 @@ class WordSearcher:
                             score_path=score_path,
                             deadline=deadline,
                             depth_left=depth_left - 1,
+                            prefer_chess_theme=prefer_chess_theme,
                         ):
                             extended = True
             path.pop()
@@ -8384,10 +9112,19 @@ class WordSearcher:
             return
         if max_rounds is None:
             max_rounds = min(self.max_len - self.min_len, 12)
+            if _nonadjacent_chess_path_viable(board, loadout):
+                # Chess→letter→Full Moon letter tips need extra +1 rounds after the
+                # all-chess tour (abiogenesist→multimegawatt).
+                max_rounds = min(self.max_len - self.min_len, max(max_rounds, 16))
         stamp_flags = self._search_ctx(loadout).search_flags
         graph_ctx = self._board_graph(board)
         from cursed_words_solver.suggestion import path_tiles_need_dictionary_resolve
+        from cursed_words_solver.rules.scoring_conditions import (
+            _path_step_adjacent,
+            path_all_non_adjacent,
+        )
 
+        nonadj_viable = _nonadjacent_chess_path_viable(board, loadout)
         use_prune = self._use_mult_prune_for(loadout)
         use_tier2 = self._use_tier2_screen_for(loadout)
         use_heap = use_prune or use_tier2
@@ -8422,20 +9159,39 @@ class WordSearcher:
             )
 
         try:
+            # One wall-clock cap for chess+item deep-extend across all rounds when
+            # the caller did not pass a deadline (otherwise each seed/round resets).
+            chess_item_deep_deadline: float | None = None
+            if (
+                _chess_item_dict_resolve_extend_viable(board)
+                and effective_deadline is None
+            ):
+                chess_item_deep_deadline = time.monotonic() + min(
+                    6.0,
+                    max(1.5, float(self.time_budget) * 0.20),
+                )
             for _round in range(max_rounds):
                 if self._f8_expired() or self._deadline_reached(effective_deadline):
                     return
+                if (
+                    chess_item_deep_deadline is not None
+                    and time.monotonic() >= chess_item_deep_deadline
+                ):
+                    # Still allow cheap +1 extend rounds without theme deep-extend.
+                    chess_item_deep_deadline = time.monotonic()  # mark spent
                 extended = False
                 seen_prefixes: set[tuple[int, ...]] = set()
                 seed_entries = list(candidates.best_sorted()[:top_paths])
                 if extra_seeds:
                     seed_entries.extend(extra_seeds)
-                # Fraction+number boards: also extend longest resolve paths so
-                # mid-score prefixes (e.g. free→freaked→freeride) are not starved
-                # by shorter high-scoring heap leaders.
-                if any(is_fraction_tile(t) for t in board.flat) and any(
-                    is_number_like_tile(t) for t in board.flat
-                ):
+                fraction_number_board = any(
+                    is_fraction_tile(t) for t in board.flat
+                ) and any(is_number_like_tile(t) for t in board.flat)
+                chess_item_resolve = _chess_item_dict_resolve_extend_viable(board)
+                # Fraction+number / chess+item resolve boards: also extend longest
+                # resolve paths so mid-score prefixes are not starved by shorter
+                # high-scoring heap leaders (free→freeride, aecial→sequacious).
+                if fraction_number_board or chess_item_resolve or nonadj_viable:
                     by_len = sorted(
                         candidates.best_sorted(),
                         key=lambda e: (len(e[2]), e[0]),
@@ -8445,6 +9201,14 @@ class WordSearcher:
                     for entry in by_len[: max(8, top_paths // 2)]:
                         if entry[2] in seen_seed:
                             continue
+                        if nonadj_viable and path_all_non_adjacent(list(entry[2])):
+                            seen_seed.add(entry[2])
+                            seed_entries.append(entry)
+                            continue
+                        if not (
+                            fraction_number_board or chess_item_resolve
+                        ):
+                            continue
                         if not path_tiles_need_dictionary_resolve(
                             board, list(entry[2]), flags=stamp_flags
                         ):
@@ -8453,9 +9217,7 @@ class WordSearcher:
                         seed_entries.append(entry)
                 # Prefer short letter→number resolve seeds (free/crd4) before
                 # sterile high-score clones (dcd4×N) that burn the deadline.
-                if any(is_fraction_tile(t) for t in board.flat) and any(
-                    is_number_like_tile(t) for t in board.flat
-                ):
+                if fraction_number_board:
                     def _extend_seed_priority(
                         entry: tuple[float, str, tuple[int, ...]],
                     ) -> tuple:
@@ -8506,43 +9268,71 @@ class WordSearcher:
                     seed_needs_dict_resolve = path_tiles_need_dictionary_resolve(
                         board, path, flags=stamp_flags
                     )
-                    fraction_number_board = any(
-                        is_fraction_tile(t) for t in board.flat
-                    ) and any(is_number_like_tile(t) for t in board.flat)
                     if (
-                        fraction_number_board
+                        (fraction_number_board or chess_item_resolve)
                         and seed_needs_dict_resolve
                         and len(path) < self.max_len
                     ):
-                        def _score_no_prune(
-                            p: list[int],
-                            w: str,
-                            *,
-                            resolved_word: str | None = None,
-                        ) -> float | None:
-                            if self._deadline_reached(effective_deadline):
-                                return None
-                            return self._rank_score_for_candidate(
-                                board,
-                                p,
-                                w,
-                                loadout,
-                                prune_heap=None,
-                                resolved_word=resolved_word,
+                        # Fast theme resolve makes unbounded deep-extend explode
+                        # when callers pass deadline=None (fringefree unit test).
+                        deep_deadline = effective_deadline
+                        if chess_item_resolve and chess_item_deep_deadline is not None:
+                            deep_deadline = (
+                                chess_item_deep_deadline
+                                if deep_deadline is None
+                                else min(deep_deadline, chess_item_deep_deadline)
                             )
+                        skip_deep = (
+                            chess_item_resolve
+                            and deep_deadline is not None
+                            and time.monotonic() >= deep_deadline
+                        )
+                        if not skip_deep:
+                            def _score_no_prune(
+                                p: list[int],
+                                w: str,
+                                *,
+                                resolved_word: str | None = None,
+                            ) -> float | None:
+                                if self._deadline_reached(deep_deadline):
+                                    return None
+                                return self._rank_score_for_candidate(
+                                    board,
+                                    p,
+                                    w,
+                                    loadout,
+                                    prune_heap=None,
+                                    resolved_word=resolved_word,
+                                )
 
-                        if self._deep_extend_dict_resolve_path(
-                            board,
-                            loadout,
-                            candidates,
-                            list(path),
-                            stamp_flags=stamp_flags,
-                            graph_ctx=graph_ctx,
-                            score_path=_score_no_prune,
-                            deadline=effective_deadline,
-                            depth_left=min(4, self.max_len - len(path)),
-                        ):
-                            extended = True
+                            # Chess+item: also reopen the prior prefix when the tip
+                            # is chess so a high-base rook continuation (aecial) does
+                            # not hide the bishop take-chain (sequacious).
+                            grow_seeds = [list(path)]
+                            if (
+                                chess_item_resolve
+                                and len(path) > self.min_len
+                                and is_chess_piece(board.get_by_index(path[-1]))
+                            ):
+                                grow_seeds.append(list(path[:-1]))
+                            for grow in grow_seeds:
+                                if self._deadline_reached(deep_deadline):
+                                    break
+                                if len(grow) >= self.max_len:
+                                    continue
+                                if self._deep_extend_dict_resolve_path(
+                                    board,
+                                    loadout,
+                                    candidates,
+                                    grow,
+                                    stamp_flags=stamp_flags,
+                                    graph_ctx=graph_ctx,
+                                    score_path=_score_no_prune,
+                                    deadline=deep_deadline,
+                                    depth_left=min(4, self.max_len - len(grow)),
+                                    prefer_chess_theme=chess_item_resolve,
+                                ):
+                                    extended = True
                     if seed_needs_dict_resolve:
                         seed_lower = search_word_from_path(
                             board, path, flags=stamp_flags
@@ -8575,15 +9365,53 @@ class WordSearcher:
                         graph_ctx=graph_ctx,
                         loadout=loadout,
                     )
-                    for idx in _neighbors_sorted_for_loadout(
-                        board,
-                        path,
-                        visited_mask,
-                        flags=stamp_flags,
-                        graph_ctx=graph_ctx,
-                        loadout=loadout,
-                        nbr_mask=nbr_mask,
-                    ):
+                    nbr_list = list(
+                        _neighbors_sorted_for_loadout(
+                            board,
+                            path,
+                            visited_mask,
+                            flags=stamp_flags,
+                            graph_ctx=graph_ctx,
+                            loadout=loadout,
+                            nbr_mask=nbr_mask,
+                        )
+                    )
+                    if seed_needs_dict_resolve:
+                        # Chess/item before low base_score letters — jack-o'-lantern
+                        # (base 0) was starved last and missed fringefree extensions.
+                        # Footprints/Clouds: non-adjacent tips before geo-adjacent
+                        # (abiogenesist +T via Full Moon before adjacent A that
+                        # breaks path_all_non_adjacent).
+                        if nonadj_viable:
+                            nbr_list.sort(
+                                key=lambda i: (
+                                    int(_path_step_adjacent(path[-1], i)),
+                                    _cursed_theme_neighbor_tier(
+                                        board, i, graph_ctx=graph_ctx
+                                    ),
+                                    -float(board.get_by_index(i).base_score),
+                                    i,
+                                )
+                            )
+                        else:
+                            nbr_list.sort(
+                                key=lambda i: (
+                                    _cursed_theme_neighbor_tier(
+                                        board, i, graph_ctx=graph_ctx
+                                    ),
+                                    -float(board.get_by_index(i).base_score),
+                                    i,
+                                )
+                            )
+                    elif nonadj_viable:
+                        nbr_list.sort(
+                            key=lambda i: (
+                                int(_path_step_adjacent(path[-1], i)),
+                                -float(board.get_by_index(i).base_score),
+                                i,
+                            )
+                        )
+                    for idx in nbr_list:
                         if self._deadline_reached(effective_deadline):
                             return
                         tile = board.get_by_index(idx)
@@ -9330,7 +10158,7 @@ class WordSearcher:
             if (
                 min_sc is not None
                 and self._use_mult_prune_for(loadout)
-                and not path_has_scattered_grid_items(board, path)
+                and not path_underbounded_by_tile_mult_lb(board, path)
             ):
                 if getattr(self, "_board_has_number_tiles", False):
                     lb = number_aware_lower_bound(
@@ -9886,21 +10714,28 @@ class WordSearcher:
         *,
         target_len: int,
     ) -> None:
-        """Enumerate full-grid visits on tiny boards; score via dictionary resolve."""
+        """Enumerate paths on tiny shrunk boards; score via dictionary resolve.
+
+        Exact hamiltonians (len == active) matter, but bat 3×3 / 3×2 boards often
+        peak on len active-1 tours (white free-move chess). Score every legal
+        path from min_len through min(max_len, active).
+        """
         active = _active_indices(board)
         n = len(active)
-        if (
-            n > _SMALL_BOARD_HAMILTONIAN_MAX
-            or target_len != n
-            or target_len < self.min_len
-            or target_len > self.max_len
-        ):
+        if n > _SMALL_BOARD_HAMILTONIAN_MAX or n < self.min_len:
+            return
+        max_path = min(self.max_len, n, max(target_len, n))
+        if max_path < self.min_len:
             return
 
         ctx = self._search_ctx(loadout)
         stamp_flags = ctx.search_flags
         graph_ctx = self._board_graph(board)
-        required_mask = sum(1 << i for i in active)
+        from cursed_words_solver.suggestion import (
+            _alignment_pattern_for_path,
+            _collect_dictionary_matches_for_path,
+            path_is_submittable,
+        )
 
         def score_path(
             path: list[int],
@@ -9913,36 +10748,62 @@ class WordSearcher:
                 path,
                 word,
                 loadout,
-                prune_heap=candidates,
+                prune_heap=None,
                 resolved_word=resolved_word,
+            )
+
+        def consider(path: list[int]) -> None:
+            if len(path) < self.min_len:
+                return
+            path_key = tuple(path)
+            scoring_word = self._dict_valid_words_cache.get(path_key)
+            if not scoring_word:
+                pattern = _alignment_pattern_for_path(board, path, stamp_flags)
+                matches = _collect_dictionary_matches_for_path(
+                    board,
+                    path,
+                    pattern,
+                    loadout,
+                    self.dictionary,
+                    min_len=self.min_len,
+                    limit=1,
+                    deadline_check=lambda: (
+                        self._time_expired() or time.monotonic() >= deadline
+                    ),
+                )
+                if not matches:
+                    return
+                scoring_word = matches[0]
+                self._dict_valid_words_cache[path_key] = scoring_word
+            if not path_is_submittable(
+                board,
+                path,
+                scoring_word,
+                loadout,
+                self.dictionary,
+                min_len=self.min_len,
+                deadline_check=lambda: (
+                    self._time_expired() or time.monotonic() >= deadline
+                ),
+            ):
+                return
+            self._consider_path_candidate(
+                board,
+                loadout,
+                candidates,
+                path,
+                scoring_word,
+                stamp_flags,
+                score_path,
+                resolved_word=scoring_word,
             )
 
         def dfs(path: list[int], visited_mask: int) -> None:
             if self._time_expired() or time.monotonic() >= deadline:
                 return
-            if len(path) == n:
-                if visited_mask != required_mask:
-                    return
-                search_word = search_word_from_path(
-                    board, path, flags=stamp_flags
-                )
-                accepted, score_word = self._accept_path_for_search(
-                    board,
-                    path,
-                    search_word,
-                    loadout,
-                    stamp_flags,
-                )
-                if accepted:
-                    self._consider_path_candidate(
-                        board,
-                        loadout,
-                        candidates,
-                        path,
-                        score_word,
-                        stamp_flags,
-                        score_path,
-                    )
+            if len(path) >= self.min_len:
+                consider(path)
+            if len(path) >= max_path:
                 return
             cell = path[-1]
             nbr_mask = neighbors_mask(
@@ -10771,6 +11632,12 @@ class WordSearcher:
                 extension_reserve = min(4.0, self.time_budget * 0.08)
                 if has_number_tiles and has_fraction_tiles:
                     extension_reserve = min(10.0, self.time_budget * 0.15)
+                # Chess+jack dict-resolve needs multi-step growth (aecial→sequacious).
+                if _chess_item_dict_resolve_extend_viable(board):
+                    extension_reserve = min(
+                        14.0,
+                        max(extension_reserve, self.time_budget * 0.28),
+                    )
             # Beam otherwise does one max_len leftover pass which starves short
             # colorless letter words on number / Chromaphobia boards.
             from cursed_words_solver.rules.quest_effects import active_quest_game_class
@@ -10813,6 +11680,60 @@ class WordSearcher:
             pre_extend_deadline = (
                 deadline - extension_reserve if extension_reserve > 0 else deadline
             )
+            # Seed jack+chess take-chains BEFORE beam/letter DFS. Beam routinely
+            # overruns into the extend reserve (dfs_sec >> main slice), which
+            # skipped the post-DFS guarantee and left aecial-class tips.
+            if (
+                _chess_item_dict_resolve_extend_viable(board)
+                and extension_reserve >= 2.0
+                and time.monotonic() < deadline
+            ):
+                guarantee_budget = min(
+                    12.0,
+                    max(5.0, float(extension_reserve) * 0.75),
+                    max(0.0, deadline - time.monotonic()),
+                )
+                if guarantee_budget >= 2.0:
+                    g_deadline = min(deadline, time.monotonic() + guarantee_budget)
+                    self._guarantee_chess_item_dict_resolve_extensions(
+                        board,
+                        loadout,
+                        candidates,
+                        deadline=g_deadline,
+                    )
+                    # Keep a post-DFS extend slice; shrink main DFS to match.
+                    remain_reserve = max(2.0, extension_reserve - guarantee_budget * 0.5)
+                    main_deadline = min(main_deadline, deadline - remain_reserve)
+                    if main_deadline < main_dfs_floor:
+                        main_deadline = main_dfs_floor
+                    timing.main_dfs_slice_sec = max(0.0, main_deadline - search_begin)
+            # Long non-adjacent chess tours (Imp/Footprints/Clouds) before DFS.
+            if (
+                _nonadjacent_chess_path_viable(board, loadout)
+                and time.monotonic() < deadline
+            ):
+                na_budget = min(
+                    8.0,
+                    max(3.0, self.time_budget * 0.12),
+                    max(0.0, deadline - time.monotonic()),
+                )
+                if na_budget >= 1.5:
+                    self._guarantee_nonadjacent_chess_paths(
+                        board,
+                        loadout,
+                        candidates,
+                        deadline=min(deadline, time.monotonic() + na_budget),
+                    )
+                    remain_reserve = max(
+                        2.0, float(extension_reserve or 0.0) * 0.5
+                    )
+                    main_deadline = min(main_deadline, deadline - remain_reserve)
+                    if main_deadline < main_dfs_floor:
+                        main_deadline = main_dfs_floor
+                    timing.main_dfs_slice_sec = max(0.0, main_deadline - search_begin)
+            # Cap DFS on the active deadline so reserve overruns are rarer.
+            if not run_until_found:
+                self._active_deadline = main_deadline
             parallel_dfs_viable = False
             dfs_start = search_begin
             self._parallel_executor = None
@@ -10857,6 +11778,9 @@ class WordSearcher:
                 # Short smoke budgets: give letter leftover a larger share so a
                 # number-heavy board still finds *some* word under ~8s.
                 beam_frac = 0.55 if main_span < 10.0 else 0.72
+                # Chess+jack resolve growth needs a real extend slice; keep beam shorter.
+                if _chess_item_dict_resolve_extend_viable(board):
+                    beam_frac = min(beam_frac, 0.48)
                 beam_deadline = now + beam_span * beam_frac
                 # Brief hub seed for Hanafuda / dense jokers (hard constraint-style,
                 # not a competing post-DFS reserve).
@@ -11060,6 +11984,8 @@ class WordSearcher:
                         digits_only=True,
                     )
             timing.dfs_sec = time.monotonic() - dfs_start
+            if not run_until_found:
+                self._active_deadline = deadline
             number_short_recovery_likely = False
             empty_heap_recovery_likely = False
         else:
@@ -11160,6 +12086,12 @@ class WordSearcher:
                     extension_reserve = min(
                         18.0,
                         max(extension_reserve, self.time_budget * 0.30),
+                    )
+                # Chess+jack: same class of multi-step dict-resolve growth.
+                if _chess_item_dict_resolve_extend_viable(board):
+                    extension_reserve = min(
+                        18.0,
+                        max(extension_reserve, self.time_budget * 0.28),
                     )
 
             (
@@ -11405,6 +12337,55 @@ class WordSearcher:
             if empty_heap_recovery_likely:
                 recovery_cutoff = deadline - empty_heap_recovery_reserve
                 pre_extend_deadline = min(pre_extend_deadline, recovery_cutoff)
+            # Pre-DFS jack+chess theme seeds (same reason as beam path).
+            if (
+                _chess_item_dict_resolve_extend_viable(board)
+                and extension_reserve >= 2.0
+                and time.monotonic() < deadline
+            ):
+                guarantee_budget = min(
+                    12.0,
+                    max(5.0, float(extension_reserve) * 0.75),
+                    max(0.0, deadline - time.monotonic()),
+                )
+                if guarantee_budget >= 2.0:
+                    g_deadline = min(deadline, time.monotonic() + guarantee_budget)
+                    self._guarantee_chess_item_dict_resolve_extensions(
+                        board,
+                        loadout,
+                        candidates,
+                        deadline=g_deadline,
+                    )
+                    remain_reserve = max(2.0, extension_reserve - guarantee_budget * 0.5)
+                    main_deadline = min(main_deadline, deadline - remain_reserve)
+                    if main_deadline < main_dfs_floor:
+                        main_deadline = main_dfs_floor
+                    timing.main_dfs_slice_sec = max(0.0, main_deadline - search_begin)
+            if (
+                _nonadjacent_chess_path_viable(board, loadout)
+                and time.monotonic() < deadline
+            ):
+                na_budget = min(
+                    8.0,
+                    max(3.0, self.time_budget * 0.12),
+                    max(0.0, deadline - time.monotonic()),
+                )
+                if na_budget >= 1.5:
+                    self._guarantee_nonadjacent_chess_paths(
+                        board,
+                        loadout,
+                        candidates,
+                        deadline=min(deadline, time.monotonic() + na_budget),
+                    )
+                    remain_reserve = max(
+                        2.0, float(extension_reserve or 0.0) * 0.5
+                    )
+                    main_deadline = min(main_deadline, deadline - remain_reserve)
+                    if main_deadline < main_dfs_floor:
+                        main_deadline = main_dfs_floor
+                    timing.main_dfs_slice_sec = max(0.0, main_deadline - search_begin)
+            if not run_until_found:
+                self._active_deadline = main_deadline
             curse_heavy = joker_count >= 2 and _chess_tile_count(board) >= 3
             wildcard_dense = joker_count >= _WILDCARD_DENSE_MIN
             parallel_dfs_viable = use_parallel and main_deadline > search_begin
@@ -11646,7 +12627,7 @@ class WordSearcher:
                                     skip_number_digit_start=False,
                                 )
             elif self._small_board_hamiltonian:
-                ham_slice = min(12.0, self.time_budget * 0.2)
+                ham_slice = min(20.0, max(8.0, self.time_budget * 0.35))
                 ham_deadline = min(main_deadline, search_begin + ham_slice)
                 if ham_deadline > time.monotonic():
                     self._collect_small_board_hamiltonian_candidates(
@@ -12076,6 +13057,8 @@ class WordSearcher:
                 self._parallel_executor = None
 
             timing.dfs_sec = time.monotonic() - dfs_start
+            if not run_until_found:
+                self._active_deadline = deadline
 
         if has_digit_tiles and len(candidates) == 0:
             timing.number_board_empty_diag = True
@@ -12155,12 +13138,55 @@ class WordSearcher:
                 active_cap = min(active_cap, f8_deadline)
             self._active_deadline = active_cap
             chess_start = time.monotonic()
+            if (
+                _chess_item_dict_resolve_extend_viable(board)
+                and not self._f8_expired()
+                and time.monotonic() < resolve_phase_deadline
+            ):
+                guarantee_budget = min(
+                    12.0,
+                    max(5.0, float(extension_reserve or 0.0) * 0.75),
+                    max(0.0, resolve_phase_deadline - time.monotonic()),
+                )
+                if guarantee_budget >= 2.0:
+                    self._guarantee_chess_item_dict_resolve_extensions(
+                        board,
+                        loadout,
+                        candidates,
+                        deadline=min(
+                            resolve_phase_deadline,
+                            time.monotonic() + guarantee_budget,
+                        ),
+                    )
+            if (
+                _nonadjacent_chess_path_viable(board, loadout)
+                and not self._f8_expired()
+                and time.monotonic() < resolve_phase_deadline
+            ):
+                na_budget = min(
+                    8.0,
+                    max(3.0, self.time_budget * 0.12),
+                    max(0.0, resolve_phase_deadline - time.monotonic()),
+                )
+                if na_budget >= 1.5:
+                    self._guarantee_nonadjacent_chess_paths(
+                        board,
+                        loadout,
+                        candidates,
+                        deadline=min(
+                            resolve_phase_deadline,
+                            time.monotonic() + na_budget,
+                        ),
+                    )
             chess_max_cap = (
                 self.max_len
                 if self._full_board_exact
                 else (
                     8
-                    if has_fraction_tiles and _chess_tile_count(board) >= 3
+                    if (
+                        (has_fraction_tiles and _chess_tile_count(board) >= 3)
+                        or _nonadjacent_chess_path_viable(board, loadout)
+                    )
                     else 5
                 )
             )
@@ -12598,10 +13624,19 @@ class WordSearcher:
         unique: list[WordResult] = []
         from cursed_words_solver.suggestion import path_is_submittable
 
-        ranked_finalists = sorted(
-            best_by_word.values(),
-            key=lambda row: -quest_candidate_rank(row[0], row[2], loadout),
-        )
+        # Final suggestion must prefer real submit score (immediate). Search rank
+        # includes setup heuristics that can crown a weaker aahs over a stronger
+        # longer tour on bat/chess boards.
+        if bullseye_active(loadout) or quest_inverts_search_rank(loadout):
+            ranked_finalists = sorted(
+                best_by_word.values(),
+                key=lambda row: -quest_candidate_rank(row[0], row[2], loadout),
+            )
+        else:
+            ranked_finalists = sorted(
+                best_by_word.values(),
+                key=lambda row: (-row[0], -row[2]),
+            )
         for immediate, setup, rank_sc, word, path_tuple in ranked_finalists:
             if time.monotonic() >= deadline and len(unique) >= top_n:
                 break

@@ -483,6 +483,7 @@ def chess_neighbors_mask(
             moving_side=side,
             allies_can_take=allies,
             graph_ctx=graph_ctx,
+            horizontal_wrap=wrap,
         )
     elif curse == CurseType.CHESS_ROOK:
         mask = _ray_neighbors_mask(

@@ -163,11 +163,17 @@ namespace CursedWordsSolverCompanion
                 var equipped = RunStateExporter.TryGetEquippedStickerLevel(player, scatterSlug);
                 if (equipped < 1)
                     continue;
-                // Dusty Coffin grid tiles keep encounter scatter tier; inventory level
-                // still fires separately in sticker order (do not bleed equipped tier).
+                // Dusty Coffin / Mysterious Amulet keep encounter scatter tier;
+                // inventory level still fires separately in sticker order
+                // (do not bleed equipped tier — amulet L3 export + L3 sticker
+                // double-counted vs live L1 scatter + L3 inventory).
                 if (string.Equals(
                         scatterSlug,
                         "dusty_coffin",
+                        StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(
+                        scatterSlug,
+                        "mysterious_amulet",
                         StringComparison.OrdinalIgnoreCase))
                     continue;
                 if (
