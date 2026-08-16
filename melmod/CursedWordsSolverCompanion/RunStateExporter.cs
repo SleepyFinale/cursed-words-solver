@@ -2799,9 +2799,9 @@ namespace CursedWordsSolverCompanion
                 if (freezes >= 0)
                 {
                     snapshot.extras["shaved_ice_freezes"] = freezes.ToString();
-                    snapshot.extras["shaved_ice_word_bonus_percent"] = (
-                        100 + freezes * 20
-                    ).ToString();
+                    var percent = TryGetShavedIceWordBonusPercent(player);
+                    if (percent >= 100)
+                        snapshot.extras["shaved_ice_word_bonus_percent"] = percent.ToString();
                 }
             }
 
@@ -3326,25 +3326,50 @@ namespace CursedWordsSolverCompanion
 
         /// <summary>
         /// Shaved Ice Freezes counter (shop-leave increments while frozen). Returns -1 if unknown.
+        /// Prefer live <see cref="ShavedIce.Freezes"/> via GetUnpackedItemsOfType.
         /// </summary>
         public static int TryGetShavedIceFreezes(Player player)
         {
-            if (player?.Stamps == null)
+            if (player == null)
+                return -1;
+
+            try
+            {
+                foreach (ShavedIce ice in player.GetUnpackedItemsOfType(typeof(ShavedIce)))
+                {
+                    if (ice == null)
+                        continue;
+                    return Math.Max(0, ice.Freezes);
+                }
+            }
+            catch (Exception ex)
+            {
+                ExportDiagnostics.RecordMergeError("TryGetShavedIceFreezes live: " + ex.Message);
+            }
+
+            if (player.Stamps == null)
                 return -1;
 
             foreach (var stamp in player.Stamps)
             {
                 if (stamp == null)
                     continue;
-                var name = stamp.Name ?? "";
-                var art = stamp.ArtFileName ?? "";
-                if (
-                    name.IndexOf("Shaved Ice", StringComparison.OrdinalIgnoreCase) < 0
-                    && name.IndexOf("ShavedIce", StringComparison.OrdinalIgnoreCase) < 0
-                    && art.IndexOf("shaved_ice", StringComparison.OrdinalIgnoreCase) < 0
-                    && art.IndexOf("shavedice", StringComparison.OrdinalIgnoreCase) < 0
-                )
-                    continue;
+                var id = Slugify(stamp.ArtFileName, stamp.Name);
+                if (!string.Equals(id, "shaved_ice", StringComparison.OrdinalIgnoreCase))
+                {
+                    var name = stamp.Name ?? "";
+                    var art = stamp.ArtFileName ?? "";
+                    if (
+                        name.IndexOf("Shaved Ice", StringComparison.OrdinalIgnoreCase) < 0
+                        && name.IndexOf("ShavedIce", StringComparison.OrdinalIgnoreCase) < 0
+                        && art.IndexOf("shaved_ice", StringComparison.OrdinalIgnoreCase) < 0
+                        && art.IndexOf("shavedice", StringComparison.OrdinalIgnoreCase) < 0
+                    )
+                        continue;
+                }
+
+                if (stamp is ShavedIce typed)
+                    return Math.Max(0, typed.Freezes);
 
                 var freezes = TryGetShavedIceFreezesFromObject(stamp);
                 if (freezes >= 0)
@@ -3352,6 +3377,8 @@ namespace CursedWordsSolverCompanion
 
                 foreach (var nested in TryGetNestedStickerTargets(stamp))
                 {
+                    if (nested is ShavedIce nestedIce)
+                        return Math.Max(0, nestedIce.Freezes);
                     freezes = TryGetShavedIceFreezesFromObject(nested);
                     if (freezes >= 0)
                         return freezes;
@@ -3367,6 +3394,17 @@ namespace CursedWordsSolverCompanion
                 return -1;
 
             return TryGetIntMember(target, "Freezes", "_freezes", "freezes");
+        }
+
+        /// <summary>
+        /// Shaved Ice multiplicative WordBonus percent (100 + 20 × Freezes). Returns -1 if unknown.
+        /// </summary>
+        public static int TryGetShavedIceWordBonusPercent(Player player)
+        {
+            var freezes = TryGetShavedIceFreezes(player);
+            if (freezes < 0)
+                return -1;
+            return 100 + freezes * 20;
         }
 
         /// <summary>

@@ -3290,3 +3290,35 @@ def test_war_shaved_ice_freezes_replay_matches_actual() -> None:
         for step in shaved_steps
         if step.get("phase") == "multiply" or step.get("factor") or step.get("percent")
     )
+
+
+def test_wanner_shaved_ice_freezes_replay_matches_actual() -> None:
+    """Mismatch 20260816_163152: Freezes not exported (stale mod) → ×1 vs game ×4.2."""
+    case_path = FIXTURES / "20260816_163152.json"
+    if not case_path.is_file():
+        pytest.skip("wanner shaved ice fixture not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    _adjust_shaved_ice_extras(run_state, data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    path = _replay_path(board, data["path"])
+    loadout = parse_run_state(run_state)
+    assert str((loadout.extras or {}).get("shaved_ice_freezes")) == "16"
+    score, _, trace = ScoringPipeline().score_with_trace(
+        board, path, data["word"], loadout
+    )
+    assert int(score) == int(data["actual_score"]) == 62777
+    shaved_steps = [
+        step
+        for step in trace
+        if isinstance(step, dict)
+        and str(step.get("rule_id", "")).lower() == "shaved_ice"
+        and step.get("phase") == "multiply"
+    ]
+    assert shaved_steps
+    assert any(
+        abs(float(step.get("factor") or 0) - 4.2) < 0.01
+        or abs(float(step.get("percent") or 0) - 420) < 0.01
+        for step in shaved_steps
+    )

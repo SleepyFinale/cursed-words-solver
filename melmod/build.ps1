@@ -39,5 +39,20 @@ if (-not (Test-Path $BuiltDll)) {
 }
 
 New-Item -ItemType Directory -Force -Path $ModsDir | Out-Null
-Copy-Item -Force $BuiltDll (Join-Path $ModsDir "CursedWordsSolverCompanion.dll")
-Write-Host "Deployed to $ModsDir\CursedWordsSolverCompanion.dll"
+$DestDll = Join-Path $ModsDir "CursedWordsSolverCompanion.dll"
+$PendingDll = Join-Path $ModsDir "CursedWordsSolverCompanion.dll.pending"
+try {
+    Copy-Item -Force $BuiltDll $DestDll
+    if (Test-Path $PendingDll) { Remove-Item -Force $PendingDll }
+    Write-Host "Deployed to $DestDll"
+}
+catch {
+    Copy-Item -Force $BuiltDll $PendingDll
+    Write-Warning @"
+Could not overwrite $DestDll (game likely still running).
+Staged update at $PendingDll
+Close Cursed Words, then re-run: .\melmod\build.ps1
+"@
+    exit 1
+}
+
