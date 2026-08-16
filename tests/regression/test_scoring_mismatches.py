@@ -367,6 +367,61 @@ def _adjust_steak_percent_extras(run_state: dict, data: dict) -> None:
     extras["steak_word_bonus_percent"] = str(percent)
 
 
+def _shaved_ice_trace_percent(data: dict) -> int | None:
+    """Infer Shaved Ice multiplicative WordBonus percent from actual_trace."""
+    trace = data.get("actual_trace")
+    if not isinstance(trace, list):
+        return None
+    for step in trace:
+        if not isinstance(step, dict):
+            continue
+        item_id = str(step.get("item_id", "") or "").lower()
+        item_name = str(step.get("item_name", "") or "").lower()
+        if item_id != "shaved_ice" and item_name != "shaved ice":
+            continue
+        if not step.get("word_bonus_multiplicative") or step.get("word_bonus_poison"):
+            continue
+        try:
+            percent = int(step.get("word_bonus", 0))
+        except (TypeError, ValueError):
+            continue
+        if percent >= 100:
+            return percent
+    return None
+
+
+def _has_shaved_ice_stamp(run_state: dict) -> bool:
+    stamps = run_state.get("stamps")
+    if not isinstance(stamps, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and str(item.get("id", "") or "").lower() == "shaved_ice"
+        for item in stamps
+    )
+
+
+def _adjust_shaved_ice_extras(run_state: dict, data: dict) -> None:
+    """Inject Shaved Ice Freezes / percent when fixture predates melmod export."""
+    if not _has_shaved_ice_stamp(run_state):
+        return
+    extras = run_state.get("extras")
+    if not isinstance(extras, dict):
+        return
+    live_freezes = extras.get("shaved_ice_freezes")
+    if live_freezes not in (None, ""):
+        try:
+            if int(live_freezes) >= 0:
+                return
+        except (TypeError, ValueError):
+            pass
+    percent = _shaved_ice_trace_percent(data)
+    if percent is None:
+        return
+    extras["shaved_ice_word_bonus_percent"] = str(percent)
+    extras["shaved_ice_freezes"] = str(max(0, (percent - 100) // 20))
+
+
 def _tile_ninja_trace_additive_bonus(data: dict) -> float | None:
     """Infer additive tile_ninja_bonus from actual_trace (total percent minus base 1.2)."""
     trace = data.get("actual_trace")
@@ -2301,6 +2356,7 @@ def test_scoring_mismatch(case_path: Path) -> None:
     _adjust_ruler_distance_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
+    _adjust_shaved_ice_extras(run_state, data)
     _adjust_cursed_bosses_defeated_from_trace(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)
     _adjust_green_tile_count_from_trace(run_state, data)
@@ -2509,6 +2565,7 @@ def test_inquirendo_electric_guitar_red_note_mismatch() -> None:
     _adjust_ruler_distance_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
+    _adjust_shaved_ice_extras(run_state, data)
     _adjust_cursed_bosses_defeated_from_trace(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)
 
@@ -2577,6 +2634,7 @@ def test_upwells_cobra_electric_guitar_scatter_tier() -> None:
     _adjust_ruler_distance_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
+    _adjust_shaved_ice_extras(run_state, data)
     _adjust_cursed_bosses_defeated_from_trace(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)
 
@@ -2674,6 +2732,7 @@ def test_nat_h4_ram_trace_checkpoints(
     _adjust_ruler_distance_extras(run_state, data)
     _adjust_rare_item_count_extras(run_state, data)
     _adjust_steak_percent_extras(run_state, data)
+    _adjust_shaved_ice_extras(run_state, data)
     _adjust_cursed_bosses_defeated_from_trace(run_state, data)
     _adjust_tile_ninja_bonus_from_trace(run_state, data)
     board_for_lucky = parse_board_from_run_state(run_state)
@@ -3193,3 +3252,41 @@ def test_external_scoring_capture_replay(capture_name: str) -> None:
     loadout = parse_run_state(run_state)
     score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
     assert int(score) == int(data["actual_score"])
+
+
+def test_war_shaved_ice_freezes_replay_matches_actual() -> None:
+    """Mismatch 20260816_152315: Shaved Ice Freezes=11 (×3.2) was skipped as frozen_in_shop."""
+    case_path = FIXTURES / "20260816_152315.json"
+    if not case_path.is_file():
+        pytest.skip("war shaved ice fixture not installed")
+    data = json.loads(case_path.read_text(encoding="utf-8"))
+    run_state = _run_state_for_replay(data)
+    _adjust_shaved_ice_extras(run_state, data)
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    path = _replay_path(board, data["path"])
+    loadout = parse_run_state(run_state)
+    assert str((loadout.extras or {}).get("shaved_ice_freezes")) == "11"
+    score, _, trace = ScoringPipeline().score_with_trace(
+        board, path, data["word"], loadout
+    )
+    assert int(score) == int(data["actual_score"]) == 21728
+    shaved_steps = [
+        step
+        for step in trace
+        if isinstance(step, dict)
+        and str(step.get("rule_id", "")).lower() == "shaved_ice"
+    ]
+    assert shaved_steps
+    assert any(step.get("applied") is not False for step in shaved_steps)
+    assert not any(
+        "frozen_in_shop" in str(step.get("skip_reason") or "")
+        or "frozen_in_shop" in str(step.get("detail") or "")
+        for step in shaved_steps
+    )
+    assert any(
+        abs(float(step.get("factor") or 0) - 3.2) < 0.01
+        or abs(float(step.get("percent") or 0) - 320) < 0.01
+        for step in shaved_steps
+        if step.get("phase") == "multiply" or step.get("factor") or step.get("percent")
+    )

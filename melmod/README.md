@@ -300,6 +300,8 @@ Run context extras (default-unlocked stickers):
 | `money_lost_encounter` | Money lost this encounter |
 | `kokeshi_dolls` | `true` when Kokeshi Dolls stamp equipped (currency path uses letter values) |
 | `frozen_in_shop` | `true` when Avocado is mushy / shop freeze active (`avocado_mushy` still exported) |
+| `shaved_ice_freezes` | Shaved Ice `Freezes` counter (increments each shop leave while the stamp sits frozen). Always-on ×WORD uses `×(1 + 0.2 × Freezes)`. |
+| `shaved_ice_word_bonus_percent` | Live Shaved Ice multiplicative ×WORD percent (e.g. `320` = ×3.2 = Freezes 11). |
 | `character_slug` | Wiki-style slug for the active character |
 | `encounter_mode` | `encounter`, `shop`, or `none` |
 | `run_stage` | Current run stage (1–6) from `CurrentRunProgress.GetStage()`; always exported during a run |

@@ -1656,6 +1656,12 @@ namespace CursedWordsSolverCompanion
                 snapshot.extras.Remove("rare_item_count_last_known");
             }
 
+            if (!PlayerHasStampSlug(player, "shaved_ice"))
+            {
+                snapshot.extras.Remove("shaved_ice_freezes");
+                snapshot.extras.Remove("shaved_ice_word_bonus_percent");
+            }
+
             if (!PlayerHasStampSlug(player, "tile_ninja"))
             {
                 snapshot.extras.Remove("tile_ninja_bonus");
@@ -2787,6 +2793,18 @@ namespace CursedWordsSolverCompanion
                     snapshot.extras["steak_word_bonus_percent"] = steakPercent.ToString();
             }
 
+            if (PlayerHasStampSlug(player, "shaved_ice"))
+            {
+                var freezes = TryGetShavedIceFreezes(player);
+                if (freezes >= 0)
+                {
+                    snapshot.extras["shaved_ice_freezes"] = freezes.ToString();
+                    snapshot.extras["shaved_ice_word_bonus_percent"] = (
+                        100 + freezes * 20
+                    ).ToString();
+                }
+            }
+
             var targetCurse = TryGetStringProperty(
                 player,
                 "TargetCurseType",
@@ -3304,6 +3322,51 @@ namespace CursedWordsSolverCompanion
                 return bonus;
 
             return -1;
+        }
+
+        /// <summary>
+        /// Shaved Ice Freezes counter (shop-leave increments while frozen). Returns -1 if unknown.
+        /// </summary>
+        public static int TryGetShavedIceFreezes(Player player)
+        {
+            if (player?.Stamps == null)
+                return -1;
+
+            foreach (var stamp in player.Stamps)
+            {
+                if (stamp == null)
+                    continue;
+                var name = stamp.Name ?? "";
+                var art = stamp.ArtFileName ?? "";
+                if (
+                    name.IndexOf("Shaved Ice", StringComparison.OrdinalIgnoreCase) < 0
+                    && name.IndexOf("ShavedIce", StringComparison.OrdinalIgnoreCase) < 0
+                    && art.IndexOf("shaved_ice", StringComparison.OrdinalIgnoreCase) < 0
+                    && art.IndexOf("shavedice", StringComparison.OrdinalIgnoreCase) < 0
+                )
+                    continue;
+
+                var freezes = TryGetShavedIceFreezesFromObject(stamp);
+                if (freezes >= 0)
+                    return freezes;
+
+                foreach (var nested in TryGetNestedStickerTargets(stamp))
+                {
+                    freezes = TryGetShavedIceFreezesFromObject(nested);
+                    if (freezes >= 0)
+                        return freezes;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int TryGetShavedIceFreezesFromObject(object target)
+        {
+            if (target == null)
+                return -1;
+
+            return TryGetIntMember(target, "Freezes", "_freezes", "freezes");
         }
 
         /// <summary>

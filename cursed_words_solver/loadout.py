@@ -1212,6 +1212,8 @@ def _normalize_pin_extras(extras: dict[str, Any]) -> dict[str, Any]:
         "movie_camera_word_score_bonus",
         "neapolitan_percent",
         "ruler_distance",
+        "shaved_ice_freezes",
+        "shaved_ice_word_bonus_percent",
         "pin_left_level",
         "pin_right_level",
         "pin_left_variable",
@@ -1459,6 +1461,13 @@ def validate_run_state_for_scoring(
         has_rare = extras.get("rare_item_count") not in (None, "")
         if not has_pct and not has_rare:
             warnings.append("Steak equipped but steak_word_bonus_percent missing")
+
+    if "shaved_ice" in stamp_ids:
+        if extras.get("shaved_ice_freezes") in (None, ""):
+            warnings.append(
+                "Shaved Ice equipped but shaved_ice_freezes missing — "
+                "rebuild melmod and press F8 again"
+            )
 
     if "twinkle_toes" in stamp_ids:
         if extras.get("twinkle_toes_swap_available") in (None, ""):
@@ -1749,6 +1758,13 @@ def _has_mutating_dna_stamp(loadout: Loadout) -> bool:
 def _has_steak_stamp(loadout: Loadout) -> bool:
     return any(
         str((s.id or "")).strip().lower() == "steak" for s in (loadout.stamps or [])
+    )
+
+
+def _has_shaved_ice_stamp(loadout: Loadout) -> bool:
+    return any(
+        str((s.id or "")).strip().lower() == "shaved_ice"
+        for s in (loadout.stamps or [])
     )
 
 
@@ -2854,6 +2870,10 @@ def sanitize_run_state_snapshot_for_f8(
         extras.pop("steak_word_bonus_percent", None)
         extras.pop("rare_item_count", None)
         extras.pop("rare_item_count_last_known", None)
+
+    if not _has_shaved_ice_stamp(loadout):
+        extras.pop("shaved_ice_freezes", None)
+        extras.pop("shaved_ice_word_bonus_percent", None)
 
     if not _has_snapshot_sticker(loadout):
         for key in (

@@ -190,6 +190,52 @@ def test_blessing_of_the_fairies_cursed_boss_scale():
     assert score == base * 2
 
 
+def test_shaved_ice_scales_with_freezes():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 10)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="shaved_ice", name="Shaved Ice", kind="stamp")],
+        extras={"shaved_ice_freezes": "11"},
+    )
+    score, bd = pipeline.score(board, [0], "a", loadout)
+    base, _ = pipeline.score(board, [0], "a", Loadout())
+    assert abs(bd["multiplier"] - 3.2) < 0.01
+    assert score == int(base * 320 / 100)
+
+
+def test_shaved_ice_prefers_live_percent():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 10)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="shaved_ice", name="Shaved Ice", kind="stamp")],
+        extras={
+            "shaved_ice_freezes": "0",
+            "shaved_ice_word_bonus_percent": "320",
+        },
+    )
+    score, bd = pipeline.score(board, [0], "a", loadout)
+    base, _ = pipeline.score(board, [0], "a", Loadout())
+    assert abs(bd["multiplier"] - 3.2) < 0.01
+    assert score == int(base * 320 / 100)
+
+
+def test_shaved_ice_applies_at_zero_freezes():
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "A", 10)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="shaved_ice", name="Shaved Ice", kind="stamp")],
+        extras={"shaved_ice_freezes": "0"},
+    )
+    score, bd = pipeline.score(board, [0], "a", loadout)
+    base, _ = pipeline.score(board, [0], "a", Loadout())
+    assert abs(bd["multiplier"] - 1.0) < 0.01
+    assert score == base
+    assert not any("skipped" in e and "shaved" in e.lower() for e in bd.get("effects", []))
+
+
 def test_builder_consumable_count_multiplier():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "?", 5, metadata={"consumable": True})

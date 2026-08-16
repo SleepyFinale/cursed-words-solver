@@ -4601,6 +4601,21 @@ def scaled_word_multiplier(
             factor += float(animal_stamp_count(loadout)) * float(
                 rule.get("scale_per_extra", 1.0)
             )
+        elif scale == "shaved_ice_freezes":
+            raw_pct = (loadout.extras or {}).get("shaved_ice_word_bonus_percent")
+            if raw_pct not in (None, ""):
+                try:
+                    return float(int(raw_pct)) / 100.0
+                except (TypeError, ValueError):
+                    pass
+            freezes = 0
+            raw_freezes = (loadout.extras or {}).get("shaved_ice_freezes")
+            if raw_freezes not in (None, ""):
+                try:
+                    freezes = max(0, int(raw_freezes))
+                except (TypeError, ValueError):
+                    freezes = 0
+            factor += float(freezes) * float(rule.get("scale_per_extra", 0.2))
     if path is not None and rule.get("scale_from_path") == "non_adjacent_steps":
         ruler_mult = ruler_multiplier_from_loadout(loadout, path)
         if ruler_mult is None:

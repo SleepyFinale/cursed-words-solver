@@ -2509,10 +2509,13 @@
     },
     "shaved_ice": {
       "name": "Shaved Ice",
-      "type": "multiply",
-      "factor": 1,
-      "condition": "frozen_in_shop",
-      "wiki_effect": "Get \u00d71 WORD SCORE. Improves while frozen in the shop",
+      "type": "multiply_word_scaled",
+      "condition": "always",
+      "base": 1,
+      "upgrade": 0,
+      "scale_from_extras": "shaved_ice_freezes",
+      "scale_per_extra": 0.2,
+      "wiki_effect": "Get \u00d71 WORD SCORE (While frozen, improved by 0.2 for each shop visited)",
       "wiki_page": "Shaved_Ice",
       "shop_price": 12,
       "game_class": "ShavedIce"

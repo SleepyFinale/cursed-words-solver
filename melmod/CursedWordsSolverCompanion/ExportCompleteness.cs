@@ -236,6 +236,9 @@ namespace CursedWordsSolverCompanion
             if (HasStamp(player, "steak") && !extras.ContainsKey("steak_word_bonus_percent"))
                 missing.Add("steak_word_bonus_percent");
 
+            if (HasStamp(player, "shaved_ice") && !extras.ContainsKey("shaved_ice_freezes"))
+                missing.Add("shaved_ice_freezes");
+
             if (HasStamp(player, "tile_ninja"))
             {
                 var hasLive = extras.ContainsKey("tile_ninja_bonus")
