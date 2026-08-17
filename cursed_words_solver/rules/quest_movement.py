@@ -17,7 +17,10 @@ from cursed_words_solver.rules.chess_tiles import (
     is_chess_piece,
     knight_neighbors_mask,
 )
-from cursed_words_solver.rules.quest_effects import quest_constraints
+from cursed_words_solver.rules.quest_effects import (
+    quest_constraints,
+    tile_forbidden_on_quest_path,
+)
 from cursed_words_solver.rules.stamp_behaviors import (
     FLAG_CHESS_ALLIES_CAN_TAKE,
     FLAG_CHESS_KING_QUEEN_ITEM_MOVEMENT,
@@ -225,6 +228,21 @@ def sicilian_neighbors_mask(
     return mask
 
 
+def _mask_without_quest_forbidden_tiles(
+    board: Board,
+    mask: int,
+    loadout: Loadout | None,
+) -> int:
+    """Clear neighbor bits that quest rules ban on any legal path."""
+    if not mask:
+        return 0
+    out = mask
+    for idx in iter_mask(mask):
+        if tile_forbidden_on_quest_path(board.get_by_index(idx), loadout):
+            out &= ~(1 << idx)
+    return out
+
+
 def neighbors_mask_for_quest(
     board: Board,
     visited_mask: int,
@@ -235,12 +253,14 @@ def neighbors_mask_for_quest(
     loadout: Loadout | None,
     standard_mask: int,
 ) -> int:
-    if not sicilian_defense_active(loadout):
-        return standard_mask
-    return sicilian_neighbors_mask(
-        board,
-        cell_id,
-        visited_mask,
-        flags=flags,
-        graph_ctx=graph_ctx,
-    )
+    if sicilian_defense_active(loadout):
+        mask = sicilian_neighbors_mask(
+            board,
+            cell_id,
+            visited_mask,
+            flags=flags,
+            graph_ctx=graph_ctx,
+        )
+    else:
+        mask = standard_mask
+    return _mask_without_quest_forbidden_tiles(board, mask, loadout)

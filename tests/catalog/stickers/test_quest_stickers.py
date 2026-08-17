@@ -124,6 +124,21 @@ def test_sushi_colourless_adjacent_multiply():
     assert score == base * 3
 
 
+def test_sushi_counts_diagonal_neighbours():
+    """Sushi uses 8-dir adjacency (GridUtility), not orthogonal-only."""
+    board = _empty_board()
+    # Centre colourless; red NW and blue SE are diagonal-only.
+    board.tiles[1][1] = _tile(1, 1, "C", 1, color=TileColor.COLORLESS)
+    board.tiles[0][0] = _tile(0, 0, "R", 1, color=TileColor.RED)
+    board.tiles[2][2] = _tile(2, 2, "B", 1, color=TileColor.BLUE)
+    pipeline = ScoringPipeline()
+    loadout = Loadout(stickers=[LoadoutItem(id="sushi", name="Sushi", level=1)])
+    score, bd = pipeline.score(board, [6], "c", loadout)  # (1,1) → index 6 on 5×5
+    base, base_bd = pipeline.score(board, [6], "c", Loadout())
+    assert bd["pipeline"]["tile_scores"][0] == base_bd["pipeline"]["tile_scores"][0] * 3
+    assert score == base * 3
+
+
 def test_ambulance_negative_base_multiplier():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "Z", 0, color=TileColor.VOID, curse=CurseType.LETTER)

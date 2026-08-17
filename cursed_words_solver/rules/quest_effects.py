@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from cursed_words_solver.models import Board, Loadout, Tile, TileColor
-from cursed_words_solver.rules.scoring_conditions import is_cursed_tile
+from cursed_words_solver.rules.scoring_conditions import tile_is_cursed_for_lexographer
 from cursed_words_solver.rules.rule_lookup import slugify_name
 
 _RULES_PATH = Path(__file__).resolve().parents[2] / "data" / "wiki" / "quests.json"
@@ -198,6 +198,24 @@ def tile_is_colored_type(tile: Tile) -> bool:
     return not tile_is_normal_type(tile)
 
 
+def tile_forbidden_on_quest_path(tile: Tile, loadout: Loadout | None) -> bool:
+    """True when ``tile`` can never appear on a quest-legal path.
+
+    Used to prune DFS neighbor expansion (e.g. Cursophobia must not walk onto
+    chess ``?`` tiles — those 26-way wildcard explosions starve letter words).
+    """
+    if tile_is_crossed_out(tile):
+        return True
+    slug = active_quest_slug(loadout)
+    if slug == "chromaphobia":
+        return tile_is_colored_type(tile)
+    if slug == "chromaphilia":
+        return tile_is_normal_type(tile)
+    if slug == "cursophobia":
+        return tile_is_cursed_for_lexographer(tile, loadout)
+    return False
+
+
 def quest_path_allowed(
     board: Board,
     path: list[int],
@@ -208,19 +226,8 @@ def quest_path_allowed(
     if not path:
         return True
     q = quest if quest is not None else quest_constraints(loadout)
-    slug = active_quest_slug(loadout)
     for idx in path:
-        tile = board.get_by_index(idx)
-        if tile_is_crossed_out(tile):
-            return False
-    if slug == "chromaphobia":
-        if any(tile_is_colored_type(board.get_by_index(i)) for i in path):
-            return False
-    if slug == "chromaphilia":
-        if any(tile_is_normal_type(board.get_by_index(i)) for i in path):
-            return False
-    if slug == "cursophobia":
-        if any(is_cursed_tile(board.get_by_index(i)) for i in path):
+        if tile_forbidden_on_quest_path(board.get_by_index(idx), loadout):
             return False
     if q.require_center_index is not None and q.require_center_index not in path:
         return False

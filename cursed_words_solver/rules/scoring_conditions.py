@@ -1697,17 +1697,24 @@ def card_count_on_path(board: Board, path: list[int]) -> int:
 
 
 def colourless_adjacent_two_unique_colours(board: Board, tile: Tile) -> bool:
-    """COLOURLESS tile with ≥2 orthogonally adjacent uniquely coloured neighbours."""
+    """COLOURLESS tile with ≥2 uniquely coloured neighbours (8-dir, chess-king).
+
+    Matches ``GridUtility.GetTilesAdjacentToCoordinates`` adjacency used by Sushi:
+    orthogonals and diagonals both count; COLORLESS/UNKNOWN/WHITE do not.
+    """
     if tile.color != TileColor.COLORLESS:
         return False
     neighbor_colors: set[TileColor] = set()
-    for dr, dc in ((0, 1), (0, -1), (1, 0), (-1, 0)):
-        neighbor = board.get(tile.row + dr, tile.col + dc)
-        if neighbor is None:
-            continue
-        if neighbor.color in NON_COLOUR_FOR_NUMBER_BONUS:
-            continue
-        neighbor_colors.add(neighbor.color)
+    for dr in (-1, 0, 1):
+        for dc in (-1, 0, 1):
+            if dr == 0 and dc == 0:
+                continue
+            neighbor = board.get(tile.row + dr, tile.col + dc)
+            if neighbor is None:
+                continue
+            if neighbor.color in NON_COLOUR_FOR_NUMBER_BONUS:
+                continue
+            neighbor_colors.add(neighbor.color)
     return len(neighbor_colors) >= 2
 
 
