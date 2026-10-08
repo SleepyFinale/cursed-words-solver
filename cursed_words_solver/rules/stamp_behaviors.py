@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
 
 from cursed_words_solver.models import Loadout
+from cursed_words_solver.paths import data_path
 from cursed_words_solver.rules.ram_memory import pin_memory_entries, ram_entry_bucket
 from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
-_CATALOG_PATH = Path(__file__).resolve().parents[2] / "data" / "wiki" / "stickers.json"
+_CATALOG_PATH = data_path("data", "wiki", "stickers.json")
 
 # Legacy slug → search_flags key (used when catalog entry lacks search_flags)
 _LEGACY_STAMP_FLAGS: dict[str, dict[str, bool]] = {

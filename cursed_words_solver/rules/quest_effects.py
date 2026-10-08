@@ -5,14 +5,14 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from cursed_words_solver.models import Board, Loadout, Tile, TileColor
+from cursed_words_solver.paths import data_path
 from cursed_words_solver.rules.scoring_conditions import tile_is_cursed_for_lexographer
 from cursed_words_solver.rules.rule_lookup import slugify_name
 
-_RULES_PATH = Path(__file__).resolve().parents[2] / "data" / "wiki" / "quests.json"
+_RULES_PATH = data_path("data", "wiki", "quests.json")
 
 # game_class -> wiki slug
 _GAME_CLASS_TO_SLUG: dict[str, str] = {

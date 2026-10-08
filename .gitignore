@@ -15,6 +15,7 @@ env/
 dist/
 build/
 *.egg
+thunderstore/**/__pycache__/
 
 # Testing
 .pytest_cache/

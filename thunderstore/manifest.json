@@ -1,0 +1,9 @@
+{
+    "name": "Cursed_Words_Solver",
+    "version_number": "0.1.0",
+    "website_url": "https://github.com/SleepyFinale/cursed-words-solver",
+    "description": "Beta solver for Cursed Words. Launch the game and press F8 for the highest-scoring word, with on-board path highlights. No terminal. Report bugs on GitHub.",
+    "dependencies": [
+        "LavaGang-MelonLoader-0.7.3"
+    ]
+}

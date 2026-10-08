@@ -31,6 +31,7 @@ include = ["cursed_words_solver*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
     "slow: search performance benchmarks (excluded from default CI)",
 ]

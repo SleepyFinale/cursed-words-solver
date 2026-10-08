@@ -420,11 +420,10 @@ class SolverApp:
 
         board_data = load_run_state_raw()
         if not melmod_board_available(board_data):
-            QMessageBox.warning(
-                None,
-                "MelonLoader mod required",
+            print(
                 melmod_install_hint()
-                + "\n\nF8 will not solve until run_state.json contains a board (start a round).",
+                + " F8 will not solve until run_state.json contains a board (start a round).",
+                flush=True,
             )
 
         wl_path = resolve_wordlist(self.config.wordlist)
@@ -461,8 +460,11 @@ class SolverApp:
         self._run_state_poll_timer.timeout.connect(self._poll_run_state_stale)
         self._run_state_poll_timer.start(500)
 
+        from cursed_words_solver.paths import PACKAGE_VERSION
+
         print(
-            f"Ready. Press {hotkey.upper()} to solve, F9 loadout, F10 recalibrate.",
+            f"Cursed Words Solver {PACKAGE_VERSION}. "
+            f"Press {hotkey.upper()} to solve, F9 loadout, F10 recalibrate.",
             flush=True,
         )
         print(
@@ -2876,6 +2878,40 @@ class SolverApp:
             self._calibrating = False
 
 
+def _ensure_stdio() -> None:
+    """Windowed PyInstaller builds set stdout/stderr to None. Restore the pipes."""
+    if not getattr(sys, "frozen", False):
+        return
+    import os
+
+    log_handle = None
+
+    def _fallback():
+        nonlocal log_handle
+        if log_handle is None:
+            log_path = Path.home() / ".cursed_words_solver" / "solver.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_handle = open(log_path, "a", encoding="utf-8", buffering=1)
+        return log_handle
+
+    for name, fd in (("stdout", 1), ("stderr", 2)):
+        if getattr(sys, name) is not None:
+            continue
+        restored = None
+        try:
+            restored = os.fdopen(
+                fd,
+                "w",
+                buffering=1,
+                encoding="utf-8",
+                errors="replace",
+                closefd=False,
+            )
+        except OSError:
+            restored = _fallback()
+        setattr(sys, name, restored)
+
+
 def main() -> None:
     if len(sys.argv) > 1:
         cmd = sys.argv[1]
@@ -2911,4 +2947,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import multiprocessing
+
+    _ensure_stdio()
+    multiprocessing.freeze_support()
     main()

@@ -3,8 +3,8 @@
 from __future__ import annotations
 import json
 import math
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from cursed_words_solver.paths import data_path
 from cursed_words_solver.models import (
     Board,
     CurseType,
@@ -161,7 +161,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     highest_number_on_path,
 )
 
-STICKERS_PATH = Path(__file__).resolve().parents[2] / "data" / "wiki" / "stickers.json"
+STICKERS_PATH = data_path("data", "wiki", "stickers.json")
 
 
 def _load_sticker_rules() -> dict[str, Any]:

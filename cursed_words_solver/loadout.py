@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from cursed_words_solver.config import RUN_STATE_PATH
+from cursed_words_solver.paths import data_path
 from cursed_words_solver.rules.rule_lookup import slugify_name
 from cursed_words_solver.rules.fraction_tiles import attach_fraction_metadata
 from cursed_words_solver.models import (
@@ -30,7 +31,7 @@ from cursed_words_solver.models import (
     normalize_tile_glyph,
 )
 
-_TAXONOMY_PATH = Path(__file__).resolve().parents[1] / "data" / "game" / "tile_taxonomy.json"
+_TAXONOMY_PATH = data_path("data", "game", "tile_taxonomy.json")
 _VALID_COLORS: set[str] | None = None
 _VALID_CURSES: set[str] | None = None
 

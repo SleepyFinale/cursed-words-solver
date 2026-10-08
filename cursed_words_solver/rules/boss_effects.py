@@ -5,16 +5,14 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from cursed_words_solver.models import Loadout
+from cursed_words_solver.paths import data_path
 from cursed_words_solver.rules.rule_lookup import get_rule, resolve_rule_id
 
-_RULES_PATH = (
-    Path(__file__).resolve().parents[2] / "data" / "wiki" / "stickers.json"
-)
-_TAXONOMY_PATH = Path(__file__).resolve().parents[2] / "data" / "game" / "boss_taxonomy.json"
+_RULES_PATH = data_path("data", "wiki", "stickers.json")
+_TAXONOMY_PATH = data_path("data", "game", "boss_taxonomy.json")
 
 # Meta bosses with no gameplay rules when stacked under Michael.
 _META_BOSS_SLUGS = frozenset(

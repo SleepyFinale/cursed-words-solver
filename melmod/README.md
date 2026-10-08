@@ -95,6 +95,8 @@ MelonPreference **Round log enabled** (default on). Startup logs the round log d
 
 ## Export diagnostics (v1.2.0+)
 
+**v1.3.0** — package **0.1.0**. On game launch, start the bundled solver (`UserData/<package>/solver/CursedWordsSolver.exe`, or `UserData/CursedWordsSolver/CursedWordsSolver.exe` for a manual copy) with no console window. Stdout goes to `%USERPROFILE%\.cursed_words_solver\solver.log`. Quit stops that process. A dev DLL with no exe logs once and does not launch Python.
+
 **v1.2.3** — skip workflow-stale suggestion clearing on submit exports; clear `last_suggestion.json` before post-submit `run_state` export; recognize grid-1 word-1 historic drift (`0→1`) as expected after submit; omit misleading `stale_f8_reason` on path-mismatch round logs.
 
 **v1.2.2** — submit path capture uses Unity bottom-origin `GetCoordinates().y` for melmod index (`y * cols + col`), matching `last_suggestion.json` and fixing false `path_mismatch` on 5×5 boards when tracing the F8 overlay.
@@ -128,7 +130,13 @@ python scripts/round_log_to_test.py $env:USERPROFILE\.cursed_words_solver\round_
 pytest tests/integration/test_round_log_schema.py -q
 ```
 
-## Install MelonLoader and the companion mod
+## Install for players
+
+End users should follow [thunderstore/README.md](../thunderstore/README.md): mod manager (launch the game from the manager) or a manual copy of the DLL plus `CursedWordsSolver.exe`. They do not clone this repo or run `cursed-solver`. Build the upload zip with `.\melmod\package-thunderstore.ps1`.
+
+Bug reports: [GitHub issues](https://github.com/SleepyFinale/cursed-words-solver/issues). The player page shows which MelonLoader lines, round log, mismatch JSON, and `solver.log` to attach.
+
+## Install MelonLoader and the companion mod (contributors)
 
 From the **repository root** in PowerShell. Steam default game path:
 

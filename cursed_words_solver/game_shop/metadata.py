@@ -6,14 +6,11 @@ import json
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 
-_METADATA_PATH = (
-    Path(__file__).resolve().parents[2] / "data" / "game" / "item_subclasses.json"
-)
-_CATALOG_PATH = (
-    Path(__file__).resolve().parents[2] / "data" / "wiki" / "stickers.json"
-)
+from cursed_words_solver.paths import data_path
+
+_METADATA_PATH = data_path("data", "game", "item_subclasses.json")
+_CATALOG_PATH = data_path("data", "wiki", "stickers.json")
 
 # Wiki slug / catalog game_class → Assembly-CSharp class when names diverge.
 _GAME_CLASS_ALIASES: dict[str, str] = {

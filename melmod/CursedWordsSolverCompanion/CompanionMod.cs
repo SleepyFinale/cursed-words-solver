@@ -24,6 +24,7 @@ namespace CursedWordsSolverCompanion
         {
             MelonLogger.Msg(
                 BuildInfo.Name + " v" + BuildInfo.Version
+                    + " (package " + BuildInfo.PackageVersion + ")"
                     + " — auto-export loadout, board, and game dictionary on change, F7 manual refresh"
             );
             MelonLogger.Msg("Output: " + RunStateExporter.OutputFilePath);
@@ -61,10 +62,23 @@ namespace CursedWordsSolverCompanion
             {
                 MelonLogger.Error("Failed to apply scoring Harmony patches: " + ex);
             }
+
+            SolverHost.Start();
+        }
+
+        public override void OnApplicationQuit()
+        {
+            SolverHost.Stop();
+        }
+
+        public override void OnDeinitializeMelon()
+        {
+            SolverHost.Stop();
         }
 
         public override void OnUpdate()
         {
+            SolverHost.Poll();
             if (Input.GetKeyDown(KeyCode.F7))
             {
                 RunStateExporter.TryExport(true);

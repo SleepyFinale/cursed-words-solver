@@ -1,8 +1,18 @@
 # Cursed Words Solver
 
-Desktop assistant for **Cursed Words: The Word Game That Isn't**. Press a hotkey to find the highest-scoring valid word on the current 5×5 board and show where to click.
+Desktop assistant for **Cursed Words: The Word Game That Isn't**. Press a hotkey to find the highest-scoring valid word on the current board and show where to click.
 
-Requires the [MelonLoader companion mod](melmod/README.md), which reads the live board, loadout, and game dictionary from game memory into `run_state.json`.
+## Play the beta
+
+Players install the Thunderstore package and launch the game. The companion mod starts the bundled solver. There is no terminal step. Press **F8** during a run.
+
+- Mod manager and manual install, plus what to attach on a bug report: [thunderstore/README.md](thunderstore/README.md)
+- Upload zip (after `.\melmod\package-thunderstore.ps1`): `dist/Cursed_Words_Solver-0.1.0.zip` on [Thunderstore Cursed Words](https://thunderstore.io/c/cursed-words/)
+- Bugs: [GitHub issues](https://github.com/SleepyFinale/cursed-words-solver/issues)
+
+The sections below are the contributor setup. Building the DLL and running `cursed-solver` from a venv is the development path. A dev DLL with no bundled exe does not auto-start Python. Start `cursed-solver` yourself in that case.
+
+Requires the [MelonLoader companion mod](melmod/README.md), which reads the live board, loadout, and game dictionary from game memory into `run_state.json`. The packaged build also launches `CursedWordsSolver.exe` from `UserData` when the game starts and stops it when the game quits.
 
 ## Capabilities
 
@@ -13,7 +23,7 @@ Requires the [MelonLoader companion mod](melmod/README.md), which reads the live
 - Shop advice (melmod shop export + F8 in Ej?A56): build-synergy recommendations ported from the in-game Advice button, plus encounter grid reroll hints
 - **Cursedle** (daily fairy trial): F8 runs a constraint-based word finder on the live 6×6 export and guess feedback (`encounter_mode: cursedle`); probes may be any valid word length (solution is 4–6 letters); scoring capture is disabled in that scene
 
-## Quick start
+## Quick start (contributors)
 
 ### Python solver
 
@@ -67,7 +77,7 @@ flowchart LR
   subgraph game [CursedWords + MelonLoader]
     GridData[GridData / Player]
     WordTrie[WordTrie]
-    Companion[CompanionMod v1.2.0]
+    Companion[CompanionMod v1.3.0]
   end
   subgraph files ["~/.cursed_words_solver/"]
     RS[run_state.json]
@@ -76,7 +86,7 @@ flowchart LR
     MM[scoring_mismatches/]
   end
   subgraph solver [Python solver]
-    App[app.py SolverApp]
+    App["app.py or bundled exe"]
     Search[search.py WordSearcher]
     SolveCtx[SolveContext + BoardGraphContext + BoardScoringContext]
     Pipe[rules/pipeline.py ScoringPipeline]
@@ -103,7 +113,7 @@ flowchart LR
 
 ### Game data extraction (melmod)
 
-`[CompanionMod.cs](melmod/CursedWordsSolverCompanion/CompanionMod.cs)` runs inside the game via MelonLoader.
+`[CompanionMod.cs](melmod/CursedWordsSolverCompanion/CompanionMod.cs)` runs inside the game via MelonLoader. On startup, `[SolverHost.cs](melmod/CursedWordsSolverCompanion/SolverHost.cs)` launches the bundled `CursedWordsSolver.exe` when that file is installed under `UserData`, and stops it when the game quits. Solver stdout goes to `%USERPROFILE%\.cursed_words_solver\solver.log`. A development DLL that was only copied into `Mods\` logs that no bundled solver was found and leaves a manually started `cursed-solver` process alone.
 
 - **Auto-export:** When loadout or board changes, `[RunStateExporter.cs](melmod/CursedWordsSolverCompanion/RunStateExporter.cs)` computes a fingerprint and writes `run_state.json` (debounced ~0.5s).
 - **Manual refresh:** Press **F7** in-game to force an immediate export and refresh `game_words.txt` via `[DictionaryExporter.cs](melmod/CursedWordsSolverCompanion/DictionaryExporter.cs)`. Melmod also auto-exports when the board or loadout fingerprint changes (~0.5s). A single **F8** in the solver polls `run_state.json` until the board and required extras are ready; **F7** is only needed to force export when auto-export has not caught up yet (e.g. right after receiving Sandy consumables).
@@ -147,8 +157,10 @@ Melmod provides *what* is on each tile and **automatic overlay alignment** via `
 
 ## Usage
 
+Players: install from [thunderstore/README.md](thunderstore/README.md), launch the game, press **F8**. The steps below are the contributor loop (`cursed-solver` in a terminal, or the bundled exe writing `solver.log`).
+
 1. **Melmod** — Install (see [Quick start](#melonloader--companion-mod-required)), start a run, press **F7** once so `run_state.json`, `ui_layout`, and `game_words.txt` exist.
-2. **Solve** — **F8**. Terminal shows `Board from melmod` and `Overlay layout: melmod (auto)`. Green path circles and orange rack circles align automatically.
+2. **Solve** — **F8**. The log shows `Board from melmod` and `Overlay layout: melmod (auto)`. Green path circles and orange rack circles align automatically.
 3. **Manual fallback** — If `ui_layout` is missing (old melmod), use **F10** to drag board + rack regions once.
 4. **Quit** — **Ctrl+Shift+Q** or close the overlay. Ctrl+C often fails while global hotkeys are active.
 5. **Recalibrate** — **F10** only when auto layout is unavailable; preview at `%USERPROFILE%\.cursed_words_solver\debug\calibration_preview.png`.
@@ -168,6 +180,7 @@ All paths under `%USERPROFILE%\.cursed_words_solver\`:
 | `last_suggestion.json`                   | Solver (each F8) | Melmod (scoring capture)                            |
 | `last_suggestion_blocked.json`           | Melmod           | Melmod                                              |
 | `scoring_mismatches/`                    | Melmod           | You → `scripts/mismatch_to_test.py`                 |
+| `solver.log`                             | Bundled solver   | You (no solver console window)                      |
 | `round_logs/*.json`, `index.jsonl`       | Melmod (v1.2+)   | Solver diagnostics, `cursed-solver explain`         |
 | `debug/`                                 | Solver           | You (parse traces, board captures, export warnings) |
 | `export_audit.jsonl`                     | Melmod (verbose) | Per-export audit trail                              |
@@ -196,6 +209,7 @@ cursed_words_solver/   # Python package
   round_log.py         # Round log index polling
   known_failing.py     # Quarantined mismatch fixture registry
   fingerprints.py      # Board/loadout change detection
+  paths.py             # Catalog root for checkout and frozen builds
   rules/               # Scoring pipeline, bosses, rule lookup
     rule_phase.py      # Static vs dynamic rule classification
   game_shop/           # Shop advice engine types and scoring
@@ -203,7 +217,8 @@ cursed_words_solver/   # Python package
   board_display.py     # ASCII grid formatting for logs
   ui/                  # Result overlay, board highlights, calibration, loadout dialog
 docs/                  # SEARCH_ARCHITECTURE.md, DATA_STRUCTURE_ANALYSIS.md, game-research/
-melmod/                # MelonLoader companion (C#) + install/build scripts
+melmod/                # MelonLoader companion (C#) + install/build/package scripts
+thunderstore/          # Thunderstore manifest, player README, icon, PyInstaller spec
 data/wiki/             # stickers.json catalog + wiki scrape inputs
 scripts/               # build_stickers_json, mismatch_to_test — see scripts/README.md
 tests/                 # catalog/, integration/, regression/, sim/, unit tests
@@ -303,6 +318,10 @@ curl -s "https://cursedwords.wiki.gg/api.php?action=query&list=categorymembers&c
 python scripts/build_stickers_json.py
 ```
 
+## Reporting bugs
+
+Player reports go to [GitHub issues](https://github.com/SleepyFinale/cursed-words-solver/issues). Ask for the MelonLoader lines that start with `[Cursed Words Solver Companion]`, the round log JSON that line names, `scoring_mismatches\` when the highlighted path scored wrong, and `%USERPROFILE%\.cursed_words_solver\solver.log`. The sample paste and the manual install steps are in [thunderstore/README.md](thunderstore/README.md#report-a-bug).
+
 ## Development and tests
 
 ```bash
@@ -346,6 +365,7 @@ New mismatch fixtures are **not** added to `known_failing.json` by default, so C
 - `[docs/SEARCH_ARCHITECTURE.md](docs/SEARCH_ARCHITECTURE.md)` — Per-solve context stack, tier-2 screening, static/dynamic scoring
 - `[docs/DATA_STRUCTURE_ANALYSIS.md](docs/DATA_STRUCTURE_ANALYSIS.md)` — Profiling results, cache hit rates, hot-path analysis
 - `[docs/game-research/sim-traceability.md](docs/game-research/sim-traceability.md)` — Encounter simulator traceability
+- `[thunderstore/README.md](thunderstore/README.md)` — Player install (mod manager and manual) and bug-report attachments
 - `[melmod/README.md](melmod/README.md)` — MelonLoader install, `run_state.json` schema, boss/pin extras, round logs
 - `[melmod/SCORING_HOOKS.md](melmod/SCORING_HOOKS.md)` — Harmony hook points for score capture
 - `[scripts/README.md](scripts/README.md)` — Maintenance scripts (`build_stickers_json`, `mismatch_to_test`, profiling)
