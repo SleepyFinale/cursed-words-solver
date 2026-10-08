@@ -16,7 +16,8 @@ namespace CursedWordsSolverCompanion
     internal static class SolverHost
     {
         private const string ExeFileName = "CursedWordsSolver.exe";
-        private const string BundleFileName = "CursedWordsSolver.bundle.zip";
+        private const string PackedBundleFileName = "CursedWordsSolver.bundle";
+        private const string ZipBundleFileName = "CursedWordsSolver.bundle.zip";
         private const string StampFileName = "CursedWordsSolver.bundle.stamp";
         private const string ProcessName = "CursedWordsSolver";
         private const uint JobObjectInfoClassExtendedLimit = 9;
@@ -50,7 +51,7 @@ namespace CursedWordsSolverCompanion
                         MelonLogger.Msg(
                             "No bundled solver found. Dev build: start cursed-solver yourself. "
                                 + "Players: install the package so "
-                                + ExeFileName
+                                + PackedBundleFileName
                                 + " is under UserData."
                         );
                     }
@@ -196,8 +197,8 @@ namespace CursedWordsSolverCompanion
         {
             foreach (var dir in SolverDirectories())
             {
-                var bundle = Path.Combine(dir, BundleFileName);
-                if (!File.Exists(bundle))
+                var bundle = FindBundle(dir);
+                if (bundle == null)
                     continue;
                 var stamp = BundleStamp(bundle);
                 var stampPath = Path.Combine(dir, StampFileName);
@@ -215,10 +216,7 @@ namespace CursedWordsSolverCompanion
                     foreach (var entry in Directory.GetFileSystemEntries(dir))
                     {
                         var name = Path.GetFileName(entry);
-                        if (
-                            name.Equals(BundleFileName, StringComparison.OrdinalIgnoreCase)
-                            || name.Equals(StampFileName, StringComparison.OrdinalIgnoreCase)
-                        )
+                        if (IsKeptBundleFile(name))
                             continue;
                         if (Directory.Exists(entry))
                             Directory.Delete(entry, true);
@@ -231,10 +229,90 @@ namespace CursedWordsSolverCompanion
                     Directory.CreateDirectory(dir);
                 }
 
-                ZipFile.ExtractToDirectory(bundle, dir);
+                ExtractZipBytes(ReadBundleZip(bundle), dir);
                 File.WriteAllText(stampPath, stamp);
                 MelonLogger.Msg("Unpacked solver to " + dir);
                 return;
+            }
+        }
+
+        private static string FindBundle(string dir)
+        {
+            var packed = Path.Combine(dir, PackedBundleFileName);
+            if (File.Exists(packed))
+                return packed;
+            var zip = Path.Combine(dir, ZipBundleFileName);
+            if (File.Exists(zip))
+                return zip;
+            return null;
+        }
+
+        private static bool IsKeptBundleFile(string name)
+        {
+            return name.Equals(PackedBundleFileName, StringComparison.OrdinalIgnoreCase)
+                || name.Equals(ZipBundleFileName, StringComparison.OrdinalIgnoreCase)
+                || name.Equals(StampFileName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Same mixing as melmod/package-thunderstore.ps1. This only keeps the
+        // runtime from looking like a zip of loose libraries.
+        private static byte PackKey(int i)
+        {
+            return (byte)(0xA7 ^ ((i * 31) & 0xFF) ^ ((i >> 8) & 0xFF));
+        }
+
+        private static byte[] ReadBundleZip(string path)
+        {
+            var raw = File.ReadAllBytes(path);
+            if (
+                raw.Length >= 4
+                && raw[0] == (byte)'C'
+                && raw[1] == (byte)'W'
+                && raw[2] == (byte)'S'
+                && raw[3] == (byte)'1'
+            )
+            {
+                var zip = new byte[raw.Length - 4];
+                for (var i = 0; i < zip.Length; i++)
+                    zip[i] = (byte)(raw[i + 4] ^ PackKey(i));
+                return zip;
+            }
+            return raw;
+        }
+
+        private static void ExtractZipBytes(byte[] zipBytes, string destDir)
+        {
+            var root = Path.GetFullPath(destDir);
+            if (!root.EndsWith(Path.DirectorySeparatorChar.ToString()))
+                root += Path.DirectorySeparatorChar;
+            using (var stream = new MemoryStream(zipBytes))
+            using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
+            {
+                foreach (var entry in archive.Entries)
+                {
+                    var relative = entry.FullName.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar
+                    );
+                    if (string.IsNullOrEmpty(relative) || Path.IsPathRooted(relative))
+                        throw new InvalidDataException(
+                            "Unsafe path in solver bundle: " + entry.FullName
+                        );
+                    var dest = Path.GetFullPath(Path.Combine(destDir, relative));
+                    if (!dest.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidDataException(
+                            "Unsafe path in solver bundle: " + entry.FullName
+                        );
+                    if (string.IsNullOrEmpty(entry.Name))
+                    {
+                        Directory.CreateDirectory(dest);
+                        continue;
+                    }
+                    var parent = Path.GetDirectoryName(dest);
+                    if (!string.IsNullOrEmpty(parent))
+                        Directory.CreateDirectory(parent);
+                    entry.ExtractToFile(dest, true);
+                }
             }
         }
 

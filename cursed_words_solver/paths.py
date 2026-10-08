@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-PACKAGE_VERSION = "0.1.1"
+PACKAGE_VERSION = "0.1.2"
 
 
 def project_root() -> Path:
