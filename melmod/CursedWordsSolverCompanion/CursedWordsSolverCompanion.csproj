@@ -18,6 +18,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="MelonLoader">
       <HintPath>$(MelonLoaderDir)\net35\MelonLoader.dll</HintPath>
       <Private>false</Private>

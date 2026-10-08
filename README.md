@@ -7,7 +7,7 @@ Desktop assistant for **Cursed Words: The Word Game That Isn't**. Press a hotkey
 Players install the Thunderstore package and launch the game. The companion mod starts the bundled solver. There is no terminal step. Press **F8** during a run.
 
 - Mod manager and manual install, plus what to attach on a bug report: [thunderstore/README.md](thunderstore/README.md)
-- Upload zip (after `.\melmod\package-thunderstore.ps1`): `dist/Cursed_Words_Solver-0.1.0.zip` on [Thunderstore Cursed Words](https://thunderstore.io/c/cursed-words/)
+- Upload zip (after `.\melmod\package-thunderstore.ps1`): `dist/Cursed_Words_Solver-0.1.1.zip` on [Thunderstore Cursed Words](https://thunderstore.io/c/cursed-words/)
 - Bugs: [GitHub issues](https://github.com/SleepyFinale/cursed-words-solver/issues)
 
 The sections below are the contributor setup. Building the DLL and running `cursed-solver` from a venv is the development path. A dev DLL with no bundled exe does not auto-start Python. Start `cursed-solver` yourself in that case.

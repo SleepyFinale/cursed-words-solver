@@ -95,6 +95,8 @@ MelonPreference **Round log enabled** (default on). Startup logs the round log d
 
 ## Export diagnostics (v1.2.0+)
 
+**v1.3.1** — package **0.1.1**. The Thunderstore zip ships the solver as `CursedWordsSolver.bundle.zip` (one archive, so the upload is not a pile of runtime DLLs). First launch unpacks it next to that zip, then starts `CursedWordsSolver.exe`.
+
 **v1.3.0** — package **0.1.0**. On game launch, start the bundled solver (`UserData/<package>/solver/CursedWordsSolver.exe`, or `UserData/CursedWordsSolver/CursedWordsSolver.exe` for a manual copy) with no console window. Stdout goes to `%USERPROFILE%\.cursed_words_solver\solver.log`. Quit stops that process. A dev DLL with no exe logs once and does not launch Python.
 
 **v1.2.3** — skip workflow-stale suggestion clearing on submit exports; clear `last_suggestion.json` before post-submit `run_state` export; recognize grid-1 word-1 historic drift (`0→1`) as expected after submit; omit misleading `stale_f8_reason` on path-mismatch round logs.

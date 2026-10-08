@@ -16,7 +16,7 @@ This is the easiest install. [Thunderstore Mod Manager](https://www.overwolf.com
 4. Launch **Cursed Words from the mod manager**. Starting the game only from Steam skips the manager's mod profile, so this package will not load.
 5. Start a run. Press **F8**. The result panel and the numbered path should show up. Press **F7** only when the board looks stale (for example right after a consumable that has not exported yet).
 
-The first launch can sit for a few seconds while the solver starts. A MelonLoader console window is normal. That console is the game log, not a step you have to run.
+The first launch unpacks the solver, so the game can sit for a little while before the overlay is ready. Later launches skip that unpack. A MelonLoader console window is normal. That console is the game log, not a step you have to run.
 
 ## Install manually
 
@@ -42,22 +42,18 @@ Launch the game **once** from Steam so MelonLoader can create `Mods\` and `UserD
 
 ### 3. This package
 
-Unzip the Thunderstore package. The zip root contains `manifest.json`, `README.md`, `icon.png`, `CursedWordsSolverCompanion.dll`, and a `UserData\solver\` folder. Copy files, not the zip itself, and do not leave them nested in an extra folder.
+Unzip the Thunderstore package. The zip root contains `manifest.json`, `README.md`, `icon.png`, `CursedWordsSolverCompanion.dll`, and `UserData\solver\CursedWordsSolver.bundle.zip`. Copy files, not the outer zip itself, and do not unzip the bundle.
 
 1. Copy `CursedWordsSolverCompanion.dll` to `<game>\Mods\`.
-2. Copy the **contents** of the zip's `UserData\solver\` folder into `<game>\UserData\CursedWordsSolver\`.
+2. Copy `CursedWordsSolver.bundle.zip` to `<game>\UserData\CursedWordsSolver\`.
 
-The solver executable must be directly here:
-
-`<game>\UserData\CursedWordsSolver\CursedWordsSolver.exe`
-
-`_internal\` and `data\` from that same `solver` folder sit next to the exe. If the exe is inside an extra `solver` folder (`UserData\CursedWordsSolver\solver\CursedWordsSolver.exe`), the mod will not find it.
+Leave the bundle zipped. The mod unpacks it on the first launch into that same folder, which produces `CursedWordsSolver.exe`.
 
 ### 4. Play
 
 Launch Cursed Words from Steam. Start a run and press **F8**.
 
-MelonLoader's log should include a line like `Cursed Words Solver Companion v1.3.0 (package 0.1.0)` and `Started bundled solver:`. If it says `No bundled solver found`, the exe is not in `UserData\CursedWordsSolver\`.
+MelonLoader's log should include a line like `Cursed Words Solver Companion v1.3.1 (package 0.1.1)`, then `Unpacking bundled solver` on the first launch, then `Started bundled solver:`. If it says `No bundled solver found`, `CursedWordsSolver.bundle.zip` is not in `UserData\CursedWordsSolver\`.
 
 ## How to play
 

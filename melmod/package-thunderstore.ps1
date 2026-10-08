@@ -1,16 +1,51 @@
 # Build a Thunderstore zip for Cursed Words Solver (beta).
-# Output: dist/Cursed_Words_Solver-0.1.0.zip
+# Output: dist/Cursed_Words_Solver-0.1.1.zip
 # Does not upload. Close the game first if you also want a local DLL deploy.
 param(
     [string]$GameDir = "C:\Program Files (x86)\Steam\steamapps\common\Cursed Words"
 )
+
+function New-ForwardSlashZip {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourceDir,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $destPath = if ([System.IO.Path]::IsPathRooted($Destination)) { $Destination } else { Join-Path (Get-Location) $Destination }
+    $parent = Split-Path $destPath -Parent
+    if ($parent -and -not (Test-Path $parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+    if (Test-Path $destPath) { Remove-Item -Force $destPath }
+    $zipStream = [System.IO.File]::Open($destPath, [System.IO.FileMode]::Create)
+    $archive = New-Object System.IO.Compression.ZipArchive(
+        $zipStream,
+        [System.IO.Compression.ZipArchiveMode]::Create
+    )
+    try {
+        $root = (Resolve-Path $SourceDir).Path.TrimEnd('\')
+        Get-ChildItem $SourceDir -Recurse -File | ForEach-Object {
+            $relative = $_.FullName.Substring($root.Length).TrimStart('\') -replace '\\', '/'
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $archive,
+                $_.FullName,
+                $relative
+            ) | Out-Null
+        }
+    }
+    finally {
+        $archive.Dispose()
+        $zipStream.Dispose()
+    }
+}
 
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path $PSScriptRoot -Parent
 $PackageDir = Join-Path $Repo "thunderstore"
 $Project = Join-Path $PSScriptRoot "CursedWordsSolverCompanion\CursedWordsSolverCompanion.csproj"
 $Spec = Join-Path $PackageDir "CursedWordsSolver.spec"
-$Version = "0.1.0"
+$Version = "0.1.1"
 $Stage = Join-Path $Repo "dist\thunderstore-stage"
 $Zip = Join-Path $Repo "dist\Cursed_Words_Solver-$Version.zip"
 $PyDist = Join-Path $Repo "dist\pyinstaller"
@@ -60,40 +95,25 @@ Copy-Item (Join-Path $PackageDir "README.md") (Join-Path $Stage "README.md")
 Copy-Item (Join-Path $PackageDir "CHANGELOG.md") (Join-Path $Stage "CHANGELOG.md")
 Copy-Item (Join-Path $PackageDir "icon.png") (Join-Path $Stage "icon.png")
 Copy-Item $BuiltDll (Join-Path $Stage "CursedWordsSolverCompanion.dll")
-Copy-Item -Recurse $SolverDir (Join-Path $Stage "UserData\solver")
 
-# Copy-Item of a directory nests the folder name. Flatten so the exe is at UserData/solver/.
-$Nested = Join-Path $Stage "UserData\solver\CursedWordsSolver"
-if (Test-Path $Nested) {
-    Get-ChildItem $Nested | ForEach-Object {
-        Move-Item $_.FullName (Join-Path $Stage "UserData\solver") -Force
-    }
-    Remove-Item $Nested -Force
-}
+# Thunderstore warns when a package contains many DLLs. The solver runtime
+# stays in one archive; the mod unpacks it on first launch.
+$Bundle = Join-Path $Stage "UserData\solver\CursedWordsSolver.bundle.zip"
+New-ForwardSlashZip -SourceDir $SolverDir -Destination $Bundle
 
 if (Test-Path $Zip) { Remove-Item -Force $Zip }
-Add-Type -AssemblyName System.IO.Compression
+New-ForwardSlashZip -SourceDir $Stage -Destination $Zip
+
+$dllCount = 0
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$zipStream = [System.IO.File]::Open($Zip, [System.IO.FileMode]::Create)
-$archive = New-Object System.IO.Compression.ZipArchive(
-    $zipStream,
-    [System.IO.Compression.ZipArchiveMode]::Create
-)
+$check = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $Zip))
 try {
-    $stageRoot = (Resolve-Path $Stage).Path.TrimEnd('\')
-    Get-ChildItem $Stage -Recurse -File | ForEach-Object {
-        $relative = $_.FullName.Substring($stageRoot.Length).TrimStart('\') -replace '\\', '/'
-        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-            $archive,
-            $_.FullName,
-            $relative
-        ) | Out-Null
-    }
+    $dllCount = @($check.Entries | Where-Object { $_.FullName -like "*.dll" }).Count
 }
 finally {
-    $archive.Dispose()
-    $zipStream.Dispose()
+    $check.Dispose()
 }
 
 Write-Host "Package: $Zip"
+Write-Host "DLL files in package: $dllCount (expect 1, the companion mod)"
 Write-Host "Upload that zip at https://thunderstore.io/c/cursed-words/"

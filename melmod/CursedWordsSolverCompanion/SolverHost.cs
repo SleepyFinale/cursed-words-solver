@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Threading;
 using MelonLoader;
@@ -14,6 +16,8 @@ namespace CursedWordsSolverCompanion
     internal static class SolverHost
     {
         private const string ExeFileName = "CursedWordsSolver.exe";
+        private const string BundleFileName = "CursedWordsSolver.bundle.zip";
+        private const string StampFileName = "CursedWordsSolver.bundle.stamp";
         private const string ProcessName = "CursedWordsSolver";
         private const uint JobObjectInfoClassExtendedLimit = 9;
         private const uint JobObjectLimitKillOnJobClose = 0x2000;
@@ -36,6 +40,7 @@ namespace CursedWordsSolverCompanion
         {
             try
             {
+                EnsureBundleExtracted();
                 var exe = FindSolverExe();
                 if (exe == null)
                 {
@@ -187,32 +192,84 @@ namespace CursedWordsSolverCompanion
             }
         }
 
-        private static string FindSolverExe()
+        private static void EnsureBundleExtracted()
+        {
+            foreach (var dir in SolverDirectories())
+            {
+                var bundle = Path.Combine(dir, BundleFileName);
+                if (!File.Exists(bundle))
+                    continue;
+                var stamp = BundleStamp(bundle);
+                var stampPath = Path.Combine(dir, StampFileName);
+                var exePath = Path.Combine(dir, ExeFileName);
+                if (File.Exists(exePath) && File.Exists(stampPath))
+                {
+                    var existing = File.ReadAllText(stampPath).Trim();
+                    if (existing == stamp)
+                        return;
+                }
+
+                MelonLogger.Msg("Unpacking bundled solver (first launch or update)...");
+                if (Directory.Exists(dir))
+                {
+                    foreach (var entry in Directory.GetFileSystemEntries(dir))
+                    {
+                        var name = Path.GetFileName(entry);
+                        if (
+                            name.Equals(BundleFileName, StringComparison.OrdinalIgnoreCase)
+                            || name.Equals(StampFileName, StringComparison.OrdinalIgnoreCase)
+                        )
+                            continue;
+                        if (Directory.Exists(entry))
+                            Directory.Delete(entry, true);
+                        else
+                            File.Delete(entry);
+                    }
+                }
+                else
+                {
+                    Directory.CreateDirectory(dir);
+                }
+
+                ZipFile.ExtractToDirectory(bundle, dir);
+                File.WriteAllText(stampPath, stamp);
+                MelonLogger.Msg("Unpacked solver to " + dir);
+                return;
+            }
+        }
+
+        private static string BundleStamp(string bundlePath)
+        {
+            var info = new FileInfo(bundlePath);
+            return info.Length + ":" + info.LastWriteTimeUtc.Ticks;
+        }
+
+        private static IEnumerable<string> SolverDirectories()
         {
             var dllDir = Path.GetDirectoryName(typeof(SolverHost).Assembly.Location);
             if (string.IsNullOrEmpty(dllDir))
-                return null;
+                yield break;
             var root = FindInstallRoot(dllDir);
             if (root == null)
-                return null;
+                yield break;
 
             var packageFolder = new DirectoryInfo(dllDir).Name;
             if (!packageFolder.Equals("Mods", StringComparison.OrdinalIgnoreCase))
             {
-                var packaged = Path.Combine(
-                    root,
-                    "UserData",
-                    packageFolder,
-                    "solver",
-                    ExeFileName
-                );
-                if (File.Exists(packaged))
-                    return packaged;
+                yield return Path.Combine(root, "UserData", packageFolder, "solver");
             }
 
-            var manual = Path.Combine(root, "UserData", "CursedWordsSolver", ExeFileName);
-            if (File.Exists(manual))
-                return manual;
+            yield return Path.Combine(root, "UserData", "CursedWordsSolver");
+        }
+
+        private static string FindSolverExe()
+        {
+            foreach (var dir in SolverDirectories())
+            {
+                var exe = Path.Combine(dir, ExeFileName);
+                if (File.Exists(exe))
+                    return exe;
+            }
             return null;
         }
 
