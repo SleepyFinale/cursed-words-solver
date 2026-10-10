@@ -201,7 +201,9 @@ def test_search_finds_ten_tile_denominator_slot(tmp_path: Path):
     v = PathValidator(d, min_len=10)
     assert v.word_ok(board, path, word, None)
 
-    searcher = WordSearcher(dictionary=d, min_len=10, max_len=10, time_budget=10.0)
+    # The DFS needs ~22k expansions to reach this path (~6s locally); CI runners
+    # are about 2x slower, so 10s was not enough there.
+    searcher = WordSearcher(dictionary=d, min_len=10, max_len=10, time_budget=30.0)
     results = searcher.find_best_words(board, top_n=3)
     assert any(r.word == word for r in results)
 
