@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,6 +35,29 @@ def playable_bounds(board: Board) -> tuple[int, int, int, int] | None:
 def _is_shrunk_grid(board: Board) -> bool:
     storage = max(board.storage_rows, board.storage_cols)
     return board.rows < storage or board.cols < storage
+
+
+# Melmod's CoordsToSolverIndex switched from top-origin (identical to storage
+# indices on full grids) to Unity bottom-origin on 2026-06-30 (local time).
+# Full-grid paths captured before then must not be flipped.
+MELMOD_BOTTOM_ORIGIN_SINCE = "20260630163000"
+_CAPTURE_STAMP_RE = re.compile(
+    r"\D*(\d{4})-?(\d{2})-?(\d{2})(?:[T_ ]?(\d{2}):?(\d{2}):?(\d{2}))?"
+)
+
+
+def melmod_path_is_bottom_origin(captured_at: str | None) -> bool:
+    """True when a capture stamp (``20260523_143502`` or ISO) postdates the flip.
+
+    Unknown / missing stamps are assumed current (bottom-origin).
+    """
+    if not captured_at:
+        return True
+    match = _CAPTURE_STAMP_RE.match(str(captured_at))
+    if match is None:
+        return True
+    stamp = "".join(part or "00" for part in match.groups())
+    return stamp >= MELMOD_BOTTOM_ORIGIN_SINCE
 
 
 def melmod_index_from_storage(board: Board, idx: int) -> int:
@@ -73,8 +97,17 @@ def path_to_melmod_indices(board: Board, path: list[int]) -> list[int]:
     return [melmod_index_from_storage(board, idx) for idx in path]
 
 
-def path_from_melmod_indices(board: Board, path: list[int]) -> list[int]:
-    """Convert melmod submit indices back to storage-grid path indices."""
+def path_from_melmod_indices(
+    board: Board, path: list[int], *, captured_at: str | None = None
+) -> list[int]:
+    """Convert melmod submit indices back to storage-grid path indices.
+
+    ``captured_at`` (fixture stem or ``exported_at``; defaults to
+    ``board.captured_at``) selects the legacy top-origin layout for full-grid
+    captures made before the melmod flip.
+    """
+    if captured_at is None:
+        captured_at = board.captured_at
     if _is_shrunk_grid(board):
         bounds = playable_bounds(board)
         if bounds is None:
@@ -91,6 +124,8 @@ def path_from_melmod_indices(board: Board, path: list[int]) -> list[int]:
             col = min_c + display_col
             out.append(row * storage_cols + col)
         return out
+    if not melmod_path_is_bottom_origin(captured_at):
+        return list(path)
     return [storage_index_from_melmod(board, idx) for idx in path]
 
 

@@ -164,7 +164,8 @@ def test_round_log_path_extension_replay_submitted_path(round_log_path: Path):
         assert score == 128
     if "nightcap" in round_log_path.stem:
         assert replay["word"] == "nightcap"
-        assert 170 <= score <= 200
+        # Game actual (Retro Raider L2 grid scatter).
+        assert score == int(data["actual"]["score"]) == 224
     if "labrador" in round_log_path.stem:
         assert replay["word"] == "labrador"
         assert score == 126

@@ -164,7 +164,10 @@ def initial_tile_scores(
     """Per-path tile scores after GetValue parity."""
     from cursed_words_solver.models import CurseType as CT
 
-    from cursed_words_solver.rules.base_scoring import melmod_void_currency_init_contribution
+    from cursed_words_solver.rules.base_scoring import (
+        lost_void_export_value,
+        melmod_void_currency_init_contribution,
+    )
 
     first_void_currency_path_index: int | None = None
     for i, idx in enumerate(path):
@@ -187,7 +190,10 @@ def initial_tile_scores(
         if tile.curse == CT.ITEM:
             scores.append(0.0)
             continue
-        if microscope_base:
+        lost_void = lost_void_export_value(board, tile, loadout)
+        if lost_void is not None:
+            contrib = lost_void
+        elif microscope_base:
             contrib = microscope_init_contribution(tile, money, loadout)
         elif tile.color == TileColor.BLUE and blue_base_override is not None:
             contrib = float(blue_base_override)

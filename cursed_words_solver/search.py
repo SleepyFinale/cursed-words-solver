@@ -972,30 +972,38 @@ def word_assignable_on_path(
 ) -> bool:
     """True when each dictionary letter is allowed on its path tile (stamps, chess, wildcards)."""
     flags = coerce_search_flags(flags)
-    if len(word) != len(path):
-        return False
     lowered = word.lower()
-    for i, idx in enumerate(path):
+    char_pos = 0
+    for idx in path:
+        if char_pos >= len(lowered):
+            return False
         tile = board.get_by_index(idx)
-        ch = lowered[i]
+        if tile.curse != CurseType.ITEM:
+            # Multi-letter tiles (Queenie ``qu``) consume their whole token.
+            token = _tile_word_token(tile, char_pos, flags=flags)
+            if len(token) > 1 and token.isalpha():
+                if lowered[char_pos : char_pos + len(token)] != token:
+                    return False
+                char_pos += len(token)
+                continue
+        ch = lowered[char_pos]
         if not ch.isalpha():
             return False
         if tile.curse == CurseType.LETTER:
-            options = resolve_letter_options(tile, i, flags=flags)
+            options = resolve_letter_options(tile, char_pos, flags=flags)
             allowed = {o.lower() for o in options if len(o) == 1 and o.isalpha()}
             if allowed and ch not in allowed:
                 return False
-            continue
-        if tile.curse in CHESS_CURSES:
+        elif tile.curse in CHESS_CURSES:
             face = (tile.letter or "").strip()
             if face not in ("", "?"):
-                options = resolve_letter_options(tile, i, flags=flags)
+                options = resolve_letter_options(tile, char_pos, flags=flags)
                 allowed = {o.lower() for o in options if len(o) == 1 and o.isalpha()}
                 if allowed and ch not in allowed:
                     return False
-            continue
         # Items, fractions, wildcards, and chess with letter "?" accept any alpha.
-    return True
+        char_pos += 1
+    return char_pos == len(lowered)
 
 
 def _tile_digit_face_matches(
@@ -11449,6 +11457,30 @@ class WordSearcher:
             )
 
     def find_best_words(
+        self,
+        board: Board,
+        loadout: Loadout | None = None,
+        top_n: int = 3,
+        *,
+        deadline: float | None = None,
+        run_until_found: bool = False,
+        cancel_check: Callable[[], bool] | None = None,
+    ) -> list[WordResult]:
+        try:
+            return self._find_best_words(
+                board,
+                loadout,
+                top_n,
+                deadline=deadline,
+                run_until_found=run_until_found,
+                cancel_check=cancel_check,
+            )
+        finally:
+            # Solve-scoped module state must not leak into later scoring of other boards.
+            clear_chess_attack_cache()
+            set_quest_search_target(None)
+
+    def _find_best_words(
         self,
         board: Board,
         loadout: Loadout | None = None,

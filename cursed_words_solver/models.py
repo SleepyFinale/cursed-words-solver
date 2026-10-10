@@ -238,6 +238,8 @@ class Board:
     playable_max_row: int = 4
     playable_min_col: int = 0
     playable_max_col: int = 4
+    # run_state ``exported_at`` (melmod path index layout depends on capture date).
+    captured_at: str | None = field(default=None, compare=False)
     _flat_cache: list[Tile] | None = field(default=None, repr=False, compare=False)
 
     @property

@@ -551,10 +551,26 @@ def _adjust_rare_item_count_extras(run_state: dict, data: dict) -> None:
     extras["rare_item_count_last_known"] = rare_text
 
 
+def _set_board_tile_field(run_state: dict, tile, key: str, value) -> None:
+    board_tiles = (run_state.get("board") or {}).get("tiles")
+    if not isinstance(board_tiles, list):
+        return
+    for entry in board_tiles:
+        if not isinstance(entry, dict):
+            continue
+        if int(entry.get("row", -1)) == tile.row and int(entry.get("col", -1)) == tile.col:
+            entry[key] = value
+            return
+
+
 def _adjust_void_penalty_from_trace(
     run_state: dict, data: dict, board, path: list[int]
 ) -> None:
-    """Set per-tile void_penalty_steps from game init tile scores in actual_trace."""
+    """Set per-tile void_penalty_steps from game init tile scores in actual_trace.
+
+    Void currency packets export as 0 (ValueModifier lost); record the game's
+    ``value_modifier`` instead so replay scores the captured board.
+    """
     from cursed_words_solver.letter_values import SCRABBLE_VALUES
     from cursed_words_solver.models import CurseType, TileColor
 
@@ -571,7 +587,10 @@ def _adjust_void_penalty_from_trace(
         if i >= len(tile_scores):
             break
         tile = board.get_by_index(idx)
-        if tile.color != TileColor.VOID or tile.curse != CurseType.LETTER:
+        if tile.color != TileColor.VOID or tile.curse not in (
+            CurseType.LETTER,
+            CurseType.CURRENCY,
+        ):
             continue
         try:
             ts = int(tile_scores[i])
@@ -579,8 +598,15 @@ def _adjust_void_penalty_from_trace(
             continue
         if ts >= 0:
             continue
+        if tile.curse == CurseType.CURRENCY:
+            _set_board_tile_field(run_state, tile, "value_modifier", abs(ts))
+            tile.metadata["value_modifier"] = abs(ts)
+            continue
         face = SCRABBLE_VALUES.get((tile.letter or "?").upper(), 1)
-        steps = max(1, (abs(ts) - face + 9) // 10)
+        steps = (abs(ts) - face + 9) // 10
+        if steps < 1:
+            # Plain negated face (GetValue × -1): no ValueModifier to record.
+            continue
         tile.metadata["void_penalty_steps"] = steps
         board_tiles = (run_state.get("board") or {}).get("tiles")
         if isinstance(board_tiles, list):
@@ -2214,13 +2240,23 @@ def _run_state_for_replay(data: dict) -> dict:
     return run_state
 
 
-def _replay_path(board, path: list[int]) -> list[int]:
-    """Melmod mismatch captures use compact indices on Bat-shrunk boards."""
+# Pre-flip captures whose stored path was re-saved in the bottom-origin layout.
+_BOTTOM_ORIGIN_PATH_STEMS = frozenset({"20260526_103842", "20260621_222004_upwells"})
+
+
+def _replay_path(board, path: list[int], case_path: Path | None = None) -> list[int]:
+    """Melmod mismatch captures use compact indices on Bat-shrunk boards.
+
+    Full-grid captures predating the melmod bottom-origin flip keep storage indices.
+    """
     if board is None:
         return list(path)
     from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
-    return path_from_melmod_indices(board, path)
+    captured_at = case_path.stem if case_path is not None else None
+    if captured_at in _BOTTOM_ORIGIN_PATH_STEMS:
+        captured_at = ""  # current layout
+    return path_from_melmod_indices(board, path, captured_at=captured_at)
 
 
 def _money_from_actual_trace(data: dict) -> int | None:
@@ -2363,7 +2399,7 @@ def test_scoring_mismatch(case_path: Path) -> None:
 
     board_for_lucky = parse_board_from_run_state(run_state)
     if board_for_lucky is not None:
-        path = _replay_path(board_for_lucky, path)
+        path = _replay_path(board_for_lucky, path, case_path)
         _adjust_lucky_dice_target_extras(run_state, data, board_for_lucky, path)
 
     # For a couple of early plain-letter fixtures the raw F8 snapshot already
@@ -2571,7 +2607,7 @@ def test_inquirendo_electric_guitar_red_note_mismatch() -> None:
 
     board_for_lucky = parse_board_from_run_state(run_state)
     if board_for_lucky is not None:
-        path = _replay_path(board_for_lucky, path)
+        path = _replay_path(board_for_lucky, path, case_path)
         _adjust_lucky_dice_target_extras(run_state, data, board_for_lucky, path)
 
     board = parse_board_from_run_state(run_state)
@@ -2640,7 +2676,7 @@ def test_upwells_cobra_electric_guitar_scatter_tier() -> None:
 
     board_for_lucky = parse_board_from_run_state(run_state)
     if board_for_lucky is not None:
-        path = _replay_path(board_for_lucky, path)
+        path = _replay_path(board_for_lucky, path, case_path)
         _adjust_lucky_dice_target_extras(run_state, data, board_for_lucky, path)
 
     board = parse_board_from_run_state(run_state)
@@ -3187,7 +3223,7 @@ def test_heigh_20260629_bicycle_fingerprint_replay() -> None:
     run_state = _run_state_for_replay(data)
     board = parse_board_from_run_state(run_state)
     assert board is not None
-    path = _replay_path(board, data["path"])
+    path = _replay_path(board, data["path"], case_path)
     loadout = parse_run_state(run_state)
     score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
     assert int(score) == int(data["actual_score"]) == 13818
@@ -3202,7 +3238,7 @@ def test_velveteen_20260629_capybara_replay_trace() -> None:
     run_state = _run_state_for_replay(data)
     board = parse_board_from_run_state(run_state)
     assert board is not None
-    path = _replay_path(board, data["path"])
+    path = _replay_path(board, data["path"], case_path)
     loadout = parse_run_state(run_state)
     from cursed_words_solver.rules.capybara_scoring import score_capybara_distribution
 
@@ -3264,7 +3300,7 @@ def test_war_shaved_ice_freezes_replay_matches_actual() -> None:
     _adjust_shaved_ice_extras(run_state, data)
     board = parse_board_from_run_state(run_state)
     assert board is not None
-    path = _replay_path(board, data["path"])
+    path = _replay_path(board, data["path"], case_path)
     loadout = parse_run_state(run_state)
     assert str((loadout.extras or {}).get("shaved_ice_freezes")) == "11"
     score, _, trace = ScoringPipeline().score_with_trace(
@@ -3302,7 +3338,7 @@ def test_wanner_shaved_ice_freezes_replay_matches_actual() -> None:
     _adjust_shaved_ice_extras(run_state, data)
     board = parse_board_from_run_state(run_state)
     assert board is not None
-    path = _replay_path(board, data["path"])
+    path = _replay_path(board, data["path"], case_path)
     loadout = parse_run_state(run_state)
     assert str((loadout.extras or {}).get("shaved_ice_freezes")) == "16"
     score, _, trace = ScoringPipeline().score_with_trace(

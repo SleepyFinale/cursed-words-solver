@@ -70,7 +70,7 @@ def test_arrow_ray_collects_multiple_tiles() -> None:
   for r, c in ((2, 2), (2, 3), (2, 4)):
     active |= 1 << index_of(r, c)
   mask = arrow_ray_target_mask(
-    index_of(2, 1), (1, 0), active, horizontal_wrap=False
+    index_of(2, 1), (1, 0), active, rows=5, cols=5, horizontal_wrap=False
   )
   assert mask & (1 << index_of(2, 2))
   assert mask & (1 << index_of(2, 3))

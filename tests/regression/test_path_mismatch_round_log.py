@@ -1121,6 +1121,8 @@ def test_full_6x6_grid_path_conversion_roundtrip():
     board = parse_board_from_run_state(data["run_state"])
     assert board is not None
     assert board.rows == 6 and board.cols == 6
+    # Exercise the current bottom-origin layout, not the fixture's pre-flip capture date.
+    board.captured_at = None
 
     melmod_path = data["solver"]["path"]
     storage_path = path_from_melmod_indices(board, melmod_path)

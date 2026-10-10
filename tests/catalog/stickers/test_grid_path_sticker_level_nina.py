@@ -32,11 +32,11 @@ def _load(stem: str) -> dict:
 @pytest.mark.parametrize(
     "stem,slug,path_index,expected_level",
     [
-        ("20260629_125703", "dusty_coffin", 0, 1),
+        ("20260629_125703", "dusty_coffin", 0, 2),
         ("20260629_125833", "tombstone", 3, 2),
         ("20260629_130154", "tombstone", 0, 2),
         ("20260629_130252", "tombstone", 3, 2),
-        ("20260629_130347", "dusty_coffin", 0, 3),
+        ("20260629_130347", "dusty_coffin", 0, 2),
         ("20260629_135501", "tombstone", 3, 2),
         ("20260629_141855", "tombstone", 4, 2),
         ("20260629_142001", "tombstone", 6, 2),
@@ -90,7 +90,8 @@ def test_nina_nix_session_capture_scores(stem: str, expected: int) -> None:
     assert int(score) == expected
 
 
-def test_dusty_grid_scatter_word_score_level_is_one() -> None:
+def test_dusty_grid_scatter_word_score_level_uses_retro_raider() -> None:
+    """Game trace: grid Dusty scores 144 over 9 voids (16/unit) = Retro Raider L2."""
     data = _load("20260629_130347")
     board = parse_board_from_run_state(data["run_state_snapshot"])
     loadout = parse_run_state(data["run_state_snapshot"])
@@ -102,7 +103,7 @@ def test_dusty_grid_scatter_word_score_level_is_one() -> None:
             board=board,
             path=data["path"],
         )
-        == 1
+        == 2
     )
 
 
@@ -122,7 +123,8 @@ def test_dusty_colorless_grid_scatter_uses_scatter_plus_one() -> None:
     )
 
 
-def test_dusty_equipped_one_above_scatter_uses_encounter_tier() -> None:
+def test_dusty_equipped_uses_own_level() -> None:
+    """Game trace: equipped Dusty L2 scores 128 over 8 voids (16/unit)."""
     data = _load("20260629_125833")
     board = parse_board_from_run_state(data["run_state_snapshot"])
     loadout = parse_run_state(data["run_state_snapshot"])
@@ -134,7 +136,7 @@ def test_dusty_equipped_one_above_scatter_uses_encounter_tier() -> None:
             board=board,
             path=data["path"],
         )
-        == 1
+        == 2
     )
 
 

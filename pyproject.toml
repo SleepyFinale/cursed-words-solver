@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4.0"]
+dev = ["pytest>=8.0"]
 fast = ["marisa-trie>=1.2.0"]
 native = ["marisa-trie>=1.2.0", "datrie>=0.8.2"]
 

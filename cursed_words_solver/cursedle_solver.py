@@ -151,18 +151,23 @@ def parse_cursedle_guesses(extras: dict[str, Any]) -> list[CursedleGuess]:
                 (int(t.get("col", 0)) + 1 for t in tiles if isinstance(t, dict)),
                 default=6,
             )
+            coords_ok = True
             for tile in tiles:
                 if not isinstance(tile, dict):
                     feedback.append("grey")
                     continue
                 fb = str(tile.get("feedback", "grey") or "grey").strip().lower()
                 feedback.append(fb if fb else "grey")
+                if not coords_ok:
+                    continue
                 try:
                     tile_row = int(tile.get("row"))
                     tile_col = int(tile.get("col"))
                 except (TypeError, ValueError):
+                    # Keep collecting feedback; only the storage coords are unusable.
                     storage_coords = []
-                    break
+                    coords_ok = False
+                    continue
                 # Legacy exports used Unity y (bottom=0) as row with melmod index.
                 try:
                     tile_index = int(tile.get("index"))

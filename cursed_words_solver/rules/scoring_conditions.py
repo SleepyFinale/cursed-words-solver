@@ -1453,8 +1453,12 @@ def is_number_like_tile(tile: Tile) -> bool:
     return tile.curse in (CurseType.NUMBER, CurseType.FRACTION)
 
 
-def is_joker_tile(tile: Tile) -> bool:
-    """True for joker wildcards (glyph / metadata / card_suit)."""
+def is_wildcard_face_tile(tile: Tile) -> bool:
+    """True for joker or blank wildcard faces that can stand in for a digit.
+
+    Broader than :func:`is_joker_tile`: plain ``?`` blanks count too. Only for
+    the numeric-word checks below.
+    """
     if tile.metadata.get("is_joker") in (True, "true", "True", "1", 1):
         return True
     if str(tile.metadata.get("card_suit") or "").strip().lower() == "joker":
@@ -1478,7 +1482,7 @@ def path_is_numbers_and_jokers(board: Board, path: list[int]) -> bool:
         return False
     for idx in path:
         tile = board.get_by_index(idx)
-        if is_number_like_tile(tile) or is_joker_tile(tile):
+        if is_number_like_tile(tile) or is_wildcard_face_tile(tile):
             continue
         return False
     return True
@@ -1500,7 +1504,7 @@ def tile_counts_as_number_for_scoring(
 ) -> bool:
     if is_number_like_tile(tile):
         return True
-    return bool(jokers_as_numbers and is_joker_tile(tile))
+    return bool(jokers_as_numbers and is_wildcard_face_tile(tile))
 
 
 def tile_numeric_value(tile: Tile) -> float:
@@ -1852,16 +1856,6 @@ def path_includes_grid_scatter(
     return False
 
 
-def _dusty_floor_mod_capped(loadout: Loadout | None) -> bool:
-    if loadout is None:
-        return False
-    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
-    if extras.get("boss_floor_modification") in (None, ""):
-        return False
-    grid = grid_number(loadout) or 1
-    return _scatter_tier_floor_mod(loadout, grid) > 0
-
-
 def _void_tombstone_scatter_on_path(board: Board, path: list[int]) -> bool:
     """True when a scattered void Tombstone item tile is on the word path."""
     for idx in path:
@@ -2077,6 +2071,10 @@ def dusty_coffin_word_score_level(
     word: str = "",
 ) -> int:
     """Effective Dusty Coffin level for per_void_unused (grid scatter vs equipped)."""
+    if from_grid_scatter:
+        rr_level = retro_raider_scatter_level(loadout, "dusty_coffin")
+        if rr_level is not None:
+            return rr_level
     scatter = max(1, scattered_grid_item_level(loadout))
     eq = _equipped_sticker_level_for_slug(loadout, "dusty_coffin")
     if from_grid_scatter:
@@ -2141,48 +2139,8 @@ def dusty_coffin_word_score_level(
         ):
             return scatter + 1
         return 1
-    if _dusty_equipped_one_above_scatter(loadout):
-        return scatter
-    scatter_tile = (
-        _dusty_coffin_scatter_tile_on_path(board, path)
-        if board is not None and path is not None
-        else None
-    )
-    if eq is not None and eq > scatter + 1:
-        if scatter_tile is not None and scatter_tile.color == TileColor.COLORLESS:
-            letters_in_word = set((word or "").lower())
-            pv = (
-                _path_void_letters_in_word_count(board, path, letters_in_word)
-                if board is not None and path is not None
-                else 0
-            )
-            if pv >= 1:
-                return max(1, int(sticker_level))
-            return scatter + 1
-        if (
-            scatter_tile is None
-            and board is not None
-            and path is not None
-            and _void_tombstone_scatter_on_path(board, path)
-            and _dusty_floor_mod_capped(loadout)
-        ):
-            return scatter + 1
+    # Equipped Dusty scores at its own level (DustyCoffin.ApplyWordBonus VariableValue).
     return max(1, int(sticker_level))
-
-
-def _dusty_equipped_one_above_scatter(loadout: Loadout | None) -> bool:
-    """Grid-1 encounter: equipped Dusty L2 with L1 scatter doubles path void units."""
-    if loadout is None or grid_number(loadout) != 1:
-        return False
-    eq = _equipped_sticker_level_for_slug(loadout, "dusty_coffin")
-    if eq is None or eq - scattered_grid_item_level(loadout) != 1:
-        return False
-    from cursed_words_solver.rules.rule_lookup import slugify_name
-
-    for stamp in loadout.stamps or []:
-        if slugify_name(str(stamp.id or stamp.name or "")) == "fried_shrimp":
-            return True
-    return False
 
 
 def void_tiles_letter_not_in_word(
@@ -5580,6 +5538,28 @@ _GRID_PATH_INVENTORY_BLEEDTHROUGH_EXCLUDE = frozenset(
 )
 
 
+# ScatteredItemPools.VoidBuildItems — Retro Raider's scatter pool.
+_VOID_POOL_STICKERS = frozenset(
+    {"dusty_coffin", "deep_sea_horror", "queen_of_spades", "tombstone"}
+)
+
+
+def retro_raider_scatter_level(loadout: Loadout | None, slug_norm: str) -> int | None:
+    """Level of a void-pool sticker scattered by Retro Raider, if equipped.
+
+    ``RetroRaider.ApplyStartOfGridEffect`` scatters a fresh void-pool item and
+    upgrades it to Retro Raider's own level; Cable Car then upgrades on-path
+    stickers once per copy at submit. Melmod's ``scattered_item_level`` export
+    lags this (captures show the item scoring at Retro Raider's level).
+    """
+    if slug_norm not in _VOID_POOL_STICKERS:
+        return None
+    rr = _equipped_sticker_level_for_slug(loadout, "retro_raider")
+    if rr is None:
+        return None
+    return rr + cable_car_stamp_count(loadout)
+
+
 def _equipped_sticker_level_for_slug(
     loadout: Loadout | None, slug_norm: str
 ) -> int | None:
@@ -5720,6 +5700,9 @@ def grid_path_sticker_level(
     from cursed_words_solver.rules.rule_lookup import slugify_name
 
     slug_norm = slugify_name(slug)
+    rr_level = retro_raider_scatter_level(loadout, slug_norm)
+    if rr_level is not None:
+        return rr_level
     encounter_level = scattered_grid_item_level(loadout)
     level = encounter_level
     tile_level_known = False

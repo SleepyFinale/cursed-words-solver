@@ -379,16 +379,16 @@ def _dusty_colorless_grid_replay(fixture_name: str, *, expected_units: int, expe
 
 
 def test_dusty_coffin_colorless_grid_scatter_effuse_six_units():
-    """20260709 effuse: path-face void count is 3 (game trace +48 still unexplained)."""
+    """20260709 effuse: 3 path-face voids × 16 (Retro Raider L2 scatter) = +48; game 118."""
     _dusty_colorless_grid_replay(
-        "20260709_144215.json", expected_units=3, expected_score=82
+        "20260709_144215.json", expected_units=3, expected_score=118
     )
 
 
 def test_dusty_coffin_colorless_grid_scatter_opts_six_units():
-    """20260709 opts: path-face void count is 3 (game trace +48 still unexplained)."""
+    """20260709 opts: 3 path-face voids × 16 (Retro Raider L2 scatter) = +48; game 138."""
     _dusty_colorless_grid_replay(
-        "20260709_144650.json", expected_units=3, expected_score=90
+        "20260709_144650.json", expected_units=3, expected_score=138
     )
 
 

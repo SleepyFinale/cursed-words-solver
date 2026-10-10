@@ -132,6 +132,117 @@ def _axolotl_floor_modification(loadout: Loadout) -> int | None:
     return None
 
 
+def _owned_item_levels(loadout: Loadout | None, slug: str) -> list[int]:
+    """Levels of each owned stamp/sticker copy with this slug."""
+    if loadout is None:
+        return []
+    from cursed_words_solver.rules.rule_lookup import slugify_name
+
+    levels: list[int] = []
+    for item in list(loadout.stamps or []) + list(loadout.stickers or []):
+        if slugify_name(str(item.id or item.name or "")) != slug:
+            continue
+        try:
+            levels.append(max(1, int(item.level)))
+        except (TypeError, ValueError):
+            levels.append(1)
+    return levels
+
+
+def _is_playable_corner(board: Board, tile: Tile) -> bool:
+    """GridUtility.IsCornerTile on the playable grid."""
+    rows, cols = board.storage_rows, board.storage_cols
+    min_r, max_r = board.playable_min_row, board.playable_max_row
+    min_c, max_c = board.playable_min_col, board.playable_max_col
+    if not (0 <= min_r <= max_r < rows and 0 <= min_c <= max_c < cols):
+        min_r, max_r, min_c, max_c = 0, rows - 1, 0, cols - 1
+    return tile.row in (min_r, max_r) and tile.col in (min_c, max_c)
+
+
+def reconstructed_value_modifier(
+    board: Board, tile: Tile, loadout: Loadout | None
+) -> int:
+    """Tile.ValueModifier from start-of-grid base-score items, rebuilt from the board.
+
+    Late-May melmod exports carry void letters as 0, losing the modifier the game
+    negates in ``Tile.GetValue``. Rebuilds the common sources:
+
+    - ``GlobeTrotter``: corner tiles become currencies with +10 BASE SCORE.
+    - ``Doughnut``: +5×level per unique non-normal neighbouring colour
+      (``GridUtility.GetTilesAdjacentToCoordinates``, 8-neighbour, Hungry Snake wrap).
+    """
+    mod = 0
+    if tile.curse == CurseType.CURRENCY and _is_playable_corner(board, tile):
+        mod += 10 * len(_owned_item_levels(loadout, "globe_trotter"))
+    doughnuts = _owned_item_levels(loadout, "doughnut")
+    if doughnuts:
+        wrap = bool(_owned_item_levels(loadout, "hungry_snake"))
+        cols = board.storage_cols
+        colours: set[TileColor] = set()
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                if dr == 0 and dc == 0:
+                    continue
+                r, c = tile.row + dr, tile.col + dc
+                if wrap and not 0 <= c < cols:
+                    c %= cols
+                if not (0 <= r < board.storage_rows and 0 <= c < cols):
+                    continue
+                if not board.is_active_cell(r, c):
+                    continue
+                color = board.tiles[r][c].color
+                if color not in (TileColor.COLORLESS, TileColor.UNKNOWN):
+                    colours.add(color)
+        mod += sum(5 * level for level in doughnuts) * len(colours)
+    return mod
+
+
+# Melmod exported void LETTER packets as 0 until early June 2026; later exports
+# are signed (a 0 is genuine, e.g. Shaved Ice frozen tiles).
+_LOSSY_VOID_LETTER_EXPORT_BEFORE = "2026-06-01"
+
+
+def _void_letter_export_was_lossy(board: Board) -> bool:
+    captured = str(board.captured_at or "")
+    return not captured or captured[:10] < _LOSSY_VOID_LETTER_EXPORT_BEFORE
+
+
+def lost_void_export_value(
+    board: Board, tile: Tile, loadout: Loadout | None
+) -> float | None:
+    """Game ``GetValue`` for a melmod void tile whose export lost its value (0).
+
+    Returns None when the export is trustworthy or the tile is not covered.
+    """
+    if tile.color != TileColor.VOID or not _is_melmod_tile(tile):
+        return None
+    if float(tile.base_score or 0) != 0:
+        return None
+    if tile.curse == CurseType.CURRENCY:
+        raw_mod = tile.metadata.get("value_modifier")
+        if raw_mod not in (None, ""):
+            try:
+                return -float(abs(int(raw_mod)))
+            except (TypeError, ValueError):
+                pass
+        # Only Globe Trotter's corner +10 is reliable: a later SetCurrency (Wad of
+        # Cash scatter) resets ValueModifier, so Doughnut may or may not survive.
+        globe = 10 * len(_owned_item_levels(loadout, "globe_trotter"))
+        if not globe or not _is_playable_corner(board, tile):
+            return None
+        return -float(globe)
+    if tile.curse != CurseType.LETTER or not _void_letter_export_was_lossy(board):
+        return None
+    face = _scrabble_value(tile.letter)
+    raw_steps = tile.metadata.get("void_penalty_steps")
+    if raw_steps not in (None, ""):
+        try:
+            return -float(face + 10 * max(0, int(raw_steps)))
+        except (TypeError, ValueError):
+            pass
+    return -float(face + reconstructed_value_modifier(board, tile, loadout))
+
+
 def _void_currency_face_value(tile: Tile, loadout: Loadout | None = None) -> int:
     """Void currency penalty magnitude (melmod packet.Score is 0 pre-negation)."""
     from cursed_words_solver.rules.scoring_conditions import (

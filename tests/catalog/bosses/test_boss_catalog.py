@@ -13,5 +13,13 @@ def test_boss_has_game_class(slug: str) -> None:
     assert rule.get("game_class"), f"{slug} missing game_class"
 
 
+# Hidden / meta bosses documented in docs/game-research/bosses.md.
+_HIDDEN_META_BOSSES = frozenset(
+    {"sandy_saguaro", "prismatic_bean", "human_boy_boss", "michael"}
+)
+
+
 def test_sixteen_main_bosses() -> None:
-    assert len(boss_entries()) == 16
+    entries = boss_entries()
+    assert _HIDDEN_META_BOSSES <= entries.keys()
+    assert len(entries.keys() - _HIDDEN_META_BOSSES) == 16

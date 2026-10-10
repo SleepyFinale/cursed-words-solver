@@ -250,6 +250,7 @@ def merge_submit_board_tile_state(run_state: dict[str, Any], data: dict[str, Any
         "char",
         "base_score",
         "void_penalty_steps",
+        "value_modifier",
         "scattered_item_id",
         "scattered_item_level",
         "cactus_growth",
@@ -618,6 +619,12 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
                 meta["melmod_fp_crossed_out"] = True
         if entry.get("is_up_and_up_center") in (True, "true", "True", "1", 1):
             meta["is_up_and_up_center"] = True
+        value_modifier = entry.get("value_modifier")
+        if value_modifier not in (None, ""):
+            try:
+                meta["value_modifier"] = int(value_modifier)
+            except (TypeError, ValueError):
+                pass
         void_steps = entry.get("void_penalty_steps")
         if void_steps is not None:
             try:
@@ -703,6 +710,7 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
         playable_max_row=pmax_r,
         playable_min_col=pmin_c,
         playable_max_col=pmax_c,
+        captured_at=str(data.get("exported_at") or "") or None,
     )
 
 
@@ -940,7 +948,7 @@ def _plain_word_from_historic_field(word: str) -> str:
 def _first_alphabetic_letter(word: str) -> str:
     """First A–Z letter in a submitted word (lowercase), matching game/melmod capture."""
     for ch in _plain_word_from_historic_field(word).strip().lower():
-        if ch.isalpha():
+        if "a" <= ch <= "z":
             return ch
     return ""
 
@@ -1840,6 +1848,9 @@ def reconcile_previous_word_first_letter_from_historic(
     extras: dict[str, Any],
 ) -> None:
     """Normalize previous_word_first_letter (mirror melmod scoring-cache vs historic)."""
+    if "historic_words" not in extras and "scoring_previous_words_count" not in extras:
+        # Legacy melmod export: only previous_word_first_letter itself was captured.
+        return
     grid = _grid_number_from_extras(extras)
     hist = str(extras.get("historic_words", "") or "").strip()
     if grid >= 2 and (not hist or hist == "[]"):
