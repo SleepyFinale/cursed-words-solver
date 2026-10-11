@@ -19,7 +19,7 @@ import pytest
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 from cursed_words_solver.search import PathValidator, WordSearcher, path_movement_ok
 from cursed_words_solver.suggestion import path_is_submittable
@@ -60,14 +60,14 @@ def test_llama_ascending_path_validates_and_scores():
     )
 
     score = int(
-        ScoringPipeline().score_total_only(
+        EngineScorer().score_total_only(
             board, path, "llama", loadout=loadout
         )
     )
     assert score == LLAMA_SUBMIT_SCORE
     sug = path_from_melmod_indices(board, data["solver"]["path"])
     aahs = int(
-        ScoringPipeline().score_total_only(board, sug, "aahs", loadout=loadout)
+        EngineScorer().score_total_only(board, sug, "aahs", loadout=loadout)
     )
     assert aahs == LLAMA_F8_SCORE
     assert score > aahs

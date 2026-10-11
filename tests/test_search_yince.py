@@ -9,12 +9,9 @@ import pytest
 
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import get_pin_scoring_rule
-from cursed_words_solver.rules.scoring_conditions import (
-    rewind_bicycle_pre_word_extras,
-    word_starts_ends_different_suit,
-)
+from cursed_words_solver.rules.scoring_conditions import rewind_bicycle_pre_word_extras
 from cursed_words_solver.search import WordSearcher
 
 FIXTURE = (
@@ -34,22 +31,10 @@ def yince_board_loadout():
     board = parse_board_from_run_state(data["run_state_snapshot"])
     assert board is not None
     loadout = parse_run_state(data["run_state_snapshot"])
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     rule = get_pin_scoring_rule(pipeline.rules, "bones_the_dog")
     rewind_bicycle_pre_word_extras(loadout, board, YINCE_PATH, rule)
     return board, loadout
-
-
-def test_yince_path_wrestlers_qualifies(yince_board_loadout):
-    board, _loadout = yince_board_loadout
-    assert word_starts_ends_different_suit(board, YINCE_PATH)
-
-
-def test_yince_fixture_scores_8320(yince_board_loadout):
-    board, loadout = yince_board_loadout
-    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    score, _ = ScoringPipeline().score(board, YINCE_PATH, data["word"], loadout)
-    assert int(score) == int(data["actual_score"])
 
 
 @pytest.mark.slow

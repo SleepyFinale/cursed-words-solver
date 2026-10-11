@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import copy
 import random
-from typing import Any
 
 from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
 from cursed_words_solver.rules.rule_lookup import get_pin_branch_rule, get_rule, resolve_rule_id, slugify_name

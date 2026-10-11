@@ -10,7 +10,7 @@ import pytest
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 from cursed_words_solver.search import PathValidator, WordSearcher, format_microscope_position_hint, microscope_position_uses
 from cursed_words_solver.search_parallel import shutdown_search_pool, warmup_search_pool
@@ -268,7 +268,7 @@ def _board_and_loadout_from_mismatch(fixture: Path):
     if not fixture.exists():
         pytest.skip(f"fixture required: {fixture.name}")
     data = json.loads(fixture.read_text(encoding="utf-8"))
-    from tests.regression.test_scoring_mismatches import _run_state_for_replay
+    from tests.helpers.replay import _run_state_for_replay
 
     run_state = _run_state_for_replay(data)
     board = parse_board_from_run_state(run_state)
@@ -295,7 +295,7 @@ def test_multidigit_number_face_dictionary_resolve_pow():
         loadout,
         d,
         min_len=1,
-        pipeline=ScoringPipeline(),
+        pipeline=EngineScorer(),
     )
     assert valid is not None
     assert v.word_ok(board, POW_PATH, valid, flags)
@@ -372,7 +372,7 @@ def test_aahing_board_search_does_not_suggest_invalid_word():
                 loadout,
                 d,
                 min_len=3,
-                pipeline=ScoringPipeline(),
+                pipeline=EngineScorer(),
             )
             if resolved:
                 assert v.word_ok(board, r.path, resolved, flags)

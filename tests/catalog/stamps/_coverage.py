@@ -1,13 +1,7 @@
 """Shared helpers for stamp catalog coverage tests."""
 
 from cursed_words_solver.models import Loadout, LoadoutItem
-from cursed_words_solver.rules.rule_lookup import (
-    count_scoring_items,
-    get_rule,
-    is_scoring_rule,
-    slugify_name,
-    stamp_is_catalog_inactive,
-)
+from cursed_words_solver.rules.rule_lookup import count_scoring_items, get_rule, is_scoring_rule, slugify_name, stamp_is_catalog_inactive
 
 
 def expected_stamp_counts(rules: dict, names: list[str]) -> tuple[int, int, int]:

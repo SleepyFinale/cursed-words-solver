@@ -5,11 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from cursed_words_solver.loadout import (
-    BOSS_RECONCILE_EXTRA_KEYS,
-    reconcile_boss_extras_for_f8_embed,
-    reconcile_boss_extras_from_extras_diff,
-)
+from cursed_words_solver.loadout import BOSS_RECONCILE_EXTRA_KEYS, reconcile_boss_extras_for_f8_embed, reconcile_boss_extras_from_extras_diff
 from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
 from cursed_words_solver.rules.boss_effects import active_boss_ids
 
@@ -31,7 +27,7 @@ def _simple_board() -> Board:
 
 
 def test_reconcile_strips_embed_boss_when_fresh_empty(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import RUN_STATE_PATH
+    pass
 
     run_state_path = tmp_path / "run_state.json"
     monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
@@ -61,7 +57,7 @@ def test_reconcile_strips_embed_boss_when_fresh_empty(tmp_path, monkeypatch):
 
 
 def test_reconcile_prefers_fresh_boss_modifiers_when_differ(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import RUN_STATE_PATH
+    pass
 
     run_state_path = tmp_path / "run_state.json"
     monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
@@ -119,9 +115,9 @@ def test_empty_boss_modifiers_disables_scoring_boss_effects():
         extras={"boss_area_number": 1, "boss_modifiers": []},
     )
     assert active_boss_ids(loadout) == []
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
+    from cursed_words_solver.engine.scorer import EngineScorer
 
-    _, bd = ScoringPipeline().score(board, [0, 1, 2], "aaa", loadout)
+    _, bd = EngineScorer().score(board, [0, 1, 2], "aaa", loadout)
     assert not any("per tile (boss)" in e for e in bd["pipeline"]["effects"])
 
 

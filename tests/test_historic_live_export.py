@@ -5,18 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 from cursed_words_solver.f8_snapshot import F8Snapshot, embed_f8_snapshot
-from cursed_words_solver.loadout import (
-    _historic_words_count,
-    _scoring_previous_words_count_from_extras,
-    merge_encounter_historic_for_f8_snapshot,
-    parse_run_state,
-    project_workflow_extras_for_f8_embed,
-    reconcile_encounter_historic_for_scoring,
-)
-from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
+from cursed_words_solver.loadout import _historic_words_count, _scoring_previous_words_count_from_extras, parse_run_state, project_workflow_extras_for_f8_embed, reconcile_encounter_historic_for_scoring
+from cursed_words_solver.models import Board, CurseType, Tile, TileColor
 from cursed_words_solver.suggestion import f8_historic_would_fail_submit_projection
 
 
@@ -43,35 +35,6 @@ def _rodman_grid2_board() -> Board:
                 curse=CurseType.LETTER,
             )
     return board
-
-
-def test_merge_encounter_historic_is_noop_even_when_disk_ahead(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import RUN_STATE_PATH
-
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps(
-            {
-                "extras": {
-                    "historic_words": '[{"word":"beedie","score":808}]',
-                    "grid_number": "2",
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    embed = {
-        "extras": {
-            "historic_words": "",
-            "previous_word_first_letter": "q",
-            "grid_number": "2",
-        }
-    }
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    assert merged["extras"]["historic_words"] == ""
-    assert merged["extras"]["previous_word_first_letter"] == "q"
 
 
 def test_same_grid_word2_path_stale_metadata_not_empty():
@@ -155,26 +118,8 @@ def test_grid2_word1_path_stale_keeps_prior_grid_metadata():
     assert "path" not in rows[0]
 
 
-def test_submit_projection_uses_scoring_extras_not_disk():
-    board = _rodman_grid2_board()
-    meta = json.dumps([{"word": "REEFERS", "score": 364, "red_tile_count": 2}])
-    scoring = {
-        "historic_words": meta,
-        "scoring_previous_words_count": "2",
-        "previous_word_first_letter": "r",
-        "encounter_historic_source": "historic_metadata_only",
-        "grid_number": "2",
-    }
-    embed = dict(scoring)
-    assert f8_historic_would_fail_submit_projection(
-        embed,
-        scoring_extras=scoring,
-        board=board,
-    ) is None
-
-
 def test_project_workflow_does_not_shrink_to_disk(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import RUN_STATE_PATH
+    pass
 
     run_state_path = tmp_path / "run_state.json"
     monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)

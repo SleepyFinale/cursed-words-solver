@@ -238,6 +238,8 @@ _ITEM_STATE_FIELDS: dict[str, str] = {
     "NumberOfGlitchTilesUsed": "glitch_used",
     "IsBroken": "broken",
     "LetterUseCounts": "letter_counts",
+    "RedCount": "red_count",
+    "BlueTilesUsed": "blue_used",
 }
 
 

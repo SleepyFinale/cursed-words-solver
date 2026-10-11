@@ -5,15 +5,7 @@ from pathlib import Path
 
 from cursed_words_solver.config import Region
 from cursed_words_solver.loadout import parse_board_from_run_state
-from cursed_words_solver.ui.board_geometry import (
-    estimate_rack_slot_size,
-    path_from_melmod_indices,
-    path_geometry,
-    placement_display_steps,
-    rack_marker_radius,
-    rack_placement_geometry,
-    rack_slot_center,
-)
+from cursed_words_solver.ui.board_geometry import estimate_rack_slot_size, path_from_melmod_indices, path_geometry, placement_display_steps, rack_marker_radius, rack_placement_geometry, rack_slot_center
 from tests.integration.test_run_state_board import _bat_4x3_run_state
 from tests.test_ui_layout import _bat_3x3_ui_layout_run_state
 

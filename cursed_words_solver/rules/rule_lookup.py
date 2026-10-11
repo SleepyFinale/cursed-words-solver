@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from cursed_words_solver.models import Loadout, LoadoutItem
+from cursed_words_solver.models import Loadout
 
 SCORING_INACTIVE_TYPES = frozenset({"unmodeled", "custom", ""})
 GRID_ONLY_TYPES = frozenset({"scatter_start_grid", "scatter_start_encounter"})
@@ -384,30 +384,6 @@ def collect_unmapped_items(
     return missing
 
 
-def count_catalog_items(rules: dict[str, Any], loadout: Loadout) -> tuple[int, int]:
-    """Return (catalog_count, total_count) — item has a wiki key."""
-    boss_slugs = _catalog_boss_slugs(loadout)
-    total = len(loadout.stickers) + len(loadout.stamps) + len(boss_slugs)
-    pin_effect = loadout.extras.get("pin_effect", "")
-    if pin_effect:
-        total += 1
-
-    mapped = sum(
-        1
-        for s in loadout.stickers
-        if resolve_rule_id(rules, "stickers", s.id, s.name)
-    )
-    mapped += sum(
-        1 for s in loadout.stamps if resolve_rule_id(rules, "stamps", s.id, s.name)
-    )
-    boss_mapped, _, _ = _count_boss_catalog(rules, loadout)
-    mapped += boss_mapped
-    if pin_effect and _pin_in_catalog(rules, str(pin_effect)):
-        mapped += 1
-
-    return mapped, total
-
-
 def count_scoring_items(rules: dict[str, Any], loadout: Loadout) -> tuple[int, int, int]:
     """Return (scoring_active, total, grid_only)."""
     boss_slugs = _catalog_boss_slugs(loadout)
@@ -457,6 +433,3 @@ def count_scoring_items(rules: dict[str, Any], loadout: Loadout) -> tuple[int, i
     return scoring, total, grid_only
 
 
-def count_mapped_items(rules: dict[str, Any], loadout: Loadout) -> tuple[int, int]:
-    """Backward-compatible alias for catalog coverage."""
-    return count_catalog_items(rules, loadout)

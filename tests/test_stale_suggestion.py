@@ -1,8 +1,7 @@
-﻿"""Stale last_suggestion.json board fingerprint warnings."""
+"""Stale last_suggestion.json board fingerprint warnings."""
 
 from __future__ import annotations
 
-import copy
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,41 +9,8 @@ from pathlib import Path
 import pytest
 
 from cursed_words_solver.models import Loadout
-from cursed_words_solver.suggestion import (
-    F8_EXPORT_CATCHUP_GRACE_SEC,
-    f8_export_catchup_grace_sec,
-    _historic_words_count,
-    _last_historic_word_first_letter,
-    _mutating_dna_letter_counts_equal,
-    clear_stale_last_suggestion_if_context_changed,
-    clear_stale_last_suggestion_if_loadout_changed,
-    clear_stale_last_suggestion_if_fingerprint_changed,
-    clear_stale_last_suggestion_if_workflow_changed,
-    empty_historic_on_later_grid_warning,
-    fingerprint_invalidate_suppressed_for_post_f8_export,
-    f8_prior_suggestion_stale_note,
-    f8_should_block_save,
-    grid_advanced_since_last_f8_warning,
-    grid_one_historic_cache_mismatch_warning,
-    grid_transition_workflow_bleed_warning,
-    is_disk_catchup_drift,
-    is_embed_stale_drift,
-    loadout_needs_encounter_historic,
-    loadout_needs_previous_word_letter,
-    historic_previous_letter_mismatch_warning,
-    is_export_catchup_drift,
-    poll_invalidate_last_suggestion,
-    run_state_historic_stale_warnings,
-    stale_suggestion_warning,
-    workflow_invalidate_suppressed_for_export_catchup,
-    f8_prediction_workflow_stale_warning,
-    workflow_stale_vs_f8_snapshot,
-)
-from cursed_words_solver.loadout import (
-    parse_board_from_run_state,
-    reconcile_encounter_historic_for_scoring,
-    sanitize_run_state_snapshot_for_f8,
-)
+from cursed_words_solver.suggestion import F8_EXPORT_CATCHUP_GRACE_SEC, f8_export_catchup_grace_sec, _historic_words_count, _last_historic_word_first_letter, _mutating_dna_letter_counts_equal, clear_stale_last_suggestion_if_context_changed, clear_stale_last_suggestion_if_loadout_changed, clear_stale_last_suggestion_if_fingerprint_changed, empty_historic_on_later_grid_warning, fingerprint_invalidate_suppressed_for_post_f8_export, f8_should_block_save, grid_advanced_since_last_f8_warning, grid_one_historic_cache_mismatch_warning, grid_transition_workflow_bleed_warning, is_disk_catchup_drift, is_embed_stale_drift, loadout_needs_encounter_historic, loadout_needs_previous_word_letter, historic_previous_letter_mismatch_warning, poll_invalidate_last_suggestion, run_state_historic_stale_warnings, stale_suggestion_warning, workflow_invalidate_suppressed_for_export_catchup, workflow_stale_vs_f8_snapshot
+from cursed_words_solver.loadout import parse_board_from_run_state, sanitize_run_state_snapshot_for_f8
 
 
 def _is_same_submit_bicycle_increment(
@@ -640,29 +606,6 @@ def test_stale_f8_mirror_bicycle_f8_zero_submit_empty_not_stale():
     assert note is None
 
 
-def test_stale_f8_mirror_bicycle_merge_from_scoring_extras_not_stale():
-    workflow = {
-        "historic_words": "[]",
-        "previous_word_first_letter": "f",
-    }
-    scoring = {
-        "bicycle_word_score_bonus": "2",
-        "cards_submitted": "2",
-    }
-    merged = _merge_pin_derived_for_stale_check(workflow, scoring)
-    f8_extras = {
-        "bicycle_word_score_bonus": "2",
-        "cards_submitted": "2",
-        "historic_words": "[]",
-    }
-    extras_diff = {
-        k: {"f8": f8_extras.get(k, ""), "submit": merged.get(k, "")}
-        for k in set(f8_extras) | set(merged)
-    }
-    note = _stale_f8_extras_note(extras_diff)
-    assert note is None
-
-
 def test_stale_f8_mirror_bicycle_f8_two_submit_empty_without_merge_is_stale():
     note = _stale_f8_extras_note(
         {
@@ -980,7 +923,6 @@ def test_stale_f8_rewind_invalid_per_card_increment_still_stale():
 
 def test_poll_invalidate_clears_on_bicycle_fingerprint_drift(tmp_path, monkeypatch):
     from cursed_words_solver.suggestion import (
-        LAST_SUGGESTION_PATH,
         poll_invalidate_last_suggestion,
     )
 
@@ -1105,259 +1047,10 @@ def test_stale_f8_workflow_drift_still_detected_without_bicycle_pin():
     assert "previous_word_first_letter f8='y' submit='f'" in note
 
 
-def test_merge_encounter_historic_for_f8_snapshot_from_disk(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps(
-            {
-                "extras": {
-                    "historic_words": '[{"word":"beedie","score":808}]',
-                    "previous_word_first_letter": "b",
-                    "grid_number": "2",
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    embed = {
-        "extras": {
-            "historic_words": "",
-            "previous_word_first_letter": "q",
-            "grid_number": "2",
-        }
-    }
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    assert merged["extras"]["historic_words"] == ""
-    assert merged["extras"]["previous_word_first_letter"] == "q"
-
-
-def test_merge_encounter_historic_with_retry_live_only_no_disk_pull(
-    tmp_path, monkeypatch
-):
-    """F8 solve uses live gather only — merge does not pull ahead-of-embed disk historic."""
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        merge_encounter_historic_for_f8_with_retry,
-    )
-
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps(
-            {
-                "extras": {
-                    "historic_words": '[{"word":"prior","score":10}]',
-                    "previous_word_first_letter": "p",
-                    "grid_number": "2",
-                    "encounter_historic_source": "live",
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    embed = {
-        "extras": {
-            "historic_words": "",
-            "grid_number": "2",
-            "encounter_historic_source": "live",
-        }
-    }
-    merged, stale = merge_encounter_historic_for_f8_with_retry(
-        embed, max_retries=1, delay_sec=0
-    )
-    assert stale is None
-    assert merged is not None
-    hist = str(merged["extras"].get("historic_words", "") or "").strip()
-    assert not hist or hist == "[]"
-
-
-def test_describe_f8_historic_catchup_pissers_grid3(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        describe_f8_historic_catchup,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "stale_f8_pissers_historic_catchup.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps({"extras": data["disk_extras"]}),
-        encoding="utf-8",
-    )
-    embed = {"extras": dict(data["embed_extras"])}
-    embed_hist = embed["extras"]["historic_words"]
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    merged_hist = merged["extras"]["historic_words"]
-    assert merged_hist == embed_hist
-    note = describe_f8_historic_catchup(
-        embed_hist,
-        merged_hist,
-        grid_number=int(data["grid_number"]),
-    )
-    assert note is None
-
-
-def test_f8_merge_before_score_loadout_and_telescope_score(tmp_path, monkeypatch):
-    """F8 scores with live historic in gather state (no disk merge)."""
-    from cursed_words_solver.loadout import (
-        parse_run_state,
-        prepare_run_state_dict_for_scoring,
-    )
-    from cursed_words_solver.models import Board, Loadout, LoadoutItem, Tile, TileColor
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "stale_f8_pissers_historic_catchup.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    live_run_state = {"extras": dict(data["disk_extras"])}
-    loadout = parse_run_state(prepare_run_state_dict_for_scoring(live_run_state))
-    assert _historic_words_count(loadout.extras.get("historic_words", "")) == 2
-    assert loadout.extras.get("red_tiles_used_encounter") == 6
-
-    board = Board(
-        tiles=[[None] * 5 for _ in range(5)],
-        active=[True] * 25,
-    )
-    board.tiles[0][0] = Tile(
-        row=0, col=0, char="A", letter="A", base_score=2, color=TileColor.RED
-    )
-    board.tiles[0][1] = Tile(
-        row=0, col=1, char="B", letter="B", base_score=2, color=TileColor.RED
-    )
-    pipeline = ScoringPipeline()
-    base = Loadout(
-        stickers=[LoadoutItem(id="telescope", name="Telescope", level=2)],
-    )
-    stale_loadout = Loadout(
-        stickers=list(base.stickers),
-        extras=dict(data["embed_extras"]),
-    )
-    merged_loadout = Loadout(
-        stickers=list(base.stickers),
-        extras=dict(loadout.extras or {}),
-    )
-    stale_score, _ = pipeline.score(board, [0, 1], "ab", stale_loadout)
-    merged_score, _ = pipeline.score(board, [0, 1], "ab", merged_loadout)
-    assert stale_score != merged_score
-
-
-def test_merge_encounter_historic_grid_advanced_stale_embed(tmp_path, monkeypatch):
-    """recrafts round: embed marked grid_advanced but still had prior-grid historic."""
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        describe_f8_historic_catchup,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "stale_f8_recrafts_grid_advance.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps({"extras": data["disk_extras"]}),
-        encoding="utf-8",
-    )
-    embed = {"extras": dict(data["embed_extras"])}
-    embed_hist = embed["extras"]["historic_words"]
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    merged_hist = merged["extras"]["historic_words"]
-    assert merged_hist == embed_hist
-    note = describe_f8_historic_catchup(
-        embed_hist,
-        merged_hist,
-        grid_number=int(data["grid_number"]),
-    )
-    assert note is None
-
-
-def test_merge_encounter_historic_prefers_shorter_fresh_on_grid_advance(
-    tmp_path, monkeypatch
-):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps(
-            {
-                "extras": {
-                    "historic_words": '[{"word":"iliacus","score":880}]',
-                    "grid_number": "2",
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    embed = {
-        "extras": {
-            "historic_words": '[{"word":"a"},{"word":"b"},{"word":"c"},{"word":"d"}]',
-            "grid_number": "2",
-        }
-    }
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    assert merged["extras"]["historic_words"] == embed["extras"]["historic_words"]
-
-
-def test_merge_encounter_historic_prefers_longer_fresh_when_missing_word(
-    tmp_path, monkeypatch
-):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    two_words = (
-        '[{"word":"iliacus","score":880},'
-        '{"word":"teepee","score":492,"red_tile_count":1}]'
-    )
-    run_state_path.write_text(
-        json.dumps({"extras": {"historic_words": two_words, "grid_number": "3"}}),
-        encoding="utf-8",
-    )
-    embed = {
-        "extras": {
-            "historic_words": '[{"word":"iliacus","score":880}]',
-            "grid_number": "3",
-        }
-    }
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    assert merged["extras"]["historic_words"] == embed["extras"]["historic_words"]
-
-
 def test_sanitize_run_state_snapshot_strips_stale_bicycle_for_bucket_pin(
     tmp_path, monkeypatch
 ):
     from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
         sanitize_run_state_snapshot_for_f8,
     )
     from cursed_words_solver.models import Loadout
@@ -1432,7 +1125,6 @@ def test_grid2_empty_historic_not_blocked_when_stale_pruned_no_telescope(
 ):
     """Grid 2 without Telescope: stale disk historic pruned after board refresh."""
     from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
         sanitize_run_state_snapshot_for_f8,
     )
     from cursed_words_solver.models import Board, Loadout
@@ -1474,91 +1166,6 @@ def test_grid2_empty_historic_not_blocked_when_stale_pruned_no_telescope(
     assert not loadout_needs_encounter_historic(loadout, board)
     f8_snapshot = sanitize_run_state_snapshot_for_f8(merged_run_state, loadout)
     f8_extras = f8_snapshot["extras"]
-    empty_warn = empty_historic_on_later_grid_warning(f8_extras)
-    blocked, reason = f8_should_block_save(
-        historic_catchup_stale_note=None,
-        empty_hist_warn=empty_warn,
-        hist_stale_note=None,
-        behind_disk_warn=None,
-        workflow_stale_warn=None,
-        grid_adv_warn=None,
-        loadout=loadout,
-        board=board,
-        f8_extras=f8_extras,
-    )
-    assert not blocked
-    assert reason is None
-
-
-def test_behind_disk_false_positive_when_stale_historic_pruned(tmp_path, monkeypatch):
-    """Disk historic from a prior board is pruned; embed empty must not lag-block."""
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        f8_historic_still_behind_disk_warning,
-        sanitize_run_state_snapshot_for_f8,
-    )
-    from cursed_words_solver.models import (
-        Board,
-        CurseType,
-        Loadout,
-        Tile,
-        TileColor,
-    )
-
-    def _tile(idx: int, ch: str) -> dict:
-        row, col = divmod(idx, 5)
-        return {
-            "row": row,
-            "col": col,
-            "char": ch,
-            "letter": ch,
-            "base_score": 1,
-            "color": "shiny",
-            "curse": "letter",
-            "active": True,
-        }
-
-    tiles = [_tile(i, "Z") for i in range(25)]
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps(
-            {
-                "board": {"rows": 5, "cols": 5, "tiles": tiles, "money": 8},
-                "extras": {
-                    "grid_number": "2",
-                    "scoring_previous_words_count": "1",
-                    "historic_words": json.dumps(
-                        [{"word": "oxyphil", "score": 63, "path": [0, 1, 2, 3, 4]}]
-                    ),
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    merged_run_state = json.loads(run_state_path.read_text(encoding="utf-8"))
-    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
-    board.tiles[2][2] = Tile(
-        2,
-        2,
-        "t",
-        "E",
-        0,
-        color=TileColor.RED,
-        curse=CurseType.ITEM,
-        metadata={"scattered_item_id": "telescope", "scattered_item_level": 1},
-    )
-    loadout = Loadout(extras={"grid_number": "2"})
-    f8_snapshot = sanitize_run_state_snapshot_for_f8(merged_run_state, loadout)
-    f8_extras = f8_snapshot["extras"]
-    assert _historic_words_count(str(f8_extras.get("historic_words", "") or "")) == 1
-    assert (
-        f8_historic_still_behind_disk_warning(
-            f8_extras,
-            board=parse_board_from_run_state(merged_run_state),
-        )
-        is None
-    )
     empty_warn = empty_historic_on_later_grid_warning(f8_extras)
     blocked, reason = f8_should_block_save(
         historic_catchup_stale_note=None,
@@ -1624,143 +1231,6 @@ def test_workflow_stale_false_positive_after_word_play_prune():
         f8_extras=f8_extras,
     )
     assert not blocked
-
-
-def test_clear_when_historic_count_increases_reason(tmp_path, monkeypatch):
-    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
-    hist_f8 = '[{"word":"a"},{"word":"b"}]'
-    hist_cur = '[{"word":"a"},{"word":"b"},{"word":"c"}]'
-    suggestion_path.write_text(
-        json.dumps(
-            {
-                "board_fingerprint": "board-a",
-                "run_state_snapshot": {
-                    "extras": {"historic_words": hist_f8},
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    reason = clear_stale_last_suggestion_if_workflow_changed(
-        {"historic_words": hist_cur}
-    )
-    assert reason is not None
-    assert "historic words changed" in reason
-    assert "2" in reason and "3" in reason
-    assert not suggestion_path.exists()
-
-
-def test_clear_when_historic_words_grows(tmp_path, monkeypatch):
-    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
-    suggestion_path.write_text(
-        json.dumps(
-            {
-                "board_fingerprint": "board-a",
-                "run_state_snapshot": {
-                    "extras": {
-                        "historic_words": '[{"word":"a"},{"word":"b"},{"word":"c"}]',
-                        "previous_word_first_letter": "s",
-                    }
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    reason = clear_stale_last_suggestion_if_workflow_changed(
-        {
-            "historic_words": '[{"word":"a"},{"word":"b"},{"word":"c"},{"word":"d"}]',
-            "previous_word_first_letter": "s",
-        }
-    )
-    assert reason is not None
-    assert "historic words changed" in reason
-    assert "3" in reason and "4" in reason
-    assert not suggestion_path.exists()
-
-
-def test_clear_when_prev_letter_changes(tmp_path, monkeypatch):
-    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
-    suggestion_path.write_text(
-        json.dumps(
-            {
-                "board_fingerprint": "board-a",
-                "run_state_snapshot": {
-                    "extras": {"previous_word_first_letter": "s"}
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    reason = clear_stale_last_suggestion_if_workflow_changed(
-        {"previous_word_first_letter": "f"}
-    )
-    assert reason is not None
-    assert "previous word letter" in reason
-    assert not suggestion_path.exists()
-
-
-def test_no_clear_when_historic_unchanged(tmp_path, monkeypatch):
-    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
-    historic = '[{"word":"a"},{"word":"b"}]'
-    suggestion_path.write_text(
-        json.dumps(
-            {
-                "board_fingerprint": "board-a",
-                "run_state_snapshot": {
-                    "extras": {
-                        "historic_words": historic,
-                        "previous_word_first_letter": "s",
-                    }
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    assert (
-        clear_stale_last_suggestion_if_workflow_changed(
-            {
-                "historic_words": historic,
-                "previous_word_first_letter": "s",
-            }
-        )
-        is None
-    )
-    assert suggestion_path.exists()
-
-
-def test_f8_prior_suggestion_stale_note_when_workflow_drifted(tmp_path, monkeypatch):
-    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
-    suggestion_path.write_text(
-        json.dumps(
-            {
-                "board_fingerprint": "board-a",
-                "run_state_snapshot": {
-                    "extras": {"previous_word_first_letter": "j"}
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    note = f8_prior_suggestion_stale_note({"previous_word_first_letter": "f"})
-    assert note is not None
-    assert "Played a word since last F8" in note
-    assert "j" in note and "f" in note
-
-
-def test_f8_prior_suggestion_stale_note_none_when_aligned(tmp_path, monkeypatch):
-    suggestion_path = _patch_suggestion_path(tmp_path, monkeypatch)
-    suggestion_path.write_text(
-        json.dumps(
-            {
-                "board_fingerprint": "board-a",
-                "run_state_snapshot": {
-                    "extras": {"previous_word_first_letter": "j"}
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    assert f8_prior_suggestion_stale_note({"previous_word_first_letter": "j"}) is None
 
 
 def test_last_historic_word_first_letter_skips_markup():
@@ -1871,42 +1341,6 @@ def test_grid_transition_stale_f8_extras_diff_fixture():
     assert note is not None
     for fragment in data["expected_stale_note_contains"]:
         assert fragment in note
-
-
-def test_is_export_catchup_drift_historic_count_increase():
-    assert is_export_catchup_drift(
-        {"historic_words": ""},
-        {"historic_words": '[{"word":"gie"}]'},
-    )
-
-
-def test_is_export_catchup_drift_letter_only_when_historic_unchanged():
-    assert is_export_catchup_drift(
-        {"historic_words": "[]", "previous_word_first_letter": "g"},
-        {"historic_words": "[]", "previous_word_first_letter": "s"},
-    )
-
-
-def test_is_export_catchup_drift_false_when_historic_same_count_content_differs():
-    hist = '[{"word":"nek"},{"word":"not"}]'
-    hist2 = '[{"word":"nek"},{"word":"effs"}]'
-    assert not is_export_catchup_drift(
-        {"historic_words": hist},
-        {"historic_words": hist2},
-    )
-
-
-def test_is_export_catchup_drift_same_count_prev_letter_and_historic_refresh():
-    assert is_export_catchup_drift(
-        {
-            "historic_words": '[{"word":"foo"}]',
-            "previous_word_first_letter": "n",
-        },
-        {
-            "historic_words": '[{"word":"bar"}]',
-            "previous_word_first_letter": "q",
-        },
-    )
 
 
 def test_board_tiles_fingerprint_suffix_strips_money_prefix():
@@ -2313,213 +1747,6 @@ def test_reconcile_clears_stale_prev_letter_grid2_empty_historic():
     assert "previous_word_first_letter" not in extras
 
 
-def test_f8_snapshot_merge_refreshes_historic_same_grid(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    two_words = '[{"word":"penne"},{"word":"zooty"}]'
-    run_state_path.write_text(
-        json.dumps(
-            {
-                "extras": {
-                    "historic_words": two_words,
-                    "previous_word_first_letter": "f",
-                    "grid_number": "2",
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    embed = {
-        "extras": {
-            "historic_words": '[{"word":"penne"}]',
-            "previous_word_first_letter": "e",
-            "grid_number": "2",
-        }
-    }
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    assert _historic_words_count(merged["extras"]["historic_words"]) == 1
-    assert merged["extras"]["previous_word_first_letter"] == "e"
-
-
-def test_gownmen_round_log_workflow_stale_matches_python():
-    fixture = (
-        Path(__file__).resolve().parent / "fixtures" / "gownmen_stale_f8_round_log.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    extras_diff = data.get("extras_diff") or {}
-    f8_extras = {
-        k: (v.get("f8") if isinstance(v, dict) else "")
-        for k, v in extras_diff.items()
-    }
-    submit_extras = {
-        k: (v.get("submit") if isinstance(v, dict) else "")
-        for k, v in extras_diff.items()
-    }
-    reason = workflow_stale_vs_f8_snapshot(submit_extras, f8_extras)
-    assert reason is not None
-    assert (
-        "historic words changed" in reason
-        or "historic words metadata changed" in reason
-    )
-    assert "e" in reason and "f" in reason
-    # Same historic count but different words — true stale, not export catch-up.
-    assert not is_export_catchup_drift(f8_extras, submit_extras)
-
-
-def test_merge_replaces_historic_same_count_different_word(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    chipotle = '[{"word":"chipotle","score":36}]'
-    penne = '[{"word":"penne","score":23}]'
-    run_state_path.write_text(
-        json.dumps(
-            {
-                "extras": {
-                    "historic_words": chipotle,
-                    "previous_word_first_letter": "c",
-                    "grid_number": "2",
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    embed = {
-        "extras": {
-            "historic_words": penne,
-            "previous_word_first_letter": "p",
-            "grid_number": "2",
-        }
-    }
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    assert merged["extras"]["historic_words"] == penne
-    assert merged["extras"]["previous_word_first_letter"] == "p"
-
-
-def test_merge_prefers_shorter_fresh_on_same_grid(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    short = '[{"word":"tiffany"}]'
-    long_hist = '[{"word":"a"},{"word":"b"},{"word":"c"}]'
-    run_state_path.write_text(
-        json.dumps(
-            {"extras": {"historic_words": short, "grid_number": "2"}},
-        ),
-        encoding="utf-8",
-    )
-    embed = {
-        "extras": {"historic_words": long_hist, "grid_number": "2"},
-    }
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    assert merged["extras"]["historic_words"] == long_hist
-
-
-def test_zoccos_same_count_fixture_merge(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        _historic_words_json_prefer_fresh,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    fixture = (
-        Path(__file__).resolve().parent / "fixtures" / "stale_f8_zoccos_same_count.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    diff = data["extras_diff"]
-    f8_hist = diff["historic_words"]["f8"]
-    submit_hist = diff["historic_words"]["submit"]
-    assert (
-        _historic_words_json_prefer_fresh(
-            f8_hist,
-            submit_hist,
-            embed_grid=2,
-            fresh_grid=2,
-        )
-        == submit_hist
-    )
-
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps(
-            {
-                "extras": {
-                    "historic_words": submit_hist,
-                    "previous_word_first_letter": diff["previous_word_first_letter"][
-                        "submit"
-                    ],
-                    "grid_number": data["grid_number"],
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    embed = {
-        "extras": {
-            "historic_words": f8_hist,
-            "previous_word_first_letter": diff["previous_word_first_letter"]["f8"],
-            "grid_number": data["grid_number"],
-        }
-    }
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged["extras"]["historic_words"] == embed["extras"]["historic_words"]
-
-
-def test_joey_shorter_submit_fixture_merge(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        _historic_words_json_prefer_fresh,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    fixture = (
-        Path(__file__).resolve().parent / "fixtures" / "stale_f8_joey_shorter_submit.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    diff = data["extras_diff"]
-    f8_hist = diff["historic_words"]["f8"]
-    submit_hist = diff["historic_words"]["submit"]
-    assert (
-        _historic_words_json_prefer_fresh(
-            f8_hist,
-            submit_hist,
-            embed_grid=2,
-            fresh_grid=2,
-        )
-        == submit_hist
-    )
-
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps(
-            {"extras": {"historic_words": submit_hist, "grid_number": data["grid_number"]}},
-        ),
-        encoding="utf-8",
-    )
-    merged = merge_encounter_historic_for_f8_snapshot(
-        {"extras": {"historic_words": f8_hist, "grid_number": data["grid_number"]}}
-    )
-    assert merged["extras"]["historic_words"] == f8_hist
-
-
 def test_rich_historic_word_previous_letter_not_from_font_tag():
     from cursed_words_solver.loadout import _previous_letter_from_historic_words
 
@@ -2531,33 +1758,6 @@ def test_rich_historic_word_previous_letter_not_from_font_tag():
     assert _previous_letter_from_historic_words(norias_rich) == "o"
 
 
-def test_word_starts_after_previous_skips_grid_one():
-    from cursed_words_solver.models import Loadout, LoadoutItem
-    from cursed_words_solver.rules.scoring_conditions import explain_sticker_condition
-    from tests.catalog.stickers.test_default_stickers import _empty_board, _tile
-
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "R", 1)
-    board.tiles[0][1] = _tile(0, 1, "O", 1)
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="limnophila", name="Limnophila", level=1, kind="stamp")],
-        extras={
-            "grid_number": "1",
-            "previous_word_first_letter": "o",
-        },
-    )
-    met, detail = explain_sticker_condition(
-        "word_starts_after_previous",
-        board,
-        [0, 1],
-        "ro",
-        loadout,
-        applying_sticker_id="limnophila",
-    )
-    assert met is False
-    assert "previous word" in detail
-
-
 def test_glaived_grid4_first_word_limnophila_off():
     """First word on grid 4: stale previous f must not Ã—1.5 when scoring cache empty."""
     from cursed_words_solver.loadout import (
@@ -2565,8 +1765,7 @@ def test_glaived_grid4_first_word_limnophila_off():
         parse_run_state,
         prepare_run_state_dict_for_scoring,
     )
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-
+    from cursed_words_solver.engine.scorer import EngineScorer
     fixture_path = (
         Path(__file__).resolve().parent / "fixtures" / "glaived_grid4_first_word.json"
     )
@@ -2580,7 +1779,7 @@ def test_glaived_grid4_first_word_limnophila_off():
 
     path = data["path"]
     word = data["word"]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
 
     stale_loadout = parse_run_state(raw_snapshot)
     stale_score, stale_trace = pipeline.score(board, path, word, stale_loadout)
@@ -2609,8 +1808,7 @@ def test_rojaks_mismatch_grid_one_limnophila_off():
         parse_run_state,
         prepare_run_state_dict_for_scoring,
     )
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-
+    from cursed_words_solver.engine.scorer import EngineScorer
     mismatch_path = (
         Path(__file__).resolve().parent
         / "fixtures"
@@ -2628,7 +1826,7 @@ def test_rojaks_mismatch_grid_one_limnophila_off():
 
     path = data["path"]
     word = data["word"]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     score, trace = pipeline.score(board, path, word, loadout)
     assert score == data["actual_score"]
     assert score == 61
@@ -2643,8 +1841,7 @@ def test_divergent_mismatch_rich_historic_scores_actual():
         parse_run_state,
         prepare_run_state_dict_for_scoring,
     )
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-
+    from cursed_words_solver.engine.scorer import EngineScorer
     mismatch_path = (
         Path(__file__).resolve().parent
         / "fixtures"
@@ -2662,7 +1859,7 @@ def test_divergent_mismatch_rich_historic_scores_actual():
 
     path = data["path"]
     word = data["word"]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     score, _ = pipeline.score(board, path, word, loadout)
     assert score == data["actual_score"]
     assert score == 88
@@ -2675,8 +1872,7 @@ def test_chipotle_mismatch_stale_f_overpredicts_limnophila():
         parse_run_state,
         prepare_run_state_dict_for_scoring,
     )
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-
+    from cursed_words_solver.engine.scorer import EngineScorer
     mismatch_path = (
         Path(__file__).resolve().parent
         / "fixtures"
@@ -2694,7 +1890,7 @@ def test_chipotle_mismatch_stale_f_overpredicts_limnophila():
 
     path = data["path"]
     word = data["word"]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
 
     score, _ = pipeline.score(board, path, word, loadout)
     assert score == data["actual_score"]
@@ -2784,83 +1980,6 @@ def test_owsen_grid2_underexport_stale_f8_extras_diff_fixture():
         assert fragment in note
 
 
-def test_gyrene_missing_owsen_historic_catchup(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        describe_f8_historic_catchup,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "stale_f8_gyrene_missing_owsen.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps({"extras": data["disk_extras"]}),
-        encoding="utf-8",
-    )
-    embed = {"extras": dict(data["embed_extras"])}
-    embed_hist = embed["extras"]["historic_words"]
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    merged_hist = merged["extras"]["historic_words"]
-    assert merged_hist == embed_hist
-    note = describe_f8_historic_catchup(
-        embed_hist,
-        merged_hist,
-        grid_number=int(data["grid_number_submit"]),
-    )
-    assert note is None
-
-
-def test_grid_advanced_not_intentionally_cleared():
-    from cursed_words_solver.loadout import _encounter_historic_intentionally_cleared
-
-    assert not _encounter_historic_intentionally_cleared(
-        {"encounter_historic_source": "grid_advanced"}
-    )
-    assert not _encounter_historic_intentionally_cleared(
-        {"encounter_historic_source": "grid1_no_scoring_cache"}
-    )
-    assert _encounter_historic_intentionally_cleared(
-        {"encounter_historic_source": "grid_start_cleared"}
-    )
-
-
-def test_grid1_no_scoring_cache_does_not_block_grid2_disk_catchup(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import merge_encounter_historic_for_f8_snapshot
-
-    hist = '[{"word":"stigmatal","score":2752,"red_tile_count":7}]'
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps(
-            {
-                "extras": {
-                    "grid_number": "2",
-                    "historic_words": hist,
-                    "encounter_historic_source": "live",
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    embed = {
-        "extras": {
-            "grid_number": "2",
-            "historic_words": "",
-            "encounter_historic_source": "grid1_no_scoring_cache",
-        }
-    }
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    assert merged["extras"]["historic_words"] == ""
-
-
 def test_loadout_fingerprint_stale_warning_detects_mismatch():
     from cursed_words_solver.loadout import loadout_fingerprint_stale_warning
     from cursed_words_solver.models import Loadout, LoadoutItem
@@ -2890,48 +2009,6 @@ def test_penill_historic_shrink_stale_f8_extras_diff_fixture():
     assert note is not None
     for fragment in data["expected_stale_note_contains"]:
         assert fragment in note
-
-
-def test_penill_historic_shrink_prefer_fresh_on_same_grid():
-    from cursed_words_solver.loadout import _historic_words_json_prefer_fresh
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "stale_f8_penill_historic_shrink.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    preferred = _historic_words_json_prefer_fresh(
-        data["embed_hist"],
-        data["disk_hist"],
-        embed_grid=int(data["grid_number"]),
-        fresh_grid=int(data["grid_number"]),
-    )
-    assert preferred == data["disk_hist"]
-
-
-def test_f8_prediction_workflow_stale_warning_penill():
-    from cursed_words_solver.suggestion import f8_prediction_workflow_stale_warning
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "stale_f8_penill_historic_shrink.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    note = f8_prediction_workflow_stale_warning(
-        {
-            "historic_words": data["disk_hist"],
-            "grid_number": data["grid_number"],
-        },
-        {
-            "historic_words": data["embed_hist"],
-            "grid_number": data["grid_number"],
-        },
-    )
-    assert note is not None
-    assert "historic words changed" in note or "historic_words changed" in note
-    assert "F8 again" in note
 
 
 def test_penill_mismatch_stale_workflow_one_point_delta():
@@ -3374,35 +2451,6 @@ def test_presync_workflow_drift_blocks_capture_satisfy_fixture():
     assert data["actual_score"] == 25
 
 
-def test_satisfy_stale_f8_solver_matches_stale_prediction_on_merged_snapshot():
-    """Merged submit extras replay scores 17 (= stale F8); 25 was in-game Bento on pre-submit board."""
-    from cursed_words_solver.loadout import (
-        parse_board_from_run_state,
-        parse_run_state,
-        prepare_run_state_dict_for_scoring,
-    )
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-    from cursed_words_solver.rules.scoring_conditions import (
-        apply_snapshot_phased_session_extras,
-    )
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "mismatches"
-        / "20260609_104918.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    run_state = prepare_run_state_dict_for_scoring(dict(data["run_state_snapshot"]))
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    apply_snapshot_phased_session_extras(loadout, board)
-    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
-    assert int(score) == data["predicted_score"] == 17
-    assert data["actual_score"] == 25
-    assert data["stale_f8_extras"] is True
-
-
 def test_is_embed_stale_drift_historic_shrink():
     f8 = {"historic_words": '[{"word":"a"},{"word":"b"}]'}
     cur = {"historic_words": '[{"word":"c"}]'}
@@ -3479,37 +2527,6 @@ def test_diets_grid2_bleed_fixture():
     assert note is not None
     for fragment in data["expected_stale_note_contains"]:
         assert fragment in note
-
-
-def test_diets_grid2_merge_prefers_disk_historic(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "stale_f8_diets_grid2_bleed.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps({"extras": data["disk_extras"]}),
-        encoding="utf-8",
-    )
-    embed = {
-        "extras": {
-            "historic_words": data["run_state_extras"]["historic_words"],
-            "grid_number": "2",
-            "encounter_historic_source": "grid_advanced_disk",
-            "scoring_previous_words_count": "4",
-        }
-    }
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    assert merged["extras"]["historic_words"] == data["run_state_extras"]["historic_words"]
 
 
 def test_grid_one_historic_cache_mismatch_warning():
@@ -3706,8 +2723,6 @@ def test_is_benign_workflow_shrink_false_on_letter_mismatch():
 
 def test_project_workflow_extras_for_f8_embed_joey(tmp_path, monkeypatch):
     from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        _previous_letter_from_historic_words,
         _scoring_previous_words_count_from_extras,
         project_workflow_extras_for_f8_embed,
     )
@@ -3751,7 +2766,6 @@ def test_embed_f8_snapshot_merges_scoring_loadout_workflow_extras(
 ):
     from cursed_words_solver.f8_snapshot import F8Snapshot, embed_f8_snapshot
     from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
         _scoring_previous_words_count_from_extras,
     )
     from cursed_words_solver.models import Loadout
@@ -3823,7 +2837,6 @@ def test_sanitize_run_state_snapshot_for_f8_projects_workflow_extras(
     tmp_path, monkeypatch
 ):
     from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
         sanitize_run_state_snapshot_for_f8,
         _scoring_previous_words_count_from_extras,
     )
@@ -3922,59 +2935,9 @@ def test_bento_jitter_historic_shrink_letter_drift_not_benign():
     assert "previous_word_first_letter f8='j' submit='h'" in note
 
 
-def test_bento_err_stale_prev_letter_overpredicts():
-    """Stale previous_word_first_letter applies Bento; submit projection scores 813."""
-    from dataclasses import replace
-
-    from cursed_words_solver.models import LoadoutItem
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-    from cursed_words_solver.loadout import parse_run_state
-    from tests.regression.test_scoring_mismatches import _run_state_for_replay
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "mismatches"
-        / "20260621_085505.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    run_state = _run_state_for_replay(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None
-    has_bento = any(
-        (s.id or "").lower() in ("bento_box", "bento") for s in (loadout.stamps or [])
-    )
-    if not has_bento:
-        loadout.stamps = list(loadout.stamps or []) + [
-            LoadoutItem(id="bento_box", name="Bento Box", kind="stamp", level=1),
-        ]
-    pipeline = ScoringPipeline()
-    score, _, trace = pipeline.score_with_trace(
-        board, data["path"], data["word"], loadout
-    )
-    assert int(score) == int(data["actual_score"])
-    bento_steps = [
-        s for s in trace if str(s.get("rule_id", "")).lower() == "bento_box"
-    ]
-    assert not any(s.get("applied") for s in bento_steps)
-
-    stale_extras = dict(loadout.extras or {})
-    stale_extras["previous_word_first_letter"] = "e"
-    stale_loadout = replace(loadout, extras=stale_extras)
-    stale_score, _, stale_trace = pipeline.score_with_trace(
-        board, data["path"], data["word"], stale_loadout
-    )
-    assert int(stale_score) == int(data["actual_score"])
-    stale_bento = [
-        s for s in stale_trace if str(s.get("rule_id", "")).lower() == "bento_box"
-    ]
-    assert not any(s.get("applied") for s in stale_bento)
-
-
 def test_jitter_bento_stale_f8_historic_replay():
     """Regression 20260621_085720: stale F8 historic must not apply Bento to jitter."""
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
+    from cursed_words_solver.engine.scorer import EngineScorer
     from cursed_words_solver.loadout import (
         parse_board_from_run_state,
         parse_run_state,
@@ -3994,7 +2957,7 @@ def test_jitter_bento_stale_f8_historic_replay():
     board = parse_board_from_run_state(run_state)
     loadout = parse_run_state(run_state)
     assert board is not None
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     score, _, trace = pipeline.score_with_trace(
         board, data["path"], data["word"], loadout
     )
@@ -4005,38 +2968,7 @@ def test_jitter_bento_stale_f8_historic_replay():
     assert not any(s.get("applied") for s in bento_steps)
 
 
-def test_merge_encounter_historic_fixes_bento_prev_letter(tmp_path, monkeypatch):
-    """Live gather uses stale embed as-is (no disk catch-up for Bento letter)."""
-    from cursed_words_solver.loadout import (
-        merge_encounter_historic_for_f8_snapshot,
-        parse_run_state,
-    )
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "mismatches"
-        / "20260621_085505.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    stale_embed = copy.deepcopy(data["run_state_snapshot"])
-    stale_extras = stale_embed.setdefault("extras", {})
-    stale_extras["historic_words"] = data["extras_diff"]["historic_words"]["f8"]
-    stale_extras["previous_word_first_letter"] = "e"
-    stale_extras["scoring_previous_words_count"] = "3"
-
-    merged = merge_encounter_historic_for_f8_snapshot(stale_embed)
-    assert merged is not None
-    merged_extras = merged.get("extras") or {}
-    assert merged_extras.get("previous_word_first_letter") == "e"
-    assert _historic_words_count(str(merged_extras.get("historic_words", ""))) == 3
-
-    loadout = parse_run_state(merged)
-    assert str((loadout.extras or {}).get("previous_word_first_letter")) == "e"
-
-
 def test_poll_round_log_submits_tails_index(tmp_path, monkeypatch):
-    from cursed_words_solver.config import ROUND_LOG_INDEX_PATH
     from cursed_words_solver.round_log import poll_round_log_submits
 
     index_path = tmp_path / "index.jsonl"
@@ -4102,8 +3034,6 @@ def test_is_benign_workflow_shrink_false_on_letter_mismatch():
 
 def test_project_workflow_extras_for_f8_embed_joey(tmp_path, monkeypatch):
     from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        _previous_letter_from_historic_words,
         _scoring_previous_words_count_from_extras,
         project_workflow_extras_for_f8_embed,
     )
@@ -4145,7 +3075,6 @@ def test_project_workflow_extras_for_f8_embed_joey(tmp_path, monkeypatch):
 def test_embed_f8_snapshot_projects_workflow_extras(tmp_path, monkeypatch):
     from cursed_words_solver.f8_snapshot import F8Snapshot, embed_f8_snapshot
     from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
         _scoring_previous_words_count_from_extras,
         parse_run_state,
     )
@@ -4253,13 +3182,6 @@ KIERIE_DNA_FIXTURE = (
     / "round_logs"
     / "20260629_221116_kierie_dna_stale.json"
 )
-
-
-def test_merge_mutating_dna_for_stale_compare_prefers_scoring():
-    workflow = {"mutating_dna_letter_counts": "{}"}
-    scoring = {"mutating_dna_letter_counts": '{"m":2,"a":1}'}
-    merged = _prepare_extras_for_bicycle_stale_compare(workflow, scoring, {})
-    assert merged["mutating_dna_letter_counts"] == '{"m":2,"a":1}'
 
 
 @pytest.mark.parametrize(
@@ -4393,15 +3315,6 @@ def test_f8_should_not_block_when_scatter_below_equipped_but_capped() -> None:
     assert reason is None
 
 
-def test_align_embed_caps_inflated_birthday_cake_bonus() -> None:
-    from cursed_words_solver.loadout import align_embed_with_scoring_loadout
-
-    embed = {"birthday_cake_bonus": "74"}
-    scoring = {"birthday_cake_bonus": "92"}
-    align_embed_with_scoring_loadout(embed, scoring)
-    assert embed["birthday_cake_bonus"] == "74"
-
-
 def test_f8_should_block_when_birthday_cake_inflated() -> None:
     from cursed_words_solver.models import LoadoutItem
 
@@ -4423,7 +3336,6 @@ def test_disk_catchup_drift_detects_inflated_birthday_cake() -> None:
         {"birthday_cake_bonus": "92"},
         {"birthday_cake_bonus": "74"},
     )
-
 
 
 def test_f8_should_not_block_when_scatter_levels_exact() -> None:

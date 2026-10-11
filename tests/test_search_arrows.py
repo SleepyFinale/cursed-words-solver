@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-from cursed_words_solver.arrow_tiles import (
-    arrow_ray_target_mask,
-    build_arrow_target_masks,
-)
-from cursed_words_solver.graph_bitboard import build_board_graph_context, index_of
+from cursed_words_solver.arrow_tiles import arrow_ray_target_mask, build_arrow_target_masks
+from cursed_words_solver.graph_bitboard import index_of
 from cursed_words_solver.models import Board, CurseType, Tile, TileColor
-from cursed_words_solver.rules.stamp_behaviors import FLAG_HORIZONTAL_WRAP
 
 
 def _board_from_tiles(specs: list[tuple[int, int, str, str]]) -> Board:

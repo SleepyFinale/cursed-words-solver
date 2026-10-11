@@ -11,7 +11,7 @@ from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.search import WordSearcher
-from tests.regression.test_scoring_mismatches import _run_state_for_replay
+from tests.helpers.replay import _run_state_for_replay
 
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "mismatches"
 

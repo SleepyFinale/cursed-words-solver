@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -31,25 +30,6 @@ def round_log_index_size() -> int:
         return ROUND_LOG_INDEX_PATH.stat().st_size
     except OSError:
         return 0
-
-
-def auto_solve_board_ready(
-    *,
-    snapshot_board_fp: str,
-    current_board_fp: str,
-    queued_monotonic: float,
-    now_monotonic: float | None = None,
-    timeout_sec: float = AUTO_SOLVE_BOARD_WAIT_TIMEOUT_SEC,
-) -> bool:
-    """True when melmod likely exported the post-submit board (or wait timed out)."""
-    snap = (snapshot_board_fp or "").strip()
-    cur = (current_board_fp or "").strip()
-    if snap and cur and cur != snap:
-        return True
-    if not snap:
-        return True
-    now = time.monotonic() if now_monotonic is None else now_monotonic
-    return (now - queued_monotonic) >= timeout_sec
 
 
 def parse_round_log_id_time(round_id: str) -> datetime | None:
@@ -258,32 +238,6 @@ def poll_round_log_submits(since_offset: int = 0) -> tuple[list[dict[str, Any]],
         if isinstance(row, dict):
             entries.append(row)
     return entries, new_offset
-
-
-def derive_match_status(
-    *,
-    solver_available: bool,
-    path_matches: bool,
-    path_prefix_extension: bool = False,
-    board_matches: bool = True,
-    predicted_score: int,
-    actual_score: int,
-    capture_blocked: bool = False,
-) -> str:
-    """Mirror RoundLogExporter.ResolveMatchStatus for tests."""
-    if not solver_available:
-        return "no_suggestion"
-    if capture_blocked:
-        return "suggestion_blocked"
-    if not board_matches:
-        return "path_mismatch"
-    if not path_matches:
-        if path_prefix_extension:
-            return "path_extension"
-        return "path_mismatch"
-    if predicted_score != actual_score:
-        return "score_mismatch"
-    return "score_match"
 
 
 def validate_round_log(data: dict[str, Any]) -> list[str]:

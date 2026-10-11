@@ -7,20 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.regression.test_path_mismatch_round_log import (
-    _round_log_to_replay,
-    _score_submitted,
-)
-from tests.regression.test_scoring_mismatches import (
-    _run_state_for_replay,
-    _replay_path,
-)
+from tests.regression.test_path_mismatch_round_log import _round_log_to_replay, _score_submitted
+from tests.helpers.replay import _run_state_for_replay, _replay_path
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.config import GAME_WORDLIST_PATH, AppConfig
-from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.search import WordSearcher
-from cursed_words_solver.rules.boss_effects import boss_word_constraints
+from cursed_words_solver.engine.scorer import EngineScorer
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "round_logs"
 
@@ -66,5 +56,5 @@ def test_hiatus_off_path_tombstone_still_3489() -> None:
     solver_path = (data.get("solver") or {}).get("path")
     assert solver_path
     off_path = _replay_path(board, solver_path)
-    score, _ = ScoringPipeline().score(board, off_path, "hiatus", loadout)
+    score, _ = EngineScorer().score(board, off_path, "hiatus", loadout)
     assert int(score) == HIATUS_OFF_PATH_SCORE

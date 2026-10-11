@@ -2,34 +2,9 @@
 
 from __future__ import annotations
 
-from cursed_words_solver.graph_bitboard import (
-    KNIGHT_ADJACENCY,
-    KNIGHT_TARGETS,
-    KING_STEP_MASK,
-    NEIGHBORS_8,
-    NEIGHBORS_8_WRAP,
-    RAY_LINES,
-    STANDARD_ADJACENCY,
-    STANDARD_ADJACENCY_WRAP,
-    build_board_graph_context,
-    collect_mask_indices,
-    iter_mask,
-    mask_from_indices,
-)
-from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
-from cursed_words_solver.rules.chess_tiles import (
-    DIRS_8,
-    _ray_neighbors_mask,
-    chess_neighbors,
-    index_of,
-    king_neighbors_mask,
-    knight_neighbors_mask,
-)
-from cursed_words_solver.rules.stamp_behaviors import (
-    FLAG_HORIZONTAL_WRAP,
-    stamp_search_flags_mask,
-)
-from cursed_words_solver.search import neighbors_from_tile
+from cursed_words_solver.graph_bitboard import KNIGHT_ADJACENCY, KNIGHT_TARGETS, KING_STEP_MASK, NEIGHBORS_8, NEIGHBORS_8_WRAP, RAY_LINES, STANDARD_ADJACENCY, STANDARD_ADJACENCY_WRAP, iter_mask, mask_from_indices
+from cursed_words_solver.models import Board, CurseType, Tile, TileColor
+from cursed_words_solver.rules.chess_tiles import DIRS_8, index_of
 
 
 def _empty_board() -> Board:
@@ -129,15 +104,6 @@ def test_ray_lines_for_board_6x6_bishop_diagonal():
     assert lines[0][7] != (6, 12, 18, 24)
 
 
-def test_board_graph_context_active_mask():
-    board = _empty_board()
-    board.active[12] = False
-    ctx = build_board_graph_context(board)
-    assert ctx.is_active(11)
-    assert not ctx.is_active(12)
-    assert ctx.active_mask & (1 << 12) == 0
-
-
 def _chess_piece_board(
     center_curse: CurseType,
     *,
@@ -190,81 +156,6 @@ def _chess_piece_board(
     return Board(tiles=rows)
 
 
-def test_chess_fast_path_matches_legacy_masks():
-    """Optimized graph_ctx paths must match board-lookup fallbacks."""
-    cases = [
-        (
-            CurseType.CHESS_KNIGHT,
-            "white",
-            {},
-            lambda b, vm, side, ctx: knight_neighbors_mask(
-                b, 12, vm, moving_side=side, graph_ctx=None
-            ),
-            lambda b, vm, side, ctx: knight_neighbors_mask(
-                b, 12, vm, moving_side=side, graph_ctx=ctx
-            ),
-        ),
-        (
-            CurseType.CHESS_KING,
-            "white",
-            {},
-            lambda b, vm, side, ctx: king_neighbors_mask(
-                b, 12, vm, moving_side=side, graph_ctx=None
-            ),
-            lambda b, vm, side, ctx: king_neighbors_mask(
-                b, 12, vm, moving_side=side, graph_ctx=ctx
-            ),
-        ),
-        (
-            CurseType.CHESS_ROOK,
-            "white",
-            {14: (CurseType.CHESS_PAWN, "black")},
-            lambda b, vm, side, ctx: _ray_neighbors_mask(
-                b, 12, vm, moving_side=side, allies_can_take=False,
-                straight=True, graph_ctx=None,
-            ),
-            lambda b, vm, side, ctx: _ray_neighbors_mask(
-                b, 12, vm, moving_side=side, allies_can_take=False,
-                straight=True, graph_ctx=ctx,
-            ),
-        ),
-        (
-            CurseType.CHESS_BISHOP,
-            "white",
-            {21: (CurseType.CHESS_PAWN, "white")},
-            lambda b, vm, side, ctx: _ray_neighbors_mask(
-                b, 12, vm, moving_side=side, allies_can_take=False,
-                diagonal=True, graph_ctx=None,
-            ),
-            lambda b, vm, side, ctx: _ray_neighbors_mask(
-                b, 12, vm, moving_side=side, allies_can_take=False,
-                diagonal=True, graph_ctx=ctx,
-            ),
-        ),
-        (
-            CurseType.CHESS_QUEEN,
-            "white",
-            {8: (CurseType.CHESS_ROOK, "black")},
-            lambda b, vm, side, ctx: _ray_neighbors_mask(
-                b, 12, vm, moving_side=side, allies_can_take=False,
-                straight=True, diagonal=True, graph_ctx=None,
-            ),
-            lambda b, vm, side, ctx: _ray_neighbors_mask(
-                b, 12, vm, moving_side=side, allies_can_take=False,
-                straight=True, diagonal=True, graph_ctx=ctx,
-            ),
-        ),
-    ]
-    visited_masks = (1 << 12, (1 << 12) | (1 << 11))
-    for curse, side, blockers, legacy_fn, fast_fn in cases:
-        board = _chess_piece_board(curse, center_side=side, blockers=blockers)
-        ctx = build_board_graph_context(board)
-        for vm in visited_masks:
-            legacy = legacy_fn(board, vm, side, ctx)
-            fast = fast_fn(board, vm, side, ctx)
-            assert sorted(iter_mask(legacy)) == sorted(iter_mask(fast))
-
-
 def test_mask_from_indices_roundtrip():
     indices = [0, 5, 12, 24]
     m = mask_from_indices(indices)
@@ -276,11 +167,3 @@ def test_static_adjacency_aliases():
     assert STANDARD_ADJACENCY_WRAP is NEIGHBORS_8_WRAP
     assert KNIGHT_ADJACENCY is KNIGHT_TARGETS
     assert KING_STEP_MASK is NEIGHBORS_8
-
-
-def test_collect_mask_indices_matches_iter_mask():
-    scratch = [0] * 25
-    for mask in (0, 1, 1 << 12, NEIGHBORS_8[12], (1 << 0) | (1 << 24)):
-        expected = list(iter_mask(mask))
-        n = collect_mask_indices(mask, scratch)
-        assert scratch[:n] == expected

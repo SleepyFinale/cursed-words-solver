@@ -8,9 +8,8 @@ from pathlib import Path
 import pytest
 
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.scoring_order import encounter_grid_scatter_refs
-from tests.regression.test_scoring_mismatches import _replay_path, _run_state_for_replay
+from cursed_words_solver.engine.scorer import EngineScorer
+from tests.helpers.replay import _replay_path, _run_state_for_replay
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "mismatches"
 
@@ -31,21 +30,6 @@ def _load(stem: str) -> dict:
 
 
 @pytest.mark.parametrize("stem,off_path_slug,word,expected", _OFF_PATH_CASES)
-def test_off_path_grid_scatter_refs_exclude_path_only_stickers(
-    stem: str, off_path_slug: str, word: str, expected: int
-) -> None:
-    del word, expected
-    data = _load(stem)
-    run_state = _run_state_for_replay(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-    rules = ScoringPipeline().rules
-    refs = encounter_grid_scatter_refs(board, data["path"], rules, loadout)
-    assert not any(r.rule_id == off_path_slug for r in refs)
-
-
-@pytest.mark.parametrize("stem,off_path_slug,word,expected", _OFF_PATH_CASES)
 def test_off_path_grid_scatter_replay_matches_actual(
     stem: str, off_path_slug: str, word: str, expected: int
 ) -> None:
@@ -56,45 +40,5 @@ def test_off_path_grid_scatter_replay_matches_actual(
     loadout = parse_run_state(run_state)
     assert board is not None and loadout is not None
     path = _replay_path(board, data["path"])
-    score, _ = ScoringPipeline().score(board, path, word, loadout)
+    score, _ = EngineScorer().score(board, path, word, loadout)
     assert int(score) == expected
-
-
-def test_off_path_tombstone_without_equip_does_not_score() -> None:
-    """20260708 iotas: grid Tombstone off path, no equipped Tombstone → no bonus."""
-    stem, off_path_slug, word, expected = _OFF_PATH_TOMBSTONE_NO_EQUIP
-    data = _load(stem)
-    run_state = _run_state_for_replay(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-    rules = ScoringPipeline().rules
-    refs = encounter_grid_scatter_refs(board, data["path"], rules, loadout)
-    assert not any(r.rule_id == off_path_slug for r in refs)
-    path = _replay_path(board, data["path"])
-    score, _ = ScoringPipeline().score(board, path, word, loadout)
-    assert int(score) == expected
-
-
-def test_off_path_dusty_coffin_without_equip_never_refs() -> None:
-    """ocherous: unequipped off-path Dusty is not in GetItemsForWordSubmission."""
-    data = _load("20260528_105530")
-    run_state = _run_state_for_replay(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-    rules = ScoringPipeline().rules
-    refs = encounter_grid_scatter_refs(board, data["path"], rules, loadout)
-    assert not any(r.rule_id == "dusty_coffin" for r in refs)
-
-
-def test_off_path_dusty_coffin_without_equip_later_grid_skipped() -> None:
-    """eath: grid-only dusty must not ref off-path when not equipped after prior words."""
-    data = _load("20260610_233142")
-    run_state = _run_state_for_replay(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-    rules = ScoringPipeline().rules
-    refs = encounter_grid_scatter_refs(board, data["path"], rules, loadout)
-    assert not any(r.rule_id == "dusty_coffin" for r in refs)

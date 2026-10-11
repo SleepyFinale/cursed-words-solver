@@ -11,7 +11,7 @@ from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.rules.boss_effects import boss_word_constraints
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.search import WordSearcher, path_movement_ok
 from cursed_words_solver.suggestion import path_is_submittable
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
@@ -60,7 +60,7 @@ def test_aug_path_miss_submitted_path_scores_and_is_legal(fixture_path: Path):
     actual = data["actual"]
     word = str(actual["word"])
     path = path_from_melmod_indices(board, actual["path"])
-    score, _ = ScoringPipeline().score(board, path, word, loadout)
+    score, _ = EngineScorer().score(board, path, word, loadout)
     assert int(score) == int(actual["score"])
     dictionary = WordDictionary(GAME_WORDLIST_PATH)
     assert path_movement_ok(board, path, loadout=loadout)
@@ -85,8 +85,8 @@ def test_aug_rodman_search_beats_logged_f8(fixture_path: Path):
     solver = data.get("solver") or {}
     f8_word = str(solver.get("word") or "")
     f8_path = path_from_melmod_indices(board, solver.get("path") or [])
-    f8_now, _ = ScoringPipeline().score(board, f8_path, f8_word, loadout)
-    rules = ScoringPipeline().rules
+    f8_now, _ = EngineScorer().score(board, f8_path, f8_word, loadout)
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),

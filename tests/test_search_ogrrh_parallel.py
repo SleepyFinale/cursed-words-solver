@@ -99,12 +99,12 @@ def test_ogrrh_board_parallel_search_finds_words():
 )
 def test_myrrhy_path_scores_220():
     """Game accepted MYRRHY on path OGRRH6 (Full Moon R-teleport); pipeline must match."""
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
+    from cursed_words_solver.engine.scorer import EngineScorer
     from cursed_words_solver.suggestion import dictionary_word_for_path
 
     board, loadout = _board_and_loadout()
     d = WordDictionary(GAME_WORDLIST_PATH)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     aligned = dictionary_word_for_path(
         board,
         MYRRH_PATH,

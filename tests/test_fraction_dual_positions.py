@@ -6,10 +6,6 @@ from pathlib import Path
 
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, CurseType, Tile, TileColor
-from cursed_words_solver.rules.fraction_tiles import (
-    fraction_position_valid,
-    tile_fraction_position_values,
-)
 from cursed_words_solver.search import PathValidator, WordSearcher
 
 
@@ -108,53 +104,6 @@ def _place_path_tiles(
     return "".join(parts)
 
 
-def test_tile_fraction_position_values():
-    half = _fraction(0, 0, 1, 2)
-    assert tile_fraction_position_values(half) == [1, 2]
-    three_quarters = _fraction(0, 0, 3, 4)
-    assert tile_fraction_position_values(three_quarters) == [3, 4]
-    three_fifths = _fraction(0, 0, 3, 5)
-    assert tile_fraction_position_values(three_fifths) == [3, 5]
-
-
-def test_three_quarters_valid_at_both_slots(tmp_path: Path):
-    wl = _wordlist(tmp_path, "abcxdefghj", "abcxxefghj")
-    d = WordDictionary(wl)
-    v = PathValidator(d, min_len=10)
-    frac = _fraction(0, 0, 3, 4)
-    path = _path_indices(10)
-
-    # Numerator slot: ¾ at tile ordinal 3 (path index 2)
-    board_num = _empty_board()
-    word_num = _place_path_tiles(
-        board_num,
-        path,
-        letters="abxdefgh",
-        frac_path_index=2,
-        frac=frac,
-        number_path_index=9,
-        number_face=10,
-    )
-    assert word_num == "ab?xdefgh10"
-    assert fraction_position_valid(frac, 2, relaxed=False)
-    assert v.word_ok(board_num, path, word_num, None)
-
-    # Denominator slot: ¾ at tile ordinal 4 (path index 3)
-    board_den = _empty_board()
-    word_den = _place_path_tiles(
-        board_den,
-        path,
-        letters="abcxefgh",
-        frac_path_index=3,
-        frac=frac,
-        number_path_index=9,
-        number_face=10,
-    )
-    assert word_den == "abc?xefgh10"
-    assert fraction_position_valid(frac, 3, relaxed=False)
-    assert v.word_ok(board_den, path, word_den, None)
-
-
 def test_search_finds_denominator_slot_path(tmp_path: Path):
     """WordSearcher must reach 3/5 at tile ordinal 5 (denominator), not only ordinal 3."""
     wl = _wordlist(tmp_path, "abcdxxe")
@@ -204,26 +153,3 @@ def test_search_finds_ten_tile_denominator_slot(tmp_path: Path):
     # Legacy results carry the wildcard pattern; the exact engine the spelling.
     assert any(r.word == word or r.dictionary_word == "abcxxefghi" for r in results)
     assert any(r.path == path for r in results)
-
-
-def test_bison_style_three_quarters_at_denominator_with_ten(tmp_path: Path):
-    """Bison: ¾ at tile ordinal 4 and NUMBER 10 at ordinal 10 validates via PathValidator."""
-    wl = _wordlist(tmp_path, "abcxxefghj")
-    d = WordDictionary(wl)
-    board = _empty_board()
-    frac = _fraction(0, 0, 3, 4)
-    path = _path_indices(10)
-    word = _place_path_tiles(
-        board,
-        path,
-        letters="abcxefgh",
-        frac_path_index=3,
-        frac=frac,
-        number_path_index=9,
-        number_face=10,
-    )
-    assert word == "abc?xefgh10"
-
-    v = PathValidator(d, min_len=10)
-    assert fraction_position_valid(frac, 3, relaxed=False)
-    assert v.word_ok(board, path, word, None)

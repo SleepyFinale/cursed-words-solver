@@ -1,17 +1,9 @@
 """Tests for melmod ui_layout overlay region resolution."""
 
-import json
 
-import pytest
 
 from cursed_words_solver.config import AppConfig, Region
-from cursed_words_solver.ui.layout import (
-    describe_overlay_source,
-    overlay_regions_ready,
-    parse_ui_layout,
-    resolve_overlay_regions,
-    ui_layout_export_status,
-)
+from cursed_words_solver.ui.layout import describe_overlay_source, overlay_regions_ready, parse_ui_layout, resolve_overlay_regions, ui_layout_export_status
 
 
 def test_parse_ui_layout_board_and_rack():

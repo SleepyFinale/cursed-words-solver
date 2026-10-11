@@ -61,11 +61,3 @@ def test_do_not_pass_go_zero_rewards() -> None:
         Loadout(extras={"challenge_game_class": "DoNotPassGo"})
     )
     assert q.zero_encounter_rewards
-
-
-def test_encounter_reward_for_quest() -> None:
-    from cursed_words_solver.rules.quest_scoring import encounter_reward_for_quest
-
-    loadout = Loadout(extras={"challenge_game_class": "DoNotPassGo"})
-    assert encounter_reward_for_quest(loadout, 5) == 0
-    assert encounter_reward_for_quest(Loadout(), 5) == 5

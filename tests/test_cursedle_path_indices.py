@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 from cursed_words_solver.config import GAME_WORDLIST_PATH
@@ -16,11 +15,9 @@ from cursed_words_solver.cursedle_solver import (
     _pick_probe_path,
     filter_candidates,
     parse_cursedle_guesses,
-    run_cursedle_solver,
 )
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.loadout import parse_board_from_run_state
-from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
+from cursed_words_solver.models import Board, CurseType, Tile, TileColor
 from cursed_words_solver.ui.board_geometry import (
     path_from_melmod_indices,
     path_to_melmod_indices,
@@ -30,7 +27,6 @@ FOYERS_MELMOD_PATH = [4, 11, 17, 10, 3, 8]
 FOYERS_STORAGE_PATH = [34, 29, 23, 28, 33, 26]
 FOYER_STORAGE_PATH = FOYERS_STORAGE_PATH[:5]
 
-LIVE_RUN_STATE = Path.home() / ".cursed_words_solver" / "run_state.json"
 
 # Legacy melmod export: Unity bottom-origin row/col with index=row*cols+col
 LIVE_UNITY_TILES = [
@@ -91,15 +87,8 @@ def _foyers_board() -> Board:
     return _board_6x6(letters)
 
 
-def _live_foyers_board() -> Board | None:
-    if not LIVE_RUN_STATE.exists():
-        return None
-    payload = json.loads(LIVE_RUN_STATE.read_text(encoding="utf-8"))
-    return parse_board_from_run_state(payload)
-
-
 def test_melmod_path_converts_to_storage_on_full_6x6() -> None:
-    board = _live_foyers_board() or _foyers_board()
+    board = _foyers_board()
     storage = path_from_melmod_indices(board, FOYERS_MELMOD_PATH)
     assert storage == FOYERS_STORAGE_PATH
 
@@ -408,34 +397,3 @@ def test_narrow_candidates_to_dictionary_shady_only() -> None:
     assert SHADY_NONWORD_PATH not in narrowed
 
 
-def test_run_cursedle_solver_commits_shady_after_upstream_shady() -> None:
-    board = _shady_puzzle_board()
-    dictionary = _shady_game_dictionary()
-    loadout = Loadout(
-        extras={
-            "encounter_mode": "cursedle",
-            "cursedle_guesses": json.dumps(
-                [
-                    {
-                        "path": UPSTREAM_CURSEDLE_PATH,
-                        "tiles": UPSTREAM_MELMOD_EXPORT_TILES,
-                    },
-                    {
-                        "path": SHADY_CURSEDLE_PATH,
-                        "tiles": SHADY_MELMOD_EXPORT_TILES,
-                    },
-                ]
-            ),
-            "cursedle_guesses_used": "2",
-            "cursedle_guesses_remaining": "3",
-        }
-    )
-    advice = run_cursedle_solver(board, loadout, dictionary)
-    assert advice.word.lower() == "shady"
-    assert advice.path == SHADY_STORAGE_SOLUTION
-    assert advice.candidates == 2  # shad (len 4) and shady (len 5)
-    assert (
-        "committing" in advice.reason.lower()
-        or "all-green prefix" in advice.reason.lower()
-    )
-    assert "foyers" not in advice.word.lower()

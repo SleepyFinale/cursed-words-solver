@@ -115,7 +115,7 @@ step.TileScores[index] += level * list.Count;
 
 ## Solver mapping checkpoints
 
-- Pipeline order: `cursed_words_solver/rules/pipeline.py`
+- Pipeline order: `cursed_words_solver/engine/calc.py`
 - Item ordering and Hourglass: `cursed_words_solver/rules/scoring_order.py`
 - Conditions/cards: `cursed_words_solver/rules/scoring_conditions.py`
 - Replay fidelity: `tests/regression/test_scoring_mismatches.py`

@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from cursed_words_solver.models import Loadout
-from cursed_words_solver.rules.rule_lookup import get_rule, is_scoring_rule, slugify_name
+from cursed_words_solver.rules.rule_lookup import slugify_name
 
 # Wiki + decompiled RandomAccessMemory.BlacklistedItemTypes (cannot be drafted into RAM).
 RAM_NON_GENERATABLE_SLUGS: frozenset[str] = frozenset(
@@ -69,35 +69,6 @@ def ram_entry_slug(entry: dict[str, Any]) -> str:
 def ram_entry_bucket(entry: dict[str, Any]) -> str:
     kind = str(entry.get("kind", "sticker")).lower()
     return "stamps" if kind == "stamp" else "stickers"
-
-
-def ram_entry_level(entry: dict[str, Any]) -> int:
-    try:
-        return int(entry.get("level", 1))
-    except (TypeError, ValueError):
-        return 1
-
-
-def should_skip_ram_scoring(
-    rules: dict[str, Any],
-    entry: dict[str, Any],
-) -> bool:
-    """True when RAM must not replay this item for word scoring (game blacklist + non-scoring)."""
-    slug = ram_entry_slug(entry)
-    if slug in RAM_NON_GENERATABLE_SLUGS:
-        return True
-    bucket = ram_entry_bucket(entry)
-    item_id = str(entry.get("id", "") or "")
-    item_name = str(entry.get("name", "") or "")
-    _key, rule = get_rule(rules, bucket, item_id, item_name)
-    if not rule:
-        return True
-    effect_type = str(rule.get("type", "")).lower()
-    if effect_type in RAM_BLACKLIST_EFFECT_TYPES:
-        return True
-    if effect_type == "custom":
-        return True
-    return not is_scoring_rule(rule)
 
 
 def ram_has_active_pin(loadout: Loadout | None) -> bool:

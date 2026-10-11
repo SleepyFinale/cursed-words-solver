@@ -16,13 +16,11 @@ from cursed_words_solver.rules.fraction_tiles import attach_fraction_metadata
 from cursed_words_solver.models import (
     CURRENCY_MAP,
     DEFAULT_GRID_SIZE,
-    MAX_GRID_SIZE,
     Board,
     CurseType,
     EncounterGridRerollState,
     Loadout,
     LoadoutItem,
-    SellCandidate,
     ShopOffer,
     ShopState,
     Tile,
@@ -280,11 +278,6 @@ def merge_submit_board_tile_state(run_state: dict[str, Any], data: dict[str, Any
                 tile[field] = 0.0
 
 
-def merge_submit_board_take_flags(run_state: dict[str, Any], data: dict[str, Any]) -> None:
-    """Backward-compatible alias for submit-time board merge."""
-    merge_submit_board_tile_state(run_state, data)
-
-
 def reconcile_grid_scattered_items_from_board(
     extras: dict[str, Any], board: Board | None
 ) -> None:
@@ -444,19 +437,6 @@ def melmod_install_hint() -> str:
     return (
         "Install the MelonLoader companion mod (see melmod/README.md in the repo), "
         f"start a run in-game, then {F8_RETRY_HINT}."
-    )
-
-
-def is_run_state_template(data: dict[str, Any] | None) -> bool:
-    if not data:
-        return True
-    if data.get("character") == "Example":
-        return True
-    board = data.get("board")
-    if isinstance(board, dict) and board.get("source") != "melmod":
-        return not melmod_board_available(data)
-    return not melmod_board_available(data) and not (
-        data.get("stickers") or data.get("extras", {}).get("pin_effect")
     )
 
 
@@ -1031,120 +1011,6 @@ def historic_metadata_matches_json(f8_json: str, auth_json: str) -> bool:
         _historic_row_metadata_matches(f8_rows[i], auth_rows[i])
         for i in range(len(f8_rows))
     )
-
-
-def _encounter_score_earned_from_extras(extras: dict[str, Any]) -> float:
-    try:
-        return float(extras.get("encounter_score_earned") or 0)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _fresh_encounter_grid_one(extras: dict[str, Any]) -> bool:
-    """Grid 1 with no points scored yet (remaining still equals total target)."""
-    if _grid_number_from_extras(extras) != 1:
-        return False
-    if _scoring_previous_words_count_from_extras(extras) > 0:
-        return False
-    rows = _parse_historic_words_rows(extras.get("historic_words"))
-    if any(
-        isinstance(row, dict) and float(row.get("score") or 0) > 0 for row in rows
-    ):
-        return False
-    if _encounter_score_earned_from_extras(extras) > 0:
-        return False
-    try:
-        total = float(extras.get("encounter_total_target") or 0)
-        remaining = float(extras.get("encounter_remaining_target") or 0)
-    except (TypeError, ValueError):
-        return False
-    return total > 0 and remaining == total
-
-
-def _encounter_historic_trusted_for_poison(extras: dict[str, Any]) -> bool:
-    """True when historic_words is from the live encounter (not stale cross-encounter bleed)."""
-    hist = str(extras.get("historic_words", "") or "").strip()
-    if not hist or hist == "[]":
-        return False
-    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
-    if source in ("live", "green_poison_only"):
-        return True
-    if source in (
-        "grid1_no_scoring_cache",
-        "historic_paths_stale",
-        "grid_advanced",
-        "grid_advanced_disk",
-        "grid_start_cleared",
-    ):
-        return False
-    return False
-
-
-def _green_poison_row_contribution(row: dict[str, Any]) -> float:
-    try:
-        green_count = int(row.get("green_tile_count") or 0)
-    except (TypeError, ValueError):
-        green_count = 0
-    if green_count <= 0:
-        return 0.0
-    try:
-        word_score = float(row.get("score") or 0)
-    except (TypeError, ValueError):
-        word_score = 0.0
-    if word_score <= 0:
-        return 0.0
-    return green_count * round(word_score * 0.1)
-
-
-def green_poison_from_historic_words(extras: dict[str, Any] | None) -> float:
-    """ApplyPoisonEffect parity: sum green_tile_count × 10% of each prior word score."""
-    if not isinstance(extras, dict):
-        return 0.0
-    raw = extras.get("historic_words")
-    rows = _parse_historic_words_rows(raw)
-    if not rows:
-        return 0.0
-    if _fresh_encounter_grid_one(extras):
-        return 0.0
-    if _encounter_historic_trusted_for_poison(extras):
-        return sum(_green_poison_row_contribution(row) for row in rows if isinstance(row, dict))
-
-    enc_earned = _encounter_score_earned_from_extras(extras)
-    if enc_earned <= 0:
-        raw_enc = extras.get("encounter_score_earned")
-        enc_missing = raw_enc is None or str(raw_enc).strip() == ""
-        grid = _grid_number_from_extras(extras)
-        spc = _scoring_previous_words_count_from_extras(extras)
-        if enc_missing and grid >= 2 and spc > 0:
-            enc_earned = sum(
-                float(row.get("score") or 0)
-                for row in rows
-                if isinstance(row, dict)
-            )
-        if enc_earned <= 0:
-            return 0.0
-    total = 0.0
-    score_used = 0.0
-    for row in reversed(rows):
-        if not isinstance(row, dict):
-            continue
-        try:
-            green_count = int(row.get("green_tile_count") or 0)
-        except (TypeError, ValueError):
-            green_count = 0
-        if green_count <= 0:
-            continue
-        try:
-            word_score = float(row.get("score") or 0)
-        except (TypeError, ValueError):
-            word_score = 0.0
-        if word_score <= 0:
-            continue
-        if score_used + word_score > enc_earned + 1e-6:
-            continue
-        score_used += word_score
-        total += _green_poison_row_contribution(row)
-    return total
 
 
 def _previous_letter_from_historic_words(raw: Any) -> str:
@@ -1804,32 +1670,6 @@ def _has_snapshot_sticker(loadout: Loadout) -> bool:
     )
 
 
-def _encounter_historic_intentionally_cleared(extras: dict[str, Any]) -> bool:
-    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
-    return source == "grid_start_cleared"
-
-
-def _is_grid_advanced_historic_source(extras: dict[str, Any]) -> bool:
-    source = str(extras.get("encounter_historic_source", "") or "").strip().lower()
-    return source in ("grid_advanced", "grid_advanced_disk")
-
-
-def _copy_grid_advance_extras_from_fresh(
-    extras: dict[str, Any],
-    fresh_extras: dict[str, Any],
-) -> None:
-    for key in (
-        "grid_number",
-        "grid_scattered_items",
-        "encounter_historic_source",
-        "previous_word_first_letter",
-        "scoring_previous_words_count",
-    ):
-        val = fresh_extras.get(key)
-        if val is not None:
-            extras[key] = val
-
-
 def _historic_words_count(raw: str) -> int:
     """Parse melmod historic_words JSON array length safely."""
     raw = (raw or "").strip()
@@ -1890,25 +1730,6 @@ def reconcile_previous_word_first_letter_from_historic(
         extras["previous_word_first_letter"] = prev
     elif "previous_word_first_letter" in extras:
         extras.pop("previous_word_first_letter", None)
-
-
-def _apply_fresh_encounter_historic_to_extras(
-    extras: dict[str, Any],
-    fresh_extras: dict[str, Any],
-    fresh_hist: str,
-) -> None:
-    extras["historic_words"] = fresh_hist
-    for key in (
-        "red_tiles_used_encounter",
-        "previous_word_first_letter",
-        "grid_number",
-        "encounter_historic_source",
-        "scoring_previous_words_count",
-    ):
-        val = fresh_extras.get(key)
-        if val is not None and str(val).strip() != "":
-            extras[key] = val
-    reconcile_previous_word_first_letter_from_historic(extras)
 
 
 def _grid_number_from_extras(extras: dict[str, Any]) -> int:
@@ -2199,49 +2020,6 @@ def reconcile_grid_one_no_scoring_cache_sentinel(extras: dict[str, Any]) -> bool
     return True
 
 
-def _historic_words_json_prefer_fresh(
-    embed_hist: str,
-    fresh_hist: str,
-    *,
-    embed_grid: int,
-    fresh_grid: int,
-) -> str | None:
-    """Pick disk/live historic for F8 embed (mirrors melmod PickBestHistoricWordList shrink)."""
-    embed_hist = (embed_hist or "").strip()
-    fresh_hist = (fresh_hist or "").strip()
-    if not fresh_hist or fresh_hist == "[]":
-        return None
-    if not embed_hist or embed_hist == "[]":
-        return fresh_hist
-
-    embed_count = _historic_words_count(embed_hist)
-    fresh_count = _historic_words_count(fresh_hist)
-
-    if fresh_grid > embed_grid >= 1:
-        return fresh_hist
-
-    if embed_grid == fresh_grid and embed_grid >= 1:
-        if fresh_count < embed_count:
-            return fresh_hist
-        if fresh_count > embed_count:
-            return fresh_hist
-        if embed_hist != fresh_hist:
-            return fresh_hist
-        return None
-
-    if embed_grid >= 2 and embed_grid == fresh_grid:
-        if embed_count == 0 or fresh_count != embed_count:
-            return fresh_hist
-        if embed_hist != fresh_hist:
-            return fresh_hist
-        return None
-
-    if embed_grid >= 2 and (embed_count == 0 or fresh_count != embed_count):
-        return fresh_hist
-
-    return None
-
-
 def describe_f8_historic_catchup(
     embed_hist: str,
     merged_hist: str,
@@ -2288,108 +2066,8 @@ def f8_historic_stale_after_merge_warning(
     )
 
 
-def merge_encounter_historic_for_f8_snapshot(
-    run_state: dict | None,
-) -> dict | None:
-    """Return F8 gather state unchanged (live export only; no disk historic merge)."""
-    if run_state is None:
-        return None
-    return copy.deepcopy(run_state)
-
-
 F8_HISTORIC_CATCHUP_RETRIES = 6
 F8_HISTORIC_CATCHUP_DELAY_SEC = 0.15
-
-
-def _force_apply_disk_historic_when_ahead(
-    run_state: dict | None,
-) -> dict | None:
-    """Disabled — live export only."""
-    if run_state is None:
-        return None
-    return copy.deepcopy(run_state)
-
-
-def merge_encounter_historic_for_f8_with_retry(
-    run_state: dict | None,
-    *,
-    max_retries: int = F8_HISTORIC_CATCHUP_RETRIES,
-    delay_sec: float = F8_HISTORIC_CATCHUP_DELAY_SEC,
-) -> tuple[dict | None, str | None]:
-    """Return F8 gather state unchanged (live export only; no disk historic merge)."""
-    del max_retries, delay_sec
-    if run_state is None:
-        return None, None
-    return copy.deepcopy(run_state), None
-
-
-def raw_disk_historic_count_on_grid(grid: int) -> int:
-    """Historic word count on disk for a grid (before reconcile)."""
-    if grid < 1:
-        return 0
-    fresh = load_run_state_raw()
-    if not isinstance(fresh, dict):
-        return 0
-    fresh_extras = fresh.get("extras")
-    if not isinstance(fresh_extras, dict):
-        return 0
-    if _grid_number_from_extras(fresh_extras) != grid:
-        return 0
-    fresh_hist = str(fresh_extras.get("historic_words", "") or "").strip()
-    return _historic_words_count(fresh_hist)
-
-
-def encounter_historic_stale_pruned_on_disk(
-    grid: int,
-    *,
-    board: Board | None = None,
-) -> bool:
-    """True when disk historic remains but reconcile clears it on the current board."""
-    if grid < 1:
-        return False
-    raw_count = raw_disk_historic_count_on_grid(grid)
-    if raw_count <= 0:
-        return False
-    reconciled_count = reconciled_disk_historic_count_on_grid(grid, board=board)
-    return reconciled_count == 0
-
-
-def reconciled_disk_historic_count_on_grid(
-    grid: int,
-    *,
-    board: Board | None = None,
-) -> int:
-    """Historic word count on disk after reconcile_encounter_historic_for_scoring."""
-    if grid < 1:
-        return 0
-    fresh = load_run_state_raw()
-    if not isinstance(fresh, dict):
-        return 0
-    fresh_extras = fresh.get("extras")
-    if not isinstance(fresh_extras, dict):
-        return 0
-    if _grid_number_from_extras(fresh_extras) != grid:
-        return 0
-    fresh_extras_cmp = copy.deepcopy(fresh_extras)
-    reconcile_board = board
-    if reconcile_board is None:
-        reconcile_board = parse_board_from_run_state(fresh)
-    reconcile_encounter_historic_for_scoring(
-        fresh_extras_cmp,
-        board=reconcile_board,
-    )
-    fresh_hist = str(fresh_extras_cmp.get("historic_words", "") or "").strip()
-    return _historic_words_count(fresh_hist)
-
-
-def f8_historic_still_behind_disk_warning(
-    embed_extras: dict[str, Any] | None,
-    *,
-    board: Board | None = None,
-) -> str | None:
-    """Disabled — live export only; no disk historic lag warnings."""
-    del embed_extras, board
-    return None
 
 
 def encounter_submit_signals_imply_prior_words(
@@ -2514,20 +2192,6 @@ def _serialize_f8_embed_extra_value(val: Any) -> str:
     return str(val)
 
 
-def merge_f8_workflow_extras_into(
-    dest: dict[str, Any],
-    loadout_extras: dict[str, Any] | None,
-) -> None:
-    """Copy scoring loadout workflow fields into F8 embed extras (no disk read)."""
-    if not isinstance(dest, dict) or not isinstance(loadout_extras, dict):
-        return
-    for key in F8_EMBED_WORKFLOW_EXTRA_KEYS:
-        val = loadout_extras.get(key)
-        if val is None or str(val).strip() == "":
-            continue
-        dest[key] = _serialize_f8_embed_extra_value(val)
-
-
 def align_embed_with_scoring_loadout(
     extras: dict[str, Any],
     scoring_extras: dict[str, Any] | None,
@@ -2648,8 +2312,6 @@ def birthday_cake_embed_post_word_stale_note(
         return None
     if embed_val <= 0:
         return None
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-
     from cursed_words_solver.rules.scoring_conditions import (
         birthday_cake_accumulated,
         birthday_cake_improve_for_path,
@@ -2658,8 +2320,9 @@ def birthday_cake_embed_post_word_stale_note(
     acc = birthday_cake_accumulated(scoring_loadout)
     if embed_val <= acc:
         return None
-    pipeline = ScoringPipeline()
-    rule = pipeline.rules.get("stickers", {}).get("birthday_cake") or {}
+    from cursed_words_solver.rules.rule_lookup import rules_catalog
+
+    rule = rules_catalog().get("stickers", {}).get("birthday_cake") or {}
     level = 1
     for sticker in scoring_loadout.stickers or []:
         if (sticker.id or "").lower() == "birthday_cake":
@@ -3228,11 +2891,6 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
     return "loadout: " + (", ".join(parts) if parts else "empty")
 
 
-def parse_board_from_prepared_run_state(data: dict[str, Any]) -> Board | None:
-    """Parse board after submit-time merge (take flags, etc.)."""
-    return parse_board_from_run_state(prepare_run_state_dict_for_scoring(data))
-
-
 def merge_loadout_with_board(
     loadout: Loadout | None,
     board_money: int,
@@ -3289,32 +2947,6 @@ def parse_shop_from_run_state(data: dict[str, Any] | None) -> ShopState | None:
     )
 
 
-def parse_inventory_sell(data: dict[str, Any] | None) -> list[SellCandidate]:
-    if not isinstance(data, dict):
-        return []
-    rows = data.get("inventory_sell")
-    if not isinstance(rows, list):
-        return []
-    result: list[SellCandidate] = []
-    for raw in rows:
-        if not isinstance(raw, dict):
-            continue
-        result.append(
-            SellCandidate(
-                kind=str(raw.get("kind", "")),
-                slot=int(raw.get("slot", 0)),
-                id=str(raw.get("id", "")),
-                name=str(raw.get("name", "")),
-                level=max(1, int(raw.get("level", 1))),
-                foil=bool(raw.get("foil", False)),
-                sell_value=int(raw.get("sell_value", 0)),
-                sell_cost=int(raw.get("sell_cost", 0)),
-                costs_money_to_sell=bool(raw.get("costs_money_to_sell", False)),
-            )
-        )
-    return result
-
-
 def _parse_encounter_grid_reroll_raw(raw: dict[str, Any]) -> EncounterGridRerollState:
     cost_per_use = raw.get("cost_per_use", raw.get("cost", 0))
     can_reroll = raw.get("can_reroll", raw.get("available", False))
@@ -3338,11 +2970,6 @@ def parse_encounter_grid_reroll(
     if not isinstance(raw, dict):
         return None
     return _parse_encounter_grid_reroll_raw(raw)
-
-
-def parse_encounter_reroll(data: dict[str, Any] | None) -> EncounterGridRerollState | None:
-    """Deprecated alias for parse_encounter_grid_reroll."""
-    return parse_encounter_grid_reroll(data)
 
 
 def _has_valid_board_export(data: dict[str, Any]) -> bool:

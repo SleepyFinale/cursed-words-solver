@@ -76,26 +76,7 @@ Harmony postfix on `CalculateOverallScore` captures `List<ScoreCalcVizInfo>` as 
 
 ## Solver implementation (Python)
 
-How the Python solver maps the game pipeline above. Full search-side detail: [`../SEARCH_ARCHITECTURE.md`](../SEARCH_ARCHITECTURE.md).
-
-### Item sequence
-
-- `scoring_order.build_scoring_item_sequence` composes path scattered items + inventory refs from `SolveContext.inventory_refs`.
-- **Capybara shuffle** is **not** applied in the sequence builder — `capybara_scoring.py` evaluates permutation EV/min/max, rebuilding a per-perm `SolveContext` for each order.
-- Hourglass reversal is applied in `ScoringPipeline._compute_state` via `SolveContext.hourglass_reversed` and `sticker_slot_order` / `stamp_slot_order`.
-
-### `_compute_state` flow
-
-`ScoringPipeline._compute_state` receives cached `solve_context`, `graph_ctx`, and `board_scoring_ctx` from the search hot path.
-
-1. Tile init (glitch, bases, currency, pink) — unchanged from game order
-2. Early/late bosses per Hourglass state
-3. Inventory loop in slot order:
-   - When `board_scoring_ctx.use_split_pipeline` is true, board-static rules run first via `apply_static_rule` (O(path)); debug traces may show `detail: "static tile_add"`
-   - Dynamic/orchestration rules follow via `apply_*_with_orchestration` (Frankenstein, RAM, Overhand, scaled factors, etc.)
-4. GREEN tile transfer, `_finalize` word multipliers, then green poison (additive)
-
-`blocks_split_pipeline()` disables the static fast path when Capybara, Compound Cocktail, Snapshot, Frankenstein, or RAM pin prevent safe interleaving.
+The solver scores with the game-port engine, which follows this order directly: [`engine.md`](engine.md) (`cursed_words_solver/engine/calc.py`). The rule-table `ScoringPipeline` and its static/dynamic split were deleted on 2026-10-11.
 
 ### Grid scatter refs
 

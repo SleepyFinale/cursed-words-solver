@@ -9,7 +9,7 @@ Regenerate decompiles: `scripts/decompile_sim_types.ps1` or see [README.md](READ
 | Game (decompile) | Python | Wiki | Fixture |
 | ---------------- | ------ | ---- | ------- |
 | `EncounterController.SubmitWord` | `EncounterEngine.step` + `RewardEngine` | [Scoring](https://cursedwords.wiki.gg/wiki/Scoring) | `tests/fixtures/round_logs/` |
-| `ScoreCalculation.CalculateOverallScore` | `RewardEngine` → `ScoringPipeline` | Scoring | `tests/regression/test_scoring_mismatches.py` |
+| `ScoreCalculation.CalculateOverallScore` | `RewardEngine` → `EngineScorer` | Scoring | `tests/engine/` |
 | `_remainingTarget -= score` | `EffectEngine.apply_post_submit` → `encounter_remaining_target` | — | round log `extras_diff` |
 | `HistoricWord` / `_previousWords` | `extras.historic_words` | — | `stale_f8_*_extras_diff.json` |
 | `GenerateGrid` / `_remainingGrids--` | `EffectEngine.apply_grid_start` | — | round logs (grid transition) |

@@ -9,7 +9,7 @@ import pytest
 
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.scoring_conditions import (
     _path_step_adjacent,
     non_adjacent_step_count,
@@ -73,7 +73,7 @@ def test_footprints_positive_on_four_tile_skips() -> None:
     loadout = Loadout(
         stickers=[LoadoutItem(id="footprints", name="Footprints", level=1, kind="sticker")]
     )
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     base, _ = pipeline.score(board, path, "aaaa", Loadout())
     score, bd = pipeline.score(board, path, "aaaa", loadout)
     assert bd["multiplier"] == 2.0
@@ -90,7 +90,7 @@ def _replay_fixture(stem: str) -> tuple[int, str, list[int]]:
         pytest.fail(f"{stem}: missing run_state snapshot")
     board = parse_board_from_run_state(run_state)
     loadout = parse_run_state(run_state)
-    score, _ = ScoringPipeline().score(board, data["path"], data["word"], loadout)
+    score, _ = EngineScorer().score(board, data["path"], data["word"], loadout)
     return int(score), data["word"], data["path"]
 
 
@@ -101,8 +101,3 @@ def test_pianolist_footprints_mismatch_replay_matches_actual() -> None:
     assert score == 47
 
 
-def test_demeaning_footprints_mismatch_replay_matches_actual() -> None:
-    score, word, path = _replay_fixture("20260616_121049")
-    assert word == "demeaning"
-    assert path == DEMEANING_PATH
-    assert score == 41

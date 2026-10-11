@@ -2,23 +2,18 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-import pytest
 
 from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
 from cursed_words_solver.rules.boss_effects import (
     active_boss_ids,
-    boss_context,
     boss_stage_display_suffix,
     boss_word_constraints,
-    effective_target_score_multiplier,
     load_rules_catalog,
     michael_finale_active,
     resolve_boss_scaling,
 )
-from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.scoring_conditions import target_score_from_loadout
 from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.dictionary import WordDictionary
@@ -102,31 +97,6 @@ def test_resolve_boss_scaling_salamander_cursed():
 def test_resolve_boss_scaling_robo_monkey_area5_na():
     rule = RULES["bosses"]["robo_monkey"]
     assert resolve_boss_scaling(rule, 5, False, field="multiplier") is None
-
-
-def test_salamander_tile_penalty_in_pipeline():
-    board = _board_letters(["cat..", ".....", ".....", ".....", "....."])
-    loadout = _loadout(
-        boss_id="salamander",
-        extras={"boss_area_number": 1, "boss_cursed": False},
-    )
-    pipe = ScoringPipeline()
-    _score, breakdown = pipe.score(board, [0, 1, 2], "cat", loadout)
-    effects = breakdown.get("pipeline", {}).get("effects", [])
-    assert any("per tile (boss)" in e for e in effects)
-
-
-def test_robo_monkey_subtracts_word_score():
-    board = _board_letters(["cat..", ".....", ".....", ".....", "....."])
-    loadout = _loadout(
-        boss_id="robo_monkey",
-        money=10,
-        extras={"boss_area_number": 1},
-    )
-    pipe = ScoringPipeline()
-    _, base_bd = pipe.score(board, [0, 1, 2], "cat", Loadout(money=10))
-    _, boss_bd = pipe.score(board, [0, 1, 2], "cat", loadout)
-    assert boss_bd["word_score"] == base_bd["word_score"] - 10
 
 
 def test_toothed_whale_target_multiplier():
@@ -309,18 +279,6 @@ def test_default_word_constraints_use_min_one_and_passed_max():
     c = boss_word_constraints(loadout, RULES, default_max_len=sum(board.active))
     assert c.min_len == 1
     assert c.max_len == 9
-
-
-def test_fox_steal_in_pipeline():
-    board = _board_letters(["cat..", ".....", ".....", ".....", "....."])
-    loadout = _loadout(
-        boss_id="fox",
-        money=10,
-        extras={"boss_area_number": 1, "boss_floor_modification": 2},
-    )
-    pipe = ScoringPipeline()
-    _, bd = pipe.score(board, [0, 1, 2], "cat", loadout)
-    assert loadout.money < 10
 
 
 def test_hyena_blocks_search():

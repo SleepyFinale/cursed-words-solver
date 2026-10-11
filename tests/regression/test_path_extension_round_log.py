@@ -8,20 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from cursed_words_solver.config import GAME_WORDLIST_PATH
-from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.loadout import (
-    parse_board_from_run_state,
-    parse_run_state,
-    prepare_run_state_dict_for_scoring,
-)
-from cursed_words_solver.rules.boss_effects import boss_word_constraints
-from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.search import WordSearcher
-from tests.regression.test_scoring_mismatches import (
-    _adjust_mutating_dna_extras,
-    _run_state_for_replay,
-)
+from cursed_words_solver.loadout import prepare_run_state_dict_for_scoring
+from tests.helpers.replay import engine_replay_score
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 FIXTURE = FIXTURES_DIR / "mismatches" / "20260615_184801_fjelds.json"
@@ -91,47 +79,8 @@ def _round_log_to_replay(data: dict) -> dict:
 
 
 def _score_submitted(data: dict, *, round_log: dict | None = None) -> int:
-    """Score submitted path; prefer F8-time state when it matches the log better."""
-    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
-
-    def _score_with_run_state(replay: dict, *, convert_path: bool) -> int:
-        board = parse_board_from_run_state(replay)
-        assert board is not None
-        loadout = parse_run_state(replay)
-        assert loadout is not None
-        path = data["path"]
-        word = data["word"]
-        if convert_path:
-            converted = path_from_melmod_indices(board, path)
-            score_raw, _ = ScoringPipeline().score(board, path, word, loadout)
-            score_conv, _ = ScoringPipeline().score(board, converted, word, loadout)
-            if score_conv > score_raw:
-                path = converted
-        _adjust_mutating_dna_extras(replay, data, board, path)
-        loadout = parse_run_state(replay)
-        score, _ = ScoringPipeline().score(board, path, word, loadout)
-        return int(score)
-
-    submit_replay = _run_state_for_replay(data)
-    submit_score = _score_with_run_state(submit_replay, convert_path=False)
-    if round_log is None or not round_log.get("extras_diff"):
-        return submit_score
-
-    f8_replay = _f8_run_state_from_round_log(round_log)
-    f8_score = _score_with_run_state(f8_replay, convert_path=True)
-    actual = data.get("actual_score")
-    if actual is None and round_log.get("actual"):
-        actual = (round_log.get("actual") or {}).get("score")
-    if actual is not None:
-        try:
-            actual_i = int(actual)
-        except (TypeError, ValueError):
-            actual_i = None
-        if actual_i is not None:
-            if abs(f8_score - actual_i) <= abs(submit_score - actual_i):
-                return f8_score
-            return submit_score
-    return max(f8_score, submit_score)
+    """Engine score of the submitted path (the round log when given: it carries the F8 extras)."""
+    return engine_replay_score(round_log if round_log is not None else data)
 
 
 @pytest.mark.skipif(not FIXTURE.exists(), reason="fjelds fixture required")

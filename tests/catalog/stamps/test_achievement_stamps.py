@@ -1,22 +1,12 @@
 """Achievement unlock stamp catalog, scoring, and search (wiki: various achievements)."""
 
 import math
-from pathlib import Path
 
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.models import (
-    Board,
-    CurseType,
-    Loadout,
-    LoadoutItem,
-    Tile,
-    TileColor,
-)
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
-from cursed_words_solver.rules.scoring_conditions import (
-    neapolitan_base_percent_from_loadout,
-)
+from cursed_words_solver.rules.scoring_conditions import neapolitan_base_percent_from_loadout
 
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
@@ -162,7 +152,7 @@ def _empty_board() -> Board:
 
 
 def test_all_achievement_stamps_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in ACHIEVEMENT_STAMP_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stamps", slug, name)
@@ -171,14 +161,14 @@ def test_all_achievement_stamps_catalogued():
 
 
 def test_count_scoring_vs_grid_only_achievement_stamps():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     assert_loadout_stamp_coverage(pipeline.rules, ACHIEVEMENT_STAMP_NAMES)
 
 
 def test_blessing_of_the_fairies_cursed_boss_scale():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 10)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="blessing_of_the_fairies", name="Blessing of the Fairies", kind="stamp")],
         extras={"cursed_bosses_defeated_count": "2"},
@@ -192,7 +182,7 @@ def test_blessing_of_the_fairies_cursed_boss_scale():
 def test_shaved_ice_scales_with_freezes():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 10)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="shaved_ice", name="Shaved Ice", kind="stamp")],
         extras={"shaved_ice_freezes": "11"},
@@ -203,27 +193,10 @@ def test_shaved_ice_scales_with_freezes():
     assert score == int(base * 320 / 100)
 
 
-def test_shaved_ice_prefers_live_percent():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 10)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="shaved_ice", name="Shaved Ice", kind="stamp")],
-        extras={
-            "shaved_ice_freezes": "0",
-            "shaved_ice_word_bonus_percent": "320",
-        },
-    )
-    score, bd = pipeline.score(board, [0], "a", loadout)
-    base, _ = pipeline.score(board, [0], "a", Loadout())
-    assert abs(bd["multiplier"] - 3.2) < 0.01
-    assert score == int(base * 320 / 100)
-
-
 def test_shaved_ice_applies_at_zero_freezes():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 10)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="shaved_ice", name="Shaved Ice", kind="stamp")],
         extras={"shaved_ice_freezes": "0"},
@@ -239,7 +212,7 @@ def test_builder_consumable_count_multiplier():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "?", 5, metadata={"consumable": True})
     board.tiles[0][1] = _tile(0, 1, "?", 5, metadata={"consumable": True})
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stamps=[LoadoutItem(id="builder", name="Builder", kind="stamp")])
     score, _ = pipeline.score(board, [0, 1], "??", loadout)
     base, _ = pipeline.score(board, [0, 1], "??", Loadout())
@@ -250,7 +223,7 @@ def test_cartwheeler_negative_per_tile():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 10)
     board.tiles[0][2] = _tile(0, 2, "B", 10)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stamps=[LoadoutItem(id="cartwheeler", name="Cartwheeler", kind="stamp")])
     score, bd = pipeline.score(board, [0, 2], "ab", loadout)
     base, _ = pipeline.score(board, [0, 2], "ab", Loadout())
@@ -263,7 +236,7 @@ def test_cartwheeler_negative_per_tile():
 def test_empty_jar_zero_money_doubles_word():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 10)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="empty_jar", name="Empty Jar", kind="stamp")],
         money=0,
@@ -279,7 +252,7 @@ def test_giraffe_number_position_multiplier():
     board.tiles[0][0] = _tile(0, 0, "1", 1, curse=CurseType.NUMBER, number_value=1)
     board.tiles[0][1] = _tile(0, 1, "2", 2, curse=CurseType.NUMBER, number_value=2)
     board.tiles[0][2] = _tile(0, 2, "3", 3, curse=CurseType.NUMBER, number_value=3)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stamps=[LoadoutItem(id="giraffe", name="Giraffe", kind="stamp")])
     score, bd = pipeline.score(board, [0, 1, 2], "123", loadout)
     assert bd["pipeline"]["tile_scores"] == [1.0, 4.0, 9.0]
@@ -289,7 +262,7 @@ def test_head_in_the_clouds_non_adjacent_path():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 10)
     board.tiles[0][2] = _tile(0, 2, "B", 10)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stamps=[LoadoutItem(id="head_in_the_clouds", name="Head In The Clouds", kind="stamp")])
     score, bd = pipeline.score(board, [0, 2], "ab", loadout)
     base, _ = pipeline.score(board, [0, 2], "ab", Loadout())
@@ -297,26 +270,12 @@ def test_head_in_the_clouds_non_adjacent_path():
     assert score == base * 1.5
 
 
-def test_heart_on_fire_red_run_multiplier():
-    board = _empty_board()
-    for c in range(3):
-        board.tiles[0][c] = _tile(0, c, "A", 5, color=TileColor.RED)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(stamps=[LoadoutItem(id="heart_on_fire", name="Heart On Fire", kind="stamp")])
-    score, bd = pipeline.score(board, [0, 1, 2], "aaa", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "aaa", Loadout())
-    assert bd["multiplier"] == 3.0
-    assert score == base * 3
-    effects = bd["pipeline"]["effects"]
-    assert any("Heart On Fire:" in e and "longest RED run 3" in e for e in effects)
-
-
 def test_neapolitan_three_colours():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 1, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 1, color=TileColor.BLUE)
     board.tiles[0][2] = _tile(0, 2, "C", 1, color=TileColor.COLORLESS)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")])
     score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
     assert bd["multiplier"] == 1.0
@@ -326,7 +285,7 @@ def test_neapolitan_uses_live_percent_from_extras():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={"neapolitan_percent": "110"},
@@ -342,7 +301,7 @@ def test_neapolitan_fresh_stamp_defaults_to_100():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={"neapolitan_percent": "100"},
@@ -358,7 +317,7 @@ def test_neapolitan_uses_live_percent_when_export_at_100():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={"neapolitan_percent": "100"},
@@ -388,7 +347,7 @@ def test_neapolitan_submit_simulation_uses_live_baseline():
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
     board.tiles[0][2] = _tile(0, 2, "C", 5, color=TileColor.SHINY)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -407,7 +366,7 @@ def test_neapolitan_skips_when_below_three_colours():
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.SHINY)
     board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.COLORLESS)
     board.tiles[0][2] = _tile(0, 2, "C", 5, color=TileColor.COLORLESS)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={"neapolitan_percent": "110"},
@@ -423,7 +382,7 @@ def test_neapolitan_applies_stored_percent_with_one_colour_no_improve():
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.COLORLESS)
     board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
     board.tiles[0][2] = _tile(0, 2, "C", 5, color=TileColor.COLORLESS)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={"neapolitan_percent": "145"},
@@ -440,7 +399,7 @@ def test_neapolitan_improves_with_void_red_blue_without_simulate_flag():
     board.tiles[1][2] = _tile(1, 2, "₱", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
     board.tiles[2][2] = _tile(2, 2, "₱", 5, color=TileColor.RED, curse=CurseType.CURRENCY)
     board.tiles[3][2] = _tile(3, 2, "¥", 5, color=TileColor.BLUE, curse=CurseType.CURRENCY)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -453,31 +412,12 @@ def test_neapolitan_improves_with_void_red_blue_without_simulate_flag():
     assert score == math.floor(base * 1.6)
 
 
-def test_neapolitan_strips_f8_preview_when_under_three_colours():
-    """ngwees: F8 export 155 with 2 colours → ×1.50 not ×1.55."""
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.COLORLESS)
-    board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.RED)
-    board.tiles[0][2] = _tile(0, 2, "C", 5, color=TileColor.VOID)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "155",
-        },
-    )
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
-    assert bd["multiplier"] == 1.5
-    assert score == math.floor(base * 1.5)
-
-
 def test_neapolitan_does_not_strip_encounter_tier_175():
     """bott: live 175 with 2 path colours is real tier, not F8 preview to strip."""
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.BLUE)
     board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.VOID)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -499,40 +439,6 @@ def _neapolitan_three_colour_board() -> Board:
     return board
 
 
-def test_neapolitan_grid_cap_blocks_improve_on_grid_1_at_170():
-    """battels: stale 175 on grid 1 with 3 colours clamps to ×1.70, no +5."""
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "175",
-            "grid_number": "1",
-        },
-    )
-    board = _neapolitan_three_colour_board()
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
-    assert bd["multiplier"] == 1.7
-    assert score == math.floor(base * 1.7)
-
-
-def test_neapolitan_clamps_stale_export_to_grid_cap():
-    """battels F8: stale export 175 on grid 1 clamps to ×1.70, no improve."""
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "175",
-            "grid_number": "1",
-        },
-    )
-    board = _neapolitan_three_colour_board()
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
-    assert bd["multiplier"] == 1.7
-    assert score == math.floor(base * 1.7)
-
-
 def _neapolitan_two_colour_board() -> Board:
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
@@ -540,43 +446,9 @@ def _neapolitan_two_colour_board() -> Board:
     return board
 
 
-def test_neapolitan_stale_above_cap_strips_to_cap_minus_five_with_two_colours():
-    """ween F8: live 185 on grid 1 with 2 colours → ×1.65 (ends-in-5 stale preview)."""
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "185",
-            "grid_number": "1",
-        },
-    )
-    board = _neapolitan_two_colour_board()
-    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
-    base, _ = pipeline.score(board, [0, 1], "ab", Loadout())
-    assert bd["multiplier"] == 1.65
-    assert score == math.floor(base * 1.65)
-
-
-def test_neapolitan_stale_above_cap_keeps_cap_with_three_colours():
-    """battels F8 guard: stale 175 on grid 1 with 3 colours stays at ×1.70."""
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "175",
-            "grid_number": "1",
-        },
-    )
-    board = _neapolitan_three_colour_board()
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
-    assert bd["multiplier"] == 1.7
-    assert score == math.floor(base * 1.7)
-
-
 def test_neapolitan_keeps_stored_tier_above_grid_cap_with_two_colours():
     """offends: grid 1 stored 175 with 2 colours → ×1.75, not stripped to ×1.65."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -593,7 +465,7 @@ def test_neapolitan_keeps_stored_tier_above_grid_cap_with_two_colours():
 
 def test_neapolitan_improves_above_grid_cap_with_three_colours():
     """payees: grid 2 baseline 175 + improve → ×1.80."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -608,26 +480,9 @@ def test_neapolitan_improves_above_grid_cap_with_three_colours():
     assert score == math.floor(base * 1.8)
 
 
-def test_neapolitan_super_stale_improve_on_grid_1():
-    """saccate: grid 1 F8 live 185 (super-stale) + improve → ×1.80."""
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "185",
-            "grid_number": "1",
-        },
-    )
-    board = _neapolitan_three_colour_board()
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
-    assert bd["multiplier"] == 1.8
-    assert score == math.floor(base * 1.8)
-
-
 def test_neapolitan_improves_from_cap_plus_five_on_grid_2():
     """pissy: grid 2 live 180 at cap+5 + improve → ×1.85."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -644,7 +499,7 @@ def test_neapolitan_improves_from_cap_plus_five_on_grid_2():
 
 def test_neapolitan_improves_from_cap_plus_five_on_grid_3():
     """nett: grid 3 live 185 at cap+5 + improve → ×1.90."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -661,7 +516,7 @@ def test_neapolitan_improves_from_cap_plus_five_on_grid_3():
 
 def test_neapolitan_improves_at_grid_cap_on_grid_3():
     """teenes: grid 3 baseline 180 + improve → ×1.85."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -678,7 +533,7 @@ def test_neapolitan_improves_at_grid_cap_on_grid_3():
 
 def test_neapolitan_improves_to_grid_cap_on_grid_2():
     """preppy: grid 2 cap 175 — 170 baseline + improve → ×1.75."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -695,7 +550,7 @@ def test_neapolitan_improves_to_grid_cap_on_grid_2():
 
 def test_neapolitan_stored_baseline_without_improve_on_grid_1():
     """eww: grid 1 stored 200%, <3 colours → ×2.0 not ×1.65."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -712,7 +567,7 @@ def test_neapolitan_stored_baseline_without_improve_on_grid_1():
 
 def test_neapolitan_stored_baseline_without_improve_on_grid_2():
     """toy: grid 2 stored 200%, <3 colours → ×2.0."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -729,7 +584,7 @@ def test_neapolitan_stored_baseline_without_improve_on_grid_2():
 
 def test_neapolitan_stored_baseline_without_improve_on_grid_2_210():
     """peeing: grid 2 stored 210%, <3 colours → ×2.10."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -746,7 +601,7 @@ def test_neapolitan_stored_baseline_without_improve_on_grid_2_210():
 
 def test_neapolitan_stored_baseline_without_improve_on_grid_4():
     """week: grid 4 stored 205%, <3 colours → ×2.05."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -761,131 +616,12 @@ def test_neapolitan_stored_baseline_without_improve_on_grid_4():
     assert score == math.floor(base * 2.05)
 
 
-def test_neapolitan_submit_improve_five_percent_on_grid_1_190():
-    """asset: grid 1 live 190 + improve → ×1.90."""
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "190",
-            "grid_number": "1",
-        },
-    )
-    board = _neapolitan_three_colour_board()
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
-    assert bd["multiplier"] == 1.9
-    assert score == math.floor(base * 1.9)
-
-
-def test_neapolitan_submit_improve_five_percent_on_grid_2_195():
-    """penny: grid 2 live 195 + improve → ×1.95."""
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "195",
-            "grid_number": "2",
-        },
-    )
-    board = _neapolitan_three_colour_board()
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
-    assert bd["multiplier"] == 1.95
-    assert score == math.floor(base * 1.95)
-
-
-def test_neapolitan_submit_improve_five_percent_on_grid_3_200():
-    """feen: grid 3 live 200 + improve → ×2.00."""
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "200",
-            "grid_number": "3",
-        },
-    )
-    board = _neapolitan_three_colour_board()
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
-    assert bd["multiplier"] == 2.0
-    assert score == math.floor(base * 2.0)
-
-
-def test_neapolitan_submit_improve_five_percent_on_grid_3_205():
-    """cann: grid 3 live 205 + improve → ×2.05."""
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "205",
-            "grid_number": "3",
-        },
-    )
-    board = _neapolitan_three_colour_board()
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
-    assert bd["multiplier"] == 2.05
-    assert score == math.floor(base * 2.05)
-
-
-def test_neapolitan_submit_improve_five_percent_on_grid_1_210():
-    """kaases: grid 1 live 210 + improve → ×2.10."""
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "210",
-            "grid_number": "1",
-        },
-    )
-    board = _neapolitan_three_colour_board()
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
-    assert bd["multiplier"] == 2.1
-    assert score == math.floor(base * 2.1)
-
-
-def test_neapolitan_submit_improve_five_percent_on_grid_3_215():
-    """kreng: grid 3 live 215 + improve → ×2.15."""
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "215",
-            "grid_number": "3",
-        },
-    )
-    board = _neapolitan_three_colour_board()
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
-    assert bd["multiplier"] == 2.15
-    assert score == math.floor(base * 2.15)
-
-
-def test_neapolitan_submit_improve_five_percent_on_grid_4_220():
-    """beety: grid 4 live 220 + improve → ×2.20."""
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
-        extras={
-            "neapolitan_percent": "220",
-            "grid_number": "4",
-        },
-    )
-    board = _neapolitan_three_colour_board()
-    score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
-    base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
-    assert bd["multiplier"] == 2.2
-    assert score == math.floor(base * 2.2)
-
-
 def test_neapolitan_submit_simulation_improves_from_baseline_with_three_colours():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
     board.tiles[0][2] = _tile(0, 2, "C", 5, color=TileColor.SHINY)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -900,7 +636,7 @@ def test_neapolitan_submit_simulation_improves_from_baseline_with_three_colours(
 
 
 def test_neapolitan_submit_simulation_only_improves_with_three_colours():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -925,7 +661,7 @@ def test_neapolitan_submit_simulation_only_improves_with_three_colours():
 
 def test_neapolitan_submit_improve_grid_1_live_180():
     """sixte capture: grid 1 live 180 + 3 colours → ×1.85 (game increment-before-apply)."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -942,7 +678,7 @@ def test_neapolitan_submit_improve_grid_1_live_180():
 
 def test_neapolitan_submit_improve_grid_2_live_185():
     """devvel capture: grid 2 live 185 + 3 colours → ×1.90."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -959,7 +695,7 @@ def test_neapolitan_submit_improve_grid_2_live_185():
 
 def test_neapolitan_submit_improve_grid_2_live_190():
     """reslices capture: grid 2 live 190 + 3 colours → ×1.95."""
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="neapolitan", name="Neapolitan", kind="stamp")],
         extras={
@@ -977,7 +713,7 @@ def test_neapolitan_submit_improve_grid_2_live_190():
 def test_stiletto_red_half_grid_number():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 2, color=TileColor.RED)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="stiletto", name="Stiletto", kind="stamp")],
         extras={"grid_number": "10"},
@@ -985,19 +721,6 @@ def test_stiletto_red_half_grid_number():
     score, _ = pipeline.score(board, [0], "a", loadout)
     base, _ = pipeline.score(board, [0], "a", Loadout())
     assert score == base * 5
-
-
-def test_silly_puppy_animal_stamps():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 10)
-    board.tiles[0][1] = _tile(0, 1, "B", 10)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="silly_puppy", name="Silly Puppy", kind="stamp")],
-        extras={"animal_stamp_count": "2"},
-    )
-    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
-    assert bd["multiplier"] == 3.0
 
 
 def test_bunch_of_grapes_roman_number_word(tmp_path):

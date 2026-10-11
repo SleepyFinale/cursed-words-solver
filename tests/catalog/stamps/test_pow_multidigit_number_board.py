@@ -7,12 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-from cursed_words_solver.rules.pipeline import ScoringPipeline
-from tests.regression.test_scoring_mismatches import (
-    _adjust_mutating_dna_extras,
-    _run_state_for_replay,
-)
+from tests.helpers.replay import engine_replay_score
 
 FIXTURE = (
     Path(__file__).resolve().parents[2]
@@ -23,18 +18,7 @@ FIXTURE = (
 
 
 def _score_fixture() -> int:
-    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    run_state = _run_state_for_replay(data)
-    board = parse_board_from_run_state(run_state)
-    assert board is not None
-    loadout = parse_run_state(run_state)
-    assert loadout is not None
-    _adjust_mutating_dna_extras(run_state, data, board, data["path"])
-    loadout = parse_run_state(run_state)
-    score, _ = ScoringPipeline().score(
-        board, data["path"], data["word"], loadout
-    )
-    return int(score)
+    return engine_replay_score(json.loads(FIXTURE.read_text(encoding="utf-8")))
 
 
 @pytest.mark.skipif(not FIXTURE.exists(), reason="fixture required")

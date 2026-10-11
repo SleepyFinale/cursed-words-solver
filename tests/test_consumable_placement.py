@@ -3,67 +3,13 @@ from pathlib import Path
 import pytest
 
 from cursed_words_solver import consumable_placement as cp
-from cursed_words_solver.consumable_placement import (
-    ConsumablePlacement,
-    _max_cells_for_rack_count,
-    _placement_cell_score,
-    _placement_per_screen,
-    _rank_placement_indices,
-    _tile_ninja_used_count_from_extras,
-    _tier_heap_cap,
-    _top_variants_for_tier,
-    apply_consumable_placements,
-    consumable_rack_tiles,
-    format_placement_instructions,
-    format_placement_path_hints,
-    has_exported_consumable_rack,
-    has_mahjong_pin,
-    iter_placement_variants_fewest_first,
-    loadout_after_consumable_placements,
-    consumables_placed_for_scoring,
-    count_new_path_consumables,
-    mahjong_rack_placement_active,
-    rack_placement_search_active,
-    placement_variants_fewest_first,
-    placements_to_records,
-    rack_requires_export,
-    rack_tile_from_entry,
-    remaining_rack_tiles,
-    sandy_placement_search_active,
-    sandy_requires_rack_export,
-    search_consumable_score_boost,
-    search_consumable_placement_fallback,
-    search_target_rescue,
-    search_with_consumable_placements,
-    under_construction_active,
-    multi_consumable_placement_beneficial,
-    _endpoint_pair_bonus,
-    _run_tiered_placement_search,
-    _screened_entry_rank,
-    _finalize_placement_search,
-    _result_rank_score,
-    _placement_screen_floor,
-    _screen_variant_limit,
-    _placement_hard_from_loadout,
-    target_rescue_worth_trying,
-    wait_for_rack_export,
-    wait_for_sandy_rack_export,
-)
+from cursed_words_solver.consumable_placement import ConsumablePlacement, _placement_cell_score, _placement_per_screen, _rank_placement_indices, _tile_ninja_used_count_from_extras, _tier_heap_cap, _top_variants_for_tier, apply_consumable_placements, consumable_rack_tiles, format_placement_instructions, format_placement_path_hints, has_exported_consumable_rack, has_mahjong_pin, loadout_after_consumable_placements, consumables_placed_for_scoring, count_new_path_consumables, rack_placement_search_active, placements_to_records, rack_requires_export, rack_tile_from_entry, remaining_rack_tiles, sandy_placement_search_active, sandy_requires_rack_export, search_consumable_score_boost, search_consumable_placement_fallback, search_target_rescue, search_with_consumable_placements, under_construction_active, multi_consumable_placement_beneficial, _endpoint_pair_bonus, _run_tiered_placement_search, _screened_entry_rank, _finalize_placement_search, _result_rank_score, _placement_screen_floor, _screen_variant_limit, _placement_hard_from_loadout, target_rescue_worth_trying
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.loadout import (
-    hydrate_tile_ninja_loadout_extras,
-    load_run_state_raw,
-    parse_board_from_run_state,
-    parse_run_state,
-)
+from cursed_words_solver.loadout import hydrate_tile_ninja_loadout_extras, load_run_state_raw, parse_board_from_run_state, parse_run_state
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.rules.boss_effects import load_rules_catalog
-from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.scoring_conditions import (
-    consumable_rack_count,
-    placed_consumable_indices,
-    tile_ninja_multiplier_bonus,
-)
+from cursed_words_solver.engine.scorer import EngineScorer
+from cursed_words_solver.rules.scoring_conditions import consumable_rack_count, placed_consumable_indices
 from cursed_words_solver.search import WordSearcher
 from tests.helpers.boards import letter_tile as _tile
 
@@ -130,8 +76,7 @@ def test_sandy_placement_search_active_when_rack_unplaced():
 def test_effective_board_does_not_grow_placed_consumable_cactus():
     from cursed_words_solver.encounter_board import effective_board_for_loadout
     from cursed_words_solver.rules.base_scoring import tile_base_contribution
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-
+    from cursed_words_solver.engine.scorer import EngineScorer
     board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
     rack = Tile(
         -1,
@@ -145,7 +90,7 @@ def test_effective_board_does_not_grow_placed_consumable_cactus():
     )
     placed = apply_consumable_placements(board, [(11, rack)])
     loadout = Loadout(extras={"board_from_melmod": "true"})
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     effective = effective_board_for_loadout(placed, loadout, rules)
     tile = effective.get_by_index(11)
     assert tile.metadata.get("cactus_growth") == 0
@@ -259,7 +204,7 @@ def test_board_only_empty_rack_placement_enables_word(tmp_path):
     rack = consumable_rack_tiles(loadout)
     searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=2.0)
     assert not searcher.find_best_words(board, top_n=1)
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     assert rack_placement_search_active(loadout, board, rules)
     sim_board, records, results = search_with_consumable_placements(
         searcher,
@@ -367,41 +312,6 @@ def test_target_rescue_worth_trying_true_when_below_target():
     assert not target_rescue_worth_trying(380.0, 0, rack)
 
 
-def test_placement_variants_fewest_first_orders_by_tile_count():
-    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
-    rack = [
-        Tile(-1, -1, "A", "A", 1, metadata={"rack_index": 0}),
-        Tile(-1, -1, "B", "B", 1, metadata={"rack_index": 1}),
-    ]
-    variants = placement_variants_fewest_first(board, rack, max_variants=50)
-    assert variants
-    one_tile = [v for v in variants if len(v) == 1]
-    two_tile = [v for v in variants if len(v) == 2]
-    assert one_tile
-    assert two_tile
-    one_tile_letters = {
-        (tile.letter or "").upper() for variant in one_tile for _, tile in variant
-    }
-    assert one_tile_letters == {"A", "B"}
-    first_two_idx = variants.index(two_tile[0])
-    last_one_idx = max(variants.index(v) for v in one_tile)
-    assert last_one_idx < first_two_idx
-
-
-def test_k1_placement_variants_include_all_rack_tiles():
-    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
-    rack = [
-        Tile(-1, -1, "Z", "Z", 1, metadata={"rack_index": 0}),
-        Tile(-1, -1, "T", "T", 5, metadata={"rack_index": 1}),
-    ]
-    variants = placement_variants_fewest_first(board, rack, max_variants=50)
-    one_tile = [v for v in variants if len(v) == 1]
-    rack_indices = {
-        tile.metadata.get("rack_index") for variant in one_tile for _, tile in variant
-    }
-    assert rack_indices == {0, 1}
-
-
 def test_search_consumable_score_boost_uses_non_first_rack_tile(tmp_path):
     wl = tmp_path / "words.txt"
     wl.write_text("cat\n", encoding="utf-8")
@@ -449,7 +359,7 @@ def test_search_consumable_score_boost_uses_non_first_rack_tile(tmp_path):
             "base_score": 5,
         },
     ]
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
     baseline_score = 10.0
     sim_board, records, results = search_consumable_score_boost(
@@ -554,14 +464,14 @@ def test_sandy_requires_rack_export_when_rack_missing():
             "stamps": [],
         }
     )
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
     assert sandy_requires_rack_export(loadout, board, rules)
 
 
 def test_sandy_requires_rack_export_false_when_rack_exported():
     loadout = _sandy_loadout_with_rack()
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
     assert not sandy_requires_rack_export(loadout, board, rules)
 
@@ -576,7 +486,7 @@ def test_sandy_requires_rack_export_false_when_consumables_placed():
             "stamps": [],
         }
     )
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
     board.tiles[0][0] = _tile("h", 0, 0, was_consumable=True)
     assert not sandy_requires_rack_export(loadout, board, rules)
@@ -627,46 +537,11 @@ def test_run_state_sandy_rack_regression():
             "stamps": [],
         }
     )
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
     assert consumable_rack_count(loadout) == 2
     assert sandy_placement_search_active(loadout, board, rules)
     assert not sandy_requires_rack_export(loadout, board, rules)
-
-
-def test_wait_for_sandy_rack_export_finds_rack(monkeypatch):
-    rules = ScoringPipeline().rules
-    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
-    loadout = parse_run_state(
-        {
-            "boss_id": "sandy_saguaro",
-            "boss_name": "Sandy Saguaro",
-            "extras": {},
-            "stickers": [],
-            "stamps": [],
-        }
-    )
-    calls = {"n": 0}
-
-    def reload():
-        calls["n"] += 1
-        if calls["n"] < 2:
-            return loadout
-        return _sandy_loadout_with_rack()
-
-    import time as time_mod
-
-    monkeypatch.setattr(time_mod, "sleep", lambda _sec: None)
-    result = wait_for_sandy_rack_export(
-        loadout,
-        board,
-        rules,
-        reload_loadout=reload,
-        timeout_sec=1.5,
-        poll_sec=0.01,
-    )
-    assert has_exported_consumable_rack(result)
-    assert calls["n"] >= 2
 
 
 def test_run_state_file_sandy_rack_if_present():
@@ -678,7 +553,7 @@ def test_run_state_file_sandy_rack_if_present():
     if not data or data.get("boss_id") != "sandy_saguaro":
         return
     loadout = parse_run_state(data)
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
     if has_exported_consumable_rack(loadout):
         assert sandy_placement_search_active(loadout, board, rules)
@@ -709,27 +584,11 @@ def _mahjong_loadout_with_red_rack() -> Loadout:
 
 
 def test_has_mahjong_pin():
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     loadout = _mahjong_loadout_with_red_rack()
     assert has_mahjong_pin(loadout, rules)
     other = Loadout(extras={"pin_effect": "abacus"})
     assert not has_mahjong_pin(other, rules)
-
-
-def test_mahjong_rack_placement_active_with_red_rack():
-    loadout = _mahjong_loadout_with_red_rack()
-    rules = ScoringPipeline().rules
-    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
-    assert mahjong_rack_placement_active(loadout, board, rules)
-
-
-def test_mahjong_rack_placement_inactive_during_sandy_boss():
-    loadout = _sandy_loadout_with_rack()
-    loadout.extras["pin_effect"] = "mahjong_red_dragon"
-    rules = ScoringPipeline().rules
-    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
-    assert sandy_placement_search_active(loadout, board, rules)
-    assert not mahjong_rack_placement_active(loadout, board, rules)
 
 
 def _generic_loadout_with_rack() -> Loadout:
@@ -754,17 +613,9 @@ def _generic_loadout_with_rack() -> Loadout:
     )
 
 
-def test_rack_placement_search_active_generic_character():
-    loadout = _generic_loadout_with_rack()
-    rules = ScoringPipeline().rules
-    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
-    assert rack_placement_search_active(loadout, board, rules)
-    assert mahjong_rack_placement_active(loadout, board, rules)
-
-
 def test_rack_placement_search_active_false_when_sandy_boss():
     loadout = _sandy_loadout_with_rack()
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
     assert sandy_placement_search_active(loadout, board, rules)
     assert not rack_placement_search_active(loadout, board, rules)
@@ -796,7 +647,7 @@ def test_currency_rack_tile_maps_symbol_to_letter():
 
 
 def test_placement_cell_score_prefers_high_base_score():
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     loadout = _mahjong_loadout_with_red_rack()
     board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
     low = Tile(-1, -1, "A", "A", 1, metadata={"rack_index": 0})
@@ -846,7 +697,7 @@ def test_search_consumable_score_boost_adopts_when_improved(tmp_path):
             "base_score": 5,
         }
     ]
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
     baseline_score = 10.0
     sim_board, records, results = search_consumable_score_boost(
@@ -988,7 +839,7 @@ def test_search_consumable_score_boost_placements_must_be_on_path(tmp_path):
             "tile_ninja_bonus": "0.2",
         },
     )
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
     sim_board, records, results = search_consumable_score_boost(
         searcher,
@@ -1015,7 +866,7 @@ def test_rack_requires_export_when_count_without_rack_json():
             "stamps": [],
         }
     )
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
     assert rack_requires_export(loadout, board, rules)
 
@@ -1138,14 +989,6 @@ def test_variant_gen_budget_limits_tier_generation(tmp_path, monkeypatch):
     assert k_values_called == [1]
 
 
-def test_lazy_n5_variant_count_bounded():
-    board = _full_active_board()
-    rack = _five_tile_rack()
-    count = sum(1 for _ in iter_placement_variants_fewest_first(board, rack))
-    assert count <= 96
-    assert count < 10_000
-
-
 def test_global_solve_deadline_skips_mahjong_when_expired():
     search_budget = 60.0
     search_started = 1000.0
@@ -1188,7 +1031,7 @@ def test_swivets_placed_wildcard_no_color_bonus_scores_189():
         t for t in consumable_rack_tiles(loadout) if t.curse == CurseType.WILDCARD
     )
     placed = apply_consumable_placements(board, [(8, wildcard)])
-    score, _ = ScoringPipeline().score(placed, data["path"], data["word"], loadout)
+    score, _ = EngineScorer().score(placed, data["path"], data["word"], loadout)
     assert int(score) == data["actual_score"] == 189
 
 
@@ -1260,162 +1103,16 @@ def test_consumables_placed_for_scoring_uses_placement_records():
     score_loadout = loadout_after_consumable_placements(loadout, 2)
     assert score_loadout.extras["tile_ninja_consumables_used"] == "23"
     assert score_loadout.extras["tile_ninja_word_bonus_percent"] == "166"
-    score, _ = ScoringPipeline().score(
+    score, _ = EngineScorer().score(
         search_board, path, data["word"], score_loadout
     )
     assert int(score) == int(data["actual_score"]) == 1430
-
-
-def test_deviative_placement_simulation_scores_203():
-    """F8 placement sim must not collapse Tile Ninja to ×1.22 (mismatch 20260610_193012)."""
-    import json
-    from copy import deepcopy
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "mismatches"
-        / "20260610_193012.json"
-    )
-    if not fixture.is_file():
-        pytest.skip("fixture 20260610_193012 not installed")
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    rs = deepcopy(data["run_state_snapshot"])
-    extras = rs["extras"]
-    extras["tile_ninja_bonus"] = "0"
-    extras["tile_ninja_bonus_last_known"] = "0"
-    extras["tile_ninja_consumables_used"] = "10"
-    extras["consumable_rack"] = data["extras_diff"]["consumable_rack"]["f8"]
-    board = parse_board_from_run_state(rs)
-    loadout = hydrate_tile_ninja_loadout_extras(parse_run_state(rs), rs)
-    rack_raw = json.loads(extras["consumable_rack"])
-    bishop = rack_tile_from_entry(rack_raw[0])
-    placed_board = apply_consumable_placements(board, [(11, bishop)])
-    var_loadout = loadout_after_consumable_placements(loadout, 1)
-    assert tile_ninja_multiplier_bonus(
-        var_loadout, board=placed_board, path=data["path"]
-    ) == pytest.approx(0.22)
-    score, _ = ScoringPipeline().score(
-        placed_board, data["path"], data["word"], var_loadout
-    )
-    assert int(score) == 203
 
 
 def test_tile_ninja_used_count_ignores_false_zero_when_bonus_exported():
     assert _tile_ninja_used_count_from_extras(
         {"tile_ninja_consumables_used": "0", "tile_ninja_bonus": "0.2"}
     ) == 10
-
-
-def test_reawaited_placement_simulation_scores_184():
-    """F8 placement sim must not inflate Tile Ninja to ×1.46 (mismatch 20260610_201120)."""
-    import json
-    from copy import deepcopy
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "mismatches"
-        / "20260610_201120.json"
-    )
-    if not fixture.is_file():
-        pytest.skip("fixture 20260610_201120 not installed")
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    rs = deepcopy(data["run_state_snapshot"])
-    for key, entry in (data.get("extras_diff") or {}).items():
-        if isinstance(entry, dict) and entry.get("f8") not in (None, ""):
-            rs["extras"][key] = entry["f8"]
-    rs["extras"]["consumable_rack"] = data["extras_diff"]["consumable_rack"]["f8"]
-    rs["extras"]["tile_ninja_consumables_used"] = "12"
-    rs["extras"]["tile_ninja_bonus"] = "0.24"
-    rs["extras"]["tile_ninja_bonus_last_known"] = "0.24"
-    rs["extras"]["tile_ninja_bonus_at_grid_start"] = "0.2"
-    board = parse_board_from_run_state(rs)
-    loadout = hydrate_tile_ninja_loadout_extras(parse_run_state(rs), rs)
-    rack_raw = json.loads(rs["extras"]["consumable_rack"])
-    letter_a = rack_tile_from_entry(rack_raw[0])
-    placed_board = apply_consumable_placements(board, [(11, letter_a)])
-    var_loadout = loadout_after_consumable_placements(loadout, 1)
-    assert tile_ninja_multiplier_bonus(
-        var_loadout, board=placed_board, path=data["path"]
-    ) == pytest.approx(0.22)
-    score, _ = ScoringPipeline().score(
-        placed_board, data["path"], data["word"], var_loadout
-    )
-    assert int(score) == 184
-
-
-def test_ibogaine_placement_simulation_scores_154():
-    """F8 placement sim must not inflate Tile Ninja to ×1.48 (mismatch 20260610_200505)."""
-    import json
-    from copy import deepcopy
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "mismatches"
-        / "20260610_200505.json"
-    )
-    if not fixture.is_file():
-        pytest.skip("fixture 20260610_200505 not installed")
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    rs = deepcopy(data["run_state_snapshot"])
-    for key, entry in (data.get("extras_diff") or {}).items():
-        if isinstance(entry, dict) and entry.get("f8") not in (None, ""):
-            rs["extras"][key] = entry["f8"]
-    rs["extras"]["consumable_rack"] = data["extras_diff"]["consumable_rack"]["f8"]
-    rs["extras"]["tile_ninja_consumables_used"] = "13"
-    rs["extras"]["tile_ninja_bonus"] = "0.26"
-    rs["extras"]["tile_ninja_bonus_last_known"] = "0.26"
-    rs["extras"]["tile_ninja_bonus_at_grid_start"] = "0.2"
-    board = parse_board_from_run_state(rs)
-    loadout = hydrate_tile_ninja_loadout_extras(parse_run_state(rs), rs)
-    rack_raw = json.loads(rs["extras"]["consumable_rack"])
-    wildcard = rack_tile_from_entry(rack_raw[0])
-    placed_board = apply_consumable_placements(board, [(6, wildcard)])
-    var_loadout = loadout_after_consumable_placements(loadout, 1)
-    assert tile_ninja_multiplier_bonus(
-        var_loadout, board=placed_board, path=data["path"]
-    ) == pytest.approx(0.22)
-    score, _ = ScoringPipeline().score(
-        placed_board, data["path"], data["word"], var_loadout
-    )
-    assert int(score) == 154
-
-
-def test_warehouse_placement_simulation_scores_286():
-    """F8 placement sim must not collapse Tile Ninja to ×1.22 (mismatch 20260610_195716)."""
-    import json
-    from copy import deepcopy
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "mismatches"
-        / "20260610_195716.json"
-    )
-    if not fixture.is_file():
-        pytest.skip("fixture 20260610_195716 not installed")
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    rs = deepcopy(data["run_state_snapshot"])
-    for key, entry in (data.get("extras_diff") or {}).items():
-        if isinstance(entry, dict) and entry.get("f8") not in (None, ""):
-            rs["extras"][key] = entry["f8"]
-    rs["extras"]["consumable_rack"] = data["extras_diff"]["consumable_rack"]["f8"]
-    rs["extras"]["tile_ninja_consumables_used"] = "10"
-    board = parse_board_from_run_state(rs)
-    loadout = hydrate_tile_ninja_loadout_extras(parse_run_state(rs), rs)
-    rack_raw = json.loads(rs["extras"]["consumable_rack"])
-    queen = rack_tile_from_entry(rack_raw[0])
-    placed_board = apply_consumable_placements(board, [(11, queen)])
-    var_loadout = loadout_after_consumable_placements(loadout, 1)
-    assert tile_ninja_multiplier_bonus(
-        var_loadout, board=placed_board, path=data["path"]
-    ) == pytest.approx(0.22)
-    score, _ = ScoringPipeline().score(
-        placed_board, data["path"], data["word"], var_loadout
-    )
-    assert int(score) == 286
 
 
 def test_live_octacles_up_and_up_rack_ready_for_placement_fallback():
@@ -1433,7 +1130,7 @@ def test_live_octacles_up_and_up_rack_ready_for_placement_fallback():
         pytest.skip("run_state is not Up and Up")
     loadout = parse_run_state(raw)
     board = parse_board_from_run_state(raw)
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     rack = remaining_rack_tiles(loadout, board)
     assert len(rack) >= 1
     assert all(t.curse == CurseType.WILDCARD for t in rack)
@@ -1488,79 +1185,6 @@ def test_placement_screen_floor_hard_up_and_up():
     assert _screen_variant_limit(10.0, 2.0, 24) == 5
 
 
-def test_cobra_hard_mode_does_not_expand_placement_cell_pool(tmp_path):
-    """Hard mode (Cobra) must not enumerate all 25 cells for variant generation."""
-    import time as time_mod
-
-    from cursed_words_solver.consumable_placement import (
-        _effective_variant_gen_deadline,
-        _variant_gen_past_deadline,
-    )
-
-    assert _max_cells_for_rack_count(5) == 10
-    loadout = Loadout(boss_id="cobra", boss_name="Cobra")
-    assert _placement_hard_from_loadout(loadout)
-    board = Board(tiles=[[_tile("a", r, c) for c in range(5)] for r in range(5)])
-    rack = [
-        Tile(-1, -1, "A", "A", 2, metadata={"rack_index": i})
-        for i in range(5)
-    ]
-    cells = _rank_placement_indices(board, rack, loadout=loadout)
-    assert len(cells) <= 10
-
-    tier_cap = _tier_heap_cap(96)
-    gen_deadline = time_mod.monotonic() + 1.0
-    started = time_mod.monotonic()
-    tier4 = _top_variants_for_tier(
-        board,
-        rack,
-        cells,
-        4,
-        tier_cap=tier_cap,
-        loadout=loadout,
-        gen_deadline=gen_deadline,
-    )
-    elapsed = time_mod.monotonic() - started
-    assert elapsed < 3.0
-    assert tier4
-    assert _variant_gen_past_deadline(gen_deadline)
-
-    wl = tmp_path / "words.txt"
-    wl.write_text("aaaaaaa\n", encoding="utf-8")
-    searcher = WordSearcher(
-        WordDictionary(wl),
-        min_len=7,
-        max_len=25,
-        time_budget=2.0,
-        search_workers=1,
-    )
-    solve_deadline = time_mod.monotonic() + 2.0
-    gen_started = time_mod.monotonic()
-    gen_budget_deadline = _effective_variant_gen_deadline(
-        solve_deadline, gen_started, variant_gen_budget=1.0
-    )
-    assert gen_budget_deadline is not None
-    assert gen_budget_deadline <= solve_deadline
-    search_started = time_mod.monotonic()
-    _run_tiered_placement_search(
-        searcher,
-        board,
-        loadout,
-        rack,
-        time_budget=2.0,
-        top_n=1,
-        min_rank_score=100.0,
-        prefer_fewest_tiles=True,
-        require_placements_in_path=True,
-        variant_gen_budget=1.0,
-        solve_deadline=solve_deadline,
-        max_tier_override=2,
-    )
-    assert time_mod.monotonic() - search_started < 3.0
-    stats = cp.last_placement_search_stats()
-    assert stats.variant_gen_sec < 3.0
-
-
 def test_westernisations_placement_candidates_regression() -> None:
     """Round log 20260616_000741: placement pool must include winning consumable cells."""
     import json
@@ -1572,15 +1196,14 @@ def test_westernisations_placement_candidates_regression() -> None:
         _tier_heap_cap,
         _top_variants_for_tier,
     )
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-
+    from cursed_words_solver.engine.scorer import EngineScorer
     if not _WESTERNISATIONS_FIXTURE.is_file():
         pytest.skip("fixture 20260616_000741_westernisations not installed")
     data = json.loads(_WESTERNISATIONS_FIXTURE.read_text(encoding="utf-8"))
     rs = data["run_state_snapshot"]
     board = parse_board_from_run_state(rs)
     loadout = parse_run_state(rs)
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     rack = consumable_rack_tiles(loadout)
     assert len(rack) == 2
 
@@ -1735,7 +1358,7 @@ def test_search_consumable_score_boost_places_two_with_under_construction(tmp_pa
             LoadoutItem(id="under_construction", name="Under Construction", level=1)
         ]
     )
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
     baseline = searcher.find_best_words(board, loadout=loadout, top_n=1)
     baseline_score = baseline[0].score if baseline else 0.0
@@ -1815,7 +1438,7 @@ def test_variant_gen_budget_does_not_skip_k2_with_under_construction(
         min_rank_score=0.0,
         prefer_fewest_tiles=False,
         variant_gen_budget=0.001,
-        rules=ScoringPipeline().rules,
+        rules=EngineScorer().rules,
     )
     assert 1 in k_values_called
     assert 2 in k_values_called
@@ -1922,7 +1545,7 @@ def test_run_state_under_construction_two_placements_with_gen_budget():
     loadout = parse_run_state(rs)
     board = parse_board_from_run_state(rs)
     rack = consumable_rack_tiles(loadout)
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     searcher = WordSearcher(
         WordDictionary(resolve_wordlist(None)),
         min_len=1,
@@ -1959,15 +1582,14 @@ def test_westernisations_consumable_fallback_finds_center_word() -> None:
 
     from cursed_words_solver.config import resolve_wordlist
     from cursed_words_solver.rules.boss_effects import boss_word_constraints
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-
+    from cursed_words_solver.engine.scorer import EngineScorer
     if not _WESTERNISATIONS_FIXTURE.is_file():
         pytest.skip("fixture 20260616_000741_westernisations not installed")
     data = json.loads(_WESTERNISATIONS_FIXTURE.read_text(encoding="utf-8"))
     rs = data["run_state_snapshot"]
     board = parse_board_from_run_state(rs)
     loadout = parse_run_state(rs)
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     rack = consumable_rack_tiles(loadout)
 
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)

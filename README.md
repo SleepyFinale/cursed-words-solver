@@ -88,8 +88,7 @@ flowchart LR
   subgraph solver [Python solver]
     App["app.py or bundled exe"]
     Search[search.py WordSearcher]
-    SolveCtx[SolveContext + BoardGraphContext + BoardScoringContext]
-    Pipe[rules/pipeline.py ScoringPipeline]
+    Engine[engine/ EnginePlan + ExactSearch]
   end
   subgraph ui [Qt overlays]
     Overlay[ResultOverlay]
@@ -129,8 +128,8 @@ Pressing **F8** once starts `_solve_worker` in `[app.py](cursed_words_solver/app
 1. **Export request** — Solver writes `f8_export_request.json`; melmod `[F8ExportRequestPoller.cs](melmod/CursedWordsSolverCompanion/F8ExportRequestPoller.cs)` forces a live export and acks via `export_diagnostics.f8_request_id`.
 2. **Gather snapshot** — `[f8_snapshot.py](cursed_words_solver/f8_snapshot.py)` polls melmod `run_state.json` until the board and required extras (historic, rack, stamp counters, etc.) are exported. Game export is the source of truth; there is no in-memory loadout cache between F8 presses.
 3. **Dictionary** — `[dictionary.py](cursed_words_solver/dictionary.py)` loads `game_words.txt` when present (from melmod), else ENABLE1 (`[config.py](cursed_words_solver/config.py)` `resolve_wordlist`).
-4. **Search** — Exact search via [`engine/search.py`](cursed_words_solver/engine/search.py) behind `WordSearcher` in `[search.py](cursed_words_solver/search.py)` (legacy heuristic search for unsupported modes and as a hybrid on wildcard-dense boards), then optional consumable placement via `[consumable_placement.py](cursed_words_solver/consumable_placement.py)` (score boost, target rescue if below `target_score`; Sandy Saguaro uses placement-first search). Optional Twinkle Toes pre-path tile swap via `[rules/twinkle_toes.py](cursed_words_solver/rules/twinkle_toes.py)`. Amber board circles and orange rack numbers mark consumable steps before the green path.
-5. **Score** — Candidates are scored by the game-port [`EnginePlan`](cursed_words_solver/engine/calc.py); the legacy `[ScoringPipeline](cursed_words_solver/rules/pipeline.py)` remains for tooling and as a fallback.
+4. **Search** — Exact search via [`engine/search.py`](cursed_words_solver/engine/search.py) behind `WordSearcher` in `[search.py](cursed_words_solver/search.py)` (score-guided beam search after enumeration on wildcard/chess-dense boards), then optional consumable placement via `[consumable_placement.py](cursed_words_solver/consumable_placement.py)` (score boost, target rescue if below `target_score`; Sandy Saguaro uses placement-first search). Optional Twinkle Toes pre-path tile swap via `[rules/twinkle_toes.py](cursed_words_solver/rules/twinkle_toes.py)`. Amber board circles and orange rack numbers mark consumable steps before the green path.
+5. **Score** — Candidates are scored by the game-port [`EnginePlan`](cursed_words_solver/engine/calc.py); single-path scoring (F8 prediction, replays, simulator, tests) goes through [`EngineScorer`](cursed_words_solver/engine/scorer.py). The old rule-table `ScoringPipeline` was deleted on 2026-10-11.
 6. **Output** — The best word is re-scored with a full trace, written to `last_suggestion.json` (with embedded F8 extras), and shown in the overlay. After you submit the word in-game, the overlay clears to **Press F8 to solve** — press F8 again on the next grid when ready.
 
 ### Display layer (overlays)
@@ -210,7 +209,8 @@ cursed_words_solver/   # Python package
   known_failing.py     # Quarantined mismatch fixture registry
   fingerprints.py      # Board/loadout change detection
   paths.py             # Catalog root for checkout and frozen builds
-  rules/               # Scoring pipeline, bosses, rule lookup
+  engine/              # Game-port scorer + exact search (ScoreCalculation, item hooks, movement)
+  rules/               # Rule catalog lookup, boss/quest/stamp metadata
     rule_phase.py      # Static vs dynamic rule classification
   game_shop/           # Shop advice engine types and scoring
   sim/                 # Experimental encounter simulator (see docs/game-research/sim-traceability.md)
@@ -338,9 +338,9 @@ GitHub Actions runs `pytest tests/` on push and pull request to `main` / `master
 | Regression  | `tests/regression/`                                                                                          | Mismatch captures (`tests/fixtures/mismatches/`) and round-log path replays              |
 | Sim         | `tests/sim/`                                                                                                 | Encounter simulator replay                                                               |
 | Unit        | `tests/test_*.py`                                                                                            | Search, bosses, dictionary, F8 snapshot, consumable placement, suggestion stale workflow |
-| Performance | `tests/test_static_dynamic_pipeline.py`, `tests/test_tier2_two_phase.py`, `tests/test_search_performance.py` | Static/dynamic scoring parity, tier-2 bounds, search gating                              |
+| Performance | `tests/test_tier2_two_phase.py`, `tests/test_search_performance.py` | Tier-2 bounds, search gating                              |
 
-**Contributing a scoring fix:** F7 → F8 → play the highlighted word → collect mismatch JSON → `python scripts/mismatch_to_test.py …` → fix pipeline → `pytest tests/regression/ -k <fixture_id>` until green → remove that stem from `[tests/fixtures/known_failing.json](tests/fixtures/known_failing.json)` if it was quarantined. For path misses, promote round logs with `python scripts/round_log_to_test.py <round_log.json>` (see [melmod README — Round logs](melmod/README.md#round-logs-v12)).
+**Contributing a scoring fix:** F7 → F8 → play the highlighted word → collect mismatch JSON → `python scripts/mismatch_to_test.py …` → fix the engine from the decompile ([engine.md](docs/game-research/engine.md)) → `pytest tests/regression/ -k <fixture_id>` until green → remove that stem from `[tests/fixtures/known_failing.json](tests/fixtures/known_failing.json)` if it was quarantined. For path misses, promote round logs with `python scripts/round_log_to_test.py <round_log.json>` (see [melmod README — Round logs](melmod/README.md#round-logs-v12)).
 
 New mismatch fixtures are **not** added to `known_failing.json` by default, so CI fails until the replay passes (or you deliberately quarantine a case). All non-quarantined regression fixtures run on every `pytest tests/`.
 

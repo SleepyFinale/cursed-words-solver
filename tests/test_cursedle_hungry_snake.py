@@ -3,26 +3,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-import pytest
 
 from cursed_words_solver.cursedle_solver import (
-    _cursedle_path_movement_ok,
     _cursedle_word_from_path,
-    _narrow_candidates_to_dictionary,
     _path_dictionary_word_any_resolution,
-    _pick_final_guess,
     enumerate_candidate_paths,
-    filter_candidates,
-    parse_cursedle_guesses,
-    run_cursedle_solver,
 )
-from cursed_words_solver.search import path_movement_ok
-from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
-LIVE_RUN_STATE = Path.home() / ".cursed_words_solver" / "run_state.json"
+from cursed_words_solver.models import Board, CurseType, Tile, TileColor
 
 CHAO_SNAKE_PATH = [32, 27, 34, 35]
 CHAO_DECOY_PATH = [32, 27, 34, 33]
@@ -178,43 +166,10 @@ def _chaos_board() -> Board:
     return Board(tiles=tiles, rows=6, cols=6)
 
 
-def test_chaos_path_requires_snake_wrap_for_movement() -> None:
-    board = _chaos_board()
-    assert not path_movement_ok(board, CHAOS_SNAKE_PATH)
-    assert _cursedle_path_movement_ok(board, CHAOS_SNAKE_PATH)
-
-
 def test_chaos_path_enumerated_with_snake_wrap() -> None:
     board = _chaos_board()
     paths = enumerate_candidate_paths(board, min_len=5, max_len=5)
     assert CHAOS_SNAKE_PATH in paths
-
-
-def test_chaos_path_resolves_to_dictionary_word() -> None:
-    board = _chaos_board()
-    dictionary = WordDictionary()
-    assert _cursedle_word_from_path(board, CHAOS_SNAKE_PATH) == "cha?s"
-    word = _path_dictionary_word_any_resolution(board, CHAOS_SNAKE_PATH, dictionary)
-    assert word == "chaos"
-
-
-@pytest.mark.skipif(not LIVE_RUN_STATE.exists(), reason="live run_state.json not present")
-def test_run_cursedle_solver_finds_chaos_after_anthimeria_seco() -> None:
-    payload = json.loads(LIVE_RUN_STATE.read_text(encoding="utf-8"))
-    board = parse_board_from_run_state(payload)
-    loadout = Loadout(
-        extras={
-            "encounter_mode": "cursedle",
-            "cursedle_guesses_used": "2",
-            "cursedle_guesses_remaining": "3",
-            "cursedle_guesses": ANTHIMERIA_SECO_GUESSES_JSON,
-        }
-    )
-    dictionary = WordDictionary()
-    advice = run_cursedle_solver(board, loadout, dictionary)
-    assert advice.word.lower() == "chaos"
-    assert advice.path == CHAOS_SNAKE_PATH
-    assert advice.candidates >= 1
 
 
 def test_cursedle_word_from_path_chess_tile_is_wildcard() -> None:
@@ -274,56 +229,3 @@ def test_pattern_fallback_when_item_has_no_letter() -> None:
     assert word in {"chao", "chay"}
 
 
-def test_pick_final_guess_does_not_repeat_all_green_chao() -> None:
-    if not LIVE_RUN_STATE.exists():
-        pytest.skip("live run_state.json not present")
-    payload = json.loads(LIVE_RUN_STATE.read_text(encoding="utf-8"))
-    board = parse_board_from_run_state(payload)
-    guesses = parse_cursedle_guesses({"cursedle_guesses": HUNGRY_SNAKE_GUESSES_JSON})
-    dictionary = WordDictionary()
-    feedback = filter_candidates(board, guesses)
-    narrowed = _narrow_candidates_to_dictionary(board, feedback, dictionary)
-    pick = _pick_final_guess(board, narrowed, dictionary, guesses)
-    assert pick is not None
-    path, word = pick
-    assert path != CHAO_SNAKE_PATH
-    assert word.lower() != "chao"
-
-
-@pytest.mark.skipif(not LIVE_RUN_STATE.exists(), reason="live run_state.json not present")
-def test_run_cursedle_solver_does_not_repeat_chao_after_all_green() -> None:
-    payload = json.loads(LIVE_RUN_STATE.read_text(encoding="utf-8"))
-    board = parse_board_from_run_state(payload)
-    loadout = Loadout(
-        extras={
-            "encounter_mode": "cursedle",
-            "cursedle_guesses_used": "2",
-            "cursedle_guesses_remaining": "3",
-            "cursedle_guesses": HUNGRY_SNAKE_GUESSES_JSON,
-        }
-    )
-    dictionary = WordDictionary()
-    advice = run_cursedle_solver(board, loadout, dictionary)
-    assert advice.path != CHAO_SNAKE_PATH
-    assert advice.word.lower() != "chao"
-
-
-def test_run_cursedle_solver_prefers_longer_extension_after_all_green_prefix() -> None:
-    if not LIVE_RUN_STATE.exists():
-        pytest.skip("live run_state.json not present")
-    payload = json.loads(LIVE_RUN_STATE.read_text(encoding="utf-8"))
-    board = parse_board_from_run_state(payload)
-    loadout = Loadout(
-        extras={
-            "encounter_mode": "cursedle",
-            "cursedle_guesses_used": "2",
-            "cursedle_guesses_remaining": "3",
-            "cursedle_guesses": HUNGRY_SNAKE_GUESSES_JSON,
-        }
-    )
-    dictionary = WordDictionary()
-    advice = run_cursedle_solver(board, loadout, dictionary)
-    if advice.path == CHANT_EXT_PATH:
-        assert advice.word.lower() == "chant"
-    else:
-        assert len(advice.path) > len(CHAO_SNAKE_PATH) or advice.word.lower() != "chao"

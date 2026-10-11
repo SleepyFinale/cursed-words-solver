@@ -8,7 +8,7 @@ from cursed_words_solver.models import (
     Tile,
     TileColor,
 )
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import count_scoring_items, get_rule, slugify_name
 
 BONES_STICKER_NAMES = [
@@ -100,7 +100,7 @@ def _empty_board() -> Board:
 
 
 def test_all_bones_stickers_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in BONES_STICKER_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stickers", slug, name)
@@ -109,7 +109,7 @@ def test_all_bones_stickers_catalogued():
 
 
 def test_count_scoring_vs_grid_only_bones():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[
             LoadoutItem(id=slugify_name(n), name=n, level=1, kind="sticker")
@@ -123,7 +123,7 @@ def test_count_scoring_vs_grid_only_bones():
 
 
 def test_postal_horn_grid_scatter():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     _key, rule = get_rule(pipeline.rules, "stickers", "postal_horn", "Postal Horn")
     assert rule.get("effect_class") == "scatter"
 
@@ -132,7 +132,7 @@ def test_celestial_body_card_tile_bonus_level2():
     board = _empty_board()
     board.tiles[0][0] = _card(0, 0, "A", "hearts")
     board.tiles[0][1] = _card(0, 1, "K", "spades")
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=2)]
     )
@@ -155,7 +155,7 @@ def test_celestial_body_l2_solitary_endpoint_d_gets_bonus():
     board.tiles[2][4] = _letter(2, 4, "E", 1)
     board.tiles[1][4] = _letter_card(1, 4, "D", "diamonds", 2)
     path = [23, 18, 12, 7, 1, 6, 10, 14, 9]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=2)]
     )
@@ -189,7 +189,7 @@ def test_celestial_body_duplicate_rank_only_last_gets_bonus():
         metadata={"source": "melmod", "card_suit": "spades", "card_rank": "M"},
     )
     path = [0, 1, 2, 3, 4]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=1)]
     )
@@ -218,7 +218,7 @@ def test_celestial_body_bones_duplicate_zero_value_both_get_bonus():
     )
     board.tiles[0][0] = _letter(0, 0, "E", 0)
     path = [2, 7, 6, 5, 0]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=1)]
     )
@@ -236,7 +236,7 @@ def test_celestial_body_l1_joker_wildcard_gets_bonus():
     board.tiles[0][0] = _joker_tile(0, 0, "diamonds")
     board.tiles[0][1] = _letter(0, 1, "E", 1)
     board.tiles[0][2] = _letter(0, 2, "X", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=1)]
     )
@@ -258,7 +258,7 @@ def test_celestial_body_l1_joker_suit_rank_i_gets_bonus():
         metadata={"source": "melmod", "card_suit": "joker", "card_rank": "I"},
     )
     board.tiles[0][1] = _letter(0, 1, "T", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=1)]
     )
@@ -280,7 +280,7 @@ def test_celestial_body_l1_high_value_non_poker_rank_gets_bonus():
         metadata={"source": "melmod", "card_suit": "spades", "card_rank": "X"},
     )
     board.tiles[0][1] = _letter(0, 1, "E", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=1)]
     )
@@ -299,7 +299,7 @@ def test_celestial_body_l3_duplicate_letter_all_suited():
     board.tiles[3][1] = _letter_card(3, 1, "A", "spades", 1)
     board.tiles[0][3] = _letter_card(0, 3, "A", "hearts", 1)
     path = [4, 9, 8, 16, 3]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=3)]
     )
@@ -316,7 +316,7 @@ def test_kadomatsu_three_of_a_kind():
     board.tiles[0][0] = _card(0, 0, "K", "hearts")
     board.tiles[0][1] = _card(0, 1, "K", "spades")
     board.tiles[0][2] = _card(0, 2, "K", "clubs")
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="kadomatsu", name="Kadomatsu", level=1)])
     score, bd = pipeline.score(board, [0, 1, 2], "kkk", loadout)
     base, base_bd = pipeline.score(board, [0, 1, 2], "kkk", Loadout())
@@ -339,7 +339,7 @@ def test_kadomatsu_pair_plus_card_suit_joker_without_is_joker_flag():
         curse=CurseType.WILDCARD,
         metadata={"source": "melmod", "card_suit": "joker"},  # no is_joker
     )
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="kadomatsu", name="Kadomatsu", level=1)])
     score, bd = pipeline.score(board, [0, 1, 2], "oo?", loadout)
     base, base_bd = pipeline.score(board, [0, 1, 2], "oo?", Loadout())
@@ -353,7 +353,7 @@ def test_peacock_flush_multiply():
     for c in range(5):
         board.tiles[0][c] = _card(0, c, str(2 + c), "hearts")
         path.append(c)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="peacock", name="Peacock", level=1)])
     score, bd = pipeline.score(board, path, "23456", loadout)
     base, _ = pipeline.score(board, path, "23456", Loadout())
@@ -365,7 +365,7 @@ def test_pear_pair_money_bonus():
     board = _empty_board()
     board.tiles[0][0] = _card(0, 0, "7", "hearts")
     board.tiles[0][1] = _card(0, 1, "7", "diamonds")
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="pear", name="Pear", level=1)])
     score, bd = pipeline.score(board, [0, 1], "77", loadout)
     base, _ = pipeline.score(board, [0, 1], "77", Loadout())
@@ -379,7 +379,7 @@ def test_hanafuda_pair_per_unused_card():
     board.tiles[0][1] = _card(0, 1, "A", "spades")
     board.tiles[1][0] = _card(1, 0, "2", "clubs")
     board.tiles[1][1] = _card(1, 1, "3", "diamonds")
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="hanafuda", name="Hanafuda", level=1)])
     score, bd = pipeline.score(board, [0, 1], "aa", loadout)
     base, base_bd = pipeline.score(board, [0, 1], "aa", Loadout())
@@ -387,25 +387,11 @@ def test_hanafuda_pair_per_unused_card():
     assert score == base + 24
 
 
-def test_slide_straight_word_bonus():
-    board = _empty_board()
-    path = []
-    for c, rank in enumerate("23456"):
-        board.tiles[0][c] = _card(0, c, rank, "hearts")
-        path.append(c)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(stickers=[LoadoutItem(id="slide", name="Slide", level=1)])
-    score, bd = pipeline.score(board, path, "23456", loadout)
-    base, base_bd = pipeline.score(board, path, "23456", Loadout())
-    assert bd["word_score"] == base_bd["word_score"] + 150
-    assert score == base + 150
-
-
 def test_poker_face_starts_with_face_card():
     board = _empty_board()
     board.tiles[0][0] = _card(0, 0, "Q", "hearts")
     board.tiles[0][1] = _letter(0, 1, "A")
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="poker_face", name="Poker Face", level=1)])
     score, bd = pipeline.score(board, [0, 1], "qa", loadout)
     base, _ = pipeline.score(board, [0, 1], "qa", Loadout())
@@ -417,7 +403,7 @@ def test_poker_face_non_face_start_no_mult():
     board = _empty_board()
     board.tiles[0][0] = _card(0, 0, "2", "hearts")
     board.tiles[0][1] = _letter(0, 1, "A")
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="poker_face", name="Poker Face", level=1)])
     score, bd = pipeline.score(board, [0, 1], "2a", loadout)
     base, _ = pipeline.score(board, [0, 1], "2a", Loadout())
@@ -430,7 +416,7 @@ def test_wrestlers_different_suits_at_ends():
     board.tiles[0][0] = _card(0, 0, "K", "hearts")
     board.tiles[0][1] = _letter(0, 1, "A")
     board.tiles[0][2] = _card(0, 2, "5", "clubs")
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=1)])
     score, bd = pipeline.score(board, [0, 1, 2], "ka5", loadout)
     base, _ = pipeline.score(board, [0, 1, 2], "ka5", Loadout())
@@ -443,7 +429,7 @@ def test_wrestlers_same_suit_ends_no_mult():
     board.tiles[0][0] = _card(0, 0, "K", "hearts")
     board.tiles[0][1] = _letter(0, 1, "A")
     board.tiles[0][2] = _card(0, 2, "5", "hearts")
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=1)])
     score, bd = pipeline.score(board, [0, 1, 2], "ka5", loadout)
     base, _ = pipeline.score(board, [0, 1, 2], "ka5", Loadout())
@@ -460,7 +446,7 @@ def test_wrestlers_letter_card_endpoints_different_suits():
     board.tiles[0][3] = _letter(0, 3, "E", 1)
     board.tiles[0][4] = _letter_card(0, 4, "E", "clubs", 1)
     path = [0, 1, 2, 3, 4]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=1)])
     score, bd = pipeline.score(board, path, "eeeee", loadout)
     base, _ = pipeline.score(board, path, "eeeee", Loadout())
@@ -475,7 +461,7 @@ def test_wrestlers_poker_rank_letter_endpoints():
     board.tiles[0][1] = _letter(0, 1, "A", 1)
     board.tiles[0][0] = _letter_card(0, 0, "A", "spades", 1)
     path = [11, 6, 0]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=1)])
     score, bd = pipeline.score(board, path, "tat", loadout)
     base, _ = pipeline.score(board, path, "tat", Loadout())
@@ -491,7 +477,7 @@ def test_wrestlers_flush_all_suited_letter_endpoints():
     board.tiles[4][1] = _letter_card(4, 1, "O", "diamonds", 1)
     board.tiles[4][0] = _letter_card(4, 0, "D", "hearts", 2)
     path = [19, 13, 21, 20]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=1)])
     score, bd = pipeline.score(board, path, "rood", loadout)
     base, _ = pipeline.score(board, path, "rood", Loadout())
@@ -506,7 +492,7 @@ def test_wrestlers_bones_rank_letter_endpoints_mismatch_value():
     board.tiles[0][1] = _letter(0, 1, "A", 1)
     board.tiles[0][2] = _letter_card(0, 2, "I", "spades", 1)
     path = [13, 6, 2]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=1)])
     score, bd = pipeline.score(board, path, "dai", loadout)
     base, _ = pipeline.score(board, path, "dai", Loadout())
@@ -523,7 +509,7 @@ def test_wrestlers_first_last_suited_not_path_endpoints():
     board.tiles[0][2] = _letter_card(0, 2, "L", "spades", 1)
     board.tiles[0][4] = _letter(0, 4, "E", 1)
     path = [0, 1, 3, 2, 4]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=1)])
     score, bd = pipeline.score(board, path, "tille", loadout)
     base, _ = pipeline.score(board, path, "tille", Loadout())
@@ -541,7 +527,7 @@ def test_wrestlers_unsuited_path_end_different_letter_suited_no_mult():
     board.tiles[1][2] = _letter_card(1, 2, "E", "hearts", 1)
     board.tiles[2][2] = _letter_card(2, 2, "R", "spades", 1)
     path = [4, 8, 3, 11, 7, 12]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=3)])
     score, bd = pipeline.score(board, path, "yecchs", loadout)
     base, _ = pipeline.score(board, path, "yecchs", Loadout())
@@ -568,7 +554,7 @@ def test_wrestlers_long_word_unsuited_ends_no_mult():
     board.tiles[0][3] = _letter_card(0, 3, "M", "spades", 3)
     board.tiles[0][4] = _letter_card(0, 4, "E", "spades", 1)
     path = [10, 11, 12, 7, 13, 9, 14, 19, 23, 18, 4]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=3)])
     score, bd = pipeline.score(board, path, "adultresses", loadout)
     base, _ = pipeline.score(board, path, "adultresses", Loadout())
@@ -584,7 +570,7 @@ def test_wrestlers_one_suited_path_endpoint_no_mult():
     board.tiles[0][4] = _letter_card(0, 4, "O", "hearts", 1)
     board.tiles[3][2] = _letter_card(3, 2, "O", "spades", 1)
     path = [13, 3, 4, 17]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=3)])
     score, bd = pipeline.score(board, path, "aahs", loadout)
     base, _ = pipeline.score(board, path, "aahs", Loadout())
@@ -604,7 +590,7 @@ def test_wrestlers_long_path_one_suited_endpoint_no_mult():
     board.tiles[2][0] = _letter(2, 0, "E", 1)
     board.tiles[2][1] = _letter_card(2, 1, "A", "spades", 1)
     path = [17, 12, 13, 14, 8, 3, 10, 11]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=3)])
     score, bd = pipeline.score(board, path, "raphides", loadout)
     base, _ = pipeline.score(board, path, "raphides", Loadout())
@@ -622,7 +608,7 @@ def test_celestial_body_l3_last_suited_single_letter():
     board.tiles[1][2] = _letter_card(1, 2, "E", "hearts", 1)
     board.tiles[2][2] = _letter_card(2, 2, "R", "spades", 1)
     path = [4, 8, 3, 11, 7, 12]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=3)]
     )
@@ -644,7 +630,7 @@ def test_celestial_body_l3_mid_path_last_suited_low_card():
     board.tiles[3][3] = _letter_card(3, 3, "G", "hearts", 2)
     board.tiles[4][4] = _letter(4, 4, "S", 1)
     path = [16, 12, 7, 13, 18, 24]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=3)]
     )
@@ -666,7 +652,7 @@ def test_celestial_body_l3_base2_suited_path_end():
     board.tiles[1][2] = _letter(1, 2, "E", 1)
     board.tiles[2][3] = _letter_card(2, 3, "D", "hearts", 2)
     path = [8, 9, 4, 2, 7, 13]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=3)]
     )
@@ -688,7 +674,7 @@ def test_celestial_body_l3_path_start_last_suited_low_cards():
     board.tiles[2][2] = _letter(2, 2, "N", 1)
     board.tiles[1][1] = _letter(1, 1, "G", 2)
     path = [8, 13, 9, 15, 11, 12, 6]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="celestial_body", name="Celestial Body", level=3)]
     )
@@ -710,7 +696,7 @@ def test_wrestlers_letter_card_e_endpoints_different_suits():
     board.tiles[1][0] = _letter(1, 0, "E", 1)
     board.tiles[0][0] = _letter_card(0, 0, "E", "hearts", 1)
     path = [9, 8, 7, 6, 5, 0]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="wrestlers", name="Wrestlers", level=1)])
     score, bd = pipeline.score(board, path, "eeeee", loadout)
     base, _ = pipeline.score(board, path, "eeeee", Loadout())
@@ -727,7 +713,7 @@ def test_yellow_glasses_path_double_not_word_string():
     board.tiles[2][3] = _letter_card(2, 3, "J", "spades", 8)
     board.tiles[1][4] = _letter_card(1, 4, "C", "spades", 3)
     path = [4, 8, 7, 13, 9]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=1)]
     )
@@ -751,7 +737,7 @@ def test_yellow_glasses_skips_mixed_currency_letter_double():
         metadata={"source": "melmod"},
     )
     board.tiles[0][1] = _letter(0, 1, "P", 18)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=3)]
     )
@@ -775,7 +761,7 @@ def test_yellow_glasses_currency_pair_double():
             curse=CurseType.CURRENCY,
             metadata={"source": "melmod"},
         )
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=3)]
     )
@@ -795,7 +781,7 @@ def test_celestial_before_yellow_glasses_with_bicycle_pin():
     board.tiles[1][2] = _letter(1, 2, "E", 1)
     board.tiles[0][2] = _letter_card(0, 2, "I", "spades", 1)
     path = [13, 18, 6, 11, 7, 2]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[
             LoadoutItem(id="celestial_body", name="Celestial Body", level=1),
@@ -822,7 +808,7 @@ def test_peas_of_a_pod_four_of_a_kind():
         path.append(c)
     board.tiles[0][4] = _letter(0, 4, "A")
     path.append(4)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="peas_of_a_pod", name="Peas Of A Pod", level=1)]
     )

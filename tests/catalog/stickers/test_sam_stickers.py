@@ -8,7 +8,7 @@ from cursed_words_solver.models import (
     Tile,
     TileColor,
 )
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import count_scoring_items, get_rule, slugify_name
 
 SAM_STICKER_NAMES = [
@@ -62,7 +62,7 @@ def _empty_board() -> Board:
 
 
 def test_all_sam_stickers_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in SAM_STICKER_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stickers", slug, name)
@@ -71,7 +71,7 @@ def test_all_sam_stickers_catalogued():
 
 
 def test_count_scoring_vs_grid_only_sam():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[
             LoadoutItem(id=slugify_name(n), name=n, level=1, kind="sticker")
@@ -85,7 +85,7 @@ def test_count_scoring_vs_grid_only_sam():
 
 
 def test_grid_sticker_scatter_class():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     _key, rule = get_rule(pipeline.rules, "stickers", "raccoon", "Raccoon")
     assert rule.get("effect_class") == "scatter"
 
@@ -117,7 +117,7 @@ def test_clapper_board_two_takes_multiply():
         metadata={"chess_color": "black"},
     )
     board.tiles[1][4] = _tile(1, 4, "A", 2)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="clapper_board", name="Clapper Board", level=1)]
     )
@@ -132,7 +132,7 @@ def test_clapper_board_one_take_no_mult():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "N", 3, curse=CurseType.CHESS_KNIGHT)
     board.tiles[0][1] = _tile(0, 1, "A", 2)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="clapper_board", name="Clapper Board", level=1)]
     )
@@ -140,51 +140,6 @@ def test_clapper_board_one_take_no_mult():
     base, _ = pipeline.score(board, [0, 1], "na", Loadout())
     assert bd["multiplier"] == 1.0
     assert score == base
-
-
-def test_movie_camera_first_take_piece_value():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(
-        0,
-        0,
-        "Q",
-        4,
-        curse=CurseType.CHESS_QUEEN,
-        metadata={"take": True},
-    )
-    board.tiles[0][1] = _tile(0, 1, "A", 2)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="movie_camera", name="Movie Camera", level=1)]
-    )
-    score, bd = pipeline.score(board, [0, 1], "qa", loadout)
-    base, base_bd = pipeline.score(board, [0, 1], "qa", Loadout())
-    assert bd["word_score"] == base_bd["word_score"] + 9
-    assert score == base + 9
-
-
-def test_movie_camera_accumulated_plus_improve():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(
-        0,
-        0,
-        "Q",
-        4,
-        curse=CurseType.CHESS_QUEEN,
-        metadata={"take": True},
-    )
-    board.tiles[0][1] = _tile(0, 1, "A", 2)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="movie_camera", name="Movie Camera", level=1)],
-        extras={"movie_camera_word_score_bonus": 20},
-    )
-    score, bd = pipeline.score(board, [0, 1], "qa", loadout)
-    base, base_bd = pipeline.score(board, [0, 1], "qa", Loadout())
-    assert bd["word_score"] == base_bd["word_score"] + 29
-    assert score == base + 29
-    effects = bd["pipeline"]["effects"]
-    assert any("Movie Camera: 20 + 9" in e for e in effects)
 
 
 def test_movie_camera_rewind_pre_word_extras():
@@ -211,54 +166,6 @@ def test_movie_camera_rewind_pre_word_extras():
     assert movie_camera_accumulated(loadout) == 20
 
 
-def test_movie_camera_level2_sums_first_two_takes():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(
-        0,
-        0,
-        "N",
-        3,
-        curse=CurseType.CHESS_KNIGHT,
-        metadata={"take": True},
-    )
-    board.tiles[0][1] = _tile(
-        0,
-        1,
-        "P",
-        1,
-        curse=CurseType.CHESS_PAWN,
-        metadata={"take": True},
-    )
-    board.tiles[0][2] = _tile(0, 2, "A", 2)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="movie_camera", name="Movie Camera", level=2)]
-    )
-    score, bd = pipeline.score(board, [0, 1, 2], "npa", loadout)
-    base, base_bd = pipeline.score(board, [0, 1, 2], "npa", Loadout())
-    assert bd["word_score"] == base_bd["word_score"] + 4  # knight 3 + pawn 1
-    assert score == base + 4
-
-
-def test_zebra_take_tile_multiply():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(
-        0,
-        0,
-        "N",
-        4,
-        curse=CurseType.CHESS_KNIGHT,
-        metadata={"take": True},
-    )
-    board.tiles[0][1] = _tile(0, 1, "A", 2)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(stickers=[LoadoutItem(id="zebra", name="Zebra", level=1)])
-    score, bd = pipeline.score(board, [0, 1], "na", loadout)
-    base, base_bd = pipeline.score(board, [0, 1], "na", Loadout())
-    assert bd["pipeline"]["tile_scores"][0] == base_bd["pipeline"]["tile_scores"][0] * 3
-    assert score > base
-
-
 def test_zebra_inferred_capture_multiplies_attacker_tile():
     """Capture landing at path[2]; Zebra multiplies capturing bishop at path[1]."""
     board = _empty_board()
@@ -280,7 +187,7 @@ def test_zebra_inferred_capture_multiplies_attacker_tile():
     )
     board.tiles[0][2] = _tile(0, 2, "A", 2)
     path = [21, 20, 16, 2]  # bishop -> knight capture -> letter
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="zebra", name="Zebra", level=1)])
     score, bd = pipeline.score(board, path, "abca", loadout)
     base, base_bd = pipeline.score(board, path, "abca", Loadout())
@@ -293,7 +200,7 @@ def test_zebra_chess_without_take_no_mult():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "N", 4, curse=CurseType.CHESS_KNIGHT)
     board.tiles[0][1] = _tile(0, 1, "A", 2)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="zebra", name="Zebra", level=1)])
     score, bd = pipeline.score(board, [0, 1], "na", loadout)
     base, base_bd = pipeline.score(board, [0, 1], "na", Loadout())

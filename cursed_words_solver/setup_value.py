@@ -17,12 +17,9 @@ from cursed_words_solver.rules.scoring_conditions import (
     sticker_rule_float,
     sticker_rule_int,
 )
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.rules.rule_lookup import rules_catalog
 from cursed_words_solver.stamp_improve_words import (
-    STAMP_IMPROVE_LABELS,
-    equipped_improve_stamps,
     stamp_improve_match,
-    stamp_improve_npv_weight,
 )
 
 _SETUP_STICKER_IDS = frozenset(
@@ -54,53 +51,12 @@ class SetupDelta:
     red_tiles_used_encounter: int = 0
     stamp_improves: dict[str, str] = field(default_factory=dict)
 
-    def total_future_points(self, grids_remaining: int, *, discount: float = 0.85) -> float:
-        """Heuristic NPV of accumulator gains over remaining encounter grids."""
-        g = max(1, grids_remaining)
-        d = discount
-        total = 0.0
-        if self.birthday_cake_bonus:
-            total += self.birthday_cake_bonus * g * (d ** 0)
-        if self.bicycle_word_score_bonus:
-            total += self.bicycle_word_score_bonus * g * (d ** 0)
-        if self.consumable_rack_count:
-            uses = min(g, 3)
-            total += self.consumable_rack_count * uses * 40.0 * (d ** 1)
-        if self.tile_ninja_bonus:
-            uses = min(g, 3)
-            total += self.tile_ninja_bonus * 500.0 * uses * (d ** 1)
-        if self.red_tiles_used_encounter:
-            total += self.red_tiles_used_encounter * g * 15.0 * (d ** 1)
-        for slug, token in self.stamp_improves.items():
-            weight = stamp_improve_npv_weight(slug, token)
-            if weight:
-                total += weight * g * (d ** 1)
-        return total
-
-
 def _sticker_level(loadout: Loadout, sticker_id: str) -> int:
     sid = sticker_id.lower()
     for item in loadout.stickers:
         if (item.id or "").lower() == sid:
             return max(1, item.level)
     return 1
-
-
-def _has_setup_mechanics(loadout: Loadout) -> bool:
-    pin = str((loadout.extras or {}).get("pin_effect", "") or "").lower()
-    if pin in _BICYCLE_PIN_EFFECTS:
-        return True
-    for item in loadout.stickers:
-        if (item.id or "").lower() in _SETUP_STICKER_IDS:
-            return True
-        if "birthday" in (item.name or "").lower():
-            return True
-    for item in loadout.stamps:
-        if (item.id or "").lower() in _SETUP_STAMP_IDS:
-            return True
-    if equipped_improve_stamps(loadout):
-        return True
-    return False
 
 
 def grids_remaining_from_loadout(loadout: Loadout) -> int:
@@ -123,7 +79,7 @@ def project_setup_delta(
 ) -> SetupDelta:
     """Post-submit accumulator changes from this word (not immediate score)."""
     delta = SetupDelta()
-    rules = rules or ScoringPipeline().rules
+    rules = rules or rules_catalog()
 
     for item in loadout.stickers:
         sid = (item.id or "").lower()
@@ -189,69 +145,3 @@ def project_setup_delta(
     return delta
 
 
-def setup_future_value(
-    delta: SetupDelta,
-    loadout: Loadout,
-    *,
-    grids_remaining: int | None = None,
-    discount: float = 0.85,
-) -> float:
-    g = grids_remaining if grids_remaining is not None else grids_remaining_from_loadout(loadout)
-    return delta.total_future_points(g, discount=discount)
-
-
-def rank_score_for_word(
-    board: Board,
-    path: list[int],
-    word: str,
-    loadout: Loadout,
-    immediate_score: float,
-    *,
-    setup_weight: float = 0.4,
-    setup_discount: float = 0.85,
-    rules: dict | None = None,
-) -> tuple[float, float]:
-    """Return (rank_score, setup_bonus)."""
-    if setup_weight <= 0 or not _has_setup_mechanics(loadout):
-        return immediate_score, 0.0
-    delta = project_setup_delta(board, path, word, loadout, rules=rules)
-    setup_pts = setup_future_value(
-        delta, loadout, discount=setup_discount
-    )
-    bonus = setup_weight * setup_pts
-    return immediate_score + bonus, bonus
-
-
-def derive_setup_ranking_winner(
-    immediate_a: float,
-    immediate_b: float,
-    rank_a: float,
-    rank_b: float,
-) -> str:
-    """Return 'setup' when rank order differs from immediate order."""
-    if rank_a > rank_b and immediate_a < immediate_b:
-        return "setup"
-    if rank_b > rank_a and immediate_b < immediate_a:
-        return "setup"
-    return "immediate"
-
-
-def format_setup_bonus_summary(setup_bonus: float, delta: SetupDelta) -> str:
-    if setup_bonus <= 0:
-        return ""
-    parts: list[str] = []
-    if delta.birthday_cake_bonus:
-        parts.append(f"Birthday +{delta.birthday_cake_bonus}")
-    if delta.bicycle_word_score_bonus:
-        parts.append(f"Bicycle +{delta.bicycle_word_score_bonus}")
-    if delta.consumable_rack_count:
-        parts.append(f"Rack +{delta.consumable_rack_count}")
-    if delta.tile_ninja_bonus:
-        parts.append(f"Ninja +{delta.tile_ninja_bonus:.2f}")
-    if delta.red_tiles_used_encounter:
-        parts.append(f"Red +{delta.red_tiles_used_encounter}")
-    for slug, token in delta.stamp_improves.items():
-        label = STAMP_IMPROVE_LABELS.get(slug, slug)
-        parts.append(f"{label} +{token}")
-    detail = ", ".join(parts) if parts else "setup"
-    return f"+{setup_bonus:,.0f} setup ({detail})"

@@ -14,19 +14,13 @@ Pawn, white-tile jumps, and Full Moon teleports are not static adjacency tables.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Iterator
 
 from cursed_words_solver.models import (
-    CHESS_CURSES,
-    CURRENCY_MAP,
     Board,
     CurseType,
-    Tile,
     TileColor,
-    full_moon_symbol_key,
-    normalize_tile_glyph,
 )
 
 GRID_SIZE = 5
@@ -43,28 +37,6 @@ def _adjacency_cache_key(
     rows: int, cols: int, *, horizontal_wrap: bool, kind: str
 ) -> tuple[int, int, bool, str]:
     return (rows, cols, horizontal_wrap, kind)
-
-
-def _build_neighbors_8_for(rows: int, cols: int, *, horizontal_wrap: bool) -> tuple[int, ...]:
-    key = _adjacency_cache_key(rows, cols, horizontal_wrap=horizontal_wrap, kind="n8")
-    cached = _ADJACENCY_CACHE.get(key)
-    if cached is not None:
-        return cached  # type: ignore[return-value]
-    out: list[int] = []
-    for idx in range(rows * cols):
-        row, col = divmod(idx, cols)
-        mask = 0
-        for dr, dc in DIRS_8:
-            nr, nc = row + dr, col + dc
-            if 0 <= nr < rows and 0 <= nc < cols:
-                mask |= 1 << index_of_rows_cols(nr, nc, cols)
-            elif horizontal_wrap and 0 <= nr < rows:
-                wnc = (nc + cols) % cols
-                mask |= 1 << index_of_rows_cols(nr, wnc, cols)
-        out.append(mask)
-    result = tuple(out)
-    _ADJACENCY_CACHE[key] = result  # type: ignore[assignment]
-    return result
 
 
 def _knight_step(
@@ -114,92 +86,6 @@ def _build_knight_targets_for(
 
 def index_of_rows_cols(row: int, col: int, cols: int) -> int:
     return row * cols + col
-
-
-def adjacency_for_board(
-    board: Board, *, horizontal_wrap: bool = False
-) -> tuple[int, ...]:
-    """8-way adjacency for board storage; Hungry Snake wraps playable width.
-
-    Game ``GetTilesAdjacentToCoordinates`` wraps ``x==0`` to ``width-1`` using
-    ``gridData.GetDimensions().x``, not a hardcoded 5. Shrunk bat grids (e.g.
-    3×2 playable in 5×5 storage) must wrap playable_min_col ↔ playable_max_col.
-    """
-    rows, cols = board.storage_rows, board.storage_cols
-    if not horizontal_wrap:
-        if rows == GRID_SIZE and cols == GRID_SIZE:
-            return NEIGHBORS_8
-        return _build_neighbors_8_for(rows, cols, horizontal_wrap=False)
-
-    pmin_c = int(getattr(board, "playable_min_col", 0) or 0)
-    pmax_c = int(getattr(board, "playable_max_col", cols - 1) or (cols - 1))
-    pmin_r = int(getattr(board, "playable_min_row", 0) or 0)
-    pmax_r = int(getattr(board, "playable_max_row", rows - 1) or (rows - 1))
-    pmin_c = max(0, min(cols - 1, pmin_c))
-    pmax_c = max(pmin_c, min(cols - 1, pmax_c))
-    if (
-        rows == GRID_SIZE
-        and cols == GRID_SIZE
-        and pmin_c == 0
-        and pmax_c == cols - 1
-        and pmin_r == 0
-        and pmax_r == rows - 1
-    ):
-        return NEIGHBORS_8_WRAP
-    return _build_neighbors_8_playable_wrap(
-        rows,
-        cols,
-        playable_min_col=pmin_c,
-        playable_max_col=pmax_c,
-    )
-
-
-def _build_neighbors_8_playable_wrap(
-    rows: int,
-    cols: int,
-    *,
-    playable_min_col: int,
-    playable_max_col: int,
-) -> tuple[int, ...]:
-    """8-way adjacency with Hungry Snake wrap on playable column edges only."""
-    key = (
-        rows,
-        cols,
-        True,
-        f"n8_pw:{playable_min_col}:{playable_max_col}",
-    )
-    cached = _ADJACENCY_CACHE.get(key)
-    if cached is not None:
-        return cached  # type: ignore[return-value]
-    out: list[int] = []
-    for idx in range(rows * cols):
-        row, col = divmod(idx, cols)
-        mask = 0
-        for dr, dc in DIRS_8:
-            nr, nc = row + dr, col + dc
-            if 0 <= nr < rows and 0 <= nc < cols:
-                mask |= 1 << index_of_rows_cols(nr, nc, cols)
-        if col == playable_min_col:
-            for dr in (-1, 0, 1):
-                nr = row + dr
-                if 0 <= nr < rows:
-                    mask |= 1 << index_of_rows_cols(nr, playable_max_col, cols)
-        elif col == playable_max_col:
-            for dr in (-1, 0, 1):
-                nr = row + dr
-                if 0 <= nr < rows:
-                    mask |= 1 << index_of_rows_cols(nr, playable_min_col, cols)
-        out.append(mask)
-    result = tuple(out)
-    _ADJACENCY_CACHE[key] = result  # type: ignore[assignment]
-    return result
-
-
-def knight_adjacency_for_board(board: Board) -> tuple[int, ...]:
-    rows, cols = board.storage_rows, board.storage_cols
-    if rows == GRID_SIZE and cols == GRID_SIZE:
-        return KNIGHT_TARGETS
-    return _build_knight_targets_for(rows, cols)
 
 
 def ray_lines_for_board(
@@ -397,21 +283,6 @@ def iter_mask(mask: int) -> Iterator[int]:
         mask &= ~(1 << bit)
 
 
-def lowest_bit_index(mask: int) -> int:
-    return (mask & -mask).bit_length() - 1
-
-
-def collect_mask_indices(mask: int, out: list[int]) -> int:
-    """Fill ``out[0:n]`` with set-bit indices; return ``n``. Reuses ``out`` storage."""
-    n = 0
-    while mask:
-        bit = (mask & -mask).bit_length() - 1
-        out[n] = bit
-        n += 1
-        mask &= mask - 1
-    return n
-
-
 def mask_from_indices(indices: list[int] | tuple[int, ...]) -> int:
     m = 0
     for idx in indices:
@@ -419,36 +290,8 @@ def mask_from_indices(indices: list[int] | tuple[int, ...]) -> int:
     return m
 
 
-def mask_from_active(board: Board) -> int:
-    m = 0
-    for i in range(board.cell_count):
-        if board.is_active_index(i):
-            m |= 1 << i
-    return m
-
-
 def get_valid_extensions(candidates_mask: int, visited_mask: int) -> int:
     return candidates_mask & ~visited_mask
-
-
-def _is_chess_piece(tile: Tile) -> bool:
-    return tile.curse in CHESS_CURSES
-
-
-def _chess_side(tile: Tile) -> str:
-    side = str(tile.metadata.get("chess_color", "") or "").lower()
-    if side in ("black", "white"):
-        return side
-    return ""
-
-
-def _chess_side_known(tile: Tile) -> bool:
-    return _chess_side(tile) in ("black", "white")
-
-
-def _physical_letter(tile: Tile) -> str:
-    """Full Moon match key; must stay aligned with ``search._physical_letter``."""
-    return full_moon_symbol_key(tile)
 
 
 @dataclass(frozen=True)
@@ -539,241 +382,3 @@ class BoardGraphContext:
         return table[allies_i][self._side_index(moving_side)][start_idx]
 
 
-def _build_piece_land_masks(
-    step_masks: tuple[int, ...] | list[int],
-    *,
-    active_mask: int,
-    chess_piece_mask: int,
-    chess_side_code: tuple[int, ...],
-    moving_side_code: int,
-    allies_can_take: bool,
-    cell_count: int,
-) -> tuple[int, ...]:
-    """Precompute landable targets per start cell for one moving side."""
-    out: list[int] = []
-    for start_idx in range(cell_count):
-        land = 0
-        for idx in iter_mask(step_masks[start_idx] & active_mask):
-            if chess_piece_mask & (1 << idx):
-                side_code = chess_side_code[idx]
-                if side_code == 0:
-                    continue
-                if side_code == moving_side_code:
-                    if allies_can_take:
-                        land |= 1 << idx
-                else:
-                    land |= 1 << idx
-            else:
-                land |= 1 << idx
-        out.append(land)
-    return tuple(out)
-
-
-def _build_chess_neighbor_masks(
-    *,
-    active_mask: int,
-    chess_piece_mask: int,
-    chess_side_code: tuple[int, ...],
-    black_piece_mask: int,
-    white_piece_mask: int,
-    neighbors_8: tuple[int, ...],
-    knight_targets: tuple[int, ...],
-    neighbors_8_wrap: tuple[int, ...],
-    cell_count: int,
-) -> tuple[
-    tuple[tuple[tuple[int, ...], ...], ...],
-    tuple[tuple[tuple[int, ...], ...], ...],
-    tuple[tuple[tuple[int, ...], ...], ...],
-]:
-    knight_tables: list[list[tuple[int, ...]]] = [[], []]
-    king_tables: list[list[tuple[int, ...]]] = [[], []]
-    king_wrap_tables: list[list[tuple[int, ...]]] = [[], []]
-    for allies_i, allies in enumerate((False, True)):
-        for side_code, _side_mask in ((1, black_piece_mask), (2, white_piece_mask)):
-            knight_tables[allies_i].append(
-                _build_piece_land_masks(
-                    knight_targets,
-                    active_mask=active_mask,
-                    chess_piece_mask=chess_piece_mask,
-                    chess_side_code=chess_side_code,
-                    moving_side_code=side_code,
-                    allies_can_take=allies,
-                    cell_count=cell_count,
-                )
-            )
-            king_tables[allies_i].append(
-                _build_piece_land_masks(
-                    neighbors_8,
-                    active_mask=active_mask,
-                    chess_piece_mask=chess_piece_mask,
-                    chess_side_code=chess_side_code,
-                    moving_side_code=side_code,
-                    allies_can_take=allies,
-                    cell_count=cell_count,
-                )
-            )
-            king_wrap_tables[allies_i].append(
-                _build_piece_land_masks(
-                    neighbors_8_wrap,
-                    active_mask=active_mask,
-                    chess_piece_mask=chess_piece_mask,
-                    chess_side_code=chess_side_code,
-                    moving_side_code=side_code,
-                    allies_can_take=allies,
-                    cell_count=cell_count,
-                )
-            )
-    return (
-        (tuple(knight_tables[0]), tuple(knight_tables[1])),
-        (tuple(king_tables[0]), tuple(king_tables[1])),
-        (tuple(king_wrap_tables[0]), tuple(king_wrap_tables[1])),
-    )
-
-
-def build_board_graph_context(board: Board) -> BoardGraphContext:
-    from cursed_words_solver.rules.base_scoring import tile_base_contribution
-    from cursed_words_solver.rules.scoring_conditions import (
-        NON_COLOUR_FOR_NUMBER_BONUS,
-        _hanafuda_tile_has_suit,
-    )
-
-    active_mask = mask_from_active(board)
-    cell_count = board.cell_count
-    neighbors_8 = adjacency_for_board(board, horizontal_wrap=False)
-    neighbors_8_wrap = adjacency_for_board(board, horizontal_wrap=True)
-    knight_targets = knight_adjacency_for_board(board)
-    ray_lines = ray_lines_for_board(board, horizontal_wrap=False)
-    ray_lines_wrap = ray_lines_for_board(board, horizontal_wrap=True)
-    chess_piece_mask = 0
-    black_piece_mask = 0
-    white_piece_mask = 0
-    item_mask = 0
-    wildcard_mask = 0
-    item_tile_base = [0.0] * cell_count
-    chess_curse: list[int] = [0] * cell_count
-    chess_side_code: list[int] = [0] * cell_count
-    letter_masks: dict[str, int] = defaultdict(int)
-    full_moon_masks: dict[str, int] = defaultdict(int)
-    identical_chess: dict[tuple[str, str], int] = defaultdict(int)
-    hanafuda_suit_mask = 0
-    grid_base_score = 0
-    coloured_tile_count = 0
-    tile_base: list[float] = [0.0] * cell_count
-    curse_code: list[int] = [0] * cell_count
-    tile_color_code: list[int] = [0] * cell_count
-    is_fraction: list[bool] = [False] * cell_count
-    number_like: list[bool] = [False] * cell_count
-
-    for idx in range(cell_count):
-        if not board.is_active_index(idx):
-            continue
-        tile = board.get_by_index(idx)
-        curse_code[idx] = _CURSE_TO_INT.get(tile.curse, 0)
-        tile_color_code[idx] = _COLOR_TO_CODE.get(tile.color, 0)
-        is_fraction[idx] = tile.curse == CurseType.FRACTION
-        number_like[idx] = tile.curse in (CurseType.NUMBER, CurseType.FRACTION)
-        if tile.curse == CurseType.ITEM:
-            item_mask |= 1 << idx
-            item_tile_base[idx] = float(tile_base_contribution(tile, board.money))
-        elif tile.curse == CurseType.WILDCARD:
-            wildcard_mask |= 1 << idx
-        else:
-            tile_base[idx] = float(tile_base_contribution(tile, board.money))
-        if _is_chess_piece(tile):
-            chess_piece_mask |= 1 << idx
-            chess_curse[idx] = curse_code[idx]
-        if _chess_side_known(tile):
-            if _chess_side(tile) == "black":
-                chess_side_code[idx] = 1
-                if _is_chess_piece(tile):
-                    black_piece_mask |= 1 << idx
-            else:
-                chess_side_code[idx] = 2
-                if _is_chess_piece(tile):
-                    white_piece_mask |= 1 << idx
-        fm_key = _physical_letter(tile)
-        if fm_key:
-            full_moon_masks[fm_key] |= 1 << idx
-        # A–Z letter masks for scoring targets (not Full Moon symbol keys).
-        if tile.curse == CurseType.LETTER:
-            glyph = normalize_tile_glyph(tile.char or "")
-            if len(glyph) == 1 and glyph.isalpha():
-                letter_masks[glyph.upper()] |= 1 << idx
-            else:
-                letter = (tile.letter or "").strip()
-                if len(letter) == 1 and letter.isalpha():
-                    letter_masks[letter.upper()] |= 1 << idx
-        if _is_chess_piece(tile) and _chess_side_known(tile):
-            key = (tile.curse.value, _chess_side(tile))
-            identical_chess[key] |= 1 << idx
-        if _hanafuda_tile_has_suit(tile):
-            hanafuda_suit_mask |= 1 << idx
-        grid_base_score += tile_base_contribution(tile, board.money)
-        if tile.color not in NON_COLOUR_FOR_NUMBER_BONUS:
-            coloured_tile_count += 1
-
-    for idx in range(cell_count):
-        if board.is_active_index(idx):
-            continue
-        row, col = board.coords_at(idx)
-        tile = board.get(row, col)
-        if tile is None:
-            continue
-        if _hanafuda_tile_has_suit(tile):
-            hanafuda_suit_mask |= 1 << idx
-
-    chess_side_tuple = tuple(chess_side_code)
-    knight_land_mask, king_step_mask, king_step_mask_wrap = _build_chess_neighbor_masks(
-        active_mask=active_mask,
-        chess_piece_mask=chess_piece_mask,
-        chess_side_code=chess_side_tuple,
-        black_piece_mask=black_piece_mask,
-        white_piece_mask=white_piece_mask,
-        neighbors_8=neighbors_8,
-        knight_targets=knight_targets,
-        neighbors_8_wrap=neighbors_8_wrap,
-        cell_count=cell_count,
-    )
-
-    from cursed_words_solver.arrow_tiles import build_arrow_target_masks
-
-    arrow_mask, arrow_target_masks, arrow_target_masks_wrap = build_arrow_target_masks(
-        board, active_mask
-    )
-
-    return BoardGraphContext(
-        board=board,
-        cell_count=cell_count,
-        neighbors_8=neighbors_8,
-        neighbors_8_wrap=neighbors_8_wrap,
-        knight_targets=knight_targets,
-        ray_lines=ray_lines,
-        ray_lines_wrap=ray_lines_wrap,
-        active_mask=active_mask,
-        chess_piece_mask=chess_piece_mask,
-        item_mask=item_mask,
-        wildcard_mask=wildcard_mask,
-        item_tile_base=tuple(item_tile_base),
-        chess_curse=tuple(chess_curse),
-        chess_side_code=chess_side_tuple,
-        has_chess_pieces=bool(chess_piece_mask),
-        hanafuda_suit_mask=hanafuda_suit_mask,
-        grid_base_score=grid_base_score,
-        coloured_tile_count=coloured_tile_count,
-        tile_base=tuple(tile_base),
-        curse_code=tuple(curse_code),
-        tile_color_code=tuple(tile_color_code),
-        is_fraction=tuple(is_fraction),
-        number_like=tuple(number_like),
-        letter_masks=dict(letter_masks),
-        full_moon_masks=dict(full_moon_masks),
-        identical_chess_masks=dict(identical_chess),
-        black_piece_mask=black_piece_mask,
-        white_piece_mask=white_piece_mask,
-        knight_land_mask=knight_land_mask,
-        king_step_mask=king_step_mask,
-        king_step_mask_wrap=king_step_mask_wrap,
-        arrow_mask=arrow_mask,
-        arrow_target_masks=arrow_target_masks,
-        arrow_target_masks_wrap=arrow_target_masks_wrap,
-    )

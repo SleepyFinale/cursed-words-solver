@@ -22,7 +22,7 @@ from cursed_words_solver.loadout import (
     parse_run_state,
     prepare_run_state_dict_for_scoring,
 )
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.scoring_conditions import placed_consumable_indices
 from cursed_words_solver.search import WordSearcher
 
@@ -53,7 +53,7 @@ def test_sandy_rack_investment_and_placement_search_active():
     board = parse_board_from_run_state(data)
     assert loadout is not None
     assert board is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     assert consumable_investment_active(loadout)
     assert rack_placement_search_active(loadout, board, rules)
     assert len(remaining_rack_tiles(loadout, board)) == 5
@@ -69,7 +69,7 @@ def test_sandy_rack_consumable_boost_can_place_currency_tile():
     board = parse_board_from_run_state(data)
     assert loadout is not None
     assert board is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     d = WordDictionary(GAME_WORDLIST_PATH)
     searcher = WordSearcher(
         dictionary=d,
@@ -121,7 +121,7 @@ def test_grid11_consumable_boost_beats_plain_sequoia():
     board = parse_board_from_run_state(run_state)
     assert loadout is not None
     assert board is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     d = WordDictionary(GAME_WORDLIST_PATH)
     searcher = WordSearcher(
         dictionary=d,
@@ -173,7 +173,7 @@ def test_bones_lab_coat_consumable_search_no_crash():
     board = parse_board_from_run_state(data)
     assert loadout is not None
     assert board is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     d = WordDictionary(GAME_WORDLIST_PATH)
     searcher = WordSearcher(
         dictionary=d,

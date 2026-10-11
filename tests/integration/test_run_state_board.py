@@ -2,12 +2,7 @@
 
 import json
 
-from cursed_words_solver.loadout import (
-    merge_loadout_with_board,
-    mod_money_from_run_state,
-    parse_board_from_run_state,
-    parse_run_state,
-)
+from cursed_words_solver.loadout import merge_loadout_with_board, mod_money_from_run_state, parse_board_from_run_state, parse_run_state
 from cursed_words_solver.rules.boss_effects import boss_word_constraints, load_rules_catalog
 from cursed_words_solver.models import CurseType, TileColor, normalize_tile_glyph
 from cursed_words_solver.board_display import format_board_grid
@@ -845,7 +840,7 @@ def test_parse_board_was_consumable_metadata():
 def test_effective_board_skips_cactus_growth_on_melmod_and_consumables():
     from cursed_words_solver.encounter_board import effective_board_for_loadout
     from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
+    from cursed_words_solver.engine.scorer import EngineScorer
 
     def _blank(row: int, col: int) -> Tile:
         return Tile(
@@ -879,7 +874,7 @@ def test_effective_board_skips_cactus_growth_on_melmod_and_consumables():
     tiles[1][1] = _cactus(1, 1, growth=0, was_consumable=True)
     board = Board(tiles=tiles)
     loadout = Loadout(extras={"board_from_melmod": "true"})
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     out = effective_board_for_loadout(board, loadout, rules)
     assert out.get(0, 0).metadata.get("cactus_growth") == 2
     assert out.get(1, 1).metadata.get("cactus_growth") == 0

@@ -2,7 +2,6 @@
 
 from cursed_words_solver.fingerprints import board_fingerprint, loadout_fingerprint
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
-from cursed_words_solver.rules.pipeline import ScoringPipeline
 
 
 def _simple_board() -> Board:
@@ -22,54 +21,6 @@ def _simple_board() -> Board:
         for r in range(5)
     ]
     return Board(tiles=tiles, money=10)
-
-
-def test_score_with_trace_returns_steps():
-    board = _simple_board()
-    path = [0, 1, 2]
-    word = "aaa"
-    pipeline = ScoringPipeline()
-    score, _bd, trace = pipeline.score_with_trace(board, path, word, Loadout())
-    assert score == pipeline.score_total_only(board, path, word, Loadout())
-    assert trace
-    assert trace[0]["phase"] == "tile_init"
-    assert any(s.get("phase") == "pre_multiply" for s in trace)
-
-
-def test_trace_conditional_rule_applied_flag():
-    """Skipped conditional rules must not reuse a prior rule's effect text."""
-    board = _simple_board()
-    board.tiles[0][0] = Tile(
-        row=0,
-        col=0,
-        char="A",
-        letter="A",
-        base_score=2,
-        color=TileColor.RED,
-        curse=CurseType.LETTER,
-    )
-    path = [0, 1, 2]
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id="artist_s_palette", name="Artist's Palette", level=1),
-            LoadoutItem(id="wheezy_vixen", name="Wheezy Vixen", level=2),
-        ],
-        money=0,
-    )
-    pipeline = ScoringPipeline()
-    _score, _bd, trace = pipeline.score_with_trace(board, path, "aaa", loadout)
-
-    rule_steps = [s for s in trace if s.get("phase") == "rule"]
-    assert rule_steps
-    assert all("applied" in s for s in rule_steps)
-
-    palette = next(s for s in rule_steps if s.get("rule_id") == "artist_s_palette")
-    wheezy = next(s for s in rule_steps if s.get("rule_id") == "wheezy_vixen")
-
-    assert palette["applied"] is True
-    assert wheezy["applied"] is False
-    assert wheezy["detail"] != palette["detail"]
-    assert "vwxyz" in wheezy["detail"].lower()
 
 
 def test_fingerprints_stable():

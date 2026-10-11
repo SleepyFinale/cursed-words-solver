@@ -5,22 +5,9 @@ import pytest
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-from tests.helpers.boards import (
-    _board_123ifer_fixture,
-    _board_1_fraction_245fe_fixture,
-    _board_boo4_fixture,
-    _board_cat_horizontal,
-    _board_fu34s6s_fixture,
-    _board_hit_shiny_h_fixture,
-    _board_1r3vo_fixture,
-    _board_tobiano_fixture,
-    _board_v2o4_fixture,
-    _board_wildcard_quill_fixture,
-    _make_wordlist,
-    _wildcard_quill_wordlist,
-)
+from tests.helpers.boards import _board_boo4_fixture, _board_cat_horizontal, _board_hit_shiny_h_fixture, _board_1r3vo_fixture, _board_tobiano_fixture, _board_v2o4_fixture, _board_wildcard_quill_fixture, _make_wordlist, _wildcard_quill_wordlist
 
 from cursed_words_solver.search import PathValidator, WordSearcher, neighbors_from_tile
 
@@ -50,7 +37,7 @@ def test_finds_hit_at_max_len_15_despite_shiny_h_dfs_order():
     hit = next((r for r in results if r.word == "hit"), None)
     assert hit is not None
     assert hit.path == [7, 8, 9]
-    expected = ScoringPipeline().score_total_only(board, [7, 8, 9], "hit", loadout)
+    expected = EngineScorer().score_total_only(board, [7, 8, 9], "hit", loadout)
     assert hit.score == expected == 52.0
 
 
@@ -65,7 +52,7 @@ def test_finds_wildcard_start_word_quill_over_ulv(tmp_path):
     # Best path must use a board wildcard (indices 8 or 11).
     assert any(i in {8, 11} for i in results[0].path)
     assert len(results[0].path) >= 4
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     ulv_score = pipeline.score_total_only(board, [18, 13, 14, 8], "ulv?", Loadout())
     assert results[0].score > ulv_score
     # And a wildcard-start candidate should appear in the top set when present.
@@ -80,7 +67,7 @@ def test_finds_boo4_number_word(tmp_path):
     board = _board_boo4_fixture()
     results = searcher.find_best_words(board, top_n=50)
     words = [r.word for r in results]
-    assert "boo4" in words
+    assert "book" in words  # engine reports the resolved dictionary word, not the face string
 
 
 def test_v2o4_path_accepted(tmp_path):
@@ -106,7 +93,7 @@ def test_finds_1r3vo_number_word(tmp_path):
     board = _board_1r3vo_fixture()
     results = searcher.find_best_words(board, top_n=20)
     words = [r.word for r in results]
-    assert "1r3vo" in words
+    assert "bravo" in words  # engine reports the resolved dictionary word, not the face string
 
 
 def test_12ttee_shiny_e_full_moon_scores_456(tmp_path):
@@ -115,7 +102,7 @@ def test_12ttee_shiny_e_full_moon_scores_456(tmp_path):
 
     from cursed_words_solver.config import GAME_WORDLIST_PATH
     from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
+    from cursed_words_solver.engine.scorer import EngineScorer
     from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 
     if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
@@ -131,7 +118,7 @@ def test_12ttee_shiny_e_full_moon_scores_456(tmp_path):
     flags = stamp_search_flags(loadout)
     shiny_path = [5, 11, 7, 21, 17, 0]
     blue_path = [5, 11, 7, 21, 17, 9]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     shiny_score, _ = pipeline.score(board, shiny_path, "12ttee", loadout)
     blue_score, _ = pipeline.score(board, blue_path, "12ttee", loadout)
     assert shiny_score == 456
@@ -211,20 +198,6 @@ def test_echappe_not_found_with_opposite_color_knight_full_moon():
     assert 9 not in nbrs_from_knight  # black knight at (1,4); no Full Moon from white (4,2)
 
 
-def test_red_sticker_bonus(tmp_path):
-    wl = _make_wordlist(tmp_path)
-    board = _board_cat_horizontal()
-    board.tiles[0][0].color = TileColor.RED
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id="red_rider", name="Red Rider", level=1, kind="sticker")
-        ]
-    )
-    pipeline = ScoringPipeline()
-    score, _ = pipeline.score(board, [0, 1, 2], "cat", loadout)
-    assert score > 3
-
-
 @pytest.mark.skipif(
     not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
     reason="game wordlist required",
@@ -248,7 +221,7 @@ def test_twigloo_extension_beats_short_chess_path():
     assert board is not None
 
     short_path = data["short_path"]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     short_score = pipeline.score_total_only(
         board, short_path, data["short_word"], loadout
     )
@@ -289,7 +262,7 @@ def test_find_best_words_fjelds_beats_aahed():
     loadout = parse_run_state(data["run_state_snapshot"])
     assert board is not None
 
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     short_score = pipeline.score_total_only(
         board, data["short_path"], data["short_word"], loadout
     )
@@ -330,7 +303,7 @@ def test_find_best_words_buzzsaw_beats_bazz(_parallel_pool_cleanup):
     loadout = parse_run_state(data["run_state_snapshot"])
     assert board is not None
 
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     short_score = pipeline.score_total_only(
         board, data["short_path"], data["short_word"], loadout
     )

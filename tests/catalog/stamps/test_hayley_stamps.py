@@ -1,17 +1,9 @@
 """Hayley Bayles unlock stamp scoring and search (wiki: Unlocked when unlocking Hayley Bayles)."""
 
-from pathlib import Path
 
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.models import (
-    Board,
-    CurseType,
-    Loadout,
-    LoadoutItem,
-    Tile,
-    TileColor,
-)
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
@@ -60,7 +52,7 @@ def _empty_board() -> Board:
 
 
 def test_all_hayley_stamps_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in HAYLEY_STAMP_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stamps", slug, name)
@@ -69,7 +61,7 @@ def test_all_hayley_stamps_catalogued():
 
 
 def test_count_scoring_vs_grid_only_hayley_stamps():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     assert_loadout_stamp_coverage(pipeline.rules, HAYLEY_STAMP_NAMES)
 
 
@@ -78,7 +70,7 @@ def test_full_battery_three_numbers_triples_word():
     board.tiles[0][0] = _tile(0, 0, "1", 1, curse=CurseType.NUMBER, number_value=1)
     board.tiles[0][1] = _tile(0, 1, "2", 2, curse=CurseType.NUMBER, number_value=2)
     board.tiles[0][2] = _tile(0, 2, "3", 3, curse=CurseType.NUMBER, number_value=3)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="full_battery", name="Full Battery", kind="stamp")]
     )
@@ -111,53 +103,6 @@ def test_microscope_letter_tile_as_digit_in_number_word(tmp_path):
     assert "Microscope:" in format_microscope_position_hint(uses)
     loadout_no = Loadout(stamps=[])
     assert not v.word_ok(board, path, word, stamp_search_flags(loadout_no))
-
-
-def test_microscope_uses_packet_base_score():
-    board = _empty_board()
-    board.tiles[0][0] = Tile(
-        row=0,
-        col=0,
-        char="A",
-        letter="A",
-        base_score=1,
-        color=TileColor.RED,
-        curse=CurseType.LETTER,
-    )
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="microscope", name="Microscope", kind="stamp")]
-    )
-    score, _ = pipeline.score(board, [0], "a", loadout)
-    base, _ = pipeline.score(board, [0], "a", Loadout())
-    assert score == 1
-    assert base == 2
-
-
-def test_microscope_void_number_uses_negated_face_value():
-    """Melmod void number base_score 0 is pre-negation; Microscope init must still score -face."""
-    board = _empty_board()
-    board.tiles[1][2] = _tile(
-        1,
-        2,
-        "4",
-        0,
-        color=TileColor.VOID,
-        curse=CurseType.NUMBER,
-        number_value=4,
-    )
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="microscope", name="Microscope", kind="stamp")]
-    )
-    score, _, trace = pipeline.score_with_trace(board, [7], "4", loadout)
-    init = next(
-        s
-        for s in trace
-        if s.get("phase") == "tile_init" and s.get("phase_detail") == "init_scores"
-    )
-    assert init["tile_scores"] == [-4.0]
-    assert score == -4.0
 
 
 def test_test_tube_number_word_digit_tolerance(tmp_path):

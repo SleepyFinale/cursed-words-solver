@@ -16,7 +16,7 @@ from cursed_words_solver.loadout import (
     prepare_run_state_dict_for_scoring,
 )
 from cursed_words_solver.rules.boss_effects import boss_word_constraints
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.search import PathValidator, WordSearcher
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices, path_to_melmod_indices
@@ -55,9 +55,9 @@ def _f8_board_and_loadout():
 def test_thowels_submitted_path_scores():
     data, board, loadout = _f8_board_and_loadout()
     storage_path = path_from_melmod_indices(board, THOWELS_MELMOD_PATH)
-    score, _ = ScoringPipeline().score(board, storage_path, "thowels", loadout)
+    score, _ = EngineScorer().score(board, storage_path, "thowels", loadout)
     assert int(score) == THOWELS_SCORE
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules)
     validator = PathValidator(WordDictionary(GAME_WORDLIST_PATH), min_len=constraints.min_len)
     validator.quest_loadout = loadout
@@ -68,7 +68,7 @@ def test_thowels_submitted_path_scores():
 @pytest.mark.skipif(not FIXTURE.exists(), reason="thowels fixture required")
 def test_thowels_search_beats_f8_suggestion():
     data, board, loadout = _f8_board_and_loadout()
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),

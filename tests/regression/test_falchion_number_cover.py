@@ -8,7 +8,6 @@ scored numbers and run a non-digits_only number-cover slice — no cross-F8 cach
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 
 import pytest
@@ -16,7 +15,7 @@ import pytest
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 from cursed_words_solver.search import PathValidator, WordSearcher, search_word_from_path
 from cursed_words_solver.suggestion import path_is_submittable
@@ -58,7 +57,7 @@ def test_falchion_submitted_path_validates_and_scores():
     )
 
     score = int(
-        ScoringPipeline().score_total_only(board, path, sw, loadout=loadout)
+        EngineScorer().score_total_only(board, path, sw, loadout=loadout)
     )
     assert score == FALCHION_PIPELINE_SCORE
     assert int(data["actual"]["score"]) == FALCHION_PIPELINE_SCORE
@@ -126,7 +125,7 @@ def test_miniatum_submitted_path_validates_and_scores():
     assert validator.word_ok(board, path, sw, flags)
     assert path_is_submittable(board, path, sw, loadout, dictionary, min_len=3)
     score = int(
-        ScoringPipeline().score_total_only(board, path, sw, loadout=loadout)
+        EngineScorer().score_total_only(board, path, sw, loadout=loadout)
     )
     assert score == MINIATUM_PIPELINE_SCORE
     assert int(data["actual"]["score"]) == MINIATUM_PIPELINE_SCORE
@@ -203,7 +202,7 @@ def test_orthodox_submitted_path_validates_and_scores():
     assert validator.word_ok(board, path, sw, flags)
     assert path_is_submittable(board, path, sw, loadout, dictionary, min_len=3)
     score = int(
-        ScoringPipeline().score_total_only(board, path, sw, loadout=loadout)
+        EngineScorer().score_total_only(board, path, sw, loadout=loadout)
     )
     assert score == ORTHODOX_PIPELINE_SCORE
     assert int(data["actual"]["score"]) == ORTHODOX_PIPELINE_SCORE
@@ -229,7 +228,7 @@ def test_entoiled_submitted_path_validates_and_scores():
     assert validator.word_ok(board, path, sw, flags)
     assert path_is_submittable(board, path, sw, loadout, dictionary, min_len=3)
     score = int(
-        ScoringPipeline().score_total_only(board, path, sw, loadout=loadout)
+        EngineScorer().score_total_only(board, path, sw, loadout=loadout)
     )
     assert score == ENTOILED_PIPELINE_SCORE
     assert int(data["actual"]["score"]) == ENTOILED_PIPELINE_SCORE

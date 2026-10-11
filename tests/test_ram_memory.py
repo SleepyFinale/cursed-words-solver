@@ -5,20 +5,9 @@ from __future__ import annotations
 import pytest
 
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.models import (
-    Board,
-    CurseType,
-    Loadout,
-    LoadoutItem,
-    Tile,
-    TileColor,
-)
-from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.ram_memory import (
-    RAM_NON_GENERATABLE_SLUGS,
-    pin_memory_entries,
-    should_skip_ram_scoring,
-)
+from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
+from cursed_words_solver.engine.scorer import EngineScorer
+from cursed_words_solver.rules.ram_memory import pin_memory_entries
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 from cursed_words_solver.search import WordSearcher
 
@@ -83,7 +72,7 @@ def test_ram_mixed_memory_merges_flags():
 def test_hungry_snake_ram_no_scoring_replay():
     grid = [[_tile(r, c, "A", 5) for c in range(5)] for r in range(5)]
     board = Board(tiles=grid)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     lo = _ram_loadout(
         {"id": "hungry_snake", "name": "Hungry Snake", "kind": "stamp", "level": 1},
     )
@@ -91,137 +80,6 @@ def test_hungry_snake_ram_no_scoring_replay():
     score, bd = pipeline.score(board, [0], "a", lo)
     assert score == base
     assert not any(e.startswith("RAM:") for e in bd["pipeline"]["effects"])
-
-
-def test_ram_replays_scoring_sticker():
-    pipeline = ScoringPipeline()
-    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
-    for i in range(3):
-        grid[0][i] = _tile(0, i, "A", 1)
-    board = Board(tiles=grid)
-    lo = _ram_loadout(
-        {"id": "graduation_cap", "name": "Graduation Cap", "kind": "sticker", "level": 1},
-    )
-    score, bd = pipeline.score(board, [0, 1, 2], "aaa", lo)
-    assert any("RAM:" in e for e in bd["pipeline"]["effects"])
-    assert bd["word_score"] >= 9
-
-
-@pytest.mark.parametrize("slug", sorted(RAM_NON_GENERATABLE_SLUGS))
-def test_wiki_blacklist_skipped_for_ram_scoring(slug):
-    pipeline = ScoringPipeline()
-    entry = {"id": slug, "name": slug, "kind": "sticker", "level": 1}
-    assert should_skip_ram_scoring(pipeline.rules, entry)
-
-
-def test_ram_acquisition_order_in_effects():
-    pipeline = ScoringPipeline()
-    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
-    path = list(range(5))
-    board = Board(tiles=grid)
-    lo = _ram_loadout(
-        {"id": "graduation_cap", "name": "Graduation Cap", "kind": "sticker", "level": 1},
-        {"id": "tombstone", "name": "Tombstone", "kind": "sticker", "level": 1},
-    )
-    _, bd = pipeline.score(board, path, "aaaaa", lo)
-    ram_effects = [e for e in bd["pipeline"]["effects"] if e.startswith("RAM:")]
-    assert len(ram_effects) == 2
-    assert "Graduation Cap" in ram_effects[0]
-    assert "Tombstone" in ram_effects[1]
-
-
-def test_ram_hourglass_reverses_memory_replay_order():
-    pipeline = ScoringPipeline()
-    grid = [[_tile(r, c, "A", 1) for c in range(5)] for r in range(5)]
-    path = list(range(5))
-    board = Board(tiles=grid)
-    lo = Loadout(
-        stamps=[LoadoutItem(id="hourglass", name="Hourglass", kind="stamp")],
-        extras={
-            "pin_effect": "random_access_memory",
-            "pin_memory": [
-                {
-                    "id": "graduation_cap",
-                    "name": "Graduation Cap",
-                    "kind": "sticker",
-                    "level": 1,
-                },
-                {
-                    "id": "tombstone",
-                    "name": "Tombstone",
-                    "kind": "sticker",
-                    "level": 1,
-                },
-            ],
-            "hourglass_count": "1",
-        },
-    )
-    _, bd = pipeline.score(board, path, "aaaaa", lo)
-    ram_effects = [e for e in bd["pipeline"]["effects"] if e.startswith("RAM:")]
-    assert len(ram_effects) == 2
-    assert "Tombstone" in ram_effects[0]
-    assert "Graduation Cap" in ram_effects[1]
-
-
-def test_ram_scoring_trace_order_grid_before_pin_before_sticker(tmp_path):
-    pipeline = ScoringPipeline()
-    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
-    grid[0][0] = Tile(
-        row=0,
-        col=0,
-        char="s",
-        letter="S",
-        base_score=0,
-        color=TileColor.VOID,
-        curse=CurseType.ITEM,
-        metadata={"source": "melmod", "scattered_item_id": "cocktail"},
-    )
-    grid[0][1] = _tile(0, 1, "A", 1)
-    grid[0][2] = _tile(0, 2, "A", 1)
-    board = Board(tiles=grid)
-    lo = Loadout(
-        stickers=[LoadoutItem(id="graduation_cap", name="Graduation Cap", level=1)],
-        extras={
-            "pin_effect": "random_access_memory",
-            "pin_memory": [
-                {
-                    "id": "tombstone",
-                    "name": "Tombstone",
-                    "kind": "sticker",
-                    "level": 1,
-                },
-            ],
-        },
-    )
-    _, _, trace = pipeline.score_with_trace(board, [0, 1, 2], "aaa", lo)
-    grid_rule_idx = next(
-        (
-            i
-            for i, t in enumerate(trace)
-            if t.get("phase") == "rule" and str(t.get("rule_id", "")).lower() == "cocktail"
-        ),
-        None,
-    )
-    ram_rule_idx = next(
-        (
-            i
-            for i, t in enumerate(trace)
-            if t.get("phase") == "rule"
-            and str(t.get("rule_id", "")).lower() in ("tombstone", "tomb stone")
-        ),
-        None,
-    )
-    inv_rule_idx = next(
-        (
-            i
-            for i, t in enumerate(trace)
-            if t.get("phase") == "rule"
-            and str(t.get("rule_id", "")).lower() == "graduation_cap"
-        ),
-        None,
-    )
-    assert grid_rule_idx is not None and ram_rule_idx is not None and inv_rule_idx is not None
-    assert grid_rule_idx < ram_rule_idx < inv_rule_idx
 
 
 def test_hungry_snake_ram_finds_wrapped_word(tmp_path):

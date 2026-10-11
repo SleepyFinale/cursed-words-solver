@@ -1,11 +1,7 @@
 """Bat / shrunk-grid path index roundtrips (no cached maps)."""
 
 from cursed_words_solver.loadout import parse_board_from_run_state
-from cursed_words_solver.ui.board_geometry import (
-    path_from_melmod_indices,
-    path_to_melmod_indices,
-    playable_bounds,
-)
+from cursed_words_solver.ui.board_geometry import path_from_melmod_indices, path_to_melmod_indices, playable_bounds
 from tests.integration.test_run_state_board import _bat_4x3_run_state
 
 

@@ -20,7 +20,7 @@ from cursed_words_solver.loadout import (
     parse_run_state,
     prepare_run_state_dict_for_scoring,
 )
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
@@ -55,7 +55,7 @@ def test_submitted_frenne_scores_above_f8():
     loadout = parse_run_state(run_state)
     assert board is not None and loadout is not None
     path = path_from_melmod_indices(board, data["actual"]["path"])
-    sc = ScoringPipeline().score_total_only(
+    sc = EngineScorer().score_total_only(
         board, path, data["actual"]["word"], loadout
     )
     assert int(sc) >= SUBMITTED_SCORE - 50

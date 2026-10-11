@@ -5,34 +5,14 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
-from cursed_words_solver.config import AppConfig, LAST_SUGGESTION_PATH
-from cursed_words_solver.f8_snapshot import (
-    F8Snapshot,
-    F8SuggestionSession,
-    _bicycle_rack_card_metadata_missing,
-    _build_snapshot_from_run_state,
-    _extras_missing_for_loadout,
-    _f8_export_acknowledged,
-    gather_f8_snapshot,
-    session_from_snapshot,
-    wait_for_f8_export_ack,
-    write_f8_export_request,
-)
+from cursed_words_solver.config import AppConfig
+from cursed_words_solver.f8_snapshot import F8Snapshot, F8SuggestionSession, _bicycle_rack_card_metadata_missing, _build_snapshot_from_run_state, _extras_missing_for_loadout, _f8_export_acknowledged, gather_f8_snapshot, wait_for_f8_export_ack, write_f8_export_request
 from cursed_words_solver.loadout import parse_board_from_run_state
 from cursed_words_solver.models import Loadout, LoadoutItem
 from cursed_words_solver.fingerprints import board_tiles_fingerprint_suffix
-from cursed_words_solver.round_log import (
-    last_round_log_submit_word,
-    last_submit_effective_first_letter,
-    last_submit_first_letter,
-)
-from cursed_words_solver.suggestion import (
-    f8_prediction_workflow_stale_warning,
-    poll_invalidate_last_suggestion,
-    f8_should_block_save,
-)
+from cursed_words_solver.round_log import last_round_log_submit_word, last_submit_effective_first_letter, last_submit_first_letter
+from cursed_words_solver.suggestion import poll_invalidate_last_suggestion, f8_should_block_save
 
 
 def test_app_config_no_auto_solve():
@@ -133,20 +113,6 @@ def test_last_submit_effective_first_letter_from_round_log(tmp_path, monkeypatch
     monkeypatch.setattr(round_log_mod, "ROUND_LOG_DIR", log_dir)
     assert last_submit_first_letter() == "y"
     assert last_submit_effective_first_letter() == "e"
-
-
-def test_f8_prediction_workflow_stale_warning_does_not_block_save():
-    warn = f8_prediction_workflow_stale_warning(
-        {"previous_word_first_letter": "m"},
-        {"previous_word_first_letter": "e"},
-    )
-    assert warn is not None
-    blocked, reason = f8_should_block_save(
-        gather_succeeded=True,
-        workflow_stale_warn=warn,
-    )
-    assert not blocked
-    assert reason is None
 
 
 def _board_run_state(*, prev_letter: str, count: str = "1") -> dict:
@@ -275,48 +241,6 @@ def test_gather_first_word_without_round_log_submit(tmp_path, monkeypatch):
     snap = gather_f8_snapshot(rules={}, extras_timeout_sec=1.0, poll_sec=0.05)
     assert snap.extras_ready
     assert snap.loadout is not None
-
-
-def test_session_from_snapshot(tmp_path, monkeypatch):
-    from cursed_words_solver import config as config_mod
-    from cursed_words_solver import loadout as loadout_mod
-    import cursed_words_solver.round_log as round_log_mod
-
-    run_state = {
-        "board": {
-            "tiles": [
-                {
-                    "row": r,
-                    "col": c,
-                    "char": "a",
-                    "letter": "A",
-                    "base_score": 1,
-                    "color": "colorless",
-                    "curse": "letter",
-                    "active": True,
-                }
-                for r in range(5)
-                for c in range(5)
-            ],
-            "money": 5,
-        },
-        "character": "Test",
-        "stickers": [],
-        "stamps": [],
-        "extras": {"grid_number": "1"},
-    }
-    run_state_path = tmp_path / "run_state.json"
-    run_state_path.write_text(json.dumps(run_state), encoding="utf-8")
-    monkeypatch.setattr(config_mod, "RUN_STATE_PATH", run_state_path)
-    monkeypatch.setattr(loadout_mod, "RUN_STATE_PATH", run_state_path)
-    index_path = tmp_path / "index.jsonl"
-    index_path.write_text("", encoding="utf-8")
-    monkeypatch.setattr(round_log_mod, "ROUND_LOG_INDEX_PATH", index_path)
-
-    snap = gather_f8_snapshot(rules={})
-    session = session_from_snapshot(snap)
-    assert session is not None
-    assert session.grid_number == 1
 
 
 def test_poll_ignores_workflow_extras_drift_on_same_tiles(tmp_path, monkeypatch):

@@ -3,16 +3,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-from cursed_words_solver.suggestion import (
-    has_played_word_since_f8_embed,
-    is_disk_catchup_drift,
-    is_export_catchup_drift,
-    poll_invalidate_last_suggestion,
-    poll_invalidation_is_workflow_stale,
-    workflow_stale_vs_f8_snapshot,
-)
+from cursed_words_solver.suggestion import has_played_word_since_f8_embed, poll_invalidate_last_suggestion, poll_invalidation_is_workflow_stale, workflow_stale_vs_f8_snapshot
 
 
 def test_workflow_stale_detects_letter_mismatch():
@@ -94,13 +86,6 @@ def test_poll_invalidation_is_workflow_stale_prefix():
     assert poll_invalidation_is_workflow_stale("workflow drift (historic words changed)")
     assert not poll_invalidation_is_workflow_stale("loadout changed")
     assert not poll_invalidation_is_workflow_stale(None)
-
-
-def test_is_disk_catchup_drift_spc_only_when_historic_unchanged():
-    f8 = {"scoring_previous_words_count": "0", "historic_words": "[]"}
-    live = {"scoring_previous_words_count": "4", "historic_words": "[]"}
-    assert is_disk_catchup_drift(f8, live)
-    assert is_export_catchup_drift(f8, live)
 
 
 def test_poll_invalidate_no_clear_on_spc_only_forward_drift_same_board(

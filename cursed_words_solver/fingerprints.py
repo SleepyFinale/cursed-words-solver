@@ -279,12 +279,6 @@ def board_fingerprint_tiles_only_from_fp(board_fp: str) -> str:
     return fp
 
 
-def board_fingerprint_tiles_only_from_run_state(data: dict) -> str:
-    """Tile board fingerprint from run_state without Cursedle guess suffix."""
-    board_fp, _ = fingerprints_from_run_state(data)
-    return board_fingerprint_tiles_only_from_fp(board_fp)
-
-
 def cursedle_guess_suffix_from_board_fp(board_fp: str) -> str:
     """Guess-history suffix embedded in a Cursedle board fingerprint."""
     base = board_fingerprint_tiles_only_from_fp(board_fp)

@@ -92,11 +92,6 @@ def michael_summoned_bosses_defeated(loadout: Loadout) -> bool:
     return _extra_bool(loadout, "michael_summoned_bosses_defeated")
 
 
-def michael_puzzle_grid_active(loadout: Loadout) -> bool:
-    """Deprecated: Cursedle used to set michael_puzzle_grid via PuzzleController."""
-    return False
-
-
 def cursedle_active(loadout: Loadout) -> bool:
     from cursed_words_solver.cursedle_solver import cursedle_active as _active
 
@@ -597,20 +592,6 @@ def load_boss_taxonomy() -> dict[str, Any]:
     if not _TAXONOMY_PATH.is_file():
         return {"bosses": {}}
     return json.loads(_TAXONOMY_PATH.read_text(encoding="utf-8"))
-
-
-def boss_scoring_effect_type(rule: dict[str, Any] | None) -> str:
-    """Resolved scoring handler id (catalog type or boss_effect_type)."""
-    if not rule:
-        return ""
-    effect = str(rule.get("boss_effect_type") or rule.get("type") or "")
-    if effect != "custom":
-        return effect
-    name = str(rule.get("name") or "").strip().lower()
-    wiki = str(rule.get("wiki_page") or "").strip().lower()
-    if name == "fox" or wiki == "fox":
-        return "boss_steal_money"
-    return effect
 
 
 def boss_grid_handler(rule: dict[str, Any] | None) -> str:

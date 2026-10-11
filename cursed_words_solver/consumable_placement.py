@@ -8,7 +8,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 from itertools import combinations, count, permutations
-from typing import Any, Iterator
+from typing import Any
 
 from cursed_words_solver.loadout import _resolve_letter_for_word
 from cursed_words_solver.models import (
@@ -24,7 +24,7 @@ from cursed_words_solver.models import (
 )
 from cursed_words_solver.rules.base_scoring import tile_base_contribution
 from cursed_words_solver.rules.grid_effects import _clone_board
-from cursed_words_solver.rules.rule_lookup import get_pin_scoring_rule, resolve_rule_id, rules_catalog
+from cursed_words_solver.rules.rule_lookup import get_pin_scoring_rule, resolve_rule_id
 from cursed_words_solver.rules.scoring_conditions import (
     mahjong_consumable_factor,
     placed_consumable_indices,
@@ -402,13 +402,6 @@ def sandy_requires_rack_export(
     return not has_exported_consumable_rack(loadout)
 
 
-def _is_first_grid_of_encounter(loadout: Loadout) -> bool:
-    first = (loadout.extras or {}).get("is_first_grid_of_encounter")
-    if first is False or str(first).lower() == "false":
-        return False
-    return True
-
-
 def rack_requires_export(
     loadout: Loadout,
     board: Board,
@@ -447,26 +440,6 @@ def wait_for_rack_export(
         if fresh is not None and not rack_requires_export(fresh, board, rules):
             return fresh
     return loadout
-
-
-def wait_for_sandy_rack_export(
-    loadout: Loadout,
-    board: Board,
-    rules: dict[str, Any],
-    *,
-    reload_loadout: Any,
-    timeout_sec: float = 5.0,
-    poll_sec: float = 0.1,
-) -> Loadout:
-    """Backward-compatible alias for wait_for_rack_export."""
-    return wait_for_rack_export(
-        loadout,
-        board,
-        rules,
-        reload_loadout=reload_loadout,
-        timeout_sec=timeout_sec,
-        poll_sec=poll_sec,
-    )
 
 
 def sandy_placement_search_active(
@@ -619,15 +592,6 @@ def _variant_meets_threshold(
     if min_score is not None:
         return result.score >= min_score
     return True
-
-
-def mahjong_rack_placement_active(
-    loadout: Loadout,
-    board: Board,
-    rules: dict[str, Any],
-) -> bool:
-    """Backward-compatible alias for rack_placement_search_active."""
-    return rack_placement_search_active(loadout, board, rules)
 
 
 def _active_indices(board: Board) -> list[int]:
@@ -902,21 +866,6 @@ def _variant_gen_past_deadline(deadline: float | None) -> bool:
     return deadline is not None and time.monotonic() >= deadline
 
 
-def _effective_variant_gen_deadline(
-    solve_deadline: float | None,
-    variant_gen_started: float,
-    variant_gen_budget: float | None,
-) -> float | None:
-    deadlines: list[float] = []
-    if solve_deadline is not None:
-        deadlines.append(solve_deadline)
-    if variant_gen_budget is not None:
-        deadlines.append(variant_gen_started + variant_gen_budget)
-    if not deadlines:
-        return None
-    return min(deadlines)
-
-
 def _tier_heap_cap(max_variants: int) -> int:
     return max(max_variants * 4, 512)
 
@@ -1046,85 +995,6 @@ def _top_variants_for_tier(
                 heapq.heapreplace(heap, entry)
     heap.sort(key=lambda row: (row[0], row[1]))
     return [placements for _, _, _, placements in heap]
-
-
-def _placement_variants(
-    board: Board,
-    rack_tiles: list[Tile],
-    *,
-    max_variants: int = 72,
-    loadout: Loadout | None = None,
-    rules: dict[str, Any] | None = None,
-) -> list[list[tuple[int, Tile]]]:
-    k = len(rack_tiles)
-    if k == 0:
-        return []
-    cells = _rank_placement_indices(
-        board, rack_tiles, loadout=loadout, rules=rules
-    )
-    tier_cap = _tier_heap_cap(max_variants) if k >= 4 else max_variants
-    return _top_variants_for_tier(
-        board,
-        rack_tiles,
-        cells,
-        k,
-        tier_cap=tier_cap,
-        loadout=loadout,
-        rules=rules,
-    )[:max_variants]
-
-
-def iter_placement_variants_fewest_first(
-    board: Board,
-    rack_tiles: list[Tile],
-    *,
-    max_variants: int = 96,
-    loadout: Loadout | None = None,
-    rules: dict[str, Any] | None = None,
-) -> Iterator[list[tuple[int, Tile]]]:
-    """Yield placement combos tier-by-tier (k=1 first), ranked within each tier."""
-    if not rack_tiles:
-        return
-    cells = _rank_placement_indices(
-        board, rack_tiles, loadout=loadout, rules=rules
-    )
-    n = len(rack_tiles)
-    tier_cap = _tier_heap_cap(max_variants)
-    yielded = 0
-    for k in range(1, n + 1):
-        for placements in _top_variants_for_tier(
-            board,
-            rack_tiles,
-            cells,
-            k,
-            tier_cap=tier_cap,
-            loadout=loadout,
-            rules=rules,
-        ):
-            yield placements
-            yielded += 1
-            if yielded >= max_variants:
-                return
-
-
-def placement_variants_fewest_first(
-    board: Board,
-    rack_tiles: list[Tile],
-    *,
-    max_variants: int = 96,
-    loadout: Loadout | None = None,
-    rules: dict[str, Any] | None = None,
-) -> list[list[tuple[int, Tile]]]:
-    """Placement combos ordered by tile count (1 first), then connectivity rank."""
-    return list(
-        iter_placement_variants_fewest_first(
-            board,
-            rack_tiles,
-            max_variants=max_variants,
-            loadout=loadout,
-            rules=rules,
-        )
-    )
 
 
 def apply_consumable_placements(
@@ -1533,88 +1403,6 @@ def _screen_placement_variants(
         searcher.search_workers = prev_workers
         searcher.validator.required_consumable_indices = base_required
     return screened, variants_screened, tier_qualifying
-
-
-def _run_placement_search(
-    searcher: WordSearcher,
-    board: Board,
-    loadout: Loadout,
-    variants: list[list[tuple[int, Tile]]],
-    *,
-    time_budget: float,
-    top_n: int,
-    min_score: float | None = None,
-    min_rank_score: float | None = None,
-    prefer_fewest_tiles: bool = False,
-    require_placements_in_path: bool = False,
-    solve_deadline: float | None = None,
-) -> tuple[Board, list[ConsumablePlacement], list[WordResult]]:
-    if not variants:
-        global _last_placement_search_stats
-        _last_placement_search_stats = PlacementSearchStats()
-        return board, [], searcher.find_best_words(
-            board,
-            loadout=loadout,
-            top_n=top_n,
-            deadline=solve_deadline,
-        )
-
-    multi_consumable = multi_consumable_placement_beneficial(loadout)
-    hard = _placement_search_hard(searcher, loadout)
-    screen_floor = _placement_screen_floor(investment=multi_consumable, hard=hard)
-    total_budget = max(2.0, float(time_budget))
-    screen_share = _placement_screen_share(total_budget, investment=multi_consumable)
-    screen_cap = (
-        _SCREEN_VARIANT_CAP_INVESTMENT if multi_consumable else _SCREEN_VARIANT_CAP_DEFAULT
-    )
-    screen_limit = _screen_variant_limit(screen_share, screen_floor, screen_cap)
-    screen_variants = _cap_variants_for_screening(
-        board,
-        variants,
-        max_screen=screen_limit,
-        loadout=loadout,
-        rules=rules_catalog(),
-    )
-    per_screen = _placement_per_screen(
-        screen_share,
-        len(screen_variants),
-        investment=multi_consumable,
-        hard=hard,
-    )
-    base_required = searcher.validator.required_consumable_indices
-    screen_started = time.monotonic()
-    screened, variants_screened, _ = _screen_placement_variants(
-        searcher,
-        board,
-        loadout,
-        screen_variants,
-        per_screen=per_screen,
-        min_score=min_score,
-        min_rank_score=min_rank_score,
-        prefer_fewest_tiles=prefer_fewest_tiles,
-        require_placements_in_path=require_placements_in_path,
-        base_required=base_required,
-        solve_deadline=solve_deadline,
-    )
-    variant_screen_sec = time.monotonic() - screen_started
-    return _finalize_placement_search(
-        searcher,
-        board,
-        loadout,
-        screened,
-        time_budget=time_budget,
-        top_n=top_n,
-        min_score=min_score,
-        min_rank_score=min_rank_score,
-        prefer_fewest_tiles=prefer_fewest_tiles,
-        require_placements_in_path=require_placements_in_path,
-        base_required=base_required,
-        variant_gen_sec=0.0,
-        variant_screen_sec=variant_screen_sec,
-        variants_screened=variants_screened,
-        solve_deadline=solve_deadline,
-        hard=hard,
-    )
 
 
 def _run_tiered_placement_search(

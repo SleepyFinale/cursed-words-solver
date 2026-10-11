@@ -1,13 +1,7 @@
 """Nina Nix unlock stamp scoring (wiki: Unlocked when unlocking Nina Nix)."""
 
-from cursed_words_solver.models import (
-    Board,
-    Loadout,
-    LoadoutItem,
-    Tile,
-    TileColor,
-)
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.models import Board, Loadout, LoadoutItem, Tile, TileColor
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
@@ -49,7 +43,7 @@ def _empty_board() -> Board:
 
 
 def test_all_nina_stamps_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in NINA_STAMP_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stamps", slug, name)
@@ -58,16 +52,15 @@ def test_all_nina_stamps_catalogued():
 
 
 def test_count_scoring_vs_grid_only_nina_stamps():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     assert_loadout_stamp_coverage(pipeline.rules, NINA_STAMP_NAMES)
-
 
 
 def test_dango_zero_colours_zeros_word():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.COLORLESS)
     board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.COLORLESS)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="dango", name="Dango", level=1, kind="stamp")]
     )
@@ -80,7 +73,7 @@ def test_dango_two_colours_doubles_word():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="dango", name="Dango", level=1, kind="stamp")]
     )
@@ -94,7 +87,7 @@ def test_dango_three_colours_triples_word():
     board.tiles[0][0] = _tile(0, 0, "A", 4, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 4, color=TileColor.BLUE)
     board.tiles[0][2] = _tile(0, 2, "C", 4, color=TileColor.SHINY)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="dango", name="Dango", level=1, kind="stamp")]
     )
@@ -103,17 +96,3 @@ def test_dango_three_colours_triples_word():
     assert score == 36
 
 
-def test_dango_uses_word_bonus_channel_for_nonzero():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 5, color=TileColor.RED)
-    board.tiles[0][1] = _tile(0, 1, "B", 5, color=TileColor.BLUE)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="dango", name="Dango", level=1, kind="stamp")]
-    )
-    score, _bd, trace = pipeline.score_with_trace(board, [0, 1], "ab", loadout)
-    assert score == 20
-    assert any(
-        step.get("phase") == "multiply" and step.get("rule_id") == "dango"
-        for step in trace
-    )

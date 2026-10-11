@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Compare solver predicted_trace vs melmod actual_trace.
+"""Step-by-step engine trace vs the game's trace for captured submits.
 
-Single-file mode:
+Shows the first scoring step where the engine and the game diverge (which
+item, tile scores, word bonus), the fastest way to find a scoring bug.
+
   python scripts/compare_trace.py tests/fixtures/mismatches/20260526_150342.json
-
-Batch mode:
-  python scripts/compare_trace.py --glob "tests/fixtures/mismatches/*.json"
+  python scripts/compare_trace.py ~/.cursed_words_solver/round_logs/20261012_*.json
+  python scripts/compare_trace.py --glob "tests/fixtures/mismatches/*.json" --only-diffs
 """
 
 from __future__ import annotations
@@ -13,170 +14,61 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.trace_compare import compare_traces
-
-
-def _replay_mismatch(data: dict) -> tuple[int, list[dict]]:
-    """Apply regression replay adjustments (Nat-H4 / trace inference) before scoring."""
-    from tests.regression.test_scoring_mismatches import (
-        _adjust_bento_previous_word_extras,
-        _adjust_nat_h4_session_extras,
-        _adjust_neapolitan_percent_extras,
-        _adjust_previous_word_letter_extras,
-        _adjust_rare_item_count_extras,
-        _adjust_scattered_item_level_from_trace,
-        _adjust_snapshot_copy_from_trace,
-        _adjust_steak_percent_extras,
-        _adjust_tile_ninja_bonus_from_trace,
-        _adjust_void_penalty_from_trace,
-        _run_state_for_replay,
-    )
-
-    run_state = _run_state_for_replay(data)
-    if not run_state:
-        raise ValueError("missing run_state_snapshot")
-    word = data.get("word") or ""
-    path = data.get("path") or []
-    case_stem = Path(str(data.get("_source_path", "unknown"))).stem
-    for fn in (
-        _adjust_previous_word_letter_extras,
-        _adjust_bento_previous_word_extras,
-        _adjust_neapolitan_percent_extras,
-        _adjust_rare_item_count_extras,
-        _adjust_steak_percent_extras,
-        _adjust_tile_ninja_bonus_from_trace,
-    ):
-        fn(run_state, data)
-    board = parse_board_from_run_state(run_state)
-    _adjust_void_penalty_from_trace(run_state, data, board, path)
-    _adjust_scattered_item_level_from_trace(run_state, data, board, path)
-    _adjust_nat_h4_session_extras(run_state, data, case_stem)
-    _adjust_snapshot_copy_from_trace(
-        run_state, data, board, path, word, case_stem=case_stem
-    )
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    pipe = ScoringPipeline()
-    pred_score, _, pred_trace = pipe.score_with_trace(board, path, word, loadout)
-    return int(pred_score), pred_trace
+from cursed_words_solver.engine import EnginePlan  # noqa: E402
+from cursed_words_solver.sim.replay import prepare_replay  # noqa: E402
+from cursed_words_solver.trace_compare import compare_traces  # noqa: E402
 
 
 def _load(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if "run_state_snapshot" in data and "run_state" not in data:  # mismatch bundle
+        data["run_state"] = data["run_state_snapshot"]
+        data["actual"] = {"word": data.get("word", ""), "path": data.get("path", []), "score": data.get("actual_score"), "trace": data.get("actual_trace") or []}
+    return data
 
 
-def _pred_step_id(step: dict) -> str:
-    return str(step.get("rule_id") or step.get("item_id") or step.get("phase") or "")
-
-
-def _actual_step_id(step: dict) -> str:
-    return str(step.get("item_id") or step.get("item_name") or f"step_{step.get('step_index','')}").lower()
-
-
-def _pred_word_bonus(step: dict) -> int:
-    return int(step.get("word_score", 0))
-
-
-def _actual_word_bonus(step: dict) -> int:
-    return int(step.get("word_bonus", 0) or 0)
-
-
-@dataclass
-class DiffResult:
-    stem: str
-    predicted_score: int
-    actual_score: int
-    delta: int
-    first_diff: str
-    hypothesis: str = ""
-
-
-def _first_trace_diff(pred_trace: list[dict], actual_trace: list[dict]) -> tuple[str, str]:
-    diff = compare_traces(pred_trace, actual_trace)
-    if diff.has_divergence:
-        return diff.summary, diff.hypothesis
-    return "none", ""
-
-
-def _compare_file(path: Path, *, replay: bool = False) -> DiffResult:
+def compare_file(path: Path) -> tuple[str, bool]:
     data = _load(path)
-    data["_source_path"] = str(path)
-    if replay:
-        pred_score, pred_trace = _replay_mismatch(data)
-    else:
-        run_state = data.get("run_state_snapshot") or data.get("run_state") or {}
-        board = parse_board_from_run_state(run_state)
-        if board is None:
-            raise ValueError(f"{path.name}: missing board in snapshot")
-        loadout = parse_run_state(run_state)
-        extras = data.get("extras_snapshot") or {}
-        if isinstance(extras, dict):
-            loadout.extras.update(extras)
-
-        path_idxs = data.get("path") or []
-        word = data.get("word") or ""
-        pipe = ScoringPipeline()
-        pred_score, _, pred_trace = pipe.score_with_trace(board, path_idxs, word, loadout)
-        pred_score = int(pred_score)
-    actual_trace = data.get("actual_trace") or []
-    actual_score = int(data.get("actual_score") or 0)
-    first_diff, hypothesis = _first_trace_diff(pred_trace, actual_trace)
-
-    return DiffResult(
-        stem=path.stem,
-        predicted_score=int(pred_score),
-        actual_score=actual_score,
-        delta=int(pred_score) - actual_score,
-        first_diff=first_diff,
-        hypothesis=hypothesis,
-    )
+    prep, err = prepare_replay(data)
+    if prep is None:
+        return f"{path.name}: cannot replay ({err})", False
+    res = EnginePlan.build(prep.board, prep.loadout).score(prep.submission.path, prep.submission.effective_scoring_word)
+    score = -res.int_score if prep.two_wrongs else res.int_score
+    actual = data.get("actual") or {}
+    actual_trace = actual.get("trace") or data.get("actual_trace") or []
+    line = f"{path.name}: engine={score} game={prep.expected} delta={score - (prep.expected or 0)}"
+    if actual_trace:
+        diff = compare_traces(res.trace(), actual_trace)
+        line += f" first_diff={diff.summary if diff.has_divergence else 'none'}"
+        if diff.has_divergence and diff.hypothesis:
+            line += f" hypothesis={diff.hypothesis}"
+    return line, score == prep.expected
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("mismatch_json", type=Path, nargs="?")
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("files", type=Path, nargs="*")
     ap.add_argument("--glob", dest="glob_pattern", default="")
-    ap.add_argument(
-        "--replay",
-        action="store_true",
-        help="apply regression replay adjustments (void/dusty/Nat-H4 extras)",
-    )
+    ap.add_argument("--only-diffs", action="store_true", help="print only captures the engine mis-scores")
     args = ap.parse_args()
-
-    files: list[Path] = []
-    if args.glob_pattern:
-        files = sorted(ROOT.glob(args.glob_pattern))
-    elif args.mismatch_json:
-        files = [args.mismatch_json]
-    else:
-        ap.error("provide mismatch_json or --glob")
-
+    files = list(args.files) + (sorted(ROOT.glob(args.glob_pattern)) if args.glob_pattern else [])
+    if not files:
+        ap.error("give capture files or --glob")
     failures = 0
     for f in files:
         try:
-            r = _compare_file(f, replay=args.replay)
+            line, ok = compare_file(f)
         except Exception as exc:  # noqa: BLE001
-            failures += 1
-            print(f"{f.name}: ERROR {exc}")
-            continue
-        line = (
-            f"{r.stem}: pred={r.predicted_score} actual={r.actual_score} "
-            f"delta={r.delta} first_diff={r.first_diff}"
-        )
-        if r.hypothesis:
-            line += f" hypothesis={r.hypothesis}"
-        print(line)
-        if r.delta != 0:
-            failures += 1
+            line, ok = f"{f.name}: ERROR {exc}", False
+        failures += not ok
+        if not ok or not args.only_diffs:
+            print(line)
     return 1 if failures else 0
 
 

@@ -26,13 +26,6 @@ class TwinkleToesSwap:
     row_b: int
     col_b: int
 
-    def index_a_at(self, cols: int) -> int:
-        return self.row_a * cols + self.col_a
-
-    def index_b_at(self, cols: int) -> int:
-        return self.row_b * cols + self.col_b
-
-
 def twinkle_toes_equipped(loadout: Loadout | None) -> bool:
     return loadout_has_stamp(loadout, "twinkle_toes")
 

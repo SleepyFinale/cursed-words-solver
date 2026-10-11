@@ -14,8 +14,8 @@ import time
 import pytest
 
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.models import Loadout, LoadoutItem, TileColor
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.models import Loadout, LoadoutItem
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.search import WordSearcher
 from tests.helpers.boards import _board_123ifer_fixture, _board_cat_horizontal, _make_wordlist
 
@@ -28,7 +28,7 @@ def test_score_total_only_matches_full_score(tmp_path):
             LoadoutItem(id="red_rider", name="Red Rider", level=1, kind="sticker")
         ]
     )
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     total = pipeline.score_total_only(board, [0, 1, 2], "cat", loadout)
     full, _ = pipeline.score(board, [0, 1, 2], "cat", loadout)
     assert total == full

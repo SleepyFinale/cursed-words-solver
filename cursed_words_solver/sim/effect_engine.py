@@ -112,9 +112,10 @@ class EffectEngine:
     @property
     def rules(self) -> dict:
         if self._rules is None:
-            from cursed_words_solver.rules.pipeline import ScoringPipeline
 
-            self._rules = ScoringPipeline().rules
+            from cursed_words_solver.rules.rule_lookup import rules_catalog
+
+            self._rules = rules_catalog()
         return self._rules
 
     def apply_post_submit(

@@ -11,7 +11,7 @@ from cursed_words_solver.config import ensure_wordlist
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.rules.boss_effects import boss_word_constraints
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
 from cursed_words_solver.search import PathValidator, WordSearcher
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
@@ -39,7 +39,7 @@ def cobra_board_loadout():
 
 def test_cobra_min_len_is_eight(cobra_board_loadout):
     _board, loadout, _data = cobra_board_loadout
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     assert constraints.min_len == 8
 
@@ -62,7 +62,7 @@ def test_submitted_path_is_valid(cobra_board_loadout):
 )
 def test_find_best_words_finds_words_parallel(cobra_board_loadout):
     board, loadout, _data = cobra_board_loadout
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     dictionary = WordDictionary(ensure_wordlist())
     searcher = WordSearcher(

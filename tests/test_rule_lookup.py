@@ -1,7 +1,7 @@
 from cursed_words_solver.loadout import parse_run_state
 from cursed_words_solver.models import Loadout, LoadoutItem
 from cursed_words_solver.rules.boss_effects import load_rules_catalog
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import (
     collect_unmapped_items,
     get_pin_branch_rule,
@@ -116,7 +116,7 @@ def test_abacus_pin_alias_resolves_to_scoring_rule():
 
 
 def test_abacus_pin_no_bonus_without_coloured_numbers_on_path():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     from cursed_words_solver.models import Board, Tile, TileColor, CurseType
 
     def tile(ch: str, row: int, col: int) -> Tile:
@@ -163,7 +163,7 @@ def test_pin_branch_rule_left():
 
 
 def test_pipeline_brain_level_affects_multiplier():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     from cursed_words_solver.models import Board, Tile, CurseType
 
     board = Board(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cursed_words_solver.models import Board, CurseType, Tile, TileColor, normalize_tile_glyph
+from cursed_words_solver.models import Board, CurseType, Tile, TileColor
 from cursed_words_solver.letter_values import SCRABBLE_VALUES
 
 if TYPE_CHECKING:
@@ -17,18 +17,6 @@ def _scrabble_value(letter: str) -> int:
 
 def _is_melmod_tile(tile: Tile) -> bool:
     return tile.metadata.get("source") == "melmod"
-
-
-def milmod_colorless_void_scatter_init_contribution(
-    tile: Tile,
-    *,
-    loadout: Loadout | None,
-    path_index: int,
-    path_len: int,
-) -> float | None:
-    """Deprecated: melmod packet base_score is authoritative (see MapBaseScore)."""
-    _ = (tile, loadout, path_index, path_len)
-    return None
 
 
 def _infer_void_penalty_steps_from_packet(tile: Tile) -> int | None:
@@ -132,115 +120,9 @@ def _axolotl_floor_modification(loadout: Loadout) -> int | None:
     return None
 
 
-def _owned_item_levels(loadout: Loadout | None, slug: str) -> list[int]:
-    """Levels of each owned stamp/sticker copy with this slug."""
-    if loadout is None:
-        return []
-    from cursed_words_solver.rules.rule_lookup import slugify_name
-
-    levels: list[int] = []
-    for item in list(loadout.stamps or []) + list(loadout.stickers or []):
-        if slugify_name(str(item.id or item.name or "")) != slug:
-            continue
-        try:
-            levels.append(max(1, int(item.level)))
-        except (TypeError, ValueError):
-            levels.append(1)
-    return levels
-
-
-def _is_playable_corner(board: Board, tile: Tile) -> bool:
-    """GridUtility.IsCornerTile on the playable grid."""
-    rows, cols = board.storage_rows, board.storage_cols
-    min_r, max_r = board.playable_min_row, board.playable_max_row
-    min_c, max_c = board.playable_min_col, board.playable_max_col
-    if not (0 <= min_r <= max_r < rows and 0 <= min_c <= max_c < cols):
-        min_r, max_r, min_c, max_c = 0, rows - 1, 0, cols - 1
-    return tile.row in (min_r, max_r) and tile.col in (min_c, max_c)
-
-
-def reconstructed_value_modifier(
-    board: Board, tile: Tile, loadout: Loadout | None
-) -> int:
-    """Tile.ValueModifier from start-of-grid base-score items, rebuilt from the board.
-
-    Late-May melmod exports carry void letters as 0, losing the modifier the game
-    negates in ``Tile.GetValue``. Rebuilds the common sources:
-
-    - ``GlobeTrotter``: corner tiles become currencies with +10 BASE SCORE.
-    - ``Doughnut``: +5×level per unique non-normal neighbouring colour
-      (``GridUtility.GetTilesAdjacentToCoordinates``, 8-neighbour, Hungry Snake wrap).
-    """
-    mod = 0
-    if tile.curse == CurseType.CURRENCY and _is_playable_corner(board, tile):
-        mod += 10 * len(_owned_item_levels(loadout, "globe_trotter"))
-    doughnuts = _owned_item_levels(loadout, "doughnut")
-    if doughnuts:
-        wrap = bool(_owned_item_levels(loadout, "hungry_snake"))
-        cols = board.storage_cols
-        colours: set[TileColor] = set()
-        for dr in (-1, 0, 1):
-            for dc in (-1, 0, 1):
-                if dr == 0 and dc == 0:
-                    continue
-                r, c = tile.row + dr, tile.col + dc
-                if wrap and not 0 <= c < cols:
-                    c %= cols
-                if not (0 <= r < board.storage_rows and 0 <= c < cols):
-                    continue
-                if not board.is_active_cell(r, c):
-                    continue
-                color = board.tiles[r][c].color
-                if color not in (TileColor.COLORLESS, TileColor.UNKNOWN):
-                    colours.add(color)
-        mod += sum(5 * level for level in doughnuts) * len(colours)
-    return mod
-
-
 # Melmod exported void LETTER packets as 0 until early June 2026; later exports
 # are signed (a 0 is genuine, e.g. Shaved Ice frozen tiles).
 _LOSSY_VOID_LETTER_EXPORT_BEFORE = "2026-06-01"
-
-
-def _void_letter_export_was_lossy(board: Board) -> bool:
-    captured = str(board.captured_at or "")
-    return not captured or captured[:10] < _LOSSY_VOID_LETTER_EXPORT_BEFORE
-
-
-def lost_void_export_value(
-    board: Board, tile: Tile, loadout: Loadout | None
-) -> float | None:
-    """Game ``GetValue`` for a melmod void tile whose export lost its value (0).
-
-    Returns None when the export is trustworthy or the tile is not covered.
-    """
-    if tile.color != TileColor.VOID or not _is_melmod_tile(tile):
-        return None
-    if float(tile.base_score or 0) != 0:
-        return None
-    if tile.curse == CurseType.CURRENCY:
-        raw_mod = tile.metadata.get("value_modifier")
-        if raw_mod not in (None, ""):
-            try:
-                return -float(abs(int(raw_mod)))
-            except (TypeError, ValueError):
-                pass
-        # Only Globe Trotter's corner +10 is reliable: a later SetCurrency (Wad of
-        # Cash scatter) resets ValueModifier, so Doughnut may or may not survive.
-        globe = 10 * len(_owned_item_levels(loadout, "globe_trotter"))
-        if not globe or not _is_playable_corner(board, tile):
-            return None
-        return -float(globe)
-    if tile.curse != CurseType.LETTER or not _void_letter_export_was_lossy(board):
-        return None
-    face = _scrabble_value(tile.letter)
-    raw_steps = tile.metadata.get("void_penalty_steps")
-    if raw_steps not in (None, ""):
-        try:
-            return -float(face + 10 * max(0, int(raw_steps)))
-        except (TypeError, ValueError):
-            pass
-    return -float(face + reconstructed_value_modifier(board, tile, loadout))
 
 
 def _void_currency_face_value(tile: Tile, loadout: Loadout | None = None) -> int:
@@ -280,84 +162,6 @@ def _void_currency_face_value(tile: Tile, loadout: Loadout | None = None) -> int
     if cv >= 3:
         return 15
     return 5 * max(3, cv + 1)
-
-
-def _void_currency_path_init_penalty(tile: Tile, loadout: Loadout | None = None) -> int:
-    """First void-currency tile on path: 5×(cv+1), or 15 when cv≥3 (not max(3,cv+1)×5)."""
-    if _void_currency_face_value(tile, loadout) == 0:
-        return 0
-    from cursed_words_solver.rules.scoring_conditions import currency_letter_value
-
-    cv = currency_letter_value(tile)
-    if cv >= 3:
-        return 15
-    return 5 * (cv + 1)
-
-
-def _void_currency_top_row_path_start_penalty(tile: Tile, loadout: Loadout | None = None) -> int:
-    """Void non-$ currency on row 0 at path start: 5×max(2,cv), or 15 when cv≥3."""
-    if _void_currency_face_value(tile, loadout) == 0:
-        return 0
-    from cursed_words_solver.rules.scoring_conditions import currency_letter_value
-
-    cv = currency_letter_value(tile)
-    if cv >= 3:
-        return 15
-    return 5 * max(2, cv)
-
-
-def melmod_void_currency_init_contribution(
-    tile: Tile,
-    *,
-    first_void_currency_on_path: bool,
-    path_index: int = 0,
-    loadout: Loadout | None = None,
-    word: str = "",
-    board_rows: int = 5,
-) -> float:
-    """Melmod void currency path init: $ waived at word start; bottom-row match penalized."""
-    if not first_void_currency_on_path:
-        return 0.0
-    glyph = normalize_tile_glyph(tile.char or tile.letter or "")
-    if glyph == "$":
-        if path_index <= 0:
-            return 0.0
-        # Game waives void $ init unless it is the second tile on the path (index 1).
-        if path_index == 1:
-            return -float(_void_currency_path_init_penalty(tile, loadout))
-        return 0.0
-    bottom_row = max(0, board_rows - 1)
-    word_lower = (word or "").lower()
-    if path_index < len(word_lower):
-        from cursed_words_solver.models import CURRENCY_MAP
-        from cursed_words_solver.rules.scoring_conditions import (
-            currency_letter_value,
-            path_letter_for_count,
-        )
-
-        mapped = CURRENCY_MAP.get(glyph, "").lower()
-        if not mapped and len(glyph) == 1 and glyph.isalpha():
-            mapped = glyph.lower()
-        face = path_letter_for_count(tile)
-        letter = word_lower[path_index]
-        in_word = (mapped and mapped == letter) or (face and face.lower() == letter)
-        if not in_word:
-            return 0.0
-        cv = currency_letter_value(tile)
-        # Bottom-row void non-$ matching the word letter is penalized (capped),
-        # including mid-path (akebia ฿ → -10). Top-row path starts stay 0 for
-        # low cv (german ₲ cv=2); high-cv top-row path starts still pay -10
-        # (waying ₩ cv≥3).
-        if tile.row == bottom_row:
-            penalty = _void_currency_path_init_penalty(tile, loadout)
-            # cv=1 void currency at bottom edge → 0; cv≥2 caps at -10 (pheese ₱).
-            if cv >= 2 and penalty > 0:
-                return -float(min(penalty, 10))
-        if path_index == 0 and tile.row == 0 and cv >= 3:
-            return -float(
-                min(_void_currency_top_row_path_start_penalty(tile, loadout), 10)
-            )
-    return 0.0
 
 
 def _void_face_value(tile: Tile, loadout: Loadout | None = None) -> int:
@@ -498,15 +302,6 @@ def tile_base_contribution(
 
     bonus = _color_bonus(tile, letter_base)
     return letter_base + bonus
-
-
-def microscope_init_contribution(
-    tile: Tile, money: int = 0, loadout: Loadout | None = None
-) -> float:
-    """Microscope init: packet base_score, except VOID where 0 means pre-negation."""
-    if tile.color == TileColor.VOID:
-        return tile_base_contribution(tile, money, loadout)
-    return float(tile.base_score)
 
 
 def score_word_base(

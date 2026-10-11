@@ -118,13 +118,6 @@ def equipped_improve_stamps(loadout: Loadout) -> frozenset[str]:
     return frozenset(slugs)
 
 
-def equipped_improve_words(loadout: Loadout) -> frozenset[str]:
-    words: set[str] = set()
-    for slug in equipped_improve_stamps(loadout):
-        words.update(STAMP_IMPROVE_WORDS[slug])
-    return frozenset(words)
-
-
 def stamp_improve_match(loadout: Loadout, word: str) -> list[tuple[str, str]]:
     w = word.lower()
     out: list[tuple[str, str]] = []
@@ -134,13 +127,3 @@ def stamp_improve_match(loadout: Loadout, word: str) -> list[tuple[str, str]]:
     return out
 
 
-def stamp_improve_npv_weight(slug: str, token: str) -> float:
-    token = token.lower()
-    if slug == FLASHY_FOUNTAIN_PEN:
-        return _COLOUR_NPV_WEIGHT.get(token, 18.0)
-    if slug == BAR_CHART:
-        face = _NUMBER_NAME_TO_FACE.get(token, 1)
-        return float(face) * 8.0
-    if slug == BOOK_OF_OPENINGS:
-        return _CHESS_NPV_WEIGHT.get(token, 8.0)
-    return 0.0

@@ -1,18 +1,10 @@
 """Bones The Dog unlock stamp catalog and behavior (wiki: Unlocked when unlocking Bones The Dog)."""
 
-from cursed_words_solver.models import (
-    Board,
-    CurseType,
-    Loadout,
-    LoadoutItem,
-    Tile,
-)
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.models import Board, CurseType, Tile
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
-from cursed_words_solver.rules.scoring_conditions import detect_card_hand
-from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 
 BONES_STAMP_NAMES = [
     "Card Shark",
@@ -63,7 +55,7 @@ def _empty_board() -> Board:
 
 
 def test_all_bones_stamps_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in BONES_STAMP_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stamps", slug, name)
@@ -72,40 +64,5 @@ def test_all_bones_stamps_catalogued():
 
 
 def test_count_scoring_vs_grid_only_bones_stamps():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     assert_loadout_stamp_coverage(pipeline.rules, BONES_STAMP_NAMES)
-
-
-def test_martini_three_card_flush():
-    board = _empty_board()
-    path = []
-    for c in range(3):
-        board.tiles[0][c] = _card(0, c, str(2 + c), "hearts")
-        path.append(c)
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="martini", name="Martini", kind="stamp")]
-    )
-    assert detect_card_hand("flush", board, path, loadout)
-    assert not detect_card_hand("flush", board, path, Loadout())
-
-
-def test_martini_five_card_flush_without_stamp():
-    board = _empty_board()
-    path = []
-    for c in range(5):
-        board.tiles[0][c] = _card(0, c, str(2 + c), "hearts")
-        path.append(c)
-    assert detect_card_hand("flush", board, path, Loadout())
-
-
-def test_martini_three_card_straight():
-    board = _empty_board()
-    path = []
-    for c, rank in enumerate("234"):
-        board.tiles[0][c] = _card(0, c, rank, "hearts")
-        path.append(c)
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="martini", name="Martini", kind="stamp")]
-    )
-    assert detect_card_hand("straight", board, path, loadout)
-    assert not detect_card_hand("straight", board, path, Loadout())

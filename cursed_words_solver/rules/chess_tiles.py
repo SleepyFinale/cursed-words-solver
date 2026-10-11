@@ -8,7 +8,6 @@ from cursed_words_solver.fingerprints import board_fingerprint
 from cursed_words_solver.graph_bitboard import (
     DIAG_DIR_INDICES,
     BoardGraphContext,
-    KNIGHT_TARGETS,
     NEIGHBORS_8,
     NEIGHBORS_8_WRAP,
     STRAIGHT_DIR_INDICES,
@@ -59,16 +58,6 @@ _board_has_chess_pieces: bool = True
 _solve_board_fingerprint: str | None = None
 
 
-def chess_attack_cache_stats() -> tuple[int, int]:
-    return _attack_cache_hits, _attack_cache_misses
-
-
-def reset_chess_attack_cache_stats() -> None:
-    global _attack_cache_hits, _attack_cache_misses
-    _attack_cache_hits = 0
-    _attack_cache_misses = 0
-
-
 def _visited_cache_key(visited: int | set[int]) -> int | frozenset[int]:
     if isinstance(visited, set):
         return frozenset(visited)
@@ -78,19 +67,6 @@ def _visited_cache_key(visited: int | set[int]) -> int | frozenset[int]:
 def solve_has_chess_pieces() -> bool:
     """Whether the current solve board has chess tiles (set via clear_chess_attack_cache)."""
     return _board_has_chess_pieces
-
-
-def clear_chess_attack_cache(
-    *,
-    has_chess_pieces: bool = True,
-    board_fingerprint: str | None = None,
-) -> None:
-    """Clear attack lookup cache (call at start of each solve)."""
-    global _board_has_chess_pieces, _solve_board_fingerprint
-    _attack_cache.clear()
-    reset_chess_attack_cache_stats()
-    _board_has_chess_pieces = has_chess_pieces
-    _solve_board_fingerprint = board_fingerprint
 
 
 def index_of(row: int, col: int) -> int:
@@ -559,81 +535,6 @@ def chess_neighbors_mask(
     return mask
 
 
-def _ray_neighbors(
-    board: Board,
-    start_idx: int,
-    visited: int | set[int],
-    *,
-    moving_side: str,
-    allies_can_take: bool,
-    straight: bool = False,
-    diagonal: bool = False,
-    horizontal_wrap: bool = False,
-) -> list[int]:
-    row, col = start_idx // 5, start_idx % 5
-    dirs: list[tuple[int, int]] = []
-    if straight:
-        dirs.extend(STRAIGHT_DIRS)
-    if diagonal:
-        dirs.extend(DIAG_DIRS)
-    out: list[int] = []
-    for dr, dc in dirs:
-        r, c = row, col
-        seen: set[tuple[int, int]] = set()
-        while True:
-            nxt = _ray_step(r, c, dr, dc, horizontal_wrap=horizontal_wrap)
-            if nxt is None or nxt in seen:
-                break
-            seen.add(nxt)
-            nr, nc = nxt
-            idx = index_of(nr, nc)
-            if not board.is_active_index(idx):
-                r, c = nr, nc
-                continue
-            if _chess_piece_at(board, idx) is not None:
-                if can_land_on_chess_square(
-                    board,
-                    idx,
-                    moving_side,
-                    visited,
-                    allies_can_take=allies_can_take,
-                ):
-                    out.append(idx)
-                break
-            if _visited_has(visited, idx):
-                r, c = nr, nc
-                continue
-            out.append(idx)
-            r, c = nr, nc
-    return out
-
-
-def knight_neighbors(
-    board: Board,
-    start_idx: int,
-    visited: int | set[int],
-    *,
-    moving_side: str,
-    allies_can_take: bool = False,
-) -> list[int]:
-    row, col = start_idx // 5, start_idx % 5
-    out: list[int] = []
-    for dr, dc in KNIGHT_DIRS:
-        nr, nc = row + dr, col + dc
-        if not (0 <= nr < 5 and 0 <= nc < 5):
-            continue
-        idx = index_of(nr, nc)
-        if can_land_on_chess_square(
-            board,
-            idx,
-            moving_side,
-            visited,
-            allies_can_take=allies_can_take,
-        ):
-            out.append(idx)
-    return out
-
-
 def _pawn_home_row(board: Board, side: str) -> int:
     """Wiki: white home = second from top; black home = second from bottom."""
     if side == "black":
@@ -643,11 +544,6 @@ def _pawn_home_row(board: Board, side: str) -> int:
 
 def _pawn_forward_delta(side: str) -> int:
     return 1 if side == "black" else -1
-
-
-def _pawn_attack_dirs(side: str) -> list[tuple[int, int]]:
-    dr = _pawn_forward_delta(side)
-    return [(dr, -1), (dr, 1)]
 
 
 def _pawn_attack_cols(pawn_col: int, *, horizontal_wrap: bool) -> list[int]:
@@ -884,32 +780,6 @@ def _is_square_attacked_by_pawn(
             ):
                 return True
     return False
-
-
-def _knight_at_attacks_target(
-    board: Board,
-    knight_row: int,
-    knight_col: int,
-    target_row: int,
-    target_col: int,
-    side: str,
-    visited: int | set[int],
-) -> bool:
-    if abs(knight_row - target_row) == 2 and abs(knight_col - target_col) == 1:
-        pass
-    elif abs(knight_row - target_row) == 1 and abs(knight_col - target_col) == 2:
-        pass
-    else:
-        return False
-    idx = index_of(knight_row, knight_col)
-    tile = _chess_piece_at(board, idx)
-    if tile is None:
-        return False
-    return (
-        tile.curse == CurseType.CHESS_KNIGHT
-        and chess_side_known(tile)
-        and chess_side(tile) == side
-    )
 
 
 def _is_square_attacked_by_knight(
@@ -1253,87 +1123,6 @@ def is_square_attacked(
     if len(_attack_cache) > _ATTACK_CACHE_MAX:
         _attack_cache.popitem(last=False)
     return result
-
-
-def _try_king_destination(
-    board: Board,
-    idx: int,
-    *,
-    moving_side: str,
-    opp: str,
-    visited: int | set[int],
-    allies_can_take: bool,
-    horizontal_wrap: bool,
-    out: list[int],
-) -> None:
-    nr, nc = idx // 5, idx % 5
-    if not can_land_on_chess_square(
-        board,
-        idx,
-        moving_side,
-        visited,
-        allies_can_take=allies_can_take,
-    ):
-        return
-    if is_square_attacked(
-        board, nr, nc, opp, visited, horizontal_wrap=horizontal_wrap
-    ):
-        return
-    out.append(idx)
-
-
-def king_neighbors(
-    board: Board,
-    start_idx: int,
-    visited: int | set[int],
-    *,
-    moving_side: str,
-    allies_can_take: bool = False,
-    horizontal_wrap: bool = False,
-) -> list[int]:
-    row, col = start_idx // 5, start_idx % 5
-    opp = opposite_side(moving_side)
-    out: list[int] = []
-    for dr, dc in DIRS_8:
-        nr, nc = row + dr, col + dc
-        if not (0 <= nr < 5 and 0 <= nc < 5):
-            continue
-        _try_king_destination(
-            board,
-            index_of(nr, nc),
-            moving_side=moving_side,
-            opp=opp,
-            visited=visited,
-            allies_can_take=allies_can_take,
-            horizontal_wrap=horizontal_wrap,
-            out=out,
-        )
-    if horizontal_wrap:
-        partner = _wrap_partner_col(col)
-        if partner is not None:
-            _try_king_destination(
-                board,
-                index_of(row, partner),
-                moving_side=moving_side,
-                opp=opp,
-                visited=visited,
-                allies_can_take=allies_can_take,
-                horizontal_wrap=horizontal_wrap,
-                out=out,
-            )
-    return out
-
-
-def _television_item_neighbors(
-    board: Board,
-    visited: int | set[int],
-) -> list[int]:
-    return [
-        idx
-        for idx in _active_indices(board)
-        if not _visited_has(visited, idx)
-        and board.get_by_index(idx).curse == CurseType.ITEM
-    ]
 
 
 def chess_neighbors(

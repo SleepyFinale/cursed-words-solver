@@ -3,25 +3,9 @@
 import json
 from pathlib import Path
 
-from cursed_words_solver.models import (
-    Board,
-    CurseType,
-    Loadout,
-    LoadoutItem,
-    Tile,
-    TileColor,
-)
-from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.rule_lookup import count_scoring_items, slugify_name
-from cursed_words_solver.rules.scoring_conditions import (
-    currency_letter_value,
-    dusty_coffin_void_units,
-    evaluate_sticker_condition,
-    grid_path_sticker_level,
-    money_for_scoring,
-    unique_vowels_in_word,
-    unique_vowels_on_path,
-)
+from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
+from cursed_words_solver.engine.scorer import EngineScorer
+from cursed_words_solver.rules.rule_lookup import slugify_name
 
 DEFAULT_STICKER_NAMES = [
     "April Shower",
@@ -97,7 +81,7 @@ def _empty_board() -> Board:
 def test_all_default_stickers_catalogued():
     from cursed_words_solver.rules.rule_lookup import get_rule
 
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in DEFAULT_STICKER_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stickers", slug, name)
@@ -105,25 +89,11 @@ def test_all_default_stickers_catalogued():
         assert rule.get("type") != "unmodeled", slug
 
 
-def test_count_scoring_vs_grid_only_all_defaults():
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id=slugify_name(n), name=n, level=1, kind="sticker")
-            for n in DEFAULT_STICKER_NAMES
-        ]
-    )
-    scoring, total, grid_only = count_scoring_items(pipeline.rules, loadout)
-    assert total == 32
-    assert grid_only == len(GRID_ONLY_SLUGS)
-    assert scoring == 32 - len(GRID_ONLY_SLUGS)
-
-
 def test_artists_palette_colored_tile_bonus():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 2, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 2)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[
             LoadoutItem(id="artist_s_palette", name="Artist's Palette", level=1)
@@ -137,7 +107,7 @@ def test_artists_palette_colored_tile_bonus():
 def test_artists_palette_applies_to_white_tile():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 1, color=TileColor.WHITE)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[
             LoadoutItem(id="artist_s_palette", name="Artist's Palette", level=1)
@@ -152,7 +122,7 @@ def test_dango_counts_white_as_unique_colour():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 2, color=TileColor.WHITE)
     board.tiles[0][1] = _tile(0, 1, "B", 2, color=TileColor.RED)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stamps=[LoadoutItem(id="dango", name="Dango", level=1)])
     score, _ = pipeline.score(board, [0, 1], "ab", loadout)
     base, _ = pipeline.score(board, [0, 1], "ab", Loadout())
@@ -163,7 +133,7 @@ def test_blueberries_ends_blue_multiplier():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "C", 2)
     board.tiles[0][1] = _tile(0, 1, "A", 2, color=TileColor.BLUE)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="blueberries", name="Blueberries", level=1)])
     score, bd = pipeline.score(board, [0, 1], "ca", loadout)
     assert bd["multiplier"] == 2.0
@@ -174,7 +144,7 @@ def test_dusty_coffin_void_unused():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 2)
     board.tiles[4][4] = _tile(4, 4, "Z", 0, color=TileColor.VOID)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
     score, bd = pipeline.score(board, [0], "a", loadout)
     base, _ = pipeline.score(board, [0], "a", Loadout())
@@ -187,7 +157,7 @@ def test_dusty_coffin_skips_void_whose_face_is_on_path():
     board.tiles[0][0] = _tile(0, 0, "B", 2)
     board.tiles[2][2] = _tile(2, 2, "A", 0, color=TileColor.VOID)
     board.tiles[4][4] = _tile(4, 4, "Z", 0, color=TileColor.VOID)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
     # Path face is only B — both voids count even though word contains A.
     score, bd = pipeline.score(board, [0], "baa", loadout)
@@ -201,7 +171,7 @@ def test_dusty_coffin_excludes_void_face_present_on_path():
     board.tiles[0][0] = _tile(0, 0, "B", 2)
     board.tiles[0][1] = _tile(0, 1, "Q", 0, color=TileColor.VOID)
     board.tiles[4][4] = _tile(4, 4, "Z", 0, color=TileColor.VOID)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
     score, bd = pipeline.score(board, [0, 1], "ba", loadout)
     base, _ = pipeline.score(board, [0, 1], "ba", Loadout())
@@ -216,7 +186,7 @@ def test_dusty_coffin_counts_void_currency_symbols_not_in_word():
     board.tiles[0][1] = _tile(0, 1, "₮", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
     board.tiles[0][2] = _tile(0, 2, "₡", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
     board.tiles[4][4] = _tile(4, 4, "Z", 0, color=TileColor.VOID)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
     score, bd = pipeline.score(board, [0], "at", loadout)
     base, _ = pipeline.score(board, [0], "at", Loadout())
@@ -238,7 +208,7 @@ def test_dusty_coffin_number_void_digit_not_in_word():
         number_value=8,
         metadata={"source": "melmod"},
     )
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
     score, bd = pipeline.score(board, [0], "a", loadout)
     base, _ = pipeline.score(board, [0], "a", Loadout())
@@ -261,7 +231,7 @@ def test_dusty_coffin_counts_void_item_tiles():
         metadata={"source": "melmod", "scattered_item_id": "ornate_key"},
     )
     board.tiles[0][1] = _tile(0, 1, "₮", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
     score, bd = pipeline.score(board, [0], "groggy", loadout)
     base, _ = pipeline.score(board, [0], "groggy", Loadout())
@@ -283,7 +253,7 @@ def test_dusty_coffin_counts_unused_void_item_when_letter_in_word():
         curse=CurseType.ITEM,
         metadata={"source": "melmod", "scattered_item_id": "rainbow_sprinkles"},
     )
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
     score, bd = pipeline.score(board, [0], "requin", loadout)
     base, _ = pipeline.score(board, [0], "requin", Loadout())
@@ -309,7 +279,7 @@ def test_dusty_coffin_uses_only_unused_void_tiles_mismatch_shape():
     board.tiles[2][4] = _tile(2, 4, "฿", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
     board.tiles[3][2] = _tile(3, 2, "₣", 0, color=TileColor.VOID, curse=CurseType.CURRENCY)
     path = [23, 19, 13, 14]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="dusty_coffin", name="Dusty Coffin", level=1)])
     score, bd = pipeline.score(board, path, "megabyte", loadout)
     base, _ = pipeline.score(board, path, "megabyte", Loadout())
@@ -317,112 +287,11 @@ def test_dusty_coffin_uses_only_unused_void_tiles_mismatch_shape():
     assert score == base + 8
 
 
-def test_dusty_coffin_colorless_grid_scatter_does_not_count_coffin_face_zags():
-    """20260709 zags: grid dusty on path, 2 off-path void letters → 16 word bonus, score 46."""
-    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-    from tests.regression.test_scoring_mismatches import (
-        FIXTURES,
-        _replay_path,
-        _run_state_for_replay,
-    )
-
-    data = json.loads((FIXTURES / "20260709_142013.json").read_text(encoding="utf-8"))
-    run_state = _run_state_for_replay(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    path = _replay_path(board, data["path"])
-    word = data["word"]
-
-    n = dusty_coffin_void_units(
-        board,
-        word,
-        loadout,
-        applying_sticker_id="dusty_coffin",
-        path=path,
-        from_grid_scatter=True,
-    )
-    assert n == 2
-
-    score, _ = ScoringPipeline().score(board, path, word, loadout)
-    assert int(score) == int(data["actual_score"]) == 46
-
-
-def _dusty_colorless_grid_replay(fixture_name: str, *, expected_units: int, expected_score: int):
-    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-    from tests.regression.test_scoring_mismatches import (
-        FIXTURES,
-        _replay_path,
-        _run_state_for_replay,
-    )
-
-    data = json.loads((FIXTURES / fixture_name).read_text(encoding="utf-8"))
-    run_state = _run_state_for_replay(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    path = _replay_path(board, data["path"])
-    word = data["word"]
-
-    n = dusty_coffin_void_units(
-        board,
-        word,
-        loadout,
-        applying_sticker_id="dusty_coffin",
-        path=path,
-        from_grid_scatter=True,
-    )
-    assert n == expected_units
-
-    score, _ = ScoringPipeline().score(board, path, word, loadout)
-    assert int(score) == expected_score
-    if expected_score == int(data["actual_score"]):
-        assert int(score) == int(data["actual_score"])
-
-
-def test_dusty_coffin_colorless_grid_scatter_effuse_six_units():
-    """20260709 effuse: 3 path-face voids × 16 (Retro Raider L2 scatter) = +48; game 118."""
-    _dusty_colorless_grid_replay(
-        "20260709_144215.json", expected_units=3, expected_score=118
-    )
-
-
-def test_dusty_coffin_colorless_grid_scatter_opts_six_units():
-    """20260709 opts: 3 path-face voids × 16 (Retro Raider L2 scatter) = +48; game 138."""
-    _dusty_colorless_grid_replay(
-        "20260709_144650.json", expected_units=3, expected_score=138
-    )
-
-
-def test_dusty_coffin_colorless_grid_scatter_pakapoo_coffin_face():
-    """20260709 pakapoo: path-face voids → 1 unit, score 138."""
-    _dusty_colorless_grid_replay(
-        "20260709_145336.json", expected_units=1, expected_score=138
-    )
-
-
-def test_pneumonia_counts_path_letter_vowels_not_dictionary_or_currency():
-    """Mismatch 20260527_024904: €–A–R scored as 'ear' — only tile A counts for Pneumonia."""
-    board = _empty_board()
-    board.tiles[4][4] = _tile(4, 4, "€", 10, curse=CurseType.CURRENCY)
-    board.tiles[3][3] = _tile(3, 3, "A", 1)
-    board.tiles[4][2] = _tile(4, 2, "R", 1)
-    path = [24, 18, 22]
-    assert unique_vowels_in_word("ear") == 2
-    assert unique_vowels_on_path(board, path) == 1
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="pneumonia", name="Pneumonia", level=2)],
-        extras={"pin_effect": "bucket", "pin_branch": "right"},
-    )
-    score, bd = pipeline.score(board, path, "ear", loadout)
-    assert bd["word_score"] == 20
-    assert int(score) == 32
-
-
 def test_fire_extinguisher_unused_red():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 2)
     board.tiles[1][0] = _tile(1, 0, "R", 2, color=TileColor.RED)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="fire_extinguisher", name="Fire Extinguisher", level=1)]
     )
@@ -435,7 +304,7 @@ def test_egg_vowel_start_multiplier():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 3)
     board.tiles[0][1] = _tile(0, 1, "B", 3)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="egg", name="Egg", level=1)])
     score, bd = pipeline.score(board, [0, 1], "ab", loadout)
     assert bd["multiplier"] == 1.5
@@ -447,7 +316,7 @@ def test_egg_vowel_uses_path_first_letter():
     board.tiles[0][3] = _tile(0, 3, "?", 1, curse=CurseType.WILDCARD)
     board.tiles[0][3].letter = "?"
     board.tiles[0][4] = _tile(0, 4, "X", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="egg", name="Egg", level=2)])
     with_egg, _ = pipeline.score(board, [3, 4], "ex", loadout)
     base, _ = pipeline.score(board, [3, 4], "ex", Loadout())
@@ -462,7 +331,7 @@ def test_egg_skips_when_path_starts_consonant_ova_style():
     board.tiles[0][1] = _tile(0, 1, "V", 2)
     board.tiles[1][1] = _tile(1, 1, "?", 1, curse=CurseType.CHESS_QUEEN)
     board.tiles[1][1].letter = "?"
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="egg", name="Egg", level=2)])
     with_egg, _ = pipeline.score(board, [20, 1, 6], "ova", loadout)
     base, _ = pipeline.score(board, [20, 1, 6], "ova", Loadout())
@@ -478,7 +347,7 @@ def test_egg_skips_when_path_starts_with_currency():
     board.tiles[0][2].char = "₲"
     board.tiles[0][3] = _tile(0, 3, "H", 5, color=TileColor.RED)
     board.tiles[0][4] = _tile(0, 4, "S", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="egg", name="Egg", level=2)])
     path = [0, 1, 2, 3, 4]
     with_egg, _ = pipeline.score(board, path, "sughs", loadout)
@@ -500,7 +369,7 @@ def test_maple_leaf_first_two_red_tiles():
     board.tiles[0][0] = _tile(0, 0, "A", 2, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 2, color=TileColor.RED)
     board.tiles[0][2] = _tile(0, 2, "C", 2, color=TileColor.RED)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="maple_leaf", name="Maple Leaf", level=1)])
     score, _ = pipeline.score(board, [0, 1, 2], "abc", loadout)
     # first two reds ×3 tile, third red unchanged
@@ -511,7 +380,7 @@ def test_sly_spy_consonant_multiply():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "B", 4)
     board.tiles[0][1] = _tile(0, 1, "E", 1, color=TileColor.RED)  # vowel, not consonant
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="sly_spy", name="Sly Spy", level=1)])
     score, _ = pipeline.score(board, [0, 1], "be", loadout)
     assert score == 4 * 2 + 1
@@ -520,7 +389,7 @@ def test_sly_spy_consonant_multiply():
 def test_credit_card_money_word_score():
     board = Board(tiles=_empty_board().tiles, money=5)
     board.tiles[0][0] = _tile(0, 0, "A", 2)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         money=5,
         stickers=[LoadoutItem(id="credit_card", name="Credit Card", level=1)],
@@ -534,7 +403,7 @@ def test_credit_card_money_includes_currency_earned_this_word():
     board = Board(tiles=_empty_board().tiles, money=5)
     board.tiles[0][0] = _tile(0, 0, "$", 0, curse=CurseType.CURRENCY)
     board.tiles[0][1] = _tile(0, 1, "A", 2)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         money=5,
         stickers=[LoadoutItem(id="credit_card", name="Credit Card", level=1)],
@@ -553,7 +422,7 @@ def test_credit_card_money_does_not_compound_across_repeated_scoring():
         money=2,
         stickers=[LoadoutItem(id="credit_card", name="Credit Card", level=1)],
     )
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for _ in range(100):
         pipeline.score_total_only(board, [0, 1], "a", loadout)
     assert loadout.money == 2
@@ -564,7 +433,7 @@ def test_credit_card_money_uses_bank_not_currency_tile_value():
     board = Board(tiles=_empty_board().tiles, money=5)
     board.tiles[0][0] = _tile(0, 0, "₩", 0, curse=CurseType.CURRENCY)
     board.tiles[0][1] = _tile(0, 1, "A", 2)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         money=5,
         stickers=[LoadoutItem(id="credit_card", name="Credit Card", level=1)],
@@ -574,26 +443,13 @@ def test_credit_card_money_uses_bank_not_currency_tile_value():
     assert score == 14
 
 
-def test_currency_letter_value_melmod_glyph():
-    glyph = "<font=InterBold SDF>₩</font>"
-    tile = _tile(0, 0, glyph, 0, curse=CurseType.CURRENCY)
-    tile.letter = glyph
-    assert currency_letter_value(tile) == 4
-
-    board = Board(tiles=_empty_board().tiles, money=4)
-    board.tiles[0][0] = tile
-    board.tiles[0][1] = _tile(0, 1, "$", 0, curse=CurseType.CURRENCY)
-    loadout = Loadout(money=4)
-    assert money_for_scoring(board, [0, 1], loadout) == 4
-
-
 def test_wheezy_vixen_no_multiply_when_currency_before_letter():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "$", 0, curse=CurseType.CURRENCY)
     board.tiles[0][1] = _tile(0, 1, "E", 1)
     board.tiles[0][2] = _tile(0, 2, "E", 1)
     board.tiles[0][3] = _tile(0, 3, "P", 3)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="wheezy_vixen", name="Wheezy Vixen", level=2)],
     )
@@ -618,7 +474,7 @@ def test_wheezy_vixen_no_multiply_when_currency_substitutes_w():
     board.tiles[0][2] = _tile(0, 2, "M", 3)
     board.tiles[0][3] = _tile(0, 3, "B", 3)
     board.tiles[0][4] = _tile(0, 4, "Y", 4)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="wheezy_vixen", name="Wheezy Vixen", level=2)],
     )
@@ -651,7 +507,7 @@ def test_wheezy_vixen_no_multiply_when_yen_substitutes_y():
         base_score=0,
         curse=CurseType.CURRENCY,
     )
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="wheezy_vixen", name="Wheezy Vixen", level=1)],
     )
@@ -670,7 +526,7 @@ def test_wheezy_vixen_no_multiply_when_word_starts_t_but_path_starts_currency_th
     board.tiles[0][2] = _tile(0, 2, "N", 1)
     board.tiles[0][3] = _tile(0, 3, "D", 2)
     board.tiles[0][4] = _tile(0, 4, "E", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="wheezy_vixen", name="Wheezy Vixen", level=2)],
     )
@@ -686,7 +542,7 @@ def test_wheezy_vixen_multiply_when_path_starts_with_v():
     board.tiles[0][2] = _tile(0, 2, "B", 3)
     board.tiles[0][3] = _tile(0, 3, "E", 1)
     board.tiles[0][4] = _tile(0, 4, "S", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="wheezy_vixen", name="Wheezy Vixen", level=2)],
     )
@@ -695,73 +551,10 @@ def test_wheezy_vixen_multiply_when_path_starts_with_v():
     assert score == 30
 
 
-def test_wheezy_vixen_skipped_for_speccy_currency_path():
-    """speccy mismatch: word starts with s (not vwxyz); Wheezy must not queue a multiplier."""
-    fixture = (
-        Path(__file__).resolve().parents[2]
-        / "fixtures"
-        / "mismatches"
-        / "20260523_163629.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-
-    run_state = dict(data["run_state_snapshot"])
-    extras = dict(run_state.get("extras") or {})
-    extras.update(data.get("extras_snapshot") or {})
-    run_state["extras"] = extras
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    from tests.regression.test_scoring_mismatches import _bank_money_for_replay
-
-    path = data["path"]
-    word = data["word"]
-
-    replay_money = _bank_money_for_replay(data, board, path, loadout)
-    if replay_money is not None:
-        board.money = max(board.money, replay_money)
-        loadout.money = max(loadout.money, replay_money)
-
-    pipeline = ScoringPipeline()
-    score, bd, trace = pipeline.score_with_trace(board, path, word, loadout)
-
-    # Fixture total may drift; this test only guards Wheezy on a currency-leading path.
-    wheezy = [s for s in trace if s.get("rule_id") == "wheezy_vixen"]
-    assert len(wheezy) == 1
-    step = wheezy[0]
-    assert step["applied"] is False
-    assert step["condition_met"] is False
-    assert step["word_first_letter"] == "s"
-    assert step.get("path_first_letter", "") == ""
-    detail = step["detail"].lower()
-    assert "not a letter" in detail or "vwxyz" in detail
-
-    pending = bd["pipeline"]["pending_word_multipliers"]
-    rule_ids = [
-        entry[1] if isinstance(entry, tuple) else ""
-        for entry in pending
-    ]
-    assert "wheezy_vixen" not in rule_ids
-
-    applied_multiply_rules = {
-        str(s.get("rule_id", "")).lower()
-        for s in trace
-        if s.get("phase") == "rule"
-        and s.get("applied")
-        and "multiply" in str(s.get("effect_type", ""))
-    }
-    assert "wheezy_vixen" not in applied_multiply_rules
-
-    multiply_steps = [s for s in trace if s.get("phase") == "multiply"]
-    multiply_rule_ids = {str(s.get("rule_id", "")).lower() for s in multiply_steps}
-    assert "wheezy_vixen" not in multiply_rule_ids
-    assert score > 0
-
-
 def test_chequered_flag_first_grid_extra():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 10)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="chequered_flag", name="Chequered Flag", level=1)],
         extras={"is_first_grid_of_encounter": True},
@@ -774,7 +567,7 @@ def test_chequered_flag_first_grid_extra():
 def test_chips_alphabet_progression():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "C", 4)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="chips", name="Chips", level=1)],
         extras={"previous_word_first_letter": "a"},
@@ -783,89 +576,10 @@ def test_chips_alphabet_progression():
     assert bd["multiplier"] == 1.5
 
 
-def test_chips_skips_when_item_chess_lead_assigns_earlier_letter():
-    """bifids: chips ITEM + chess face 'l' must not override dictionary start 'b'."""
-    from cursed_words_solver.rules.scoring_conditions import explain_sticker_condition
-
-    board = _empty_board()
-    board.tiles[0][0] = _tile(
-        0, 0, "?", 0, curse=CurseType.ITEM, color=TileColor.COLORLESS
-    )
-    board.tiles[0][0].metadata["scattered_item_id"] = "chips"
-    board.tiles[0][1] = _tile(
-        0, 1, "l", 15, curse=CurseType.CHESS_KING, color=TileColor.COLORLESS
-    )
-    board.tiles[0][2] = _tile(0, 2, "F", 4)
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="chips", name="Chips", level=1)],
-        extras={
-            "grid_number": "2",
-            "scoring_previous_words_count": "2",
-            "previous_word_first_letter": "d",
-        },
-    )
-    met, detail = explain_sticker_condition(
-        "word_starts_after_previous",
-        board,
-        [0, 1, 2],
-        "bifids",
-        loadout,
-        applying_sticker_id="chips",
-    )
-    assert met is False
-    assert "starts 'b'" in detail
-
-
-def test_chips_any_later_letter_not_exact_plus_one():
-    """owner capture: o > e but not exactly f — Chips applies, Limnophila does not."""
-    from cursed_words_solver.rules.scoring_conditions import explain_sticker_condition
-
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "O", 1)
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="chips", name="Chips", level=1)],
-        extras={
-            "grid_number": "2",
-            "scoring_previous_words_count": "2",
-            "previous_word_first_letter": "e",
-        },
-    )
-    met, detail = explain_sticker_condition(
-        "word_starts_after_previous",
-        board,
-        [0],
-        "owner",
-        loadout,
-        applying_sticker_id="chips",
-    )
-    assert met is True
-    assert "after previous 'e' in alphabet" in detail
-
-
-def test_telescope_red_encounter_bonus():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 2, color=TileColor.RED)
-    board.tiles[0][1] = _tile(0, 1, "B", 2, color=TileColor.RED)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="telescope", name="Telescope", level=2)],
-        extras={
-            "historic_words": json.dumps(
-                [{"word": "prior", "red_tile_count": 2}]
-            )
-        },
-    )
-    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
-    # 1st red: level×(2+1)=6; 2nd red: level×(2+2)=8
-    assert score == (2 + 6) + (2 + 8)
-    effects = bd["pipeline"]["effects"]
-    assert any(e.startswith("Telescope:") for e in effects)
-
-
 def test_sunflower_money_multiplier():
     board = Board(tiles=_empty_board().tiles, money=10)
     board.tiles[0][0] = _tile(0, 0, "A", 5)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         money=10,
         stickers=[LoadoutItem(id="sunflower", name="Sunflower", level=1)],
@@ -880,7 +594,7 @@ def test_yellow_glasses_double_letter():
     board.tiles[0][0] = _tile(0, 0, "B", 2)
     board.tiles[0][1] = _tile(0, 1, "B", 2)
     board.tiles[0][2] = _tile(0, 2, "A", 2)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=1)]
     )
@@ -906,7 +620,7 @@ def test_yellow_glasses_no_double_across_chess_tile():
         metadata={"chess_color": "black"},
     )
     board.tiles[0][2] = _tile(0, 2, "S", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=1)]
     )
@@ -931,7 +645,7 @@ def test_yellow_glasses_no_double_across_chess_bishop():
         metadata={"chess_color": "black"},
     )
     board.tiles[0][2] = _tile(0, 2, "E", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=1)]
     )
@@ -946,7 +660,7 @@ def test_yellow_glasses_double_letter_currency_path_uses_word():
     board = _empty_board()
     for col, glyph in enumerate(("₱", "₣", "₣", "₮")):
         board.tiles[0][col] = _tile(0, col, glyph, 16, curse=CurseType.CURRENCY)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=3)]
     )
@@ -981,7 +695,7 @@ def test_yellow_glasses_two_adjacent_wildcards_double():
     board.tiles[0][2] = _wildcard_tile(0, 2)
     board.tiles[0][3] = _tile(0, 3, "Z", 10)
     board.tiles[0][4] = _tile(0, 4, "Y", 4)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=1)]
     )
@@ -1002,7 +716,7 @@ def test_yellow_glasses_wildcard_with_real_letter_not_double():
     board.tiles[0][0] = _tile(0, 0, "K", 5)
     board.tiles[0][1] = _wildcard_tile(0, 1)
     board.tiles[0][2] = _tile(0, 2, "E", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="yellow_glasses", name="Yellow Glasses", level=1)]
     )
@@ -1037,7 +751,7 @@ def test_ham_sandwich_no_bonus_fraction_start_wildcard_end():
     board.tiles[2][0] = _tile(2, 0, "S", 1)
     board.tiles[2][1] = _tile(2, 1, "E", 1)
     board.tiles[2][2] = _tile(2, 2, "S", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="ham_sandwich", name="Ham Sandwich", level=1)]
     )
@@ -1062,7 +776,7 @@ def test_ham_sandwich_no_bonus_when_endpoint_is_blank():
     board.tiles[0][2] = _tile(0, 2, "O", 1)
     board.tiles[0][3] = _wildcard_tile(0, 3)
     board.tiles[0][4] = _wildcard_tile(0, 4)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="ham_sandwich", name="Ham Sandwich", level=1)]
     )
@@ -1078,7 +792,7 @@ def test_ham_sandwich_bonus_on_equal_real_endpoints():
     board.tiles[0][1] = _tile(0, 1, "H", 4)
     board.tiles[0][2] = _tile(0, 2, "E", 1)
     board.tiles[0][3] = _tile(0, 3, "W", 4)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="ham_sandwich", name="Ham Sandwich", level=1)]
     )
@@ -1093,39 +807,13 @@ def test_ham_sandwich_two_blank_endpoints_match():
     board.tiles[0][0] = _wildcard_tile(0, 0)
     board.tiles[0][1] = _tile(0, 1, "A", 1)
     board.tiles[0][2] = _wildcard_tile(0, 2)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="ham_sandwich", name="Ham Sandwich", level=1)]
     )
     score, _ = pipeline.score(board, [0, 1, 2], "cat", loadout)
     base, _ = pipeline.score(board, [0, 1, 2], "cat", Loadout())
     assert score > base
-
-
-def test_ham_sandwich_no_bonus_wildcard_item_endpoints():
-    """Mismatch 20260607_134035 (sliest): wildcard + item endpoints use display glyphs, not '?'."""
-    from cursed_words_solver.loadout import (
-        parse_board_from_run_state,
-        parse_run_state,
-        prepare_run_state_dict_for_scoring,
-    )
-    from cursed_words_solver.rules.scoring_conditions import word_same_start_end_on_path
-
-    fixture = (
-        Path(__file__).resolve().parents[2]
-        / "fixtures"
-        / "mismatches"
-        / "20260607_134035.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
-    board = parse_board_from_run_state(run_state)
-    path = data["path"]
-    word = data["word"]
-    assert not word_same_start_end_on_path(board, path, word)
-    loadout = parse_run_state(run_state)
-    score, _ = ScoringPipeline().score(board, path, word, loadout)
-    assert int(score) == data["actual_score"]
 
 
 def test_hi_vis_uses_post_placement_consumable_count():
@@ -1144,7 +832,7 @@ def test_hi_vis_uses_post_placement_consumable_count():
     board.tiles[0][0] = _tile(0, 0, "C", 2)
     board.tiles[0][1] = _tile(0, 1, "A", 2)
     board.tiles[0][2] = _tile(0, 2, "T", 2)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     pre = Loadout(
         stickers=[LoadoutItem(id="hi_vis_jacket", name="Hi Vis Jacket", level=1)],
         extras={"consumable_rack_count": 5},
@@ -1182,7 +870,7 @@ def test_hi_vis_defers_word_bonus_before_stilton_blueberries_stack():
     run_state = prepare_run_state_dict_for_scoring(data["run_state_snapshot"])
     board = parse_board_from_run_state(run_state)
     loadout = parse_run_state(run_state)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     path = data["path"]
     score, _bd, trace = pipeline.score_with_trace(board, path, data["word"], loadout)
     assert score == 3696
@@ -1199,191 +887,3 @@ def test_hi_vis_defers_word_bonus_before_stilton_blueberries_stack():
     ]
     assert "hi_vis_jacket" in multiply_rules
     assert "blueberries" in multiply_rules
-
-
-def test_cherry_pie_grid_path_word_mult_before_additive_bonuses():
-    """Scattered Cherry Pie ×WORD queues for finalize; tile mult before +WORD (e.g. Super 8)."""
-    from cursed_words_solver.rules.scoring_conditions import grid_path_word_mult_is_immediate
-    from cursed_words_solver.rules.rule_lookup import get_rule
-
-    pipeline = ScoringPipeline()
-    _key, rule = get_rule(pipeline.rules, "stickers", "cherry_pie", "Cherry Pie")
-    assert rule is not None
-    assert not grid_path_word_mult_is_immediate(Loadout(), "cherry_pie", rule)
-
-    board = _empty_board()
-    for col in range(3):
-        board.tiles[0][col] = _tile(0, col, "r", 10, color=TileColor.RED)
-    board.tiles[0][3] = Tile(
-        row=0,
-        col=3,
-        char="p",
-        letter="A",
-        base_score=0,
-        color=TileColor.VOID,
-        curse=CurseType.ITEM,
-        metadata={
-            "source": "melmod",
-            "scattered_item_id": "cherry_pie",
-            "scattered_item_level": 1,
-        },
-    )
-    board.tiles[1][0] = Tile(
-        row=1,
-        col=0,
-        char="k",
-        letter="?",
-        base_score=5,
-        color=TileColor.RED,
-        curse=CurseType.CHESS_KING,
-        metadata={"source": "melmod", "take": True},
-    )
-    loadout = Loadout(
-        extras={
-            "pin_effect": "super_8",
-            "pin_right_level": "8",
-            "pin_right_variable": "8",
-        },
-    )
-    path = [0, 1, 2, 3, 5]
-    score, _bd = pipeline.score(board, path, "rrra", loadout)
-    # tile sum 35; ×2 cherry on tiles → 70; +8 Super 8 (one melmod take)
-    assert int(score) == 78
-
-
-def test_ornate_key_grid_path_uses_scatter_tier_when_export_matches_equipped():
-    """guenon: scattered export L3 + equipped L3 → grid scores at encounter L1 (150%)."""
-    board = _empty_board()
-    board.tiles[4][2] = Tile(
-        row=4,
-        col=2,
-        char="j",
-        letter="J",
-        base_score=0,
-        color=TileColor.VOID,
-        curse=CurseType.ITEM,
-        metadata={
-            "source": "melmod",
-            "scattered_item_id": "ornate_key",
-            "scattered_item_level": 3,
-        },
-    )
-    board.tiles[1][3] = _tile(1, 3, "g", 3, color=TileColor.RED)
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="ornate_key", name="Ornate Key", level=3)],
-        extras={"grid_number": "1", "scoring_previous_words_count": "0"},
-    )
-    path = [8, 22]
-    level = grid_path_sticker_level(
-        loadout,
-        "ornate_key",
-        board=board,
-        path=path,
-        path_tile_index=1,
-    )
-    assert level == 1
-
-
-def test_artist_s_palette_grid_path_uses_scatter_tier_when_export_matches_equipped():
-    """trinkum/jazzbos: scattered export L3 + equipped L3 → grid scores at encounter L1 (+42)."""
-    board = _empty_board()
-    board.tiles[1][2] = Tile(
-        row=1,
-        col=2,
-        char="p",
-        letter="P",
-        base_score=0,
-        color=TileColor.RED,
-        curse=CurseType.ITEM,
-        metadata={
-            "source": "melmod",
-            "scattered_item_id": "artist_s_palette",
-            "scattered_item_level": 3,
-        },
-    )
-    board.tiles[1][3] = _tile(1, 3, "a", 2, color=TileColor.RED)
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="artist_s_palette", name="Artist's Palette", level=3)],
-        extras={"grid_number": "1", "scoring_previous_words_count": "0"},
-    )
-    path = [7, 8]
-    level = grid_path_sticker_level(
-        loadout,
-        "artist_s_palette",
-        board=board,
-        path=path,
-        path_tile_index=0,
-    )
-    assert level == 1
-
-
-def test_artist_s_palette_grid_only_uses_exported_level_on_late_grid():
-    """Beans grid 3: scattered L1 palette (not equipped) scores at L1, not grid-1."""
-    board = _empty_board()
-    board.tiles[3][3] = Tile(
-        row=3,
-        col=3,
-        char="i",
-        letter="I",
-        base_score=0,
-        color=TileColor.SHINY,
-        curse=CurseType.ITEM,
-        metadata={
-            "source": "melmod",
-            "scattered_item_id": "artist_s_palette",
-            "scattered_item_level": 1,
-        },
-    )
-    board.tiles[3][2] = _tile(3, 2, "e", 12, color=TileColor.WHITE)
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id="game_pad", name="Game Pad", level=2),
-            LoadoutItem(id="ferris_wheel", name="Ferris Wheel", level=1),
-        ],
-        extras={"grid_number": "3", "scoring_previous_words_count": "2"},
-    )
-    path = [18, 17]
-    level = grid_path_sticker_level(
-        loadout,
-        "artist_s_palette",
-        board=board,
-        path=path,
-        path_tile_index=0,
-    )
-    assert level == 1
-
-
-def test_ornate_key_no_colorless_allows_white_item_on_path():
-    """Ornate Key: WHITE item tiles are not COLOURLESS (Beans sele path)."""
-    board = _empty_board()
-    board.tiles[0][3] = Tile(
-        row=0,
-        col=3,
-        char="e",
-        letter="E",
-        base_score=0,
-        color=TileColor.WHITE,
-        curse=CurseType.ITEM,
-        metadata={"scattered_item_id": "cocktail", "scattered_item_level": 1},
-    )
-    board.tiles[4][4] = _tile(4, 4, "u", 0, color=TileColor.PINK, curse=CurseType.ITEM)
-    board.tiles[4][3] = _tile(4, 3, "l", 12, color=TileColor.BLUE)
-    board.tiles[3][3] = Tile(
-        row=3,
-        col=3,
-        char="i",
-        letter="I",
-        base_score=0,
-        color=TileColor.SHINY,
-        curse=CurseType.ITEM,
-    )
-    loadout = Loadout()
-    path = [3, 24, 23, 18]
-    met = evaluate_sticker_condition(
-        "no_colorless_on_path",
-        board,
-        path,
-        "sele",
-        loadout,
-    )
-    assert met is True

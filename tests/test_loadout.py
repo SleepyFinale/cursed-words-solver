@@ -1,16 +1,6 @@
 import json
-from pathlib import Path
 
-from cursed_words_solver.loadout import (
-    format_loadout_summary,
-    load_run_state,
-    loadout_to_dict,
-    neapolitan_extras_stale_warning,
-    parse_run_state,
-    save_loadout,
-    steak_extras_stale_warning,
-    validate_run_state_for_scoring,
-)
+from cursed_words_solver.loadout import format_loadout_summary, load_run_state, loadout_to_dict, neapolitan_extras_stale_warning, parse_run_state, save_loadout, steak_extras_stale_warning, validate_run_state_for_scoring
 from cursed_words_solver.models import Loadout, LoadoutItem
 
 MELMOD_EXAMPLE = {
@@ -286,114 +276,6 @@ def test_parse_run_state_normalizes_michael_min_word_length():
         }
     )
     assert lo.extras["michael_min_word_length"] == 25
-
-
-def test_read_run_state_json_retries_during_atomic_replace(tmp_path, monkeypatch):
-    import threading
-
-    from cursed_words_solver.loadout import _read_run_state_json
-
-    path = tmp_path / "run_state.json"
-    payload = {"character": "Test", "board": {"tiles": [{}] * 25}}
-    path.write_text(json.dumps(payload), encoding="utf-8")
-
-    stop = threading.Event()
-
-    def hammer_replace() -> None:
-        while not stop.is_set():
-            temp = path.with_suffix(".json.tmp")
-            temp.write_text("{", encoding="utf-8")
-            if path.exists():
-                temp.replace(path)
-            else:
-                temp.rename(path)
-            time.sleep(0.005)
-
-    import time
-
-    t = threading.Thread(target=hammer_replace, daemon=True)
-    t.start()
-    try:
-        data = _read_run_state_json(path, retries=20, delay_sec=0.01)
-    finally:
-        stop.set()
-        t.join(timeout=1.0)
-        path.write_text(json.dumps(payload), encoding="utf-8")
-
-    assert data is not None
-    assert data["character"] == "Test"
-
-
-def test_merge_encounter_historic_catches_disk_ahead_on_same_grid(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        merge_encounter_historic_for_f8_snapshot,
-    )
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "stale_f8_penill_historic_shrink.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps(
-            {
-                "extras": {
-                    "historic_words": data["disk_hist"],
-                    "grid_number": data["grid_number"],
-                    "red_tiles_used_encounter": "3",
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    embed = {
-        "extras": {
-            "historic_words": data["embed_hist"],
-            "grid_number": data["grid_number"],
-            "red_tiles_used_encounter": "1",
-        }
-    }
-    merged = merge_encounter_historic_for_f8_snapshot(embed)
-    assert merged is not None
-    assert merged["extras"]["historic_words"] == data["embed_hist"]
-
-
-def test_f8_historic_still_behind_disk_warning(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        f8_historic_still_behind_disk_warning,
-    )
-
-    fixture = (
-        Path(__file__).resolve().parent
-        / "fixtures"
-        / "stale_f8_penill_historic_shrink.json"
-    )
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(
-        json.dumps(
-            {
-                "extras": {
-                    "historic_words": data["disk_hist"],
-                    "grid_number": data["grid_number"],
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    note = f8_historic_still_behind_disk_warning(
-        {
-            "historic_words": data["embed_hist"],
-            "grid_number": data["grid_number"],
-        }
-    )
-    assert note is None
 
 
 def test_loadout_fingerprint_stacked_boss_modifiers():

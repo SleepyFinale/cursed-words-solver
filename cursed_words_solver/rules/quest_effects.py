@@ -183,12 +183,6 @@ def tile_is_crossed_out(tile: Tile) -> bool:
     return val in (True, "true", "True", "1", 1)
 
 
-def tile_is_up_and_up_center(tile: Tile) -> bool:
-    meta = tile.metadata or {}
-    val = meta.get("is_up_and_up_center")
-    return val in (True, "true", "True", "1", 1)
-
-
 def tile_is_normal_type(tile: Tile) -> bool:
     """Game TileType.Normal ≈ colorless on melmod export."""
     return tile.color == TileColor.COLORLESS
@@ -239,40 +233,3 @@ _ALWAYS_INCLUDE_STICKERS = frozenset({"left_human_hand"})
 _ALWAYS_INCLUDE_STAMPS = frozenset({"right_human_hand"})
 
 
-def _parse_id_list(raw: str) -> frozenset[str]:
-    return frozenset(
-        s.strip().lower()
-        for s in (raw or "").split(",")
-        if s.strip()
-    )
-
-
-def filter_playing_favourites_loadout(loadout: Loadout) -> Loadout:
-    """Return loadout with stickers/stamps filtered like Player.GetAllItems (PlayingFavourites)."""
-    if active_quest_game_class(loadout) != "PlayingFavourites":
-        return loadout
-    extras = loadout.extras or {}
-    fav_stickers = _parse_id_list(str(extras.get("favourite_sticker_ids", "")))
-    fav_stamps = _parse_id_list(str(extras.get("favourite_stamp_ids", "")))
-    stickers = []
-    for item in loadout.stickers:
-        sid = (item.id or slugify_name(item.name)).lower()
-        if sid in _ALWAYS_INCLUDE_STICKERS or sid in fav_stickers:
-            stickers.append(item)
-    stamps: list = []
-    right_idx = None
-    for i, item in enumerate(loadout.stamps):
-        sid = (item.id or slugify_name(item.name)).lower()
-        if sid in _ALWAYS_INCLUDE_STAMPS:
-            right_idx = i
-            stamps.append(item)
-            break
-    if right_idx is not None and right_idx + 1 < len(loadout.stamps):
-        stamps.append(loadout.stamps[right_idx + 1])
-    for item in loadout.stamps:
-        sid = (item.id or slugify_name(item.name)).lower()
-        if sid in fav_stamps and item not in stamps:
-            stamps.append(item)
-    from dataclasses import replace
-
-    return replace(loadout, stickers=stickers, stamps=stamps)

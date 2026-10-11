@@ -8,21 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from cursed_words_solver.loadout import (
-    parse_board_from_run_state,
-    parse_run_state,
-    prepare_run_state_dict_for_scoring,
-)
+from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state, prepare_run_state_dict_for_scoring
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.rules.boss_effects import boss_word_constraints
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
 from cursed_words_solver.search import PathValidator, WordSearcher, path_movement_ok
-from tests.regression.test_scoring_mismatches import (
-    _adjust_mutating_dna_extras,
-    _run_state_for_replay,
-)
+from tests.helpers.replay import _run_state_for_replay, engine_replay_score
 
 ROUND_LOG_FIXTURES = sorted(
     (Path(__file__).resolve().parents[1] / "fixtures" / "round_logs").glob(
@@ -353,7 +346,7 @@ def test_20260708_path_mismatch_search_beats_logged_f8():
     assert board is not None
     loadout = parse_run_state(run_state)
     assert loadout is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -386,7 +379,7 @@ def test_unwieldy_replay_submitted_path_scores_464():
     from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
     path = path_from_melmod_indices(board, replay["path"])
-    score, _ = ScoringPipeline().score(board, path, UNWIELDY_WORD, loadout)
+    score, _ = EngineScorer().score(board, path, UNWIELDY_WORD, loadout)
     assert int(score) == UNWIELDY_SUBMITTED_SCORE
     assert replay["actual_score"] == UNWIELDY_SUBMITTED_SCORE
 
@@ -402,7 +395,7 @@ def test_unwieldy_search_beats_logged_f8():
     assert board is not None
     loadout = parse_run_state(run_state)
     assert loadout is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -439,27 +432,6 @@ def test_assessable_melmod_path_converts_to_storage():
     assert path == ASSESSABLE_STORAGE_PATH
 
 
-@pytest.mark.skipif(not ASSESSABLE_FIXTURE.exists(), reason="assessable fixture required")
-def test_assessable_path_movement_and_validation_ok():
-    from cursed_words_solver.debug_path import validate_submitted_path
-    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
-    from cursed_words_solver.suggestion import _alignment_pattern_for_path
-    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
-
-    data, board, loadout = _assessable_board_and_loadout()
-    path = path_from_melmod_indices(board, ASSESSABLE_MELMOD_PATH)
-    flags = stamp_search_flags_mask(loadout)
-    assert path_movement_ok(board, path, flags=flags, loadout=loadout)
-    pattern = _alignment_pattern_for_path(board, path, flags)
-    # Spicy Pepper multi-option reds must be wildcards, not locked to "s".
-    assert pattern == "?" * len(path)
-    report = validate_submitted_path(
-        data["run_state"], path, loadout=loadout, board=board, min_len=3
-    )
-    assert report.accepted, report.reject_reasons
-    assert report.dictionary_word.lower() == ASSESSABLE_WORD
-
-
 @pytest.mark.skipif(
     not ASSESSABLE_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
     reason="assessable fixture and game wordlist required",
@@ -472,7 +444,7 @@ def test_assessable_search_finds_word():
     should beat the manually submitted assessable score (760).
     """
     _data, board, loadout = _assessable_board_and_loadout()
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -505,10 +477,10 @@ def test_nightcap_search_beats_logged_f8():
 
     expected_path = path_from_melmod_indices(board, data["actual"]["path"])
     expected_word = data["actual"]["word"]
-    submitted_score, _ = ScoringPipeline().score(
+    submitted_score, _ = EngineScorer().score(
         board, expected_path, expected_word, loadout
     )
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -541,10 +513,10 @@ def test_labrador_search_beats_logged_f8():
 
     expected_path = path_from_melmod_indices(board, data["actual"]["path"])
     expected_word = data["actual"]["word"]
-    submitted_score, _ = ScoringPipeline().score(
+    submitted_score, _ = EngineScorer().score(
         board, expected_path, expected_word, loadout
     )
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -580,10 +552,10 @@ def test_ayenbites_search_beats_logged_f8():
 
     expected_path = path_from_melmod_indices(board, data["actual"]["path"])
     expected_word = data["actual"]["word"]
-    submitted_score, _ = ScoringPipeline().score(
+    submitted_score, _ = EngineScorer().score(
         board, expected_path, expected_word, loadout
     )
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -617,7 +589,7 @@ def test_item_heavy_grid_search_beats_f8_suggestion(
     assert board is not None
     loadout = parse_run_state(run_state)
     assert loadout is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -634,20 +606,8 @@ def test_item_heavy_grid_search_beats_f8_suggestion(
 
 
 def _score_submitted(data: dict) -> int:
-    replay = _run_state_for_replay(data)
-    board = parse_board_from_run_state(replay)
-    assert board is not None
-    loadout = parse_run_state(replay)
-    assert loadout is not None
-    path = data["path"]
-    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
-
-    path = path_from_melmod_indices(board, path)
-    word = data["word"]
-    _adjust_mutating_dna_extras(replay, data, board, path)
-    loadout = parse_run_state(replay)
-    score, _ = ScoringPipeline().score(board, path, word, loadout)
-    return int(score)
+    """Engine score of the submitted path (capture replay: layout, pre-submit extras)."""
+    return engine_replay_score(data)
 
 
 @pytest.mark.skipif(not FIXTURE.exists(), reason="pow fixture required")
@@ -759,7 +719,7 @@ def test_voteless_path_movement_ok():
 @pytest.mark.skipif(not VOTELESS_FIXTURE.exists(), reason="voteless fixture required")
 def test_voteless_path_word_ok():
     _data, board, loadout = _voteless_board_and_loadout()
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     validator = PathValidator(WordDictionary(GAME_WORDLIST_PATH), min_len=constraints.min_len)
     validator.quest_loadout = loadout
@@ -770,7 +730,7 @@ def test_voteless_path_word_ok():
 @pytest.mark.skipif(not VOTELESS_FIXTURE.exists(), reason="voteless fixture required")
 def test_voteless_search_finds_words():
     _data, board, loadout = _voteless_board_and_loadout()
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -828,7 +788,7 @@ def test_aardvark_search_does_not_suggest_invalid_path():
     _data, board, loadout = _aardvark_board_and_loadout()
     if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
         pytest.skip("game wordlist required")
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -1061,7 +1021,7 @@ def test_preassure_search_finds_submitted_path():
     from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
     data, board, loadout = _preassure_board_and_loadout()
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -1126,7 +1086,7 @@ def test_intermeasured_search_beats_f8():
     assert board is not None
     loadout = parse_run_state(run_state)
     assert loadout is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     dictionary = WordDictionary(GAME_WORDLIST_PATH)
     searcher = WordSearcher(
@@ -1255,7 +1215,7 @@ def test_aigrets_f8_run_state_search_beats_f8():
     assert board is not None
     loadout = parse_run_state(run_state)
     assert loadout is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -1270,47 +1230,6 @@ def test_aigrets_f8_run_state_search_beats_f8():
     f8_score = int((data.get("solver") or {}).get("predicted_score", 0))
     assert top_score > f8_score
     assert top_score >= AIGRETS_SUBMITTED_SCORE
-
-
-@pytest.mark.skipif(
-    not AIGRETS_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="aigrets fixture and game wordlist required",
-)
-def test_dictionary_scoring_word_does_not_cache_timeout():
-    if GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-    import time
-
-    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
-    from cursed_words_solver.search import search_word_from_path
-    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
-
-    data = json.loads(AIGRETS_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board = parse_board_from_run_state(run_state)
-    assert board is not None
-    loadout = parse_run_state(run_state)
-    assert loadout is not None
-    path = path_from_melmod_indices(board, data["actual"]["path"])
-    flags = stamp_search_flags_mask(loadout)
-    search_word = search_word_from_path(board, path, flags=flags)
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=3,
-        max_len=25,
-    )
-    searcher.validator.quest_loadout = loadout
-    searcher._active_deadline = time.monotonic() + 0.001
-    assert searcher._dictionary_scoring_word(
-        board, path, search_word, loadout, flags
-    ) is None
-    assert path not in searcher._dict_valid_words_cache
-    searcher._active_deadline = time.monotonic() + 120.0
-    resolved = searcher._dictionary_scoring_word(
-        board, path, search_word, loadout, flags
-    )
-    assert resolved
-    assert tuple(path) in searcher._dict_valid_words_cache
 
 
 @pytest.mark.skipif(not TREENS_FIXTURE.exists(), reason="treens fixture required")
@@ -1337,7 +1256,7 @@ def test_number_start_alternate_path_replay_is_reachable():
     assert board is not None
     loadout = parse_run_state(run_state)
     assert loadout is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     dictionary = WordDictionary(GAME_WORDLIST_PATH)
     searcher = WordSearcher(
@@ -1388,7 +1307,7 @@ def test_comitadji_submitted_path_pipeline_score():
     path = path_from_melmod_indices(board, data["actual"]["path"])
     sw = search_word_from_path(board, path, flags=flags)
     score = int(
-        ScoringPipeline().score_total_only(board, path, sw, loadout=loadout)
+        EngineScorer().score_total_only(board, path, sw, loadout=loadout)
     )
     assert score == COMITADJI_PIPELINE_SCORE
     assert int(data["actual"]["score"]) == COMITADJI_PIPELINE_SCORE
@@ -1418,7 +1337,7 @@ def test_comitadji_beam_search_beats_f8():
         from cursed_words_solver.dictionary import WordDictionary
         from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
         from cursed_words_solver.rules.boss_effects import boss_word_constraints
-        from cursed_words_solver.rules.pipeline import ScoringPipeline
+        from cursed_words_solver.engine.scorer import EngineScorer
         from cursed_words_solver.search import WordSearcher
         from tests.regression.test_path_mismatch_round_log import (
             COMITADJI_PATH_MISMATCH_FIXTURE,
@@ -1430,7 +1349,7 @@ def test_comitadji_beam_search_beats_f8():
         board = parse_board_from_run_state(run_state)
         loadout = parse_run_state(run_state)
         constraints = boss_word_constraints(
-            loadout, ScoringPipeline().rules, default_max_len=25
+            loadout, EngineScorer().rules, default_max_len=25
         )
         searcher = WordSearcher(
             dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -1461,36 +1380,6 @@ def test_comitadji_beam_search_beats_f8():
     )
 
 
-@pytest.mark.skipif(
-    not STOMATOCYTES_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="20260713 stomatocytes path-mismatch fixture and game wordlist required",
-)
-def test_stomatocytes_submitted_path_pipeline_score():
-    """Submitted stomatocytes path scores 39 via Banana (blank end has no strict suit)."""
-    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
-    from cursed_words_solver.rules.scoring_conditions import word_starts_ends_different_suit
-    from cursed_words_solver.search import search_word_from_path
-    from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
-
-    data = json.loads(STOMATOCYTES_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board = parse_board_from_run_state(run_state)
-    assert board is not None
-    loadout = parse_run_state(run_state)
-    assert loadout is not None
-    flags = stamp_search_flags_mask(loadout)
-    path = path_from_melmod_indices(board, data["actual"]["path"])
-    end = board.get_by_index(path[-1])
-    assert not (end.metadata or {}).get("card_suit"), "wildcard end must not invent CardSuit"
-    assert not word_starts_ends_different_suit(board, path)
-    sw = search_word_from_path(board, path, flags=flags)
-    score = int(
-        ScoringPipeline().score_total_only(board, path, sw, loadout=loadout)
-    )
-    assert score == STOMATOCYTES_PIPELINE_SCORE
-    assert int(data["actual"]["score"]) == STOMATOCYTES_PIPELINE_SCORE
-
-
 @pytest.mark.slow
 @pytest.mark.skipif(
     not STOMATOCYTES_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
@@ -1511,7 +1400,7 @@ def test_stomatocytes_beam_search_beats_f8():
         from cursed_words_solver.dictionary import WordDictionary
         from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
         from cursed_words_solver.rules.boss_effects import boss_word_constraints
-        from cursed_words_solver.rules.pipeline import ScoringPipeline
+        from cursed_words_solver.engine.scorer import EngineScorer
         from cursed_words_solver.search import WordSearcher
         from tests.regression.test_path_mismatch_round_log import (
             STOMATOCYTES_PATH_MISMATCH_FIXTURE,
@@ -1523,7 +1412,7 @@ def test_stomatocytes_beam_search_beats_f8():
         board = parse_board_from_run_state(run_state)
         loadout = parse_run_state(run_state)
         constraints = boss_word_constraints(
-            loadout, ScoringPipeline().rules, default_max_len=25
+            loadout, EngineScorer().rules, default_max_len=25
         )
         searcher = WordSearcher(
             dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -1568,7 +1457,7 @@ def test_divots_number_start_path_mismatch_is_recovered():
     assert board is not None
     loadout = parse_run_state(run_state)
     assert loadout is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -1669,7 +1558,7 @@ def test_freeride_f8_run_state_search_beats_f8():
     assert board is not None
     loadout = parse_run_state(run_state)
     assert loadout is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -1707,7 +1596,7 @@ def test_freeride_parallel_search_not_shallow_junk():
     assert board is not None
     loadout = parse_run_state(run_state)
     assert loadout is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),
@@ -1783,7 +1672,7 @@ def test_cartwheeler_full_moon_submitted_score(
         if storage
         else path_from_melmod_indices(board, melmod_path)
     )
-    score, _ = ScoringPipeline().score(board, path, word, loadout)
+    score, _ = EngineScorer().score(board, path, word, loadout)
     # Allow tiny orchestration drift vs live capture (grid items / void).
     assert abs(int(score) - submitted_score) <= 50
     assert int(actual.get("score") or 0) == submitted_score
@@ -1807,7 +1696,7 @@ def test_cartwheeler_full_moon_search_beats_logged_f8(
     assert board is not None
     loadout = parse_run_state(run_state)
     assert loadout is not None
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),

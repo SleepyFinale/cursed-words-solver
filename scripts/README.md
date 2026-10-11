@@ -35,8 +35,6 @@ Run all commands from the **repository root** (the folder containing `pyproject.
 | `python scripts/search_benchmark.py --latest 30 [--budget 20]` | Re-solve recent rounds with the current search; compare with what was played and the F8 suggestion |
 | `python scripts/mismatch_to_test.py <mismatch.json>` | Copy a scoring mismatch into `tests/fixtures/mismatches/` |
 | `python scripts/compare_trace.py <mismatch.json> [--replay]` | Step-by-step predicted vs actual trace diff |
-| `python scripts/triage_mismatch.py <mismatch.json>` | Classify capture (stale vs pipeline vs search miss) |
-| `python scripts/promote_scoring_mismatches.py` | Batch-promote live `scoring_mismatches/` into test fixtures |
 | `python scripts/mismatch_to_round_log_fixture.py` | Build round-log fixture from mismatch JSON (see script) |
 | `cursed-solver diagnose` | Health report for last F8, round logs, mismatches |
 | `cursed-solver explain --round-log <file>` | Why solver missed a submitted path |

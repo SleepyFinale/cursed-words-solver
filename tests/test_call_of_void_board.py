@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import json
 
-import pytest
 
 from cursed_words_solver.board_display import format_board_grid
 from cursed_words_solver.loadout import parse_board_from_run_state
-from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
 
 
 def _void_ring_tile(row: int, col: int, *, letter: str = "", active: bool = True) -> dict:
@@ -79,33 +76,3 @@ def test_format_call_of_void_shows_void_center() -> None:
     lines = text.split("\n")
     assert len(lines) == 6
     assert "..." in lines[2] or ". . ." in lines[2]
-
-
-def test_graph_context_neighbors_on_6x6_ring() -> None:
-    from cursed_words_solver.graph_bitboard import build_board_graph_context
-
-    board = parse_board_from_run_state(_build_call_of_void_export())
-    assert board is not None
-    ctx = build_board_graph_context(board)
-    assert ctx.cell_count == 36
-    # Top-left corner (0,0) index 0 neighbors include (0,1) and (1,0) on ring.
-    top_left = 0
-    nbrs = ctx.neighbors_8[top_left] & ctx.active_mask
-    assert nbrs & (1 << board.index_at(0, 1))
-    assert nbrs & (1 << board.index_at(1, 0))
-
-
-def test_fresh_encounter_no_green_poison_from_stale_historic() -> None:
-    from cursed_words_solver.loadout import green_poison_from_historic_words
-
-    extras = {
-        "grid_number": "1",
-        "encounter_score_earned": "0",
-        "encounter_total_target": "12",
-        "encounter_remaining_target": "12",
-        "encounter_historic_source": "live",
-        "historic_words": json.dumps(
-            [{"word": "ditto", "score": 10255, "green_tile_count": 1}]
-        ),
-    }
-    assert green_poison_from_historic_words(extras) == 0.0

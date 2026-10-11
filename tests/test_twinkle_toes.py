@@ -2,23 +2,11 @@ import time
 
 import pytest
 
-from cursed_words_solver.consumable_placement import (
-    apply_consumable_placements,
-    search_consumable_score_boost,
-)
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.search import WordSearcher
-from cursed_words_solver.rules.twinkle_toes import (
-    format_swap_instructions,
-    iter_swap_pairs,
-    search_with_twinkle_toes_swap,
-    swap_tile_contents,
-    swap_to_record,
-    twinkle_swap_eligible_indices,
-    twinkle_toes_swap_pending,
-)
+from cursed_words_solver.rules.twinkle_toes import format_swap_instructions, iter_swap_pairs, search_with_twinkle_toes_swap, swap_tile_contents, swap_to_record, twinkle_swap_eligible_indices, twinkle_toes_swap_pending
 from tests.test_consumable_placement import _mahjong_loadout_with_red_rack
 from tests.helpers.boards import letter_tile as _tile
 
@@ -298,7 +286,7 @@ def test_twinkle_plus_rack_orchestration_leaves_consumable_boost_time():
         LoadoutItem(id="twinkle_toes", name="Twinkle Toes", kind="stamp"),
     ]
     loadout.extras["twinkle_toes_swap_available"] = "true"
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
 
     rack_pending = rack_placement_search_active(loadout, board, rules)
     assert rack_pending

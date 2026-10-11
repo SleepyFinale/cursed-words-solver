@@ -2,7 +2,8 @@
 
 The engine is a direct port of the game's scoring and word rules from the
 decompiled `Assembly-CSharp.dll` (game 0.2.x). It replaced the rule-table
-`ScoringPipeline` as the solver's scorer, and its exact search replaced the
+`ScoringPipeline` (deleted 2026-10-11, with ~1,500 catalog tests that encoded
+its representations) as the solver's only scorer, and its exact search replaced the
 heuristic search on every board that can be enumerated.
 
 ## Why

@@ -11,22 +11,12 @@ import pytest
 
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.graph_bitboard import RED_COLOR_CODE, build_board_graph_context
-from cursed_words_solver.solve_context import build_solve_context
-from cursed_words_solver.loadout import (
-    parse_board_from_run_state,
-    parse_run_state,
-    prepare_run_state_dict_for_scoring,
-)
-from cursed_words_solver.models import Loadout, LoadoutItem
-from cursed_words_solver.rules.chess_tiles import (
-    clear_chess_attack_cache,
-    is_square_attacked,
-)
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state, prepare_run_state_dict_for_scoring
+from cursed_words_solver.models import Loadout
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.search import WordSearcher
 from tests.helpers.boards import _board_cat_horizontal, _make_wordlist
-from tests.regression.test_scoring_mismatches import _run_state_for_replay
+from tests.helpers.replay import _run_state_for_replay
 
 @pytest.fixture(autouse=True)
 def _reset_search_pool():
@@ -78,56 +68,6 @@ def test_fast_rank_finds_cat(tmp_path):
     assert results[0].word == "cat"
 
 
-def test_chess_attack_cache_consistent():
-    board, _ = _chess_board_and_loadout()
-    clear_chess_attack_cache(has_chess_pieces=True)
-    row, col, side, visited = 2, 2, "white", 1 << 12
-    a = is_square_attacked(board, row, col, side, visited)
-    b = is_square_attacked(board, row, col, side, visited)
-    assert a == b
-
-
-def test_is_square_attacked_skips_flat_without_chess_pieces():
-    from cursed_words_solver.models import board_flat_call_count, reset_board_flat_call_count
-    from cursed_words_solver.rules.chess_tiles import (
-        chess_attack_cache_stats,
-        reset_chess_attack_cache_stats,
-    )
-
-    board = _board_cat_horizontal()
-    clear_chess_attack_cache(has_chess_pieces=False)
-    reset_chess_attack_cache_stats()
-    reset_board_flat_call_count()
-    for _ in range(50):
-        assert not is_square_attacked(board, 2, 2, "white", set())
-    assert board_flat_call_count() == 0
-    hits, misses = chess_attack_cache_stats()
-    assert hits == 0 and misses == 0
-
-
-def test_unused_cards_on_board_bitmask_matches_flat_scan():
-    from cursed_words_solver.encounter_board import effective_board_for_loadout
-    from cursed_words_solver.graph_bitboard import build_board_graph_context
-    from cursed_words_solver.rules.scoring_conditions import unused_cards_on_board
-
-    if not STICKER_FIXTURE.exists():
-        pytest.skip("sticker mismatch fixture required")
-    data = json.loads(STICKER_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _run_state_for_replay(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None
-    pipeline = ScoringPipeline()
-    board = effective_board_for_loadout(board, loadout, pipeline.rules)
-    graph_ctx = build_board_graph_context(board)
-    path = [14, 8, 3, 4, 9]
-    legacy = unused_cards_on_board(board, path, hanafuda_suit_mask=0)
-    fast = unused_cards_on_board(
-        board, path, hanafuda_suit_mask=graph_ctx.hanafuda_suit_mask
-    )
-    assert fast == legacy
-
-
 @pytest.mark.slow
 @pytest.mark.skipif(
     not STICKER_FIXTURE.exists(),
@@ -146,7 +86,7 @@ def test_sticker_fixture_board_flat_calls_bounded():
     board = parse_board_from_run_state(run_state)
     loadout = parse_run_state(run_state)
     assert board is not None
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     board = effective_board_for_loadout(board, loadout, pipeline.rules)
     reset_board_flat_call_count()
     searcher = WordSearcher(
@@ -637,7 +577,7 @@ def test_xylometers_path_movement_ok_with_hungry_snake():
 
 def test_xylometers_path_scores_like_game():
     board, loadout = _xylometers_board_and_loadout()
-    score, _bd = ScoringPipeline().score(
+    score, _bd = EngineScorer().score(
         board, XYLOMETERS_PATH, "xylometers", loadout
     )
     assert score == pytest.approx(6615, abs=5)

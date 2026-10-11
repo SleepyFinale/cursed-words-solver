@@ -20,7 +20,7 @@ from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.rules.boss_effects import boss_word_constraints
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.quest_effects import quest_path_allowed
 from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
@@ -57,7 +57,7 @@ def test_jade_path_is_quest_allowed(jade_board_loadout):
     data, board, loadout = jade_board_loadout
     path = path_from_melmod_indices(board, data["actual"]["path"])
     assert quest_path_allowed(board, path, loadout=loadout)
-    score, _ = ScoringPipeline().score(board, path, SUBMITTED_WORD, loadout)
+    score, _ = EngineScorer().score(board, path, SUBMITTED_WORD, loadout)
     assert int(score) == SUBMITTED_SCORE
 
 
@@ -67,7 +67,7 @@ def test_jade_path_is_quest_allowed(jade_board_loadout):
 )
 def test_cursophobia_search_finds_jade_over_f8_jato(jade_board_loadout):
     _data, board, loadout = jade_board_loadout
-    rules = ScoringPipeline().rules
+    rules = EngineScorer().rules
     constraints = boss_word_constraints(loadout, rules, default_max_len=25)
     searcher = WordSearcher(
         dictionary=WordDictionary(GAME_WORDLIST_PATH),

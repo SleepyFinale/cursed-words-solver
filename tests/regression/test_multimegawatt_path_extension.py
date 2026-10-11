@@ -20,7 +20,7 @@ from cursed_words_solver.loadout import (
     parse_run_state,
     prepare_run_state_dict_for_scoring,
 )
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
@@ -58,7 +58,7 @@ def test_submitted_multimegawatt_scores_match_game():
     f8 = path_from_melmod_indices(board, data["solver"]["path"])
     assert path[: len(f8)] == f8
     assert len(path) == len(f8) + 1
-    sc = ScoringPipeline().score_total_only(
+    sc = EngineScorer().score_total_only(
         board, path, data["actual"]["word"], loadout
     )
     assert int(sc) == SUBMITTED_SCORE

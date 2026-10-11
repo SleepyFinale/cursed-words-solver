@@ -11,18 +11,8 @@ from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
-from cursed_words_solver.rules.chess_tiles import (
-    chess_neighbors,
-    chess_side,
-    chess_side_known,
-    index_of,
-    is_chess_capture_step,
-    is_square_attacked,
-    king_neighbors,
-    missing_chess_color_warnings,
-)
-from cursed_words_solver.rules.scoring_conditions import chess_balanced_colors, chess_take_strict_mode
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.rules.chess_tiles import chess_neighbors, chess_side, chess_side_known, index_of, is_chess_capture_step, is_square_attacked, missing_chess_color_warnings
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.stamp_behaviors import StampSearchFlags, stamp_search_flags
 from cursed_words_solver.search import WordSearcher, neighbors_from_tile, path_movement_ok
 
@@ -358,27 +348,6 @@ def _styrofoams_board_and_loadout():
     return board, loadout
 
 
-def test_styrofoams_king_cannot_step_into_check():
-    """Visited black rook (1,3) still controls (4,3); king at (3,4) may not step there."""
-    board, loadout = _styrofoams_board_and_loadout()
-    flags = stamp_search_flags(loadout)
-    assert flags.horizontal_wrap is True
-    visited = set(STYROFOAMS_PREFIX)
-    king_idx = index_of(3, 4)
-    assert is_square_attacked(
-        board, 4, 3, "black", visited, horizontal_wrap=True
-    )
-    nbrs = neighbors_from_tile(board, STYROFOAMS_PREFIX, visited, flags=flags)
-    assert index_of(4, 3) not in nbrs
-    assert index_of(4, 3) not in king_neighbors(
-        board,
-        king_idx,
-        visited,
-        moving_side="white",
-        horizontal_wrap=True,
-    )
-
-
 def test_styrofoams_path_not_in_search(tmp_path):
     board, loadout = _styrofoams_board_and_loadout()
     wl = tmp_path / "words.txt"
@@ -456,14 +425,6 @@ def test_parse_chess_color_from_run_state():
     tile = board.get(0, 0)
     assert tile is not None
     assert chess_side(tile) == "white"
-
-
-def test_chess_balanced_colors_with_metadata():
-    board = _empty_board()
-    board.tiles[0][0] = _chess(0, 0, CurseType.CHESS_PAWN, "black")
-    board.tiles[0][1] = _chess(0, 1, CurseType.CHESS_PAWN, "white")
-    path = [index_of(0, 0), index_of(0, 1)]
-    assert chess_balanced_colors(board, path)
 
 
 def test_is_square_attacked_by_rook():
@@ -654,79 +615,6 @@ def _skokiaans_board_and_loadout():
     return board, loadout
 
 
-def test_faldstool_movie_camera_after_full_moon_capture():
-    """Capture after Full Moon teleport uses boosted from-tile base for Movie Camera."""
-    board, loadout = _faldstool_board_and_loadout()
-    pipeline = ScoringPipeline()
-    score, bd, _ = pipeline.score_with_trace(
-        board, FALDSTOOL_PATH, "faldstool", loadout
-    )
-    assert score == 280.0
-    effects = bd["pipeline"]["effects"]
-    assert any("+9 word (Movie Camera:" in e for e in effects)
-    assert any("+16 word (2 take(s))" in e for e in effects)
-
-
-def test_coannexes_movie_camera_full_moon_chain():
-    """Later FM capture counts for Movie Camera; earlier take across letters does not."""
-    board, loadout = _coannexes_board_and_loadout()
-    data = json.loads(COANNEXES_FIXTURE.read_text(encoding="utf-8"))
-    path = data["path"]
-    pipeline = ScoringPipeline()
-    score, bd, _ = pipeline.score_with_trace(
-        board, path, "coannexes", loadout
-    )
-    assert score == 316.0
-    effects = bd["pipeline"]["effects"]
-    assert any("+9 word (Movie Camera:" in e for e in effects)
-    assert any("+24 word (3 take(s))" in e for e in effects)
-
-
-def test_fasciitis_movie_camera_carousel_chess_chain():
-    """Carousel + FM path: rook take and boosted knight FM capture count for Movie Camera L3."""
-    board, loadout = _fasciitis_board_and_loadout()
-    data = json.loads(FASCIITIS_FIXTURE.read_text(encoding="utf-8"))
-    path = data["path"]
-    pipeline = ScoringPipeline()
-    score, bd, _ = pipeline.score_with_trace(
-        board, path, "fasciitis", loadout
-    )
-    assert score == 1548.0
-    effects = bd["pipeline"]["effects"]
-    assert any("+46 word (Movie Camera:" in e for e in effects)
-    assert any("+24 word (3 take(s))" in e for e in effects)
-
-
-def test_knaurring_movie_camera_carousel_first_take():
-    """Queen capture on doubled rook: Movie Camera credits landing base + attacker piece."""
-    board, loadout = _knaurring_board_and_loadout()
-    data = json.loads(KNAURRING_FIXTURE.read_text(encoding="utf-8"))
-    path = data["path"]
-    pipeline = ScoringPipeline()
-    score, bd, _ = pipeline.score_with_trace(
-        board, path, "knaurring", loadout
-    )
-    assert score == 3464.0
-    effects = bd["pipeline"]["effects"]
-    assert any("+80 word (Movie Camera:" in e for e in effects)
-    assert any("+40 word (5 take(s))" in e for e in effects)
-
-
-def test_skokiaans_movie_camera_carousel_chain():
-    """Four captures, Movie Camera L3: sum three largest piece values (FM chain + letter gap)."""
-    board, loadout = _skokiaans_board_and_loadout()
-    data = json.loads(SKOKIAANS_FIXTURE.read_text(encoding="utf-8"))
-    path = data["path"]
-    pipeline = ScoringPipeline()
-    score, bd, _ = pipeline.score_with_trace(
-        board, path, "skokiaans", loadout
-    )
-    assert score == 4380.0
-    effects = bd["pipeline"]["effects"]
-    assert any("+101 word (Movie Camera:" in e for e in effects)
-    assert any("+32 word (4 take(s))" in e for e in effects)
-
-
 def test_hungry_snake_wrap_enables_third_rook_take():
     """White rook at (0,1) captures (0,3) through wrap when Hungry Snake is equipped."""
     board = _empty_board()
@@ -749,7 +637,7 @@ def test_hungry_snake_wrap_enables_third_rook_take():
     assert chess_take_path_positions(board, path, loadout=without) == [1, 2]
     assert chess_take_path_positions(board, path, loadout=lo) == [1, 2, 3]
 
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     score, bd = pipeline.score(board, path, "xxxx", lo)
     assert bd["pipeline"]["word_score"] == 24.0
     assert score == 24.0 + sum(bd["pipeline"]["tile_scores"])

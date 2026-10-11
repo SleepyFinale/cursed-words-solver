@@ -39,7 +39,6 @@ from cursed_words_solver.loadout import (
 from cursed_words_solver.models import Board, Loadout
 from cursed_words_solver.rules.scoring_conditions import (
     card_rank,
-    card_suit,
     consumable_rack_count,
     grid_number,
     is_joker_tile,
@@ -557,20 +556,6 @@ def _build_snapshot_from_run_state(
     )
 
 
-def rebuild_snapshot_from_run_state(
-    run_state: dict[str, Any] | None,
-    *,
-    rules: dict[str, Any] | None = None,
-    f8_export_acked: bool = False,
-) -> F8Snapshot:
-    """Rebuild a gathered snapshot from an on-disk run_state export."""
-    snapshot = _build_snapshot_from_run_state(run_state, rules=rules)
-    snapshot.f8_export_acked = f8_export_acked
-    if isinstance(run_state, dict):
-        snapshot.run_state = copy.deepcopy(run_state)
-    return snapshot
-
-
 def gather_f8_snapshot(
     *,
     rules: dict[str, Any] | None = None,
@@ -781,26 +766,6 @@ def historic_words_gather_pending(snapshot: F8Snapshot) -> bool:
     return "historic_words" in (snapshot.gather_missing or [])
 
 
-def _last_historic_word_key(raw: str) -> str:
-    """Normalized last word in historic_words JSON for drift detection."""
-    text = str(raw or "").strip()
-    if not text:
-        return ""
-    try:
-        rows = json.loads(text)
-    except json.JSONDecodeError:
-        return ""
-    if not isinstance(rows, list):
-        return ""
-    for row in reversed(rows):
-        if not isinstance(row, dict):
-            continue
-        word = str(row.get("word") or "").strip().upper()
-        if word:
-            return word
-    return ""
-
-
 def historic_workflow_catchup_needed(snapshot: F8Snapshot) -> bool:
     """True when F8 gather still lacks live encounter historic (re-export only)."""
     return historic_words_gather_pending(snapshot)
@@ -833,26 +798,6 @@ def historic_gather_timeout_sec(
     if len(missing) == 1 and missing[0] == "historic_words":
         return F8_GATHER_HISTORIC_EXTRAS_TIMEOUT_SEC
     return F8_GATHER_EXTRAS_TIMEOUT_SEC
-
-
-def _apply_historic_extras_to_loadout(
-    loadout: Loadout,
-    extras: dict[str, Any],
-) -> None:
-    if loadout.extras is None:
-        loadout.extras = {}
-    for key in _HISTORIC_CATCHUP_EXTRA_KEYS:
-        if key in extras:
-            loadout.extras[key] = extras[key]
-
-
-def try_refresh_historic_extras_from_disk(
-    loadout: Loadout,
-    board: Board,
-) -> bool:
-    """Disabled — live F8 export only; never pull historic from disk."""
-    del loadout, board
-    return False
 
 
 def catchup_historic_gather_after_search(
@@ -944,26 +889,6 @@ def session_from_run_state(run_state: dict[str, Any] | None) -> F8SuggestionSess
     )
 
 
-def session_from_snapshot(snapshot: F8Snapshot) -> F8SuggestionSession | None:
-    """Build active-session metadata from a gathered snapshot."""
-    if snapshot.run_state is None or snapshot.board is None:
-        return None
-    board_fp, loadout_fp = fingerprints_from_run_state(snapshot.run_state)
-    tiles_fp = board_tiles_fingerprint_suffix(board_fp)
-    gn = 0
-    if snapshot.loadout is not None:
-        try:
-            gn = grid_number(snapshot.loadout)
-        except (TypeError, ValueError):
-            gn = 0
-    return F8SuggestionSession(
-        board_fingerprint=board_fp,
-        loadout_fingerprint=loadout_fp,
-        board_tiles_fingerprint=tiles_fp,
-        grid_number=gn,
-    )
-
-
 def embed_f8_snapshot(
     snapshot: F8Snapshot,
     *,
@@ -1036,7 +961,7 @@ def f8_embed_replay_score(
     path: list[int],
     word: str,
     loadout: Loadout,
-    pipeline: Any,
+    pipeline: Any = None,
 ) -> int | None:
     """Re-score an F8 embed snapshot; None when board/loadout cannot be parsed."""
     from cursed_words_solver.loadout import (
@@ -1054,35 +979,9 @@ def f8_embed_replay_score(
     from cursed_words_solver.encounter_board import effective_board_for_loadout
     from cursed_words_solver.engine.solver import engine_path_score
 
-    eff = effective_board_for_loadout(board, replay_loadout, getattr(pipeline, "rules", {}) or {})
-    engine_score = engine_path_score(eff, path, word, replay_loadout)
-    if engine_score is not None:
-        return engine_score
-    score, _ = pipeline.score(board, path, word, replay_loadout)
-    return int(score)
+    from cursed_words_solver.rules.rule_lookup import rules_catalog
+
+    eff = effective_board_for_loadout(board, replay_loadout, rules_catalog())
+    return engine_path_score(eff, path, word, replay_loadout)
 
 
-def embed_run_state_for_suggestion(run_state: dict[str, Any]) -> dict[str, Any]:
-    """Legacy wrapper — prefer embed_f8_snapshot with a gathered F8Snapshot."""
-    board = parse_board_from_run_state(run_state)
-    mod_money = mod_money_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    if board is not None:
-        loadout = merge_loadout_with_board(
-            loadout,
-            board.money,
-            mod_money=mod_money if mod_money > 0 else None,
-        )
-    loadout = hydrate_tile_ninja_loadout_extras(loadout, run_state)
-    return (
-        embed_f8_snapshot(
-            F8Snapshot(
-                run_state=run_state,
-                board=board,
-                loadout=loadout,
-                board_available=board is not None,
-            ),
-            scoring_loadout=loadout,
-        )
-        or dict(run_state)
-    )

@@ -1,16 +1,8 @@
 """Card suit, joker, and stacked-curse behavior."""
 
 from cursed_words_solver.loadout import parse_board_from_run_state
-from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile
-from cursed_words_solver.rules.scoring_conditions import (
-    bicycle_suited_credit_on_path,
-    detect_card_hand,
-    effective_suited_cards_on_path,
-    is_card_tile,
-    is_joker_tile,
-    suited_cards_on_path_count,
-)
-from cursed_words_solver.rules.card_overlay import detect_card_overlay as _detect_card_overlay
+from cursed_words_solver.models import Board, CurseType, Loadout, Tile
+from cursed_words_solver.rules.scoring_conditions import bicycle_suited_credit_on_path, effective_suited_cards_on_path, is_card_tile
 
 
 def _card(row: int, col: int, rank: str, suit: str, score: int = 2) -> Tile:
@@ -131,72 +123,6 @@ def test_parse_board_number_with_suit_keeps_number_curse():
     assert is_card_tile(tile)
 
 
-def test_joker_plus_rank_makes_pair():
-    board = _empty_board()
-    board.tiles[0][0] = _joker(0, 0)
-    board.tiles[0][1] = _card(0, 1, "7", "hearts")
-    assert detect_card_hand("pair", board, [0, 1], Loadout())
-
-
-def test_two_jokers_make_pair():
-    board = _empty_board()
-    board.tiles[0][0] = _joker(0, 0)
-    board.tiles[0][1] = _joker(0, 1)
-    assert detect_card_hand("pair", board, [0, 1], Loadout())
-
-
-def test_joker_fills_flush_with_martini():
-    board = _empty_board()
-    path = []
-    board.tiles[0][0] = _joker(0, 0)
-    for c, rank in enumerate("23", start=1):
-        board.tiles[0][c] = _card(0, c, rank, "hearts")
-        path.append(c)
-    path.insert(0, 0)
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="martini", name="Martini", kind="stamp")]
-    )
-    assert detect_card_hand("flush", board, path, loadout)
-
-
-def test_grid_scattered_martini_lowers_flush_min_size():
-    """prefacers: Martini on path (not loadout stamp) still enables 3-card flush."""
-    board = _empty_board()
-    path = [0, 1, 2]
-    board.tiles[0][0] = _card(0, 0, "2", "hearts")
-    board.tiles[0][1] = _card(0, 1, "3", "hearts")
-    # Scattered Martini cocktail: ITEM + suited (same shape as live exports).
-    board.tiles[0][2] = Tile(
-        row=0,
-        col=2,
-        char="🍸",
-        letter="N",
-        base_score=0,
-        curse=CurseType.ITEM,
-        metadata={
-            "card_suit": "hearts",
-            "card_rank": "N",
-            "scattered_item_id": "martini",
-            "scattered_item_level": 1,
-        },
-    )
-    assert detect_card_hand("flush", board, path, Loadout())
-    assert not detect_card_hand("flush", board, [0, 1], Loadout())
-
-
-def test_joker_fills_straight_gap():
-    board = _empty_board()
-    path = []
-    board.tiles[0][0] = _card(0, 0, "2", "hearts")
-    board.tiles[0][1] = _joker(0, 1)
-    board.tiles[0][2] = _card(0, 2, "4", "hearts")
-    path = [0, 1, 2]
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="martini", name="Martini", kind="stamp")]
-    )
-    assert detect_card_hand("straight", board, path, loadout)
-
-
 def _plain(row: int, col: int, rank: str, score: int = 2) -> Tile:
     return Tile(
         row=row,
@@ -207,24 +133,6 @@ def _plain(row: int, col: int, rank: str, score: int = 2) -> Tile:
         curse=CurseType.LETTER,
         metadata={"source": "melmod"},
     )
-
-
-def test_suited_cards_on_path_counts_letter_tiles_with_suit_metadata():
-    board = _empty_board()
-    board.tiles[0][0] = _card(0, 0, "K", "hearts")
-    board.tiles[0][1] = _card(0, 1, "7", "spades")
-    board.tiles[0][2] = _plain(0, 2, "Q", 1)
-    loadout = Loadout()
-    assert suited_cards_on_path_count(board, [0, 1, 2]) == 2
-    assert effective_suited_cards_on_path(board, [0, 1, 2], loadout) == 2
-
-
-def test_suited_cards_deduplicate_same_suit_on_path():
-    board = _empty_board()
-    board.tiles[0][0] = _card(0, 0, "K", "hearts")
-    board.tiles[0][1] = _card(0, 1, "Q", "hearts")
-    board.tiles[0][2] = _plain(0, 2, "Z", 1)
-    assert suited_cards_on_path_count(board, [0, 1, 2]) == 1
 
 
 def test_bicycle_nebbish_only_real_card_on_path_counts_one():
@@ -263,9 +171,9 @@ def test_bicycle_nebbish_only_real_card_on_path_counts_one():
             "bicycle_word_score_bonus": "0",
         }
     )
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
+    from cursed_words_solver.engine.scorer import EngineScorer
 
-    score, bd = ScoringPipeline().score(board, path, "nebbish", loadout)
+    score, bd = EngineScorer().score(board, path, "nebbish", loadout)
     assert bd["pipeline"]["word_score"] == 1.0
     assert int(score) == 15
 
@@ -298,30 +206,6 @@ def test_bicycle_joker_not_at_end_mono_suit_counts_one():
     assert bicycle_suited_credit_on_path(board, path) == 1
 
 
-def test_suited_cards_count_duplicate_ranks_on_multi_suit_path():
-    """Multi-suit paths credit unique suited ranks (D♦ + D♥ count once)."""
-    board = _empty_board()
-    board.tiles[0][0] = Tile(
-        row=0, col=0, char="D", letter="D", base_score=2, curse=CurseType.LETTER,
-        metadata={"source": "melmod", "card_suit": "diamonds", "card_rank": "D"},
-    )
-    board.tiles[0][1] = _plain(0, 1, "O", 1)
-    board.tiles[0][2] = Tile(
-        row=0, col=2, char="T", letter="T", base_score=1, curse=CurseType.LETTER,
-        metadata={"source": "melmod", "card_suit": "diamonds", "card_rank": "T"},
-    )
-    board.tiles[0][3] = Tile(
-        row=0, col=3, char="D", letter="D", base_score=2, curse=CurseType.LETTER,
-        metadata={"source": "melmod", "card_suit": "hearts", "card_rank": "D"},
-    )
-    board.tiles[0][4] = Tile(
-        row=0, col=4, char="M", letter="M", base_score=3, curse=CurseType.LETTER,
-        metadata={"source": "melmod", "card_suit": "spades", "card_rank": "M"},
-    )
-    path = [0, 1, 2, 3, 4]
-    assert suited_cards_on_path_count(board, path) == 3
-
-
 def test_effective_suited_prefers_board_count_over_stale_extras():
     board = _empty_board()
     board.tiles[0][0] = Tile(
@@ -338,15 +222,6 @@ def test_effective_suited_prefers_board_count_over_stale_extras():
     )
     loadout = Loadout(extras={"bicycle_suited_on_path": 4})
     assert effective_suited_cards_on_path(board, [0, 1, 2], loadout) == 2
-
-
-def test_effective_suited_uses_board_only_when_board_lacks_suits():
-    board = _empty_board()
-    board.tiles[0][0] = _plain(0, 0, "A", 1)
-    board.tiles[0][1] = _plain(0, 1, "B", 1)
-    loadout = Loadout(extras={"bicycle_suited_on_path": 2})
-    assert suited_cards_on_path_count(board, [0, 1]) == 0
-    assert effective_suited_cards_on_path(board, [0, 1], loadout) == 0
 
 
 def test_effective_suited_ignores_stale_low_melmod_extra():
@@ -392,26 +267,6 @@ def test_effective_suited_ignores_stale_low_melmod_extra():
     loadout = Loadout(extras={"bicycle_suited_on_path": 2})
     assert bicycle_suited_credit_on_path(board, path) == 4
     assert effective_suited_cards_on_path(board, path, loadout) == 4
-
-
-def test_bicycle_joker_multi_suit_adds_joker_to_rank_credit():
-    """Regression 20260530_005432 ashy: joker + W♠ + S♥ + Y♠ → 4 suited credit."""
-    board = _empty_board()
-    board.tiles[0][1] = Tile(
-        row=0,
-        col=1,
-        char="🃏",
-        letter="?",
-        base_score=0,
-        curse=CurseType.WILDCARD,
-        metadata={"source": "melmod", "is_joker": True, "card_suit": "joker"},
-    )
-    board.tiles[1][0] = _card(1, 0, "W", "spades", 4)
-    board.tiles[1][4] = _card(1, 4, "S", "hearts", 4)
-    board.tiles[2][4] = _card(2, 4, "Y", "spades", 4)
-    path = [1, 5, 9, 14]
-    assert bicycle_suited_credit_on_path(board, path) == 4
-    assert suited_cards_on_path_count(board, path) == 4
 
 
 def test_bicycle_joker_at_path_end_multi_suit_does_not_add_credit():
@@ -525,9 +380,3 @@ def test_bicycle_mono_suit_joker_two_non_joker_per_tile_credit():
     board.tiles[1][4] = _card(1, 4, "E", "spades", 1)
     board.tiles[0][3] = _card(0, 3, "Q", "spades", 10)
     assert bicycle_suited_credit_on_path(board, [14, 9, 3]) == 3
-
-
-def test_detect_card_overlay_symbols_and_joker():
-    assert _detect_card_overlay("K♥") == ("hearts", "K", False)
-    assert _detect_card_overlay("JOKER tile") == (None, None, True)
-    assert _detect_card_overlay("7 of clubs") == ("clubs", "7", False)

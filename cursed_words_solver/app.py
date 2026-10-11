@@ -48,7 +48,6 @@ from cursed_words_solver.f8_snapshot import (
     gather_f8_snapshot,
     historic_words_gather_pending,
     historic_workflow_catchup_needed,
-    session_from_snapshot,
     session_from_run_state,
     sole_gather_miss_is_historic,
     write_f8_export_request,
@@ -100,7 +99,7 @@ from cursed_words_solver.loadout import (
     save_loadout,
     save_run_state_template,
 )
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.boss_effects import (
     boss_stage_display_suffix,
     boss_word_constraints,
@@ -116,9 +115,8 @@ from cursed_words_solver.rules.quest_scoring import (
     target_met,
     two_wrongs_active,
 )
-from cursed_words_solver.rules.rule_lookup import boss_display_name, resolve_rule_id
+from cursed_words_solver.rules.rule_lookup import boss_display_name
 from cursed_words_solver.consumable_placement import (
-    consumable_investment_active,
     consumables_placed_for_scoring,
     consumable_rack_tiles,
     format_placement_instructions,
@@ -243,7 +241,7 @@ class SolverApp:
         self._workflow_stale_overlay_reason: str | None = None
         self._active_suggestion_session: F8SuggestionSession | None = None
         self._loadout_source = self._detect_loadout_source()
-        self._scoring = ScoringPipeline()
+        self._scoring = EngineScorer()
         self._dictionary: WordDictionary | None = None
         self._searcher: WordSearcher | None = None
         self._wordlist_sig: tuple[str, int, int] | None = None
@@ -2602,63 +2600,34 @@ class SolverApp:
         score_word: str,
         loadout: Loadout,
     ) -> tuple[float, dict, list, object | None]:
-        from cursed_words_solver.rules.capybara_scoring import (
-            score_capybara_with_trace,
-        )
-        from cursed_words_solver.rules.scoring_order import capybara_shuffles_loadout
+        """Exact score, per-item breakdown and trace for the suggestion (engine).
 
-        engine_pred = self._engine_prediction(board, top, score_word, loadout)
-        if engine_pred is not None:
-            return engine_pred
-        if capybara_shuffles_loadout(loadout, self._scoring.rules):
-            pred_score, pred_bd, pred_trace, stats = score_capybara_with_trace(
-                self._scoring,
-                board,
-                top.path,
-                score_word,
-                loadout,
-                self._scoring.rules,
+        Capybara shuffles item order at submit: the score is the mean over every
+        order it can roll, with the range in the breakdown.
+        """
+        from cursed_words_solver.encounter_board import effective_board_for_loadout
+        from cursed_words_solver.engine import EnginePlan
+        from cursed_words_solver.engine.scorer import summarize_steps
+        from cursed_words_solver.engine.solver import _capybara_mode, capybara_score_range
+        from cursed_words_solver.rules.capybara_scoring import CapybaraScoreStats
+
+        eff = effective_board_for_loadout(board, loadout, self._scoring.rules)
+        plan = EnginePlan.build(eff, loadout)
+        res = plan.score(list(top.path), score_word)
+        breakdown = summarize_steps(res.steps)
+        breakdown.update(engine="exact", nondeterministic=res.nondeterministic)
+        score = float(res.int_score)
+        stats = None
+        mode = _capybara_mode(loadout)
+        if mode:
+            ev, lo, hi, n, exhaustive = capybara_score_range(plan, top.path, score_word, mode)
+            score = float(ev)
+            breakdown.update({"nondeterministic": True, "score_min": lo, "score_max": hi})
+            stats = CapybaraScoreStats(
+                ev=float(ev), min_score=float(lo), max_score=float(hi),
+                perm_count=n, exhaustive=exhaustive,
             )
-            return pred_score, pred_bd, pred_trace, stats
-        pred_score, pred_bd, pred_trace = self._scoring.score_with_trace(
-            board, top.path, score_word, loadout
-        )
-        return pred_score, pred_bd, pred_trace, None
-
-    def _engine_prediction(
-        self,
-        board: Board,
-        top: WordResult,
-        score_word: str,
-        loadout: Loadout,
-    ) -> tuple[float, dict, list, object | None] | None:
-        """Exact game-port score + trace for the suggestion (engine/)."""
-        try:
-            from cursed_words_solver.encounter_board import effective_board_for_loadout
-            from cursed_words_solver.engine import EnginePlan
-            from cursed_words_solver.engine.solver import _capybara_mode, capybara_score_range
-            from cursed_words_solver.rules.capybara_scoring import CapybaraScoreStats
-
-            eff = effective_board_for_loadout(board, loadout, self._scoring.rules)
-            plan = EnginePlan.build(eff, loadout)
-            res = plan.score(list(top.path), score_word)
-            breakdown = {"engine": "exact", "nondeterministic": res.nondeterministic}
-            score = float(res.int_score)
-            stats = None
-            mode = _capybara_mode(loadout)
-            if mode:
-                # Every order Capybara can roll at submit: exact mean and range for melmod.
-                ev, lo, hi, n, exhaustive = capybara_score_range(plan, top.path, score_word, mode)
-                score = float(ev)
-                breakdown.update({"nondeterministic": True, "score_min": lo, "score_max": hi})
-                stats = CapybaraScoreStats(
-                    ev=float(ev), min_score=float(lo), max_score=float(hi),
-                    perm_count=n, exhaustive=exhaustive,
-                )
-            return score, breakdown, res.trace(), stats
-        except Exception as exc:  # noqa: BLE001 - fall back to the legacy pipeline
-            print(f"  Engine prediction failed ({exc}); using legacy pipeline.", flush=True)
-            return None
+        return score, breakdown, res.trace(), stats
 
     def _overlay_warnings(
         self,

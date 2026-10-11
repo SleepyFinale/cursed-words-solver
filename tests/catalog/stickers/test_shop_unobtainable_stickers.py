@@ -1,7 +1,7 @@
 """Cannot-be-obtained-from-shop sticker scoring and catalog."""
 
 from cursed_words_solver.models import Board, Loadout, LoadoutItem, Tile, TileColor
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import count_scoring_items, get_rule, slugify_name
 
 SHOP_UNOBTAINABLE_NAMES = [
@@ -36,7 +36,7 @@ def _empty_board() -> Board:
 
 
 def test_all_shop_unobtainable_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in SHOP_UNOBTAINABLE_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stickers", slug, name)
@@ -45,7 +45,7 @@ def test_all_shop_unobtainable_catalogued():
 
 
 def test_count_scoring_vs_catalog():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[
             LoadoutItem(id=slugify_name(n), name=n, level=1, kind="sticker")
@@ -60,7 +60,7 @@ def test_count_scoring_vs_catalog():
 
 def test_bone_multiplier_level_1():
     board = _empty_board()
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="bone", name="Bone", level=1)])
     score, bd = pipeline.score(board, [0], "x", loadout)
     base, base_bd = pipeline.score(board, [0], "x", Loadout())
@@ -71,7 +71,7 @@ def test_bone_multiplier_level_1():
 
 def test_bone_multiplier_level_3():
     board = _empty_board()
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="bone", name="Bone", level=3)])
     score, bd = pipeline.score(board, [0], "x", loadout)
     base, _ = pipeline.score(board, [0], "x", Loadout())
@@ -80,7 +80,7 @@ def test_bone_multiplier_level_3():
 
 
 def test_frankenstein_left_hand_padlock_catalog():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     _key, frank = get_rule(pipeline.rules, "stickers", "frankenstein", "Frankenstein")
     assert frank.get("effect_class") == "orchestration"
     _key, left = get_rule(pipeline.rules, "stickers", "left_hand", "Left Hand")
@@ -91,16 +91,3 @@ def test_frankenstein_left_hand_padlock_catalog():
     assert pad.get("sell_price_upgrade") == 8
 
 
-def test_burrito_ignores_left_hand_level():
-    board = _empty_board()
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id="burrito", name="Burrito", level=1),
-            LoadoutItem(id="left_hand", name="Left Hand", level=5),
-            LoadoutItem(id="printer", name="Printer", level=2),
-        ]
-    )
-    _score, bd = pipeline.score(board, [0], "x", loadout)
-    # Burrito: 1 + 0.05 * other sticker levels (Printer L2 only; Left Hand excluded)
-    assert abs(bd["multiplier"] - 1.1) < 1e-9

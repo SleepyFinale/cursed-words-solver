@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from cursed_words_solver.known_failing import is_known_failing, known_failing_info
@@ -117,9 +116,3 @@ def triage_capture(data: dict[str, Any], *, stem: str = "") -> TriageResult:
     )
 
 
-def triage_file(path: Path) -> TriageResult:
-    import json
-
-    data = json.loads(path.read_text(encoding="utf-8"))
-    data["_source_stem"] = path.stem
-    return triage_capture(data, stem=path.stem)

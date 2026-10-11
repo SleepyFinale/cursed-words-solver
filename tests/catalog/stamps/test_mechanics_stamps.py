@@ -1,7 +1,7 @@
 """Created-by-other-mechanics stamp catalog (Padlock stamp, Right Hand)."""
 
-from cursed_words_solver.models import Board, Loadout, LoadoutItem, Tile, TileColor
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.models import Board, Tile, TileColor
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
@@ -35,7 +35,7 @@ def _empty_board() -> Board:
 
 
 def test_all_mechanics_stamps_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in MECHANICS_STAMP_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stamps", slug, name)
@@ -44,12 +44,12 @@ def test_all_mechanics_stamps_catalogued():
 
 
 def test_count_scoring_vs_grid_only_mechanics_stamps():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     assert_loadout_stamp_coverage(pipeline.rules, MECHANICS_STAMP_NAMES)
 
 
 def test_padlock_stamp_sell_cost_metadata():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     _key, rule = get_rule(pipeline.rules, "stamps", "padlock_stamp", "Padlock (stamp)")
     assert rule.get("effect_class") == "sell_cost"
     assert rule.get("sell_price_base") == 8
@@ -59,7 +59,7 @@ def test_padlock_stamp_sell_cost_metadata():
 
 
 def test_right_hand_meta_for_human_hands():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     _key, rule = get_rule(pipeline.rules, "stamps", "right_hand", "Right Hand")
     assert rule.get("effect_class") == "meta"
     assert rule.get("unique") is True

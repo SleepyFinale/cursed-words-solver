@@ -6,7 +6,6 @@ import json
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 _REGISTRY_PATH = (
     Path(__file__).resolve().parents[1]
@@ -48,10 +47,6 @@ def load_known_failing_registry() -> dict[str, KnownFailingEntry]:
     return out
 
 
-def known_failing_stems() -> frozenset[str]:
-    return frozenset(load_known_failing_registry().keys())
-
-
 def is_known_failing(stem: str) -> bool:
     return stem in load_known_failing_registry()
 
@@ -60,13 +55,3 @@ def known_failing_info(stem: str) -> KnownFailingEntry | None:
     return load_known_failing_registry().get(stem)
 
 
-def registry_summary() -> list[dict[str, Any]]:
-    return [
-        {
-            "stem": e.stem,
-            "category": e.category,
-            "reason": e.reason,
-            "tracking_issue": e.tracking_issue,
-        }
-        for e in load_known_failing_registry().values()
-    ]

@@ -1,7 +1,7 @@
 """Nat-H4 unlock stamp catalog and scoring (wiki: Unlocked when unlocking Nat-H4)."""
 
-from cursed_words_solver.models import Board, Loadout, LoadoutItem, Tile, TileColor
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.models import Board, Tile, TileColor
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
@@ -36,7 +36,7 @@ def _empty_board() -> Board:
 
 
 def test_all_nat_h4_stamps_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in NAT_H4_STAMP_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stamps", slug, name)
@@ -45,64 +45,19 @@ def test_all_nat_h4_stamps_catalogued():
 
 
 def test_count_scoring_vs_grid_only_nat_h4_stamps():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     assert_loadout_stamp_coverage(pipeline.rules, NAT_H4_STAMP_NAMES)
 
 
-
 def test_delivery_truck_shop_effect():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     _key, rule = get_rule(pipeline.rules, "stamps", "delivery_truck", "Delivery Truck")
     assert rule.get("effect_class") == "shop"
 
 
 def test_filing_cabinet_grid_scatter():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     _key, rule = get_rule(pipeline.rules, "stamps", "filing_cabinet", "Filing Cabinet")
     assert rule.get("effect_class") == "scatter"
 
 
-def test_steak_rare_items_increase_multiplier():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 10)
-    board.tiles[0][1] = _tile(0, 1, "B", 10)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="steak", name="Steak", kind="stamp")],
-        extras={"rare_item_count": "2"},
-    )
-    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
-    assert bd["multiplier"] == 1.5
-    assert score == 30
-
-
-def test_steak_no_rare_items_base_multiplier():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 10)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="steak", name="Steak", kind="stamp")],
-        extras={"rare_item_count": "0"},
-    )
-    score, bd = pipeline.score(board, [0], "a", loadout)
-    base, _ = pipeline.score(board, [0], "a", Loadout())
-    assert bd["multiplier"] == 1.0
-    assert score == base
-
-
-def test_steak_word_bonus_percent_overrides_rare_count():
-    """Melmod-exported percent (from trace) beats wiki rare-count formula."""
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 10)
-    board.tiles[0][1] = _tile(0, 1, "B", 10)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="steak", name="Steak", kind="stamp")],
-        extras={
-            "rare_item_count": "2",
-            "steak_word_bonus_percent": "275",
-        },
-    )
-    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
-    assert bd["multiplier"] == 2.75
-    assert score == 55

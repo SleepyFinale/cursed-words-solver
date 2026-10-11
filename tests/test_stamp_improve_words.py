@@ -9,18 +9,7 @@ import pytest
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.search import PathValidator, WordSearcher
-from cursed_words_solver.setup_value import (
-    project_setup_delta,
-    rank_score_for_word,
-    setup_future_value,
-)
-from cursed_words_solver.stamp_improve_words import (
-    BAR_CHART,
-    BOOK_OF_OPENINGS,
-    FLASHY_FOUNTAIN_PEN,
-    equipped_improve_words,
-    stamp_improve_match,
-)
+from cursed_words_solver.stamp_improve_words import BAR_CHART, BOOK_OF_OPENINGS, FLASHY_FOUNTAIN_PEN
 
 
 def _make_wordlist(tmp_path: Path, words: list[str]) -> Path:
@@ -117,67 +106,6 @@ def test_twentyone_accepted_as_bar_chart_improve_word(tmp_path) -> None:
     path = [0, 1, 2, 3, 4, 9, 8, 7, 6]
     assert [board.get_by_index(i).char for i in path] == list("twentyone")
     assert validator.word_ok(board, path, "twentyone", 0)
-
-
-@pytest.mark.parametrize(
-    ("stamp_id", "word"),
-    [
-        (FLASHY_FOUNTAIN_PEN, "red"),
-        (BAR_CHART, "seven"),
-        (BOOK_OF_OPENINGS, "pawn"),
-    ],
-)
-def test_project_setup_delta_records_improve(stamp_id: str, word: str) -> None:
-    board = _board_spelling(word)
-    path = _path_for_word(word)
-    loadout = Loadout(
-        stamps=[LoadoutItem(id=stamp_id, name=stamp_id, kind="stamp")],
-        extras={"grids_remaining": "3"},
-    )
-    delta = project_setup_delta(board, path, word, loadout)
-    assert delta.stamp_improves[stamp_id] == word
-    assert setup_future_value(delta, loadout) > 0
-
-
-def test_stamp_improve_match_multiple_stamps() -> None:
-    loadout = Loadout(
-        stamps=[
-            LoadoutItem(id=FLASHY_FOUNTAIN_PEN, name="Pen", kind="stamp"),
-            LoadoutItem(id=BAR_CHART, name="Bar", kind="stamp"),
-        ],
-    )
-    assert stamp_improve_match(loadout, "red") == [(FLASHY_FOUNTAIN_PEN, "red")]
-    assert stamp_improve_match(loadout, "seven") == [(BAR_CHART, "seven")]
-    union = equipped_improve_words(loadout)
-    assert "red" in union and "seven" in union
-
-
-def test_rank_prefers_improve_word_over_higher_immediate(tmp_path) -> None:
-    wl = _make_wordlist(tmp_path, ["red", "shiny", "shinyx"])
-    d = WordDictionary(wl)
-    board = _board_spelling("red")
-    path_red = [0, 1, 2]
-    grid = [[_letter(r, c, "Q", score=50.0) for c in range(5)] for r in range(5)]
-    for i, ch in enumerate("shiny"):
-        grid[1][i] = _letter(1, i, ch, score=50.0, color=TileColor.SHINY)
-    board_hi = Board(tiles=grid, money=0)
-    path_hi = [5, 6, 7, 8, 9]
-    loadout = Loadout(
-        stamps=[LoadoutItem(id=FLASHY_FOUNTAIN_PEN, name="Pen", kind="stamp")],
-        extras={"grids_remaining": "4"},
-    )
-    imm_red = 3.0
-    imm_hi = 250.0
-    rank_red, setup_red = rank_score_for_word(
-        board, path_red, "red", loadout, imm_red, setup_weight=0.5
-    )
-    rank_hi, _ = rank_score_for_word(
-        board_hi, path_hi, "shiny", loadout, imm_hi, setup_weight=0.5
-    )
-    assert setup_red > 0
-    assert rank_red > imm_red
-    if imm_hi > imm_red:
-        assert rank_red > rank_hi or setup_red > 0
 
 
 def test_searcher_seeds_improve_word(tmp_path) -> None:

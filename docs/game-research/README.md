@@ -63,7 +63,7 @@ python scripts/generate_boss_audit.py
 | ---- | ------------- |
 | `EncounterController.GetItemsForWordSubmission` | `cursed_words_solver/rules/scoring_order.py` |
 | `Item.ApplyStartOfGridEffect` | `cursed_words_solver/rules/grid_effects.py` |
-| `ScoreCalculation.CalculateOverallScore` | `cursed_words_solver/rules/pipeline.py` |
+| `ScoreCalculation.CalculateOverallScore` | `cursed_words_solver/engine/calc.py` |
 | Per-solve loadout snapshot | `cursed_words_solver/solve_context.py` |
 | Board topology / chess masks | `cursed_words_solver/graph_bitboard.py`, `rules/chess_tiles.py` |
 | Board-static scoring precompute | `cursed_words_solver/board_scoring_context.py` |

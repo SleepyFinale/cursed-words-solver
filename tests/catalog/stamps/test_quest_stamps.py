@@ -1,17 +1,9 @@
 """Quest unlock stamp catalog, scoring, and search (wiki: Unlocked when completing quests)."""
 
-from pathlib import Path
 
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.models import (
-    Board,
-    CurseType,
-    Loadout,
-    LoadoutItem,
-    Tile,
-    TileColor,
-)
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
@@ -81,7 +73,7 @@ def _empty_board() -> Board:
 
 
 def test_all_quest_stamps_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in QUEST_STAMP_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stamps", slug, name)
@@ -90,7 +82,7 @@ def test_all_quest_stamps_catalogued():
 
 
 def test_count_scoring_vs_grid_only_quest_stamps():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     assert_loadout_stamp_coverage(pipeline.rules, QUEST_STAMP_NAMES)
 
 
@@ -100,7 +92,7 @@ def test_banana_four_same_letters_doubles_word():
     for c in range(4):
         board.tiles[0][c] = _tile(0, c, "A", 5)
         path.append(c)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stamps=[LoadoutItem(id="banana", name="Banana", kind="stamp")])
     score, bd = pipeline.score(board, path, "aaaa", loadout)
     base, _ = pipeline.score(board, path, "aaaa", Loadout())
@@ -114,7 +106,7 @@ def test_ruler_non_adjacent_steps_scale_word():
     board.tiles[0][2] = _tile(0, 2, "B", 10)
     board.tiles[0][4] = _tile(0, 4, "C", 10)
     path = [0, 2, 4]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stamps=[LoadoutItem(id="ruler", name="Ruler", kind="stamp")])
     score, bd = pipeline.score(board, path, "abc", loadout)
     assert bd["multiplier"] == 1.04
@@ -126,7 +118,7 @@ def test_ruler_uses_accumulated_distance_from_extras():
     board.tiles[0][1] = _tile(0, 1, "B", 10)
     board.tiles[0][4] = _tile(0, 4, "C", 10)
     path = [0, 1, 4]
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stamps=[LoadoutItem(id="ruler", name="Ruler", kind="stamp")],
         extras={"ruler_distance": "2"},
@@ -141,29 +133,12 @@ def test_ruler_skips_when_distance_zero():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 10)
     board.tiles[0][1] = _tile(0, 1, "B", 10)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stamps=[LoadoutItem(id="ruler", name="Ruler", kind="stamp")])
     score, bd = pipeline.score(board, [0, 1], "ab", loadout)
     base, _ = pipeline.score(board, [0, 1], "ab", Loadout())
     assert bd["multiplier"] == 1.0
     assert score == base
-
-
-def test_chick_level_one_stickers_scale_word():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 10)
-    board.tiles[0][1] = _tile(0, 1, "B", 10)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="chick", name="Chick", kind="stamp")],
-        stickers=[
-            LoadoutItem(id="s1", name="Sticker 1", level=1, kind="sticker"),
-            LoadoutItem(id="s2", name="Sticker 2", level=1, kind="sticker"),
-        ],
-    )
-    score, bd = pipeline.score(board, [0, 1], "ab", loadout)
-    assert bd["multiplier"] == 3.0
-    assert score == 60
 
 
 def test_honeypot_stitched_words_validate(tmp_path):

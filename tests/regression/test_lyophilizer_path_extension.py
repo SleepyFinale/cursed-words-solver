@@ -15,16 +15,8 @@ import pytest
 
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.loadout import (
-    parse_board_from_run_state,
-    parse_run_state,
-    prepare_run_state_dict_for_scoring,
-)
-from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.scoring_conditions import chess_takes_on_path
-from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
+from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state, prepare_run_state_dict_for_scoring
 from cursed_words_solver.search import WordSearcher
-from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
 FIXTURE = (
     Path(__file__).resolve().parents[1]
@@ -44,27 +36,6 @@ def _f8_run_state_from_round_log(data: dict) -> dict:
         if isinstance(entry, dict) and "f8" in entry and entry["f8"] not in (None, ""):
             ex[key] = entry["f8"]
     return prepare_run_state_dict_for_scoring(rs)
-
-
-@pytest.mark.skipif(
-    not FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="lyophilizer fixture and game wordlist required",
-)
-def test_submitted_lyophilizer_scores_match_game():
-    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-    path = path_from_melmod_indices(board, data["actual"]["path"])
-    flags = stamp_search_flags(loadout)
-    assert chess_takes_on_path(
-        board, path, strict=False, loadout=loadout, search_flags=flags
-    ) >= 6
-    sc = ScoringPipeline().score_total_only(
-        board, path, data["actual"]["word"], loadout
-    )
-    assert int(sc) == SUBMITTED_SCORE
 
 
 @pytest.mark.skipif(

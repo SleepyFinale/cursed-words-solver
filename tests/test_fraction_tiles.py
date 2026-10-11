@@ -6,23 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile
-from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.fraction_tiles import (
-    format_fraction_parts,
-    format_fraction_text,
-    format_fraction_tile,
-    format_fraction_value,
-    fraction_parts,
-    fraction_position_valid,
-    parse_fraction_parts_from_float,
-    parse_fraction_parts_from_text,
-)
-from cursed_words_solver.rules.scoring_conditions import (
-    is_number_like_tile,
-    number_sum_on_path,
-    tile_numeric_value,
-)
+from cursed_words_solver.models import Board, CurseType, Tile
+from cursed_words_solver.rules.fraction_tiles import format_fraction_parts, format_fraction_text, format_fraction_tile, format_fraction_value, parse_fraction_parts_from_float, parse_fraction_parts_from_text
 from cursed_words_solver.search import PathValidator, WordSearcher
 from cursed_words_solver.dictionary import WordDictionary
 
@@ -98,63 +83,6 @@ def test_format_fraction_tile_from_decimal_letter():
     assert format_fraction_tile(tile) == "⅖"
 
 
-def test_fraction_position_valid_3_5():
-    tile = _tile(
-        0,
-        0,
-        "?",
-        8,
-        curse=CurseType.FRACTION,
-        char="⅗",
-        fraction_value=0.6,
-        metadata={"fraction_num": 3, "fraction_den": 5},
-    )
-    assert fraction_position_valid(tile, 2, relaxed=False)  # 1-based pos 3
-    assert fraction_position_valid(tile, 4, relaxed=False)  # 1-based pos 5
-    assert not fraction_position_valid(tile, 1, relaxed=False)  # 1-based pos 2
-    assert not fraction_position_valid(tile, 0, relaxed=False)
-    assert not fraction_position_valid(tile, 3, relaxed=False)
-
-
-def test_tile_numeric_value_uses_fraction_float():
-    tile = _tile(
-        0,
-        0,
-        "?",
-        8,
-        curse=CurseType.FRACTION,
-        char="3/5",
-        fraction_value=0.6,
-        metadata={"fraction_num": 3, "fraction_den": 5},
-    )
-    assert tile_numeric_value(tile) == pytest.approx(0.6)
-
-
-def test_number_sum_includes_fraction_numeric_value():
-    board = Board(
-        tiles=[[_tile(0, c, "x", 1) for c in range(5)] for _ in range(5)],
-        money=0,
-    )
-    board.tiles[0][0] = _tile(
-        0, 0, "1", 1, curse=CurseType.NUMBER, number_value=1
-    )
-    board.tiles[0][1] = _tile(
-        0,
-        1,
-        "?",
-        8,
-        curse=CurseType.FRACTION,
-        char="3/5",
-        fraction_value=0.6,
-        metadata={"fraction_num": 3, "fraction_den": 5},
-    )
-    board.tiles[0][2] = _tile(
-        0, 2, "4", 4, curse=CurseType.NUMBER, number_value=4
-    )
-    path = [0, 1, 2]
-    assert number_sum_on_path(board, path) == pytest.approx(5.6)
-
-
 def test_fraction_word_via_path_validator(tmp_path):
     wl = tmp_path / "words.txt"
     wl.write_text("ace\n")
@@ -206,56 +134,6 @@ def test_search_finds_word_through_fraction(tmp_path):
     assert "ace" in words or "ac?" in words
 
 
-def test_number_tile_multiply_includes_fraction():
-    board = Board(
-        tiles=[[_tile(0, c, "x", 1) for c in range(5)] for _ in range(5)],
-        money=0,
-    )
-    board.tiles[0][0] = _tile(
-        0,
-        0,
-        "?",
-        8,
-        curse=CurseType.FRACTION,
-        char="3/5",
-        fraction_value=0.6,
-        metadata={"fraction_num": 3, "fraction_den": 5},
-    )
-    assert is_number_like_tile(board.tiles[0][0])
-
-
-def test_brain_number_sum_includes_fraction_value():
-    board = Board(
-        tiles=[[_tile(0, c, "x", 1) for c in range(5)] for _ in range(5)],
-        money=0,
-    )
-    board.tiles[0][0] = _tile(
-        0, 0, "4", 4, curse=CurseType.NUMBER, number_value=4
-    )
-    board.tiles[0][1] = _tile(
-        0,
-        1,
-        "?",
-        8,
-        curse=CurseType.FRACTION,
-        char="3/5",
-        fraction_value=0.6,
-        metadata={"fraction_num": 3, "fraction_den": 5},
-    )
-    board.tiles[0][2] = _tile(
-        0, 2, "4", 4, curse=CurseType.NUMBER, number_value=4
-    )
-    path = [0, 1, 2]
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="brain", name="Brain", level=1, kind="sticker")]
-    )
-    score, bd = ScoringPipeline().score(board, path, "4?4", loadout)
-    assert number_sum_on_path(board, path) == pytest.approx(8.6)
-    effects = " ".join(bd.get("pipeline", {}).get("effects", []) or [])
-    assert "8.6" in effects or "≥ 7" in effects
-    assert score >= 12.0
-
-
 def test_three_eighths_cannot_start_word():
     """⅜ (3/8) at path index 0 is illegal; digits elsewhere must not relax that."""
     board = Board(
@@ -283,21 +161,6 @@ def test_three_eighths_cannot_start_word():
         assert not v.word_ok(board, path, "?a6", None)
     finally:
         wl.unlink(missing_ok=True)
-
-
-def test_fraction_parts_from_melmod_tenth_glyph():
-    tile = _tile(
-        0,
-        0,
-        "?",
-        11,
-        curse=CurseType.FRACTION,
-        char="⅒",
-        fraction_value=0.1,
-    )
-    assert fraction_parts(tile) == (1, 10)
-    assert not fraction_position_valid(tile, 1, relaxed=False)  # 1-based pos 2
-    assert fraction_position_valid(tile, 0, relaxed=False)  # 1-based pos 1
 
 
 def test_invalid_trovers_path_rejected(tmp_path):

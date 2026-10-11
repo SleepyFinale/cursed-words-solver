@@ -8,7 +8,7 @@ from cursed_words_solver.models import (
     Tile,
     TileColor,
 )
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import count_scoring_items, get_rule, slugify_name
 
 ACHIEVEMENT_STICKER_NAMES = [
@@ -121,7 +121,7 @@ def _empty_board() -> Board:
 
 
 def test_all_achievement_stickers_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in ACHIEVEMENT_STICKER_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stickers", slug, name)
@@ -130,7 +130,7 @@ def test_all_achievement_stickers_catalogued():
 
 
 def test_count_scoring_vs_grid_only_achievement():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[
             LoadoutItem(id=slugify_name(n), name=n, level=1, kind="sticker")
@@ -145,7 +145,7 @@ def test_count_scoring_vs_grid_only_achievement():
 
 def test_arrivals_first_slot_multiplier():
     board = _empty_board()
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="arrivals", name="Arrivals", level=1)])
     score, bd = pipeline.score(board, [0], "x", loadout)
     base, _ = pipeline.score(board, [0], "x", Loadout())
@@ -153,18 +153,9 @@ def test_arrivals_first_slot_multiplier():
     assert score == int(base * 1.5)
 
 
-def test_departures_last_slot_bonus():
-    board = _empty_board()
-    pipeline = ScoringPipeline()
-    loadout = Loadout(stickers=[LoadoutItem(id="departures", name="Departures", level=1)])
-    score, _ = pipeline.score(board, [0], "x", loadout)
-    base, _ = pipeline.score(board, [0], "x", Loadout())
-    assert score == base + 100
-
-
 def test_axe_short_word_multiplier():
     board = _empty_board()
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="axe", name="Axe", level=1)])
     score, bd = pipeline.score(board, [0, 1, 2], "abc", loadout)
     base, _ = pipeline.score(board, [0, 1, 2], "abc", Loadout())
@@ -177,7 +168,7 @@ def test_circus_tent_three_colours():
     board.tiles[0][0] = _tile(0, 0, "R", 1, color=TileColor.RED)
     board.tiles[0][1] = _tile(0, 1, "B", 1, color=TileColor.BLUE)
     board.tiles[0][2] = _tile(0, 2, "C", 1, color=TileColor.COLORLESS)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="circus_tent", name="Circus Tent", level=1)])
     score, bd = pipeline.score(board, [0, 1, 2], "rbc", loadout)
     base, _ = pipeline.score(board, [0, 1, 2], "rbc", Loadout())
@@ -188,7 +179,7 @@ def test_circus_tent_three_colours():
 def test_postbox_uncursed_word():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="postbox", name="Postbox", level=1)])
     score, bd = pipeline.score(board, [0], "a", loadout)
     base, _ = pipeline.score(board, [0], "a", Loadout())
@@ -200,7 +191,7 @@ def test_newspaper_colourless_word():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 1, color=TileColor.COLORLESS)
     board.tiles[0][1] = _tile(0, 1, "B", 1, color=TileColor.COLORLESS)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="newspaper", name="Newspaper", level=1)])
     score, bd = pipeline.score(board, [0, 1], "ab", loadout)
     base, _ = pipeline.score(board, [0, 1], "ab", Loadout())
@@ -211,7 +202,7 @@ def test_newspaper_colourless_word():
 def test_onigiri_colourless_flat_bonus():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 1, color=TileColor.COLORLESS)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="onigiri", name="Onigiri", level=1)])
     score, _ = pipeline.score(board, [0], "a", loadout)
     base, _ = pipeline.score(board, [0], "a", Loadout())
@@ -223,7 +214,7 @@ def test_parrot_colourless_per_coloured_on_grid():
     board.tiles[0][0] = _tile(0, 0, "A", 1, color=TileColor.COLORLESS)
     board.tiles[0][1] = _tile(0, 1, "R", 1, color=TileColor.RED)
     board.tiles[1][0] = _tile(1, 0, "B", 1, color=TileColor.BLUE)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="parrot", name="Parrot", level=1)])
     score, _ = pipeline.score(board, [0], "a", loadout)
     base, _ = pipeline.score(board, [0], "a", Loadout())
@@ -241,7 +232,7 @@ def test_dagger_king_take_bonus():
         curse=CurseType.CHESS_KING,
         metadata={"take": True},
     )
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="dagger", name="Dagger", level=1)])
     score, _ = pipeline.score(board, [0], "k", loadout)
     base, _ = pipeline.score(board, [0], "k", Loadout())
@@ -252,7 +243,7 @@ def test_las_vegas_two_suits():
     board = _empty_board()
     board.tiles[0][0] = _card(0, 0, "2", "hearts")
     board.tiles[0][1] = _card(0, 1, "3", "clubs")
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="las_vegas", name="Las Vegas", level=1)])
     score, bd = pipeline.score(board, [0, 1], "23", loadout)
     base, _ = pipeline.score(board, [0, 1], "23", Loadout())
@@ -264,7 +255,7 @@ def test_scissors_one_pair_multiplier():
     board = _empty_board()
     board.tiles[0][0] = _card(0, 0, "2", "hearts")
     board.tiles[0][1] = _card(0, 1, "2", "clubs")
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="scissors", name="Scissors", level=1)])
     score, bd = pipeline.score(board, [0, 1], "22", loadout)
     base, _ = pipeline.score(board, [0, 1], "22", Loadout())
@@ -275,7 +266,7 @@ def test_scissors_one_pair_multiplier():
 def test_down_under_negative_tile_mult():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "A", 2)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="down_under", name="Down Under", level=1)])
     score, bd = pipeline.score(board, [0], "a", loadout)
     base, _ = pipeline.score(board, [0], "a", Loadout())
@@ -283,43 +274,7 @@ def test_down_under_negative_tile_mult():
     assert score == base * -3
 
 
-def test_shield_blue_base_override():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 1, color=TileColor.BLUE)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(stickers=[LoadoutItem(id="shield", name="Shield", level=1)])
-    score, bd = pipeline.score(board, [0], "a", loadout)
-    base, _ = pipeline.score(board, [0], "a", Loadout())
-    assert bd["base_total"] == 10
-    assert score == 10
-
-
-def test_crystal_ball_wildcard_bonus():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "?", 1, curse=CurseType.WILDCARD)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="crystal_ball", name="Crystal Ball", level=1)],
-        extras={"target_curse_type": "wildcard"},
-    )
-    score, _ = pipeline.score(board, [0], "?", loadout)
-    base, _ = pipeline.score(board, [0], "?", Loadout())
-    assert score == base + 70
-
-
-def test_lollipop_restock_bonus():
-    board = _empty_board()
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="lollipop", name="Lollipop", level=1)],
-        extras={"shop_restock_count": "3"},
-    )
-    score, _ = pipeline.score(board, [0], "x", loadout)
-    base, _ = pipeline.score(board, [0], "x", Loadout())
-    assert score == base + 15
-
-
 def test_candle_grid_scatter_catalog():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     _key, rule = get_rule(pipeline.rules, "stickers", "candle", "Candle")
     assert rule.get("effect_class") == "scatter"

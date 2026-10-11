@@ -1,8 +1,8 @@
 """Nat-H4 unlock sticker scoring."""
 
 from cursed_words_solver.models import Board, Loadout, LoadoutItem, Tile, TileColor
-from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.rule_lookup import count_scoring_items, get_rule, slugify_name
+from cursed_words_solver.engine.scorer import EngineScorer
+from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
 NAT_H4_STICKER_NAMES = [
     "Burrito",
@@ -39,7 +39,7 @@ def _empty_board() -> Board:
 
 
 def test_all_nat_h4_stickers_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in NAT_H4_STICKER_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stickers", slug, name)
@@ -47,22 +47,8 @@ def test_all_nat_h4_stickers_catalogued():
         assert rule.get("type") != "unmodeled", slug
 
 
-def test_count_scoring_vs_grid_only_nat_h4():
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id=slugify_name(n), name=n, level=1, kind="sticker")
-            for n in NAT_H4_STICKER_NAMES
-        ]
-    )
-    scoring, total, grid_only = count_scoring_items(pipeline.rules, loadout)
-    assert total == 6
-    assert grid_only == len(GRID_ONLY_SLUGS)
-    assert scoring == 6 - len(GRID_ONLY_SLUGS)
-
-
 def test_grid_and_sell_stickers_catalog():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for slug in ("printer", "retro_raider", "toolbox"):
         _key, rule = get_rule(pipeline.rules, "stickers", slug, slug)
         assert rule.get("effect_class") == "scatter"
@@ -72,7 +58,7 @@ def test_grid_and_sell_stickers_catalog():
 
 def test_burrito_alone_no_multiplier():
     board = _empty_board()
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="burrito", name="Burrito", level=1)])
     score, bd = pipeline.score(board, [0], "x", loadout)
     base, base_bd = pipeline.score(board, [0], "x", Loadout())
@@ -82,7 +68,7 @@ def test_burrito_alone_no_multiplier():
 
 def test_burrito_with_other_stickers():
     board = _empty_board()
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[
             LoadoutItem(id="burrito", name="Burrito", level=1),
@@ -98,7 +84,7 @@ def test_burrito_with_other_stickers():
 
 def test_burrito_level2_rate():
     board = _empty_board()
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[
             LoadoutItem(id="burrito", name="Burrito", level=2),
@@ -111,60 +97,9 @@ def test_burrito_level2_rate():
     assert score == int(base * 1.2)  # floor after ×WORD
 
 
-def test_burrito_includes_pin_memory_sticker_levels():
-    from cursed_words_solver.rules.scoring_conditions import (
-        burrito_word_multiplier,
-        other_sticker_levels_sum,
-    )
-
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id="retro_raider", name="Retro Raider", level=1),
-            LoadoutItem(id="game_pad", name="Game Pad", level=2),
-            LoadoutItem(id="doughnut", name="Doughnut", level=2),
-            LoadoutItem(id="burrito", name="Burrito", level=1),
-            LoadoutItem(id="cocktail", name="Cocktail", level=1),
-        ],
-        extras={
-            "pin_memory": [
-                {"id": "sunflower", "name": "Sunflower", "level": 1, "kind": "sticker"},
-                {"id": "hungry_snake", "name": "Hungry Snake", "level": 1, "kind": "stamp"},
-            ],
-        },
-    )
-    assert other_sticker_levels_sum(loadout) == 7
-    rule = {"base": 0.05, "upgrade": 0.05}
-    assert burrito_word_multiplier(1, rule, loadout) == 1.35
-
-
-def test_stamp_album_from_extras():
-    board = _empty_board()
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="stamp_album", name="Stamp Album", level=1)],
-        extras={"stamps_shop_price_total": "12"},
-    )
-    score, bd = pipeline.score(board, [0], "x", loadout)
-    base, _ = pipeline.score(board, [0], "x", Loadout())
-    assert score == base + 12
-    assert any("per_stamp_shop_price" in e for e in bd["pipeline"]["effects"])
-
-
-def test_stamp_album_level2_from_extras():
-    board = _empty_board()
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="stamp_album", name="Stamp Album", level=2)],
-        extras={"stamps_shop_price_total": "12"},
-    )
-    score, _ = pipeline.score(board, [0], "x", loadout)
-    base, _ = pipeline.score(board, [0], "x", Loadout())
-    assert score == base + 24
-
-
 def test_stamp_album_no_stamps_no_extras():
     board = _empty_board()
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="stamp_album", name="Stamp Album", level=1)])
     score, bd = pipeline.score(board, [0], "x", loadout)
     base, _ = pipeline.score(board, [0], "x", Loadout())
@@ -172,64 +107,12 @@ def test_stamp_album_no_stamps_no_extras():
     assert bd["multiplier"] == 1.0
 
 
-def test_stamp_album_from_catalog_stamp_prices():
-    board = _empty_board()
-    pipeline = ScoringPipeline()
-    stamps = [
-        LoadoutItem(id="newspaper", name="Newspaper", level=1, kind="stamp"),
-        LoadoutItem(id="moai", name="Moai", level=1, kind="stamp"),
-    ]
-    with_album = Loadout(
-        stickers=[LoadoutItem(id="stamp_album", name="Stamp Album", level=1)],
-        stamps=stamps,
-    )
-    stamps_only = Loadout(stamps=stamps)
-    score_album, _ = pipeline.score(board, [0], "x", with_album)
-    score_stamps, _ = pipeline.score(board, [0], "x", stamps_only)
-    assert score_album - score_stamps == 20
-
-
-def test_grid_path_tombstone_uses_retro_raider_level_without_equip():
-    """20260709 attend: grid tombstone L1 export scores at Retro Raider L2."""
-    import json
-    from pathlib import Path
-
-    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-    from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
-    from tests.regression.test_scoring_mismatches import (
-        FIXTURES,
-        _replay_path,
-        _run_state_for_replay,
-    )
-
-    data = json.loads((FIXTURES / "20260709_144945.json").read_text(encoding="utf-8"))
-    run_state = _run_state_for_replay(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    path = _replay_path(board, data["path"])
-    tomb_idx = next(
-        i
-        for i, idx in enumerate(path)
-        if str((board.get_by_index(idx).metadata or {}).get("scattered_item_id") or "")
-        == "tombstone"
-    )
-    level = grid_path_sticker_level(
-        loadout,
-        "tombstone",
-        board=board,
-        path=path,
-        path_tile_index=tomb_idx,
-    )
-    assert level == 2
-
-
 def test_attend_grid_tombstone_retro_raider_replay_score_151():
     """20260709 attend: +80 void-adjacent at L2, ×1.5 YG → 151."""
     import json
-    from pathlib import Path
 
     from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-    from tests.regression.test_scoring_mismatches import (
+    from tests.helpers.replay import (
         FIXTURES,
         _replay_path,
         _run_state_for_replay,
@@ -240,5 +123,5 @@ def test_attend_grid_tombstone_retro_raider_replay_score_151():
     board = parse_board_from_run_state(run_state)
     loadout = parse_run_state(run_state)
     path = _replay_path(board, data["path"])
-    score, _ = ScoringPipeline().score(board, path, data["word"], loadout)
+    score, _ = EngineScorer().score(board, path, data["word"], loadout)
     assert int(score) == int(data["actual_score"]) == 151

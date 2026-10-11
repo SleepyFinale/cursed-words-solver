@@ -6,7 +6,7 @@ from cursed_words_solver.models import Board, CurseType, Tile, TileColor
 
 
 def _make_wordlist(tmp_path: Path) -> Path:
-    words = ["cat", "car", "tar", "rat", "art", "the", "buy", "game", "boo", "book"]
+    words = ["cat", "car", "tar", "rat", "art", "the", "buy", "game", "boo", "book", "bravo"]
     p = tmp_path / "words.txt"
     p.write_text("\n".join(words), encoding="utf-8")
     return p
@@ -449,7 +449,6 @@ def _board_1_fraction_245fe_fixture() -> Board:
     grid[4][3] = letter(4, 3, "R")
     grid[4][4] = letter(4, 4, "A")
     return Board(tiles=grid, money=3)
-
 
 
 def letter_tile(ch: str, row: int, col: int, *, was_consumable: bool = False) -> "Tile":

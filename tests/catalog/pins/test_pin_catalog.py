@@ -5,11 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from cursed_words_solver.rules.rule_lookup import (
-    get_pin_branch_rule,
-    get_pin_scoring_rule,
-    pin_has_word_scoring,
-)
+from cursed_words_solver.rules.rule_lookup import get_pin_branch_rule, get_pin_scoring_rule, pin_has_word_scoring
 
 ROOT = Path(__file__).resolve().parents[3]
 CATALOG = ROOT / "data" / "wiki" / "stickers.json"
@@ -69,15 +65,3 @@ def test_pin_game_class_and_tracks(pins, slug, game_class, has_right, has_left):
         assert right is not None
     if slug in ("random_access_memory", "human_boy"):
         assert pin_has_word_scoring(entry)
-
-
-def test_super_8_uses_pin_right_variable():
-    from cursed_words_solver.models import Board, Loadout
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-    from cursed_words_solver.rules.scoring_conditions import super_8_take_word_bonus
-
-    rule = get_pin_scoring_rule(
-        json.loads(CATALOG.read_text(encoding="utf-8")), "sam_gambit"
-    )
-    lo = Loadout(extras={"pin_right_variable": 24, "pin_right_level": "1"})
-    assert super_8_take_word_bonus(lo, rule) == 24

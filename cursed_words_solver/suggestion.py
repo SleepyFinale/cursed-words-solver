@@ -22,7 +22,6 @@ from cursed_words_solver.f8_messages import F8_RETRY_HINT
 from cursed_words_solver.dictionary import WordDictionary
 
 from cursed_words_solver.fingerprints import (
-    board_fingerprint,
     board_fingerprint_tiles_only_from_fp,
     board_tiles_fingerprint_suffix,
     cursedle_guess_suffix_from_board_fp,
@@ -38,7 +37,6 @@ from cursed_words_solver.models import (
     normalize_tile_glyph,
 )
 
-from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 
 from cursed_words_solver.rules.twinkle_toes import TwinkleToesSwap
@@ -252,91 +250,6 @@ def fingerprint_change_is_suggested_board_progress(
                 return False
 
     return True
-
-
-def fingerprint_change_is_consumable_placement_progress(
-    saved_board_fp: str,
-    current_board_fp: str,
-    placements: list[Any],
-) -> bool:
-    """True when board drift is only rack consumables placed at suggested cells (partial OK)."""
-    return fingerprint_change_is_suggested_board_progress(
-        saved_board_fp,
-        current_board_fp,
-        placements=placements,
-        swap=None,
-    )
-
-
-def fingerprint_change_is_suggested_consumable_placement_only(
-    saved_board_fp: str,
-    current_board_fp: str,
-    placements: list[Any],
-) -> bool:
-    """Alias for placement-progress check (supports one-at-a-time rack placement)."""
-    return fingerprint_change_is_consumable_placement_progress(
-        saved_board_fp,
-        current_board_fp,
-        placements,
-    )
-
-
-def fingerprint_invalidate_suppressed_for_consumable_placement(
-    current_board_fp: str,
-) -> bool:
-    """Keep F8 suggestion/highlight when user placed suggested consumables only."""
-    data = _last_suggestion_fingerprint_data()
-    if data is None:
-        return False
-    placements = data.get("consumable_placements")
-    if not isinstance(placements, list) or not placements:
-        return False
-    saved_board = str(data.get("board_fingerprint") or "").strip()
-    cur_board = (current_board_fp or "").strip()
-    if not saved_board or not cur_board or saved_board == cur_board:
-        return False
-    return fingerprint_change_is_suggested_board_progress(
-        saved_board,
-        cur_board,
-        placements=placements,
-        swap=None,
-    )
-
-
-def fingerprint_change_is_twinkle_toes_swap_progress(
-    saved_board_fp: str,
-    current_board_fp: str,
-    swap: Any,
-) -> bool:
-    """True when board drift is only the suggested Twinkle Toes tile swap."""
-    return fingerprint_change_is_suggested_board_progress(
-        saved_board_fp,
-        current_board_fp,
-        placements=None,
-        swap=swap,
-    )
-
-
-def fingerprint_invalidate_suppressed_for_twinkle_toes_swap(
-    current_board_fp: str,
-) -> bool:
-    """Keep F8 suggestion/highlight when user performed the suggested Twinkle Toes swap."""
-    data = _last_suggestion_fingerprint_data()
-    if data is None:
-        return False
-    swap = data.get("twinkle_toes_swap")
-    if not isinstance(swap, dict) or not swap:
-        return False
-    saved_board = str(data.get("board_fingerprint") or "").strip()
-    cur_board = (current_board_fp or "").strip()
-    if not saved_board or not cur_board or saved_board == cur_board:
-        return False
-    return fingerprint_change_is_suggested_board_progress(
-        saved_board,
-        cur_board,
-        placements=None,
-        swap=swap,
-    )
 
 
 def fingerprint_invalidate_suppressed_for_suggested_board_change(
@@ -713,14 +626,6 @@ def is_disk_catchup_drift(
     return False
 
 
-def is_export_catchup_drift(
-    f8_extras: dict[str, Any] | None,
-    cur_extras: dict[str, Any] | None,
-) -> bool:
-    """Alias for disk catchup drift (melmod export lag after F8, not embed ahead)."""
-    return is_disk_catchup_drift(f8_extras, cur_extras)
-
-
 def fingerprint_invalidate_suppressed_for_post_f8_export(
     current_board_fp: str,
     *,
@@ -843,24 +748,6 @@ def grid_transition_workflow_bleed_warning(
             f"{F8_RETRY_HINT}."
         )
     return None
-
-
-def scoring_cache_bleed_blocks_f8(
-    run_state_extras: dict[str, Any] | None,
-) -> bool:
-    """True when grid 2+ has prior-grid historic but melmod scoring cache is still empty."""
-    extras = run_state_extras if isinstance(run_state_extras, dict) else {}
-    hist = str(extras.get("historic_words", "") or "").strip()
-    hist_count = _historic_words_count(hist)
-    try:
-        grid = int(str(extras.get("grid_number") or "0"))
-    except ValueError:
-        grid = 0
-    try:
-        scoring_count = int(str(extras.get("scoring_previous_words_count") or "0"))
-    except ValueError:
-        scoring_count = 0
-    return grid >= 2 and hist_count > 0 and scoring_count == 0
 
 
 def run_state_historic_stale_warnings(
@@ -1140,58 +1027,6 @@ def workflow_stale_vs_f8_snapshot(
     if not notes:
         return None
     return "; ".join(notes)
-
-
-def f8_prediction_workflow_stale_warning(
-    run_state_extras: dict[str, Any] | None,
-    f8_snapshot_extras: dict[str, Any] | None,
-) -> str | None:
-    """Blocking-style warning when live run_state workflow drifted from the F8 embed."""
-    reason = workflow_stale_vs_f8_snapshot(run_state_extras, f8_snapshot_extras)
-    if reason is None:
-        return None
-    return (
-        f"F8 prediction may be wrong ({reason}) — press F8 again."
-    )
-
-
-def f8_prior_suggestion_stale_note(
-    run_state_extras: dict[str, Any] | None,
-) -> str | None:
-    """Note when run_state workflow drifted since the prior F8 embed (before overwriting)."""
-    if not LAST_SUGGESTION_PATH.exists():
-        return None
-    data = _last_suggestion_fingerprint_data()
-    if data is None:
-        return None
-    reason = workflow_stale_vs_f8_snapshot(
-        run_state_extras if isinstance(run_state_extras, dict) else {},
-        _f8_snapshot_extras(data),
-    )
-    if reason is None:
-        return None
-    return (
-        "Played a word since last F8 "
-        f"({reason}) — prior overlay suggestion was stale; this F8 refreshes it."
-    )
-
-
-def clear_stale_last_suggestion_if_workflow_changed(
-    run_state_extras: dict[str, Any] | None,
-) -> str | None:
-    """Remove last_suggestion.json when a word was played since F8 (no board-fp gate)."""
-    data = _last_suggestion_fingerprint_data()
-    if data is None:
-        return None
-    reason = workflow_stale_vs_f8_snapshot(
-        run_state_extras,
-        _f8_snapshot_extras(data),
-    )
-    if reason is None:
-        return None
-    if clear_last_suggestion():
-        return reason
-    return None
 
 
 def clear_stale_last_suggestion_if_fingerprint_changed(
@@ -1483,10 +1318,6 @@ def clear_stale_last_suggestion_if_loadout_changed(current_loadout_fp: str) -> b
     return True
 
 
-def stale_suggestion_warning_for_board(board: Board) -> str | None:
-    return stale_suggestion_warning(board_fingerprint(board))
-
-
 def format_suggestion_word(result: WordResult) -> str:
     """Human-readable suggestion: scoring pattern → dictionary word when they differ."""
     if result.dictionary_word and result.dictionary_word.lower() != result.word.lower():
@@ -1754,7 +1585,7 @@ def f8_should_block_save(
     dictionary: WordDictionary | None = None,
     scoring_word: str | None = None,
     min_len: int = 3,
-    pipeline: ScoringPipeline | None = None,
+    pipeline: Any = None,
 ) -> tuple[bool, str | None]:
     """Whether F8 must skip trusted last_suggestion.json (melmod capture)."""
     del grid_adv_warn, grid_one_hist_warn

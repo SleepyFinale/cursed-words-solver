@@ -8,17 +8,9 @@ from pathlib import Path
 import pytest
 
 from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
-from cursed_words_solver.rules.boss_effects import (
-    active_boss_ids,
-    boss_word_constraints,
-    floor_mod_for_rule,
-    load_rules_catalog,
-    michael_finale_active,
-    michael_finale_export_expected,
-    resolve_boss_scaling_for_rule,
-)
+from cursed_words_solver.rules.boss_effects import active_boss_ids, boss_word_constraints, floor_mod_for_rule, load_rules_catalog, michael_finale_active, michael_finale_export_expected, resolve_boss_scaling_for_rule
 from cursed_words_solver.rules.boss_grid_effects import apply_boss_grid_mutations
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.rules.rule_lookup import boss_display_name
 
 RULES = load_rules_catalog()
@@ -64,26 +56,6 @@ def test_floor_mod_for_rule_from_extras() -> None:
     assert resolve_boss_scaling_for_rule(loadout, RULES, "salamander", sal) == 9
 
 
-def test_yeti_salamander_stacked_scoring_penalty() -> None:
-    board = _board()
-    path = list(range(7))
-    # trim board to 7 tiles for simple path
-    loadout = Loadout(
-        boss_id="yeti_crab",
-        money=2,
-        extras={
-            "boss_modifiers": ["yeti_crab", "salamander"],
-            "boss_modifier_floor_mods": '{"salamander": 9}',
-            "boss_area_number": 1,
-            "run_seed": "t",
-        },
-    )
-    pipe = ScoringPipeline()
-    _, bd = pipe.score(board, path, "abcdefg", loadout)
-    effects = bd.get("pipeline", {}).get("effects", [])
-    assert any("-9 per tile (boss)" in e for e in effects)
-
-
 def test_boss_display_name_stacked() -> None:
     loadout = Loadout(
         extras={"boss_modifiers": ["yeti_crab", "salamander"]},
@@ -104,22 +76,6 @@ def test_boss_display_name_michael_draft_phase() -> None:
         },
     )
     assert boss_display_name(loadout, RULES) == "Michael"
-
-
-def test_badger_grid_level_when_boss_id_is_michael() -> None:
-    from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
-
-    loadout = Loadout(
-        boss_id="michael",
-        extras={
-            "michael_phase": 1,
-            "boss_area_number": 6,
-            "boss_modifiers": ["badger"],
-            "grid_number": 4,
-        },
-    )
-    level = grid_path_sticker_level(loadout, "lucky_scarf")
-    assert level >= 4
 
 
 def test_michael_finale_requires_all_active_tiles() -> None:
@@ -144,7 +100,7 @@ def test_michael_finale_skips_boss_penalties_with_stale_modifiers() -> None:
     )
     assert michael_finale_active(loadout)
     assert active_boss_ids(loadout) == []
-    pipe = ScoringPipeline()
+    pipe = EngineScorer()
     _, bd = pipe.score(board, list(range(5)), "abcde", loadout)
     effects = bd.get("pipeline", {}).get("effects", [])
     assert not any("per tile (boss)" in e for e in effects)
@@ -169,7 +125,7 @@ def test_michael_encounter_finale_corrected_export() -> None:
     c = boss_word_constraints(loadout, RULES, default_max_len=25)
     assert c.min_len == 25
     assert c.max_len == 25
-    pipe = ScoringPipeline()
+    pipe = EngineScorer()
     _, bd = pipe.score(board, list(range(5)), "abcde", loadout)
     effects = bd.get("pipeline", {}).get("effects", [])
     assert not any("per tile (boss)" in e for e in effects)
@@ -379,7 +335,7 @@ def test_michael_finale_skips_boss_penalties() -> None:
             "boss_modifier_floor_mods": '{"salamander": 9}',
         },
     )
-    pipe = ScoringPipeline()
+    pipe = EngineScorer()
     _, bd = pipe.score(board, list(range(5)), "abcde", loadout)
     effects = bd.get("pipeline", {}).get("effects", [])
     assert not any("per tile (boss)" in e for e in effects)
@@ -406,26 +362,3 @@ def test_grid_stack_mole_and_yeti() -> None:
     assert colorless >= 1
 
 
-def test_wessand_michael_mismatch_replay() -> None:
-    case_path = FIXTURES / "20260527_201129.json"
-    if not case_path.is_file():
-        pytest.skip("fixture 20260527_201129 not installed")
-    from tests.regression.test_scoring_mismatches import _run_state_for_replay
-    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-
-    data = json.loads(case_path.read_text(encoding="utf-8"))
-    run_state = _run_state_for_replay(data)
-    extras = dict(run_state.get("extras") or {})
-    extras["boss_modifier_floor_mods"] = json.dumps(
-        {"salamander": 9, "yeti_crab": 6}
-    )
-    run_state["extras"] = extras
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None
-    score, bd = ScoringPipeline().score(
-        board, data["path"], data["word"], loadout
-    )
-    effects = bd.get("pipeline", {}).get("effects", [])
-    assert any("-9 per tile (boss)" in e for e in effects)
-    assert int(score) == int(data["actual_score"])

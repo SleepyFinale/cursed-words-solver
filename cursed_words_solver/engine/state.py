@@ -74,10 +74,25 @@ class Ctx:
     nondeterministic: bool = False
 
     def all_items(self) -> list[ItemInst]:
-        """``Player.GetAllItems()``: character item, stickers, stamps (non-null)."""
+        """``Player.GetAllItems()``: character item, stickers, stamps (non-null).
+
+        Under Playing Favourites only the pin, the favourite sticker (left of
+        Left Hand), Left Hand, Right Hand and the stamp after Right Hand.
+        """
         out: list[ItemInst] = []
         if self.character_item is not None:
             out.append(self.character_item)
+        if self.challenge == "PlayingFavourites":
+            st, sp = self.stickers, self.stamps
+            for i, item in enumerate(st):
+                if item is not None and i + 1 < len(st) and st[i + 1] is not None and st[i + 1].cls == "LeftHumanHand":
+                    out.append(item)
+            out.extend([i for i in st if i is not None and i.cls == "LeftHumanHand"][:1])
+            right = [k for k, i in enumerate(sp) if i is not None and i.cls == "RightHumanHand"][:1]
+            out.extend(sp[k] for k in right)
+            if right and right[0] < 4 and right[0] + 1 < len(sp) and sp[right[0] + 1] is not None:
+                out.append(sp[right[0] + 1])
+            return out
         out.extend(i for i in self.stickers if i is not None)
         out.extend(i for i in self.stamps if i is not None)
         return out

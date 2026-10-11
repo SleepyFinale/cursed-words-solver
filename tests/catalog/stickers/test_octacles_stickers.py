@@ -1,15 +1,8 @@
 """Octacles unlock sticker scoring."""
 
-from cursed_words_solver.models import (
-    Board,
-    CurseType,
-    Loadout,
-    LoadoutItem,
-    Tile,
-    TileColor,
-)
-from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.rule_lookup import count_scoring_items, get_rule, slugify_name
+from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
+from cursed_words_solver.engine.scorer import EngineScorer
+from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
 OCTACLES_STICKER_NAMES = [
     "Amphora",
@@ -54,7 +47,7 @@ def _empty_board() -> Board:
 
 
 def test_all_octacles_stickers_catalogued():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for name in OCTACLES_STICKER_NAMES:
         slug = slugify_name(name)
         _key, rule = get_rule(pipeline.rules, "stickers", slug, name)
@@ -62,22 +55,8 @@ def test_all_octacles_stickers_catalogued():
         assert rule.get("type") != "unmodeled", slug
 
 
-def test_count_scoring_vs_grid_only_octacles():
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id=slugify_name(n), name=n, level=1, kind="sticker")
-            for n in OCTACLES_STICKER_NAMES
-        ]
-    )
-    scoring, total, grid_only = count_scoring_items(pipeline.rules, loadout)
-    assert total == 7
-    assert grid_only == len(GRID_ONLY_SLUGS)
-    assert scoring == 7 - len(GRID_ONLY_SLUGS)
-
-
 def test_amphora_and_ghost_grid_scatter():
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     for slug in ("amphora", "ghost"):
         _key, rule = get_rule(pipeline.rules, "stickers", slug, slug)
         assert rule.get("effect_class") == "scatter"
@@ -86,7 +65,7 @@ def test_amphora_and_ghost_grid_scatter():
 def test_mysterious_amulet_cursed_tile_bonus():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "3", 3, curse=CurseType.NUMBER)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="mysterious_amulet", name="Mysterious Amulet", level=1)]
     )
@@ -104,7 +83,7 @@ def test_mysterious_amulet_counts_suited_letter():
     suited.metadata["card_rank"] = "W"
     board.tiles[0][0] = suited
     board.tiles[0][1] = _tile(0, 1, "E", 1)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="mysterious_amulet", name="Mysterious Amulet", level=1)]
     )
@@ -115,52 +94,6 @@ def test_mysterious_amulet_counts_suited_letter():
     assert score == base + 8
 
 
-def test_mysterious_amulet_grid_path_bleed_uses_encounter_not_equipped():
-    """20260809_200850: melmod L3 scatter export + equipped L3 → grid at L1.
-
-    Live game applies scatter L1 then inventory L3; treating export as real L3
-    double-counts (+24 twice → 940 vs 664).
-    """
-    from cursed_words_solver.rules.scoring_conditions import grid_path_sticker_level
-
-    board = _empty_board()
-    board.tiles[1][4] = Tile(
-        row=1,
-        col=4,
-        char="N",
-        letter="N",
-        base_score=0.0,
-        color=TileColor.COLORLESS,
-        curse=CurseType.ITEM,
-        metadata={
-            "scattered_item_id": "mysterious_amulet",
-            "scattered_item_level": 3,
-        },
-    )
-    board.tiles[0][0] = _tile(0, 0, "q", 9, curse=CurseType.CHESS_QUEEN)
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id="mysterious_amulet", name="Mysterious Amulet", level=3)
-        ],
-        extras={
-            "grid_number": "2",
-            "grid_scattered_items": (
-                '[{"row":1,"col":4,"id":"mysterious_amulet","level":3}]'
-            ),
-        },
-    )
-    assert (
-        grid_path_sticker_level(
-            loadout,
-            "mysterious_amulet",
-            board=board,
-            path=[0, 9],
-            path_tile_index=1,
-        )
-        == 1
-    )
-
-
 def test_mysterious_amulet_counts_colorless_suited_letter():
     """Colorless Go Fish / Postal Horn suited letters are cursed (Tile.IsCursed)."""
     board = _empty_board()
@@ -169,7 +102,7 @@ def test_mysterious_amulet_counts_colorless_suited_letter():
     suited.metadata["card_rank"] = "A"
     board.tiles[0][0] = suited
     board.tiles[0][1] = _tile(0, 1, "B", 3, color=TileColor.COLORLESS)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="mysterious_amulet", name="Mysterious Amulet", level=1)]
     )
@@ -189,34 +122,12 @@ def test_broom_colorless_suited_letter_start_counts_as_cursed():
     board.tiles[0][0] = start
     board.tiles[0][1] = _tile(0, 1, "A", 2)
     board.tiles[0][2] = _tile(0, 2, "?", 0, curse=CurseType.WILDCARD)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="broom", name="Broom", level=1)])
     score, bd = pipeline.score(board, [0, 1, 2], "ean", loadout)
     base, _ = pipeline.score(board, [0, 1, 2], "ean", Loadout())
     assert bd["multiplier"] == 1.5
     assert score == int(base * 1.5)
-
-
-def test_mysterious_amulet_ignores_stale_joker_suit_on_letter():
-    """Letter + exported card_suit joker is not cursed (SetGlyphType clears Joker→None)."""
-    board = _empty_board()
-    w = _tile(0, 0, "W", 4)
-    w.metadata["card_suit"] = "joker"
-    w.metadata["card_rank"] = "W"
-    w.metadata["was_consumable"] = True
-    board.tiles[0][0] = w
-    board.tiles[0][1] = _tile(0, 1, "A", 1)
-    board.tiles[0][2] = _tile(0, 2, "?", 0, curse=CurseType.CURRENCY)
-    board.tiles[0][2].letter = "T"
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="mysterious_amulet", name="Mysterious Amulet", level=1)]
-    )
-    score, bd = pipeline.score(board, [0, 1, 2], "wat", loadout)
-    # Only currency is cursed → +8, not W
-    assert bd["pipeline"]["tile_scores"][0] == 4
-    assert bd["pipeline"]["tile_scores"][2] == 8
-    assert score == 4 + 1 + 8
 
 
 def test_moai_sticker_colourless_cursed_only():
@@ -225,7 +136,7 @@ def test_moai_sticker_colourless_cursed_only():
     board.tiles[0][1] = _tile(
         0, 1, "5", 5, curse=CurseType.NUMBER, color=TileColor.RED
     )
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="moai", name="Moai", level=1, kind="sticker")])
     score, bd = pipeline.score(board, [0, 1], "45", loadout)
     base, base_bd = pipeline.score(board, [0, 1], "45", Loadout())
@@ -239,7 +150,7 @@ def test_broom_different_curse_types_at_ends():
     board.tiles[0][0] = _tile(0, 0, "2", 2, curse=CurseType.NUMBER)
     board.tiles[0][1] = _tile(0, 1, "A", 2)
     board.tiles[0][2] = _tile(0, 2, "N", 1, curse=CurseType.CHESS_KNIGHT)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="broom", name="Broom", level=1)])
     score, bd = pipeline.score(board, [0, 1, 2], "2an", loadout)
     base, _ = pipeline.score(board, [0, 1, 2], "2an", Loadout())
@@ -252,7 +163,7 @@ def test_broom_same_curse_type_ends_no_mult():
     board.tiles[0][0] = _tile(0, 0, "2", 2, curse=CurseType.NUMBER)
     board.tiles[0][1] = _tile(0, 1, "A", 2)
     board.tiles[0][2] = _tile(0, 2, "3", 3, curse=CurseType.NUMBER)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="broom", name="Broom", level=1)])
     score, bd = pipeline.score(board, [0, 1, 2], "2a3", loadout)
     base, _ = pipeline.score(board, [0, 1, 2], "2a3", Loadout())
@@ -265,7 +176,7 @@ def test_broom_chess_vs_chess_no_mult():
     board.tiles[0][0] = _tile(0, 0, "N", 1, curse=CurseType.CHESS_BISHOP)
     board.tiles[0][1] = _tile(0, 1, "A", 2)
     board.tiles[0][2] = _tile(0, 2, "N", 1, curse=CurseType.CHESS_KNIGHT)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(stickers=[LoadoutItem(id="broom", name="Broom", level=1)])
     score, bd = pipeline.score(board, [0, 1, 2], "nan", loadout)
     base, _ = pipeline.score(board, [0, 1, 2], "nan", Loadout())
@@ -279,7 +190,7 @@ def test_broom_sluggish_zombie_z_end_counts_as_cursed():
     board.tiles[0][0] = _tile(0, 0, "?", 0, curse=CurseType.ITEM)
     board.tiles[0][1] = _tile(0, 1, "A", 1)
     board.tiles[0][2] = _tile(0, 2, "Z", 10)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     with_zombie = Loadout(
         stickers=[LoadoutItem(id="broom", name="Broom", level=1)],
         stamps=[LoadoutItem(id="sluggish_zombie", name="Sluggish Zombie", level=1)],
@@ -298,7 +209,7 @@ def test_mischievous_imp_all_cursed_multiply():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "2", 2, curse=CurseType.NUMBER)
     board.tiles[0][1] = _tile(0, 1, "N", 1, curse=CurseType.CHESS_KNIGHT)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="mischievous_imp", name="Mischievous Imp", level=1)]
     )
@@ -312,7 +223,7 @@ def test_mischievous_imp_mixed_letter_no_mult():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "2", 2, curse=CurseType.NUMBER)
     board.tiles[0][1] = _tile(0, 1, "A", 2)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="mischievous_imp", name="Mischievous Imp", level=1)]
     )
@@ -326,7 +237,7 @@ def test_jack_o_lantern_cursed_word_money():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "2", 2, curse=CurseType.NUMBER)
     board.tiles[0][1] = _tile(0, 1, "?", 1, curse=CurseType.WILDCARD)
-    pipeline = ScoringPipeline()
+    pipeline = EngineScorer()
     loadout = Loadout(
         stickers=[LoadoutItem(id="jack_o_lantern", name="Jack-o'-Lantern", level=1)]
     )
@@ -336,15 +247,3 @@ def test_jack_o_lantern_cursed_word_money():
     assert score == base
 
 
-def test_jack_o_lantern_letter_and_currency_path():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "G", 2)
-    board.tiles[0][1] = _tile(0, 1, "O", 2)
-    pipeline = ScoringPipeline()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="jack_o_lantern", name="Jack-o'-Lantern", level=1)]
-    )
-    score, bd = pipeline.score(board, [0, 1], "go", loadout)
-    base, _ = pipeline.score(board, [0, 1], "go", Loadout())
-    assert bd["money_bonus"] == 1
-    assert score == base

@@ -1299,6 +1299,8 @@ def run_cursedle_solver(
         guesses_remaining = max(0, 5 - guesses_used)
 
     warnings: list[str] = []
+    if board is None:
+        return CursedleAdvice("", [], 0, guesses_used, guesses_remaining, "no board", ["No board in run_state — re-export (F8)."])
     if guesses_used > 0 and len(guesses) < guesses_used:
         warnings.append(
             f"Cursedle guess history incomplete ({len(guesses)}/{guesses_used}) — rebuild melmod."

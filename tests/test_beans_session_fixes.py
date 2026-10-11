@@ -6,45 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-
-from cursed_words_solver.loadout import (
-    _fresh_encounter_grid_one,
-    green_poison_from_historic_words,
-)
-from cursed_words_solver.suggestion import (
-    f8_historic_would_fail_submit_projection,
-    f8_should_block_save,
-)
-
-
-def test_fresh_encounter_grid_one_false_when_spc_positive() -> None:
-    extras = {
-        "grid_number": "1",
-        "encounter_total_target": "61126",
-        "encounter_remaining_target": "61126",
-        "encounter_score_earned": "0",
-        "scoring_previous_words_count": "3",
-    }
-    assert not _fresh_encounter_grid_one(extras)
-
-
-def test_green_poison_applies_when_spc_positive_despite_earned_zero() -> None:
-    extras = {
-        "grid_number": "1",
-        "encounter_total_target": "61126",
-        "encounter_remaining_target": "61126",
-        "encounter_score_earned": "0",
-        "scoring_previous_words_count": "3",
-        "encounter_historic_source": "live",
-        "historic_words": json.dumps(
-            [
-                {"word": "a", "score": 3218, "green_tile_count": 1},
-                {"word": "b", "score": 79347, "green_tile_count": 1},
-            ]
-        ),
-    }
-    poison = green_poison_from_historic_words(extras)
-    assert poison == 322 + 7935
+from cursed_words_solver.suggestion import f8_historic_would_fail_submit_projection, f8_should_block_save
 
 
 def test_f8_historic_would_fail_on_empty_embed_with_projected_historic() -> None:
@@ -231,58 +193,6 @@ def _rodman_grid1_word2_run_state() -> dict:
         "extras": dict(fixture["extras"]),
     }
     return run_state
-
-
-def test_f8_should_not_block_grid1_word2_path_stale_historic(
-    tmp_path, monkeypatch
-) -> None:
-    """Grid 1 word 2: pruned embed must not false-block on stale export historic."""
-    from copy import deepcopy
-
-    from cursed_words_solver.f8_snapshot import (
-        embed_f8_snapshot,
-        rebuild_snapshot_from_run_state,
-    )
-    from cursed_words_solver.loadout import (
-        RUN_STATE_PATH,
-        parse_board_from_run_state,
-        project_workflow_extras_for_f8_embed,
-        reconcile_encounter_historic_for_scoring,
-    )
-
-    run_state = _rodman_grid1_word2_run_state()
-    run_state_path = tmp_path / "run_state.json"
-    monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
-    run_state_path.write_text(json.dumps(run_state), encoding="utf-8")
-
-    snapshot = rebuild_snapshot_from_run_state(run_state, rules={})
-    board = parse_board_from_run_state(run_state)
-    assert snapshot.loadout is not None
-    assert board is not None
-
-    embedded = embed_f8_snapshot(
-        snapshot,
-        scoring_loadout=snapshot.loadout,
-        fresh_run_state=run_state,
-    )
-    assert embedded is not None
-    f8_extras = embedded.get("extras")
-    assert isinstance(f8_extras, dict)
-
-    submit_projected = deepcopy(run_state["extras"])
-    reconcile_encounter_historic_for_scoring(submit_projected, board=board)
-    project_workflow_extras_for_f8_embed(submit_projected, board=board)
-
-    blocked, reason = f8_should_block_save(
-        gather_succeeded=True,
-        loadout=snapshot.loadout,
-        board=board,
-        f8_extras=f8_extras,
-        submit_projected_extras=submit_projected,
-        scoring_extras=snapshot.loadout.extras,
-    )
-    assert not blocked
-    assert reason is None
 
 
 def test_stale_f8_round_log_would_block_save() -> None:

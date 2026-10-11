@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from cursed_words_solver.f8_messages import gather_block_reason
-from cursed_words_solver.known_failing import is_known_failing, known_failing_stems
 from cursed_words_solver.suggestion import f8_should_block_save
 from cursed_words_solver.trace_compare import compare_traces
 from cursed_words_solver.triage import triage_capture
@@ -23,12 +22,6 @@ def test_f8_should_block_save_gather_missing():
     )
     assert blocked
     assert reason == "gather_incomplete:historic_words"
-
-
-def test_known_failing_registry_loads():
-    stems = known_failing_stems()
-    assert "20260605_173757" in stems
-    assert is_known_failing("20260605_173757")
 
 
 def test_compare_traces_detects_tile_drift():

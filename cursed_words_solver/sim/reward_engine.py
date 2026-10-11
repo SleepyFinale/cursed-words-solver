@@ -1,4 +1,4 @@
-"""RewardEngine — wraps ScoringPipeline for submit scoring."""
+"""RewardEngine — scores a submission with the game-port engine."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from cursed_words_solver.loadout import prepare_run_state_dict_for_scoring
-from cursed_words_solver.rules.pipeline import ScoringPipeline
+from cursed_words_solver.engine.scorer import EngineScorer
 from cursed_words_solver.sim.state import RunState
 from cursed_words_solver.sim.submission import Submission
 
@@ -32,10 +32,10 @@ class RewardResult:
 
 
 class RewardEngine:
-    """Score a submission via ScoringPipeline (EncounterController → CalculateOverallScore)."""
+    """Score a submission (EncounterController.SubmitWord → CalculateOverallScore)."""
 
-    def __init__(self, pipeline: ScoringPipeline | None = None) -> None:
-        self.pipeline = pipeline or ScoringPipeline()
+    def __init__(self, pipeline: EngineScorer | None = None) -> None:
+        self.pipeline = pipeline or EngineScorer()
 
     def score(self, state: RunState, submission: Submission) -> RewardResult:
         word = submission.effective_scoring_word

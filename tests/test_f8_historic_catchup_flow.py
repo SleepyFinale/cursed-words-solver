@@ -4,16 +4,8 @@ from __future__ import annotations
 
 import json
 
-import pytest
 
-from cursed_words_solver.f8_snapshot import (
-    F8Snapshot,
-    _build_snapshot_from_run_state,
-    catchup_historic_gather_after_search,
-    historic_words_gather_pending,
-    sole_gather_miss_is_historic,
-    try_refresh_historic_extras_from_disk,
-)
+from cursed_words_solver.f8_snapshot import F8Snapshot, _build_snapshot_from_run_state, catchup_historic_gather_after_search, historic_words_gather_pending, sole_gather_miss_is_historic
 from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColor
 from cursed_words_solver.suggestion import f8_should_block_save
 
@@ -137,7 +129,6 @@ def test_grid2_prior_grid_historic_path_mismatch_preserves_metadata():
 
 def test_catchup_live_only_does_not_unblock_from_disk_alone(tmp_path, monkeypatch):
     """Post-search catchup does not merge disk historic; F8 live export required."""
-    from cursed_words_solver.loadout import RUN_STATE_PATH
 
     run_state_path = tmp_path / "run_state.json"
     monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
@@ -181,7 +172,7 @@ def test_catchup_live_only_does_not_unblock_from_disk_alone(tmp_path, monkeypatc
 
 
 def test_catchup_live_only_disk_historic_not_merged(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import RUN_STATE_PATH
+    pass
 
     run_state_path = tmp_path / "run_state.json"
     monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
@@ -225,7 +216,7 @@ def test_catchup_live_only_disk_historic_not_merged(tmp_path, monkeypatch):
 
 
 def test_catchup_still_blocks_when_historic_stays_empty(tmp_path, monkeypatch):
-    from cursed_words_solver.loadout import RUN_STATE_PATH
+    pass
 
     run_state_path = tmp_path / "run_state.json"
     monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
@@ -264,24 +255,9 @@ def test_catchup_still_blocks_when_historic_stays_empty(tmp_path, monkeypatch):
     assert reason == "gather_incomplete:historic_words"
 
 
-def test_try_refresh_historic_extras_from_disk_is_disabled():
-    from cursed_words_solver.f8_snapshot import try_refresh_historic_extras_from_disk
-
-    loadout = Loadout(
-        extras={
-            "grid_number": "2",
-            "scoring_previous_words_count": "1",
-            "historic_words": "",
-        }
-    )
-    board = Board(tiles=[[None] * 5 for _ in range(5)], money=0)
-    assert not try_refresh_historic_extras_from_disk(loadout, board)
-
-
 def test_catchup_then_embed_projects_to_submit_extras(tmp_path, monkeypatch):
     """Post-search catchup is live-only; embed keeps gather historic after path reconcile."""
     from cursed_words_solver.f8_snapshot import embed_f8_snapshot
-    from cursed_words_solver.loadout import RUN_STATE_PATH
 
     run_state_path = tmp_path / "run_state.json"
     monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
@@ -315,7 +291,6 @@ def test_catchup_then_embed_projects_to_submit_extras(tmp_path, monkeypatch):
 
 def test_catchup_live_reexport_unblocks_historic(tmp_path, monkeypatch):
     """Post-search catchup succeeds when melmod live F8 re-export adds historic_words."""
-    from cursed_words_solver.loadout import RUN_STATE_PATH
 
     run_state_path = tmp_path / "run_state.json"
     monkeypatch.setattr("cursed_words_solver.loadout.RUN_STATE_PATH", run_state_path)
