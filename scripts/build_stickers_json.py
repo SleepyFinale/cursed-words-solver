@@ -2198,10 +2198,12 @@ ALIASES: dict[str, dict[str, str]] = {
         "doublescore": "double_score",
         "longword": "long_word",
         "shinychain": "shiny_chain",
+        "padlock": "padlock_sticker",
     },
     "stamps": {
         "beam_me_up": "beam_me_up",
         "pinata": "pi_ata",
+        "padlock": "padlock_stamp",
     },
     "bosses": {
         "robo_eel_boss": "robo_eel",
