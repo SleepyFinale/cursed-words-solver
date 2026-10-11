@@ -24,7 +24,6 @@ tests/catalog/stamps/test_achievement_stamps.py::test_bunch_of_grapes_roman_numb
 tests/catalog/stamps/test_default_stamps.py::test_bento_box_path_first_letter_not_dictionary_word
 tests/catalog/stamps/test_default_stamps.py::test_golden_record_word_only_when_full_rack_short_word
 tests/catalog/stamps/test_default_stamps.py::test_merge_tile_ninja_extras_monotonic_ignores_zero_live
-tests/catalog/stamps/test_default_stamps.py::test_sluggish_zombie_finds_zoo_as_soo
 tests/catalog/stamps/test_default_stamps.py::test_tile_ninja_last_known_when_live_export_zero
 tests/catalog/stamps/test_default_stamps.py::test_tile_ninja_missing_export_single_on_path_floor
 tests/catalog/stamps/test_default_stamps.py::test_tile_ninja_path_consumable_bump_when_export_missing
@@ -56,7 +55,6 @@ tests/catalog/stickers/test_telescope_gap_path.py::test_grid_one_stale_historic_
 tests/catalog/stickers/test_telescope_gap_path.py::test_veniremen_replay_score
 
 # tests/integration/test_consumable_tile_ninja_rack.py
-tests/integration/test_consumable_tile_ninja_rack.py::test_grid11_consumable_boost_beats_plain_sequoia  # [local]
 
 # tests/integration/test_fingerprints_melmod.py
 tests/integration/test_fingerprints_melmod.py::test_dictionary_word_for_12ttee_path  # [local]
@@ -66,13 +64,11 @@ tests/integration/test_loadout_scoring.py::test_o2oe5_fractional_red_number_base
 tests/integration/test_loadout_scoring.py::test_rodman_wheeps_socks_multiply_tile_sum_before_hippo
 
 # tests/regression/test_aug_path_miss_round_logs.py
-tests/regression/test_aug_path_miss_round_logs.py::test_aug_rodman_search_beats_logged_f8[20260801_230242_898_hostesses]  # [local]
 
 # tests/regression/test_falchion_number_cover.py
 tests/regression/test_falchion_number_cover.py::test_entoiled_number_cover_slice_beats_f8  # [local]
 tests/regression/test_falchion_number_cover.py::test_entoiled_submitted_path_validates_and_scores  # [local]
 tests/regression/test_falchion_number_cover.py::test_falchion_submitted_path_validates_and_scores  # [local]
-tests/regression/test_falchion_number_cover.py::test_miniatum_find_best_words_beats_f8  # [local]
 tests/regression/test_falchion_number_cover.py::test_miniatum_submitted_path_validates_and_scores  # [local]
 tests/regression/test_falchion_number_cover.py::test_orthodox_number_cover_slice_beats_f8  # [local]
 tests/regression/test_falchion_number_cover.py::test_orthodox_submitted_path_validates_and_scores  # [local]
@@ -81,42 +77,29 @@ tests/regression/test_falchion_number_cover.py::test_orthodox_submitted_path_val
 tests/regression/test_frenne_path_mismatch.py::test_submitted_frenne_scores_above_f8  # [local]
 
 # tests/regression/test_grid_scatter_path_round_logs.py
-tests/regression/test_grid_scatter_path_round_logs.py::test_hiatus_search_finds_tombstone_ending  # [local]
 
 # tests/regression/test_jadeite_number_start.py
-tests/regression/test_jadeite_number_start.py::test_find_best_words_finds_jadeite
 
 # tests/regression/test_lyophilizer_path_extension.py
 tests/regression/test_lyophilizer_path_extension.py::test_full_search_beats_submitted_lyophilizer  # [local]
 
 # tests/regression/test_path_mismatch_round_log.py
-tests/regression/test_path_mismatch_round_log.py::test_preassure_search_finds_submitted_path  # [local] timing-dependent: sometimes prefers israelis (8 tiles)
 tests/regression/test_path_mismatch_round_log.py::test_assessable_path_movement_and_validation_ok
 tests/regression/test_path_mismatch_round_log.py::test_beans_greedy_item_tour_includes_invalid_path
 tests/regression/test_path_mismatch_round_log.py::test_cartwheeler_full_moon_submitted_score[godamndest]
 tests/regression/test_path_mismatch_round_log.py::test_cartwheeler_full_moon_submitted_score[mothproofed]
 tests/regression/test_path_mismatch_round_log.py::test_cartwheeler_full_moon_submitted_score[syndicship]
 tests/regression/test_path_mismatch_round_log.py::test_dictionary_scoring_word_does_not_cache_timeout  # [local]
-tests/regression/test_path_mismatch_round_log.py::test_dilutes_parallel_search_finds_words_with_cobra_min_len  # [local]
 tests/regression/test_path_mismatch_round_log.py::test_divots_number_start_path_mismatch_is_recovered  # [local]
 tests/regression/test_path_mismatch_round_log.py::test_intermeasured_search_beats_f8  # [local]
 tests/regression/test_path_mismatch_round_log.py::test_item_heavy_grid_search_beats_f8_suggestion[cenobitisms]  # [local]
-tests/regression/test_path_mismatch_round_log.py::test_item_heavy_grid_search_beats_f8_suggestion[histidines]  # [local]
-tests/regression/test_path_mismatch_round_log.py::test_item_heavy_grid_search_beats_f8_suggestion[hootnannie]  # [local]
-tests/regression/test_path_mismatch_round_log.py::test_item_heavy_grid_search_beats_f8_suggestion[intermeasured]  # [local]
-tests/regression/test_path_mismatch_round_log.py::test_item_heavy_grid_search_beats_f8_suggestion[kiddywinks]  # [local]
-tests/regression/test_path_mismatch_round_log.py::test_labrador_search_beats_logged_f8  # [local]
 tests/regression/test_path_mismatch_round_log.py::test_number_start_alternate_path_replay_is_reachable  # [local]
 tests/regression/test_path_mismatch_round_log.py::test_odyle_fixture_replay_submitted_path
-tests/regression/test_path_mismatch_round_log.py::test_odyle_search_finds_submitted_path  # [local]
 tests/regression/test_path_mismatch_round_log.py::test_round_log_path_mismatch_replay_submitted_path[20260625_cenobitisms_path_mismatch]
 tests/regression/test_path_mismatch_round_log.py::test_round_log_path_mismatch_replay_submitted_path[20260708_divots_path_mismatch]
 tests/regression/test_path_mismatch_round_log.py::test_round_log_path_mismatch_replay_submitted_path[20260708_number_start_path_mismatch]
 tests/regression/test_path_mismatch_round_log.py::test_round_log_path_mismatch_replay_submitted_path[20260715_231615_503_amoeboa_path_mismatch]
-tests/regression/test_path_mismatch_round_log.py::test_round_log_path_mismatch_replay_submitted_path[20260809_215329_djent_path_mismatch]
-tests/regression/test_path_mismatch_round_log.py::test_spoofery_search_finds_best_path  # [local]
 tests/regression/test_path_mismatch_round_log.py::test_thuya_parallel_search_beats_f8_suggestion  # [local]
-tests/regression/test_path_mismatch_round_log.py::test_unwieldy_search_beats_logged_f8  # [local]
 tests/regression/test_path_mismatch_round_log.py::test_voteless_path_word_ok  # [local]
 
 # tests/regression/test_scoring_mismatches.py
@@ -267,7 +250,6 @@ tests/test_cursedle_long_probes.py::test_run_cursedle_suggests_long_probe_when_a
 tests/test_cursedle_path_indices.py::test_run_cursedle_solver_commits_shady_after_upstream_shady  # [local]
 
 # tests/test_debug_path.py
-tests/test_debug_path.py::test_validate_poetcraft_fixture_accepted
 
 # tests/test_f8_embed_snapshot.py
 tests/test_f8_embed_snapshot.py::test_embed_f8_snapshot_aligns_bicycle_from_loadout_fingerprint
@@ -299,7 +281,6 @@ tests/test_pin_scoring.py::test_human_hands_dango_mismatch_replay[20260621_11483
 
 # tests/test_search.py
 tests/test_search.py::test_extension_from_bazz_prefix_finds_buzzsaw  # [local]
-tests/test_search.py::test_find_best_words_buzzsaw_beats_bazz  # [local]
 tests/test_search.py::test_finds_123ifer_when_search_starts_on_number_tiles  # [local]
 tests/test_search.py::test_finds_1_fraction_245fe_above_134pebra  # [local]
 tests/test_search.py::test_finds_1r3vo_number_word
@@ -309,7 +290,6 @@ tests/test_search.py::test_finds_seven_letter_number_word_not_capped_at_six  # [
 tests/test_search.py::test_finds_v2o4_number_word  # [local]
 tests/test_search.py::test_scatter_augment_dust_finds_ayenbites  # [local]
 tests/test_search.py::test_solve_extension_picks_eelskin_over_aahs  # [local]
-tests/test_search.py::test_twigloo_extension_beats_short_chess_path  # [local]
 
 # tests/test_search_number_words.py
 tests/test_search_number_words.py::test_seed_finds_single_number_tile  # [local]
@@ -321,12 +301,8 @@ tests/test_search_ogrrh_parallel.py::test_myrrhy_path_scores_220  # [local]
 tests/test_search_ogrrh_parallel.py::test_myrrhy_path_valid  # [local]
 
 # tests/test_search_performance.py
-tests/test_search_performance.py::test_search_process_pool_entered_once_per_solve
 
 # tests/test_search_up_and_up.py
-tests/test_search_up_and_up.py::test_find_best_words_juxtalittoral_includes_center
-tests/test_search_up_and_up.py::test_find_best_words_poetcraft_includes_center
-tests/test_search_up_and_up.py::test_poetcraft_path_accepted
 
 # tests/test_stale_suggestion.py
 tests/test_stale_suggestion.py::test_align_embed_caps_inflated_birthday_cake_bonus
@@ -347,3 +323,7 @@ tests/test_tile_color_parity.py::test_green_poison_fresh_call_of_void_grid1_stal
 
 # tests/test_trie_cursor.py
 tests/test_trie_cursor.py::test_search_word_stitch_uses_prefix_extension
+
+# Pass with the real game wordlist; fail on CI (no game_words.txt, ENABLE1 lacks "poetcraft").
+tests/test_debug_path.py::test_validate_poetcraft_fixture_accepted  # [ci]
+tests/test_search_up_and_up.py::test_poetcraft_path_accepted  # [ci]

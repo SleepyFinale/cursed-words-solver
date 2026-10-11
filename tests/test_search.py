@@ -1233,6 +1233,7 @@ def test_nat_h4_find_best_words_all_paths_movement_valid(_parallel_pool_cleanup)
     assert not any(list(r.path) == INVALID_EPIDERMIC_PATH for r in results)
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_find_best_words_wall_sec_includes_refine_and_finalize(tmp_path):
     import time
 

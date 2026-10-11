@@ -68,6 +68,27 @@ _F8_SEQUENCE_PATH = LAST_SUGGESTION_PATH.parent / ".f8_sequence"
 F8_EXPORT_CATCHUP_GRACE_SEC = 1.5
 
 
+def suggestion_path_movement_ok(
+    board: Board,
+    path: list[int],
+    loadout: Loadout | None,
+    *,
+    flags: SearchFlagsMask = 0,
+) -> bool:
+    """Game movement rules for a suggested path: engine port first, legacy fallback.
+
+    The legacy neighbor rules miss some chess moves the game (and the engine
+    search that produced the suggestion) accept, which blocked valid F8 captures.
+    """
+    if loadout is not None:
+        from cursed_words_solver.engine.solver import engine_path_movement_ok
+
+        ok = engine_path_movement_ok(board, list(path), loadout)
+        if ok is not None:
+            return ok
+    return path_movement_ok(board, list(path), flags=flags, loadout=loadout)
+
+
 def _path_search_flags(board: Board, path: list[int], loadout: Loadout) -> SearchFlagsMask:
     """Equipped stamp flags OR scattered stamp items picked up on ``path``."""
     return path_scattered_search_flags_mask(
@@ -2200,7 +2221,7 @@ def f8_should_block_save(
         and path
     ):
         flags = stamp_search_flags(loadout)
-        if not path_movement_ok(board, list(path), flags=flags, loadout=loadout):
+        if not suggestion_path_movement_ok(board, list(path), loadout, flags=flags):
             return True, "invalid_path_movement"
     if (
         dictionary is not None
@@ -2209,7 +2230,7 @@ def f8_should_block_save(
         and path
         and scoring_word
     ):
-        if not path_is_submittable(
+        if not suggestion_path_submittable(
             board,
             list(path),
             scoring_word,
@@ -2388,6 +2409,38 @@ def path_is_submittable(
     return resolved is not None and resolved.isalpha()
 
 
+def suggestion_path_submittable(
+    board: Board,
+    path: list[int],
+    scoring_word: str,
+    loadout: Loadout,
+    dictionary: WordDictionary,
+    *,
+    min_len: int = 3,
+    pipeline: ScoringPipeline | None = None,
+) -> bool:
+    """``path_is_submittable`` for one F8 suggestion: engine port first, legacy fallback.
+
+    Not for search loops (builds an engine plan per call).
+    """
+    from cursed_words_solver.engine.solver import engine_path_submittable
+
+    ok = engine_path_submittable(board, list(path), loadout, dictionary, min_len=min_len)
+    if ok is not None:
+        return ok
+    return path_is_submittable(
+        board, list(path), scoring_word, loadout, dictionary, min_len=min_len, pipeline=pipeline
+    )
+
+
+def _exact_engine_validated(result: WordResult) -> bool:
+    """Exact-engine hits were already checked with the game's own movement and
+    GetValidWordFromTiles rules; the legacy validator disagrees on chess /
+    wildcard-dense boards, so it must not veto them."""
+    bd = result.breakdown or {}
+    return bd.get("engine") == "exact" and bd.get("source") != "legacy_search"
+
+
 def filter_submittable_results(
     board: Board,
     results: list[WordResult],
@@ -2404,7 +2457,8 @@ def filter_submittable_results(
     return [
         r
         for r in results
-        if path_is_submittable(
+        if _exact_engine_validated(r)
+        or path_is_submittable(
             board,
             r.path,
             r.word,
@@ -2517,14 +2571,14 @@ def save_last_suggestion(
     """Write last_suggestion.json for the companion mod after F8 solve."""
 
     flags = stamp_search_flags(loadout)
-    if not path_movement_ok(
-        board, list(result.path), flags=flags, loadout=loadout
+    if not suggestion_path_movement_ok(
+        board, list(result.path), loadout, flags=flags
     ):
         return
 
     if dictionary is not None:
         word = scoring_word or result.word
-        if not path_is_submittable(
+        if not suggestion_path_submittable(
             board,
             list(result.path),
             word,

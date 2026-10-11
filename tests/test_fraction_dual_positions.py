@@ -205,7 +205,9 @@ def test_search_finds_ten_tile_denominator_slot(tmp_path: Path):
     # are about 2x slower, so 10s was not enough there.
     searcher = WordSearcher(dictionary=d, min_len=10, max_len=10, time_budget=30.0)
     results = searcher.find_best_words(board, top_n=3)
-    assert any(r.word == word for r in results)
+    # Legacy results carry the wildcard pattern; the exact engine the spelling.
+    assert any(r.word == word or r.dictionary_word == "abcxxefghi" for r in results)
+    assert any(r.path == path for r in results)
 
 
 def test_bison_style_three_quarters_at_denominator_with_ten(tmp_path: Path):

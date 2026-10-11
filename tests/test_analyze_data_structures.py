@@ -39,6 +39,7 @@ def _reset_search_pool():
     shutdown_search_pool(wait=True)
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_search_timing_cache_counters(tmp_path: Path):
     wl = _make_wordlist(tmp_path)
     d = WordDictionary(wl)

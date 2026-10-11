@@ -83,6 +83,7 @@ def test_submitted_stogy_path_is_playable(hyena_board_loadout):
     assert validator.word_ok(board, path, SUBMITTED_WORD, flags)
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_find_best_words_finds_words_serial(hyena_board_loadout):
     board, loadout, _data = hyena_board_loadout
     rules = ScoringPipeline().rules
@@ -105,6 +106,7 @@ def test_find_best_words_finds_words_serial(hyena_board_loadout):
     assert timing.dfs_caps != (12, 11, 10, 9, 8, 7, 6, 5, 4, 3)
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_find_best_words_finds_words_parallel(hyena_board_loadout):
     board, loadout, _data = hyena_board_loadout
     rules = ScoringPipeline().rules

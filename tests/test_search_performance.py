@@ -686,6 +686,7 @@ def test_dfs_bb_preserves_top_results():
     assert off_results[0].score == on_results[0].score
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_dfs_bb_reduces_expansions(tmp_path):
     """Letter-only board: B&B prunes once best score is known."""
     wl = _make_wordlist(tmp_path)
@@ -742,6 +743,7 @@ def test_dfs_bb_prunes_sticker_fixture():
     assert on.last_search_timing.dfs_expansions <= off.last_search_timing.dfs_expansions
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_dfs_bb_prunes_chess_board(tmp_path):
     """Chess piece on board: B&B runs on letter-only DFS branches."""
     from cursed_words_solver.models import Board, CurseType, Tile, TileColor
@@ -1016,6 +1018,7 @@ def test_reserve_scaling_leaves_positive_main_slice():
     assert main_slice >= tb * 0.30
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_serial_workers_finds_candidates_on_yicker_board():
     if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
         pytest.skip("game wordlist required")

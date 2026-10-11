@@ -57,6 +57,7 @@ def _f8_run_state_from_round_log(data: dict) -> dict:
     not FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
     reason="wolf xis fixture and game wordlist required",
 )
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_chess_path_not_pruned_after_item_heap_fill():
     """Item-filled heap must not mult-prune a higher chess-only capture path."""
     data = json.loads(FIXTURE.read_text(encoding="utf-8"))

@@ -1213,19 +1213,21 @@ def test_preassure_search_finds_submitted_path():
 
 @pytest.mark.skipif(not PREASSURE_FIXTURE.exists(), reason="preassure fixture required")
 def test_bat_3x3_path_export_matches_melmod_cols():
-    from cursed_words_solver.ui.board_geometry import path_to_melmod_indices
+    from cursed_words_solver.ui.board_geometry import (
+        path_from_melmod_indices,
+        path_to_melmod_indices,
+    )
 
     _data, board, _loadout = _preassure_board_and_loadout()
-    assert path_to_melmod_indices(board, UREASES_STORAGE_PATH) == UREASES_MELMOD_PATH
-    assert path_to_melmod_indices(board, UREASES_STORAGE_PATH) != [
-        1,
-        3,
-        0,
-        2,
-        6,
-        5,
-        4,
-    ]
+    # Captured 2026-06-23: melmod indices were still top-origin then.
+    assert path_from_melmod_indices(board, UREASES_MELMOD_PATH) == UREASES_STORAGE_PATH
+    # Current melmod indices are Unity bottom-origin (y * cols + x) on Bat grids too.
+    current = path_to_melmod_indices(board, UREASES_STORAGE_PATH)
+    assert current == [1, 3, 0, 2, 6, 5, 4]
+    assert (
+        path_from_melmod_indices(board, current, captured_at="20261010_120000")
+        == UREASES_STORAGE_PATH
+    )
     assert PREASSURE_MELMOD_PATH != UREASES_MELMOD_PATH
 
 

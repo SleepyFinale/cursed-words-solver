@@ -283,7 +283,8 @@ namespace CursedWordsSolverCompanion
             var displayCol = melmodIndex % cols;
             if (IsShrunkPlayableGrid(board))
             {
-                row = board.playable_max_row - displayRow;
+                // ExportTiles writes Unity y=0 (bottom) to the last playable storage row.
+                row = board.playable_max_row - (melmodIndex / cols);
                 col = board.playable_min_col + displayCol;
             }
             else

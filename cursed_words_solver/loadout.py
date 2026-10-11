@@ -573,6 +573,18 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
         fraction_value = entry.get("fraction_value")
 
         meta: dict[str, Any] = {"source": "melmod"}
+        if is_active and "base_score" not in entry:
+            meta["base_score_missing"] = True
+        exact_value = entry.get("value_exact")
+        if exact_value is not None and not isinstance(exact_value, bool):
+            try:
+                entry = dict(entry)
+                entry["base_score"] = float(exact_value)
+                meta["value_exact"] = True
+            except (TypeError, ValueError):
+                pass
+        if isinstance(entry.get("scattered_item_state"), dict):
+            meta["scattered_item_state"] = entry["scattered_item_state"]
         if not is_active:
             meta["inactive"] = True
         if entry.get("consumable"):

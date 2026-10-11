@@ -1368,7 +1368,6 @@ class SolverApp:
             if steak_warn:
                 print(f"  Warning: {steak_warn}", flush=True)
             from cursed_words_solver.rules.capybara_scoring import (
-                MAX_EXHAUSTIVE_PERMS,
                 capybara_active_warning,
                 capybara_perm_count,
                 capybara_sampling_warning,
@@ -1378,9 +1377,11 @@ class SolverApp:
             capybara_warn = capybara_active_warning(loadout, self._scoring.rules)
             if capybara_warn:
                 print(f"  Warning: {capybara_warn}", flush=True)
+                from cursed_words_solver.engine.solver import _CAPYBARA_EXACT_LIMIT
+
                 scope = capybara_shuffle_scope(loadout, self._scoring.rules)
-                if capybara_perm_count(loadout, scope) > MAX_EXHAUSTIVE_PERMS:
-                    sample_warn = capybara_sampling_warning(False, 256)
+                if capybara_perm_count(loadout, scope) > _CAPYBARA_EXACT_LIMIT:
+                    sample_warn = capybara_sampling_warning(False, _CAPYBARA_EXACT_LIMIT)
                     if sample_warn:
                         print(f"  Warning: {sample_warn}", flush=True)
             if total:
@@ -2336,9 +2337,8 @@ class SolverApp:
                 )
                 if capybara_warn:
                     export_warnings = list(export_warnings) + [capybara_warn]
-                    scope = capybara_shuffle_scope(f8_loadout, self._scoring.rules)
-                    if capybara_perm_count(f8_loadout, scope) > MAX_EXHAUSTIVE_PERMS:
-                        sample_warn = capybara_sampling_warning(False, 256)
+                    if capybara_stats is not None and not capybara_stats.exhaustive:
+                        sample_warn = capybara_sampling_warning(False, capybara_stats.perm_count)
                         if sample_warn:
                             export_warnings.append(sample_warn)
                 session_extras = solver_session_extras_from_loadout(f8_loadout)
@@ -2750,6 +2750,9 @@ class SolverApp:
         )
         from cursed_words_solver.rules.scoring_order import capybara_shuffles_loadout
 
+        engine_pred = self._engine_prediction(board, top, score_word, loadout)
+        if engine_pred is not None:
+            return engine_pred
         if capybara_shuffles_loadout(loadout, self._scoring.rules):
             pred_score, pred_bd, pred_trace, stats = score_capybara_with_trace(
                 self._scoring,
@@ -2764,6 +2767,41 @@ class SolverApp:
             board, top.path, score_word, loadout
         )
         return pred_score, pred_bd, pred_trace, None
+
+    def _engine_prediction(
+        self,
+        board: Board,
+        top: WordResult,
+        score_word: str,
+        loadout: Loadout,
+    ) -> tuple[float, dict, list, object | None] | None:
+        """Exact game-port score + trace for the suggestion (engine/)."""
+        try:
+            from cursed_words_solver.encounter_board import effective_board_for_loadout
+            from cursed_words_solver.engine import EnginePlan
+            from cursed_words_solver.engine.solver import _capybara_mode, capybara_score_range
+            from cursed_words_solver.rules.capybara_scoring import CapybaraScoreStats
+
+            eff = effective_board_for_loadout(board, loadout, self._scoring.rules)
+            plan = EnginePlan.build(eff, loadout)
+            res = plan.score(list(top.path), score_word)
+            breakdown = {"engine": "exact", "nondeterministic": res.nondeterministic}
+            score = float(res.int_score)
+            stats = None
+            mode = _capybara_mode(loadout)
+            if mode:
+                # Every order Capybara can roll at submit: exact mean and range for melmod.
+                ev, lo, hi, n, exhaustive = capybara_score_range(plan, top.path, score_word, mode)
+                score = float(ev)
+                breakdown.update({"nondeterministic": True, "score_min": lo, "score_max": hi})
+                stats = CapybaraScoreStats(
+                    ev=float(ev), min_score=float(lo), max_score=float(hi),
+                    perm_count=n, exhaustive=exhaustive,
+                )
+            return score, breakdown, res.trace(), stats
+        except Exception as exc:  # noqa: BLE001 - fall back to the legacy pipeline
+            print(f"  Engine prediction failed ({exc}); using legacy pipeline.", flush=True)
+            return None
 
     def _overlay_warnings(
         self,

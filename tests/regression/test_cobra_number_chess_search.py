@@ -56,6 +56,7 @@ def test_submitted_path_is_valid(cobra_board_loadout):
     assert validator.word_ok(board, path, SUBMITTED_WORD, flags)
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_find_best_words_finds_words_serial(cobra_board_loadout):
     board, loadout, _data = cobra_board_loadout
     rules = ScoringPipeline().rules

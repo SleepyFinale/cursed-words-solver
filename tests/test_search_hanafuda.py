@@ -1,3 +1,4 @@
+import pytest
 """Search + scoring for multi-joker Hanafuda paths (464 vs 2554 regression)."""
 
 import json
@@ -55,6 +56,7 @@ def test_ayms_path_hanafuda_hand_and_score():
     assert score == 2554
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_search_finds_ayms_over_short_edh():
     board, loadout, _ = _board_and_loadout()
     dictionary = WordDictionary()

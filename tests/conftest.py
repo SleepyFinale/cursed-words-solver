@@ -60,3 +60,13 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     for item in items:
         if item.nodeid in known:
             item.add_marker(marker)
+
+
+@pytest.fixture(autouse=True)
+def _legacy_search_marker(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``@pytest.mark.legacy_search``: WordSearcher uses the legacy heuristic search."""
+    if request.node.get_closest_marker("legacy_search") is None:
+        return
+    from cursed_words_solver.search import WordSearcher
+
+    monkeypatch.setattr(WordSearcher, "default_use_exact_engine", False)

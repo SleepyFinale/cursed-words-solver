@@ -4659,6 +4659,9 @@ def _fraction_cluster_number_starts(board: Board) -> list[int]:
     )
 
 class WordSearcher:
+    # Exact game-port search (engine/) by default; tests of legacy internals flip it.
+    default_use_exact_engine = True
+
     def __init__(
         self,
         dictionary: WordDictionary | None = None,
@@ -4697,6 +4700,10 @@ class WordSearcher:
         self.mult_search_passes = mult_search_passes
         self.search_workers = max(1, int(search_workers))
         self.use_beam_search = bool(use_beam_search)
+        # Exact game-port search (engine/); falls back to the legacy search for
+        # unsupported modes. Disable to A/B against the legacy search.
+        self.use_exact_engine = self.default_use_exact_engine
+        self.last_exact_info: dict = {}
         self._mult_rules: list = []
         self._mult_hints: MultNeighborHints | None = None
         self._wordlist_path = wordlist_path or getattr(
@@ -11480,6 +11487,60 @@ class WordSearcher:
             clear_chess_attack_cache()
             set_quest_search_target(None)
 
+    def _find_best_words_exact(
+        self,
+        board: Board,
+        loadout: Loadout,
+        top_n: int,
+        *,
+        deadline: float | None,
+        cancel_check: Callable[[], bool] | None,
+        quest_target: float | None,
+    ) -> list[WordResult] | None:
+        from cursed_words_solver.engine.solver import ParallelSpec, exact_find_best_words
+        from cursed_words_solver.rules.quest_scoring import search_rank_for_quest
+
+        start = time.monotonic()
+        if deadline is None and self.time_budget:
+            deadline = time.monotonic() + float(self.time_budget)
+        # The engine works with perf_counter; translate a monotonic deadline.
+        perf_deadline = None
+        if deadline is not None:
+            perf_deadline = time.perf_counter() + max(0.0, deadline - time.monotonic())
+        cancel = cancel_check or getattr(self, "_cancel_check", None)
+        parallel = None
+        if self.search_workers > 1 and self._wordlist_path is not None:
+            from cursed_words_solver.search_parallel import get_search_pool
+
+            pool = get_search_pool(Path(self._wordlist_path), self.search_workers)
+            if pool is not None:
+                parallel = ParallelSpec(pool, self.search_workers, quest_target)
+        results, info = exact_find_best_words(
+            self.dictionary,
+            board,
+            loadout,
+            top_n=top_n,
+            min_len=self.min_len,
+            max_len=self.max_len,
+            required_indices=frozenset(self.validator.required_consumable_indices or ()),
+            deadline=perf_deadline,
+            cancel_check=cancel,
+            rank=lambda s: search_rank_for_quest(float(s), loadout, quest_target=quest_target),
+            parallel=parallel,
+        )
+        info.pop("plan", None)
+        self.last_exact_info = info
+        if results is None:
+            return None
+        timing = SearchTiming(parallel_workers=int(info.get("parallel_workers", 1)))
+        timing.wall_sec = time.monotonic() - start
+        timing.dfs_sec = float(info.get("enum_sec", 0.0))
+        timing.score_sec = float(info.get("score_sec", 0.0))
+        timing.score_calls = int(info.get("scored", 0) or 0)
+        timing.letter_dfs_added = int(info.get("paths", 0) or 0)
+        self.last_search_timing = timing
+        return results
+
     def _find_best_words(
         self,
         board: Board,
@@ -11519,6 +11580,13 @@ class WordSearcher:
                 quest_target = float(remaining)
         set_quest_search_target(quest_target)
         board = effective_board_for_loadout(board, loadout, self.scoring.rules)
+        if self.use_exact_engine and self.score_fn is None:
+            exact = self._find_best_words_exact(
+                board, loadout, top_n, deadline=deadline, cancel_check=cancel_check,
+                quest_target=quest_target,
+            )
+            if exact is not None:
+                return exact
         _active = _active_indices(board)
         active_count = len(_active)
         self._full_board_exact = (

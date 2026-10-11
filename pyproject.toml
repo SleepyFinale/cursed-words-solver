@@ -33,6 +33,7 @@ include = ["cursed_words_solver*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
+    "legacy_search: run WordSearcher with the legacy heuristic search (tests of its internals)",
     "slow: search performance benchmarks (excluded from default CI)",
 ]
 addopts = "-m 'not slow'"

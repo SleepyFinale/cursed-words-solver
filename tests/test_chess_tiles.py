@@ -535,8 +535,9 @@ def test_rufiyaa_not_found_on_melmod_snapshot(tmp_path):
         time_budget=5.0,
     )
     results = searcher.find_best_words(board, top_n=20)
-    words = [r.word for r in results]
-    assert "rufiyaa" not in words
+    # The game does allow "rufiyaa" on this board through other chess routes
+    # (e.g. knight -> u -> queen slide -> i -> bishop take -> knight -> a);
+    # only the path that jumps past the blocking piece must never be suggested.
     assert invalid_path not in [r.path for r in results]
 
 

@@ -16,8 +16,8 @@ Requires the [MelonLoader companion mod](melmod/README.md), which reads the live
 
 ## Capabilities
 
-- Time-budgeted word search with curse-aware paths (teleports, rook/queen lines, wildcards, number tiles)
-- Scoring that follows the official [wiki order](https://cursedwords.wiki.gg/wiki/Scoring) (tiles → boss tile/word penalties → grid → pin → stickers → stamps), driven by `[data/wiki/stickers.json](data/wiki/stickers.json)`
+- Exact word search: every path the game accepts (portals, Full Moon, chess moves, arrows, Hungry Snake wrap, wildcards, number tiles) is enumerated and scored — typically in well under a second; wildcard-dense boards fall back to a hybrid with the heuristic search
+- Scoring ported directly from the game DLL (`ScoreCalculation`, every item's tile/word bonus) in [`engine/`](cursed_words_solver/engine) — see [docs/game-research/engine.md](docs/game-research/engine.md)
 - Always-on-top result overlay plus numbered, click-through path highlights on the game board
 - Scoring mismatch capture (melmod v1.1.6+) and per-submit round logs (v1.2+), with regression fixtures from real in-game submits
 - Shop advice (melmod shop export + F8 in Ej?A56): build-synergy recommendations ported from the in-game Advice button, plus encounter grid reroll hints
@@ -129,8 +129,8 @@ Pressing **F8** once starts `_solve_worker` in `[app.py](cursed_words_solver/app
 1. **Export request** — Solver writes `f8_export_request.json`; melmod `[F8ExportRequestPoller.cs](melmod/CursedWordsSolverCompanion/F8ExportRequestPoller.cs)` forces a live export and acks via `export_diagnostics.f8_request_id`.
 2. **Gather snapshot** — `[f8_snapshot.py](cursed_words_solver/f8_snapshot.py)` polls melmod `run_state.json` until the board and required extras (historic, rack, stamp counters, etc.) are exported. Game export is the source of truth; there is no in-memory loadout cache between F8 presses.
 3. **Dictionary** — `[dictionary.py](cursed_words_solver/dictionary.py)` loads `game_words.txt` when present (from melmod), else ENABLE1 (`[config.py](cursed_words_solver/config.py)` `resolve_wordlist`).
-4. **Search** — Baseline word search via `[search.py](cursed_words_solver/search.py)`, then optional consumable placement via `[consumable_placement.py](cursed_words_solver/consumable_placement.py)` (score boost, target rescue if below `target_score`; Sandy Saguaro uses placement-first search). Optional Twinkle Toes pre-path tile swap via `[rules/twinkle_toes.py](cursed_words_solver/rules/twinkle_toes.py)`. Amber board circles and orange rack numbers mark consumable steps before the green path.
-5. **Score** — Each surviving candidate is scored by `[ScoringPipeline](cursed_words_solver/rules/pipeline.py)` using rules from `[data/wiki/stickers.json](data/wiki/stickers.json)`.
+4. **Search** — Exact search via [`engine/search.py`](cursed_words_solver/engine/search.py) behind `WordSearcher` in `[search.py](cursed_words_solver/search.py)` (legacy heuristic search for unsupported modes and as a hybrid on wildcard-dense boards), then optional consumable placement via `[consumable_placement.py](cursed_words_solver/consumable_placement.py)` (score boost, target rescue if below `target_score`; Sandy Saguaro uses placement-first search). Optional Twinkle Toes pre-path tile swap via `[rules/twinkle_toes.py](cursed_words_solver/rules/twinkle_toes.py)`. Amber board circles and orange rack numbers mark consumable steps before the green path.
+5. **Score** — Candidates are scored by the game-port [`EnginePlan`](cursed_words_solver/engine/calc.py); the legacy `[ScoringPipeline](cursed_words_solver/rules/pipeline.py)` remains for tooling and as a fallback.
 6. **Output** — The best word is re-scored with a full trace, written to `last_suggestion.json` (with embedded F8 extras), and shown in the overlay. After you submit the word in-game, the overlay clears to **Press F8 to solve** — press F8 again on the next grid when ready.
 
 ### Display layer (overlays)

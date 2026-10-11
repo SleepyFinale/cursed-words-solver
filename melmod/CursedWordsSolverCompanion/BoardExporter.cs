@@ -81,9 +81,9 @@ namespace CursedWordsSolverCompanion
             if (tiles == null || tiles.Count != storageSize * storageSize)
                 return null;
 
-            ApplyToolboxScatterLevels(player, tiles);
-            ApplyEquippedScatterLevels(player, tiles);
-            ApplyVoidTombstoneCombinedScatterLevels(player, tiles);
+            // scattered_item_level is the live UpgradeableComponents[0].Level
+            // (ItemStateExporter.FillExactTileFields); the old tier heuristics
+            // (Toolbox / equipped bleed / tombstone sums) are no longer applied.
 
             var snapshot = new BoardSnapshot
             {
@@ -1306,6 +1306,7 @@ namespace CursedWordsSolverCompanion
                 // optional
             }
 
+            ItemStateExporter.FillExactTileFields(tile, snap);
             return snap;
         }
 

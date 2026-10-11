@@ -2775,6 +2775,18 @@ namespace CursedWordsSolverCompanion
             if (movieCameraBonus >= 0)
                 snapshot.extras["movie_camera_word_score_bonus"] = movieCameraBonus.ToString();
 
+            try
+            {
+                snapshot.extras["item_states"] = JsonConvert.SerializeObject(
+                    ItemStateExporter.BuildItemStates(player)
+                );
+                snapshot.extras["item_levels_exact"] = "true";
+            }
+            catch
+            {
+                // optional exact export; solver falls back to legacy extras
+            }
+
             var neapolitanPercent = ResolveNeapolitanPercentForExport(player);
             if (neapolitanPercent >= 100)
                 snapshot.extras["neapolitan_percent"] = neapolitanPercent.ToString();

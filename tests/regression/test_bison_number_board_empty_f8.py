@@ -69,6 +69,7 @@ def test_submitted_reen_path_is_playable(bison_board_loadout):
         assert validator.word_ok(board, path, SUBMITTED_WORD, flags)
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_find_best_words_finds_words_serial(bison_board_loadout):
     board, loadout, _data = bison_board_loadout
     rules = ScoringPipeline().rules
@@ -90,6 +91,7 @@ def test_find_best_words_finds_words_serial(bison_board_loadout):
     assert timing.dfs_caps[:6] == (3, 4, 5, 6, 7, 8)
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_find_best_words_finds_words_parallel(bison_board_loadout):
     board, loadout, _data = bison_board_loadout
     rules = ScoringPipeline().rules

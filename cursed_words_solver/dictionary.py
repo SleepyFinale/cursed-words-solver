@@ -67,7 +67,8 @@ class WordDictionary:
         text = path.read_text(encoding="utf-8", errors="ignore")
         for line in text.splitlines():
             w = line.strip().lower()
-            if len(w) >= 2 and w.isalpha():
+            # One-letter words ("a", "i", "o") are valid in-game (Vocabulary length-1 trie).
+            if len(w) >= 1 and w.isalpha():
                 words.add(w)
                 by_length.setdefault(len(w), []).append(w)
         self.words = words

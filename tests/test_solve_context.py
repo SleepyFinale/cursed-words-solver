@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from unittest.mock import patch
 
 from cursed_words_solver.dictionary import WordDictionary
@@ -88,6 +90,7 @@ def test_build_solve_context_grid_tile_multiply_first_flag():
     assert ctx.grid_tile_multiply_first is True
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_solve_context_precompute_called_once_per_find_best_words(tmp_path):
     wl = _make_wordlist(tmp_path)
     d = WordDictionary(wl)

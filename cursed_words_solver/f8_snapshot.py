@@ -1050,6 +1050,14 @@ def f8_embed_replay_score(
     replay_loadout = parse_run_state(prepared)
     if board is None or replay_loadout is None:
         return None
+    # Predictions come from the engine port; replay with the same scorer.
+    from cursed_words_solver.encounter_board import effective_board_for_loadout
+    from cursed_words_solver.engine.solver import engine_path_score
+
+    eff = effective_board_for_loadout(board, replay_loadout, getattr(pipeline, "rules", {}) or {})
+    engine_score = engine_path_score(eff, path, word, replay_loadout)
+    if engine_score is not None:
+        return engine_score
     score, _ = pipeline.score(board, path, word, replay_loadout)
     return int(score)
 

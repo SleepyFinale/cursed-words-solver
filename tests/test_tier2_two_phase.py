@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.scoring_order import (
@@ -106,6 +108,7 @@ def test_tier2_bounds_bracket_full_score():
     assert rank_lb <= full
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_searcher_grid_refs_cache_populated(tmp_path):
     from cursed_words_solver.dictionary import WordDictionary
     from cursed_words_solver.search import WordSearcher

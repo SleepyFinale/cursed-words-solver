@@ -58,5 +58,21 @@ namespace CursedWordsSolverCompanion
         public bool is_crossed_out;
         /// <summary>Up and Up center number tile (must be in word).</summary>
         public bool is_up_and_up_center;
+
+        /// <summary>Signed Tile.GetValue() (base_score mirrors it when present).</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public long? value_exact;
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public long? value_modifier;
+        /// <summary>Raw GlyphType / TileType / Suit enum names.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string glyph;
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string tile_type;
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string suit;
+        /// <summary>Scattered item: ItemStateExporter.Describe (levels, values, fields).</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public Dictionary<string, object> scattered_item_state;
     }
 }

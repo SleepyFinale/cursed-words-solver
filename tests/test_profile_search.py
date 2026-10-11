@@ -48,6 +48,7 @@ def test_adaptive_tier2_mode_updates_during_search(tmp_path: Path):
     assert searcher._tier2_adaptive_mode in ("light", "normal", "deep")
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_find_best_words_records_score_timing(tmp_path: Path):
     wl = _make_wordlist(tmp_path)
     d = WordDictionary(wl)

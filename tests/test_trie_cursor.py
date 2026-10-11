@@ -1,3 +1,4 @@
+import pytest
 from pathlib import Path
 
 from cursed_words_solver.dictionary import WordDictionary
@@ -83,6 +84,7 @@ def _board_c_wildcard_t() -> Board:
     return Board(tiles=grid)
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_wildcard_trie_branch_finds_cat(tmp_path: Path):
     wl = _write_words(tmp_path, ["cat", "cot", "cut"])
     d = WordDictionary(wl)

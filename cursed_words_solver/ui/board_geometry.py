@@ -83,16 +83,14 @@ def path_to_melmod_indices(board: Board, path: list[int]) -> list[int]:
         bounds = playable_bounds(board)
         if bounds is None:
             return list(path)
-        min_r, max_r, min_c, _max_c = bounds
+        _min_r, max_r, min_c, _max_c = bounds
         cols = board.cols
-        playable_h = max_r - min_r + 1
         out: list[int] = []
         for idx in path:
             row, col = board.coords_at(idx)
-            # display_row 0 = bottom of playable (Unity y); flip with height not width.
-            display_row = max_r - row
-            display_col = col - min_c
-            out.append((playable_h - 1 - display_row) * cols + display_col)
+            # Melmod exports Unity y=0 (bottom) as the last playable storage row,
+            # and its submit index is y * cols + x.
+            out.append((max_r - row) * cols + (col - min_c))
         return out
     return [melmod_index_from_storage(board, idx) for idx in path]
 
@@ -115,13 +113,12 @@ def path_from_melmod_indices(
         min_r, max_r, min_c, _max_c = bounds
         cols = board.cols
         storage_cols = board.storage_cols
-        playable_h = max_r - min_r + 1
+        bottom_origin = melmod_path_is_bottom_origin(captured_at)
         out: list[int] = []
         for idx in path:
-            display_row = playable_h - 1 - (idx // cols)
-            display_col = idx % cols
-            row = max_r - display_row
-            col = min_c + display_col
+            # Unity y (bottom-origin) -> storage row; see path_to_melmod_indices.
+            row = max_r - idx // cols if bottom_origin else min_r + idx // cols
+            col = min_c + idx % cols
             out.append(row * storage_cols + col)
         return out
     if not melmod_path_is_bottom_origin(captured_at):

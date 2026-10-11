@@ -157,7 +157,9 @@ namespace CursedWordsSolverCompanion
                 return;
 
             w = w.Trim().ToLowerInvariant();
-            if (w.Length < 2)
+            // Vocabulary.TriesByLength includes 1-letter words ("a", "i", "o"); the
+            // game accepts them (e.g. a lone "1" tile reads as "a" on Advent Calendar).
+            if (w.Length < 1)
                 return;
 
             for (var i = 0; i < w.Length; i++)

@@ -1755,12 +1755,19 @@ def test_search_consumable_score_boost_places_two_with_under_construction(tmp_pa
     assert results[0].word == "cat"
     assert results[0].path[0] in {rec.index for rec in records}
     assert results[0].path[-1] in {rec.index for rec in records}
-    pipeline = (results[0].breakdown or {}).get("pipeline", {})
-    effects = pipeline.get("effects", [])
-    finalize = pipeline.get("pending_word_finalize_steps", [])
-    assert any(
-        "word_starts_ends_consumable" in str(e) for e in effects
-    ) or any("under_construction" in str(step).lower() for step in finalize)
+    breakdown = results[0].breakdown or {}
+    if breakdown.get("engine") == "exact":
+        from cursed_words_solver.engine import EnginePlan
+
+        plain = EnginePlan.build(sim_board, Loadout()).score(results[0].path, "cat").int_score
+        assert results[0].score == plain * 2  # UnderConstruction: x2 when both ends were rack tiles
+    else:
+        pipeline = breakdown.get("pipeline", {})
+        effects = pipeline.get("effects", [])
+        finalize = pipeline.get("pending_word_finalize_steps", [])
+        assert any(
+            "word_starts_ends_consumable" in str(e) for e in effects
+        ) or any("under_construction" in str(step).lower() for step in finalize)
 
 
 def test_variant_gen_budget_does_not_skip_k2_with_under_construction(

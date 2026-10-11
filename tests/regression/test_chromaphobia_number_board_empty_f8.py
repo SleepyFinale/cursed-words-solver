@@ -53,6 +53,7 @@ def test_submitted_slav_path_is_quest_allowed(chromaphobia_board_loadout):
     assert quest_path_allowed(board, path, loadout=loadout)
 
 
+@pytest.mark.legacy_search  # asserts legacy-search internals
 def test_beam_find_best_words_finds_colorless_words(chromaphobia_board_loadout):
     board, loadout, _data = chromaphobia_board_loadout
     rules = ScoringPipeline().rules
