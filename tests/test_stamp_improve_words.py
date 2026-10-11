@@ -8,7 +8,7 @@ import pytest
 
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
-from cursed_words_solver.search import PathValidator, WordSearcher, _paths_spelling_word
+from cursed_words_solver.search import PathValidator, WordSearcher
 from cursed_words_solver.setup_value import (
     project_setup_delta,
     rank_score_for_word,
@@ -80,11 +80,8 @@ def test_improve_word_valid_with_stamp(tmp_path, stamp_id: str, word: str) -> No
     loadout = Loadout(
         stamps=[LoadoutItem(id=stamp_id, name=stamp_id, kind="stamp")],
     )
-    validator = PathValidator(
-        d,
-        min_len=3,
-        extra_valid_words=equipped_improve_words(loadout),
-    )
+    validator = PathValidator(d, min_len=3)
+    validator.quest_loadout = loadout  # accumulator words come from the equipped stamp
     board = _board_spelling(word)
     path = _path_for_word(word)
     assert validator.word_ok(board, path, word, 0)
@@ -113,13 +110,13 @@ def test_twentyone_accepted_as_bar_chart_improve_word(tmp_path) -> None:
     loadout = Loadout(
         stamps=[LoadoutItem(id=BAR_CHART, name="Bar", kind="stamp")],
     )
-    validator = PathValidator(
-        d,
-        min_len=3,
-        extra_valid_words=equipped_improve_words(loadout),
-    )
-    board = Board(tiles=[[_letter(r, c, "Q") for c in range(5)] for r in range(5)])
-    assert validator._word_content_ok(board, [], "twentyone", 0)
+    validator = PathValidator(d, min_len=3)
+    validator.quest_loadout = loadout
+    # Snake along rows 0-1 so every step is adjacent: t w e n t / y o n e (reversed).
+    board = _board_spelling("twent" + "Qenoy")
+    path = [0, 1, 2, 3, 4, 9, 8, 7, 6]
+    assert [board.get_by_index(i).char for i in path] == list("twentyone")
+    assert validator.word_ok(board, path, "twentyone", 0)
 
 
 @pytest.mark.parametrize(
@@ -183,13 +180,6 @@ def test_rank_prefers_improve_word_over_higher_immediate(tmp_path) -> None:
         assert rank_red > rank_hi or setup_red > 0
 
 
-def test_paths_spelling_word_finds_red() -> None:
-    board = _board_spelling("red")
-    paths = _paths_spelling_word(board, "red", max_len=5)
-    assert paths
-    assert paths[0] == [0, 1, 2]
-
-
 def test_searcher_seeds_improve_word(tmp_path) -> None:
     wl = _make_wordlist(tmp_path, ["cat"])
     d = WordDictionary(wl)
@@ -203,7 +193,6 @@ def test_searcher_seeds_improve_word(tmp_path) -> None:
         min_len=3,
         max_len=5,
         time_budget=1.0,
-        setup_weight=0.4,
     )
     results = searcher.find_best_words(board, loadout=loadout, top_n=5)
     words = {r.word for r in results}

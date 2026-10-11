@@ -82,8 +82,6 @@ def build_diagnose_report() -> list[str]:
     lines.append(f"  wordlist: {describe_wordlist(resolve_wordlist(cfg.wordlist))}")
     lines.append(f"  game_words: {'yes' if GAME_WORDLIST_PATH.exists() else 'missing'}")
     lines.append(f"  search_budget: {cfg.search_time_budget_sec}s")
-    lines.append(f"  setup_weight: {cfg.setup_weight}")
-    lines.append(f"  mult_search_weight: {cfg.mult_search_weight}")
     lines.append("")
 
     suggestion = _read_json(LAST_SUGGESTION_PATH) if LAST_SUGGESTION_PATH.exists() else None

@@ -21,7 +21,6 @@ from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.graph_bitboard import build_board_graph_context, iter_mask
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.models import Board, CurseType, Tile, TileColor
-from cursed_words_solver.search import neighbors_mask
 
 FIXTURE = (
     Path(__file__).resolve().parent
@@ -86,21 +85,6 @@ def fairy_dictionary(monkeypatch: pytest.MonkeyPatch) -> WordDictionary:
         _load,
     )
     return fairy
-
-
-def test_6x6_bishop_diagonal_neighbors_not_5x5_misindexed() -> None:
-    """Bishop at (0,0) on 6x6 must use 6-wide diagonals, not 5x5 ray indices."""
-    board = _empty_6x6_with_bishop()
-    ctx = build_board_graph_context(board)
-    mask = neighbors_mask(board, 0, cell_id=0, flags=0, graph_ctx=ctx)
-    nbrs = set(iter_mask(mask))
-    # Correct SE diagonal on 6x6: (1,1),(2,2),(3,3),(4,4),(5,5)
-    assert board.index_at(1, 1) in nbrs
-    assert board.index_at(4, 4) in nbrs
-    assert board.index_at(5, 5) in nbrs
-    # 5x5 mis-index would treat diagonals as left-column cells (1,0)..(4,0)
-    assert board.index_at(1, 0) not in nbrs
-    assert board.index_at(2, 0) not in nbrs
 
 
 def test_bishop_leap_fixture_matches_feedback_and_dictionary(

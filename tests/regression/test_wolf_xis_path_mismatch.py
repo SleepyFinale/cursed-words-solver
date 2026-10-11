@@ -16,10 +16,6 @@ import pytest
 
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.fast_rank import (
-    mult_aware_lower_bound,
-    path_underbounded_by_tile_mult_lb,
-)
 from cursed_words_solver.loadout import (
     parse_board_from_run_state,
     parse_run_state,
@@ -28,7 +24,7 @@ from cursed_words_solver.loadout import (
 from cursed_words_solver.rules.boss_effects import boss_word_constraints
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.quest_scoring import prune_cannot_beat_heap
-from cursed_words_solver.search import WordSearcher, _CandidateHeap
+from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
 FIXTURE = (
@@ -51,52 +47,6 @@ def _f8_run_state_from_round_log(data: dict) -> dict:
         if isinstance(entry, dict) and "f8" in entry and entry["f8"] not in (None, ""):
             ex[key] = entry["f8"]
     return prepare_run_state_dict_for_scoring(rs)
-
-
-@pytest.mark.skipif(
-    not FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="wolf xis fixture and game wordlist required",
-)
-@pytest.mark.legacy_search  # asserts legacy-search internals
-def test_chess_path_not_pruned_after_item_heap_fill():
-    """Item-filled heap must not mult-prune a higher chess-only capture path."""
-    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-
-    pipeline = ScoringPipeline()
-    assert path_underbounded_by_tile_mult_lb(board, QUEEN_ROOK_ROOK)
-    lb = mult_aware_lower_bound(board, QUEEN_ROOK_ROOK, loadout, pipeline.rules)
-    # LB is far below real score — prune would fire without the chess exemption.
-    assert prune_cannot_beat_heap(lb, float(F8_SCORE) + 40.0, loadout)
-
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=3,
-        max_len=3,
-        time_budget=8.0,
-        search_workers=1,
-    )
-    # Warm solve context / caches.
-    _ = searcher.find_best_words(board, loadout, top_n=1)
-
-    heap = _CandidateHeap(32)
-    item_path = path_from_melmod_indices(board, data["solver"]["path"])
-    heap.consider(181.76, "???", item_path, immediate=float(F8_SCORE))
-    while len(heap) < 32:
-        heap.consider(181.76, "???", item_path, immediate=float(F8_SCORE))
-
-    rank = searcher._rank_score_for_candidate(
-        board,
-        QUEEN_ROOK_ROOK,
-        "???",
-        loadout,
-        prune_heap=heap,
-    )
-    assert rank is not None
-    assert rank > 181.76
 
 
 @pytest.mark.skipif(

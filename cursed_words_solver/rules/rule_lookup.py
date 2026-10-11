@@ -16,6 +16,28 @@ PIN_ORCHESTRATION_TYPES = frozenset({"pin_memory_replay", "human_hands_pin"})
 STICKER_ORCHESTRATION_TYPES = frozenset({"frankenstein_stitch", "overhand_replay"})
 
 
+_CATALOG: dict[str, Any] | None = None
+
+
+def rules_catalog() -> dict[str, Any]:
+    """The item / boss / pin rules catalog (``data/wiki/stickers.json``), loaded once.
+
+    Callers must not mutate it.
+    """
+    global _CATALOG
+    if _CATALOG is None:
+        import json
+
+        from cursed_words_solver.paths import data_path
+
+        path = data_path("data", "wiki", "stickers.json")
+        if path.exists():
+            _CATALOG = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            _CATALOG = {"stickers": {}, "stamps": {}, "bosses": {}, "pins": {}, "aliases": {}}
+    return _CATALOG
+
+
 def slugify_name(name: str) -> str:
     """Match MelonLoader RunStateExporter.Slugify fallback from display name."""
     raw = (name or "").strip().lower()

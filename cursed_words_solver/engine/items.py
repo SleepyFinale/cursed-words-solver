@@ -15,6 +15,7 @@ import numpy as np
 from cursed_words_solver.engine import packet as P
 from cursed_words_solver.engine.model import (
     BLUE,
+    PURPLE,
     C_CHESS,
     CHESS_VALUES,
     CONSONANTS,
@@ -392,7 +393,12 @@ def _telescope(inst, step, i, ctx):
     if not ctx.tiles[i].is_type(colour):
         return
     count = sum(1 for t in ctx.tiles[: i + 1] if t.is_type(colour))
-    count += sum(w.red_count for w in ctx.prev_words)
+    for w in ctx.prev_words:
+        if w.tile_types:
+            # IsTileType: purple counts as red and blue.
+            count += sum(1 for tt in w.tile_types if tt == colour or (tt == PURPLE and colour in (RED, BLUE)))
+        else:
+            count += w.red_count  # legacy exports only counted red tiles
     _tadd(step, i, inst.var() * count)
 
 

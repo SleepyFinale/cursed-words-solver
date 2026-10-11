@@ -20,13 +20,7 @@ from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-from cursed_words_solver.search import (
-    PathValidator,
-    WordSearcher,
-    neighbors_from_tile,
-    neighbors_standard,
-    resolve_letter,
-)
+from cursed_words_solver.search import PathValidator, WordSearcher, neighbors_from_tile
 
 DEFAULT_STAMP_NAMES = [
     "Avocado",
@@ -958,39 +952,6 @@ def test_tile_ninja_fourteen_percent_on_high_subtotal():
     assert score == int(30 * 1.34)
 
 
-def test_hungry_snake_horizontal_wrap_neighbors():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "A", 1)
-    loadout = _stamp_loadout("hungry_snake", "Hungry Snake")
-    flags = stamp_search_flags(loadout)
-    nbrs = neighbors_standard(board, [0], {0}, flags=flags)
-    assert 4 in nbrs
-
-
-def test_red_envelope_red_as_e_resolve():
-    board = _empty_board()
-    tile = _tile(0, 0, "X", 1, color=TileColor.RED)
-    loadout = _stamp_loadout("red_envelope", "Red Envelope")
-    flags = stamp_search_flags(loadout)
-    assert resolve_letter(tile, 0, flags=flags) == "e"
-
-
-def test_sluggish_zombie_z_as_s_resolve():
-    board = _empty_board()
-    tile = _tile(0, 0, "Z", 1)
-    loadout = _stamp_loadout("sluggish_zombie", "Sluggish Zombie")
-    flags = stamp_search_flags(loadout)
-    assert resolve_letter(tile, 0, flags=flags) == "s"
-
-
-def test_queenie_q_resolves_as_qu():
-    board = _empty_board()
-    tile = _tile(0, 0, "Q", 1)
-    loadout = _stamp_loadout("queenie", "Queenie")
-    flags = stamp_search_flags(loadout)
-    assert resolve_letter(tile, 0, flags=flags) == "qu"
-
-
 def test_full_moon_double_letter_teleport(tmp_path):
     words = ["bee", "bed"]
     wl = _make_wordlist(tmp_path, words)
@@ -1043,28 +1004,6 @@ def test_full_moon_no_teleport_between_letter_and_currency_e():
     flags = stamp_search_flags(loadout)
     nbrs = neighbors_from_tile(board, [0], {1 << 0}, flags=flags)
     assert 1 not in nbrs
-
-
-def test_full_moon_flamingo_shiny_e_teleport_matches_physical_letter():
-    """Flamingo shiny-as-1 is word-position only; Full Moon matches tile glyph."""
-    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
-    grid[0][0] = _tile(0, 0, "E", 50, color=TileColor.SHINY)
-    grid[1][4] = _tile(1, 4, "E", 2, color=TileColor.BLUE)
-    grid[3][2] = _tile(3, 2, "E", 2, color=TileColor.BLUE)
-    board = Board(tiles=grid)
-    loadout = Loadout(
-        stamps=[
-            LoadoutItem(id="flamingo", name="Flamingo", level=1, kind="stamp"),
-            LoadoutItem(id="full_moon", name="Full Moon", level=1, kind="stamp"),
-        ]
-    )
-    flags = stamp_search_flags(loadout)
-    assert resolve_letter(grid[0][0], 0, flags=flags) == "1"
-    path = [5, 11, 7, 21, 17]
-    visited = sum(1 << i for i in path)
-    nbrs = neighbors_from_tile(board, path, visited, flags=flags)
-    assert 0 in nbrs  # shiny E at (0,0)
-    assert 9 in nbrs  # blue E at (1,4)
 
 
 def test_full_moon_no_letter_teleport_to_chess_rook_with_same_char():

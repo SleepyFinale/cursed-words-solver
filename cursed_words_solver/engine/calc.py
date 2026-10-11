@@ -316,6 +316,12 @@ class EnginePlan:
     kokeshi: bool = False
     cursed_bosses_defeated: int = 0
     sicilian: bool = False
+    # InventoryCache.PertinentAccumulatorWords: valid before the dictionary is checked.
+    accumulator_words: list[str] = field(default_factory=list)
+    # Item classes / colours Player.GetAllItems() exposes to movement and letter
+    # rules (InventoryCache, GetValidNextTiles); narrower under Playing Favourites.
+    inventory_classes: set[str] | None = None
+    inventory_colours: dict[str, list[str]] | None = None
 
     # ------------------------------------------------------------------ build
 
@@ -414,6 +420,31 @@ class EnginePlan:
             if it.cls == "Frankenstein":
                 classes.update(n.cls for n in it.nested)
 
+        # GetValidNextTiles / InventoryCache read Player.GetAllItems(), which Playing
+        # Favourites limits to the pin, the favourite sticker, Left / Right Hand and
+        # the stamp after Right Hand (plus RAM memory / Snapshot copy / stitches).
+        inventory_items = all_items
+        if str(_extra(extras, "challenge_game_class") or "") == "PlayingFavourites":
+            fav: list[ItemInst] = [character_item] if character_item else []
+            for i, st in enumerate(stickers):
+                if st is not None and i + 1 < len(stickers) and stickers[i + 1] is not None and stickers[i + 1].cls == "LeftHumanHand":
+                    fav.append(st)
+            fav += [st for st in stickers if st is not None and st.cls == "LeftHumanHand"][:1]
+            right = [i for i, st in enumerate(stamps) if st is not None and st.cls == "RightHumanHand"][:1]
+            fav += [stamps[i] for i in right]
+            if right and right[0] < 4 and right[0] + 1 < len(stamps) and stamps[right[0] + 1] is not None:
+                fav.append(stamps[right[0] + 1])
+            inventory_items = fav
+        inventory_all = list(inventory_items)
+        for it in inventory_items:
+            if it.cls in ("RandomAccessMemory", "Snapshot", "Frankenstein"):
+                inventory_all.extend(it.nested)
+        inventory_classes = {i.cls for i in inventory_all}
+        inventory_colours: dict[str, list[str]] = {}
+        for it in inventory_all:
+            if it.cls in ("Flamingo", "RedEnvelope", "SpicyPepper", "Automobile"):
+                inventory_colours.setdefault(it.cls, []).extend(it.colours)
+
         if "GlobeTrotter" in classes:
             # GlobeTrotter: corner tiles become currency with ValueModifier +10;
             # legacy exports clamp the void version (-10) to 0.
@@ -469,7 +500,7 @@ class EnginePlan:
             hourglass_odd=hourglasses % 2 == 1,
             challenge=str(_extra(extras, "challenge_game_class") or ""),
             prev_words=prev_words,
-            grid_number=_extra_int(extras, "grid_number") or 1,
+            grid_number=_extra_int(extras, "grid_number_exact") or _extra_int(extras, "grid_number") or 1,
             cable_cars=sum(1 for i in unpacked if i.cls == "CableCar"),
             favourite_stamps=favourite,
             overhand=overhand,
@@ -481,6 +512,9 @@ class EnginePlan:
             kokeshi=any(i.cls == "KokeshiDolls" for i in unpacked),
             cursed_bosses_defeated=_extra_int(extras, "cursed_bosses_defeated_count") or 0,
             sicilian=str(_extra(extras, "challenge_game_class") or "") == "SicilianDefense",
+            accumulator_words=_accumulator_words(extras, inventory_items),
+            inventory_classes=inventory_classes,
+            inventory_colours=inventory_colours,
         )
 
     # ------------------------------------------------------------- helpers
@@ -652,7 +686,8 @@ class EnginePlan:
         path_items = [t for t in tiles if t.glyph == G_ITEM and t.item]
         path_classes = {ITEMS[t.item].cls for t in path_items if t.item in ITEMS}
         sels = self.selections(tiles, path_classes)
-        word_list = words if words is not None else ([word.lower()] if word else [])
+        # Honeypot submits are two words, passed space-separated.
+        word_list = words if words is not None else (word.lower().split() if word else [])
 
         # Per-submit item copies so persistent counters never leak between paths.
         stickers = [_fresh(s) for s in self.stickers]
@@ -894,8 +929,42 @@ def final_score(steps: list[Step]) -> int | float:
     return total
 
 
+# Item.GetAccumulatorWords for items whose list is fixed.
+_FIXED_ACCUMULATOR_WORDS = {
+    "BarChart": (
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+        "eighteen", "nineteen", "twenty", "twentyone", "twentytwo", "twentythree",
+        "twentyfour", "twentyfive",
+    ),
+    "ChessStrategyGuide": ("pawn", "knight", "bishop", "rook", "queen", "king"),
+    "FlashyFountainPen": (
+        "red", "blue", "void", "shiny", "purple", "gold", "white", "green", "pink", "glitch", "cactus",
+    ),
+}
+
+
+def _accumulator_words(extras: dict[str, Any], items: list[ItemInst]) -> list[str]:
+    """Words ``Vocabulary`` accepts from player items before the dictionary.
+
+    Melmod exports the live list (``accumulator_words``, needed for Microphone,
+    whose item names depend on unlocks); older captures derive the fixed lists.
+    """
+    exported = _extra_json(extras, "accumulator_words")
+    if isinstance(exported, list):
+        return sorted({str(w).lower() for w in exported if str(w).strip()})
+    words: set[str] = set()
+    for it in items:
+        for inst in [it] + (it.nested if it.cls == "RandomAccessMemory" else []):
+            words.update(_FIXED_ACCUMULATOR_WORDS.get(inst.cls, ()))
+            if inst.cls == "MichaelsBook" and inst.state.get("current_word"):
+                words.add(str(inst.state["current_word"]).lower())
+    return sorted(words)
+
+
 def _historic_words(extras: dict[str, Any]) -> list[HistWord]:
-    rows = _extra_json(extras, "historic_words")
+    exact = _extra_json(extras, "historic_words_exact")
+    rows = exact if isinstance(exact, list) else _extra_json(extras, "historic_words")
     out: list[HistWord] = []
     if isinstance(rows, list):
         for row in rows:
@@ -906,21 +975,26 @@ def _historic_words(extras: dict[str, Any]) -> list[HistWord]:
                 score = int(float(row.get("score") or 0))
             except (TypeError, ValueError):
                 score = 0
-            out.append(
-                HistWord(
-                    score=score,
-                    skipped=skipped,
-                    red_count=int(row.get("red_tile_count") or 0),
-                    green_count=int(row.get("green_tile_count") or 0),
-                )
+            hist = HistWord(
+                score=score,
+                skipped=skipped,
+                red_count=int(row.get("red_tile_count") or 0),
+                green_count=int(row.get("green_tile_count") or 0),
+                tile_types=tuple(str(t) for t in row.get("tile_types") or ()),
             )
+            if row.get("first_srep"):
+                hist.first_srep = str(row["first_srep"])
+                hist.first_is_letter = len(hist.first_srep) == 1 and hist.first_srep.isalpha()
+            out.append(hist)
+    if isinstance(exact, list):
+        return out  # melmod game_state: exactly _previousWords
     # The game's _previousWords for this encounter; stale melmod rows beyond the
     # live count (e.g. from an earlier encounter) are dropped.
     live = _extra_int(extras, "scoring_previous_words_count")
     if live is not None and 0 <= live < len(out):
         out = out[len(out) - live :] if live else []
     first = str(_extra(extras, "previous_word_first_letter") or "").strip().lower()
-    if first:
+    if first and not any(w.first_srep for w in out):
         target = next((w for w in reversed(out) if not w.skipped), None)
         if target is None:
             target = HistWord(score=0)

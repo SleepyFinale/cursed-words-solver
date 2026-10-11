@@ -8,16 +8,14 @@ card_shark ITEM — cards alone on the board do not enable suit letters.
 
 from __future__ import annotations
 
-from cursed_words_solver.cursedle_solver import (
-    _path_dictionary_word_any_resolution,
-    _primary_cursedle_flags,
-)
+from cursed_words_solver.cursedle_solver import _path_dictionary_word_any_resolution
 from cursed_words_solver.models import Board, CurseType, Tile, TileColor
 
 
 class _FakeDictionary:
     def __init__(self, words: set[str]) -> None:
         self._words = {w.lower() for w in words}
+        self.words = sorted(self._words)
 
     def contains(self, word: str) -> bool:
         return word.lower() in self._words
@@ -62,17 +60,16 @@ def _card_shark_item(row: int, col: int, letter: str = "A") -> Tile:
     )
 
 
-def test_primary_flags_do_not_enable_card_suit_from_poker_cards_alone() -> None:
+def test_poker_cards_alone_do_not_enable_card_suit_letters() -> None:
     tiles = [
         [_card_tile(0, 0, "K", "hearts"), _letter_tile(0, 1, "I"), _letter_tile(0, 2, "N"), _letter_tile(0, 3, "G")]
         + [_letter_tile(0, c, "A") for c in range(4, 6)],
         *[[_letter_tile(r, c, "A") for c in range(6)] for r in range(1, 6)],
     ]
     board = Board(tiles=tiles, rows=6, cols=6)
-    assert _primary_cursedle_flags(board) == 0
-    dictionary = _FakeDictionary({"hing", "king"})
     # Without card_shark on the path, K♥ stays face K — not suit H.
-    assert _path_dictionary_word_any_resolution(board, [0, 1, 2, 3], dictionary) == "king"
+    assert _path_dictionary_word_any_resolution(board, [0, 1, 2, 3], _FakeDictionary({"hing"})) is None
+    assert _path_dictionary_word_any_resolution(board, [0, 1, 2, 3], _FakeDictionary({"hing", "king"})) == "king"
 
 
 def test_card_shark_on_path_enables_suit_letters() -> None:
@@ -88,7 +85,6 @@ def test_card_shark_on_path_enables_suit_letters() -> None:
         *[[_letter_tile(r, c, "A") for c in range(6)] for r in range(1, 6)],
     ]
     board = Board(tiles=tiles, rows=6, cols=6)
-    assert _primary_cursedle_flags(board) == 0
     # Face-only spells "king"; only suit remapping (shark on path) yields "hing".
     dictionary = _FakeDictionary({"hing"})
     word = _path_dictionary_word_any_resolution(board, [0, 1, 2, 3], dictionary)

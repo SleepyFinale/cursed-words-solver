@@ -29,7 +29,7 @@ from cursed_words_solver.rules.stamp_behaviors import (
     FLAG_HORIZONTAL_WRAP,
     stamp_search_flags_mask,
 )
-from cursed_words_solver.search import neighbors_from_tile, neighbors_mask
+from cursed_words_solver.search import neighbors_from_tile
 
 
 def _empty_board() -> Board:
@@ -138,44 +138,6 @@ def test_board_graph_context_active_mask():
     assert ctx.active_mask & (1 << 12) == 0
 
 
-def test_neighbors_mask_matches_neighbors_from_tile_standard():
-    board = _empty_board()
-    flags = stamp_search_flags_mask(Loadout())
-    ctx = build_board_graph_context(board)
-    for cell in range(25):
-        if not board.is_active_index(cell):
-            continue
-        path = [cell]
-        visited = 1 << cell
-        expected = neighbors_from_tile(board, path, visited, flags=flags)
-        mask = neighbors_mask(
-            board, visited, cell_id=cell, flags=flags, graph_ctx=ctx
-        )
-        assert sorted(expected) == sorted(iter_mask(mask))
-
-
-def test_neighbors_mask_parity_with_hungry_snake():
-    board = _empty_board()
-    loadout = Loadout(
-        stamps=[
-            LoadoutItem(
-                id="hungry_snake", name="Hungry Snake", level=1, kind="stamp"
-            )
-        ]
-    )
-    flags = stamp_search_flags_mask(loadout)
-    assert flags & FLAG_HORIZONTAL_WRAP
-    ctx = build_board_graph_context(board)
-    for cell in range(25):
-        path = [cell]
-        visited = 1 << cell
-        expected = neighbors_from_tile(board, path, visited, flags=flags)
-        mask = neighbors_mask(
-            board, visited, cell_id=cell, flags=flags, graph_ctx=ctx
-        )
-        assert sorted(expected) == sorted(iter_mask(mask))
-
-
 def _chess_piece_board(
     center_curse: CurseType,
     *,
@@ -226,53 +188,6 @@ def _chess_piece_board(
                 )
         rows.append(row)
     return Board(tiles=rows)
-
-
-def _assert_chess_mask_parity(board: Board, *, cell: int = 12) -> None:
-    flags = stamp_search_flags_mask(Loadout())
-    ctx = build_board_graph_context(board)
-    path = [cell]
-    visited_masks = (1 << cell, (1 << cell) | (1 << (cell - 1)))
-    for visited in visited_masks:
-        expected = chess_neighbors(board, path, visited, flags)
-        mask = neighbors_mask(
-            board, visited, cell_id=cell, flags=flags, graph_ctx=ctx
-        )
-        assert sorted(expected) == sorted(iter_mask(mask))
-
-
-def test_chess_neighbors_mask_parity_rook():
-    board = _chess_piece_board(CurseType.CHESS_ROOK)
-    _assert_chess_mask_parity(board)
-
-
-def test_chess_neighbors_mask_parity_knight():
-    board = _chess_piece_board(
-        CurseType.CHESS_KNIGHT,
-        blockers={6: (CurseType.CHESS_PAWN, "black")},
-    )
-    _assert_chess_mask_parity(board)
-
-
-def test_chess_neighbors_mask_parity_bishop():
-    board = _chess_piece_board(
-        CurseType.CHESS_BISHOP,
-        blockers={21: (CurseType.CHESS_PAWN, "white")},
-    )
-    _assert_chess_mask_parity(board)
-
-
-def test_chess_neighbors_mask_parity_queen():
-    board = _chess_piece_board(
-        CurseType.CHESS_QUEEN,
-        blockers={8: (CurseType.CHESS_ROOK, "black")},
-    )
-    _assert_chess_mask_parity(board)
-
-
-def test_chess_neighbors_mask_parity_king():
-    board = _chess_piece_board(CurseType.CHESS_KING)
-    _assert_chess_mask_parity(board)
 
 
 def test_chess_fast_path_matches_legacy_masks():

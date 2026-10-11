@@ -293,9 +293,86 @@ def make_item(
     return inst
 
 
+_GAME_GLYPH = {
+    "Blank": G_BLANK, "Letter": G_LETTER, "Number": G_NUMBER, "Fraction": G_FRACTION,
+    "Chess": G_CHESS, "BespokeCard": G_CARD, "Currency": G_CURRENCY, "Arrow": G_ARROW,
+    "ScatteredItem": G_ITEM, "None": G_NONE,
+}
+_GAME_TYPE = {
+    "Normal": NORMAL, "Red": RED, "Blue": BLUE, "Shiny": SHINY, "Void": VOID, "Cactus": CACTUS,
+    "Pink": PINK, "Gold": GOLD, "Green": GREEN, "Purple": PURPLE, "White": WHITE, "Glitch": GLITCH,
+}
+# Tile flags (melmod game_state) that take a tile out of GridData.GetAvailableTiles.
+_GONE_FLAGS = frozenset({"in_void", "destroyed", "gone"})
+
+
+def _game_int(raw: Any, default: int = 0) -> int:
+    """ScorePacket / int export ("inf" saturates)."""
+    if raw == "inf":
+        return (1 << 63) - 1
+    if raw == "-inf":
+        return -(1 << 63)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def etile_from_game(raw: dict[str, Any], idx: int, x: int, y: int, *, active: bool = True) -> ETile:
+    """``ETile`` from a raw melmod ``game_state`` tile (exact glyph / type / letter / value)."""
+    from cursed_words_solver.engine.item_data import CLASS_TO_SLUG
+
+    glyph = _GAME_GLYPH.get(str(raw.get("glyph") or "Letter"), G_LETTER)
+    flags = set(raw.get("flags") or ())
+    active = active and raw.get("available", True) is not False and not (flags & _GONE_FLAGS)
+    letter = str(raw.get("letter") or "").lower()
+    symbol = ""
+    if glyph == G_CURRENCY:
+        from cursed_words_solver.models import CURRENCY_MAP
+
+        symbol = str(raw.get("letter") or "")
+        letter = CURRENCY_MAP.get(symbol, symbol).lower()
+    elif glyph not in (G_LETTER, G_ARROW):
+        letter = ""
+    fraction = raw.get("fraction")
+    item = raw.get("item") if isinstance(raw.get("item"), dict) else None
+    item_slug = ""
+    item_level = None
+    if item is not None:
+        item_slug = CLASS_TO_SLUG.get(str(item.get("class") or ""), str(item.get("id") or ""))
+        levels = item.get("levels") or []
+        item_level = int(levels[0]) if levels else None
+    suit = str(raw.get("suit") or "None").lower()
+    return ETile(
+        idx=idx,
+        x=x,
+        y=y,
+        tile_type=_GAME_TYPE.get(str(raw.get("type") or "Normal"), NORMAL),
+        glyph=glyph,
+        letter=letter,
+        symbol=symbol,
+        number=_game_int(raw.get("number")) if glyph == G_NUMBER else None,
+        fraction=(int(fraction[0]), int(fraction[1])) if glyph == G_FRACTION and isinstance(fraction, list) and len(fraction) >= 2 else None,
+        piece=str(raw.get("piece") or "None").lower() if glyph == G_CHESS else "none",
+        white=bool(raw.get("white", True)),
+        suit=SUIT_NONE if suit == "none" else suit,
+        value=_game_int(raw.get("value")) if active else 0,
+        was_consumable="was_consumable" in flags,
+        was_glitch="was_glitch" in flags,
+        item=item_slug if glyph == G_ITEM else "",
+        item_level=item_level if glyph == G_ITEM else None,
+        in_void=not active,
+        crossed_out="crossed_out" in flags,
+        row=y,
+        col=x,
+    )
+
+
 def etile_from_tile(tile: Tile, idx: int, x: int, y: int, *, active: bool = True) -> ETile:
     """Build an ``ETile`` from the solver's parsed board ``Tile``."""
     meta = tile.metadata or {}
+    if isinstance(meta.get("game_tile"), dict):
+        return etile_from_game(meta["game_tile"], idx, x, y, active=active)
     tt = _COLOR_TO_TYPE.get(tile.color, NORMAL)
     curse = tile.curse
     suit = str(meta.get("card_suit") or "").strip().lower() or SUIT_NONE

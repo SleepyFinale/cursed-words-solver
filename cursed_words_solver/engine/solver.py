@@ -1,7 +1,5 @@
-"""Adapter: run the exact engine search behind ``WordSearcher.find_best_words``.
-
-Returns ``None`` for situations the exact search does not model yet (Cursedle,
-Michael's 25-tile finale, Honeypot two-word submits) so the legacy search runs.
+"""Adapter: the exact engine search behind ``WordSearcher.find_best_words``, plus
+the per-path checks (movement, submittable, game spelling, score) the F8 gates use.
 """
 
 from __future__ import annotations
@@ -10,33 +8,48 @@ import itertools
 import os
 import random
 import time
+import weakref
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from cursed_words_solver.engine import packet as P
 from cursed_words_solver.engine.calc import EnginePlan
-from cursed_words_solver.engine.search import Candidate, ExactSearch
+from cursed_words_solver.engine.search import FINALE_WORD, Candidate, ExactSearch
 from cursed_words_solver.engine.trie import CsrTrie, load_trie
 from cursed_words_solver.models import Board, Loadout, WordResult
 
 _CAPYBARA_SAMPLES = 120
 
+_SEARCH_CACHE: OrderedDict[tuple, ExactSearch] = OrderedDict()
+_SEARCH_CACHE_SIZE = 6
 
-def unsupported_reason(plan: EnginePlan, loadout: Loadout) -> str:
-    extras = loadout.extras or {}
-    if str(extras.get("encounter_mode") or "").lower() == "cursedle":
-        return "cursedle"
-    if str(extras.get("michael_summoned_bosses_defeated") or "").lower() == "true":
-        return "michael_finale"
-    if "Honeypot" in plan.item_classes:
-        return "honeypot"
-    return ""
+
+def path_search(board: Board, loadout: Loadout | None, dictionary=None, *, min_len: int = 1) -> ExactSearch:
+    """Cached ``ExactSearch`` for path checks on one board / loadout / dictionary."""
+    from cursed_words_solver.fingerprints import board_fingerprint, loadout_fingerprint
+
+    loadout = loadout or Loadout(money=board.money)
+    trie = trie_for(dictionary) if dictionary is not None else _EMPTY_TRIE
+    # Callers mutate boards / extras in place: key on content, not just identity.
+    extras_key = hash(tuple(sorted((str(k), str(v)) for k, v in (loadout.extras or {}).items())))
+    key = (board_fingerprint(board), loadout_fingerprint(loadout), extras_key, id(trie), int(min_len or 1))
+    search = _SEARCH_CACHE.get(key)
+    if search is None:
+        search = ExactSearch(EnginePlan.build(board, loadout), trie)
+        search.min_len = max(search.min_len, int(min_len or 1))
+        _SEARCH_CACHE[key] = search
+        while len(_SEARCH_CACHE) > _SEARCH_CACHE_SIZE:
+            _SEARCH_CACHE.popitem(last=False)
+    else:
+        _SEARCH_CACHE.move_to_end(key)
+    return search
 
 
 def _moves_ok(search: ExactSearch, path) -> bool:
     n = len(search.tiles)
-    if any(not (0 <= i < n) for i in path) or len(set(path)) != len(path):
+    if not path or any(not (0 <= i < n) or not search.clickable[i] for i in path) or len(set(path)) != len(path):
         return False
     for k in range(len(path) - 1):
         prefix = tuple(path[: k + 1])
@@ -45,54 +58,58 @@ def _moves_ok(search: ExactSearch, path) -> bool:
     return True
 
 
-def _submittable(search: ExactSearch, path) -> bool:
+def engine_path_movement_ok(board: Board, path: list[int], loadout: Loadout | None) -> bool:
+    """Every step follows ``GetValidNextTiles`` (tiles clickable, none repeated)."""
+    return _moves_ok(path_search(board, loadout), list(path))
+
+
+def engine_valid_word(board: Board, path: list[int], loadout: Loadout | None, dictionary, *, min_len: int = 1) -> str | None:
+    """The word(s) the game submits for ``path``, or None if it is not submittable.
+
+    Movement, challenge restrictions and ``Vocabulary`` (accumulator words,
+    wildcards, Honeypot splits as "first second", Michael's finale) all apply.
+    """
+    search = path_search(board, loadout, dictionary, min_len=min_len)
     path = tuple(path)
-    return _moves_ok(search, path) and search.path_allowed(path) and search.valid_word(path) is not None
-
-
-def engine_path_movement_ok(board: Board, path: list[int], loadout: Loadout) -> bool | None:
-    """Every step follows ``GetValidNextTiles``; None when the engine can't model the board."""
-    try:
-        plan = EnginePlan.build(board, loadout)
-        if unsupported_reason(plan, loadout):
-            return None
-        return _moves_ok(ExactSearch(plan, CsrTrie.from_words(())), path)
-    except Exception:  # noqa: BLE001 - caller falls back to the legacy check
+    if not _moves_ok(search, path) or not search.path_allowed(path):
         return None
+    return search.valid_word(path)
 
 
-def engine_path_submittable(board: Board, path: list[int], loadout: Loadout, dictionary, *, min_len: int = 1) -> bool | None:
-    """Game accepts some word on ``path`` (movement + vocabulary + challenge rules); None if unmodeled."""
-    try:
-        plan = EnginePlan.build(board, loadout)
-        if unsupported_reason(plan, loadout):
-            return None
-        search = ExactSearch(plan, trie_for(dictionary))
-        search.min_len = max(search.min_len, int(min_len or 1))
-        return _submittable(search, path)
-    except Exception:  # noqa: BLE001 - caller falls back to the legacy check
-        return None
+def engine_path_submittable(board: Board, path: list[int], loadout: Loadout | None, dictionary, *, min_len: int = 1) -> bool:
+    """Game accepts some word on ``path`` (movement + vocabulary + challenge rules)."""
+    return engine_valid_word(board, path, loadout, dictionary, min_len=min_len) is not None
 
 
-def engine_path_score(board: Board, path: list[int], word: str, loadout: Loadout) -> int | None:
-    """Exact game-port score for one path; None when the engine can't model the board."""
-    try:
-        plan = EnginePlan.build(board, loadout)
-        if unsupported_reason(plan, loadout):
-            return None
-        mode = _capybara_mode(loadout)
-        if mode:
-            # Same expected value over shuffled item orders as the prediction.
-            return int(capybara_score_range(plan, path, word, mode)[0])
-        return int(plan.score(list(path), word).int_score)
-    except Exception:  # noqa: BLE001 - caller falls back to the legacy pipeline
-        return None
+def engine_path_score(board: Board, path: list[int], word: str, loadout: Loadout) -> int:
+    """Exact game score for one path (Capybara: expected value over item shuffles)."""
+    plan = path_search(board, loadout).plan
+    mode = _capybara_mode(loadout)
+    if mode:
+        return int(capybara_score_range(plan, path, word, mode)[0])
+    return int(plan.score(list(path), word).int_score)
+
+
+_EMPTY_TRIE = CsrTrie.from_words(())
+_TRIE_BY_DICT: "weakref.WeakKeyDictionary[Any, tuple[int, CsrTrie]]" = weakref.WeakKeyDictionary()
 
 
 def trie_for(dictionary) -> CsrTrie:
+    """Engine trie for a ``WordDictionary`` (anything with ``.words``), memoized per object."""
     words = getattr(dictionary, "words", None) or ()
+    try:
+        hit = _TRIE_BY_DICT.get(dictionary)
+    except TypeError:  # not weak-referenceable
+        hit = None
+    if hit is not None and hit[0] == len(words):
+        return hit[1]
     cache_dir = Path.home() / ".cursed_words_solver"
-    return load_trie(words, cache_dir if cache_dir.exists() else None)
+    trie = load_trie(words, cache_dir if cache_dir.exists() else None)
+    try:
+        _TRIE_BY_DICT[dictionary] = (len(words), trie)
+    except TypeError:
+        pass
+    return trie
 
 
 def _capybara_mode(loadout: Loadout) -> int:
@@ -171,12 +188,14 @@ def _expected_score(plan: EnginePlan, path: tuple[int, ...], word: str, ordering
 
 def _distinct(candidates: list[Candidate], required_indices: frozenset[int], limit: int | None = None) -> list[Candidate]:
     """Suggestions are distinct words, each on its best-ranked path (input already sorted)."""
-    seen_words: set[str] = set()
+    seen_words: set = set()
     out: list[Candidate] = []
     for c in candidates:
-        if c.word in seen_words or (required_indices and not required_indices.issubset(c.path)):
+        # Every finale tour submits the same (random) word: keep distinct paths.
+        key = c.path if c.word == FINALE_WORD else c.word
+        if key in seen_words or (required_indices and not required_indices.issubset(c.path)):
             continue
-        seen_words.add(c.word)
+        seen_words.add(key)
         out.append(c)
         if limit is not None and len(out) >= limit:
             break
@@ -341,8 +360,8 @@ def exact_find_best_words(
     cancel_check: Callable[[], bool] | None = None,
     rank: Callable[[float], float] | None = None,
     parallel: ParallelSpec | None = None,
-) -> tuple[list[WordResult] | None, dict]:
-    """Best ``top_n`` words by exact game score, or (None, info) when unsupported.
+) -> tuple[list[WordResult], dict]:
+    """Best ``top_n`` words by exact game score (and search stats).
 
     With ``parallel``, start tiles are spread over the search process pool; each
     worker ranks with ``search_rank_for_quest`` (``rank`` must be that function
@@ -352,9 +371,6 @@ def exact_find_best_words(
     if cancel_check is not None and cancel_check():
         return [], {"engine": "exact", "cancelled": True}
     plan = EnginePlan.build(board, loadout)
-    reason = unsupported_reason(plan, loadout)
-    if reason:
-        return None, {"unsupported": reason}
     search = ExactSearch(plan, trie_for(dictionary))
     search.min_len = max(search.min_len, int(min_len or 1))
     search.max_len = min(search.max_len, int(max_len or 25))
@@ -420,46 +436,8 @@ def exact_find_best_words(
                 )
             )
     info["wall_sec"] = round(time.perf_counter() - t0, 3)
-    info["exhaustive"] = bool(search.stats.extra.get("exhaustive", True))
+    if "parallel_workers" not in info:
+        info["exhaustive"] = bool(search.stats.extra.get("exhaustive", True))
     info["plan"] = plan
     info["capybara_mode"] = mode
     return results, info
-
-
-def rescore_results(
-    plan: EnginePlan,
-    results: list[WordResult],
-    *,
-    capybara_mode: int = 0,
-    rank: Callable[[float], float] | None = None,
-) -> list[WordResult]:
-    """Exact engine scores for candidates found by another search (legacy fallback)."""
-    rank_fn = rank or (lambda s: s)
-    orderings = _orderings(plan, capybara_mode, random.Random(0)) if capybara_mode else None
-    out: list[WordResult] = []
-    for r in results:
-        path = tuple(r.path)
-        if any(i >= len(plan.grid.tiles) for i in path):
-            continue
-        word = r.dictionary_word or r.word
-        if orderings:
-            ev, lo, hi = _expected_score(plan, path, word, orderings)
-            score, bd = float(ev), {"engine": "exact", "nondeterministic": True, "score_min": lo, "score_max": hi}
-        else:
-            res = plan.score(list(path), word)
-            score = float(P.to_int(res.score))
-            bd = {"engine": "exact", "nondeterministic": res.nondeterministic}
-        merged = dict(r.breakdown or {})
-        merged.update(bd)
-        merged["source"] = "legacy_search"
-        out.append(
-            WordResult(
-                word=r.word,
-                path=list(path),
-                score=score,
-                breakdown=merged,
-                dictionary_word=r.dictionary_word,
-                rank_score=float(rank_fn(score)),
-            )
-        )
-    return out

@@ -103,6 +103,14 @@ namespace CursedWordsSolverCompanion
                 SanitizeLoadoutSpecificExtras(snapshot, player);
                 BoardExporter.ApplyGridScatteredLevelsFromExtras(snapshot);
                 BoardExporter.FillGridScatteredItemsExtra(snapshot);
+                try
+                {
+                    snapshot.game_state = GameStateSerializer.Capture(trigger);
+                }
+                catch (Exception ex)
+                {
+                    ExportDiagnostics.RecordMergeError("game_state: " + ex.Message);
+                }
                 sw.Stop();
                 ExportDiagnostics.ApplyToSnapshot(
                     snapshot,

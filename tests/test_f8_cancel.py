@@ -61,9 +61,3 @@ def test_find_best_words_stops_when_cancel_check_fires(tmp_path):
     assert results == []
 
 
-def test_time_expired_includes_cancel_check(tmp_path):
-    wl = _wordlist(tmp_path, ["aaa"])
-    dictionary = WordDictionary(wl)
-    searcher = WordSearcher(dictionary=dictionary, min_len=3, max_len=3, time_budget=5.0)
-    searcher._cancel_check = lambda: True
-    assert searcher._time_expired() is True

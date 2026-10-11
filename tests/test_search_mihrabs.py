@@ -12,7 +12,7 @@ from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-from cursed_words_solver.search import WordSearcher, resolve_letter
+from cursed_words_solver.search import WordSearcher
 
 FIXTURE = (
     Path(__file__).resolve().parent
@@ -33,19 +33,6 @@ def mihrabs_board_loadout():
     assert board is not None
     loadout = parse_run_state(data["run_state_snapshot"])
     return board, loadout, data
-
-
-def test_mihrabs_fixture_scores_60(mihrabs_board_loadout):
-    board, loadout, data = mihrabs_board_loadout
-    flags = stamp_search_flags(loadout)
-    scoring_word = "".join(
-        resolve_letter(board.get_by_index(idx), j, flags=flags)
-        for j, idx in enumerate(MIHRABS_PATH)
-    ).lower()
-    score = ScoringPipeline().score_total_only(
-        board, MIHRABS_PATH, scoring_word, loadout
-    )
-    assert int(score) == int(data["actual_score"])
 
 
 def test_short_prefix_fixture_scores_54(mihrabs_board_loadout):

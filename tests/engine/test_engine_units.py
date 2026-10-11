@@ -132,6 +132,94 @@ def test_exact_search_rejects_non_adjacent_paths() -> None:
     assert _search(rows, {"cat"}).run(top_n=0) == []
 
 
+def test_honeypot_submits_two_words_when_one_does_not_fit() -> None:
+    rows = ["catdo", "xxxxg", "xxxxx", "xxxxx", "xxxxx"]
+    words = {"cat", "dog", "at", "catdog"}
+    honeypot = Loadout(stickers=[LoadoutItem("honeypot", "honeypot", 1)], extras={"wolf_max_length": "3"})
+    xs = _search(rows, words, honeypot)
+    # GetConcatenatedValidWordsFromTiles: whole word first, then the shortest first word.
+    assert xs.valid_word((0, 1, 2, 3, 4, 9)) == "cat dog"
+    assert xs.valid_word((1, 2, 3, 4, 9)) == "at dog"
+    found = {c.word: c.path for c in xs.run(top_n=0)}
+    assert found["cat dog"] == (0, 1, 2, 3, 4, 9)
+    # Without Honeypot the Wolf limit rules both out.
+    assert _search(rows, words, Loadout(extras={"wolf_max_length": "3"})).valid_word((0, 1, 2, 3, 4, 9)) is None
+
+
+def test_honeypot_second_word_restarts_number_positions() -> None:
+    # "1" is a wildcard only at position 0 of a word: here, the start of word two.
+    rows = ["at1ox", "xxxxx", "xxxxx", "xxxxx", "xxxxx"]
+    honeypot = Loadout(stickers=[LoadoutItem("honeypot", "honeypot", 1)])
+    xs = _search(rows, {"at", "go"}, honeypot)
+    assert xs.valid_word((0, 1, 2, 3)) == "at go"
+    assert _search(rows, {"at", "go"}).valid_word((0, 1, 2, 3)) is None
+
+
+def test_accumulator_words_are_valid_without_the_dictionary() -> None:
+    # Flashy Fountain Pen: colour names are accepted even if the dictionary lacks them.
+    rows = ["redxx", "xxxxx", "xxxxx", "xxxxx", "xxxxx"]
+    flashy = Loadout(stamps=[LoadoutItem("flashy_fountain_pen", "flashy_fountain_pen", 1, "stamp")])
+    xs = _search(rows, {"ed"}, flashy)
+    assert xs.valid_word((0, 1, 2)) == "red"
+    assert any(c.path == (0, 1, 2) and c.word == "red" for c in xs.run(top_n=0))
+    assert _search(rows, {"ed"}).valid_word((0, 1, 2)) is None
+
+
+def test_exported_accumulator_words_replace_derived_list() -> None:
+    rows = ["pigxx", "xxxxx", "xxxxx", "xxxxx", "xxxxx"]
+    mic = Loadout(extras={"accumulator_words": json.dumps(["pig"])})
+    assert _search(rows, set(), mic).valid_word((0, 1, 2)) == "pig"
+
+
+def test_playing_favourites_limits_movement_items_to_favourites() -> None:
+    # Full Moon teleports between the two "c" tiles only while it is in GetAllItems().
+    rows = ["cxxxc", "xxxxx", "xxxxx", "xxxxx", "xxxxa"]
+    full_moon = [LoadoutItem("full_moon", "full_moon", 1, "stamp")]
+    free = _search(rows, {"ca"}, Loadout(stamps=full_moon))
+    assert 4 in free.next_tiles((0,), {0}, free.inventory_for((0,)))
+    quest = Loadout(stamps=full_moon, extras={"challenge_game_class": "PlayingFavourites"})
+    fav = _search(rows, {"ca"}, quest)
+    assert 4 not in fav.next_tiles((0,), {0}, fav.inventory_for((0,)))
+    # Right Hand makes the stamp after it a favourite again.
+    hands = Loadout(
+        stamps=[LoadoutItem("right_hand", "right_hand", 1, "stamp")] + full_moon,
+        extras={"challenge_game_class": "PlayingFavourites"},
+    )
+    fav2 = _search(rows, {"ca"}, hands)
+    assert 4 in fav2.next_tiles((0,), {0}, fav2.inventory_for((0,)))
+
+
+def _finale_board(rows: list[str]):
+    """Michael's finale: '?' blanks, digits/letters for numbers (a=10, b=11, ...)."""
+    from cursed_words_solver.models import Tile
+
+    board = _board(["xxxxx"] * 5)
+    for r, line in enumerate(rows):
+        for c, ch in enumerate(line):
+            if ch == "?":
+                t = Tile(r, c, "?", "?", 1.0, curse=CurseType.WILDCARD)
+            else:
+                n = int(ch, 36)
+                t = Tile(r, c, str(n), str(n), float(n), curse=CurseType.NUMBER, number_value=n)
+            t.metadata["source"] = "melmod"
+            board.tiles[r][c] = t
+    return board
+
+
+def test_michael_finale_tours_every_tile_with_numbers_in_place() -> None:
+    board = _finale_board(["1????", "?????", "?????", "?????", "????p"])  # p = 25
+    loadout = Loadout(extras={"michael_summoned_bosses_defeated": "true", "encounter_min_word_length": "25"})
+    xs = ExactSearch(EnginePlan.build(board, loadout), CsrTrie.from_words(()))
+    cands = xs.run(top_n=0, deadline=time.perf_counter() + 10)
+    assert cands
+    for c in cands:
+        assert len(c.path) == 25 and len(set(c.path)) == 25
+        assert c.path[0] == 0 and c.path[-1] == 24
+    assert xs.valid_word(cands[0].path)
+    # A number off its position is not a wildcard.
+    assert not xs.finale_valid(tuple(reversed(cands[0].path)))
+
+
 def test_number_tile_is_wildcard_only_at_its_position() -> None:
     # "1" is a wildcard as the first tile, "2" as the second (IsNumericWildcard).
     rows = ["12txx", "xxxxx", "xxxxx", "xxxxx", "xxxxx"]

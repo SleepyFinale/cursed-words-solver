@@ -21,7 +21,7 @@ from cursed_words_solver.rules.quest_effects import (
     active_quest_game_class,
     quest_path_allowed,
 )
-from cursed_words_solver.search import WordSearcher, _number_board_cap_sequence
+from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
 FIXTURE = (
@@ -51,32 +51,3 @@ def test_submitted_slav_path_is_quest_allowed(chromaphobia_board_loadout):
     path = path_from_melmod_indices(board, SUBMITTED_MELMOD_PATH)
     assert data["actual"]["word"] == SUBMITTED_WORD
     assert quest_path_allowed(board, path, loadout=loadout)
-
-
-@pytest.mark.legacy_search  # asserts legacy-search internals
-def test_beam_find_best_words_finds_colorless_words(chromaphobia_board_loadout):
-    board, loadout, _data = chromaphobia_board_loadout
-    rules = ScoringPipeline().rules
-    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
-    dictionary = WordDictionary(ensure_wordlist())
-    searcher = WordSearcher(
-        dictionary=dictionary,
-        min_len=max(3, constraints.min_len),
-        max_len=min(25, constraints.max_len),
-        time_budget=20.0,
-        search_workers=1,
-        use_beam_search=True,
-    )
-    results = searcher.find_best_words(board, loadout, top_n=5)
-    assert results, (
-        "beam F8 must find at least one colorless Chromaphobia word "
-        "on number+wildcard boards"
-    )
-    timing = searcher.last_search_timing
-    assert timing is not None
-    assert not timing.number_board_empty_diag
-    assert timing.dfs_caps[:6] == tuple(
-        _number_board_cap_sequence(searcher.min_len, searcher.max_len)[:6]
-    )
-    for result in results:
-        assert quest_path_allowed(board, list(result.path), loadout=loadout)

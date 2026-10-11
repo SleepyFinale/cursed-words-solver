@@ -20,7 +20,7 @@ from cursed_words_solver.rules.boss_effects import (
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.scoring_conditions import target_score_from_loadout
-from cursed_words_solver.search import WordSearcher, _active_indices
+from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.dictionary import WordDictionary
 
 
@@ -334,41 +334,6 @@ def test_hyena_blocks_search():
         time_budget=1.0,
     )
     assert searcher.find_best_words(board, loadout=loadout) == []
-
-
-def test_bat_inactive_cells_not_in_search_starts():
-    board = _board_letters(
-        [
-            "cat..",
-            ".....",
-            ".....",
-            ".....",
-            ".....",
-        ]
-    )
-    assert len(_active_indices(board)) == 3
-    assert 3 not in _active_indices(board)
-
-
-def test_bat_3x4_search_uses_column_four(tmp_path: Path):
-    """Col 3 must be active so words like 'wet' / 'went' are reachable."""
-    from cursed_words_solver.loadout import parse_board_from_run_state
-    from tests.integration.test_run_state_board import _bat_3x4_run_state
-
-    board = parse_board_from_run_state(_bat_3x4_run_state())
-    assert board is not None
-    assert 13 in _active_indices(board)  # row 2, col 3
-
-    wl = tmp_path / "words.txt"
-    wl.write_text(
-        "wet\nwent\nteeth\n",
-        encoding="utf-8",
-    )
-    d = WordDictionary(wl)
-    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=2.0)
-    results = searcher.find_best_words(board)
-    words = {r.word for r in results}
-    assert "wet" in words or "went" in words
 
 
 def test_parse_board_inactive_from_run_state(tmp_path: Path):

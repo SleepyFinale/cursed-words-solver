@@ -13,25 +13,8 @@ from cursed_words_solver.fingerprints import (
     board_fingerprint_tiles_only_from_fp,
     fingerprints_from_run_state,
 )
-from cursed_words_solver.graph_bitboard import build_board_graph_context
-from cursed_words_solver.models import CHESS_CURSES, Board, CurseType, Loadout
-from cursed_words_solver.rules.fraction_tiles import (
-    fraction_is_numeric_wildcard,
-    is_fraction_tile,
-)
-from cursed_words_solver.rules.stamp_behaviors import (
-    FLAG_NUMBER_PLUS_MINUS_ONE,
-    flag_test,
-    path_scattered_search_flags_mask,
-)
-from cursed_words_solver.search import (
-    coerce_search_flags,
-    is_numeric_wildcard,
-    neighbors_mask,
-    physical_word_for_path,
-    resolve_letter,
-    search_word_from_path,
-)
+from cursed_words_solver.engine.board_paths import BoardPaths
+from cursed_words_solver.models import Board, CurseType, Loadout
 from cursed_words_solver.suggestion import SOLVER_VERSION, _next_f8_sequence
 from cursed_words_solver.config import (
     FAIRY_CURATED_WORDLIST_PATH,
@@ -67,7 +50,7 @@ def load_fairy_solution_dictionary(
     """
     if fairy_curated_wordlist_available():
         return (
-            WordDictionary(FAIRY_CURATED_WORDLIST_PATH, use_trie_cache=True),
+            WordDictionary(FAIRY_CURATED_WORDLIST_PATH),
             None,
         )
     if fallback is not None:
@@ -255,32 +238,23 @@ def solution_matches_all_guesses(
     return all(solution_matches_guess(board, solution_path, g) for g in guesses)
 
 
-def _cursedle_step_flags(board: Board, path_prefix: list[int]) -> int:
-    """Search flags after walking ``path_prefix`` (Hungry Snake wrap from path items)."""
-    return path_scattered_search_flags_mask(board, path_prefix, base_flags=0)
+def _paths(board: Board) -> BoardPaths:
+    """Engine movement / word rules for the puzzle grid (PuzzleController uses the
+    same ``GetValidNextTiles`` and ``Vocabulary`` as encounters)."""
+    return BoardPaths.for_board(board)
+
+
+def _trie(dictionary: WordDictionary):
+    from cursed_words_solver.engine.solver import trie_for
+
+    return trie_for(dictionary)
 
 
 def _cursedle_path_movement_ok(board: Board, path: list[int]) -> bool:
-    """Path validity using scattered-item movement (e.g. snake horizontal wrap)."""
+    """Every step is a legal selection (scattered items on the path included)."""
     if len(path) < 2:
         return True
-    graph_ctx = build_board_graph_context(board)
-    visited = 0
-    for i in range(len(path) - 1):
-        a, b = path[i], path[i + 1]
-        visited |= 1 << a
-        step_flags = _cursedle_step_flags(board, path[: i + 1])
-        mask = neighbors_mask(
-            board,
-            visited,
-            cell_id=a,
-            flags=step_flags,
-            graph_ctx=graph_ctx,
-        )
-        if not (mask & (1 << b)):
-            return False
-        visited |= 1 << b
-    return True
+    return _paths(board).moves_ok(path)
 
 
 def enumerate_candidate_paths(
@@ -289,36 +263,7 @@ def enumerate_candidate_paths(
     min_len: int = CURSEDLE_SOLUTION_MIN_LEN,
     max_len: int = CURSEDLE_SOLUTION_MAX_LEN,
 ) -> list[list[int]]:
-    graph_ctx = build_board_graph_context(board)
-    n = board.cell_count
-    paths: list[list[int]] = []
-    for start in range(n):
-        if not board.is_active_index(start):
-            continue
-        stack: list[tuple[int, list[int], int]] = [(start, [start], 1 << start)]
-        while stack:
-            cell, path, visited = stack.pop()
-            if len(path) >= min_len:
-                paths.append(list(path))
-            if len(path) >= max_len:
-                continue
-            step_flags = _cursedle_step_flags(board, path)
-            mask = neighbors_mask(
-                board,
-                visited,
-                cell_id=cell,
-                flags=step_flags,
-                graph_ctx=graph_ctx,
-            )
-            bit = 0
-            while bit < n:
-                if mask & (1 << bit):
-                    if board.is_active_index(bit) and not (visited & (1 << bit)):
-                        stack.append(
-                            (bit, path + [bit], visited | (1 << bit))
-                        )
-                bit += 1
-    return paths
+    return list(_paths(board).walk(min_len, max_len))
 
 
 def filter_candidates(
@@ -338,197 +283,67 @@ def filter_candidates(
     ]
 
 
-def _primary_cursedle_flags(board: Board) -> int:
-    """Board-wide Cursedle search flags (none).
+def _solution_letter_hints(board: Board, path: list[int]) -> dict[int, str]:
+    """Letters the hidden solution must have under theme items on ``path``.
 
-    Theme letter effects (e.g. Card Shark suit letters) are not inferred from
-    poker cards on the grid. Game ``Tile.IsDisplayingAsVariableLetter`` enables
-    Card Shark only when a ``CardShark`` is in player items — including scattered
-    items on the current selection. Fairy Grid places a live ``card_shark`` ITEM;
-    derive the flag per path via ``path_scattered_search_flags_mask`` only.
+    ``FairyGridGeneration`` puts theme items (Hungry Snake, Card Shark, ...) on
+    solution tiles and keeps the solution letter underneath. The game still
+    treats the item as a wildcard for validity, but its letter pins the
+    solution; items on filler tiles have no letter (emoji face).
     """
-    return 0
-
-
-def _cursedle_path_flags(board: Board, path: list[int]) -> int:
-    """Board-wide theme flags plus scattered-item effects along ``path``."""
-    return path_scattered_search_flags_mask(
-        board, path, _primary_cursedle_flags(board)
-    )
-
-
-def _cursedle_flag_variants(board: Board, path: list[int]) -> tuple[int, ...]:
-    """Distinct flag masks to try when resolving a path to a dictionary word."""
-    primary = _primary_cursedle_flags(board)
-    path_flags = path_scattered_search_flags_mask(board, path, primary)
-    seen: set[int] = set()
-    out: list[int] = []
-    for flags in (0, primary, path_flags):
-        if flags not in seen:
-            seen.add(flags)
-            out.append(flags)
-    return tuple(out)
-
-
-def _cursedle_tile_is_wildcard(tile: Any) -> bool:
-    """True when the game treats a path tile as a dictionary wildcard."""
-    if tile.curse in CHESS_CURSES:
-        return True
-    if tile.curse in (CurseType.WILDCARD, CurseType.BLANK, CurseType.ARROW):
-        return True
-    if tile.curse == CurseType.CARD and getattr(tile, "is_joker", False):
-        return True
-    if tile.curse == CurseType.ITEM:
-        face = (tile.char or "").strip()
-        return bool(face and not face.isalpha())
-    return False
-
-
-def _cursedle_word_from_path(
-    board: Board,
-    path: list[int],
-    *,
-    flags: int = 0,
-) -> str:
-    """Spell a path for Cursedle dictionary checks.
-
-    Theme scattered items on solution letters use the underlying face letter
-    when the tile face is alphabetic; emoji overlays (e.g. Hungry Snake) use
-    ``?`` so longer dictionary words can be resolved via pattern matching.
-    """
-    flags = coerce_search_flags(flags)
-    parts: list[str] = []
-    char_pos = 0
-    for idx in path:
-        tile = board.get_by_index(idx)
-        if _cursedle_tile_is_wildcard(tile):
-            parts.append("?")
-            char_pos += 1
-        elif tile.curse == CurseType.ITEM:
-            face = (tile.char or "").strip()
-            if face and not face.isalpha():
-                parts.append("?")
-            else:
-                ch = (tile.letter or "").strip()
-                if len(ch) == 1 and ch.isalpha():
-                    parts.append(ch.lower())
-                else:
-                    parts.append("?")
-            char_pos += 1
-        elif tile.curse == CurseType.NUMBER and is_numeric_wildcard(
-            tile, char_pos, flags=flags
-        ):
-            # Test Tube / position-matched numbers stand for any letter (game
-            # IsNumericWildcard); digits must not appear in the dict pattern.
-            parts.append("?")
-            char_pos += 1
-        elif is_fraction_tile(tile):
-            # Same IsNumericWildcard rule as numbers (incl. Test Tube ±1).
-            if fraction_is_numeric_wildcard(
-                tile,
-                char_pos,
-                number_plus_minus_one=flag_test(
-                    flags, FLAG_NUMBER_PLUS_MINUS_ONE
-                ),
-            ):
-                parts.append("?")
-            else:
-                parts.append((tile.char or "#").strip() or "#")
-            char_pos += 1
-        else:
-            token = resolve_letter(tile, char_pos, flags=flags)
-            parts.append(token)
-            char_pos += len(token)
-    return "".join(parts).lower()
-
-
-def _pattern_letter_hints(
-    board: Board,
-    path: list[int],
-    pattern: str,
-) -> dict[int, str]:
-    letter_hints: dict[int, str] = {}
+    hints: dict[int, str] = {}
     for i, idx in enumerate(path):
-        if i >= len(pattern) or pattern[i] != "?":
-            continue
         tile = board.get_by_index(idx)
         if tile.curse != CurseType.ITEM:
             continue
-        # Game IsWildcard: GlyphType.ScatteredItem is always a wildcard.
-        # Only alphabetic item faces (not emoji overlays) fix a letter.
         face = (tile.char or "").strip()
         if not face.isalpha():
             continue
         ch = (tile.letter or face).strip()
         if len(ch) == 1 and ch.isalpha():
-            letter_hints[i] = ch.lower()
-    return letter_hints
+            hints[i] = ch.lower()
+    return hints
+
+
+def _cursedle_word_from_path(board: Board, path: list[int]) -> str:
+    """Face spelling of a path (``?`` for wildcards; theme items show their letter)."""
+    spelled = _paths(board).spell(path).lower()
+    hints = _solution_letter_hints(board, path)
+    if not hints or len(spelled) != len(path):
+        return spelled
+    return "".join(hints.get(i, ch) for i, ch in enumerate(spelled))
 
 
 def _pattern_dictionary_matches(
     board: Board,
     path: list[int],
-    pattern: str,
     dictionary: WordDictionary,
 ) -> list[str]:
-    """All dictionary words that fill ``pattern`` on ``path`` (length-matched)."""
-    if "?" not in pattern:
-        return [pattern] if dictionary.contains(pattern) else []
-    letter_hints = _pattern_letter_hints(board, path, pattern)
-    matches = [
-        word
-        for word in dictionary.enumerate_pattern_matches(
-            pattern, limit=CURSEDLE_PATTERN_MATCH_LIMIT
-        )
-        if len(word) == len(path)
-    ]
-    if letter_hints:
+    """Dictionary words the game accepts on ``path`` that fit the theme-item letters."""
+    matches = _paths(board).words(path, _trie(dictionary), limit=CURSEDLE_PATTERN_MATCH_LIMIT)
+    hints = _solution_letter_hints(board, path)
+    if hints:
         matches = [
-            word
-            for word in matches
-            if all(word[pos] == ch for pos, ch in letter_hints.items())
+            w for w in matches
+            if len(w) == len(path) and all(w[pos] == ch for pos, ch in hints.items())
         ]
     return matches
 
 
-def _pattern_dictionary_word(
-    board: Board,
-    path: list[int],
-    pattern: str,
-    dictionary: WordDictionary,
-) -> str | None:
-    matches = _pattern_dictionary_matches(board, path, pattern, dictionary)
-    if not matches:
-        return None
-    # Prefer a unique fill; otherwise any match (stable order from enumerator).
-    if len(matches) == 1:
-        return matches[0]
-    return matches[0]
-
-
 def _wildcard_tile_count(board: Board, path: list[int]) -> int:
-    return sum(
-        1 for idx in path if _cursedle_tile_is_wildcard(board.get_by_index(idx))
-    )
+    return _paths(board).wildcard_count(path)
 
 
 def _path_dictionary_word(
     board: Board,
     path: list[int],
     dictionary: WordDictionary,
-    *,
-    flags: int | None = None,
 ) -> str | None:
-    if not _cursedle_path_movement_ok(board, path):
+    """The word ``path`` spells when it has no wildcard tiles (None otherwise)."""
+    if not _cursedle_path_movement_ok(board, path) or _wildcard_tile_count(board, path):
         return None
-    if flags is None:
-        flags = _primary_cursedle_flags(board)
-    word = _cursedle_word_from_path(board, path, flags=flags)
-    if not word or "?" in word:
-        return None
-    if dictionary.contains(word):
-        return word
-    return None
+    matches = _pattern_dictionary_matches(board, path, dictionary)
+    return matches[0] if matches else None
 
 
 def _path_solution_resolution(
@@ -538,28 +353,15 @@ def _path_solution_resolution(
 ) -> tuple[str, int, int] | None:
     """Resolve a solution path to ``(display_word, match_count, wildcard_count)``.
 
-    ``match_count`` is how many dictionary fills the path pattern admits (1 is
-    most specific). Used for ranking — not alphabetical word labels.
+    ``match_count`` is how many dictionary words the game accepts on the path
+    (1 is most specific). Used for ranking — not alphabetical word labels.
     """
     if not _cursedle_path_movement_ok(board, path):
         return None
-    wildcards = _wildcard_tile_count(board, path)
-    path_flags = _cursedle_path_flags(board, path)
-    for flags in _cursedle_flag_variants(board, path):
-        exact = _path_dictionary_word(board, path, dictionary, flags=flags)
-        if exact:
-            return exact, 1, wildcards
-        pattern = _cursedle_word_from_path(board, path, flags=flags)
-        if pattern and "?" in pattern:
-            matches = _pattern_dictionary_matches(board, path, pattern, dictionary)
-            if matches:
-                return matches[0], len(matches), wildcards
-    phys = _cursedle_word_from_path(board, path, flags=path_flags)
-    if not phys:
-        phys = physical_word_for_path(board, path, flags=path_flags)
-    if phys and "?" not in phys and dictionary.contains(phys.lower()):
-        return phys.lower(), 1, wildcards
-    return None
+    matches = _pattern_dictionary_matches(board, path, dictionary)
+    if not matches:
+        return None
+    return matches[0], len(matches), _wildcard_tile_count(board, path)
 
 
 def _path_dictionary_word_any_resolution(
@@ -683,34 +485,11 @@ def _paths_extending_prefix(
     """Walk extensions that continue a guessed prefix by ``extra_steps`` tiles."""
     if not prefix or extra_steps < 1:
         return []
-    graph_ctx = build_board_graph_context(board)
-    results: list[list[int]] = []
-    visited = sum(1 << idx for idx in prefix)
-
-    def extend(path: list[int], cell: int, vis: int, steps_left: int) -> None:
-        if steps_left == 0:
-            if min_len <= len(path) <= max_len and _cursedle_path_movement_ok(board, path):
-                results.append(list(path))
-            return
-        mask = neighbors_mask(
-            board,
-            vis,
-            cell_id=cell,
-            flags=_cursedle_step_flags(board, path),
-            graph_ctx=graph_ctx,
-        )
-        for bit in range(board.cell_count):
-            if (
-                mask & (1 << bit)
-                and board.is_active_index(bit)
-                and not (vis & (1 << bit))
-            ):
-                extend(path + [bit], bit, vis | (1 << bit), steps_left - 1)
-
-    endpoint = prefix[-1]
-    for steps in range(1, extra_steps + 1):
-        extend(list(prefix), endpoint, visited, steps)
-    return results
+    lo = max(min_len, len(prefix) + 1)
+    hi = min(max_len, len(prefix) + extra_steps)
+    if lo > hi:
+        return []
+    return list(_paths(board).walk(lo, hi, prefix=list(prefix)))
 
 
 def _path_exactly_guessed(
@@ -792,10 +571,9 @@ def _word_from_path(
     word = _path_dictionary_word_any_resolution(board, path, dictionary)
     if word:
         return word.lower()
-    raw = search_word_from_path(board, path, flags=_cursedle_path_flags(board, path))
-    if not raw:
+    raw = _cursedle_word_from_path(board, path)
+    if not raw or "?" in raw:
         return None
-    raw = raw.lower()
     if dictionary.contains(raw) or len(raw) >= CURSEDLE_PROBE_MIN_LEN:
         return raw
     return None
@@ -826,14 +604,8 @@ def _guessed_melmod_path_keys(
 
 
 def _raw_word_from_path(board: Board, path: list[int]) -> str | None:
-    flags = _cursedle_path_flags(board, path)
-    raw = search_word_from_path(board, path, flags=flags)
-    if not raw:
-        raw = physical_word_for_path(board, path, flags=flags)
-    if not raw:
-        return None
-    raw = raw.lower()
-    if "?" in raw:
+    raw = _cursedle_word_from_path(board, path)
+    if not raw or "?" in raw:
         return None
     if len(raw) >= CURSEDLE_PROBE_MIN_LEN:
         return raw
@@ -857,16 +629,13 @@ def _guessed_words(
             ):
                 continue
         path = _guess_storage_path(board, guess.path, guess)
-        path_flags = _cursedle_path_flags(board, path)
         word = _word_from_path(board, path, dictionary)
         if word:
             words.add(word)
         raw = _raw_word_from_path(board, path)
         if raw:
             words.add(raw)
-        phys = physical_word_for_path(board, path, flags=path_flags)
-        if phys and "?" not in phys:
-            words.add(phys.lower())
+
     return words
 
 
@@ -1032,9 +801,8 @@ def _path_not_already_guessed(
         return False
     if word and word.lower() in excluded_words:
         return False
-    raw = search_word_from_path(board, path, flags=_primary_cursedle_flags(board))
-    if raw:
-        raw = raw.lower()
+    raw = _cursedle_word_from_path(board, path)
+    if raw and "?" not in raw:
         if raw in excluded_words or _is_near_duplicate_word(raw, excluded_words):
             return False
     return True
@@ -1232,9 +1000,7 @@ def _pick_final_guess(
         return pick
     if pool:
         path = pool[0]
-        word = _raw_word_from_path(board, path) or physical_word_for_path(
-            board, path, flags=_primary_cursedle_flags(board)
-        )
+        word = _raw_word_from_path(board, path) or _cursedle_word_from_path(board, path)
         if word:
             return path, word.lower()
         return path, "?"
@@ -1253,50 +1019,26 @@ def _enumerate_dictionary_probe_paths(
     *,
     max_collected: int = _MAX_PROBE_PATHS_COLLECTED,
 ) -> list[tuple[str, list[int]]]:
-    """Dictionary-valid paths for probe guesses (any length, not just 4-6)."""
-    max_len = board.cell_count
-    graph_ctx = build_board_graph_context(board)
-    n = board.cell_count
-    flags = _primary_cursedle_flags(board)
+    """Dictionary-valid paths for probe guesses (any length, not just 4-6).
+
+    The engine's exact search over the full dictionary: every path the game
+    accepts, longest path kept per word, longest words first.
+    """
+    from cursed_words_solver.engine.search import ExactSearch
+
+    paths = _paths(board)
+    search = ExactSearch(paths.plan, _trie(dictionary))
+    search.min_len = max(search.min_len, CURSEDLE_PROBE_MIN_LEN)
+    found, needs_check = search._enumerate_all(None, None)
     by_word: dict[str, list[int]] = {}
-
-    def record(path: list[int], word: str) -> None:
-        key = word.lower()
-        previous = by_word.get(key)
-        if previous is None or len(path) > len(previous):
-            by_word[key] = list(path)
-
-    def dfs(cell: int, path: list[int], visited: int) -> None:
-        if len(by_word) >= max_collected:
-            return
-        if not _cursedle_path_movement_ok(board, path):
-            return
-        partial = search_word_from_path(board, path, flags=flags)
-        if not partial or "?" in partial or not dictionary.has_prefix(partial):
-            return
-        if dictionary.is_valid_word(partial, CURSEDLE_PROBE_MIN_LEN):
-            record(path, partial)
-        if len(path) >= max_len:
-            return
-        mask = neighbors_mask(
-            board,
-            visited,
-            cell_id=cell,
-            flags=0,
-            graph_ctx=graph_ctx,
-        )
-        bit = 0
-        while bit < n:
-            if mask & (1 << bit):
-                if board.is_active_index(bit) and not (visited & (1 << bit)):
-                    dfs(bit, path + [bit], visited | (1 << bit))
-            bit += 1
-
-    for start in range(n):
-        if not board.is_active_index(start):
+    for path, word in found.items():
+        if path in needs_check:
+            word = search.valid_word(path) or ""
+        if not word:
             continue
-        dfs(start, [start], 1 << start)
-
+        previous = by_word.get(word)
+        if previous is None or len(path) > len(previous):
+            by_word[word] = list(path)
     options = sorted(by_word.items(), key=lambda row: (-len(row[0]), row[0]))
     return options[:max_collected]
 

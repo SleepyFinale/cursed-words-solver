@@ -90,3 +90,14 @@ def test_resolve_falls_back_without_game_file(tmp_path: Path, monkeypatch) -> No
     assert path == enable1
     label = describe_wordlist(path, preference="game")
     assert "enable1 fallback" in label
+
+
+def test_remove_legacy_caches_keeps_wordlists_and_meta(tmp_path) -> None:
+    from cursed_words_solver.config import remove_legacy_caches
+
+    keep = ["game_words.txt", "game_words_meta.json", "engine_trie_v2_abc.pkl", "run_state.json"]
+    gone = ["game_words.array_trie.pkl", "game_words.array_trie.meta.json", "enable1.marisa", "enable1.marisa_trie.meta.json"]
+    for name in keep + gone:
+        (tmp_path / name).write_text("x", encoding="utf-8")
+    assert remove_legacy_caches(tmp_path) == len(gone)
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(keep)

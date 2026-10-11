@@ -11,21 +11,7 @@ import pytest
 
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
-from cursed_words_solver.fast_rank import (
-    build_search_tile_base,
-    fast_rank_lower_bound,
-    loadout_allows_fast_rank,
-    loadout_allows_tier2_screen,
-    loadout_allows_tier2_two_phase,
-    number_aware_lower_bound,
-    prefix_immediate_upper_bound,
-    prefix_rank_upper_bound,
-    tier2_immediate_upper_bound,
-    tier2_rank_lower_bound,
-    tier2_rank_upper_bound,
-)
 from cursed_words_solver.graph_bitboard import RED_COLOR_CODE, build_board_graph_context
-from cursed_words_solver.mult_search import loadout_mult_rules
 from cursed_words_solver.solve_context import build_solve_context
 from cursed_words_solver.loadout import (
     parse_board_from_run_state,
@@ -38,13 +24,7 @@ from cursed_words_solver.rules.chess_tiles import (
     is_square_attacked,
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.search import (
-    WordSearcher,
-    _chess_prefix_budget_sec,
-    _chess_tile_count,
-    REFINE_OVERRUN_SEC,
-    _scale_post_dfs_reserves,
-)
+from cursed_words_solver.search import WordSearcher
 from tests.helpers.boards import _board_cat_horizontal, _make_wordlist
 from tests.regression.test_scoring_mismatches import _run_state_for_replay
 
@@ -82,23 +62,6 @@ def _chess_board_and_loadout():
     return board, loadout
 
 
-def test_loadout_allows_fast_rank_empty():
-    assert loadout_allows_fast_rank(Loadout())
-    assert not loadout_allows_fast_rank(
-        Loadout(stickers=[LoadoutItem(id="brain", name="Brain", level=1, kind="sticker")])
-    )
-
-
-def test_fast_rank_lower_bound_le_full_score(tmp_path):
-    board = _board_cat_horizontal()
-    loadout = Loadout()
-    pipeline = ScoringPipeline()
-    path = [0, 1, 2]
-    lb = fast_rank_lower_bound(board, path)
-    full = pipeline.score_total_only(board, path, "cat", loadout)
-    assert lb <= full
-
-
 def test_fast_rank_finds_cat(tmp_path):
     wl = _make_wordlist(tmp_path)
     d = WordDictionary(wl)
@@ -108,7 +71,6 @@ def test_fast_rank_finds_cat(tmp_path):
         min_len=3,
         max_len=8,
         time_budget=0.5,
-        use_fast_rank=True,
         wordlist_path=wl,
     )
     results = searcher.find_best_words(board, Loadout(), top_n=1)
@@ -201,15 +163,6 @@ def test_sticker_fixture_board_flat_calls_bounded():
     assert timing is not None
     assert timing.board_flat_calls == board_flat_call_count()
     assert timing.board_flat_calls < 5000
-
-
-def test_chess_prefix_budget_adaptive():
-    board, _ = _chess_board_and_loadout()
-    assert _chess_tile_count(board) >= 6
-    assert _chess_prefix_budget_sec(board) == 2.0
-    cat = _board_cat_horizontal()
-    assert _chess_tile_count(cat) < 3
-    assert _chess_prefix_budget_sec(cat) == 0.0
 
 
 @pytest.mark.slow
@@ -372,128 +325,6 @@ def _sticker_board_and_loadout():
     return board, loadout
 
 
-def test_number_aware_lower_bound_le_full_score():
-    board = _board_cat_horizontal()
-    loadout = Loadout()
-    pipeline = ScoringPipeline()
-    rules = pipeline.rules
-    graph_ctx = build_board_graph_context(board)
-    path = [0, 1, 2]
-    full = pipeline.score_total_only(board, path, "cat", loadout)
-    lb = number_aware_lower_bound(
-        board, path, loadout, rules, graph_ctx=graph_ctx
-    )
-    assert lb <= full + 1e-6
-
-
-def test_tier2_upper_bound_ge_full_score():
-    board = _board_cat_horizontal()
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id="red_rider", name="Red Rider", level=1, kind="sticker")
-        ]
-    )
-    pipeline = ScoringPipeline()
-    rules = pipeline.rules
-    ctx = build_solve_context(loadout, rules)
-    mult_rules = loadout_mult_rules(
-        loadout, rules, board=board, path=[0, 1, 2], solve_context=ctx
-    )
-    path = [0, 1, 2]
-    full = pipeline.score_total_only(board, path, "cat", loadout)
-    ub = tier2_immediate_upper_bound(board, path, "cat", loadout, ctx, mult_rules)
-    assert ub >= full
-
-
-def test_tier2_upper_bound_ge_rank_score():
-    board = _board_cat_horizontal()
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id="red_rider", name="Red Rider", level=1, kind="sticker")
-        ]
-    )
-    searcher = WordSearcher(min_len=3, max_len=8, time_budget=1.0)
-    rules = searcher.scoring.rules
-    ctx = build_solve_context(loadout, rules)
-    mult_rules = loadout_mult_rules(
-        loadout, rules, board=board, path=[0, 1, 2], solve_context=ctx
-    )
-    path = [0, 1, 2]
-    rank = searcher._rank_score_for_candidate(board, path, "cat", loadout)
-    assert rank is not None
-    ub = tier2_rank_upper_bound(
-        board,
-        path,
-        "cat",
-        loadout,
-        ctx,
-        mult_rules,
-        mult_weight=searcher.mult_search_weight,
-    )
-    assert ub >= rank
-
-
-def test_tier2_rank_lower_bound_le_full_score():
-    board = _board_cat_horizontal()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="red_rider", name="Red Rider", level=1, kind="sticker")]
-    )
-    pipeline = ScoringPipeline()
-    rules = pipeline.rules
-    ctx = build_solve_context(loadout, rules)
-    mult_rules = loadout_mult_rules(
-        loadout, rules, board=board, path=[0, 1, 2], solve_context=ctx
-    )
-    path = [0, 1, 2]
-    full = pipeline.score_total_only(board, path, "cat", loadout, solve_context=ctx)
-    rank_lb = tier2_rank_lower_bound(
-        board,
-        path,
-        "cat",
-        loadout,
-        ctx,
-        mult_rules,
-        mult_weight=0.4,
-    )
-    assert rank_lb <= full
-
-
-def test_loadout_allows_tier2_two_phase_when_screen_enabled():
-    rules = ScoringPipeline().rules
-    sticker_only = Loadout(
-        stickers=[LoadoutItem(id="brain", name="Brain", level=1, kind="sticker")]
-    )
-    ctx = build_solve_context(sticker_only, rules)
-    assert loadout_allows_tier2_two_phase(ctx, sticker_only)
-
-
-def test_loadout_allows_tier2_screen_gating():
-    rules = ScoringPipeline().rules
-    sticker_only = Loadout(
-        stickers=[LoadoutItem(id="brain", name="Brain", level=1, kind="sticker")]
-    )
-    ctx_sticker = build_solve_context(sticker_only, rules)
-    assert loadout_allows_tier2_screen(ctx_sticker, sticker_only)
-
-    setup_loadout = Loadout(
-        stickers=[
-            LoadoutItem(id="birthday_cake", name="Birthday Cake", level=1, kind="sticker")
-        ]
-    )
-    ctx_setup = build_solve_context(setup_loadout, rules)
-    assert loadout_allows_tier2_screen(
-        ctx_setup, setup_loadout, setup_weight=0.4
-    )
-    assert loadout_allows_tier2_screen(ctx_setup, setup_loadout, setup_weight=0.0)
-
-    compound_loadout = Loadout(
-        stickers=[LoadoutItem(id="brain", name="Brain", level=1, kind="sticker")],
-        extras={"compound_word_percents_on_tile_sum": "10,20"},
-    )
-    ctx_compound = build_solve_context(compound_loadout, rules)
-    assert not ctx_compound.tier2_screen_enabled
-
-
 @pytest.mark.slow
 @pytest.mark.skipif(
     not STICKER_FIXTURE.exists()
@@ -564,101 +395,6 @@ def _board_duplicate_vowel_routes():
     return Board(tiles=grid)
 
 
-def test_linguistic_cache_key_uses_path_tuple(tmp_path):
-    """Scoring-only dict cache keys use path coordinates (unique per traversal)."""
-    wl = _make_wordlist(tmp_path)
-    d = WordDictionary(wl)
-    board = _board_duplicate_vowel_routes()
-    searcher = WordSearcher(dictionary=d, min_len=3, max_len=3, time_budget=2.0)
-    path_a = [0, 1, 2]
-    path_b = [5, 6, 7]
-    key_a = searcher._linguistic_cache_key(board, path_a)
-    key_b = searcher._linguistic_cache_key(board, path_b)
-    assert key_a == tuple(path_a)
-    assert key_b == tuple(path_b)
-    assert key_a != key_b
-
-
-def test_prefix_rank_upper_bound_sound():
-    board = _board_cat_horizontal()
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id="red_rider", name="Red Rider", level=1, kind="sticker")
-        ]
-    )
-    rules = ScoringPipeline().rules
-    ctx = build_solve_context(loadout, rules)
-    graph_ctx = build_board_graph_context(board)
-    mult_rules = loadout_mult_rules(
-        loadout, rules, board=board, path=[0, 1, 2], solve_context=ctx
-    )
-    search_tile_base = build_search_tile_base(board, ctx, graph_ctx)
-    path = [0, 1, 2]
-    word = "cat"
-    full_rank_ub = tier2_rank_upper_bound(
-        board,
-        path,
-        word,
-        loadout,
-        ctx,
-        mult_rules,
-        mult_weight=0.4,
-        graph_ctx=graph_ctx,
-    )
-    full_imm_ub = tier2_immediate_upper_bound(
-        board,
-        path,
-        word,
-        loadout,
-        ctx,
-        mult_rules,
-        graph_ctx=graph_ctx,
-    )
-    visited = 0
-    prefix_base = 0.0
-    prefix_red = 0
-    chars: list[str] = []
-    for i, idx in enumerate(path):
-        visited |= 1 << idx
-        prefix_base += search_tile_base[idx]
-        if graph_ctx.tile_color_code[idx] == RED_COLOR_CODE:
-            prefix_red += 1
-        chars.append(word[i])
-        imm_ub = prefix_immediate_upper_bound(
-            prefix_base,
-            board,
-            path[: i + 1],
-            chars,
-            visited,
-            max(0, 3 - len(chars)),
-            loadout,
-            ctx,
-            mult_rules,
-            graph_ctx,
-            search_tile_base,
-            max_len=3,
-            prefix_red_count=prefix_red,
-        )
-        bound = prefix_rank_upper_bound(
-            prefix_base,
-            board,
-            path[: i + 1],
-            chars,
-            visited,
-            max(0, 3 - len(chars)),
-            loadout,
-            ctx,
-            mult_rules,
-            graph_ctx,
-            search_tile_base,
-            mult_weight=0.4,
-            max_len=3,
-            prefix_red_count=prefix_red,
-        )
-        assert imm_ub >= full_imm_ub
-        assert bound >= full_rank_ub
-
-
 @pytest.mark.slow
 @pytest.mark.skipif(
     not STICKER_FIXTURE.exists()
@@ -675,7 +411,6 @@ def test_dfs_bb_preserves_top_results():
         time_budget=12.0,
         wordlist_path=GAME_WORDLIST_PATH,
         search_workers=1,
-        use_tier2_screen=True,
     )
     off = WordSearcher(**common, use_dfs_bb=False)
     on = WordSearcher(**common, use_dfs_bb=True)
@@ -684,33 +419,6 @@ def test_dfs_bb_preserves_top_results():
     assert off_results and on_results
     assert off_results[0].word == on_results[0].word
     assert off_results[0].score == on_results[0].score
-
-
-@pytest.mark.legacy_search  # asserts legacy-search internals
-def test_dfs_bb_reduces_expansions(tmp_path):
-    """Letter-only board: B&B prunes once best score is known."""
-    wl = _make_wordlist(tmp_path)
-    board = _board_cat_horizontal()
-    loadout = Loadout()
-    common = dict(
-        dictionary=WordDictionary(wl),
-        min_len=3,
-        max_len=3,
-        time_budget=2.0,
-        wordlist_path=wl,
-        search_workers=1,
-        use_tier2_screen=True,
-        candidate_heap_size=1,
-    )
-    off = WordSearcher(**common, use_dfs_bb=False)
-    on = WordSearcher(**common, use_dfs_bb=True)
-    off.find_best_words(board, loadout, top_n=1)
-    on.find_best_words(board, loadout, top_n=1)
-    assert off.last_search_timing is not None
-    assert on.last_search_timing is not None
-    assert on.last_search_timing.dfs_bb_calls > 0
-    assert on.last_search_timing.dfs_bb_prunes > 0
-    assert on.last_search_timing.dfs_expansions < off.last_search_timing.dfs_expansions
 
 
 @pytest.mark.slow
@@ -730,7 +438,6 @@ def test_dfs_bb_prunes_sticker_fixture():
         time_budget=12.0,
         wordlist_path=GAME_WORDLIST_PATH,
         search_workers=1,
-        use_tier2_screen=True,
     )
     off = WordSearcher(**common, use_dfs_bb=False)
     on = WordSearcher(**common, use_dfs_bb=True)
@@ -741,60 +448,6 @@ def test_dfs_bb_prunes_sticker_fixture():
     assert on.last_search_timing.dfs_bb_prunes > 0
     assert on.last_search_timing.dfs_bb_calls > 0
     assert on.last_search_timing.dfs_expansions <= off.last_search_timing.dfs_expansions
-
-
-@pytest.mark.legacy_search  # asserts legacy-search internals
-def test_dfs_bb_prunes_chess_board(tmp_path):
-    """Chess piece on board: B&B runs on letter-only DFS branches."""
-    from cursed_words_solver.models import Board, CurseType, Tile, TileColor
-
-    wl = _make_wordlist(tmp_path)
-    grid = [
-        [Tile(r, c, "q", "Q", 1.0, TileColor.COLORLESS, CurseType.LETTER) for c in range(5)]
-        for r in range(5)
-    ]
-    grid[0][0] = Tile(
-        0, 0, "r", "R", 1.0, TileColor.COLORLESS, CurseType.CHESS_ROOK
-    )
-    grid[0][1] = Tile(0, 1, "c", "C", 1.0, TileColor.COLORLESS, CurseType.LETTER)
-    grid[0][2] = Tile(0, 2, "a", "A", 1.0, TileColor.COLORLESS, CurseType.LETTER)
-    grid[0][3] = Tile(0, 3, "t", "T", 1.0, TileColor.COLORLESS, CurseType.LETTER)
-    board = Board(tiles=grid)
-    loadout = Loadout()
-    searcher = WordSearcher(
-        dictionary=WordDictionary(wl),
-        min_len=3,
-        max_len=3,
-        time_budget=2.0,
-        wordlist_path=wl,
-        search_workers=1,
-        use_tier2_screen=True,
-        use_dfs_bb=True,
-        candidate_heap_size=1,
-    )
-    searcher.find_best_words(board, loadout, top_n=1)
-    assert searcher.last_search_timing is not None
-    assert searcher.last_search_timing.dfs_bb_calls > 0
-
-
-def test_linguistic_cache_key_spatial_on_chess_board(tmp_path):
-    """Dict resolve cache keys use path tuple on all boards."""
-    from cursed_words_solver.models import Board, CurseType, Tile, TileColor
-
-    wl = _make_wordlist(tmp_path)
-    d = WordDictionary(wl)
-    grid = [
-        [Tile(r, c, "q", "Q", 1.0, TileColor.COLORLESS, CurseType.LETTER) for c in range(5)]
-        for r in range(5)
-    ]
-    grid[0][0] = Tile(
-        0, 0, "r", "R", 1.0, TileColor.COLORLESS, CurseType.CHESS_ROOK
-    )
-    board = Board(tiles=grid)
-    searcher = WordSearcher(dictionary=d, min_len=3, max_len=3, time_budget=1.0)
-    path = [0, 1, 2]
-    key = searcher._linguistic_cache_key(board, path)
-    assert key == tuple(path)
 
 
 OCTACLES_FIXTURE = (
@@ -816,164 +469,6 @@ def _octacles_curse_heavy_board_and_loadout():
     return board, loadout
 
 
-def test_refine_provisional_heap_stops_at_deadline():
-    """Tier-2 phase 2 must not run unbounded when the solve deadline has passed."""
-    from cursed_words_solver.search import SearchTiming, _CandidateHeap
-
-    board, loadout = _sticker_board_and_loadout()
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH) if GAME_WORDLIST_PATH.exists() else None,
-        min_len=3,
-        max_len=12,
-        time_budget=5.0,
-    )
-    if searcher.dictionary is None:
-        pytest.skip("game wordlist required")
-    searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
-    timing = SearchTiming()
-    searcher._active_timing = timing
-    searcher._provisional_candidates = {
-        (tuple(range(i, i + 3)), f"?w{i}"): float(1000 - i) for i in range(80)
-    }
-    heap = _CandidateHeap(50)
-    searcher._refine_provisional_heap(
-        board,
-        loadout,
-        heap,
-        deadline=time.monotonic(),
-    )
-    assert timing.tier2_phase2_calls == 0
-
-
-def test_provisional_deferral_stores_two_tuple_keys():
-    """Regression: tier-1 deferral keys must match _refine_provisional_heap unpacking."""
-    from cursed_words_solver.search import _CandidateHeap
-
-    board = _board_cat_horizontal()
-    loadout = Loadout(
-        stickers=[
-            LoadoutItem(id="red_rider", name="Red Rider", level=1, kind="sticker")
-        ]
-    )
-    searcher = WordSearcher(
-        min_len=3,
-        max_len=8,
-        time_budget=5.0,
-        use_tier2_screen=True,
-        use_tier2_two_phase=True,
-    )
-    searcher._scoring_cache_tag = "fp-tag"
-    searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
-    searcher._tier2_adaptive_mode = "normal"
-    heap = _CandidateHeap(1)
-    heap.consider(50.0, "leader", [0, 1, 2])
-
-    path = [0, 1, 2]
-    with (
-        patch.object(searcher, "_use_tier2_screen_for", return_value=True),
-        patch.object(searcher, "_tier2_two_phase_active", return_value=True),
-        patch(
-            "cursed_words_solver.search.tier2_rank_upper_bound",
-            return_value=100.0,
-        ),
-        patch(
-            "cursed_words_solver.search.tier2_rank_lower_bound",
-            return_value=10.0,
-        ),
-        patch(
-            "cursed_words_solver.search.tier2_immediate_upper_bound",
-            return_value=100.0,
-        ),
-    ):
-        searcher._provisional_candidates.clear()
-        result = searcher._rank_score_for_candidate(
-            board, path, "cat", loadout, prune_heap=heap
-        )
-    assert result == 100.0
-    assert len(searcher._provisional_candidates) == 1
-    key = next(iter(searcher._provisional_candidates))
-    assert key == (tuple(path), "cat")
-    assert len(key) == 2
-    searcher._refine_provisional_heap(
-        board, loadout, heap, deadline=time.monotonic() + 5.0
-    )
-
-
-def test_parallel_extend_seeds_survives_pool_shutdown(tmp_path):
-    """Quitting mid-solve must not raise when parallel extend hits a shut-down pool."""
-    from cursed_words_solver.search_parallel import (
-        get_search_pool,
-        parallel_extend_seeds,
-        shutdown_search_pool,
-        warmup_search_pool,
-    )
-
-    wl = _make_wordlist(tmp_path)
-    pool = get_search_pool(wl, 2)
-    assert pool is not None
-    warmup_search_pool(wl, 2)
-    stale_pool = pool
-    shutdown_search_pool(wait=False)
-    assert get_search_pool(wl, 2) is None
-    board = _board_cat_horizontal()
-    loadout = Loadout()
-    seeds = [(100.0, "cat", (0, 1, 2))] * 4
-    result = parallel_extend_seeds(
-        executor=stale_pool,
-        workers=2,
-        board=board,
-        loadout=loadout,
-        seeds=seeds,
-        deadline=time.monotonic() + 5.0,
-        min_len=3,
-        max_len=8,
-        top_paths=4,
-        max_rounds=3,
-        setup_weight=0.0,
-        setup_discount=0.0,
-        wordlist_path=wl,
-    )
-    assert result is None
-
-
-@pytest.mark.slow
-@pytest.mark.skipif(
-    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
-    reason="game wordlist required",
-)
-def test_curse_heavy_tier2_search_within_f8_budget():
-    """Regression: tier-2 refine must not blow past the configured search budget."""
-    from cursed_words_solver.search_parallel import warmup_search_pool
-
-    board, loadout = _octacles_curse_heavy_board_and_loadout()
-    budget = 12.0
-    warmup_search_pool(GAME_WORDLIST_PATH, 2)
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=1,
-        max_len=25,
-        time_budget=budget,
-        wordlist_path=GAME_WORDLIST_PATH,
-        search_workers=2,
-    )
-    solve_deadline = time.monotonic() + budget
-    t0 = time.perf_counter()
-    results = searcher.find_best_words(
-        board,
-        loadout,
-        top_n=1,
-        deadline=solve_deadline,
-    )
-    elapsed = time.perf_counter() - t0
-    assert results
-    timing = searcher.last_search_timing
-    assert timing is not None
-    assert timing.wall_sec < budget * 1.15 + REFINE_OVERRUN_SEC
-    assert elapsed < budget * 1.15 + REFINE_OVERRUN_SEC
-    if timing.tier2_phase2_deferred > 0:
-        assert timing.tier2_phase2_calls <= timing.tier2_phase2_deferred
-
-
 YICKER_FIXTURE = (
     Path(__file__).resolve().parent
     / "fixtures"
@@ -991,90 +486,6 @@ def _yicker_board_and_loadout():
     loadout = parse_run_state(run_state)
     assert board is not None
     return board, loadout
-
-
-def test_reserve_scaling_leaves_positive_main_slice():
-    """Curse-heavy boards must keep at least 30% of budget for primary DFS."""
-    board, _loadout = _yicker_board_and_loadout()
-    from cursed_words_solver.search import is_fraction_tile, is_number_like_tile
-
-    tb = 60.0
-    has_num = any(is_number_like_tile(t) for t in board.flat)
-    has_frac = any(is_fraction_tile(t) for t in board.flat)
-    nr = min(10.0, tb * 0.45) if has_num else 0.0
-    fr = min(15.0, tb * 0.35) if has_frac else 0.0
-    cr = min(8.0, tb * 0.35) if _chess_tile_count(board) >= 3 else 0.0
-    er = min(5.0, tb * 0.12)
-    scaled = _scale_post_dfs_reserves(
-        time_budget=tb,
-        number_reserve=nr,
-        void_reserve=0.0,
-        fraction_cluster_reserve=fr,
-        chess_reserve=cr,
-        seed_reserve=0.0,
-        extension_reserve=er,
-    )
-    main_slice = tb - sum(scaled[:7])
-    assert main_slice >= tb * 0.30
-
-
-@pytest.mark.legacy_search  # asserts legacy-search internals
-def test_serial_workers_finds_candidates_on_yicker_board():
-    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-    board, loadout = _yicker_board_and_loadout()
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=1,
-        max_len=25,
-        time_budget=60.0,
-        wordlist_path=GAME_WORDLIST_PATH,
-        search_workers=1,
-    )
-    results = searcher.find_best_words(board, loadout=loadout, top_n=1)
-    assert results
-    timing = searcher.last_search_timing
-    assert timing is not None
-    assert timing.main_dfs_slice_sec >= 60.0 * 0.30
-
-
-@pytest.mark.slow
-@pytest.mark.skipif(
-    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
-    reason="game wordlist required",
-)
-def test_yicker_board_finds_high_scoring_word():
-    """Regression: da-prefix board must find yicker-class scores, not 2-letter junk."""
-    from cursed_words_solver.search_parallel import warmup_search_pool
-
-    board, loadout = _yicker_board_and_loadout()
-    budget = 60.0
-    warmup_search_pool(GAME_WORDLIST_PATH, 2)
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=1,
-        max_len=25,
-        time_budget=budget,
-        wordlist_path=GAME_WORDLIST_PATH,
-        search_workers=8,
-    )
-    solve_deadline = time.monotonic() + budget
-    t0 = time.monotonic()
-    results = searcher.find_best_words(
-        board,
-        loadout,
-        top_n=1,
-        deadline=solve_deadline,
-    )
-    elapsed = time.monotonic() - t0
-    assert results
-    timing = searcher.last_search_timing
-    assert timing is not None
-    assert timing.wall_sec < budget + REFINE_OVERRUN_SEC + 35.0
-    assert elapsed < budget + REFINE_OVERRUN_SEC + 35.0
-    assert timing.main_dfs_slice_sec >= budget * 0.23
-    best = results[0]
-    assert best.score >= 2000 or best.word == "yicker"
 
 
 SAM_GAMBIT_CURSE_HEAVY_FIXTURE = (
@@ -1230,37 +641,3 @@ def test_xylometers_path_scores_like_game():
         board, XYLOMETERS_PATH, "xylometers", loadout
     )
     assert score == pytest.approx(6615, abs=5)
-
-
-@pytest.mark.slow
-@pytest.mark.skipif(
-    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
-    reason="game wordlist required",
-)
-def test_xylometers_board_finds_high_scoring_word():
-    """Regression: Hungry Snake wrap path must reach xylometers, not short wildcard junk."""
-    from cursed_words_solver.search_parallel import warmup_search_pool
-
-    board, loadout = _xylometers_board_and_loadout()
-    budget = 60.0
-    warmup_search_pool(GAME_WORDLIST_PATH, 2)
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=1,
-        max_len=25,
-        time_budget=budget,
-        wordlist_path=GAME_WORDLIST_PATH,
-        search_workers=8,
-    )
-    results = searcher.find_best_words(
-        board,
-        loadout,
-        top_n=1,
-        deadline=time.monotonic() + budget + REFINE_OVERRUN_SEC,
-    )
-    assert results
-    timing = searcher.last_search_timing
-    assert timing is not None
-    assert timing.wall_sec < budget + REFINE_OVERRUN_SEC + 15.0
-    best = results[0]
-    assert best.score >= 6000

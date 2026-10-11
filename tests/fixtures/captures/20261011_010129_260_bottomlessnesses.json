@@ -1,0 +1,696 @@
+{
+ "round_id": "20261011_010129_260",
+ "actual": {
+  "score": 11679,
+  "word": "bottomlessnesses"
+ },
+ "capture": {
+  "pre_submit": {
+   "schema": "game_state/1",
+   "trigger": "test",
+   "grid": {
+    "width": 5,
+    "height": 5,
+    "tiles": [
+     {
+      "x": 0,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Void",
+      "letter": "M",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": -3,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 1,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Void",
+      "letter": "I",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": -1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 2,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "V",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 3,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 3,
+      "y": 4,
+      "glyph": "Chess",
+      "type": "Blue",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Queen",
+      "white": false,
+      "value": 10,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 4,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "T",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 0,
+      "y": 3,
+      "glyph": "Chess",
+      "type": "Void",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Queen",
+      "white": false,
+      "value": -9,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 1,
+      "y": 3,
+      "glyph": "Chess",
+      "type": "Blue",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "King",
+      "white": true,
+      "value": 16,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 2,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "T",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 3,
+      "y": 3,
+      "glyph": "Chess",
+      "type": "Blue",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Bishop",
+      "white": false,
+      "value": 4,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 4,
+      "y": 3,
+      "glyph": "Chess",
+      "type": "Blue",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "King",
+      "white": false,
+      "value": 16,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 0,
+      "y": 2,
+      "glyph": "Chess",
+      "type": "Red",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Bishop",
+      "white": true,
+      "value": 4,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 1,
+      "y": 2,
+      "glyph": "Chess",
+      "type": "Red",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "King",
+      "white": false,
+      "value": 16,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 2,
+      "y": 2,
+      "glyph": "Chess",
+      "type": "Void",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Bishop",
+      "white": true,
+      "value": -3,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 3,
+      "y": 2,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "E",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 0,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 4,
+      "y": 2,
+      "glyph": "Chess",
+      "type": "Blue",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Queen",
+      "white": false,
+      "value": 10,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 0,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Void",
+      "letter": "E",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 0,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 1,
+      "y": 1,
+      "glyph": "Chess",
+      "type": "Blue",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Knight",
+      "white": true,
+      "value": 4,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 2,
+      "y": 1,
+      "glyph": "Chess",
+      "type": "Red",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Bishop",
+      "white": false,
+      "value": 4,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 3,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "V",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 3,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 4,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Void",
+      "letter": "K",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": -4,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 0,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "O",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 1,
+      "y": 0,
+      "glyph": "Chess",
+      "type": "Void",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Queen",
+      "white": true,
+      "value": -9,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 2,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Void",
+      "letter": "Z",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": -8,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 3,
+      "y": 0,
+      "glyph": "Chess",
+      "type": "Blue",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Rook",
+      "white": false,
+      "value": 6,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 4,
+      "y": 0,
+      "glyph": "Chess",
+      "type": "Red",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "King",
+      "white": true,
+      "value": 16,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     }
+    ]
+   },
+   "encounter": {
+    "grids_generated": 2,
+    "bosses": [
+     {
+      "class": "ExtraVoids",
+      "fields": {
+       "FloorAdjustedModification": 7
+      }
+     }
+    ],
+    "previous_words": [
+     {
+      "words": [
+       "x"
+      ],
+      "skipped": false,
+      "score": 10496,
+      "tiles": [
+       {
+        "glyph": "Letter",
+        "type": "Normal",
+        "letter": "R"
+       },
+       {
+        "glyph": "Letter",
+        "type": "Red",
+        "letter": "X"
+       },
+       {
+        "glyph": "Letter",
+        "type": "Red",
+        "letter": "X"
+       }
+      ]
+     }
+    ]
+   },
+   "player": {
+    "money": 13,
+    "stickers": [
+     {
+      "id": "raccoon",
+      "class": "Raccoon",
+      "levels": [
+       3
+      ],
+      "values": [
+       4
+      ],
+      "colours": [],
+      "fields": {},
+      "slot": 0
+     },
+     {
+      "id": "gorilla",
+      "class": "Gorilla",
+      "levels": [
+       3
+      ],
+      "values": [
+       4
+      ],
+      "colours": [
+       "Void"
+      ],
+      "fields": {},
+      "slot": 1
+     },
+     {
+      "id": "movie_camera",
+      "class": "MovieCamera",
+      "levels": [
+       3
+      ],
+      "values": [
+       3
+      ],
+      "colours": [],
+      "fields": {
+       "WordScoreBonus": 332
+      },
+      "slot": 2
+     },
+     {
+      "id": "zebra",
+      "class": "Zebra",
+      "levels": [
+       3
+      ],
+      "values": [
+       7
+      ],
+      "colours": [],
+      "fields": {},
+      "slot": 3
+     },
+     {
+      "id": "clapper_board",
+      "class": "ClapperBoard",
+      "levels": [
+       3
+      ],
+      "values": [
+       4
+      ],
+      "colours": [],
+      "fields": {},
+      "slot": 4
+     }
+    ],
+    "stamps": [
+     {
+      "id": "business_goose",
+      "class": "BusinessGoose",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "slot": 0
+     },
+     {
+      "id": "haunted_mirror",
+      "class": "HauntedMirror",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "slot": 1
+     },
+     {
+      "id": "full_moon",
+      "class": "FullMoon",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "slot": 2
+     },
+     {
+      "id": "hungry_snake",
+      "class": "HungrySnake",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "slot": 3
+     },
+     {
+      "id": "ruler",
+      "class": "Ruler",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {
+       "Distance": 172
+      },
+      "slot": 4
+     }
+    ],
+    "pin": {
+     "id": "super_8",
+     "class": "SuperEight",
+     "levels": [
+      6,
+      1
+     ],
+     "values": [
+      6,
+      8
+     ],
+     "colours": [],
+     "fields": {}
+    },
+    "consumables": [],
+    "accumulator_words": []
+   },
+   "run": {
+    "challenge": null,
+    "cursed_bosses_defeated": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "submission": {
+   "words": [
+    "bottomlessnesses"
+   ],
+   "tiles": [
+    {
+     "x": 1,
+     "y": 2,
+     "method": "Adjacent"
+    },
+    {
+     "x": 4,
+     "y": 3,
+     "method": "Adjacent"
+    },
+    {
+     "x": 4,
+     "y": 4,
+     "method": "Adjacent"
+    },
+    {
+     "x": 2,
+     "y": 3,
+     "method": "Adjacent"
+    },
+    {
+     "x": 3,
+     "y": 3,
+     "method": "Adjacent"
+    },
+    {
+     "x": 2,
+     "y": 1,
+     "method": "Adjacent"
+    },
+    {
+     "x": 1,
+     "y": 0,
+     "method": "Adjacent"
+    },
+    {
+     "x": 0,
+     "y": 1,
+     "method": "Adjacent"
+    },
+    {
+     "x": 1,
+     "y": 1,
+     "method": "Adjacent"
+    },
+    {
+     "x": 0,
+     "y": 3,
+     "method": "Adjacent"
+    },
+    {
+     "x": 3,
+     "y": 4,
+     "method": "Adjacent"
+    },
+    {
+     "x": 4,
+     "y": 2,
+     "method": "Adjacent"
+    },
+    {
+     "x": 2,
+     "y": 2,
+     "method": "Adjacent"
+    },
+    {
+     "x": 0,
+     "y": 2,
+     "method": "Adjacent"
+    },
+    {
+     "x": 3,
+     "y": 0,
+     "method": "Adjacent"
+    },
+    {
+     "x": 4,
+     "y": 0,
+     "method": "Adjacent"
+    }
+   ]
+  },
+  "scoring_call": {
+   "grid_number": 2
+  }
+ },
+ "match_status": "path_mismatch"
+}

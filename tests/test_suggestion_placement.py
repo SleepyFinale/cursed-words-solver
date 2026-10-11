@@ -12,7 +12,7 @@ from cursed_words_solver.suggestion import (
     fingerprint_invalidate_suppressed_for_consumable_placement,
     poll_invalidate_last_suggestion,
 )
-from tests.test_search import _tile
+from tests.helpers.boards import letter_tile as _tile
 
 
 def _board_with_cell(row: int, col: int, letter: str) -> Board:

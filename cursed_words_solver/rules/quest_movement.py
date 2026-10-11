@@ -43,9 +43,27 @@ def _double_letter_teleport_mask(
     *,
     graph_ctx: BoardGraphContext | None = None,
 ) -> int:
-    from cursed_words_solver.search import _double_letter_teleport_mask as _dlt
+    """Full Moon: jump to an unused tile with the same symbol + glyph, or an identical chess piece."""
+    from cursed_words_solver.rules.chess_tiles import identical_chess_piece
+    from cursed_words_solver.models import full_moon_symbol_key
 
-    return _dlt(board, cell_id, visited_mask, graph_ctx=graph_ctx)
+    last_tile = board.get_by_index(cell_id)
+    letter = full_moon_symbol_key(last_tile)
+    mask = 0
+    if graph_ctx is not None:
+        if letter:
+            mask |= get_valid_extensions(graph_ctx.full_moon_masks.get(letter, 0), visited_mask) & ~(1 << cell_id)
+        if is_chess_piece(last_tile) and chess_side_known(last_tile):
+            group = graph_ctx.identical_chess_masks.get((last_tile.curse.value, chess_side(last_tile)), 0)
+            mask |= get_valid_extensions(group, visited_mask) & ~(1 << cell_id)
+        return mask
+    for idx in _active_indices(board):
+        if idx == cell_id or visited_mask & (1 << idx):
+            continue
+        other = board.get_by_index(idx)
+        if (letter and full_moon_symbol_key(other) == letter) or identical_chess_piece(last_tile, other):
+            mask |= 1 << idx
+    return mask
 
 
 def sicilian_defense_active(loadout: Loadout | None) -> bool:

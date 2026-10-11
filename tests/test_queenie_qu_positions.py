@@ -8,14 +8,7 @@ from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.loadout import Loadout
 from cursed_words_solver.models import Board, CurseType, LoadoutItem, Tile, TileColor
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-from cursed_words_solver.search import (
-    PathValidator,
-    WordSearcher,
-    path_letter_tiles_match_word,
-    path_word_char_len,
-    resolve_letter,
-    search_word_from_path,
-)
+from cursed_words_solver.search import PathValidator, WordSearcher, search_word_from_path
 
 
 def _letter(r: int, c: int, ch: str, *, score: float = 1.0) -> Tile:
@@ -67,14 +60,6 @@ def _wordlist(tmp_path: Path, *words: str) -> Path:
     return p
 
 
-def test_resolve_letter_qu_at_char_offset_after_prior_qu():
-    """Q→QU is position-independent; char_pos 2 still yields qu."""
-    tile = _letter(0, 0, "Q")
-    flags = _queenie_flags()
-    assert resolve_letter(tile, 0, flags=flags) == "qu"
-    assert resolve_letter(tile, 2, flags=flags) == "qu"
-
-
 def test_search_word_from_path_queen():
     board = _empty_board()
     path = [0, 1, 2, 3]
@@ -83,26 +68,6 @@ def test_search_word_from_path_queen():
         board.tiles[r][c] = _letter(r, c, "QEEN"[i])
     flags = _queenie_flags()
     assert search_word_from_path(board, path, flags=flags) == "queen"
-
-
-def test_path_word_char_len_after_q_is_two_not_one():
-    board = _empty_board()
-    board.tiles[0][0] = _letter(0, 0, "Q")
-    flags = _queenie_flags()
-    assert path_word_char_len(board, [0], flags=flags) == 2
-    assert path_word_char_len(board, [0], flags=flags) != len([0])
-
-
-def test_path_word_char_len_matches_search_word_from_path():
-    board = _empty_board()
-    path = [0, 1, 2]
-    board.tiles[0][0] = _letter(0, 0, "Q")
-    board.tiles[0][1] = _letter(0, 1, "I")
-    board.tiles[0][2] = _letter(0, 2, "T")
-    flags = _queenie_flags()
-    word = search_word_from_path(board, path, flags=flags)
-    assert path_word_char_len(board, path, flags=flags) == len(word)
-    assert word == "quit"
 
 
 def test_word_ok_accepts_queen(tmp_path: Path):
@@ -118,18 +83,8 @@ def test_word_ok_accepts_queen(tmp_path: Path):
     assert v.word_ok(board, path, "queen", flags)
 
 
-def test_path_letter_tiles_rejects_misaligned_qeen():
-    board = _empty_board()
-    path = [0, 1, 2, 3]
-    for i, idx in enumerate(path):
-        r, c = divmod(idx, 5)
-        board.tiles[r][c] = _letter(r, c, "QEEN"[i])
-    flags = _queenie_flags()
-    assert not path_letter_tiles_match_word(board, path, "qeen", flags=flags)
-
-
 def test_word_ok_qu_then_number_at_third_tile(tmp_path: Path):
-    """Letters after Q align at char_pos; number lock uses tile ordinal."""
+    """Number positions count tiles (Queenie's qu is one tile)."""
     wl = _wordlist(tmp_path, "qan")
     d = WordDictionary(wl)
     board = _empty_board()
@@ -138,9 +93,10 @@ def test_word_ok_qu_then_number_at_third_tile(tmp_path: Path):
     board.tiles[0][1] = _letter(0, 1, "A")
     board.tiles[0][2] = _number(0, 2, 3)
     flags = _queenie_flags()
-    v = PathValidator(d, min_len=4)
-    assert v.word_ok(board, path, "qua3", flags)
-    assert not v.word_ok(board, path, "qu3a", flags)
+    # The number is a wildcard at its 1-based tile position (3), so Q-A-3 spells "qan".
+    assert PathValidator(d, min_len=3).word_ok(board, path, "qan", flags)
+    # IsWordLengthValid counts tiles, not letters: three tiles never meet a 4 minimum.
+    assert not PathValidator(d, min_len=4).word_ok(board, path, "qan", flags)
 
 
 def test_word_searcher_finds_quit_with_queenie(tmp_path: Path):

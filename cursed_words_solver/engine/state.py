@@ -44,6 +44,8 @@ class HistWord:
     first_is_letter: bool = False
     red_count: int = 0
     green_count: int = 0
+    # Tile types of the word's tiles (game_state captures); empty for legacy exports.
+    tile_types: tuple[str, ...] = ()
 
 
 @dataclass

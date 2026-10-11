@@ -13,7 +13,6 @@ from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
 from cursed_words_solver.rules.scoring_conditions import detect_card_hand
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-from cursed_words_solver.search import resolve_letter
 
 BONES_STAMP_NAMES = [
     "Card Shark",
@@ -77,7 +76,6 @@ def test_count_scoring_vs_grid_only_bones_stamps():
     assert_loadout_stamp_coverage(pipeline.rules, BONES_STAMP_NAMES)
 
 
-
 def test_martini_three_card_flush():
     board = _empty_board()
     path = []
@@ -111,13 +109,3 @@ def test_martini_three_card_straight():
     )
     assert detect_card_hand("straight", board, path, loadout)
     assert not detect_card_hand("straight", board, path, Loadout())
-
-
-def test_card_shark_suit_first_letter():
-    tile = _card(0, 0, "K", "hearts")
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="card_shark", name="Card Shark", kind="stamp")]
-    )
-    flags = stamp_search_flags(loadout)
-    assert resolve_letter(tile, 0, flags=flags) == "h"
-    assert resolve_letter(tile, 0, flags=stamp_search_flags(Loadout())) == "K"

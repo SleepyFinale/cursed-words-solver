@@ -1,0 +1,525 @@
+{
+ "round_id": "20261010_205316_109",
+ "actual": {
+  "score": 13,
+  "word": "ziff"
+ },
+ "capture": {
+  "pre_submit": {
+   "schema": "game_state/1",
+   "trigger": "test",
+   "grid": {
+    "width": 5,
+    "height": 5,
+    "tiles": [
+     {
+      "x": 0,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "A",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 1,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "D",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 2,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "U",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 3,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "T",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 4,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "I",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 0,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "L",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 1,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "R",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 2,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "Q",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 8,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 3,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "U",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 4,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "B",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 3,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 0,
+      "y": 2,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "E",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 0,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 1,
+      "y": 2,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "A",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 2,
+      "y": 2,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "E",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 0,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 3,
+      "y": 2,
+      "glyph": "Chess",
+      "type": "Normal",
+      "letter": "",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Pawn",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 4,
+      "y": 2,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "A",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 0,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "U",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 1,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "I",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 2,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "F",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 3,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 3,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "A",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 4,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "U",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 0,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "E",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 0,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 1,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "A",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 2,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "I",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 3,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "Z",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 8,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     },
+     {
+      "x": 4,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "T",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": true,
+      "value": 1,
+      "value_modifier": 0,
+      "available": true,
+      "flags": []
+     }
+    ]
+   },
+   "encounter": {
+    "grids_generated": 1,
+    "bosses": [
+     {
+      "class": "MaxWordLength",
+      "fields": {
+       "FloorAdjustedModification": 4
+      }
+     }
+    ],
+    "previous_words": []
+   },
+   "player": {
+    "money": 6,
+    "stickers": [
+     {
+      "id": "movie_camera",
+      "class": "MovieCamera",
+      "levels": [
+       1
+      ],
+      "values": [
+       1
+      ],
+      "colours": [],
+      "fields": {
+       "WordScoreBonus": 0
+      },
+      "slot": 0
+     },
+     {
+      "id": "clapper_board",
+      "class": "ClapperBoard",
+      "levels": [
+       1
+      ],
+      "values": [
+       2
+      ],
+      "colours": [],
+      "fields": {},
+      "slot": 1
+     },
+     null,
+     null,
+     null
+    ],
+    "stamps": [
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    "pin": {
+     "id": "super_8",
+     "class": "SuperEight",
+     "levels": [
+      1,
+      1
+     ],
+     "values": [
+      1,
+      8
+     ],
+     "colours": [],
+     "fields": {}
+    },
+    "consumables": [],
+    "accumulator_words": []
+   },
+   "run": {
+    "challenge": null,
+    "cursed_bosses_defeated": []
+   }
+  },
+  "submission": {
+   "words": [
+    "ziff"
+   ],
+   "tiles": [
+    {
+     "x": 3,
+     "y": 0,
+     "method": "Adjacent"
+    },
+    {
+     "x": 2,
+     "y": 0,
+     "method": "Adjacent"
+    },
+    {
+     "x": 2,
+     "y": 1,
+     "method": "Adjacent"
+    },
+    {
+     "x": 3,
+     "y": 2,
+     "method": "Adjacent"
+    }
+   ]
+  },
+  "scoring_call": {
+   "grid_number": 1
+  }
+ },
+ "match_status": "score_match"
+}

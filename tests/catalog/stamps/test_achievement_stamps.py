@@ -20,7 +20,7 @@ from cursed_words_solver.rules.scoring_conditions import (
 
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-from cursed_words_solver.search import PathValidator, resolve_letter_options
+from cursed_words_solver.search import PathValidator
 
 ACHIEVEMENT_STAMP_NAMES = [
     "Akoya Pearl",
@@ -173,7 +173,6 @@ def test_all_achievement_stamps_catalogued():
 def test_count_scoring_vs_grid_only_achievement_stamps():
     pipeline = ScoringPipeline()
     assert_loadout_stamp_coverage(pipeline.rules, ACHIEVEMENT_STAMP_NAMES)
-
 
 
 def test_blessing_of_the_fairies_cursed_boss_scale():
@@ -1012,20 +1011,6 @@ def test_bunch_of_grapes_roman_number_word(tmp_path):
     loadout = Loadout(stamps=[LoadoutItem(id="bunch_of_grapes", name="Bunch Of Grapes", kind="stamp")])
     flags = stamp_search_flags(loadout)
     assert validator.word_ok(board, [0, 1], "iv", stamp_flags=flags)
-
-
-def test_jellyfish_j_alternatives():
-    tile = _tile(0, 0, "J", 1, color=TileColor.SHINY)
-    loadout = Loadout(stamps=[LoadoutItem(id="jellyfish", name="Jellyfish", kind="stamp")])
-    flags = stamp_search_flags(loadout)
-    assert set(resolve_letter_options(tile, 0, flags=flags)) == {"h", "y"}
-
-
-def test_suspension_bridge_red_letter_neighbors():
-    tile = _tile(0, 0, "B", 1, color=TileColor.RED)
-    loadout = Loadout(stamps=[LoadoutItem(id="suspension_bridge", name="Suspension Bridge", kind="stamp")])
-    flags = stamp_search_flags(loadout)
-    assert set(resolve_letter_options(tile, 0, flags=flags)) == {"a", "b", "c"}
 
 
 def test_king_of_the_bridge_flag_wired():

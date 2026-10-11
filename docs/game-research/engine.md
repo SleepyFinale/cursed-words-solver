@@ -25,7 +25,8 @@ captures showed where it diverged from the game, and the search spent
 | `calc.py` | `ScoreCalculation.CalculateOverallScore`, `EncounterController.SubmitWord` | Item order (pin → stickers → stamps, scattered path items first), RAM / Frankenstein / Snapshot / Overhand / Human Boy replays, Hourglass, bosses, Bones Round, currency/pink money, Lexographer, poison, final fold |
 | `search.py` | `GridUtility.GetValidNextTiles`, `ChessPieces`, `Arrows`, `Vocabulary` | Exact movement + word validity, trie DFS over every valid path |
 | `trie.py` | `WordTrie` | Compact CSR trie (cached under `~/.cursed_words_solver/`) |
-| `solver.py` | — | `WordSearcher` adapter: quest ranking, Capybara expected value, legacy fallback |
+| `solver.py` | — | `WordSearcher` adapter: quest ranking, Capybara expected value, per-path checks (movement, submittable, game word, score) |
+| `board_paths.py` | — | Movement / spelling / word matching for callers that inspect paths (Cursedle, F8 gates) |
 
 Regenerate `item_data.py` after a game update:
 
@@ -36,18 +37,29 @@ python scripts/generate_engine_item_data.py <dir>
 
 ## Search
 
-1. `EnginePlan.build` resolves the loadout once per solve.
-2. `ExactSearch` precomputes per-tile move tables (portal, Full Moon group,
-   chess / arrow / adjacent moves, king safety) and runs a trie DFS.
-3. Each distinct valid path is scored once; a path's score never depends on
-   which letters its wildcards spell.
-4. If the DFS exceeds `exhaustive_node_budget` (wildcard- or chess-dense
-   boards, ~20% of captures, mostly Full Moon + Hungry Snake builds), the
-   legacy heuristic search runs on the remaining time and its candidates are
-   re-scored exactly; the best of both wins.
+See [`../SEARCH_ARCHITECTURE.md`](../SEARCH_ARCHITECTURE.md). The engine is the
+only search (the legacy heuristic search and its tuning knobs were removed). It
+covers every mode:
 
-Unsupported (falls back to the legacy search): Cursedle, Michael's 25-tile
-finale, Honeypot two-word submits.
+- **Honeypot** (`GetConcatenatedValidWordsFromTiles`): a path is the whole word,
+  else the first split into two words; each part meets the boss length limits on
+  its own and positional wildcards restart at the second word. Words are passed
+  space-separated (`"cat dog"`) and scored as the game's word list.
+- **Accumulator words** (`InventoryCache.PertinentAccumulatorWords`): Bar Chart
+  numbers, Book of Openings pieces, Flashy Fountain Pen colours, Michael's Book's
+  word, and Microphone's item names (melmod exports the live list) are valid before
+  the dictionary is consulted.
+- **Michael's finale**: any 25-tile tour whose every tile is a wildcard at its
+  position (numbers / fractions / Microscope pin positions); the game submits a
+  random 25-letter word.
+- **Cursedle** uses the same movement and vocabulary (`engine/board_paths.py`).
+- **Playing Favourites** limits the items movement / letter rules see to the
+  favourites, like `Player.GetAllItems()`.
+
+`GetValidNextTiles` note: the decompiled chess branch reads
+`Exists(t => t.SelectedTile == t.SelectedTile)`; ILSpy reused one name for two
+lambda variables. The game de-duplicates, so chess moves are added after white
+portal / Full Moon targets (99 captured Full Moon submissions confirm it).
 
 ## Oracle
 
@@ -87,3 +99,30 @@ Legacy exports lose information the engine needs; the companion now adds:
 The engine keeps legacy fallbacks (Retro Raider / Toolbox / Cursed VHS /
 Radio scatter pools, Left Hand favourite upgrades, Globe Trotter corner
 modifiers, void-value reconstruction) for older captures.
+
+## Exact captures (`game_state/1`, companion 1.4)
+
+`melmod/.../GameStateSerializer.cs` dumps the live game objects:
+
+| Block | Contents |
+| --- | --- |
+| `grid` | width / height / grid number; per tile: game `x`, `y` (y = 0 bottom row), `glyph`, `type`, `letter`, `number`, `fraction`, `suit`, `piece`, `white`, `value` (`GetValue()`), `value_modifier`, `cactus_growth`, `srep`, `srep_word`, `cursed`, `flags`, scattered `item` |
+| `encounter` | `grids_generated` (the GridNumber scoring receives), targets, grids left, rerolls, piggy bank, `bosses` (class + every field), `previous_words` (words, score, skipped, tiles, selection methods) |
+| `player` | money, character, sticker / stamp slots (5 each, empty slots kept) and pin with components, colours and fields, consumable rack tiles, `accumulator_words` / `accumulator_pairs` |
+| `run` | stage, node type, ascension, cursed bosses, embargo, `challenge` (class + fields) |
+
+`run_state.json` carries it as `game_state`; the solver keeps the legacy board
+(overlay layout) but takes item states, accumulator words, previous words and the
+grid number from it (`game_state.apply_game_state`), and each board tile gets its
+raw tile (`metadata["game_tile"]`) so glyph / type / value are never inferred.
+
+Round logs carry `capture`: `pre_submit` (taken in the `SubmitWord` prefix, i.e.
+exactly what the word is scored against), `submission` (tile coordinates, selection
+methods, words) and `scoring_call` (grid number, item order and item slots as
+`CalculateOverallScore` received them, after Capybara's shuffle). `prepare_replay`
+replays these directly (`game_state.replay_from_capture`) -- no post-submit rewind.
+
+Turn captures into tests with `scripts/capture_to_fixture.py`; every file in
+`tests/fixtures/captures/` must replay to the game's score
+(`tests/engine/test_capture_fixtures.py`). `scripts/engine_replay.py` measures
+scoring accuracy and path validity across all captures.

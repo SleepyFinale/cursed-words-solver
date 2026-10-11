@@ -1,51 +1,27 @@
-"""Process-pool parallelization for fair-start DFS slices."""
+"""Process pool for the exact search: each worker holds the dictionary and
+searches a share of the start tiles (``engine/solver.py:_mp_exact_task``)."""
 
 from __future__ import annotations
 
 import os
-import sys
 import time
-import traceback
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
-
-from cursed_words_solver.models import Board, Loadout
-
-if TYPE_CHECKING:
-    from cursed_words_solver.search import _CandidateHeap
 
 _mp_dictionary = None
-_mp_pipeline = None
 
 _pool: ProcessPoolExecutor | None = None
-_pool_key: tuple[str, int, str] | None = None
+_pool_key: tuple[str, int] | None = None
 _pool_warm = False
 _pool_shutdown_requested = False
-_worker_errors: list[str] = []
 
 
-def _trie_backend_from_env() -> str:
-    return os.environ.get("CWS_TRIE_BACKEND", "auto")
-
-
-def prebuild_shared_trie_cache(wordlist_path: Path, *, backend: str | None = None) -> None:
-    """Build on-disk trie cache once so worker processes mmap-load instead of rebuilding."""
+def prebuild_shared_trie_cache(wordlist_path: Path) -> None:
+    """Build the engine trie's disk cache once so workers load it instead of rebuilding."""
     from cursed_words_solver.dictionary import WordDictionary
+    from cursed_words_solver.engine.solver import trie_for
 
-    WordDictionary(
-        wordlist_path,
-        trie_backend=backend or _trie_backend_from_env(),
-        use_trie_cache=True,
-    )
-
-
-def drain_parallel_worker_errors() -> list[str]:
-    """Return and clear recent parallel worker error summaries (for terminal logging)."""
-    global _worker_errors
-    out = list(_worker_errors)
-    _worker_errors.clear()
-    return out
+    trie_for(WordDictionary(wordlist_path))
 
 
 def resolve_search_workers(requested: int | str) -> int:
@@ -71,15 +47,14 @@ def get_search_pool(
         return None
     if _pool_shutdown_requested:
         return None
-    backend = _trie_backend_from_env()
-    key = (str(wordlist_path), workers, backend)
+    key = (str(wordlist_path), workers)
     if _pool is None or _pool_key != key:
         shutdown_search_pool(wait=True)
-        prebuild_shared_trie_cache(wordlist_path, backend=backend)
+        prebuild_shared_trie_cache(wordlist_path)
         _pool = ProcessPoolExecutor(
             max_workers=workers,
             initializer=_mp_init,
-            initargs=(str(wordlist_path), backend),
+            initargs=(str(wordlist_path),),
         )
         _pool_key = key
         global _pool_warm
@@ -120,12 +95,15 @@ def shutdown_search_pool(*, wait: bool = True) -> None:
 
 
 def _mp_warmup(_: int) -> int:
-    if _mp_dictionary is None or _mp_pipeline is None:
+    if _mp_dictionary is None:
         return 0
+    from cursed_words_solver.engine.solver import trie_for
+
+    trie_for(_mp_dictionary)  # build / load the engine trie before the first solve
     return len(_mp_dictionary.words)
 
 
-def _mp_init(wordlist_path: str, trie_backend: str = "auto") -> None:
+def _mp_init(wordlist_path: str) -> None:
     import signal
 
     # Parent handles Ctrl+C; ignore in workers to avoid shutdown traceback spam.
@@ -133,475 +111,7 @@ def _mp_init(wordlist_path: str, trie_backend: str = "auto") -> None:
     if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, signal.SIG_IGN)
 
-    global _mp_dictionary, _mp_pipeline
+    global _mp_dictionary
     from cursed_words_solver.dictionary import WordDictionary
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
 
-    _mp_dictionary = WordDictionary(
-        Path(wordlist_path),
-        trie_backend=trie_backend,
-        use_trie_cache=True,
-    )
-    _mp_pipeline = ScoringPipeline()
-
-
-def _mp_collect_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[int, ...]]]:
-    from cursed_words_solver.graph_bitboard import build_board_graph_context
-    from cursed_words_solver.mult_search import (
-        build_mult_neighbor_hints,
-        loadout_mult_rules,
-    )
-    from cursed_words_solver.search import WordSearcher, _CandidateHeap, _active_indices
-    from cursed_words_solver.solve_context import build_solve_context
-
-    if _mp_dictionary is None:
-        raise RuntimeError("parallel search worker: dictionary not initialized")
-    board: Board = payload["board"]
-    loadout: Loadout = payload["loadout"]
-    starts: list[int] = payload["starts"]
-    budget_sec: float = float(payload["budget_sec"])
-    pass_deadline: float = float(payload["pass_deadline"])
-    max_len: int = payload["max_len"]
-    min_len: int = payload["min_len"]
-    heap_k: int = payload["heap_k"]
-    digits_only: bool = payload["digits_only"]
-    setup_weight: float = payload["setup_weight"]
-    setup_discount: float = payload["setup_discount"]
-    use_fast_rank: bool = payload["use_fast_rank"]
-    use_tier2_screen: bool = payload["use_tier2_screen"]
-    use_dfs_bb: bool = payload.get("use_dfs_bb", False)
-    required_raw = payload.get("required_consumable_indices") or []
-
-    now = time.monotonic()
-    local_deadline = min(pass_deadline, now + budget_sec)
-    budget_sec = max(0.0, local_deadline - now)
-    if budget_sec <= 0 or not starts:
-        return []
-    searcher = WordSearcher(
-        dictionary=_mp_dictionary,
-        min_len=min_len,
-        max_len=max_len,
-        time_budget=budget_sec,
-        setup_weight=setup_weight,
-        setup_discount=setup_discount,
-        use_fast_rank=use_fast_rank,
-        use_tier2_screen=use_tier2_screen,
-        use_dfs_bb=use_dfs_bb,
-        search_workers=1,
-    )
-    if _mp_pipeline is not None:
-        searcher.scoring = _mp_pipeline
-    searcher.validator.required_consumable_indices = frozenset(
-        int(idx) for idx in required_raw
-    )
-    searcher.validator.quest_loadout = loadout
-    active = _active_indices(board)
-    searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
-    searcher._mult_rules = loadout_mult_rules(
-        loadout,
-        searcher.scoring.rules,
-        board=board,
-        path=[active[0]] if active else [],
-        solve_context=searcher._solve_ctx,
-    )
-    searcher._mult_hints = (
-        build_mult_neighbor_hints(searcher._mult_rules)
-        if searcher._mult_rules
-        else None
-    )
-    searcher._graph_ctx = build_board_graph_context(board)
-    from cursed_words_solver.board_scoring_context import (
-        build_board_scoring_context,
-    )
-
-    searcher._board_scoring_ctx = build_board_scoring_context(
-        board,
-        loadout,
-        searcher._solve_ctx,
-        searcher._graph_ctx,
-        searcher.scoring.rules,
-    )
-    from cursed_words_solver.fingerprints import board_fingerprint
-    from cursed_words_solver.rules.chess_tiles import clear_chess_attack_cache
-
-    clear_chess_attack_cache(
-        has_chess_pieces=searcher._graph_ctx.has_chess_pieces,
-        board_fingerprint=(
-            board_fingerprint(board) if searcher._graph_ctx.has_chess_pieces else None
-        ),
-    )
-    mini = _CandidateHeap(heap_k)
-    try:
-        searcher._collect_words_fair_starts(
-            board,
-            loadout,
-            mini,
-            local_deadline,
-            max_len,
-            starts,
-            digits_only=digits_only,
-        )
-        return mini.best_sorted()
-    finally:
-        searcher.validator.quest_loadout = None
-
-
-def parallel_collect_fair_starts(
-    *,
-    executor: ProcessPoolExecutor,
-    workers: int,
-    board: Board,
-    loadout: Loadout,
-    candidates: Any,
-    deadline: float,
-    max_len: int,
-    min_len: int,
-    starts: list[int],
-    digits_only: bool,
-    setup_weight: float,
-    setup_discount: float,
-    use_fast_rank: bool,
-    use_tier2_screen: bool,
-    use_dfs_bb: bool = False,
-    required_consumable_indices: frozenset[int] | None = None,
-    cancel_check: Callable[[], bool] | None = None,
-) -> None:
-    """Run start slices on a reused process pool and merge into candidates."""
-    if cancel_check is not None and cancel_check():
-        return
-    if time.monotonic() >= deadline:
-        return
-    if workers <= 1 or len(starts) <= 1:
-        return
-
-    n = min(workers, len(starts))
-    chunk_size = (len(starts) + n - 1) // n
-    chunks = [starts[i : i + chunk_size] for i in range(0, len(starts), chunk_size)]
-    remaining = max(0.0, deadline - time.monotonic())
-    if remaining <= 0:
-        return
-
-    base_payload = {
-        "board": board,
-        "loadout": loadout,
-        "budget_sec": remaining,
-        "pass_deadline": deadline,
-        "max_len": max_len,
-        "min_len": min_len,
-        "heap_k": candidates._k,
-        "digits_only": digits_only,
-        "setup_weight": setup_weight,
-        "setup_discount": setup_discount,
-        "use_fast_rank": use_fast_rank,
-        "use_tier2_screen": use_tier2_screen,
-        "use_dfs_bb": use_dfs_bb,
-        "required_consumable_indices": sorted(required_consumable_indices or ()),
-    }
-    payloads = [{**base_payload, "starts": chunk} for chunk in chunks]
-
-    # Grace for process IPC / teardown (workers honor pass_deadline internally).
-    collect_timeout = remaining + min(5.0, max(1.0, remaining * 0.15))
-    collect_end = time.monotonic() + collect_timeout
-    try:
-        futures = [executor.submit(_mp_collect_chunk, p) for p in payloads]
-    except RuntimeError:
-        return
-    pending = set(futures)
-    while pending and time.monotonic() < collect_end:
-        if cancel_check is not None and cancel_check():
-            break
-        wait_sec = max(0.01, collect_end - time.monotonic())
-        done, pending = wait(pending, timeout=wait_sec, return_when=FIRST_COMPLETED)
-        for fut in done:
-            try:
-                entries = fut.result()
-            except Exception as exc:
-                global _worker_errors
-                if len(_worker_errors) < 3:
-                    _worker_errors.append(f"{type(exc).__name__}: {exc}")
-                    traceback.print_exc(file=sys.stderr)
-                continue
-            for score, word, path in entries:
-                candidates.consider(score, word, list(path))
-    for fut in pending:
-        fut.cancel()
-
-
-def _mp_hamiltonian_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[int, ...]]]:
-    from cursed_words_solver.graph_bitboard import build_board_graph_context
-    from cursed_words_solver.search import WordSearcher, _CandidateHeap, _active_indices
-    from cursed_words_solver.solve_context import build_solve_context
-
-    if _mp_dictionary is None:
-        raise RuntimeError("parallel hamiltonian worker: dictionary not initialized")
-    board: Board = payload["board"]
-    loadout: Loadout = payload["loadout"]
-    starts: list[int] = payload["starts"]
-    budget_sec: float = float(payload["budget_sec"])
-    pass_deadline: float = float(payload["pass_deadline"])
-    target_len: int = payload["target_len"]
-    score_all: bool = payload.get("score_all", False)
-    heap_k: int = payload["heap_k"]
-    setup_weight: float = payload["setup_weight"]
-    setup_discount: float = payload["setup_discount"]
-    use_fast_rank: bool = payload["use_fast_rank"]
-
-    now = time.monotonic()
-    local_deadline = min(pass_deadline, now + budget_sec)
-    if local_deadline <= now or not starts:
-        return []
-    searcher = WordSearcher(
-        dictionary=_mp_dictionary,
-        min_len=target_len,
-        max_len=target_len,
-        time_budget=max(0.0, local_deadline - now),
-        setup_weight=setup_weight,
-        setup_discount=setup_discount,
-        use_fast_rank=use_fast_rank,
-        search_workers=1,
-    )
-    searcher.validator.quest_loadout = loadout
-    active = _active_indices(board)
-    searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
-    searcher._graph_ctx = build_board_graph_context(board)
-    mini = _CandidateHeap(heap_k)
-    try:
-        searcher._collect_trie_guided_hamiltonian_candidates(
-            board,
-            loadout,
-            mini,
-            local_deadline,
-            target_len=target_len,
-            score_all=score_all,
-            start_indices=starts,
-        )
-        return mini.best_sorted()
-    finally:
-        searcher.validator.quest_loadout = None
-
-
-def parallel_collect_hamiltonian_starts(
-    *,
-    executor: ProcessPoolExecutor,
-    workers: int,
-    board: Board,
-    loadout: Loadout,
-    candidates: Any,
-    deadline: float,
-    target_len: int,
-    starts: list[int],
-    score_all: bool,
-    setup_weight: float,
-    setup_discount: float,
-    use_fast_rank: bool,
-    cancel_check: Callable[[], bool] | None = None,
-) -> None:
-    """Run Hamiltonian start slices on a reused process pool."""
-    if cancel_check is not None and cancel_check():
-        return
-    if time.monotonic() >= deadline:
-        return
-    if workers <= 1 or len(starts) <= 1:
-        return
-
-    n = min(workers, len(starts))
-    chunk_size = (len(starts) + n - 1) // n
-    chunks = [starts[i : i + chunk_size] for i in range(0, len(starts), chunk_size)]
-    remaining = max(0.0, deadline - time.monotonic())
-    if remaining <= 0:
-        return
-
-    base_payload = {
-        "board": board,
-        "loadout": loadout,
-        "budget_sec": remaining,
-        "pass_deadline": deadline,
-        "target_len": target_len,
-        "score_all": score_all,
-        "heap_k": candidates._k,
-        "setup_weight": setup_weight,
-        "setup_discount": setup_discount,
-        "use_fast_rank": use_fast_rank,
-    }
-    payloads = [{**base_payload, "starts": chunk} for chunk in chunks]
-
-    collect_timeout = remaining + min(5.0, max(1.0, remaining * 0.15))
-    collect_end = time.monotonic() + collect_timeout
-    try:
-        futures = [executor.submit(_mp_hamiltonian_chunk, p) for p in payloads]
-    except RuntimeError:
-        return
-    pending = set(futures)
-    while pending and time.monotonic() < collect_end:
-        if cancel_check is not None and cancel_check():
-            break
-        if not score_all and len(candidates) > 0:
-            break
-        wait_sec = max(0.01, collect_end - time.monotonic())
-        done, pending = wait(pending, timeout=wait_sec, return_when=FIRST_COMPLETED)
-        for fut in done:
-            try:
-                entries = fut.result()
-            except Exception as exc:
-                global _worker_errors
-                if len(_worker_errors) < 3:
-                    _worker_errors.append(f"{type(exc).__name__}: {exc}")
-                    traceback.print_exc(file=sys.stderr)
-                continue
-            for score, word, path in entries:
-                candidates.consider(score, word, list(path))
-            if not score_all and entries:
-                break
-        if not score_all and len(candidates) > 0:
-            break
-    for fut in pending:
-        fut.cancel()
-
-
-def _mp_extend_chunk(payload: dict[str, Any]) -> list[tuple[float, str, tuple[int, ...]]]:
-    from cursed_words_solver.search import WordSearcher, _CandidateHeap
-    from cursed_words_solver.solve_context import build_solve_context
-
-    if _mp_dictionary is None:
-        raise RuntimeError("parallel extend worker: dictionary not initialized")
-    board: Board = payload["board"]
-    loadout: Loadout = payload["loadout"]
-    seeds: list[tuple[float, str, tuple[int, ...]]] = payload["seeds"]
-    budget_sec: float = float(payload["budget_sec"])
-    pass_deadline: float = float(payload["pass_deadline"])
-    max_len: int = payload["max_len"]
-    min_len: int = payload["min_len"]
-    top_paths: int = int(payload.get("top_paths", 30))
-    max_rounds: int = int(payload.get("max_rounds", 8))
-    setup_weight: float = payload["setup_weight"]
-    setup_discount: float = payload["setup_discount"]
-    f8_raw = payload.get("f8_deadline")
-    f8_deadline: float | None = float(f8_raw) if f8_raw is not None else None
-
-    now = time.monotonic()
-    local_deadline = min(pass_deadline, now + budget_sec) if pass_deadline else now + budget_sec
-    if f8_deadline is not None:
-        local_deadline = min(local_deadline, f8_deadline)
-    if local_deadline <= now or not seeds:
-        return []
-
-    searcher = WordSearcher(
-        dictionary=_mp_dictionary,
-        min_len=min_len,
-        max_len=max_len,
-        time_budget=max(0.0, local_deadline - now),
-        setup_weight=setup_weight,
-        setup_discount=setup_discount,
-        search_workers=1,
-        wordlist_path=Path(payload["wordlist_path"]) if payload.get("wordlist_path") else None,
-    )
-    if _mp_pipeline is not None:
-        searcher.scoring = _mp_pipeline
-    searcher.validator.quest_loadout = loadout
-    searcher._solve_ctx = build_solve_context(loadout, searcher.scoring.rules)
-    searcher._f8_deadline = f8_deadline
-    mini = _CandidateHeap(max(len(seeds) + 50, 80))
-    for rank_sc, word, path_tuple in seeds:
-        mini.consider(rank_sc, word, list(path_tuple))
-    try:
-        searcher._extend_top_candidates(
-            board,
-            loadout,
-            mini,
-            top_paths=top_paths,
-            max_rounds=max_rounds,
-            deadline=local_deadline,
-        )
-        return [(sc, w, tuple(p)) for sc, w, p in mini.best_sorted()]
-    finally:
-        searcher.validator.quest_loadout = None
-
-
-def parallel_extend_seeds(
-    *,
-    executor: ProcessPoolExecutor,
-    workers: int,
-    board: Board,
-    loadout: Loadout,
-    seeds: list[tuple[float, str, tuple[int, ...]]],
-    deadline: float | None,
-    min_len: int,
-    max_len: int,
-    top_paths: int,
-    max_rounds: int,
-    setup_weight: float,
-    setup_discount: float,
-    wordlist_path: Path | None,
-    f8_deadline: float | None = None,
-) -> list[tuple[float, str, tuple[int, ...]]] | None:
-    """Partition dictionary-resolve extension seeds across worker processes."""
-    if workers <= 1 or len(seeds) < 4 or deadline is None:
-        return []
-    if time.monotonic() >= deadline:
-        return []
-    if f8_deadline is not None and time.monotonic() >= f8_deadline:
-        return []
-
-    n = min(workers, len(seeds))
-    chunk_size = (len(seeds) + n - 1) // n
-    chunks = [seeds[i : i + chunk_size] for i in range(0, len(seeds), chunk_size)]
-    remaining = max(0.0, deadline - time.monotonic())
-    if f8_deadline is not None:
-        remaining = min(remaining, max(0.0, f8_deadline - time.monotonic()))
-    if remaining <= 0:
-        return []
-
-    base_payload = {
-        "board": board,
-        "loadout": loadout,
-        "min_len": min_len,
-        "max_len": max_len,
-        "top_paths": top_paths,
-        "max_rounds": max_rounds,
-        "setup_weight": setup_weight,
-        "setup_discount": setup_discount,
-        "wordlist_path": str(wordlist_path) if wordlist_path else None,
-        "pass_deadline": deadline,
-        "f8_deadline": f8_deadline,
-    }
-    per_chunk_budget = remaining / max(len(chunks), 1)
-    try:
-        futures = [
-            executor.submit(
-                _mp_extend_chunk,
-                {
-                    **base_payload,
-                    "seeds": chunk,
-                    "budget_sec": per_chunk_budget,
-                },
-            )
-            for chunk in chunks
-        ]
-    except RuntimeError:
-        return None
-    merged: list[tuple[float, str, tuple[int, ...]]] = []
-    collect_end = min(deadline, time.monotonic() + remaining)
-    if f8_deadline is not None:
-        collect_end = min(collect_end, f8_deadline)
-    pending = set(futures)
-    while pending:
-        now = time.monotonic()
-        if f8_deadline is not None and now >= f8_deadline:
-            break
-        if now >= collect_end:
-            break
-        wait_sec = max(0.01, collect_end - now)
-        if f8_deadline is not None:
-            wait_sec = min(wait_sec, max(0.01, f8_deadline - now))
-        done, pending = wait(pending, timeout=wait_sec, return_when=FIRST_COMPLETED)
-        for fut in done:
-            try:
-                merged.extend(fut.result())
-            except Exception as exc:
-                global _worker_errors
-                if len(_worker_errors) < 3:
-                    _worker_errors.append(f"{type(exc).__name__}: {exc}")
-                    traceback.print_exc(file=sys.stderr)
-    for fut in pending:
-        fut.cancel()
-    return merged
+    _mp_dictionary = WordDictionary(Path(wordlist_path))

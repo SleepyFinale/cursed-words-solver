@@ -20,7 +20,7 @@ from cursed_words_solver.loadout import (
     parse_run_state,
     prepare_run_state_dict_for_scoring,
 )
-from cursed_words_solver.search import WordSearcher, _is_shrunk_board, _active_indices
+from cursed_words_solver.search import WordSearcher
 
 FIXTURE = (
     Path(__file__).resolve().parents[1]
@@ -40,18 +40,6 @@ def _f8_run_state_from_round_log(data: dict) -> dict:
         if isinstance(entry, dict) and "f8" in entry and entry["f8"] not in (None, ""):
             ex[key] = entry["f8"]
     return prepare_run_state_dict_for_scoring(rs)
-
-
-@pytest.mark.skipif(
-    not FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="kwela fixture and game wordlist required",
-)
-def test_bat_board_is_shrunk_nine_cells():
-    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    board = parse_board_from_run_state(_f8_run_state_from_round_log(data))
-    assert board is not None
-    assert _is_shrunk_board(board)
-    assert len(_active_indices(board)) == 9
 
 
 @pytest.mark.skipif(

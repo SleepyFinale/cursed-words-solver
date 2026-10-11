@@ -16,12 +16,7 @@ from cursed_words_solver.rules.boss_effects import (
     michael_finale_active,
 )
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
-from cursed_words_solver.search import (
-    PathValidator,
-    WordSearcher,
-    path_movement_ok,
-    search_word_from_path,
-)
+from cursed_words_solver.search import PathValidator, WordSearcher, path_movement_ok, search_word_from_path
 from cursed_words_solver.suggestion import dictionary_word_for_path
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 

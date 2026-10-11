@@ -23,12 +23,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     number_sum_on_path,
     tile_numeric_value,
 )
-from cursed_words_solver.search import (
-    PathValidator,
-    WordSearcher,
-    _legal_word_start_indices,
-    resolve_letter,
-)
+from cursed_words_solver.search import PathValidator, WordSearcher
 from cursed_words_solver.dictionary import WordDictionary
 
 
@@ -160,11 +155,6 @@ def test_number_sum_includes_fraction_numeric_value():
     assert number_sum_on_path(board, path) == pytest.approx(5.6)
 
 
-def test_resolve_letter_fraction_is_wildcard():
-    tile = _tile(0, 0, "0.6", 8, curse=CurseType.FRACTION, fraction_value=0.6)
-    assert resolve_letter(tile, 0) == "?"
-
-
 def test_fraction_word_via_path_validator(tmp_path):
     wl = tmp_path / "words.txt"
     wl.write_text("ace\n")
@@ -266,30 +256,6 @@ def test_brain_number_sum_includes_fraction_value():
     assert score >= 12.0
 
 
-def test_mixed_digit_fraction_word_valid(tmp_path):
-    """Regression: 1?245fe uses _number_word_valid; 3/5 fraction is not at num/den slots."""
-    from cursed_words_solver.config import GAME_WORDLIST_PATH
-    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-    from tests.helpers.boards import _board_1_fraction_245fe_fixture
-
-    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-
-    board = _board_1_fraction_245fe_fixture()
-    path = [9, 13, 17, 21, 22, 16, 10]
-    word = "1?245fe"
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="test_tube", name="Test Tube", level=1, kind="sticker")]
-    )
-    flags = stamp_search_flags(loadout)
-    d = WordDictionary(GAME_WORDLIST_PATH)
-    v = PathValidator(d, min_len=3)
-
-    assert not v._wildcard_valid(word)
-    assert not v._number_word_valid(board, path, word, flags)
-    assert not v.word_ok(board, path, word, flags)
-
-
 def test_three_eighths_cannot_start_word():
     """⅜ (3/8) at path index 0 is illegal; digits elsewhere must not relax that."""
     board = Board(
@@ -317,38 +283,6 @@ def test_three_eighths_cannot_start_word():
         assert not v.word_ok(board, path, "?a6", None)
     finally:
         wl.unlink(missing_ok=True)
-
-
-def test_legal_word_start_indices_fraction_slots():
-    board = Board(
-        tiles=[[_tile(0, c, "x", 1) for c in range(5)] for _ in range(5)],
-        money=0,
-    )
-    three_eighths = _tile(
-        0,
-        0,
-        "?",
-        11,
-        curse=CurseType.FRACTION,
-        char="⅜",
-        fraction_value=3 / 8,
-        metadata={"fraction_num": 3, "fraction_den": 8},
-    )
-    one_eighth = _tile(
-        0,
-        1,
-        "?",
-        9,
-        curse=CurseType.FRACTION,
-        char="⅛",
-        fraction_value=0.125,
-        metadata={"fraction_num": 1, "fraction_den": 8},
-    )
-    board.tiles[0][0] = three_eighths
-    board.tiles[0][1] = one_eighth
-    starts = _legal_word_start_indices(board)
-    assert 0 not in starts
-    assert 1 in starts
 
 
 def test_fraction_parts_from_melmod_tenth_glyph():

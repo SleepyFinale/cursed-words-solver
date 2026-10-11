@@ -4950,6 +4950,9 @@ def melmod_would_inflate_scatter_to_equipped(
     if slug in ("dusty_coffin", "mysterious_amulet"):
         return False
     extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    # Melmod 1.4+ exports the live UpgradeableComponents level; no inflation.
+    if extras.get("item_levels_exact") in (True, "true", "1"):
+        return False
     if extras.get("boss_floor_modification") in (None, ""):
         return True
     encounter_tier = scattered_grid_item_level(loadout)

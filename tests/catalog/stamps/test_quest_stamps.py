@@ -16,7 +16,7 @@ from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-from cursed_words_solver.search import PathValidator, number_position_valid, resolve_letter
+from cursed_words_solver.search import PathValidator
 
 QUEST_STAMP_NAMES = [
     "Angel Investment",
@@ -94,7 +94,6 @@ def test_count_scoring_vs_grid_only_quest_stamps():
     assert_loadout_stamp_coverage(pipeline.rules, QUEST_STAMP_NAMES)
 
 
-
 def test_banana_four_same_letters_doubles_word():
     board = _empty_board()
     path = []
@@ -167,36 +166,6 @@ def test_chick_level_one_stickers_scale_word():
     assert score == 60
 
 
-def test_spicy_pepper_red_tile_resolves_as_s():
-    board = _empty_board()
-    tile = _tile(0, 0, "X", 1, color=TileColor.RED)
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="spicy_pepper", name="Spicy Pepper", kind="stamp")]
-    )
-    flags = stamp_search_flags(loadout)
-    assert resolve_letter(tile, 0, flags=flags) == "s"
-
-
-def test_number_go_up_ascending_digits_relax_position():
-    board = _empty_board()
-    board.tiles[0][0] = _tile(0, 0, "3", 3, curse=CurseType.NUMBER, number_value=3)
-    board.tiles[0][1] = _tile(0, 1, "1", 1, curse=CurseType.NUMBER, number_value=1)
-    board.tiles[0][2] = _tile(0, 2, "2", 2, curse=CurseType.NUMBER, number_value=2)
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="number_go_up", name="Number Go Up", kind="stamp")]
-    )
-    flags = stamp_search_flags(loadout)
-    assert number_position_valid(
-        board.tiles[0][0], 0, flags=flags, segment="123"
-    )
-    assert number_position_valid(
-        board.tiles[0][1], 1, flags=flags, segment="123"
-    )
-    assert number_position_valid(
-        board.tiles[0][2], 2, flags=flags, segment="123"
-    )
-
-
 def test_honeypot_stitched_words_validate(tmp_path):
     wl = tmp_path / "words.txt"
     wl.write_text("cat\ndog\n", encoding="utf-8")
@@ -229,26 +198,3 @@ def test_number_go_up_uses_path_values_not_word_digits(tmp_path):
     )
     flags = stamp_search_flags(loadout)
     assert not validator.word_ok(board, path, "123", stamp_flags=flags)
-
-
-def test_honeypot_number_go_up_segment_local_positions():
-    board = _empty_board()
-    tiles = [
-        _tile(0, 0, "3", 3, curse=CurseType.NUMBER, number_value=3),
-        _tile(0, 1, "1", 1, curse=CurseType.NUMBER, number_value=1),
-        _tile(0, 2, "4", 4, curse=CurseType.NUMBER, number_value=4),
-        _tile(0, 3, "2", 2, curse=CurseType.NUMBER, number_value=2),
-    ]
-    for t in tiles:
-        board.tiles[t.row][t.col] = t
-    loadout = Loadout(
-        stamps=[
-            LoadoutItem(id="honeypot", name="Honeypot", kind="stamp"),
-            LoadoutItem(id="number_go_up", name="Number Go Up", kind="stamp"),
-        ]
-    )
-    flags = stamp_search_flags(loadout)
-    assert number_position_valid(tiles[0], 0, flags=flags, segment="12")
-    assert number_position_valid(tiles[1], 1, flags=flags, segment="12")
-    assert number_position_valid(tiles[2], 0, flags=flags, segment="34")
-    assert number_position_valid(tiles[3], 1, flags=flags, segment="34")

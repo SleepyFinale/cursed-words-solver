@@ -4424,3 +4424,41 @@ def test_disk_catchup_drift_detects_inflated_birthday_cake() -> None:
         {"birthday_cake_bonus": "74"},
     )
 
+
+
+def test_f8_should_not_block_when_scatter_levels_exact() -> None:
+    """Melmod 1.4 exports live scatter tier (grid 1 → L1 under L3 sticker)."""
+    from cursed_words_solver.models import (
+        Board,
+        CurseType,
+        Loadout,
+        LoadoutItem,
+        Tile,
+        TileColor,
+    )
+    from cursed_words_solver.suggestion import scatter_level_below_equipped_warning
+
+    tiles: list[list[Tile | None]] = [
+        [Tile(row=r, col=c, char="a", letter="a", base_score=1.0) for c in range(5)]
+        for r in range(5)
+    ]
+    tiles[3][2] = Tile(
+        row=3,
+        col=2,
+        char="?",
+        letter="?",
+        base_score=0.0,
+        color=TileColor.COLORLESS,
+        curse=CurseType.ITEM,
+        metadata={"scattered_item_id": "wrestlers", "scattered_item_level": 1},
+    )
+    board = Board(tiles=tiles, money=15)
+    stickers = [LoadoutItem(id="wrestlers", name="Wrestlers", level=3)]
+
+    exact = Loadout(stickers=stickers, extras={"grid_number": "1", "item_levels_exact": "true"})
+    assert scatter_level_below_equipped_warning(exact, board) is None
+    assert f8_should_block_save(loadout=exact, board=board) == (False, None)
+
+    legacy = Loadout(stickers=stickers, extras={"grid_number": "1"})
+    tiles[3][2].metadata["scattered_item_state"] = {"id": "wrestlers", "levels": [1]}
+    assert scatter_level_below_equipped_warning(legacy, board) is None

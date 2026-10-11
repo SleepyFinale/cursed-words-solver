@@ -31,6 +31,24 @@ FAIRY_CURATED_WORDLIST_PATH = CONFIG_DIR / "fairy_curated_words.txt"
 FAIRY_CURATED_WORDLIST_META_PATH = CONFIG_DIR / "fairy_curated_words_meta.json"
 GAME_WORDLIST_MIN_BYTES = 1024
 FAIRY_CURATED_WORDLIST_MIN_BYTES = 64
+# Prefix-trie caches the pre-engine search built next to each word list.
+_LEGACY_CACHE_PATTERNS = ("*.array_trie.pkl", "*.array_trie.meta.json", "*.marisa", "*.marisa_trie.meta.json")
+
+
+def remove_legacy_caches(config_dir: Path | None = None) -> int:
+    """Delete trie caches only the removed legacy search used; returns files removed."""
+    root = config_dir or CONFIG_DIR
+    removed = 0
+    for pattern in _LEGACY_CACHE_PATTERNS:
+        for path in root.glob(pattern):
+            try:
+                path.unlink()
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
 WORDLIST_URL = (
     "https://raw.githubusercontent.com/dolph/dictionary/master/enable1.txt"
 )
@@ -68,10 +86,6 @@ class AppConfig:
     top_n_results: int = 3
     wordlist: str = "game"
     show_board_highlight: bool = True
-    setup_weight: float = 0.4
-    setup_discount: float = 0.85
-    mult_search_weight: float = 0.4
-    mult_search_passes: bool = True
     search_workers: int | str = "auto"
     grid_reroll_gap_ratio: float = 0.3
 
@@ -85,10 +99,6 @@ class AppConfig:
             "top_n_results": self.top_n_results,
             "wordlist": self.wordlist,
             "show_board_highlight": self.show_board_highlight,
-            "setup_weight": self.setup_weight,
-            "setup_discount": self.setup_discount,
-            "mult_search_weight": self.mult_search_weight,
-            "mult_search_passes": self.mult_search_passes,
             "search_workers": self.search_workers,
             "grid_reroll_gap_ratio": self.grid_reroll_gap_ratio,
         }
@@ -127,10 +137,6 @@ class AppConfig:
             top_n_results=int(data.get("top_n_results", 3)),
             wordlist=str(data.get("wordlist", "game")),
             show_board_highlight=bool(data.get("show_board_highlight", True)),
-            setup_weight=float(data.get("setup_weight", 0.4)),
-            setup_discount=float(data.get("setup_discount", 0.85)),
-            mult_search_weight=float(data.get("mult_search_weight", 0.4)),
-            mult_search_passes=bool(data.get("mult_search_passes", True)),
             search_workers=data.get("search_workers", "auto"),
             grid_reroll_gap_ratio=grid_reroll_gap_ratio,
         )

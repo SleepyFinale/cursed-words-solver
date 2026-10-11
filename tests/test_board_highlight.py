@@ -5,7 +5,7 @@ from cursed_words_solver.consumable_placement import ConsumablePlacement
 from cursed_words_solver.models import Board
 from cursed_words_solver.rules.twinkle_toes import TwinkleToesSwap
 from cursed_words_solver.ui.board_geometry import placement_geometry, path_geometry, swap_geometry
-from tests.test_search import _tile
+from tests.helpers.boards import letter_tile as _tile
 
 
 def test_placement_geometry_maps_indices():

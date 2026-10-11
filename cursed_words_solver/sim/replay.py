@@ -65,8 +65,16 @@ class PreparedReplay:
 
 
 def prepare_replay(data: dict[str, Any]) -> tuple[PreparedReplay | None, str]:
-    """Resolve a round log / mismatch capture into (board, loadout, submission)."""
+    """Resolve a round log / mismatch capture into (board, loadout, submission).
+
+    Round logs with a ``capture`` block (melmod pre-submit ``game_state``) replay
+    from it directly. Older captures go through the legacy reconstruction below
+    (post-submit extras rewound, melmod path layouts, F8 extras diff).
+    """
     from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
+
+    if isinstance(data.get("capture"), dict) and isinstance(data["capture"].get("pre_submit"), dict):
+        return _prepare_from_capture(data)
 
     submission = Submission.from_round_log(data)
     if submission is None:
@@ -139,6 +147,29 @@ def prepare_replay(data: dict[str, Any]) -> tuple[PreparedReplay | None, str]:
             submission=submission,
             expected=expected,
             two_wrongs=str(prepared.get("challenge_game_class") or "") == "TwoWrongs",
+        ),
+        "",
+    )
+
+
+def _prepare_from_capture(data: dict[str, Any]) -> tuple[PreparedReplay | None, str]:
+    from cursed_words_solver.game_state import replay_from_capture
+
+    rep, err = replay_from_capture(data)
+    if rep is None:
+        return None, err
+    if not rep.path:
+        return None, "no submitted tiles"
+    word = " ".join(rep.words) or str((data.get("actual") or {}).get("word") or "")
+    submission = Submission(word=word, path=list(rep.path))
+    return (
+        PreparedReplay(
+            run_state={"capture": data["capture"]},
+            board=rep.board,
+            loadout=rep.loadout,
+            submission=submission,
+            expected=rep.expected,
+            two_wrongs=rep.two_wrongs,
         ),
         "",
     )

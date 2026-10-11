@@ -10,11 +10,7 @@ from cursed_words_solver.rules.fraction_tiles import (
     fraction_position_valid,
     tile_fraction_position_values,
 )
-from cursed_words_solver.search import (
-    PathValidator,
-    WordSearcher,
-    _interleaved_number_starts,
-)
+from cursed_words_solver.search import PathValidator, WordSearcher
 
 
 def _letter(r: int, c: int, ch: str) -> Tile:
@@ -231,12 +227,3 @@ def test_bison_style_three_quarters_at_denominator_with_ten(tmp_path: Path):
     v = PathValidator(d, min_len=10)
     assert fraction_position_valid(frac, 3, relaxed=False)
     assert v.word_ok(board, path, word, None)
-
-
-def test_interleaved_number_starts_registers_both_fraction_slots():
-    board = _empty_board()
-    board.tiles[0][0] = _fraction(0, 0, 3, 5)
-    board.tiles[0][1] = _number(0, 1, 1)
-    starts = _interleaved_number_starts(board)
-    assert 0 in starts
-    assert starts.count(0) == 1

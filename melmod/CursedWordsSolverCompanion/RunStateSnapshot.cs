@@ -28,6 +28,9 @@ namespace CursedWordsSolverCompanion
         public List<InventorySellSnapshot> inventory_sell;
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public EncounterGridRerollSnapshot encounter_grid_reroll;
+        /// <summary>Raw game objects (GameStateSerializer); the solver prefers these over extras.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public Dictionary<string, object> game_state;
     }
 
     public sealed class RunStateItem

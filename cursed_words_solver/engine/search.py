@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from cursed_words_solver.engine import packet as P
 from cursed_words_solver.engine.calc import EnginePlan, _extra_int
 from cursed_words_solver.engine.item_data import ITEMS
 from cursed_words_solver.engine.model import (
@@ -38,6 +39,10 @@ from cursed_words_solver.engine.model import (
 from cursed_words_solver.engine.trie import CsrTrie
 
 ALL = None  # matcher sentinel: tile matches any letter
+
+# Michael's finale submits ``Vocabulary.GetRandomTwentyFiveLetterWord()``; scoring
+# only reads the word for Michael's Book, which never asks for a 25-letter word.
+FINALE_WORD = "?" * 25
 
 _ARROW_DIRS = {
     "↑": (0, 1), "→": (1, 0), "↓": (0, -1), "←": (-1, 0),
@@ -77,9 +82,10 @@ class _Inventory:
     """``InventoryCache`` + movement flags for a set of item classes."""
 
     def __init__(self, plan: EnginePlan, extra_classes: frozenset[str]) -> None:
-        classes = set(plan.item_classes) | set(extra_classes)
+        exact = plan.inventory_classes is not None
+        classes = set(plan.inventory_classes if exact else plan.item_classes) | set(extra_classes)
         self.classes = classes
-        colours = {k: list(v) for k, v in plan.colour_lists.items()}
+        colours = {k: list(v) for k, v in ((plan.inventory_colours or {}) if exact else plan.colour_lists).items()}
         for cls in extra_classes:
             slug = _CLASS_SLUG.get(cls)
             if slug and cls in ("Flamingo", "RedEnvelope", "SpicyPepper", "Automobile"):
@@ -148,6 +154,8 @@ def _np_advance(arrays, nodes, wild: bool, codes: bytes, tokens: tuple[str, ...]
     import numpy as np
 
     starts_np, counts_np, childs_np, edge_keys = arrays[0], arrays[1], arrays[2], arrays[3]
+    if not len(edge_keys):
+        return None  # empty dictionary
 
     def step_letter(ns, code: int):
         keys = ns.astype(np.int64) * 32 + (code - 97)
@@ -180,7 +188,10 @@ def _np_advance(arrays, nodes, wild: bool, codes: bytes, tokens: tuple[str, ...]
     if not parts:
         return None
     out = parts[0] if len(parts) == 1 else np.concatenate(parts)
-    if out.size > 64:
+    if tokens and out.size > 1:
+        # Children of distinct trie nodes are distinct, so letter steps never
+        # duplicate; a multi-letter token ("qu") can land on a node another
+        # member reaches by a letter.
         out = np.unique(out)
     return out
 
@@ -219,8 +230,15 @@ class ExactSearch:
         extras = plan.extras
         self.min_len = max(1, _extra_int(extras, "encounter_min_word_length") or _extra_int(extras, "cobra_min_length") or 1)
         self.max_len = _extra_int(extras, "wolf_max_length") or 999
+        # Honeypot checks each of the two words against the boss length limits.
+        self.part_max_len = self.max_len
         self.max_len = min(self.max_len, len(grid.available))
+        self.honeypot = "Honeypot" in (plan.inventory_classes if plan.inventory_classes is not None else plan.item_classes)
+        # Item accumulator words (Bar Chart numbers, Microphone item names, ...).
+        self.acc_trie = CsrTrie.from_words(plan.accumulator_words) if plan.accumulator_words else None
         self.challenge = plan.challenge
+        # Michael's 25-tile finale grid: validity is "all wildcards", not the dictionary.
+        self.finale = str(extras.get("michael_summoned_bosses_defeated") or "").lower() == "true"
         self.up_and_up_center = _extra_int(extras, "up_and_up_center_index")
         self.stats = SearchStats()
         # Tiles a word may never contain under the active challenge (static prune).
@@ -257,8 +275,11 @@ class ExactSearch:
     def move_tables(self, inv: _Inventory) -> tuple[list[bool], list[list[int]], list[list[int]], list[bool]]:
         """Per tile: (portal?, Full Moon group, primary moves, primary-is-chess?).
 
-        ``GetValidNextTiles`` = portal targets + Full Moon targets, then chess moves
-        only when nothing was added yet, else arrow / adjacent targets.
+        ``GetValidNextTiles`` = portal targets + Full Moon targets, then the chess /
+        arrow / adjacent targets not already listed. (The decompiled chess branch
+        reads ``Exists(t => t.SelectedTile == t.SelectedTile)`` -- ILSpy reused one
+        name for two lambda variables; the game de-duplicates, and real captures
+        play chess moves after Full Moon targets.)
         """
         cached = getattr(inv, "_tables", None)
         if cached is not None:
@@ -327,9 +348,8 @@ class ExactSearch:
                         add(t.idx)
             return out
         if cur.glyph == G_CHESS:
-            if not out:  # GetValidNextTiles skips chess moves once any selection exists
-                for i in self._chess_moves(cur, inv):
-                    add(i)
+            for i in self._chess_moves(cur, inv):
+                add(i)
             return out
         if cur.glyph == G_ARROW:
             for i in self._arrow_targets(cur, inv):
@@ -592,19 +612,45 @@ class ExactSearch:
     def valid_word(self, path: tuple[int, ...]) -> str | None:
         """Exact ``GetValidWordFromTiles`` for a full path (None if invalid).
 
-        Steps the set of trie nodes consistent with each tile (exact,
-        path-dependent inventory) and spells the first word node reached.
+        With Honeypot, ``GetConcatenatedValidWordsFromTiles``: the whole path as one
+        word, else the first split (shortest first word) into two valid words,
+        returned space-separated.
+        """
+        if self.finale:
+            return FINALE_WORD if self.finale_valid(path) else None
+        inv = self.inventory_for(path)
+        if self.acc_trie is not None:
+            # TryGetAccumulatorWordFromTiles runs before the dictionary.
+            acc = self._part_word(path, inv, self.min_len, self.max_len, self.acc_trie)
+            if acc is not None:
+                return acc
+        word = self._part_word(path, inv, self.min_len, self.max_len)
+        if word is not None or not self.honeypot:
+            return word
+        for k in range(1, len(path)):
+            first = self._part_word(path[:k], inv, self.min_len, self.part_max_len)
+            if first is None:
+                continue
+            second = self._part_word(path[k:], inv, self.min_len, self.part_max_len)
+            if second is not None:
+                return f"{first} {second}"
+        return None
+
+    def _part_word(self, path: tuple[int, ...], inv: _Inventory, min_len: int, max_len: int, trie: CsrTrie | None = None) -> str | None:
+        """One ``GetValidWordFromTiles`` call on ``path`` (inventory from the whole submit).
+
+        Steps the set of trie nodes consistent with each tile and spells the first
+        word node reached.
         """
         import numpy as np
 
         n = len(path)
-        if n < self.min_len or n > self.max_len:
+        if n < min_len or n > max_len:
             return None
-        inv = self.inventory_for(path)
         tiles = [self.tiles[i] for i in path]
         nums = [t.number_float() for t in tiles if t.is_number()]
         ascending = all(nums[i] > nums[i - 1] for i in range(1, len(nums)))
-        arrays = _numpy_trie(self.trie)
+        arrays = _numpy_trie(trie or self.trie)
         nodes = np.zeros(1, dtype=np.int32)
         for i, t in enumerate(tiles):
             wild, codes, tokens = self._matcher(t, i, inv, ascending)
@@ -614,7 +660,7 @@ class ExactSearch:
         words = nodes[arrays[4][nodes]]
         if not words.size:
             return None
-        return _np_spell(arrays, int(words[0]))
+        return _np_spell(arrays, int(words.min()))
 
     def path_allowed(self, path: tuple[int, ...]) -> bool:
         """Challenge / boss word restrictions (TileSelectionManager.PopulateValidityAndScore)."""
@@ -690,8 +736,6 @@ class ExactSearch:
             for j in moon[idx]:
                 if not (visited >> j) & 1 and j not in out:
                     out.append(j)
-            if is_chess[idx] and out:
-                return out
             if out:
                 for j in primary[idx]:
                     if not (visited >> j) & 1 and j not in out:
@@ -699,7 +743,13 @@ class ExactSearch:
                 return out
             return [j for j in primary[idx] if not (visited >> j) & 1]
 
-        def dfs(idx: int, node: int, depth: int, visited: int, last_num: float | None = None, asc: bool = True) -> None:
+        # Honeypot: a word may be two dictionary words; the second restarts at the
+        # trie root, and its positional wildcards / Number Go Up run count from 0.
+        honeypot = self.honeypot
+        part_max = self.part_max_len
+        total_max = len(self.grid.available) if honeypot else max_len
+
+        def dfs(idx: int, node: int, depth: int, visited: int, last_num: float | None = None, asc: bool = True, part_start: int = 0) -> None:
             stats.nodes += 1
             counter[0] += 1
             if counter[0] >= check_every:
@@ -710,40 +760,52 @@ class ExactSearch:
             if stopped[0] or budget[0] < 0:
                 return
             length = depth + 1
-            if is_word[node] and length >= min_len and (not pickup_mask or visited & pickup_mask):
+            part_len = length - part_start
+            word_end = is_word[node] and part_len >= min_len
+            if word_end and (not pickup_mask or visited & pickup_mask):
                 key = tuple(path)
-                if key not in found:
+                prev = found.get(key)
+                if prev is None or (" " in prev and not part_start):
                     found[key] = "".join(letters)
-            if length >= max_len:
+            if length >= total_max:
                 return
+            if part_len < (part_max if part_start else max_len):
+                expand(idx, node, length, visited, last_num, asc, part_start)
+            if honeypot and not part_start and word_end and part_len <= part_max:
+                letters.append(" ")
+                expand(idx, 0, length, visited, None, True, length)
+                letters.pop()
+
+        def expand(idx: int, node: int, length: int, visited: int, last_num, asc: bool, part_start: int) -> None:
+            pos = length - part_start
             for nxt in moves(idx, visited):
                 nv = num_value[nxt]
                 n_last, n_asc = last_num, asc
                 if nv is not None:
                     n_asc = asc and (last_num is None or nv > last_num)
                     n_last = nv
-                wild, codes, tokens = matcher(nxt, length, n_asc)
+                wild, codes, tokens = matcher(nxt, pos, n_asc)
                 path.append(nxt)
                 vis2 = visited | (1 << nxt)
                 for tok in tokens:
                     child = trie.walk(node, tok)
                     if child >= 0:
                         letters.append(tok)
-                        dfs(nxt, child, length, vis2, n_last, n_asc)
+                        dfs(nxt, child, length, vis2, n_last, n_asc, part_start)
                         letters.pop()
                 s = starts[node]
                 e = s + counts[node]
                 if wild:
                     for k in range(s, e):
                         letters.append(chr(chars[k]))
-                        dfs(nxt, childs[k], length, vis2, n_last, n_asc)
+                        dfs(nxt, childs[k], length, vis2, n_last, n_asc, part_start)
                         letters.pop()
                 else:
                     for c in codes:
                         k = chars.find(c, s, e)
                         if k >= 0:
                             letters.append(chr(c))
-                            dfs(nxt, childs[k], length, vis2, n_last, n_asc)
+                            dfs(nxt, childs[k], length, vis2, n_last, n_asc, part_start)
                             letters.pop()
                 path.pop()
                 if stopped[0] or budget[0] < 0:
@@ -844,8 +906,6 @@ class ExactSearch:
             for j in moon[idx]:
                 if not (visited >> j) & 1 and j not in out:
                     out.append(j)
-            if is_chess[idx] and out:
-                return out
             if out:
                 for j in primary[idx]:
                     if not (visited >> j) & 1 and j not in out:
@@ -866,7 +926,7 @@ class ExactSearch:
             if length >= min_len and (not pickup_mask or visited & pickup_mask):
                 words = nodes[is_word_np[nodes]]
                 if words.size:
-                    found.setdefault(tuple(path), _np_spell(arrays, int(words[0])))
+                    found.setdefault(tuple(path), _np_spell(arrays, int(words.min())))
             if length >= max_len:
                 return
             for nxt in moves(idx, visited):
@@ -897,6 +957,119 @@ class ExactSearch:
         visited_paths = path_budget - budget[0]
         self.stats.extra["subset_paths_visited"] = self.stats.extra.get("subset_paths_visited", 0) + visited_paths
         return found, not (budget[0] < 0 or stopped[0])
+
+    # ------------------------------------------------------------------ Michael's finale
+
+    finale_length = 25
+    # Complete finale tours collected before scoring (all tiles, so scores differ little).
+    max_finale_paths = 20_000
+
+    def _path_moves(self, idx: int, visited: int, path: list[int]) -> list[int]:
+        """``GetValidNextTiles`` from ``idx`` (precomputed tables, path-dependent inventory)."""
+        portal, moon, primary, is_chess = self.move_tables(self.inventory_for(tuple(path)))
+        out = [j for j in self._available_allowed if not (visited >> j) & 1] if portal[idx] else []
+        for j in moon[idx]:
+            if not (visited >> j) & 1 and j not in out:
+                out.append(j)
+        if out:
+            for j in primary[idx]:
+                if not (visited >> j) & 1 and j not in out:
+                    out.append(j)
+            return out
+        return [j for j in primary[idx] if not (visited >> j) & 1]
+
+    def finale_valid(self, path: tuple[int, ...]) -> bool:
+        """``PopulateValidityAndScore`` on Michael's finale grid: 25 tiles, every one a
+        wildcard at its position (the game then submits a random 25-letter word)."""
+        if len(path) < self.finale_length:
+            return False
+        inv = self.inventory_for(path)
+        tiles = [self.tiles[i] for i in path]
+        nums = [t.number_float() for t in tiles if t.is_number()]
+        ascending = all(nums[i] > nums[i - 1] for i in range(1, len(nums)))
+        return all(self._is_wildcard(t, i, inv, ascending) for i, t in enumerate(tiles))
+
+    def enumerate_finale(
+        self,
+        deadline: float | None = None,
+        cancel_check: Callable[[], bool] | None = None,
+        *,
+        starts: list[int] | None = None,
+        node_budget: int | None = None,
+    ) -> tuple[dict[tuple[int, ...], str], bool]:
+        """Every 25-tile tour of all-wildcard positions (up to ``max_finale_paths``).
+
+        Numbers / fractions / Microscope tiles are wildcards only at fixed positions,
+        so each tile gets the latest depth it may still be placed at; a branch dies
+        as soon as one unvisited tile can no longer be placed.
+        """
+        target = self.finale_length
+        inv = self.super_inv
+        tiles = self.tiles
+        n = len(tiles)
+        allowed_at: list[int] = [0] * n  # bitmask of depths
+        for t in self.grid.available:
+            if not self.allowed_tile[t.idx]:
+                continue
+            mask = 0
+            for d in range(target):
+                if self._is_wildcard(t, d, inv, None):
+                    mask |= 1 << d
+            allowed_at[t.idx] = mask
+        cands = [i for i in self._available_allowed if allowed_at[i]]
+        if len(cands) < target:
+            return {}, True
+        # must_by[d]: tiles whose last allowed depth is <= d (must be placed by then).
+        latest = {i: allowed_at[i].bit_length() - 1 for i in cands}
+        must_by = [0] * target
+        for i, last in latest.items():
+            for d in range(last, target):
+                must_by[d] |= 1 << i
+        found: dict[tuple[int, ...], str] = {}
+        path: list[int] = []
+        budget = [self.exhaustive_node_budget * 10 if node_budget is None else node_budget]
+        stopped = [False]
+        counter = [0]
+        cap = self.max_finale_paths
+
+        def dfs(idx: int, depth: int, visited: int) -> None:
+            budget[0] -= 1
+            counter[0] += 1
+            if counter[0] >= 2048:
+                counter[0] = 0
+                if (deadline is not None and time.perf_counter() > deadline) or (cancel_check is not None and cancel_check()):
+                    stopped[0] = True
+            if budget[0] < 0 or stopped[0]:
+                return
+            if must_by[depth] & ~visited:
+                return
+            if depth + 1 == target:
+                found[tuple(path)] = ""
+                if len(found) >= cap:
+                    stopped[0] = True
+                return
+            nd = depth + 1
+            for nxt in self._path_moves(idx, visited, path):
+                if not (allowed_at[nxt] >> nd) & 1:
+                    continue
+                path.append(nxt)
+                dfs(nxt, nd, visited | (1 << nxt))
+                path.pop()
+                if budget[0] < 0 or stopped[0]:
+                    return
+
+        for i in cands if starts is None else [s for s in starts if allowed_at[s] & 1]:
+            if not allowed_at[i] & 1:
+                continue
+            path.append(i)
+            dfs(i, 0, 1 << i)
+            path.pop()
+            if budget[0] < 0 or stopped[0]:
+                break
+        complete = not (budget[0] < 0 or stopped[0]) or len(found) >= cap
+        exact = {p: w for p, w in found.items() if self.finale_valid(p)}
+        self.stats.extra["finale_tours"] = len(exact)
+        return exact, complete
 
     def _enumerate_tiers(self, deadline, cancel_check, inv, require_pickup, starts=None) -> tuple[dict[tuple[int, ...], str], bool]:
         """Per start tile: letter DFS, then the vectorised subset tier if it overflowed.
@@ -944,6 +1117,13 @@ class ExactSearch:
         board scattered items, keeping only paths that pick one up (checked later).
         Extra items only ever add matches, so A + checked B is exactly the valid set.
         """
+        if self.finale:
+            found, exhaustive = self.enumerate_finale(deadline, cancel_check, starts=starts)
+            found = dict.fromkeys(found, FINALE_WORD)
+            self.stats.extra["exhaustive"] = exhaustive
+            self.stats.timed_out = not exhaustive
+            self.stats.paths = len(found)
+            return found, set()
         two_pass = self.super_inv.classes != self.base_inv.classes
         deadline_a = deadline
         if two_pass and deadline is not None:
@@ -962,6 +1142,20 @@ class ExactSearch:
                     found[p] = w
                     needs_check.add(p)
             exhaustive = exhaustive and ex_b
+        if self.acc_trie is not None:
+            # Accumulator words: same DFS over their tiny trie (no Honeypot splits:
+            # GetConcatenatedValidWordsFromTiles clears them before splitting).
+            saved, honeypot = self.trie, self.honeypot
+            self.trie, self.honeypot = self.acc_trie, False
+            try:
+                acc = self.enumerate(deadline, cancel_check, inv=self.super_inv, starts=starts)
+            finally:
+                self.trie, self.honeypot = saved, honeypot
+            for p in acc:
+                found[p] = ""  # valid_word: accumulator word first, else dictionary
+                needs_check.add(p)
+        if self.honeypot:
+            needs_check.update(p for p, w in found.items() if " " in w)
         if self.super_inv.number_go_up:
             # Number Go Up wildcards were granted while the prefix ascended; the game
             # checks the whole path, so any path that stops ascending is re-checked.
@@ -1009,6 +1203,133 @@ class ExactSearch:
             keep.setdefault(p, w)
         return list(keep.items())
 
+    # ------------------------------------------------------------------ beam
+
+    # Beam passes widen from ``beam_start_width`` (x2 per pass) until the deadline.
+    beam_start_width = 64
+    beam_max_width = 2048
+    # Width of the single beam pass when there is no deadline (deterministic tests).
+    beam_fixed_width = 256
+    # Share of a deadline-bound search given to enumeration before the beam may run.
+    enum_share_before_beam = 0.55
+
+    def beam_search(
+        self,
+        deadline: float | None = None,
+        cancel_check: Callable[[], bool] | None = None,
+        *,
+        rank: Callable[[int | float], float] | None = None,
+        starts: list[int] | None = None,
+        width: int | None = None,
+    ) -> dict[tuple[int, ...], Candidate]:
+        """Score-guided beam over tile paths for boards too dense to enumerate.
+
+        Each depth extends every kept path by one legal move (``GetValidNextTiles``)
+        whose letters still lead somewhere in the trie, scores the extensions
+        exactly (``EnginePlan.score``) and keeps the ``width`` best by ``rank``.
+        Every extension that spells a word is recorded. With a deadline the beam
+        restarts twice as wide while time remains; without one it runs a single
+        ``beam_fixed_width`` pass. Returns path -> scored candidate.
+        """
+        import numpy as np
+
+        key = rank or (lambda s: s)
+        found: dict[tuple[int, ...], Candidate] = {}
+        if self.finale:
+            return found
+        arrays = _numpy_trie(self.trie)
+        is_word = arrays[4]
+        inv = self.super_inv
+        # A path that picks up a letter / movement item, or Number Go Up, needs the
+        # exact (path-dependent) validity check; otherwise the node set is exact.
+        pickup = {
+            t.idx for t in self.grid.available
+            if t.glyph == G_ITEM and t.item in ITEMS and ITEMS[t.item].cls in (_MOVE_CLASSES | _LETTER_CLASSES)
+        }
+        loose = bool(self.super_inv.number_go_up)
+        start_tiles = list(self._available_allowed if starts is None else starts)
+        plan = self.plan
+        word_scored = "MichaelsBook" in plan.item_classes
+        widths = [width or self.beam_fixed_width] if deadline is None else []
+        w = self.beam_start_width
+        while deadline is not None and w <= self.beam_max_width:
+            widths.append(w)
+            w *= 2
+
+        def out_of_time() -> bool:
+            return (deadline is not None and time.perf_counter() > deadline) or (
+                cancel_check is not None and cancel_check()
+            )
+
+        def record(path: tuple[int, ...], nodes, res) -> None:
+            if path in found or len(path) < self.min_len or not is_word[nodes].any():
+                return
+            if loose or pickup.intersection(path):
+                word = self.valid_word(path)
+            else:
+                word = _np_spell(arrays, int(nodes[is_word[nodes]].min()))
+            if word and self.path_allowed(path):
+                if word_scored:
+                    res = plan.score(list(path), word)  # Michael's Book reads the word
+                found[path] = Candidate(path, word, res.score, res.nondeterministic)
+
+        root = np.zeros(1, dtype=np.int32)
+        for width_now in widths:
+            # Node sets shared between beam states at one depth (wildcard chains
+            # make many identical); cleared per depth to bound memory.
+            beam: list[tuple[float, tuple[int, ...], Any]] = []
+            for s in start_tiles:
+                nodes = _np_advance(arrays, root, *self._matcher(self.tiles[s], 0, inv, True))
+                if nodes is None or not nodes.size:
+                    continue
+                res = plan.score([s], "")
+                beam.append((key(P.to_int(res.score)), (s,), nodes))
+                record((s,), nodes, res)
+            seen: set[tuple[int, ...]] = set()
+            stopped = False
+            for depth in range(1, self.max_len):
+                interned: dict[tuple, Any] = {}
+                memo: dict[tuple, Any] = {}
+                nxt: list[tuple[float, tuple[int, ...], Any]] = []
+                for _, path, nodes in beam:
+                    if out_of_time():
+                        stopped = True
+                        break
+                    visited = 0
+                    for i in path:
+                        visited |= 1 << i
+                    nid = id(nodes)
+                    for j in self._path_moves(path[-1], visited, list(path)):
+                        q = path + (j,)
+                        if q in seen:
+                            continue
+                        seen.add(q)
+                        m = self._matcher(self.tiles[j], depth, inv, True)
+                        mk = (nid, m)
+                        nn = memo.get(mk, False)
+                        if nn is False:
+                            nn = _np_advance(arrays, nodes, *m)
+                            if nn is not None and nn.size:
+                                ik = (nn.size, int(nn[0]), int(nn[-1]), hash(nn.tobytes()))
+                                nn = interned.setdefault(ik, nn)
+                            else:
+                                nn = None
+                            memo[mk] = nn
+                        if nn is None:
+                            continue
+                        res = plan.score(list(q), "")
+                        nxt.append((key(P.to_int(res.score)), q, nn))
+                        record(q, nn, res)
+                if stopped or not nxt:
+                    break
+                nxt.sort(key=lambda e: e[0], reverse=True)
+                beam = nxt[:width_now]
+            self.stats.extra["beam_width"] = width_now
+            if stopped:
+                break
+        self.stats.extra["beam_found"] = len(found)
+        return found
+
     def run(
         self,
         *,
@@ -1022,13 +1343,28 @@ class ExactSearch:
 
         ``starts`` restricts paths to those start tiles (parallel workers split
         the board this way). With a deadline, enumeration stops early enough to
-        score what it found.
+        score what it found. If enumeration cannot finish (wildcard / chess-dense
+        boards), a score-guided beam (``beam_search``) uses the remaining time and
+        its exactly scored finds join the results.
         """
         t0 = time.perf_counter()
         enum_deadline = deadline
         if deadline is not None:
-            enum_deadline = deadline - min(self.score_reserve_sec, 0.15 * max(0.0, deadline - t0))
+            budget = max(0.0, deadline - t0)
+            enum_deadline = t0 + budget * self.enum_share_before_beam
         found, needs_check = self._enumerate_all(enum_deadline, cancel_check, starts)
+        beam_found: dict[tuple[int, ...], Candidate] = {}
+        if not self.stats.extra.get("exhaustive", True) and not (cancel_check is not None and cancel_check()):
+            enum_exhaustive = False
+            beam_deadline = None
+            if deadline is not None:
+                left = max(0.0, deadline - time.perf_counter())
+                beam_deadline = deadline - min(self.score_reserve_sec, 0.3 * left)
+            tb = time.perf_counter()
+            beam_found = self.beam_search(beam_deadline, cancel_check, rank=rank, starts=starts)
+            self.stats.extra["beam_sec"] = round(time.perf_counter() - tb, 3)
+            self.stats.extra["exhaustive"] = enum_exhaustive
+            self.stats.timed_out = True
         self.last_found = found
         t1 = time.perf_counter()
         self.stats.enum_sec = t1 - t0
@@ -1073,6 +1409,9 @@ class ExactSearch:
             scored.append(Candidate(p, word, res.score, res.nondeterministic))
         if n_scored < len(items):
             self.stats.extra["shortlisted"] = n_scored
+        if beam_found:
+            have = {c.path for c in scored}
+            scored.extend(c for path, c in beam_found.items() if path not in have)
         self.stats.valid_paths = len(scored)
         key = rank or (lambda s: s)
         scored.sort(key=lambda c: key(c.score), reverse=True)

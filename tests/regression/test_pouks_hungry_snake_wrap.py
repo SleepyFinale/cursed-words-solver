@@ -60,28 +60,6 @@ def test_pouks_hungry_snake_wrap_movement():
     not POUKS_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
     reason="20260809 pouks path-mismatch fixture and game wordlist required",
 )
-def test_pouks_digit_face_string_not_submittable():
-    """Digit concatenations are display/historic faces — not Vocabulary words."""
-    data = json.loads(POUKS_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-
-    path = path_from_melmod_indices(board, POUKS_MELMOD_PATH)
-    flags = stamp_search_flags(loadout)
-    dictionary = WordDictionary(GAME_WORDLIST_PATH)
-    validator = PathValidator(dictionary, min_len=3)
-    assert not validator.word_ok(board, path, POUKS_DIGIT_WORD, flags)
-    assert not path_is_submittable(
-        board, path, POUKS_DIGIT_WORD, loadout, dictionary, min_len=3
-    )
-
-
-@pytest.mark.skipif(
-    not POUKS_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="20260809 pouks path-mismatch fixture and game wordlist required",
-)
 def test_digit_only_suggestion_like_1656253_rejected():
     """Pure digit F8 suggestions must fail word_ok (not a Vocabulary word)."""
     dictionary = WordDictionary(GAME_WORDLIST_PATH)

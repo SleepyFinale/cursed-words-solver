@@ -95,21 +95,6 @@ def test_graph_context_neighbors_on_6x6_ring() -> None:
     assert nbrs & (1 << board.index_at(1, 0))
 
 
-def test_build_search_tile_base_sized_for_6x6() -> None:
-    from cursed_words_solver.fast_rank import build_search_tile_base
-    from cursed_words_solver.graph_bitboard import build_board_graph_context
-    from cursed_words_solver.rules.pipeline import ScoringPipeline
-    from cursed_words_solver.solve_context import build_solve_context
-
-    board = parse_board_from_run_state(_build_call_of_void_export())
-    assert board is not None
-    ctx = build_solve_context(Loadout(), ScoringPipeline().rules)
-    graph = build_board_graph_context(board)
-    bases = build_search_tile_base(board, ctx, graph)
-    assert len(bases) == 36
-    assert bases[board.index_at(0, 0)] > 0
-
-
 def test_fresh_encounter_no_green_poison_from_stale_historic() -> None:
     from cursed_words_solver.loadout import green_poison_from_historic_words
 

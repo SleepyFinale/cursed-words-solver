@@ -139,54 +139,6 @@ def _juxtalittoral_run_state() -> dict:
     return data["run_state_snapshot"]
 
 
-def test_accept_path_bypass_rejects_up_and_up_without_center() -> None:
-    data = _simple_up_and_up_run_state()
-    board = parse_board_from_run_state(data)
-    loadout = parse_run_state(data)
-    assert board is not None
-    dictionary = WordDictionary(resolve_wordlist("game"))
-    searcher = WordSearcher(dictionary=dictionary, min_len=3)
-    searcher.validator.quest_loadout = loadout
-    path = [0, 1, 2]
-    accepted, _ = searcher._accept_path_for_search(
-        board,
-        path,
-        "cat",
-        loadout,
-        0,
-        trie_compatible=True,
-        prefix_cursor=dictionary.step_token_cursor(
-            dictionary.root_cursor(), "cat"
-        ),
-    )
-    assert not accepted
-    assert not quest_path_allowed(board, path, loadout=loadout)
-
-
-def test_partial_dict_resolve_extends_to_center() -> None:
-    data = _fixture_run_state()
-    board = parse_board_from_run_state(data)
-    loadout = parse_run_state(data)
-    assert board is not None
-    dictionary = WordDictionary(resolve_wordlist("game"))
-    searcher = WordSearcher(dictionary=dictionary, min_len=1)
-    searcher.validator.quest_loadout = loadout
-    flags = build_solve_context(loadout, {}).search_flags
-    partial = [2, 1, 6]
-    full = [2, 1, 6, 12, 18, 23]
-    partial_word = search_word_from_path(board, partial, flags=flags)
-    full_word = search_word_from_path(board, full, flags=flags)
-    partial_ok, _ = searcher._accept_path_for_search(
-        board, partial, partial_word, loadout, flags
-    )
-    full_ok, _ = searcher._accept_path_for_search(
-        board, full, full_word, loadout, flags
-    )
-    assert not partial_ok
-    assert full_ok
-    assert 12 in full
-
-
 def test_find_best_words_all_results_include_center() -> None:
     data = _simple_up_and_up_run_state()
     board = parse_board_from_run_state(data)
@@ -242,25 +194,6 @@ def test_f8_should_block_save_up_and_up() -> None:
     assert reason_ok is None
 
 
-def test_renders_path_accepted() -> None:
-    data = _renders_run_state()
-    board = parse_board_from_run_state(data)
-    loadout = parse_run_state(data)
-    assert board is not None
-    dictionary = WordDictionary(resolve_wordlist("game"))
-    searcher = WordSearcher(dictionary=dictionary, min_len=1)
-    searcher.validator.quest_loadout = loadout
-    flags = build_solve_context(loadout, {}).search_flags
-    path = _RENDERS_PATH
-    search_word = search_word_from_path(board, path, flags=flags)
-    accepted, _ = searcher._accept_path_for_search(
-        board, path, search_word, loadout, flags
-    )
-    assert accepted
-    assert 12 in path
-    assert quest_path_allowed(board, path, loadout=loadout)
-
-
 def test_find_best_words_renders_board_includes_center() -> None:
     data = _renders_run_state()
     board = parse_board_from_run_state(data)
@@ -302,25 +235,6 @@ def test_find_best_words_renders_board_parallel_includes_center() -> None:
         assert 12 in result.path
 
 
-def test_poetcraft_path_accepted() -> None:
-    data = _poetcraft_run_state()
-    board = parse_board_from_run_state(data)
-    loadout = parse_run_state(data)
-    assert board is not None
-    dictionary = WordDictionary(resolve_wordlist("game"))
-    searcher = WordSearcher(dictionary=dictionary, min_len=1)
-    searcher.validator.quest_loadout = loadout
-    flags = build_solve_context(loadout, {}).search_flags
-    path = _POETCRAFT_PATH
-    search_word = search_word_from_path(board, path, flags=flags)
-    accepted, _ = searcher._accept_path_for_search(
-        board, path, search_word, loadout, flags
-    )
-    assert accepted
-    assert 12 in path
-    assert quest_path_allowed(board, path, loadout=loadout)
-
-
 def test_find_best_words_poetcraft_includes_center() -> None:
     data = _poetcraft_run_state()
     board = parse_board_from_run_state(data)
@@ -340,25 +254,6 @@ def test_find_best_words_poetcraft_includes_center() -> None:
     assert results, "expected center-using word on poetcraft board"
     for result in results:
         assert 12 in result.path
-
-
-def test_juxtalittoral_path_accepted() -> None:
-    data = _juxtalittoral_run_state()
-    board = parse_board_from_run_state(data)
-    loadout = parse_run_state(data)
-    assert board is not None
-    dictionary = WordDictionary(resolve_wordlist("game"))
-    searcher = WordSearcher(dictionary=dictionary, min_len=1)
-    searcher.validator.quest_loadout = loadout
-    flags = build_solve_context(loadout, {}).search_flags
-    path = _JUXTALITTORAL_PATH
-    search_word = search_word_from_path(board, path, flags=flags)
-    accepted, _ = searcher._accept_path_for_search(
-        board, path, search_word, loadout, flags
-    )
-    assert accepted
-    assert 12 in path
-    assert quest_path_allowed(board, path, loadout=loadout)
 
 
 def test_find_best_words_juxtalittoral_includes_center() -> None:

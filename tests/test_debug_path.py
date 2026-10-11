@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+
+import pytest
 from pathlib import Path
 
 from cursed_words_solver.debug_path import (
@@ -28,6 +30,10 @@ _JUXTALITTORAL_PATH = [16, 10, 6, 0, 1, 2, 17, 22, 23, 19, 13, 8, 12]
 
 
 def test_validate_poetcraft_fixture_accepted() -> None:
+    from cursed_words_solver.config import GAME_WORDLIST_PATH
+
+    if not GAME_WORDLIST_PATH.exists():
+        pytest.skip("game_words.txt not installed ('poetcraft' is not in ENABLE1)")
     data = json.loads(_FIXTURE.read_text(encoding="utf-8"))
     report = validate_submitted_path(
         {"run_state_snapshot": data["run_state_snapshot"]},

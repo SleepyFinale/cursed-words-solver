@@ -28,6 +28,8 @@ namespace CursedWordsSolverCompanion
         public RunStateSnapshot RunState;
         public Dictionary<string, string> ScoringExtras;
         public bool CaptureActive;
+        // game_state/1 pre-submit snapshot + submission + scoring call (see GameStateSerializer).
+        public Dictionary<string, object> CaptureV2;
     }
 
     public static class RoundLogExporter
@@ -123,6 +125,7 @@ namespace CursedWordsSolverCompanion
                     ["consumables"] = BuildConsumablesBlock(ctx),
                     ["comparison"] = BuildComparisonBlock(ctx, matchStatus),
                     ["extras_diff"] = extrasDiff,
+                    ["capture"] = ctx.CaptureV2,
                     ["export_diagnostics_at_submit"] = ctx.RunState?.export_diagnostics,
                     ["export_diagnostics_at_f8"] = ctx.Suggestion != null
                         ? ExtrasDiffHelper.ExportDiagnosticsFromRunState(
@@ -584,8 +587,11 @@ namespace CursedWordsSolverCompanion
                 return new Dictionary<string, object>();
 
             var json = JsonConvert.SerializeObject(snapshot);
-            return JsonConvert.DeserializeObject<Dictionary<string, object>>(json)
+            var dict = JsonConvert.DeserializeObject<Dictionary<string, object>>(json)
                 ?? new Dictionary<string, object>();
+            // Post-submit copy; the exact pre-submit state is under "capture".
+            dict.Remove("game_state");
+            return dict;
         }
 
         private static string GetGridNumber(RoundCaptureContext ctx)

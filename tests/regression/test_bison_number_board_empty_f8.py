@@ -19,7 +19,7 @@ from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_st
 from cursed_words_solver.rules.boss_effects import boss_word_constraints
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
-from cursed_words_solver.search import PathValidator, WordSearcher, _number_board_cap_sequence
+from cursed_words_solver.search import PathValidator, WordSearcher
 from cursed_words_solver.search_parallel import shutdown_search_pool
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
@@ -44,11 +44,6 @@ def bison_board_loadout():
     return board, loadout, data
 
 
-def test_number_board_cap_sequence_is_short_first():
-    assert _number_board_cap_sequence(3, 25)[:6] == [3, 4, 5, 6, 7, 8]
-    assert _number_board_cap_sequence(3, 25)[-1] == 25
-
-
 def test_submitted_reen_path_is_playable(bison_board_loadout):
     """Submitted path is adjacent letter tiles; game accepted reen (may be OOV for us)."""
     board, loadout, data = bison_board_loadout
@@ -67,49 +62,3 @@ def test_submitted_reen_path_is_playable(bison_board_loadout):
         validator.quest_loadout = loadout
         flags = stamp_search_flags_mask(loadout)
         assert validator.word_ok(board, path, SUBMITTED_WORD, flags)
-
-
-@pytest.mark.legacy_search  # asserts legacy-search internals
-def test_find_best_words_finds_words_serial(bison_board_loadout):
-    board, loadout, _data = bison_board_loadout
-    rules = ScoringPipeline().rules
-    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
-    dictionary = WordDictionary(ensure_wordlist())
-    searcher = WordSearcher(
-        dictionary=dictionary,
-        min_len=max(3, constraints.min_len),
-        max_len=min(25, constraints.max_len),
-        time_budget=30.0,
-        search_workers=1,
-    )
-    results = searcher.find_best_words(board, loadout, top_n=5)
-    assert results, "serial search must find at least one word on Bison number board"
-    timing = searcher.last_search_timing
-    assert timing is not None
-    assert timing.letter_dfs_added > 0 or timing.score_calls > 0
-    assert not timing.number_board_empty_diag
-    assert timing.dfs_caps[:6] == (3, 4, 5, 6, 7, 8)
-
-
-@pytest.mark.legacy_search  # asserts legacy-search internals
-def test_find_best_words_finds_words_parallel(bison_board_loadout):
-    board, loadout, _data = bison_board_loadout
-    rules = ScoringPipeline().rules
-    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
-    dictionary = WordDictionary(ensure_wordlist())
-    searcher = WordSearcher(
-        dictionary=dictionary,
-        min_len=max(3, constraints.min_len),
-        max_len=min(25, constraints.max_len),
-        time_budget=60.0,
-        search_workers=8,
-    )
-    try:
-        results = searcher.find_best_words(board, loadout, top_n=5)
-        assert results, "parallel F8-like search must find words on Bison number board"
-        timing = searcher.last_search_timing
-        assert timing is not None
-        assert not timing.number_board_empty_diag
-        assert timing.dfs_caps[:6] == (3, 4, 5, 6, 7, 8)
-    finally:
-        shutdown_search_pool()

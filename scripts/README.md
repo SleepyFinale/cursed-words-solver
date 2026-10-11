@@ -30,6 +30,9 @@ Run all commands from the **repository root** (the folder containing `pyproject.
 | Script | Purpose |
 | ------ | ------- |
 | `python scripts/build_stickers_json.py` | Regenerate `data/wiki/stickers.json` from wiki API scratch files |
+| `python scripts/engine_replay.py [--since DATE] [--write-lists]` | Replay every capture through the engine: exact-score and path-validity rates by month; `--write-lists` regenerates `tests/engine/engine_*_captures.txt` |
+| `python scripts/capture_to_fixture.py <round_log.json>` / `--failing` | Copy captures (companion >= 1.4) into `tests/fixtures/captures/` — each file is a test; `--failing` adds every local capture the engine mis-scores |
+| `python scripts/search_benchmark.py --latest 30 [--budget 20]` | Re-solve recent rounds with the current search; compare with what was played and the F8 suggestion |
 | `python scripts/mismatch_to_test.py <mismatch.json>` | Copy a scoring mismatch into `tests/fixtures/mismatches/` |
 | `python scripts/compare_trace.py <mismatch.json> [--replay]` | Step-by-step predicted vs actual trace diff |
 | `python scripts/triage_mismatch.py <mismatch.json>` | Classify capture (stale vs pipeline vs search miss) |
@@ -38,15 +41,6 @@ Run all commands from the **repository root** (the folder containing `pyproject.
 | `cursed-solver diagnose` | Health report for last F8, round logs, mismatches |
 | `cursed-solver explain --round-log <file>` | Why solver missed a submitted path |
 | `cursed-solver validate-path --round-log <file>` | Path/quest/dictionary acceptance check |
-| `python scripts/profile_solve.py [fixture.json] --budget 8` | cProfile chess-heavy solve; DFS vs scoring breakdown |
-| `python scripts/profile_search.py [--run-state] [--latest N] --budget 12` | SearchTiming: scoring % vs DFS expansions; Tier-2 recommendation |
-| `python scripts/search_quality.py [--ab] [--budget 12] [--long-budget 60]` | Miss-gap harness: budgeted vs long-run (or beam vs DFS A/B) |
-| `python scripts/profile_search.py --round-logs --use-config-budget` | Profile every board from your `round_logs/` play sessions |
-| `python scripts/profile_search.py --round-logs --mismatches-only --budget 12` | Profile only rounds where in-game score differed from solver |
-| `python scripts/analyze_data_structures.py --budget 12` | Full structure analysis: phase timings, caches, tier-2, context precompute, optimization gating; see [`docs/DATA_STRUCTURE_ANALYSIS.md`](../docs/DATA_STRUCTURE_ANALYSIS.md) |
-| `python scripts/analyze_data_structures.py --write-doc` | Regenerate `docs/DATA_STRUCTURE_ANALYSIS.md` from default fixtures |
-| `python scripts/analyze_data_structures.py --latest 4 --category chess` | Analyze newest mismatches or filter by category (chess, sticker, hanafuda, number, boss) |
-| `python scripts/analyze_data_structures.py --profile-flat` | Optional extra cProfile pass for Board.flat cumulative seconds (slow) |
 | `scripts/catalog/achievement_stamps_catalog.py` | Data module (not run directly); imported by `build_stickers_json.py` |
 
 ## Regenerate `stickers.json`

@@ -314,7 +314,9 @@ def reconcile_grid_scattered_items_from_board(
 
 def prepare_run_state_dict_for_scoring(data: dict[str, Any]) -> dict[str, Any]:
     """Merge submit-time fields into run_state before scoring (live or replay)."""
-    run_state = dict(data)
+    from cursed_words_solver.game_state import apply_game_state
+
+    run_state = apply_game_state(dict(data))
     extras = dict(run_state.get("extras") or {})
     merge_extras_snapshot_into(extras, data.get("extras_snapshot") or {})
     merge_extras_diff_submit(extras, data)
@@ -711,7 +713,7 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
                 else:
                     playable_origin = "bottom_left"
 
-    return Board(
+    board = Board(
         tiles=tiles,
         money=money,
         rows=board_rows,
@@ -724,6 +726,12 @@ def parse_board_from_run_state(data: dict[str, Any] | None) -> Board | None:
         playable_max_col=pmax_c,
         captured_at=str(data.get("exported_at") or "") or None,
     )
+    game_state = data.get("game_state")
+    if isinstance(game_state, dict) and board_data.get("row_order") == "top_first":
+        from cursed_words_solver.game_state import attach_game_tiles
+
+        attach_game_tiles(board, game_state)
+    return board
 
 
 def _solver_row_to_melmod(board_data: dict[str, Any], solver_row: int, storage: int) -> int:

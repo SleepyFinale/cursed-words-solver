@@ -67,6 +67,25 @@ Writes `tests/fixtures/mismatches/<timestamp>.json`; parametrized tests live in 
 
 See [`SCORING_HOOKS.md`](SCORING_HOOKS.md) for hooked game types (`EncounterController.SubmitWord`, `ScoreCalculation.CalculateOverallScore`, etc.).
 
+## Exact capture (v1.4+)
+
+Every `run_state.json` export adds `game_state` — a raw dump of the game objects
+(grid tiles, item slots with components / fields, bosses, challenge, previous words,
+encounter counters, consumable rack, accumulator words). Every round log adds
+`capture`: the same dump taken in the `SubmitWord` prefix (the exact state the word
+is scored against), the submission (tile coordinates, selection methods, words) and
+the arguments `CalculateOverallScore` received (item order after Capybara's
+shuffle). The solver replays round logs from `capture` without reconstructing
+anything; see [`docs/game-research/engine.md`](../docs/game-research/engine.md).
+
+Turn any round log into a regression test:
+
+```powershell
+python scripts/capture_to_fixture.py $env:USERPROFILE\.cursed_words_solver\round_logs\<id>.json
+ound_logs\<id>.json
+python scripts/capture_to_fixture.py --failing    # every capture the engine mis-scores
+```
+
 ## Round logs (v1.2+)
 
 After **every** word submit (encounter or puzzle), the mod writes a structured round record — not only on score mismatches.

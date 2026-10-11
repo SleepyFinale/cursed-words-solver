@@ -21,12 +21,7 @@ from cursed_words_solver.models import CurseType
 from cursed_words_solver.rules.boss_effects import boss_word_constraints
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
-from cursed_words_solver.search import (
-    PathValidator,
-    WordSearcher,
-    _number_board_cap_sequence,
-    resolve_letter,
-)
+from cursed_words_solver.search import PathValidator, WordSearcher
 from cursed_words_solver.search_parallel import shutdown_search_pool
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
@@ -51,25 +46,6 @@ def hyena_board_loadout():
     return board, loadout, data
 
 
-def test_currency_dollar_resolves_to_s(hyena_board_loadout):
-    board, _loadout, _data = hyena_board_loadout
-    dollar = next(
-        t
-        for t in board.flat
-        if t.curse == CurseType.CURRENCY and (t.char == "$" or t.letter in ("$", "S"))
-    )
-    assert resolve_letter(dollar, 0) == "S"
-
-
-def test_fraction_tiles_are_not_wildcard_hubs(hyena_board_loadout):
-    """Fraction letter '?' must not trigger Full Moon joker-cluster seeding."""
-    from cursed_words_solver.search import _wildcard_start_indices
-
-    board, _loadout, _data = hyena_board_loadout
-    assert any(t.curse == CurseType.FRACTION for t in board.flat)
-    assert _wildcard_start_indices(board) == []
-
-
 def test_submitted_stogy_path_is_playable(hyena_board_loadout):
     board, loadout, data = hyena_board_loadout
     dictionary = WordDictionary(ensure_wordlist())
@@ -81,57 +57,3 @@ def test_submitted_stogy_path_is_playable(hyena_board_loadout):
     validator.quest_loadout = loadout
     flags = stamp_search_flags_mask(loadout)
     assert validator.word_ok(board, path, SUBMITTED_WORD, flags)
-
-
-@pytest.mark.legacy_search  # asserts legacy-search internals
-def test_find_best_words_finds_words_serial(hyena_board_loadout):
-    board, loadout, _data = hyena_board_loadout
-    rules = ScoringPipeline().rules
-    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
-    dictionary = WordDictionary(ensure_wordlist())
-    searcher = WordSearcher(
-        dictionary=dictionary,
-        min_len=max(3, constraints.min_len),
-        max_len=min(25, constraints.max_len),
-        time_budget=30.0,
-        search_workers=1,
-    )
-    results = searcher.find_best_words(board, loadout, top_n=5)
-    assert results, "serial search must find at least one word on Hyena fraction board"
-    timing = searcher.last_search_timing
-    assert timing is not None
-    assert timing.letter_dfs_added > 0 or timing.score_calls > 0
-    assert not timing.number_board_empty_diag
-    assert timing.dfs_caps[:6] == (3, 4, 5, 6, 7, 8)
-    assert timing.dfs_caps != (12, 11, 10, 9, 8, 7, 6, 5, 4, 3)
-
-
-@pytest.mark.legacy_search  # asserts legacy-search internals
-def test_find_best_words_finds_words_parallel(hyena_board_loadout):
-    board, loadout, _data = hyena_board_loadout
-    rules = ScoringPipeline().rules
-    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
-    dictionary = WordDictionary(ensure_wordlist())
-    searcher = WordSearcher(
-        dictionary=dictionary,
-        min_len=max(3, constraints.min_len),
-        max_len=min(25, constraints.max_len),
-        time_budget=60.0,
-        search_workers=8,
-    )
-    try:
-        t0 = time.monotonic()
-        results = searcher.find_best_words(board, loadout, top_n=5)
-        elapsed = time.monotonic() - t0
-        assert results, "parallel F8-like search must find words on Hyena fraction board"
-        timing = searcher.last_search_timing
-        assert timing is not None
-        assert not timing.number_board_empty_diag
-        assert timing.dfs_caps[:6] == (3, 4, 5, 6, 7, 8)
-        assert elapsed < 70.0, f"parallel search took {elapsed:.1f}s (expected <70s)"
-    finally:
-        shutdown_search_pool()
-
-
-def test_number_board_cap_sequence_still_short_first():
-    assert _number_board_cap_sequence(3, 25)[:6] == [3, 4, 5, 6, 7, 8]

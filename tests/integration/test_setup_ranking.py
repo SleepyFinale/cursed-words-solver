@@ -71,29 +71,6 @@ def test_rank_score_prefers_setup_word(tmp_path):
         assert rank_invest > rank_plain or setup > 0
 
 
-def test_searcher_score_cache_reuses(tmp_path):
-    wl = _make_wordlist(tmp_path)
-    d = WordDictionary(wl)
-    board = _board_with_high_number()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="birthday_cake", name="Birthday Cake", level=1)],
-        extras={"grids_remaining": "2"},
-    )
-    searcher = WordSearcher(
-        dictionary=d,
-        min_len=3,
-        max_len=5,
-        time_budget=0.5,
-        setup_weight=0.4,
-    )
-    path = [12, 13, 14]
-    searcher._score_cache.clear()
-    a = searcher._rank_score_for_candidate(board, path, "9et", loadout)
-    b = searcher._rank_score_for_candidate(board, path, "9et", loadout)
-    assert a == b
-    assert len(searcher._score_cache) == 1
-
-
 def test_derive_setup_ranking_winner_helper():
     assert derive_setup_ranking_winner(80.0, 100.0, 120.0, 90.0) == "setup"
 

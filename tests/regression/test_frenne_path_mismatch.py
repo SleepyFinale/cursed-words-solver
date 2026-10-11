@@ -21,11 +21,7 @@ from cursed_words_solver.loadout import (
     prepare_run_state_dict_for_scoring,
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.search import (
-    WordSearcher,
-    _nonadjacent_chess_path_viable,
-    _probe_nonadjacent_chess_paths,
-)
+from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
 FIXTURE = (
@@ -46,21 +42,6 @@ def _f8_run_state_from_round_log(data: dict) -> dict:
         if isinstance(entry, dict) and "f8" in entry and entry["f8"] not in (None, ""):
             ex[key] = entry["f8"]
     return prepare_run_state_dict_for_scoring(rs)
-
-
-@pytest.mark.skipif(
-    not FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="frenne fixture and game wordlist required",
-)
-def test_nonadjacent_chess_viable_and_includes_submitted_path():
-    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    board = parse_board_from_run_state(_f8_run_state_from_round_log(data))
-    loadout = parse_run_state(_f8_run_state_from_round_log(data))
-    assert board is not None and loadout is not None
-    assert _nonadjacent_chess_path_viable(board, loadout)
-    submitted = path_from_melmod_indices(board, data["actual"]["path"])
-    probes = _probe_nonadjacent_chess_paths(board, loadout)
-    assert any(list(p) == submitted for p in probes)
 
 
 @pytest.mark.skipif(

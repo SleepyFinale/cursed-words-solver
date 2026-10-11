@@ -216,7 +216,7 @@ cursed_words_solver/   # Python package
   sim/                 # Experimental encounter simulator (see docs/game-research/sim-traceability.md)
   board_display.py     # ASCII grid formatting for logs
   ui/                  # Result overlay, board highlights, calibration, loadout dialog
-docs/                  # SEARCH_ARCHITECTURE.md, DATA_STRUCTURE_ANALYSIS.md, game-research/
+docs/                  # SEARCH_ARCHITECTURE.md, game-research/
 melmod/                # MelonLoader companion (C#) + install/build/package scripts
 thunderstore/          # Thunderstore manifest, player README, icon, PyInstaller spec
 data/wiki/             # stickers.json catalog + wiki scrape inputs
@@ -238,35 +238,19 @@ Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 | `search_time_budget_sec` | `60`     | Seconds per solve for word search. Legacy values `2` / `15` / `30` / `45` auto-upgrade on startup |
 | `top_n_results`          | `3`      | Alternate words shown in the overlay                                                              |
 | `wordlist`               | `game`   | `game` → `game_words.txt`; `enable1` → offline fallback                                           |
-| `setup_weight`           | `0.4`    | Weight for future-round setup value in search ranking                                             |
-| `setup_discount`         | `0.85`   | Discount factor for future-round setup value in search ranking                                    |
-| `mult_search_weight`     | `0.4`    | Weight for inventory-mult enumeration in search ranking                                           |
-| `mult_search_passes`     | `true`   | Enable mult-rule search passes during word search                                                 |
-| `search_workers`         | `"auto"` | Parallel DFS processes: `"auto"` (up to 8 cores), `1` to disable, or integer `2`–`16`             |
+| `search_workers`         | `"auto"` | Parallel search processes: `"auto"` (up to 8 cores), `1` to disable, or integer `2`–`16`             |
 | `grid_reroll_gap_ratio`  | `0.3`    | Show "Reroll Grid" when best score is below this fraction of estimated grid target                |
 
 On startup the terminal prints the loaded word list, e.g. `Word list: game (120000 words)`. After each solve it prints the grid and `Board source: melmod`.
 
 Word length is derived automatically per solve: minimum is 1, maximum is the active board size (up to 25), then boss effects (for example Cobra/Wolf) clamp that range.
 
-**Optional performance extras** (parallel search trie backends):
-
-```bash
-pip install -e ".[fast]"    # marisa-trie
-pip install -e ".[native]"  # marisa-trie + datrie
-```
-
-Set `CWS_TRIE_BACKEND` to `auto` (default), `array`, `marisa`, or `datrie` — used by `[search_parallel.py](cursed_words_solver/search_parallel.py)`.
-
 ### Search performance
 
-- **Melmod board (F7)** — Exact tiles avoid wasted DFS branches; refresh before **F8**.
-- **Game wordlist** — **F7** exports `game_words.txt` for tighter dictionary pruning than ENABLE1.
-- `search_time_budget_sec` — Main knob for more candidates within a time limit.
-- `search_workers` — Set to `"auto"` or `4` to partition DFS by start cell across processes (helps CPU-bound search on multi-core machines).
-- **Automatic optimizations** — Per-solve context precompute, tier-2 candidate screening, static scoring fast path, and chess/Hanafuda hot-path fixes run automatically on eligible loadouts (no config keys). See `[docs/SEARCH_ARCHITECTURE.md](docs/SEARCH_ARCHITECTURE.md)`.
-- **Where time goes** — On profiled fixtures (`[docs/DATA_STRUCTURE_ANALYSIS.md](docs/DATA_STRUCTURE_ANALYSIS.md)`), DFS exploration dominates wall time; tier-2 screening helps most when `score_pct` is high. Profile your boards: `python scripts/profile_search.py … --budget 12` or `python scripts/analyze_data_structures.py --budget 12`.
-- **Curse-heavy boards** — Teleports, chess pieces, and wildcards branch heavily; wildcards are searched first. Raise the time budget on dense boards if needed.
+- Every suggestion comes from the game-port engine: legal paths only, ranked by the exact score the game gives (see [`docs/SEARCH_ARCHITECTURE.md`](docs/SEARCH_ARCHITECTURE.md)).
+- `search_time_budget_sec` — most boards finish exhaustively in well under a second; chess / wildcard-dense boards (Full Moon, Hungry Snake, many jokers) use the whole budget, ending with a score-guided beam, so more time can still find better words there.
+- `search_workers` — `"auto"` spreads start tiles over up to 8 processes.
+- Measure on your own games: `python scripts/search_benchmark.py --latest 30` (re-solves recent rounds and compares with what you played) and `python scripts/engine_replay.py` (scoring accuracy vs the game).
 
 ### Troubleshooting
 
@@ -362,8 +346,8 @@ New mismatch fixtures are **not** added to `known_failing.json` by default, so C
 
 ## Related documentation
 
-- `[docs/SEARCH_ARCHITECTURE.md](docs/SEARCH_ARCHITECTURE.md)` — Per-solve context stack, tier-2 screening, static/dynamic scoring
-- `[docs/DATA_STRUCTURE_ANALYSIS.md](docs/DATA_STRUCTURE_ANALYSIS.md)` — Profiling results, cache hit rates, hot-path analysis
+- `[docs/SEARCH_ARCHITECTURE.md](docs/SEARCH_ARCHITECTURE.md)` — How the engine search enumerates, validates and scores paths
+- `[docs/game-research/engine.md](docs/game-research/engine.md)` — The game-port engine (scoring, movement, vocabulary) and the melmod capture format
 - `[docs/game-research/sim-traceability.md](docs/game-research/sim-traceability.md)` — Encounter simulator traceability
 - `[thunderstore/README.md](thunderstore/README.md)` — Player install (mod manager and manual) and bug-report attachments
 - `[melmod/README.md](melmod/README.md)` — MelonLoader install, `run_state.json` schema, boss/pin extras, round logs

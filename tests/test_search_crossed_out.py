@@ -98,29 +98,6 @@ def test_find_best_words_skips_crossed_out_jokers() -> None:
         )
 
 
-def test_accept_path_bypass_rejects_crossed_out_wildcard() -> None:
-    data = _user_board_data()
-    board = parse_board_from_run_state(data)
-    loadout = parse_run_state(data)
-    assert board is not None
-    dictionary = WordDictionary(resolve_wordlist("game"))
-    searcher = WordSearcher(dictionary=dictionary, min_len=1)
-    searcher.validator.quest_loadout = loadout
-    path = [6, 0, 5, 22, 21, 15]
-    accepted, _ = searcher._accept_path_for_search(
-        board,
-        path,
-        "grrrls",
-        loadout,
-        0,
-        trie_compatible=True,
-        prefix_cursor=dictionary.step_token_cursor(
-            dictionary.root_cursor(), "grrrls"
-        ),
-    )
-    assert not accepted
-
-
 def test_f8_should_block_save_when_path_uses_crossed_out() -> None:
     data = _user_board_data()
     board = parse_board_from_run_state(data)

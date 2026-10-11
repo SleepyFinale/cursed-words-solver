@@ -15,7 +15,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     rewind_bicycle_pre_word_extras,
     word_starts_ends_different_suit,
 )
-from cursed_words_solver.search import WordSearcher, _joker_pair_paths
+from cursed_words_solver.search import WordSearcher
 
 FIXTURE = (
     Path(__file__).resolve().parent
@@ -43,12 +43,6 @@ def yince_board_loadout():
 def test_yince_path_wrestlers_qualifies(yince_board_loadout):
     board, _loadout = yince_board_loadout
     assert word_starts_ends_different_suit(board, YINCE_PATH)
-
-
-def test_joker_pair_paths_seed_yince_bridge(yince_board_loadout):
-    board, _loadout = yince_board_loadout
-    seeded = {tuple(p) for p in _joker_pair_paths(board, 15)}
-    assert tuple(YINCE_PATH) in seeded
 
 
 def test_yince_fixture_scores_8320(yince_board_loadout):

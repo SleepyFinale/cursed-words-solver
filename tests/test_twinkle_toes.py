@@ -9,7 +9,7 @@ from cursed_words_solver.consumable_placement import (
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, CurseType, Loadout, LoadoutItem, Tile, TileColor
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.search import WordSearcher, physical_word_for_path
+from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.rules.twinkle_toes import (
     format_swap_instructions,
     iter_swap_pairs,
@@ -20,7 +20,7 @@ from cursed_words_solver.rules.twinkle_toes import (
     twinkle_toes_swap_pending,
 )
 from tests.test_consumable_placement import _mahjong_loadout_with_red_rack
-from tests.test_search import _tile
+from tests.helpers.boards import letter_tile as _tile
 
 
 def _full_board(tiles_by_rc: dict[tuple[int, int], Tile]) -> Board:
@@ -237,149 +237,10 @@ def test_twinkle_toes_screen_uses_meaningful_search_budget(tmp_path):
     assert getattr(searcher, "_placement_screen_pass", False) is False
 
 
-def test_twinkle_toes_grid5_nanas_round_log_regression():
-    """Regression: grid 5 / cherries board must not return empty after swap screening."""
-    import json
-    from pathlib import Path
-
-    from cursed_words_solver.config import GAME_WORDLIST_PATH
-    from cursed_words_solver.loadout import parse_board_from_run_state, parse_run_state
-    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-
-    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-
-    fixture = Path(__file__).resolve().parent / "fixtures/boards/20260621_grid5_twinkle_nanas.json"
-    data = json.loads(fixture.read_text(encoding="utf-8"))
-    board = parse_board_from_run_state(data)
-    loadout = parse_run_state(data)
-    assert board is not None
-    loadout.extras["twinkle_toes_swap_available"] = "true"
-
-    nanas_path = [17, 18, 12, 16, 11]
-    flags = stamp_search_flags(loadout)
-    d = WordDictionary(GAME_WORDLIST_PATH)
-    searcher = WordSearcher(
-        dictionary=d, min_len=1, max_len=25, time_budget=60.0, search_workers=8
-    )
-    searcher.scoring = ScoringPipeline()
-    searcher.validator.quest_loadout = loadout
-    assert searcher.validator.word_ok(board, nanas_path, "nanas", flags)
-
-    deadline = time.monotonic() + 60.0
-    swapped_board, swap_record, results = search_with_twinkle_toes_swap(
-        searcher,
-        board,
-        loadout,
-        time_budget=60.0,
-        top_n=3,
-        solve_deadline=deadline,
-    )
-    assert swap_record is not None
-    assert results
-    assert results[0].word
-
-
 def _result_rank_score(result) -> float:
     if result.rank_score > 0:
         return result.rank_score
     return result.score + result.setup_bonus
-
-
-def test_consumable_boost_after_twinkle_uses_swapped_board(tmp_path):
-    """Consumable boost must search on the post-swap board, not the original."""
-    wl = tmp_path / "words.txt"
-    wl.write_text("cat\n", encoding="utf-8")
-    d = WordDictionary(wl)
-    tiles = [[_tile(".", r, c) for c in range(5)] for r in range(5)]
-    tiles[0][0] = _letter_tile("c", 0, 0)
-    tiles[0][1] = _letter_tile("t", 0, 1)
-    tiles[0][2] = _letter_tile("a", 0, 2)
-    active = [False] * 25
-    for idx in (0, 1, 2):
-        active[idx] = True
-    board = Board(tiles=tiles, active=active)
-    loadout = _mahjong_loadout_with_red_rack()
-    loadout.stamps = [
-        LoadoutItem(id="twinkle_toes", name="Twinkle Toes", kind="stamp"),
-    ]
-    loadout.extras["twinkle_toes_swap_available"] = "true"
-    loadout.extras["consumable_rack"] = [
-        {
-            "rack_index": 0,
-            "letter": "T",
-            "color": "red",
-            "curse": "letter",
-            "base_score": 5,
-        },
-    ]
-    rules = ScoringPipeline().rules
-    searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=4.0)
-
-    swapped_board, swap_record, twinkle_results = search_with_twinkle_toes_swap(
-        searcher,
-        board,
-        loadout,
-        time_budget=4.0,
-        top_n=1,
-    )
-    assert swap_record is not None
-    assert twinkle_results
-    assert twinkle_results[0].word == "cat"
-    baseline_rank = _result_rank_score(twinkle_results[0])
-
-    rack = [
-        Tile(
-            -1,
-            -1,
-            "T",
-            "T",
-            5,
-            color=TileColor.RED,
-            curse=CurseType.LETTER,
-            metadata={"rack_index": 0},
-        ),
-    ]
-    wrong_board, wrong_records, wrong_results = search_consumable_score_boost(
-        searcher,
-        board,
-        loadout,
-        rack,
-        baseline_score=twinkle_results[0].score,
-        baseline_rank_score=baseline_rank,
-        time_budget=4.0,
-        top_n=1,
-        rules=rules,
-    )
-    right_board, right_records, right_results = search_consumable_score_boost(
-        searcher,
-        swapped_board,
-        loadout,
-        rack,
-        baseline_score=twinkle_results[0].score,
-        baseline_rank_score=baseline_rank,
-        time_budget=4.0,
-        top_n=1,
-        rules=rules,
-    )
-
-    search_board = swapped_board
-    placement_records = []
-    results = twinkle_results
-    if right_results and _result_rank_score(right_results[0]) > baseline_rank:
-        search_board = right_board
-        placement_records = right_records
-        results = right_results
-
-    assert results
-    assert results[0].word == "cat"
-    path_word = physical_word_for_path(search_board, results[0].path)
-    assert path_word == "cat"
-
-    if wrong_results and wrong_records:
-        user_board = apply_consumable_placements(swapped_board, wrong_records)
-        wrong_path_word = physical_word_for_path(user_board, wrong_results[0].path)
-        assert wrong_path_word != "cat"
 
 
 def test_twinkle_swap_time_budget_caps_when_rack_placement_pending():

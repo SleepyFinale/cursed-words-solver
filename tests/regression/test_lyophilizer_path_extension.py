@@ -23,11 +23,7 @@ from cursed_words_solver.loadout import (
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.scoring_conditions import chess_takes_on_path
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-from cursed_words_solver.search import (
-    WordSearcher,
-    _nonadjacent_chess_path_viable,
-    _probe_nonadjacent_chess_paths,
-)
+from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
 FIXTURE = (
@@ -69,22 +65,6 @@ def test_submitted_lyophilizer_scores_match_game():
         board, path, data["actual"]["word"], loadout
     )
     assert int(sc) == SUBMITTED_SCORE
-
-
-@pytest.mark.skipif(
-    not FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="lyophilizer fixture and game wordlist required",
-)
-def test_nonadj_dfs_probe_finds_long_tours():
-    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-    assert _nonadjacent_chess_path_viable(board, loadout)
-    probes = _probe_nonadjacent_chess_paths(board, loadout)
-    assert probes
-    assert max(len(p) for p in probes) >= 10
 
 
 @pytest.mark.skipif(

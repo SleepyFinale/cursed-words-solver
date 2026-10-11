@@ -68,95 +68,6 @@ def test_falchion_submitted_path_validates_and_scores():
     not FALCHION_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
     reason="20260808 falchion path-mismatch fixture and game wordlist required",
 )
-def test_falchion_number_cover_slice_beats_f8():
-    """Number-cover side slice (non-digits_only) beats logged F8 without full solve."""
-    from cursed_words_solver.board_scoring_context import build_board_scoring_context
-    from cursed_words_solver.board_value_model import build_board_value_model
-    from cursed_words_solver.graph_bitboard import build_board_graph_context
-    from cursed_words_solver.loadout_affordances import build_loadout_affordances
-    from cursed_words_solver.models import CurseType
-    from cursed_words_solver.rules.chess_tiles import clear_chess_attack_cache
-    from cursed_words_solver.search import _CandidateHeap
-    from cursed_words_solver.solve_context import build_solve_context
-
-    if GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-
-    data = json.loads(FALCHION_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=3,
-        max_len=25,
-        search_workers=1,
-        time_budget=40.0,
-        use_beam_search=True,
-    )
-    rules = ScoringPipeline().rules
-    searcher._solve_ctx = build_solve_context(loadout, rules)
-    searcher._graph_ctx = build_board_graph_context(board)
-    searcher._board_scoring_ctx = build_board_scoring_context(
-        board, loadout, searcher._solve_ctx, searcher._graph_ctx, rules
-    )
-    searcher._affordances = build_loadout_affordances(
-        board,
-        loadout,
-        searcher._solve_ctx,
-        searcher._graph_ctx,
-        rules=rules,
-    )
-    assert searcher._affordances.rewards_number_tiles
-    searcher._value_model = build_board_value_model(
-        board,
-        loadout,
-        searcher._solve_ctx,
-        searcher._graph_ctx,
-        searcher._board_scoring_ctx,
-        affordances=searcher._affordances,
-    )
-    assert searcher._value_model.soft_cover_mask & searcher._value_model.number_mask
-    searcher._board_has_number_tiles = True
-    searcher._score_cache = {}
-    searcher._dict_path_cache = {}
-    searcher._grid_refs_cache = {}
-    searcher._provisional_candidates = []
-    searcher._number_extend_cache = {}
-    clear_chess_attack_cache(
-        has_chess_pieces=searcher._graph_ctx.has_chess_pieces
-    )
-
-    deadline = time.monotonic() + 20.0
-    searcher._active_deadline = deadline
-    candidates = _CandidateHeap(80)
-    searcher._collect_number_covering_candidates(
-        board,
-        loadout,
-        candidates,
-        deadline,
-        max_len=12,
-    )
-    assert candidates, "number-cover slice must find mixed letter+number words"
-    best_sorted = candidates.best_sorted()
-    best_score = int(best_sorted[0][0])
-    best_path = best_sorted[0][2]
-    blue_hit = sum(
-        1
-        for i in best_path
-        if board.get_by_index(i).curse == CurseType.NUMBER
-        and str(board.get_by_index(i).color.value) == "blue"
-    )
-    assert best_score > FALCHION_F8_SCORE or blue_hit >= 4
-    assert best_score >= FALCHION_F8_SCORE
-
-
-@pytest.mark.skipif(
-    not FALCHION_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="20260808 falchion path-mismatch fixture and game wordlist required",
-)
 def test_falchion_find_best_words_beats_f8():
     """Full beam solve should beat the logged 98 digit-local suggestion."""
     if GAME_WORDLIST_PATH.stat().st_size < 1024:
@@ -174,7 +85,6 @@ def test_falchion_find_best_words_beats_f8():
         max_len=25,
         search_workers=2,
         time_budget=45.0,
-        use_beam_search=True,
     )
     results = searcher.find_best_words(board, loadout, top_n=5)
     assert results, "search must find words on falchion board"
@@ -194,58 +104,6 @@ MINIATUM_F8_SCORE = 88
 MINIATUM_PIPELINE_SCORE = 130
 # Melmod: M→2→4→5→A→6→U→M
 MINIATUM_MELMOD_PATH = [10, 15, 21, 22, 23, 19, 13, 7]
-
-
-def _setup_number_cover_searcher(run_state: dict) -> tuple:
-    from cursed_words_solver.board_scoring_context import build_board_scoring_context
-    from cursed_words_solver.board_value_model import build_board_value_model
-    from cursed_words_solver.graph_bitboard import build_board_graph_context
-    from cursed_words_solver.loadout_affordances import build_loadout_affordances
-    from cursed_words_solver.rules.chess_tiles import clear_chess_attack_cache
-    from cursed_words_solver.solve_context import build_solve_context
-
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=3,
-        max_len=25,
-        search_workers=1,
-        time_budget=40.0,
-        use_beam_search=True,
-    )
-    rules = ScoringPipeline().rules
-    searcher._solve_ctx = build_solve_context(loadout, rules)
-    searcher._graph_ctx = build_board_graph_context(board)
-    searcher._board_scoring_ctx = build_board_scoring_context(
-        board, loadout, searcher._solve_ctx, searcher._graph_ctx, rules
-    )
-    searcher._affordances = build_loadout_affordances(
-        board,
-        loadout,
-        searcher._solve_ctx,
-        searcher._graph_ctx,
-        rules=rules,
-    )
-    searcher._value_model = build_board_value_model(
-        board,
-        loadout,
-        searcher._solve_ctx,
-        searcher._graph_ctx,
-        searcher._board_scoring_ctx,
-        affordances=searcher._affordances,
-    )
-    searcher._board_has_number_tiles = True
-    searcher._score_cache = {}
-    searcher._dict_path_cache = {}
-    searcher._grid_refs_cache = {}
-    searcher._provisional_candidates = []
-    searcher._number_extend_cache = {}
-    clear_chess_attack_cache(
-        has_chess_pieces=searcher._graph_ctx.has_chess_pieces
-    )
-    return board, loadout, searcher
 
 
 @pytest.mark.skipif(
@@ -278,38 +136,6 @@ def test_miniatum_submitted_path_validates_and_scores():
     not MINIATUM_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
     reason="20260808 miniatum path-mismatch fixture and game wordlist required",
 )
-def test_miniatum_number_cover_slice_beats_f8():
-    """Number-cover must skip distant blue 3 and grow …6UM for miniatum."""
-    from cursed_words_solver.search import _CandidateHeap
-
-    if GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-
-    data = json.loads(MINIATUM_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board, loadout, searcher = _setup_number_cover_searcher(run_state)
-    assert searcher._affordances.rewards_number_tiles
-
-    deadline = time.monotonic() + 20.0
-    searcher._active_deadline = deadline
-    candidates = _CandidateHeap(80)
-    searcher._collect_number_covering_candidates(
-        board, loadout, candidates, deadline, max_len=12
-    )
-    assert candidates, "number-cover slice must find miniatum-class words"
-    best_score = int(candidates.best_sorted()[0][0])
-    assert best_score > MINIATUM_F8_SCORE
-    faces = {
-        "".join(board.get_by_index(i).letter for i in path).lower()
-        for _sc, _w, path in candidates.best_sorted()
-    }
-    assert any("245a6" in f for f in faces)
-
-
-@pytest.mark.skipif(
-    not MINIATUM_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="20260808 miniatum path-mismatch fixture and game wordlist required",
-)
 def test_miniatum_find_best_words_beats_f8():
     """Full beam solve should beat the logged 88 digit-local suggestion."""
     if GAME_WORDLIST_PATH.stat().st_size < 1024:
@@ -327,7 +153,6 @@ def test_miniatum_find_best_words_beats_f8():
         max_len=25,
         search_workers=2,
         time_budget=45.0,
-        use_beam_search=True,
     )
     results = searcher.find_best_words(board, loadout, top_n=5)
     assert results, "search must find words on miniatum board"
@@ -385,39 +210,6 @@ def test_orthodox_submitted_path_validates_and_scores():
 
 
 @pytest.mark.skipif(
-    not ORTHODOX_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="20260808 orthodox path-mismatch fixture and game wordlist required",
-)
-def test_orthodox_number_cover_slice_beats_f8():
-    """Number-cover must prefer neighbor-linked colorless 2 and O…X bookends."""
-    from cursed_words_solver.search import _CandidateHeap
-
-    if GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-
-    data = json.loads(ORTHODOX_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board, loadout, searcher = _setup_number_cover_searcher(run_state)
-    assert searcher._affordances.rewards_number_tiles
-
-    deadline = time.monotonic() + 12.0
-    searcher._active_deadline = deadline
-    candidates = _CandidateHeap(80)
-    searcher._collect_number_covering_candidates(
-        board, loadout, candidates, deadline, max_len=14
-    )
-    assert candidates, "number-cover slice must find orthodox-class words"
-    best_score = int(candidates.best_sorted()[0][0])
-    assert best_score > ORTHODOX_F8_SCORE
-    faces = {
-        "".join(board.get_by_index(i).letter for i in path).lower()
-        for _sc, _w, path in candidates.best_sorted()
-    }
-    assert any("24h5d6" in f for f in faces)
-    assert best_score >= ORTHODOX_PIPELINE_SCORE
-
-
-@pytest.mark.skipif(
     not ENTOILED_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
     reason="20260808 entoiled path-mismatch fixture and game wordlist required",
 )
@@ -441,36 +233,3 @@ def test_entoiled_submitted_path_validates_and_scores():
     )
     assert score == ENTOILED_PIPELINE_SCORE
     assert int(data["actual"]["score"]) == ENTOILED_PIPELINE_SCORE
-
-
-@pytest.mark.skipif(
-    not ENTOILED_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="20260808 entoiled path-mismatch fixture and game wordlist required",
-)
-def test_entoiled_number_cover_slice_beats_f8():
-    """Number-cover must allow letter-only corridors longer than one hop."""
-    from cursed_words_solver.search import _CandidateHeap
-
-    if GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-
-    data = json.loads(ENTOILED_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board, loadout, searcher = _setup_number_cover_searcher(run_state)
-    assert searcher._affordances.rewards_number_tiles
-
-    deadline = time.monotonic() + 12.0
-    searcher._active_deadline = deadline
-    candidates = _CandidateHeap(80)
-    searcher._collect_number_covering_candidates(
-        board, loadout, candidates, deadline, max_len=14
-    )
-    assert candidates, "number-cover slice must find entoiled-class words"
-    best_score = int(candidates.best_sorted()[0][0])
-    assert best_score > ENTOILED_F8_SCORE
-    faces = {
-        "".join(board.get_by_index(i).letter for i in path).lower()
-        for _sc, _w, path in candidates.best_sorted()
-    }
-    assert any("24ile5" in f or "ile5" in f for f in faces)
-    assert best_score >= ENTOILED_PIPELINE_SCORE

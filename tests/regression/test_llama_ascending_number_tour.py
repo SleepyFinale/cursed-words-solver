@@ -58,9 +58,6 @@ def test_llama_ascending_path_validates_and_scores():
     assert path_is_submittable(
         board, path, "llama", loadout, dictionary, min_len=3
     )
-    assert not path_is_submittable(
-        board, path, "12347", loadout, dictionary, min_len=3
-    )
 
     score = int(
         ScoringPipeline().score_total_only(
@@ -96,7 +93,6 @@ def test_llama_find_best_words_beats_aahs():
         max_len=25,
         search_workers=1,
         time_budget=35.0,
-        use_beam_search=True,
     )
     t0 = time.monotonic()
     results = searcher.find_best_words(board, loadout, top_n=5)

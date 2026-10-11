@@ -450,3 +450,14 @@ def _board_1_fraction_245fe_fixture() -> Board:
     grid[4][4] = letter(4, 4, "A")
     return Board(tiles=grid, money=3)
 
+
+
+def letter_tile(ch: str, row: int, col: int, *, was_consumable: bool = False) -> "Tile":
+    """Plain colourless letter tile (``was_consumable`` marks a placed rack tile)."""
+    from cursed_words_solver.models import CurseType, Tile, TileColor
+
+    meta: dict = {"was_consumable": True} if was_consumable else {}
+    return Tile(
+        row=row, col=col, char=ch, letter=ch, base_score=1,
+        color=TileColor.COLORLESS, curse=CurseType.LETTER, metadata=meta,
+    )

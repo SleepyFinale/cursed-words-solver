@@ -16,13 +16,7 @@ from cursed_words_solver.rules.rule_lookup import get_rule, slugify_name
 
 from tests.catalog.stamps._coverage import assert_loadout_stamp_coverage
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-from cursed_words_solver.search import (
-    PathValidator,
-    format_microscope_position_hint,
-    microscope_position_uses,
-    number_position_valid,
-    resolve_letter,
-)
+from cursed_words_solver.search import PathValidator, format_microscope_position_hint, microscope_position_uses
 
 HAYLEY_STAMP_NAMES = [
     "Flamingo",
@@ -79,7 +73,6 @@ def test_count_scoring_vs_grid_only_hayley_stamps():
     assert_loadout_stamp_coverage(pipeline.rules, HAYLEY_STAMP_NAMES)
 
 
-
 def test_full_battery_three_numbers_triples_word():
     board = _empty_board()
     board.tiles[0][0] = _tile(0, 0, "1", 1, curse=CurseType.NUMBER, number_value=1)
@@ -92,37 +85,6 @@ def test_full_battery_three_numbers_triples_word():
     score, bd = pipeline.score(board, [0, 1, 2], "123", loadout)
     assert bd["multiplier"] == 3.0
     assert score == 18
-
-
-def test_microscope_number_tile_dual_position():
-    """Blue 5 with base_score 6 may occupy position 5 or 6."""
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="microscope", name="Microscope", kind="stamp")]
-    )
-    flags = stamp_search_flags(loadout)
-    tile = _tile(
-        0,
-        0,
-        "5",
-        6,
-        color=TileColor.BLUE,
-        curse=CurseType.NUMBER,
-        number_value=5,
-    )
-    assert number_position_valid(tile, 4, flags=flags)
-    assert number_position_valid(tile, 5, flags=flags)
-    assert not number_position_valid(tile, 3, flags=flags)
-
-
-def test_microscope_letter_tile_unrestricted_as_letter():
-    """V with base_score 4: letter mode has no position lock; number mode uses base_score."""
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="microscope", name="Microscope", kind="stamp")]
-    )
-    flags = stamp_search_flags(loadout)
-    tile = _tile(0, 0, "V", 4, curse=CurseType.LETTER)
-    assert number_position_valid(tile, 3, flags=flags)
-    assert number_position_valid(tile, 0, flags=flags)
 
 
 def test_microscope_letter_tile_as_digit_in_number_word(tmp_path):
@@ -196,58 +158,6 @@ def test_microscope_void_number_uses_negated_face_value():
     )
     assert init["tile_scores"] == [-4.0]
     assert score == -4.0
-
-
-def test_flamingo_shiny_resolves_as_one():
-    """Flamingo: shiny letters behave as 1s; shiny numbers keep normal position rules."""
-    board = _empty_board()
-    tile = _tile(0, 0, "S", 50, color=TileColor.SHINY)
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="flamingo", name="Flamingo", kind="stamp")]
-    )
-    flags = stamp_search_flags(loadout)
-    assert resolve_letter(tile, 0, flags=flags) == "1"
-    assert number_position_valid(tile, 0, flags=flags)
-    assert resolve_letter(tile, 3, flags=flags).lower() == "s"
-
-
-def test_flamingo_shiny_number_uses_normal_position():
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="flamingo", name="Flamingo", kind="stamp")]
-    )
-    flags = stamp_search_flags(loadout)
-    five = _tile(
-        0,
-        0,
-        "5",
-        50,
-        color=TileColor.SHINY,
-        curse=CurseType.NUMBER,
-        number_value=5,
-    )
-    six = _tile(
-        0,
-        1,
-        "6",
-        50,
-        color=TileColor.SHINY,
-        curse=CurseType.NUMBER,
-        number_value=6,
-    )
-    assert number_position_valid(five, 4, flags=flags)
-    assert number_position_valid(six, 5, flags=flags)
-    assert not number_position_valid(five, 0, flags=flags)
-
-
-def test_test_tube_number_position_plus_minus_one():
-    board = _empty_board()
-    tile = _tile(0, 1, "3", 3, curse=CurseType.NUMBER, number_value=3)
-    loadout = Loadout(
-        stamps=[LoadoutItem(id="test_tube", name="Test Tube", kind="stamp")]
-    )
-    flags = stamp_search_flags(loadout)
-    assert number_position_valid(tile, 1, flags=flags)
-    assert not number_position_valid(tile, 0, flags=flags)
 
 
 def test_test_tube_number_word_digit_tolerance(tmp_path):

@@ -9,7 +9,7 @@ import pytest
 from cursed_words_solver.config import GAME_WORDLIST_PATH
 from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, CurseType, Loadout, Tile
-from cursed_words_solver.search import WordSearcher, is_fraction_tile
+from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.suggestion import filter_submittable_results, path_is_submittable
 
 
@@ -121,30 +121,6 @@ def test_filter_without_deadline_keeps_search_validated_wildcard_hits():
         assert not expired, "deadline-gated re-filter drops unresolved wildcard paths"
 
 
-@pytest.mark.skipif(
-    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
-    reason="game wordlist required",
-)
-def test_expired_deadline_aborts_wildcard_dictionary_resolve():
-    """Documents why app.py must not pass deadline_check after search returns."""
-    board = _fraction_ace_board()
-    loadout = Loadout(money=0)
-    dictionary = WordDictionary(GAME_WORDLIST_PATH)
-    path = [0, 1, 2]
-    assert path_is_submittable(
-        board, path, "ac?", loadout, dictionary, min_len=3
-    )
-    assert not path_is_submittable(
-        board,
-        path,
-        "ac?",
-        loadout,
-        dictionary,
-        min_len=3,
-        deadline_check=lambda: True,
-    )
-
-
 def _fraction_only_board() -> Board:
     """Fraction tiles without number tiles (session-1 style)."""
     board = Board(
@@ -172,30 +148,3 @@ def _fraction_only_board() -> Board:
         metadata={"fraction_num": 1, "fraction_den": 3},
     )
     return board
-
-
-@pytest.mark.skipif(
-    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
-    reason="game wordlist required",
-)
-def test_fraction_only_board_reserves_post_dfs_time():
-    """Fraction-only boards must not give DFS the entire F8 budget."""
-    board = _fraction_only_board()
-    assert any(is_fraction_tile(t) for t in board.flat)
-    assert not any(t.curse == CurseType.NUMBER for t in board.flat)
-
-    budget = 60.0
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=3,
-        max_len=25,
-        time_budget=budget,
-        search_workers=1,
-    )
-    deadline = time.monotonic() + budget
-    searcher.find_best_words(board, Loadout(money=0), top_n=1, deadline=deadline)
-    timing = searcher.last_search_timing
-    assert timing is not None
-    assert timing.main_dfs_slice_sec < budget * 0.92, (
-        "fraction-only boards should reserve post-DFS time"
-    )

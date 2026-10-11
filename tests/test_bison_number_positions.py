@@ -10,12 +10,7 @@ from cursed_words_solver.dictionary import WordDictionary
 from cursed_words_solver.models import Board, CurseType, Tile, TileColor
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 from cursed_words_solver.loadout import Loadout
-from cursed_words_solver.search import (
-    PathValidator,
-    _max_number_face_on_board,
-    _tile_digit_face_matches,
-    number_position_valid,
-)
+from cursed_words_solver.search import PathValidator
 
 
 def _letter(r: int, c: int, ch: str) -> Tile:
@@ -73,26 +68,6 @@ def _wordlist(tmp_path: Path, *words: str) -> Path:
     return p
 
 
-def test_number_position_valid_accepts_nine_at_ninth_tile():
-    tile = _number(0, 0, 9)
-    assert number_position_valid(tile, 8, flags=0)
-    assert not number_position_valid(tile, 7, flags=0)
-
-
-def test_tile_digit_face_matches_multi_digit():
-    tile = _number(0, 0, 10)
-    assert _tile_digit_face_matches("10", tile, 0)
-    assert not _tile_digit_face_matches("1", tile, 0)
-    assert _tile_digit_face_matches("9", _number(0, 0, 9), 0)
-
-
-def test_max_number_face_on_board():
-    board = _empty_board()
-    board.tiles[0][0] = _number(0, 0, 9)
-    board.tiles[0][1] = _number(0, 1, 12)
-    assert _max_number_face_on_board(board) == 12
-
-
 def test_word_ok_ten_tile_path_with_face_ten(tmp_path: Path):
     """10-tile path: number 10 at position 10 consumes two-char face in word string."""
     wl = _wordlist(tmp_path, "abcdefghij")
@@ -143,22 +118,3 @@ def test_word_ok_seventeen_tile_path_with_face_seventeen(tmp_path: Path):
     flags = stamp_search_flags(Loadout())
     v = PathValidator(d, min_len=1)
     assert v.word_ok(board, path, word, flags)
-
-
-def test_word_ok_nine_tile_path_single_digit_nine(tmp_path: Path):
-    wl = _wordlist(tmp_path, "abcdefghi")
-    d = WordDictionary(wl)
-    board = _empty_board()
-    path = _path_indices(9)
-    for i, idx in enumerate(path[:-1]):
-        r, c = divmod(idx, 5)
-        board.tiles[r][c] = _letter(r, c, chr(ord("a") + i))
-    r, c = divmod(path[-1], 5)
-    board.tiles[r][c] = _number(r, c, 9)
-    word = "abcdefgh9"
-    flags = stamp_search_flags(Loadout())
-    v = PathValidator(d, min_len=1)
-    assert v.word_ok(board, path, word, flags)
-    assert not number_position_valid(
-        board.get_by_index(path[-1]), 7, flags=flags, segment=word
-    )

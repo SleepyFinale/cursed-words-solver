@@ -82,7 +82,6 @@ def test_search_benchmark_with_setup_weight(tmp_path):
         min_len=3,
         max_len=8,
         time_budget=1.0,
-        setup_weight=0.4,
     )
     t0 = time.perf_counter()
     results = searcher.find_best_words(board, loadout, top_n=1)

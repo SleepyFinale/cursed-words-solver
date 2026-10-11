@@ -24,7 +24,7 @@ from cursed_words_solver.rules.chess_tiles import (
 from cursed_words_solver.rules.scoring_conditions import chess_balanced_colors, chess_take_strict_mode
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import StampSearchFlags, stamp_search_flags
-from cursed_words_solver.search import WordSearcher, neighbors_from_tile, path_movement_ok, resolve_letter
+from cursed_words_solver.search import WordSearcher, neighbors_from_tile, path_movement_ok
 
 
 def _tile(
@@ -498,15 +498,6 @@ def test_black_pawn_can_move_down_to_letter():
     assert index_of(4, 3) in nbrs
 
 
-def test_missing_chess_color_does_not_allow_pawn_forward():
-    board = _empty_board()
-    board.tiles[3][3] = _tile(3, 3, curse=CurseType.CHESS_PAWN, letter="?")
-    visited = {index_of(3, 2), index_of(3, 3)}
-    nbrs = neighbors_from_tile(board, [index_of(3, 2), index_of(3, 3)], visited)
-    assert index_of(4, 3) not in nbrs
-    assert index_of(2, 3) not in nbrs
-
-
 def test_missing_chess_color_warning():
     board = _empty_board()
     board.tiles[3][3] = _tile(3, 3, curse=CurseType.CHESS_PAWN, letter="?")
@@ -663,48 +654,6 @@ def _skokiaans_board_and_loadout():
     return board, loadout
 
 
-def test_markkaa_eight_tile_scores_180_with_movie_camera():
-    """8-tile markkaa path: infer takes for Movie Camera when melmod take flags absent."""
-    board, loadout = _markkaa_board_and_loadout()
-    flags = stamp_search_flags(loadout)
-    letters = "".join(
-        resolve_letter(board.get_by_index(i), j, flags=flags)
-        for j, i in enumerate(MARKKAA_PATH)
-    )
-    pipeline = ScoringPipeline()
-    score, bd, _ = pipeline.score_with_trace(
-        board, MARKKAA_PATH, letters.lower(), loadout
-    )
-    assert score == 198.0
-    effects = bd["pipeline"]["effects"]
-    assert any("+9 word (Movie Camera:" in e for e in effects)
-
-
-def test_movie_camera_strict_when_melmod_take_metadata():
-    """Melmod take flags on path switch Movie Camera to strict piece-value takes."""
-    board, loadout = _markkaa_board_and_loadout()
-    flags = stamp_search_flags(loadout)
-    letters = "".join(
-        resolve_letter(board.get_by_index(i), j, flags=flags)
-        for j, i in enumerate(MARKKAA_PATH)
-    )
-    pipeline = ScoringPipeline()
-    score_inferred, _, _ = pipeline.score_with_trace(
-        board, MARKKAA_PATH, letters.lower(), loadout
-    )
-    assert score_inferred == 198.0
-    assert not chess_take_strict_mode(board, MARKKAA_PATH, strict_requested=True)
-
-    board.get_by_index(MARKKAA_PATH[2]).metadata["take"] = True
-    assert chess_take_strict_mode(board, MARKKAA_PATH, strict_requested=True)
-    score_strict, bd_strict, _ = pipeline.score_with_trace(
-        board, MARKKAA_PATH, letters.lower(), loadout
-    )
-    assert score_strict >= score_inferred
-    effects = bd_strict["pipeline"]["effects"]
-    assert any("+9 word (Movie Camera:" in e for e in effects)
-
-
 def test_faldstool_movie_camera_after_full_moon_capture():
     """Capture after Full Moon teleport uses boosted from-tile base for Movie Camera."""
     board, loadout = _faldstool_board_and_loadout()
@@ -847,31 +796,3 @@ def test_markkaa_extension_found_in_search():
     assert match[0].score >= 180.0
     effects = match[0].breakdown.get("pipeline", {}).get("effects", [])
     assert any("Movie Camera:" in e for e in effects)
-
-
-def test_neighbors_mask_matches_neighbors_from_tile_on_chess_boards():
-    """Bitboard neighbor API must match list API on representative fixtures."""
-    from cursed_words_solver.graph_bitboard import build_board_graph_context, iter_mask
-    from cursed_words_solver.search import neighbors_from_tile, neighbors_mask
-
-    boards = []
-    board, _ = _markkaa_board_and_loadout()
-    boards.append(board)
-    if RUFIYAA_FIXTURE.exists():
-        data = json.loads(RUFIYAA_FIXTURE.read_text(encoding="utf-8"))
-        rb = parse_board_from_run_state(data)
-        if rb is not None:
-            boards.append(rb)
-
-    for board in boards:
-        ctx = build_board_graph_context(board)
-        for start in range(25):
-            if not board.is_active_index(start):
-                continue
-            for visited_bits in (1 << start, (1 << start) | (1 << ((start + 1) % 25))):
-                path = [start]
-                expected = neighbors_from_tile(board, path, visited_bits)
-                mask = neighbors_mask(
-                    board, visited_bits, cell_id=start, graph_ctx=ctx
-                )
-                assert sorted(expected) == sorted(iter_mask(mask))

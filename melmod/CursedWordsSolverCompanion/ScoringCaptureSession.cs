@@ -20,6 +20,12 @@ namespace CursedWordsSolverCompanion
         private static Dictionary<string, string> _scoringContextExtras =
             new Dictionary<string, string>();
         private static BoardSnapshot _submitBoardSnapshot;
+        // Exact pre-submit state (GameStateSerializer), what was submitted, and the
+        // arguments CalculateOverallScore actually received (item order after
+        // Capybara's shuffle, grid number) -- round logs replay from these alone.
+        private static Dictionary<string, object> _preSubmitState;
+        private static Dictionary<string, object> _submission;
+        private static Dictionary<string, object> _scoringCall;
         private static BoardSnapshot _boardAtSubmit;
         private static List<ConsumableRackTileSnapshot> _rackBefore;
         private static List<ConsumablePlacementRecord> _consumablePlacements;
@@ -94,6 +100,17 @@ namespace CursedWordsSolverCompanion
             _scoringBossModifiers = null;
             _f8PredictionHistoricStaleNote = "";
             _lastSubmitBicycleSuitedCount = -1;
+            _preSubmitState = null;
+            _scoringCall = null;
+            _submission = DescribeSubmission(submitMethod, selections, words);
+            try
+            {
+                _preSubmitState = GameStateSerializer.Capture("pre_submit");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning("Pre-submit game_state capture failed: " + ex.Message);
+            }
             _suggestion = SuggestionMatcher.Load();
             if (_suggestion == null)
             {
@@ -182,6 +199,93 @@ namespace CursedWordsSolverCompanion
                         )
                 );
             }
+        }
+
+        private static Dictionary<string, object> DescribeSubmission(
+            string submitMethod,
+            List<TileSelection> selections,
+            List<string> words
+        )
+        {
+            var tiles = new List<object>();
+            foreach (var sel in selections ?? new List<TileSelection>())
+            {
+                if (sel == null)
+                    continue;
+                var entry = new Dictionary<string, object>();
+                try
+                {
+                    var c = sel.SelectedTile.GetCoordinates();
+                    entry["x"] = c.x;
+                    entry["y"] = c.y;
+                    entry["method"] = sel.SelectionMethod.ToString();
+                    if (sel.EnPassantedTile != null)
+                    {
+                        var e = sel.EnPassantedTile.GetCoordinates();
+                        entry["en_passant"] = new List<int> { e.x, e.y };
+                    }
+                    if (sel.IsWobbly)
+                        entry["wobbly"] = true;
+                }
+                catch
+                {
+                    // keep what we have
+                }
+                tiles.Add(entry);
+            }
+            return new Dictionary<string, object>
+            {
+                ["method"] = submitMethod ?? "",
+                ["words"] = words != null ? new List<string>(words) : new List<string>(),
+                ["tiles"] = tiles,
+            };
+        }
+
+        /// <summary>CalculateOverallScore prefix during a submit: record its real arguments.</summary>
+        public static void OnScoringCall(List<Item> items, int gridNumber)
+        {
+            if (!_submitInFlight || _scoringCall != null)
+                return;
+            try
+            {
+                var order = new List<object>();
+                foreach (var item in items ?? new List<Item>())
+                {
+                    if (item == null)
+                        continue;
+                    order.Add(new Dictionary<string, object>
+                    {
+                        ["class"] = item.GetType().Name,
+                        ["id"] = RunStateExporter.Slugify(item.ArtFileName, item.Name),
+                    });
+                }
+                _scoringCall = new Dictionary<string, object>
+                {
+                    ["grid_number"] = gridNumber,
+                    ["items"] = order,
+                };
+                // Slots as scored: Capybara's RandomiseItemOrder shuffles them inside
+                // SubmitWord, after the pre-submit snapshot.
+                var player = GameStatics.GetPlayer();
+                if (player != null)
+                    _scoringCall["item_states"] = ItemStateExporter.BuildItemStates(player);
+            }
+            catch
+            {
+                // optional
+            }
+        }
+
+        public static Dictionary<string, object> BuildCaptureV2()
+        {
+            if (_preSubmitState == null && _submission == null)
+                return null;
+            return new Dictionary<string, object>
+            {
+                ["pre_submit"] = _preSubmitState,
+                ["submission"] = _submission,
+                ["scoring_call"] = _scoringCall,
+            };
         }
 
         public static void BeginPuzzleSubmit(List<TileSelection> selections)
@@ -1475,6 +1579,7 @@ namespace CursedWordsSolverCompanion
                     RunState = runState,
                     ScoringExtras = extras,
                     CaptureActive = _active,
+                    CaptureV2 = BuildCaptureV2(),
                 };
 
                 RoundLogExporter.EnsurePrefs();

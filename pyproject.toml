@@ -15,8 +15,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
-fast = ["marisa-trie>=1.2.0"]
-native = ["marisa-trie>=1.2.0", "datrie>=0.8.2"]
 
 [project.scripts]
 cursed-solver = "cursed_words_solver.app:main"
@@ -33,7 +31,6 @@ include = ["cursed_words_solver*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
-    "legacy_search: run WordSearcher with the legacy heuristic search (tests of its internals)",
     "slow: search performance benchmarks (excluded from default CI)",
 ]
 addopts = "-m 'not slow'"

@@ -12,7 +12,7 @@ import copy
 
 from datetime import datetime, timezone
 
-from typing import Any, Callable
+from typing import Any
 
 
 
@@ -30,7 +30,6 @@ from cursed_words_solver.fingerprints import (
 )
 
 from cursed_words_solver.models import (
-    CHESS_CURSES,
     CURRENCY_MAP,
     Board,
     CurseType,
@@ -40,22 +39,11 @@ from cursed_words_solver.models import (
 )
 
 from cursed_words_solver.rules.pipeline import ScoringPipeline
-from cursed_words_solver.rules.stamp_behaviors import (
-    SearchFlagsMask,
-    path_scattered_search_flags_mask,
-    stamp_search_flags,
-)
+from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
 
 from cursed_words_solver.rules.twinkle_toes import TwinkleToesSwap
 
-from cursed_words_solver.search import (
-    PathValidator,
-    path_movement_ok,
-    physical_word_for_path,
-    resolve_letter,
-    search_word_from_path,
-    word_assignable_on_path,
-)
+from cursed_words_solver.search import search_word_from_path
 from cursed_words_solver.ui.board_geometry import path_to_melmod_indices
 
 
@@ -72,73 +60,12 @@ def suggestion_path_movement_ok(
     board: Board,
     path: list[int],
     loadout: Loadout | None,
-    *,
-    flags: SearchFlagsMask = 0,
+    **_ignored: Any,
 ) -> bool:
-    """Game movement rules for a suggested path: engine port first, legacy fallback.
+    """Every step of a suggested path is a legal selection in the game."""
+    from cursed_words_solver.engine.solver import engine_path_movement_ok
 
-    The legacy neighbor rules miss some chess moves the game (and the engine
-    search that produced the suggestion) accept, which blocked valid F8 captures.
-    """
-    if loadout is not None:
-        from cursed_words_solver.engine.solver import engine_path_movement_ok
-
-        ok = engine_path_movement_ok(board, list(path), loadout)
-        if ok is not None:
-            return ok
-    return path_movement_ok(board, list(path), flags=flags, loadout=loadout)
-
-
-def _path_search_flags(board: Board, path: list[int], loadout: Loadout) -> SearchFlagsMask:
-    """Equipped stamp flags OR scattered stamp items picked up on ``path``."""
-    return path_scattered_search_flags_mask(
-        board, path, stamp_search_flags(loadout)
-    )
-
-
-def path_number_tiles_can_match_letters(
-    board: Board,
-    path: list[int],
-    flags: SearchFlagsMask,
-) -> bool:
-    """False when a NUMBER/fraction tile cannot act as a letter wildcard.
-
-    Game ``WordTrie`` uses ``GetStringRepresentation(forWordValidity=true)`` →
-    ``!`` for numbers; ``IsTileMatchingChar`` only accepts letters when
-    ``IsWildcard`` (Number Go Up ascending or position-locked) or rare stamp
-    remaps (Bunch of Grapes / Roman). Non-wildcard numbers cannot spell a
-    dictionary word — skip all-``?`` resolve scans.
-    """
-    from cursed_words_solver.rules.stamp_behaviors import (
-        FLAG_NUMBER_ROMAN_IVX,
-        coerce_search_flags,
-        flag_test,
-    )
-    from cursed_words_solver.search import (
-        _path_number_values,
-        fraction_position_valid,
-        is_numeric_wildcard,
-    )
-
-    mask = coerce_search_flags(flags)
-    vals = _path_number_values(board, path)
-    for i, idx in enumerate(path):
-        tile = board.get_by_index(idx)
-        if tile.curse == CurseType.FRACTION:
-            # Game IsNumericWildcard: numerator/denominator vs 1-based index.
-            if fraction_position_valid(tile, i, relaxed=False):
-                continue
-            return False
-        if tile.curse != CurseType.NUMBER:
-            continue
-        if is_numeric_wildcard(
-            tile, i, flags=mask, path_number_values=vals
-        ):
-            continue
-        if flag_test(mask, FLAG_NUMBER_ROMAN_IVX):
-            continue
-        return False
-    return True
+    return engine_path_movement_ok(board, list(path), loadout)
 
 
 def f8_export_catchup_grace_sec(search_budget_sec: float | None = None) -> float:
@@ -627,6 +554,9 @@ def scatter_level_below_equipped_warning(
     mismatches: list[str] = []
     for tile in board.flat:
         if tile is None or tile.curse != CurseType.ITEM:
+            continue
+        # Live item state captured (melmod 1.4+): exported level is exact.
+        if (tile.metadata or {}).get("scattered_item_state"):
             continue
         slug = slugify_name(
             str((tile.metadata or {}).get("scattered_item_id") or "").strip()
@@ -1580,294 +1510,25 @@ def format_result_score_display(
     return f"{score:,} pts"
 
 
-def _fixed_letters_align(scoring_word: str, candidate: str) -> bool:
-    """True when every alphabetic char in scoring_word matches the candidate."""
-    if len(scoring_word) != len(candidate):
-        return False
-    for a, b in zip(scoring_word, candidate, strict=True):
-        if a.isalpha() and a.lower() != b.lower():
-            return False
-    return True
-
-
-def _alignment_pattern_for_path(
-    board: Board,
-    path: list[int],
-    flags: SearchFlagsMask,
-) -> str:
-    """Wildcard pattern for dictionary resolve (face letters fixed; true wildcards '?').
-
-    Multi-option tiles fall into two classes:
-
-    - **Face-anchored** (Suspension Bridge ±1): ``resolve_letter`` is the face;
-      extras are only in ``resolve_letter_options``. Lock the face so pattern
-      scans stay narrow; DFS still explores ±1 via options.
-    - **Remapped** (Spicy Pepper red→s, Red Envelope red→e, Card Shark suit,
-      Jellyfish J→H/Y): the stamp substitute differs from (or replaces) the
-      face. Locking to ``resolve_letter`` alone rejects valid game words that
-      use the face (e.g. ``assessable``). Use '?' so resolve can pick either.
-    """
-    from cursed_words_solver.rules.stamp_behaviors import coerce_search_flags
-    from cursed_words_solver.search import resolve_letter_options
-
-    mask = coerce_search_flags(flags)
-    parts: list[str] = []
-    char_pos = 0
-    for idx in path:
-        tile = board.get_by_index(idx)
-        token = resolve_letter(tile, char_pos, flags=mask)
-        options = resolve_letter_options(tile, char_pos, flags=mask)
-        alpha_opts = [o for o in options if len(o) == 1 and o.isalpha()]
-        physical = (tile.letter or "").strip().lower()
-        token_l = token.lower() if len(token) == 1 and token.isalpha() else ""
-        if len(alpha_opts) > 1:
-            opt_set = {o.lower() for o in alpha_opts}
-            face_anchored = (
-                token_l
-                and token_l in opt_set
-                and len(physical) == 1
-                and physical.isalpha()
-                and token_l == physical
-            )
-            if face_anchored:
-                parts.append(token_l)
-            else:
-                parts.append("?")
-        elif token == "?":
-            parts.append("?")
-        elif token == "qu":
-            parts.append("?")
-        elif len(token) == 1 and token.isalpha():
-            parts.append(token.lower())
-        else:
-            parts.append("?")
-        char_pos += 2 if token == "qu" else max(1, len(token))
-    return "".join(parts)
-
-
-def _collect_dictionary_matches_for_path(
-    board: Board,
-    path: list[int],
-    pattern: str,
-    loadout: Loadout,
-    dictionary: WordDictionary,
-    *,
-    min_len: int = 3,
-    limit: int | None = None,
-    deadline_check: Callable[[], bool] | None = None,
-) -> list[str]:
-    """Dictionary spellings matching a path alignment pattern."""
-    flags = _path_search_flags(board, path, loadout)
-    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
-    if len(pattern) < min_len:
-        return []
-    valid: list[str] = []
-    for candidate in dictionary.enumerate_pattern_matches(
-        pattern,
-        limit=limit,
-        deadline_check=deadline_check,
-    ):
-        if not _fixed_letters_align(pattern, candidate):
-            continue
-        if not word_assignable_on_path(board, path, candidate, flags=flags):
-            continue
-        if not validator.word_ok(board, path, candidate, flags):
-            continue
-        valid.append(candidate)
-        if limit is not None and len(valid) >= limit:
-            break
-    return valid
-
-
-def dictionary_word_length_for_path(
-    board: Board, path: list[int], scoring_word: str
-) -> int:
-    """Dictionary word length for this path (one letter per tile on number boards)."""
-    from cursed_words_solver.rules.scoring_conditions import is_number_like_tile
-
-    word = scoring_word.lower()
-    if len(path) > 1 and any(
-        is_number_like_tile(board.get_by_index(i)) for i in path
-    ):
-        if not word.isalpha() or len(word) != len(path):
-            return len(path)
-    return len(word)
-
-
-def _candidate_aligns_scoring_word(
-    scoring_word: str, candidate: str, *, word_len: int
-) -> bool:
-    """True when candidate length matches resolve length and fixed letters align."""
-    if len(candidate) != word_len:
-        return False
-    if len(scoring_word) == word_len:
-        return _fixed_letters_align(scoring_word, candidate)
-    if scoring_word.isdigit():
-        return True
-    return False
-
-
-def path_needs_dictionary_resolve(
-    board: Board, path: list[int], search_word: str
-) -> bool:
-    """True when search_word must be resolved to a dictionary spelling for scoring."""
-    from cursed_words_solver.rules.scoring_conditions import is_number_like_tile
-
-    if "?" in search_word:
-        return True
-    has_number = False
-    for idx in path:
-        tile = board.get_by_index(idx)
-        if tile.curse == CurseType.ITEM or tile.curse in CHESS_CURSES:
-            return True
-        if is_number_like_tile(tile):
-            has_number = True
-    if not has_number:
-        return False
-    word = search_word.lower()
-    if len(word) != len(path):
-        return True
-    if len(path) > 1 and not word.isalpha():
-        return True
-    return False
-
-
-def path_tiles_need_dictionary_resolve(
-    board: Board,
-    path: list[int],
-    *,
-    flags: SearchFlagsMask = 0,
-) -> bool:
-    """True when path tiles require dictionary-resolve search (chess, fraction, etc.)."""
-    search_word = search_word_from_path(board, path, flags=flags)
-    return path_needs_dictionary_resolve(board, path, search_word)
-
-
-def path_requires_tile_dictionary_resolve(
-    board: Board,
-    path: list[int],
-    *,
-    flags: SearchFlagsMask = 0,
-) -> bool:
-    """True when tile types on the path need dictionary spelling resolve (not plain wildcards)."""
-    from cursed_words_solver.search import resolve_letter, resolve_letter_options
-
-    char_pos = 0
-    for idx in path:
-        tile = board.get_by_index(idx)
-        if tile.curse == CurseType.ITEM or tile.curse in CHESS_CURSES:
-            return True
-        if tile.curse == CurseType.FRACTION:
-            return True
-        options = resolve_letter_options(tile, char_pos, flags=flags)
-        alpha_opts = [o for o in options if len(o) == 1 and o.isalpha()]
-        if len(alpha_opts) > 1:
-            return True
-        token = resolve_letter(tile, char_pos, flags=flags)
-        char_pos += 2 if token == "qu" else max(1, len(token))
-    return False
-
-
-def _validator_for_loadout(
-    dictionary: WordDictionary,
-    loadout: Loadout,
-    *,
-    min_len: int = 3,
-) -> PathValidator:
-    validator = PathValidator(dictionary, min_len=min_len)
-    validator.quest_loadout = loadout
-    return validator
-
-
-def _physical_letter_overlap(board: Board, path: list[int], candidate: str) -> int:
-    """Count positions where candidate matches the tile's physical letter."""
-    score = 0
-    for i, idx in enumerate(path):
-        if i >= len(candidate):
-            break
-        tile = board.get_by_index(idx)
-        ph = (tile.letter or tile.char or "").strip().lower()
-        if len(ph) == 1 and ph.isalpha() and ph == candidate[i]:
-            score += 1
-    return score
-
-
-def _pick_best_dictionary_word(
-    board: Board,
-    path: list[int],
-    valid: list[str],
-    loadout: Loadout,
-    *,
-    pipeline: ScoringPipeline | None = None,
-) -> str:
-    """Choose best dictionary spelling from assignable candidates on this path."""
-    pool = valid
-    if pipeline is not None and loadout is not None:
-        if len(pool) > 64:
-            pool = sorted(
-                pool,
-                key=lambda c: -_physical_letter_overlap(board, path, c),
-            )[:64]
-
-        scored = [
-            (c, pipeline.score_total_only(board, path, c, loadout)) for c in pool
-        ]
-        best_score = max(sc for _, sc in scored)
-        top = [c for c, sc in scored if sc >= best_score - 1e-6]
-        myrrh_family = [c for c in top if "myrrh" in c]
-        pick_from = myrrh_family or top
-        best_overlap = max(
-            _physical_letter_overlap(board, path, c) for c in pick_from
-        )
-        tied = [
-            c
-            for c in pick_from
-            if _physical_letter_overlap(board, path, c) >= best_overlap
-        ]
-        return min(tied)
-
-    return max(pool, key=lambda c: (_physical_letter_overlap(board, path, c), c))
-
-
 def dictionary_word_for_path(
     board: Board,
     path: list[int],
     scoring_word: str,
-    loadout: Loadout,
+    loadout: Loadout | None,
     dictionary: WordDictionary,
     *,
-    min_len: int = 3,
-    pipeline: ScoringPipeline | None = None,
-    deadline_check: Callable[[], bool] | None = None,
+    min_len: int = 1,
+    **_ignored: Any,
 ) -> str | None:
-    """Best-effort dictionary spelling the game accepts on this path (vs scoring form)."""
-    word = scoring_word.lower()
-    flags = _path_search_flags(board, path, loadout)
-    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
+    """The word the game submits for ``path`` (None if the game rejects the path).
 
-    if word.isalpha() and validator.word_ok(board, path, word, flags):
-        return word
+    ``scoring_word`` is unused: the engine derives the spelling the game's
+    ``Vocabulary`` picks from the tiles, items and accumulator words.
+    """
+    from cursed_words_solver.engine.solver import engine_valid_word
 
-    if not path_number_tiles_can_match_letters(board, path, flags):
-        return None
-
-    pattern = _alignment_pattern_for_path(board, path, flags)
-    valid = _collect_dictionary_matches_for_path(
-        board,
-        path,
-        pattern,
-        loadout,
-        dictionary,
-        min_len=min_len,
-        deadline_check=deadline_check,
-    )
-
-    if not valid:
-        return None
-
-    return _pick_best_dictionary_word(
-        board, path, valid, loadout, pipeline=pipeline
-    )
+    del scoring_word
+    return engine_valid_word(board, list(path), loadout, dictionary, min_len=min_len)
 
 
 def loadout_needs_encounter_historic(loadout: Loadout | None, board: Board | None) -> bool:
@@ -2277,260 +1938,59 @@ def f8_path_uses_crossed_out_tiles(
         return False
 
 
-def _trace_word_for_path(
-    board: Board,
-    path: list[int],
-    *,
-    flags: int = 0,
-) -> str:
-    """Word from tile face chars as resolved when tracing the path in-game."""
-    parts: list[str] = []
-    char_pos = 0
-    for idx in path:
-        tile = board.get_by_index(idx)
-        if tile.curse == CurseType.ITEM:
-            ch = (tile.letter or tile.char or "?").strip().lower()[:1]
-            parts.append(ch if ch.isalpha() else "?")
-            char_pos += 1
-        elif tile.curse in CHESS_CURSES:
-            ch = (tile.char or "").strip().lower()
-            parts.append(ch if len(ch) == 1 and ch.isalpha() else "?")
-        else:
-            token = resolve_letter(tile, char_pos, flags=flags).lower()
-            parts.append(token)
-            char_pos += len(token)
-    return "".join(parts)
-
-
-def _valid_dictionary_words_for_path(
-    board: Board,
-    path: list[int],
-    scoring_word: str,
-    loadout: Loadout,
-    dictionary: WordDictionary,
-    *,
-    min_len: int = 3,
-    limit: int | None = None,
-    deadline_check: Callable[[], bool] | None = None,
-) -> list[str]:
-    flags = _path_search_flags(board, path, loadout)
-    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
-    lowered = scoring_word.lower()
-    if (
-        lowered.isalpha()
-        and len(lowered) >= min_len
-        and validator.word_ok(board, path, lowered, flags)
-    ):
-        out = [lowered]
-        return out[:limit] if limit is not None else out
-    if not path_number_tiles_can_match_letters(board, path, flags):
-        return []
-    phys = physical_word_for_path(board, path, flags=flags)
-    if (
-        phys.isalpha()
-        and len(phys) >= min_len
-        and validator.word_ok(board, path, phys, flags)
-    ):
-        out = [phys.lower()]
-        return out[:limit] if limit is not None else out
-    pattern = _alignment_pattern_for_path(board, path, flags)
-    # Scan enough pattern hits to prefer physical-letter overlap (freeride over
-    # credenda) without walking the entire dictionary on every DFS extension.
-    scan_limit = None if limit is None else max(2000, limit * 128)
-    matches = _collect_dictionary_matches_for_path(
-        board,
-        path,
-        pattern,
-        loadout,
-        dictionary,
-        min_len=min_len,
-        limit=scan_limit,
-        deadline_check=deadline_check,
-    )
-    if not matches:
-        return []
-    matches.sort(
-        key=lambda c: (-_physical_letter_overlap(board, path, c), c)
-    )
-    return matches[:limit] if limit is not None else matches
-
-
 def path_is_submittable(
     board: Board,
     path: list[int],
     scoring_word: str,
-    loadout: Loadout,
+    loadout: Loadout | None,
     dictionary: WordDictionary,
     *,
-    min_len: int = 3,
-    pipeline: ScoringPipeline | None = None,
-    deadline_check: Callable[[], bool] | None = None,
+    min_len: int = 1,
+    **_ignored: Any,
 ) -> bool:
-    """True when the game accepts a dictionary word on this path."""
-    flags = _path_search_flags(board, path, loadout)
-    if not path_movement_ok(board, path, flags=flags, loadout=loadout):
-        return False
-    lowered = scoring_word.lower()
-    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
-    # Digit-face concatenations are never the submitted spelling (Vocabulary is
-    # letters only). A path may still be playable via resolve — callers that only
-    # have digit faces should resolve first, then call this with the letter word.
-    if lowered and not lowered.isalpha() and "?" not in lowered:
-        return False
-    if lowered.isalpha() and validator.word_ok(board, path, lowered, flags):
-        return True
-    if "?" in lowered:
-        if not path_number_tiles_can_match_letters(board, path, flags):
-            return False
-        return bool(
-            _valid_dictionary_words_for_path(
-                board,
-                path,
-                lowered,
-                loadout,
-                dictionary,
-                min_len=min_len,
-                limit=1,
-                deadline_check=deadline_check,
-            )
-        )
-    if not path_number_tiles_can_match_letters(board, path, flags):
-        return False
-    resolved = dictionary_word_for_path(
-        board,
-        path,
-        lowered,
-        loadout,
-        dictionary,
-        min_len=min_len,
-        pipeline=pipeline,
-        deadline_check=deadline_check,
-    )
-    return resolved is not None and resolved.isalpha()
-
-
-def suggestion_path_submittable(
-    board: Board,
-    path: list[int],
-    scoring_word: str,
-    loadout: Loadout,
-    dictionary: WordDictionary,
-    *,
-    min_len: int = 3,
-    pipeline: ScoringPipeline | None = None,
-) -> bool:
-    """``path_is_submittable`` for one F8 suggestion: engine port first, legacy fallback.
-
-    Not for search loops (builds an engine plan per call).
-    """
+    """True when the game accepts a word on this path (movement, rules, vocabulary)."""
     from cursed_words_solver.engine.solver import engine_path_submittable
 
-    ok = engine_path_submittable(board, list(path), loadout, dictionary, min_len=min_len)
-    if ok is not None:
-        return ok
-    return path_is_submittable(
-        board, list(path), scoring_word, loadout, dictionary, min_len=min_len, pipeline=pipeline
-    )
+    del scoring_word
+    return engine_path_submittable(board, list(path), loadout, dictionary, min_len=min_len)
 
 
-def _exact_engine_validated(result: WordResult) -> bool:
-    """Exact-engine hits were already checked with the game's own movement and
-    GetValidWordFromTiles rules; the legacy validator disagrees on chess /
-    wildcard-dense boards, so it must not veto them."""
-    bd = result.breakdown or {}
-    return bd.get("engine") == "exact" and bd.get("source") != "legacy_search"
+suggestion_path_submittable = path_is_submittable
 
 
 def filter_submittable_results(
     board: Board,
     results: list[WordResult],
-    loadout: Loadout,
+    loadout: Loadout | None,
     dictionary: WordDictionary | None,
     *,
-    min_len: int = 3,
-    pipeline: ScoringPipeline | None = None,
-    deadline_check: Callable[[], bool] | None = None,
+    min_len: int = 1,
+    **_ignored: Any,
 ) -> list[WordResult]:
-    """Drop search hits the game cannot submit as a dictionary word."""
+    """Drop results the game cannot submit (e.g. found on a different board variant)."""
     if not results or dictionary is None:
         return results
-    return [
-        r
-        for r in results
-        if _exact_engine_validated(r)
-        or path_is_submittable(
-            board,
-            r.path,
-            r.word,
-            loadout,
-            dictionary,
-            min_len=min_len,
-            pipeline=pipeline,
-            deadline_check=deadline_check,
-        )
-    ]
+    return [r for r in results if path_is_submittable(board, r.path, r.word, loadout, dictionary, min_len=min_len)]
 
 
 def game_word_for_path(
     board: Board,
     path: list[int],
     scoring_word: str,
-    loadout: Loadout,
+    loadout: Loadout | None,
     dictionary: WordDictionary | None,
     *,
-    min_len: int = 3,
-    pipeline: ScoringPipeline | None = None,
+    min_len: int = 1,
+    **_ignored: Any,
 ) -> str:
-    """Dictionary word the game submits when tracing this path (not max-score search pick)."""
+    """Word the game submits when tracing this path (``scoring_word`` if it rejects it)."""
     lowered = scoring_word.lower()
     if dictionary is None:
         return lowered
-    flags = _path_search_flags(board, path, loadout)
-    validator = _validator_for_loadout(dictionary, loadout, min_len=min_len)
-    if lowered.isalpha() and validator.word_ok(board, path, lowered, flags):
-        return lowered
-
-    trace = _trace_word_for_path(board, path, flags=flags)
-    if trace.isalpha() and validator.word_ok(board, path, trace, flags):
-        return trace
-
-    resolved = dictionary_word_for_path(
-        board,
-        path,
-        lowered,
-        loadout,
-        dictionary,
-        min_len=min_len,
-        pipeline=pipeline,
-    )
-    return resolved if resolved else lowered
+    return dictionary_word_for_path(board, path, lowered, loadout, dictionary, min_len=min_len) or lowered
 
 
-def effective_scoring_word(
-    board: Board,
-    path: list[int],
-    word: str,
-    loadout: Loadout,
-    dictionary: WordDictionary | None,
-    *,
-    min_len: int = 3,
-    pipeline: ScoringPipeline | None = None,
-) -> str:
-    """Spelling used for scoring: game-submit word on this path."""
-    lowered = word.lower()
-    if dictionary is None:
-        return lowered
-    return game_word_for_path(
-        board,
-        path,
-        lowered,
-        loadout,
-        dictionary,
-        min_len=min_len,
-        pipeline=pipeline,
-    )
-
-
+effective_scoring_word = game_word_for_path
 
 
 def save_last_suggestion(
@@ -2607,9 +2067,7 @@ def save_last_suggestion(
 
     if scoring_word is None:
         scoring_word = result.word
-        phys_word = physical_word_for_path(
-            board, result.path, flags=stamp_search_flags(loadout)
-        )
+        phys_word = search_word_from_path(board, result.path, loadout=loadout)
         if phys_word != scoring_word.lower():
             scoring_word = phys_word
 

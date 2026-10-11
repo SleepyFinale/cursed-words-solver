@@ -172,6 +172,8 @@ def test_guessed_words_from_storage_path_export() -> None:
     board = _foyers_board()
 
     class _FakeDictionary:
+        words = ["foyer", "foyers"]
+
         def contains(self, word: str) -> bool:
             return word.lower() in {"foyers", "foyer"}
 
@@ -190,6 +192,8 @@ def test_guessed_words_includes_foyers_from_live_shaped_guess() -> None:
     board = _foyers_board()
 
     class _FakeDictionary:
+        words = ["foyer", "foyers"]
+
         def contains(self, word: str) -> bool:
             return word.lower() in {"foyers", "foyer"}
 
@@ -206,6 +210,7 @@ def test_guessed_words_includes_foyers_from_live_shaped_guess() -> None:
 class _FakeDictionary:
     def __init__(self, words: set[str]) -> None:
         self._words = {w.lower() for w in words}
+        self.words = sorted(self._words)
 
     def contains(self, word: str) -> bool:
         return word.lower() in self._words

@@ -90,6 +90,34 @@ class CsrTrie:
 
 
 _MEMO: dict[str, CsrTrie] = {}
+_MEMO_SIZE = 4
+# Small word lists build in milliseconds; only real dictionaries are cached on disk.
+_DISK_CACHE_MIN_WORDS = 20_000
+# Cached tries kept on disk (newest first); older dictionaries are pruned.
+_DISK_CACHE_KEEP = 3
+
+
+def _remember(digest: str, trie: CsrTrie) -> CsrTrie:
+    _MEMO.pop(digest, None)
+    _MEMO[digest] = trie
+    while len(_MEMO) > _MEMO_SIZE:
+        _MEMO.pop(next(iter(_MEMO)))
+    return trie
+
+
+def _prune_disk_cache(cache_dir: Path, keep: Path) -> None:
+    """Drop stale trie pickles (old cache versions, superseded word lists)."""
+    try:
+        files = sorted(cache_dir.glob("engine_trie_v*.pkl"), key=lambda f: f.stat().st_mtime, reverse=True)
+    except OSError:
+        return
+    current = [f for f in files if f.name.startswith(f"engine_trie_v{_CACHE_VERSION}_")]
+    stale = [f for f in files if f not in current] + [f for f in current[_DISK_CACHE_KEEP:] if f != keep]
+    for f in stale:
+        try:
+            f.unlink()
+        except OSError:
+            pass
 
 
 def load_trie(words, cache_dir: Path | None = None) -> CsrTrie:
@@ -97,22 +125,22 @@ def load_trie(words, cache_dir: Path | None = None) -> CsrTrie:
     word_list = sorted(words)
     digest = hashlib.sha1("\n".join(word_list).encode("utf-8")).hexdigest()[:16]
     if digest in _MEMO:
-        return _MEMO[digest]
+        return _remember(digest, _MEMO[digest])
     path = None
-    if cache_dir is not None:
+    if cache_dir is not None and len(word_list) >= _DISK_CACHE_MIN_WORDS:
         path = cache_dir / f"engine_trie_v{_CACHE_VERSION}_{digest}.pkl"
         if path.exists():
             try:
                 trie = pickle.loads(path.read_bytes())
-                _MEMO[digest] = trie
-                return trie
+                path.touch()
+                return _remember(digest, trie)
             except Exception:  # noqa: BLE001 - rebuild on any cache problem
                 pass
     trie = CsrTrie.from_words(word_list)
     if path is not None:
         try:
             path.write_bytes(pickle.dumps(trie, protocol=pickle.HIGHEST_PROTOCOL))
+            _prune_disk_cache(path.parent, path)
         except OSError:
             pass
-    _MEMO[digest] = trie
-    return trie
+    return _remember(digest, trie)

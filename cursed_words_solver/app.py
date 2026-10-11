@@ -301,10 +301,6 @@ class SolverApp:
                 min_len=1,
                 max_len=25,
                 time_budget=self.config.search_time_budget_sec,
-                setup_weight=self.config.setup_weight,
-                setup_discount=self.config.setup_discount,
-                mult_search_weight=self.config.mult_search_weight,
-                mult_search_passes=self.config.mult_search_passes,
                 search_workers=workers,
                 wordlist_path=wl_path,
             )
@@ -388,6 +384,11 @@ class SolverApp:
         )
 
     def run(self) -> int:
+        from cursed_words_solver.config import remove_legacy_caches
+
+        removed = remove_legacy_caches()
+        if removed:
+            print(f"Removed {removed} unused legacy search cache file(s).", flush=True)
         if self._needs_manual_calibration():
             QMessageBox.information(
                 None,
@@ -1346,10 +1347,6 @@ class SolverApp:
                             "neapolitan_percent.",
                             flush=True,
                         )
-            self._searcher.setup_weight = self.config.setup_weight
-            self._searcher.setup_discount = self.config.setup_discount
-            self._searcher.mult_search_weight = self.config.mult_search_weight
-            self._searcher.mult_search_passes = self.config.mult_search_passes
             scoring, total, grid_only, unmapped = self._scoring.loadout_mapping_summary(
                 loadout
             )
@@ -1442,7 +1439,8 @@ class SolverApp:
                 self._scoring.rules,
                 default_max_len=board_max_len,
             )
-            effective_min = max(constraints.min_len, 3)
+            # Vocabulary.IsWordLengthValid: 1 unless a boss / quest raises it.
+            effective_min = max(constraints.min_len, 1)
             effective_max = min(board_max_len, constraints.max_len)
             if effective_max < effective_min:
                 effective_max = effective_min
@@ -1489,10 +1487,6 @@ class SolverApp:
                         flush=True,
                     )
                     return
-            michael_finale_guaranteed = (
-                michael_finale_active(loadout, default_max_len=board_max_len)
-                and effective_min == effective_max == board_max_len
-            )
             rules = self._scoring.rules
             rack_placement_pending = (
                 not sandy_auto_place
@@ -1742,61 +1736,6 @@ class SolverApp:
                             "placements.",
                             flush=True,
                         )
-
-            if not results and michael_finale_guaranteed:
-                print(
-                    f"  Michael finale: no word in {search_budget:.0f}s "
-                    "— continuing until solution found…",
-                    flush=True,
-                )
-                print(
-                    "  Do not submit yet — search is still running.",
-                    flush=True,
-                )
-                search_call_mono = time.monotonic()
-                completion_start = time.monotonic()
-                completion_results: list = []
-                completion_error: list[BaseException] = []
-
-                def _finale_completion_search() -> None:
-                    try:
-                        completion_results.extend(
-                            self._searcher.find_best_words(
-                                search_board,
-                                loadout=loadout,
-                                top_n=self.config.top_n_results,
-                                run_until_found=True,
-                                cancel_check=cancel_check,
-                            )
-                        )
-                    except BaseException as exc:
-                        completion_error.append(exc)
-
-                completion_thread = threading.Thread(
-                    target=_finale_completion_search,
-                    daemon=True,
-                )
-                completion_thread.start()
-                last_progress = completion_start
-                while completion_thread.is_alive():
-                    completion_thread.join(timeout=5.0)
-                    now = time.monotonic()
-                    if now - last_progress >= 20.0:
-                        print(
-                            f"  Michael finale: still searching… "
-                            f"({now - completion_start:.0f}s elapsed)",
-                            flush=True,
-                        )
-                        last_progress = now
-                if completion_error:
-                    raise completion_error[0]
-                if completion_results:
-                    results = completion_results
-                    print(
-                        f"  Found in {time.monotonic() - completion_start:.1f}s "
-                        "additional search",
-                        flush=True,
-                    )
 
             baseline_score = results[0].score if results else 0.0
             baseline_rank = (
@@ -2079,7 +2018,6 @@ class SolverApp:
                     loadout,
                     self._dictionary,
                     min_len=effective_min,
-                    deadline_check=_post_deadline_reached,
                 )
             post_search_sec = time.monotonic() - search_end_mono
             pre_search_sec = search_call_mono - search_started
@@ -2091,30 +2029,6 @@ class SolverApp:
                 )
             timing = self._searcher.last_search_timing
             if timing is not None:
-                pool_note = (
-                    f", pool init {timing.pool_init_sec:.1f}s"
-                    if timing.pool_init_sec > 0.05
-                    else ""
-                )
-                total_score = timing.score_sec + timing.final_score_sec
-                score_pct = (
-                    f"{100.0 * total_score / timing.wall_sec:.0f}%"
-                    if timing.wall_sec > 0
-                    else "n/a"
-                )
-                worker_note = ""
-                if timing.parallel_workers > 1:
-                    worker_note = (
-                        f", {timing.score_calls} parent pipeline calls "
-                        "(worker scoring not counted)"
-                    )
-                else:
-                    worker_note = f", {timing.score_calls} pipeline calls"
-                fallback_note = (
-                    " (serial fallback after parallel)"
-                    if timing.parallel_serial_fallback
-                    else ""
-                )
                 placement_parts: list[str] = []
                 if placement_gen_sec > 0.001:
                     placement_parts.append(f"gen {placement_gen_sec:.1f}s")
@@ -2123,54 +2037,11 @@ class SolverApp:
                 if placement_refine_sec > 0.001:
                     placement_parts.append(f"refine {placement_refine_sec:.1f}s")
                 variant_note = (
-                    f"placement {', '.join(placement_parts)}, "
+                    f"placement {', '.join(placement_parts)}; "
                     if placement_parts
                     else ""
                 )
-                if timing.reserve_scaling_applied and timing.main_dfs_slice_sec > 0:
-                    pool_note += f", main DFS {timing.main_dfs_slice_sec:.1f}s"
-                overrun_note = ""
-                if timing.refine_overrun_sec > 0.05:
-                    overrun_note = (
-                        f", refine overrun +{timing.refine_overrun_sec:.1f}s"
-                        f" ({timing.refine_overrun_deferred} deferred)"
-                    )
-                over_budget = search_elapsed > search_budget + 0.5
-                extra_timing = ""
-                if over_budget and (
-                    timing.refine_sec > 0.05
-                    or timing.seed_sec > 0.05
-                    or timing.tier2_phase2_deferred > 0
-                    or timing.refine_overrun_sec > 0.05
-                ):
-                    extra_timing = (
-                        f", refine {timing.refine_sec:.1f}s"
-                        f", seed {timing.seed_sec:.1f}s"
-                    )
-                    if (
-                        timing.tier2_phase2_deferred > 0
-                        and timing.refine_sec > search_budget * 0.25
-                    ):
-                        extra_timing += (
-                            f" (tier-2 deferred "
-                            f"{timing.tier2_phase2_deferred}, "
-                            f"refined {timing.tier2_phase2_calls})"
-                        )
-                print(
-                    f"  Timing: {variant_note}"
-                    f"dfs {timing.dfs_sec:.1f}s{fallback_note}, "
-                    f"extend {timing.extend_sec:.1f}s, "
-                    f"chess {timing.chess_sec:.1f}s, score {total_score:.1f}s"
-                    f"{extra_timing}{overrun_note} "
-                    f"({score_pct} of {timing.wall_sec:.1f}s{worker_note}{pool_note})",
-                    flush=True,
-                )
-                from cursed_words_solver.search_parallel import (
-                    drain_parallel_worker_errors,
-                )
-
-                for err in drain_parallel_worker_errors():
-                    print(f"  Parallel worker error: {err}", flush=True)
+                print(f"  Timing: {variant_note}{timing.summary()}", flush=True)
 
             pred_trace: list | None = None
             export_warnings: list[str] = []
@@ -2617,20 +2488,6 @@ class SolverApp:
                     f"Done in {search_elapsed:.1f}s. No valid words found.",
                     flush=True,
                 )
-                if timing is not None and timing.number_board_empty_diag:
-                    caps_note = (
-                        f"caps={list(timing.dfs_caps)}"
-                        if timing.dfs_caps
-                        else "caps=?"
-                    )
-                    print(
-                        f"  Number-board empty diag: {caps_note}, "
-                        f"letter_dfs_added={timing.letter_dfs_added}, "
-                        f"trie_prunes={timing.trie_prunes}, "
-                        f"number_position_prunes={timing.number_position_prunes}, "
-                        f"serial_fallback={timing.parallel_serial_fallback}",
-                        flush=True,
-                    )
 
             warnings = self._overlay_warnings(board, unmapped, loadout=loadout)
             if results and encounter_mode_from_run_state(run_state_data) == "encounter":

@@ -20,11 +20,7 @@ from cursed_words_solver.rules.ram_memory import (
     should_skip_ram_scoring,
 )
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-from cursed_words_solver.search import (
-    WordSearcher,
-    neighbors_standard,
-    resolve_letter,
-)
+from cursed_words_solver.search import WordSearcher
 
 
 def _tile(row: int, col: int, ch: str, score: int = 1, **kwargs) -> Tile:
@@ -82,18 +78,6 @@ def test_ram_mixed_memory_merges_flags():
     flags = stamp_search_flags(loadout)
     assert flags.horizontal_wrap is True
     assert flags.q_as_qu is True
-
-
-def test_hungry_snake_ram_horizontal_wrap_neighbors():
-    grid = [[_tile(r, c, "X", 1) for c in range(5)] for r in range(5)]
-    grid[0][0] = _tile(0, 0, "A", 1)
-    board = Board(tiles=grid)
-    loadout = _ram_loadout(
-        {"id": "hungry_snake", "name": "Hungry Snake", "kind": "stamp", "level": 1},
-    )
-    flags = stamp_search_flags(loadout)
-    nbrs = neighbors_standard(board, [0], {0}, flags=flags)
-    assert 4 in nbrs
 
 
 def test_hungry_snake_ram_no_scoring_replay():
@@ -255,15 +239,6 @@ def test_hungry_snake_ram_finds_wrapped_word(tmp_path):
     searcher = WordSearcher(dictionary=d, min_len=3, max_len=5, time_budget=3.0)
     results = searcher.find_best_words(board, loadout, top_n=5)
     assert any(r.word == "arc" for r in results)
-
-
-def test_red_envelope_ram_resolve():
-    tile = _tile(0, 0, "X", 1, color=TileColor.RED)
-    loadout = _ram_loadout(
-        {"id": "red_envelope", "name": "Red Envelope", "kind": "stamp", "level": 1},
-    )
-    flags = stamp_search_flags(loadout)
-    assert resolve_letter(tile, 0, flags=flags) == "e"
 
 
 def test_pin_memory_entries_parsed():

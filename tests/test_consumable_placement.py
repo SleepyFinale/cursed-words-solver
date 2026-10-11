@@ -65,7 +65,7 @@ from cursed_words_solver.rules.scoring_conditions import (
     tile_ninja_multiplier_bonus,
 )
 from cursed_words_solver.search import WordSearcher
-from tests.test_search import _tile
+from tests.helpers.boards import letter_tile as _tile
 
 
 def _sandy_loadout_with_rack() -> Loadout:

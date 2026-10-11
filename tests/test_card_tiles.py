@@ -10,7 +10,6 @@ from cursed_words_solver.rules.scoring_conditions import (
     is_joker_tile,
     suited_cards_on_path_count,
 )
-from cursed_words_solver.search import _is_wildcard_tile
 from cursed_words_solver.rules.card_overlay import detect_card_overlay as _detect_card_overlay
 
 
@@ -130,45 +129,6 @@ def test_parse_board_number_with_suit_keeps_number_curse():
     assert tile.number_value == 4
     assert tile.metadata.get("card_suit") == "spades"
     assert is_card_tile(tile)
-
-
-def test_parse_board_is_joker_metadata():
-    data = {
-        "board": {
-            "source": "melmod",
-            "row_order": "top_first",
-            "tiles": [
-                {
-                    "row": 0,
-                    "col": 0,
-                    "char": "?",
-                    "letter": "?",
-                    "base_score": 0,
-                    "curse": "wildcard",
-                    "is_joker": True,
-                },
-            ]
-            + [
-                {
-                    "row": r,
-                    "col": c,
-                    "char": "X",
-                    "letter": "X",
-                    "curse": "letter",
-                }
-                for r in range(5)
-                for c in range(5)
-                if not (r == 0 and c == 0)
-            ],
-        }
-    }
-    board = parse_board_from_run_state(data)
-    assert board is not None
-    tile = board.get(0, 0)
-    assert tile is not None
-    assert is_joker_tile(tile)
-    assert not is_card_tile(tile)
-    assert _is_wildcard_tile(tile)
 
 
 def test_joker_plus_rank_makes_pair():

@@ -88,39 +88,3 @@ def test_build_solve_context_grid_tile_multiply_first_flag():
     rules = ScoringPipeline().rules
     ctx = build_solve_context(loadout, rules)
     assert ctx.grid_tile_multiply_first is True
-
-
-@pytest.mark.legacy_search  # asserts legacy-search internals
-def test_solve_context_precompute_called_once_per_find_best_words(tmp_path):
-    wl = _make_wordlist(tmp_path)
-    d = WordDictionary(wl)
-    board = _board_cat_horizontal()
-    loadout = Loadout(
-        stickers=[LoadoutItem(id="bone", name="Bone", level=1, kind="sticker")]
-    )
-    searcher = WordSearcher(
-        dictionary=d,
-        min_len=3,
-        max_len=6,
-        time_budget=1.0,
-        search_workers=1,
-    )
-    with (
-        patch(
-            "cursed_words_solver.solve_context.stamp_search_flags_mask",
-            wraps=stamp_search_flags_mask,
-        ) as mock_flags,
-        patch(
-            "cursed_words_solver.solve_context.hourglass_reverses_order",
-            wraps=hourglass_reverses_order,
-        ) as mock_hourglass,
-        patch(
-            "cursed_words_solver.solve_context.shield_blue_base_from_loadout",
-            wraps=shield_blue_base_from_loadout,
-        ) as mock_shield,
-    ):
-        results = searcher.find_best_words(board, loadout, top_n=1)
-    assert results
-    assert mock_flags.call_count == 1
-    assert mock_hourglass.call_count == 1
-    assert mock_shield.call_count == 1

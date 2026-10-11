@@ -76,7 +76,6 @@ def test_sandy_rack_consumable_boost_can_place_currency_tile():
         min_len=3,
         max_len=15,
         time_budget=4.0,
-        setup_weight=0.4,
     )
     baseline = searcher.find_best_words(board, loadout=loadout, top_n=1)
     assert baseline
@@ -129,7 +128,6 @@ def test_grid11_consumable_boost_beats_plain_sequoia():
         min_len=3,
         max_len=25,
         time_budget=10.0,
-        setup_weight=0.4,
         search_workers=1,
     )
     baseline = searcher.find_best_words(board, loadout=loadout, top_n=1)
@@ -182,7 +180,6 @@ def test_bones_lab_coat_consumable_search_no_crash():
         min_len=3,
         max_len=25,
         time_budget=8.0,
-        setup_weight=0.4,
         search_workers=1,
     )
     baseline = searcher.find_best_words(board, loadout=loadout, top_n=1)

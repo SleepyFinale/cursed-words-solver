@@ -24,7 +24,7 @@ from cursed_words_solver.models import (
 )
 from cursed_words_solver.rules.base_scoring import tile_base_contribution
 from cursed_words_solver.rules.grid_effects import _clone_board
-from cursed_words_solver.rules.rule_lookup import get_pin_scoring_rule, resolve_rule_id
+from cursed_words_solver.rules.rule_lookup import get_pin_scoring_rule, resolve_rule_id, rules_catalog
 from cursed_words_solver.rules.scoring_conditions import (
     mahjong_consumable_factor,
     placed_consumable_indices,
@@ -35,11 +35,7 @@ from cursed_words_solver.rules.fraction_tiles import (
     format_fraction_text,
     format_fraction_tile,
 )
-from cursed_words_solver.search import (
-    WordSearcher,
-    _paths_between_indices,
-    neighbors_from_tile,
-)
+from cursed_words_solver.search import WordSearcher, neighbors_from_tile, paths_between
 
 _ENDPOINT_PATH_MAX_LEN = 10
 _ENDPOINT_PAIR_MIN = 8
@@ -778,9 +774,9 @@ def _cells_have_path_between(board: Board, start: int, end: int) -> bool:
     if start == end:
         return False
     cap = _ENDPOINT_PATH_MAX_LEN
-    if _paths_between_indices(board, start, end, cap, path_cap=1):
+    if paths_between(board, start, end, cap, limit=1):
         return True
-    return bool(_paths_between_indices(board, end, start, cap, path_cap=1))
+    return bool(paths_between(board, end, start, cap, limit=1))
 
 
 def _screened_entry_rank(
@@ -1485,7 +1481,6 @@ def _screen_placement_variants(
     try:
         if use_serial:
             searcher.search_workers = 1
-        searcher._placement_screen_pass = use_serial
         searcher.time_budget = per_screen
         for placements in variants:
             variants_screened += 1
@@ -1536,7 +1531,6 @@ def _screen_placement_variants(
     finally:
         searcher.time_budget = prev_budget
         searcher.search_workers = prev_workers
-        searcher._placement_screen_pass = False
         searcher.validator.required_consumable_indices = base_required
     return screened, variants_screened, tier_qualifying
 
@@ -1579,7 +1573,7 @@ def _run_placement_search(
         variants,
         max_screen=screen_limit,
         loadout=loadout,
-        rules=searcher.scoring.rules,
+        rules=rules_catalog(),
     )
     per_screen = _placement_per_screen(
         screen_share,

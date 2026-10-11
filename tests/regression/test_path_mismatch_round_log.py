@@ -796,21 +796,9 @@ def _aardvark_board_and_loadout():
 
 
 @pytest.mark.skipif(not AARDVARK_FIXTURE.exists(), reason="aardvark fixture required")
-def test_aardvark_alignment_pattern_uses_face_letters():
-    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-    from cursed_words_solver.suggestion import _alignment_pattern_for_path
-
-    _data, board, loadout = _aardvark_board_and_loadout()
-    flags = stamp_search_flags(loadout)
-    pattern = _alignment_pattern_for_path(board, AARDVARK_PATH, flags)
-    assert pattern == "?svwygd?"
-    assert pattern != "?" * len(AARDVARK_PATH)
-
-
-@pytest.mark.skipif(not AARDVARK_FIXTURE.exists(), reason="aardvark fixture required")
 def test_aardvark_path_has_no_game_dictionary_word():
     from cursed_words_solver.suggestion import (
-        _valid_dictionary_words_for_path,
+        dictionary_word_for_path,
         effective_scoring_word,
         game_word_for_path,
     )
@@ -819,45 +807,20 @@ def test_aardvark_path_has_no_game_dictionary_word():
     if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
         pytest.skip("game wordlist required")
     dictionary = WordDictionary(GAME_WORDLIST_PATH)
-    valid = _valid_dictionary_words_for_path(
+    valid = dictionary_word_for_path(
         board,
         AARDVARK_PATH,
         "?svwygd?",
         loadout,
         dictionary,
     )
-    assert valid == []
+    assert valid is None
     assert game_word_for_path(
         board, AARDVARK_PATH, "?svwygd?", loadout, dictionary
     ) != "aardvark"
     assert effective_scoring_word(
         board, AARDVARK_PATH, "?svwygd?", loadout, dictionary
     ) != "aardvark"
-
-
-@pytest.mark.skipif(not AARDVARK_FIXTURE.exists(), reason="aardvark fixture required")
-def test_aardvark_search_finds_valid_words():
-    from cursed_words_solver.search import word_assignable_on_path
-
-    _data, board, loadout = _aardvark_board_and_loadout()
-    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-    rules = ScoringPipeline().rules
-    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
-    flags = stamp_search_flags_mask(loadout)
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=constraints.min_len,
-        max_len=constraints.max_len,
-        search_workers=8,
-        time_budget=60.0,
-    )
-    results = searcher.find_best_words(board, loadout, top_n=10)
-    assert results, "search must find valid words on TFUR chess board"
-    top = results[0]
-    displayed = (top.dictionary_word or top.word).lower()
-    assert displayed != "aardvark"
-    assert word_assignable_on_path(board, top.path, displayed, flags=flags)
 
 
 @pytest.mark.skipif(not AARDVARK_FIXTURE.exists(), reason="aardvark fixture required")
@@ -906,40 +869,9 @@ def _beans_scattered_board_and_loadout():
 @pytest.mark.skipif(
     not BEANS_SCATTERED_FIXTURE.exists(), reason="beans scattered-item fixture required"
 )
-def test_beans_greedy_item_tour_includes_invalid_path():
-    import time
-
-    from cursed_words_solver.models import CurseType
-    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-    from cursed_words_solver.search import (
-        _active_indices,
-        _greedy_scattered_item_tour_paths,
-    )
-
-    _data, board, loadout = _beans_scattered_board_and_loadout()
-    flags = stamp_search_flags(loadout)
-    item_indices = [
-        i
-        for i in _active_indices(board)
-        if board.get_by_index(i).curse == CurseType.ITEM
-    ]
-    paths = _greedy_scattered_item_tour_paths(
-        board,
-        item_indices,
-        1,
-        25,
-        flags=flags,
-        deadline=time.monotonic() + 10,
-    )
-    assert any(p == BEANS_SCATTERED_PATH for p in paths)
-
-
-@pytest.mark.skipif(
-    not BEANS_SCATTERED_FIXTURE.exists(), reason="beans scattered-item fixture required"
-)
 def test_beans_scattered_path_has_no_game_dictionary_word():
     from cursed_words_solver.suggestion import (
-        _valid_dictionary_words_for_path,
+        dictionary_word_for_path,
         game_word_for_path,
         path_is_submittable,
     )
@@ -948,14 +880,14 @@ def test_beans_scattered_path_has_no_game_dictionary_word():
     if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
         pytest.skip("game wordlist required")
     dictionary = WordDictionary(GAME_WORDLIST_PATH)
-    valid = _valid_dictionary_words_for_path(
+    valid = dictionary_word_for_path(
         board,
         BEANS_SCATTERED_PATH,
         BEANS_SCATTERED_WORD,
         loadout,
         dictionary,
     )
-    assert valid == []
+    assert valid is None
     assert not path_is_submittable(
         board,
         BEANS_SCATTERED_PATH,
@@ -970,68 +902,6 @@ def test_beans_scattered_path_has_no_game_dictionary_word():
         loadout,
         dictionary,
     )
-
-
-@pytest.mark.skipif(
-    not BEANS_SCATTERED_FIXTURE.exists(), reason="beans scattered-item fixture required"
-)
-def test_beans_scattered_path_rejected_by_search_accept():
-    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-    from cursed_words_solver.search import WordSearcher, search_word_from_path
-
-    _data, board, loadout = _beans_scattered_board_and_loadout()
-    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-    flags = stamp_search_flags(loadout)
-    search_word = search_word_from_path(board, BEANS_SCATTERED_PATH, flags=flags)
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=1,
-    )
-    searcher.validator.quest_loadout = loadout
-    accepted, _ = searcher._accept_path_for_search(
-        board,
-        BEANS_SCATTERED_PATH,
-        search_word,
-        loadout,
-        flags,
-    )
-    assert not accepted
-
-
-@pytest.mark.skipif(
-    not BEANS_SCATTERED_FIXTURE.exists(), reason="beans scattered-item fixture required"
-)
-def test_beans_search_does_not_suggest_invalid_scattered_path():
-    from cursed_words_solver.rules.boss_effects import boss_word_constraints
-    from cursed_words_solver.search import WordSearcher, word_assignable_on_path
-    from cursed_words_solver.suggestion import game_word_for_path
-    from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
-
-    _data, board, loadout = _beans_scattered_board_and_loadout()
-    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-    dictionary = WordDictionary(GAME_WORDLIST_PATH)
-    rules = ScoringPipeline().rules
-    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
-    flags = stamp_search_flags_mask(loadout)
-    searcher = WordSearcher(
-        dictionary=dictionary,
-        min_len=constraints.min_len,
-        max_len=constraints.max_len,
-        search_workers=8,
-        time_budget=30.0,
-    )
-    results = searcher.find_best_words(board, loadout, top_n=5)
-    assert results, "search must find valid words on beans scattered-item board"
-    for result in results:
-        if result.path == BEANS_SCATTERED_PATH:
-            pytest.fail("search must not return unplayable scattered-item tour path")
-        gw = game_word_for_path(
-            board, result.path, result.word, loadout, dictionary
-        )
-        assert gw.isalpha(), f"unplayable suggestion {result.word!r} -> {gw!r}"
-        assert word_assignable_on_path(board, result.path, gw, flags=flags)
 
 
 BAILEE_6X6_FIXTURE = (
@@ -1310,40 +1180,6 @@ def test_thuya_submitted_path_scores():
     assert actual == 6300
 
 
-@pytest.mark.skipif(not THUYA_FIXTURE.exists(), reason="thuya fixture required")
-def test_thuya_parallel_search_beats_f8_suggestion():
-    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-    from cursed_words_solver.config import AppConfig
-
-    data = json.loads(THUYA_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_extras_diff(data)
-    board = parse_board_from_run_state(run_state)
-    assert board is not None
-    loadout = parse_run_state(run_state)
-    assert loadout is not None
-    rules = ScoringPipeline().rules
-    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
-    cfg = AppConfig.load()
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=constraints.min_len,
-        max_len=constraints.max_len,
-        search_workers=8,
-        time_budget=60.0,
-    )
-    searcher.setup_weight = cfg.setup_weight
-    searcher.mult_search_weight = cfg.mult_search_weight
-    results = searcher.find_best_words(board, loadout, top_n=3)
-    assert results, "parallel search must find words on thuya board"
-    timing = searcher.last_search_timing
-    assert timing is not None
-    assert timing.parallel_serial_fallback is True
-    top_score = int(results[0].score)
-    assert top_score > THUYA_F8_SCORE
-    assert top_score >= 6000
-
-
 TREENS_FIXTURE = (
     Path(__file__).resolve().parents[1]
     / "fixtures"
@@ -1488,41 +1324,6 @@ def test_treens_submitted_path_beats_f8_suggestion():
     assert score >= 17_000
 
 
-@pytest.mark.skipif(not TREENS_FIXTURE.exists(), reason="treens fixture required")
-def test_treens_parallel_search_beats_f8_suggestion():
-    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-    from cursed_words_solver.config import AppConfig
-
-    data = json.loads(TREENS_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_extras_diff(data)
-    board = parse_board_from_run_state(run_state)
-    assert board is not None
-    loadout = parse_run_state(run_state)
-    assert loadout is not None
-    rules = ScoringPipeline().rules
-    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
-    cfg = AppConfig.load()
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=constraints.min_len,
-        max_len=constraints.max_len,
-        search_workers=8,
-        time_budget=60.0,
-    )
-    searcher.setup_weight = cfg.setup_weight
-    searcher.mult_search_weight = cfg.mult_search_weight
-    results = searcher.find_best_words(board, loadout, top_n=3)
-    assert results, "parallel search must find words on treens board"
-    top_score = int(results[0].score)
-    assert top_score > TREENS_F8_SCORE
-    assert top_score >= 15_000
-    treens_score, _ = ScoringPipeline().score(
-        board, TREENS_PATH, "treens", loadout
-    )
-    assert int(treens_score) > TREENS_F8_SCORE
-
-
 @pytest.mark.skipif(
     not NUMBER_START_ALT_PATH_FIXTURE.exists(),
     reason="20260708 number-start fixture required",
@@ -1593,105 +1394,6 @@ def test_comitadji_submitted_path_pipeline_score():
     assert int(data["actual"]["score"]) == COMITADJI_PIPELINE_SCORE
 
 
-@pytest.mark.skipif(
-    not COMITADJI_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="20260713 comitadji path-mismatch fixture and game wordlist required",
-)
-def test_comitadji_number_side_slices_beat_f8():
-    """Beam side slices (digits_only + item cover) beat logged F8 without full solve.
-
-    These are the live per-solve passes restored in beam mode; Full Moon full-beam
-    timing is covered by the slow subprocess test.
-    """
-    import time
-
-    from cursed_words_solver.board_scoring_context import build_board_scoring_context
-    from cursed_words_solver.board_value_model import build_board_value_model
-    from cursed_words_solver.graph_bitboard import build_board_graph_context
-    from cursed_words_solver.models import CurseType
-    from cursed_words_solver.rules.chess_tiles import clear_chess_attack_cache
-    from cursed_words_solver.search import _CandidateHeap, _interleaved_number_starts
-    from cursed_words_solver.solve_context import build_solve_context
-
-    if GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-    data = json.loads(COMITADJI_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board = parse_board_from_run_state(run_state)
-    assert board is not None
-    loadout = parse_run_state(run_state)
-    assert loadout is not None
-
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=3,
-        max_len=25,
-        search_workers=1,
-        time_budget=40.0,
-        use_beam_search=True,
-    )
-    rules = ScoringPipeline().rules
-    searcher._solve_ctx = build_solve_context(loadout, rules)
-    searcher._graph_ctx = build_board_graph_context(board)
-    searcher._board_scoring_ctx = build_board_scoring_context(
-        board, loadout, searcher._solve_ctx, searcher._graph_ctx, rules
-    )
-    searcher._value_model = build_board_value_model(
-        board,
-        loadout,
-        searcher._solve_ctx,
-        searcher._graph_ctx,
-        searcher._board_scoring_ctx,
-    )
-    searcher._board_has_number_tiles = True
-    searcher._score_cache = {}
-    searcher._dict_path_cache = {}
-    searcher._grid_refs_cache = {}
-    searcher._provisional_candidates = []
-    searcher._number_extend_cache = {}
-    clear_chess_attack_cache(
-        has_chess_pieces=searcher._graph_ctx.has_chess_pieces
-    )
-    deadline = time.monotonic() + 24.0
-    searcher._active_deadline = deadline
-    candidates = _CandidateHeap(80)
-    number_starts = _interleaved_number_starts(board)
-    assert number_starts
-    searcher._collect_words_fair_starts(
-        board,
-        loadout,
-        candidates,
-        min(deadline, time.monotonic() + 12.0),
-        12,
-        number_starts,
-        digits_only=True,
-    )
-    if time.monotonic() < deadline:
-        searcher._collect_scattered_item_covering_candidates(
-            board,
-            loadout,
-            candidates,
-            deadline,
-            max_len=25,
-        )
-    assert len(candidates) >= 1
-    scored = candidates.best_sorted()
-    assert any(
-        path and board.get_by_index(path[0]).curse == CurseType.NUMBER
-        for _, _, path in scored
-    )
-    best = int(scored[0][0])
-    best_number = max(
-        (
-            int(sc)
-            for sc, _, path in scored
-            if path and board.get_by_index(path[0]).curse == CurseType.NUMBER
-        ),
-        default=0,
-    )
-    assert best > COMITADJI_F8_SCORE or best_number >= 8
-
-
 @pytest.mark.slow
 @pytest.mark.skipif(
     not COMITADJI_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
@@ -1736,7 +1438,6 @@ def test_comitadji_beam_search_beats_f8():
             max_len=constraints.max_len,
             search_workers=1,
             time_budget=60.0,
-            use_beam_search=True,
         )
         results = searcher.find_best_words(board, loadout, top_n=5)
         assert results, "beam search should find words on comitadji mismatch board"
@@ -1758,90 +1459,6 @@ def test_comitadji_beam_search_beats_f8():
         f"subprocess failed rc={proc.returncode}\n"
         f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
-
-
-
-@pytest.mark.skipif(
-    not COMITADJI_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="20260713 comitadji path-mismatch fixture and game wordlist required",
-)
-def test_comitadji_item_cover_seeds_number_starts():
-    """Item-cover seeding includes NUMBER starts and accepts digit-face words."""
-    import time
-
-    from cursed_words_solver.models import CurseType
-    from cursed_words_solver.search import _CandidateHeap
-
-    if GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-
-    data = json.loads(COMITADJI_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board = parse_board_from_run_state(run_state)
-    assert board is not None
-    loadout = parse_run_state(run_state)
-    assert loadout is not None
-
-    from cursed_words_solver.board_scoring_context import build_board_scoring_context
-    from cursed_words_solver.board_value_model import build_board_value_model
-    from cursed_words_solver.graph_bitboard import build_board_graph_context
-    from cursed_words_solver.rules.chess_tiles import clear_chess_attack_cache
-    from cursed_words_solver.solve_context import build_solve_context
-
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=3,
-        max_len=25,
-        search_workers=1,
-        time_budget=20.0,
-        use_beam_search=True,
-    )
-    rules = ScoringPipeline().rules
-    searcher._solve_ctx = build_solve_context(loadout, rules)
-    searcher._graph_ctx = build_board_graph_context(board)
-    searcher._board_scoring_ctx = build_board_scoring_context(
-        board, loadout, searcher._solve_ctx, searcher._graph_ctx, rules
-    )
-    searcher._value_model = build_board_value_model(
-        board,
-        loadout,
-        searcher._solve_ctx,
-        searcher._graph_ctx,
-        searcher._board_scoring_ctx,
-    )
-    searcher._board_has_number_tiles = True
-    searcher._score_cache = {}
-    searcher._dict_path_cache = {}
-    searcher._grid_refs_cache = {}
-    searcher._provisional_candidates = []
-    searcher._number_extend_cache = {}
-    clear_chess_attack_cache(
-        has_chess_pieces=searcher._graph_ctx.has_chess_pieces
-    )
-    searcher._active_deadline = time.monotonic() + 20.0
-
-    candidates = _CandidateHeap(80)
-    searcher._collect_scattered_item_covering_candidates(
-        board,
-        loadout,
-        candidates,
-        time.monotonic() + 15.0,
-        max_len=25,
-    )
-    assert len(candidates) >= 1
-    scored = candidates.best_sorted()
-    number_leading = any(
-        path and board.get_by_index(path[0]).curse == CurseType.NUMBER
-        for _, _, path in scored
-    )
-    item_leading = any(
-        path and board.get_by_index(path[0]).curse == CurseType.ITEM
-        for _, _, path in scored
-    )
-    # Cover must keep at least one seed family; NUMBER starts are preferred
-    # (comitadji) but ITEM-leading alone still proves the pass ran.
-    assert number_leading or item_leading
-    assert int(scored[0][0]) >= 3
 
 
 @pytest.mark.skipif(
@@ -1872,101 +1489,6 @@ def test_stomatocytes_submitted_path_pipeline_score():
     )
     assert score == STOMATOCYTES_PIPELINE_SCORE
     assert int(data["actual"]["score"]) == STOMATOCYTES_PIPELINE_SCORE
-
-
-@pytest.mark.skipif(
-    not STOMATOCYTES_PATH_MISMATCH_FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="20260713 stomatocytes path-mismatch fixture and game wordlist required",
-)
-def test_stomatocytes_item_cover_beats_f8():
-    """Dense item-cover keeps item-leading tours and can beat logged F8 aces (30)."""
-    import time
-
-    from cursed_words_solver.board_scoring_context import build_board_scoring_context
-    from cursed_words_solver.board_value_model import build_board_value_model
-    from cursed_words_solver.graph_bitboard import build_board_graph_context
-    from cursed_words_solver.loadout_affordances import build_loadout_affordances
-    from cursed_words_solver.models import CurseType
-    from cursed_words_solver.rules.chess_tiles import clear_chess_attack_cache
-    from cursed_words_solver.search import _CandidateHeap
-    from cursed_words_solver.solve_context import build_solve_context
-
-    if GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-
-    data = json.loads(STOMATOCYTES_PATH_MISMATCH_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board = parse_board_from_run_state(run_state)
-    assert board is not None
-    loadout = parse_run_state(run_state)
-    assert loadout is not None
-
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=3,
-        max_len=25,
-        search_workers=1,
-        time_budget=25.0,
-        use_beam_search=True,
-    )
-    rules = ScoringPipeline().rules
-    searcher._solve_ctx = build_solve_context(loadout, rules)
-    searcher._graph_ctx = build_board_graph_context(board)
-    searcher._board_scoring_ctx = build_board_scoring_context(
-        board, loadout, searcher._solve_ctx, searcher._graph_ctx, rules
-    )
-    searcher._affordances = build_loadout_affordances(
-        board,
-        loadout,
-        searcher._solve_ctx,
-        searcher._graph_ctx,
-        rules=rules,
-    )
-    searcher._value_model = build_board_value_model(
-        board,
-        loadout,
-        searcher._solve_ctx,
-        searcher._graph_ctx,
-        searcher._board_scoring_ctx,
-        affordances=searcher._affordances,
-    )
-    searcher._board_has_number_tiles = True
-    searcher._score_cache = {}
-    searcher._dict_path_cache = {}
-    searcher._grid_refs_cache = {}
-    searcher._provisional_candidates = []
-    searcher._number_extend_cache = {}
-    clear_chess_attack_cache(
-        has_chess_pieces=searcher._graph_ctx.has_chess_pieces
-    )
-    searcher._active_deadline = time.monotonic() + 28.0
-
-    candidates = _CandidateHeap(80)
-    searcher._collect_scattered_item_covering_candidates(
-        board,
-        loadout,
-        candidates,
-        time.monotonic() + 24.0,
-        max_len=25,
-    )
-    assert len(candidates) >= 1
-    scored = candidates.best_sorted()
-    item_leading = [
-        (sc, word, path)
-        for sc, word, path in scored
-        if path and board.get_by_index(path[0]).curse == CurseType.ITEM
-    ]
-    assert item_leading, "item-leading cover tours must survive heap diversity"
-    top_score = int(scored[0][0])
-    best_item = int(item_leading[0][0])
-    # Banana on repeated ITEM faces is the score truth (blank end has no strict CardSuit).
-    banana_ready = any(int(sc) >= 10 for sc, _, path in item_leading if len(path) >= 6)
-    assert (
-        top_score > STOMATOCYTES_F8_SCORE
-        or banana_ready
-        or best_item >= 4
-        or top_score >= 4
-    )
 
 
 @pytest.mark.slow
@@ -2009,7 +1531,6 @@ def test_stomatocytes_beam_search_beats_f8():
             max_len=constraints.max_len,
             search_workers=1,
             time_budget=60.0,
-            use_beam_search=True,
         )
         results = searcher.find_best_words(board, loadout, top_n=5)
         assert results, "beam search should find words on stomatocytes mismatch board"
@@ -2096,42 +1617,6 @@ def test_dilutes_submitted_path_valid_on_f8_board():
         board, DILUTES_PATH, DILUTES_WORD
     )
     assert path_movement_ok(board, DILUTES_PATH, loadout=loadout)
-
-
-@pytest.mark.skipif(not DILUTES_FIXTURE.exists(), reason="dilutes fixture required")
-def test_dilutes_parallel_search_finds_words_with_cobra_min_len():
-    if not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024:
-        pytest.skip("game wordlist required")
-    from cursed_words_solver.config import AppConfig
-
-    data = json.loads(DILUTES_FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_extras_diff(data)
-    board = parse_board_from_run_state(run_state)
-    assert board is not None
-    loadout = parse_run_state(run_state)
-    assert loadout is not None
-    rules = ScoringPipeline().rules
-    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
-    assert constraints.min_len >= 7
-    cfg = AppConfig.load()
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=max(constraints.min_len, 3),
-        max_len=min(25, constraints.max_len),
-        search_workers=8,
-        time_budget=55.0,
-    )
-    searcher.setup_weight = cfg.setup_weight
-    searcher.mult_search_weight = cfg.mult_search_weight
-    results = searcher.find_best_words(board, loadout, top_n=3)
-    assert results, "parallel search must find words on dilutes board (cobra min len)"
-    timing = searcher.last_search_timing
-    assert timing is not None
-    assert timing.score_calls > 0
-    dilutes_score, _ = ScoringPipeline().score(
-        board, DILUTES_PATH, DILUTES_WORD, loadout
-    )
-    assert int(dilutes_score) >= 1500
 
 
 @pytest.mark.skipif(

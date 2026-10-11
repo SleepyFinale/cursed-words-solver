@@ -68,33 +68,3 @@ def test_hiatus_off_path_tombstone_still_3489() -> None:
     off_path = _replay_path(board, solver_path)
     score, _ = ScoringPipeline().score(board, off_path, "hiatus", loadout)
     assert int(score) == HIATUS_OFF_PATH_SCORE
-
-
-@pytest.mark.skipif(
-    not GAME_WORDLIST_PATH.exists() or GAME_WORDLIST_PATH.stat().st_size < 1024,
-    reason="game wordlist required",
-)
-def test_hiatus_search_finds_tombstone_ending() -> None:
-    path = FIXTURE_DIR / "20260701_001007_816.json"
-    if not path.exists():
-        pytest.skip("hiatus fixture required")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    run_state = _run_state_for_replay(_round_log_to_replay(data))
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-    rules = ScoringPipeline().rules
-    constraints = boss_word_constraints(loadout, rules)
-    cfg = AppConfig.load()
-    searcher = WordSearcher(
-        dictionary=WordDictionary(GAME_WORDLIST_PATH),
-        min_len=constraints.min_len,
-        max_len=constraints.max_len,
-        search_workers=8,
-        time_budget=45.0,
-    )
-    searcher.setup_weight = cfg.setup_weight
-    searcher.mult_search_weight = cfg.mult_search_weight
-    results = searcher.find_best_words(board, loadout, top_n=3)
-    assert results
-    assert int(results[0].score) >= 5000

@@ -62,6 +62,7 @@ namespace CursedWordsSolverCompanion
             if (!ScoringCaptureSession.IsSubmitInFlight())
                 RunStateExporter.BeginPreviewScoreMutationGuard();
 
+            ScoringCaptureSession.OnScoringCall(items, GridNumber);
             RunStateExporter.CacheGridNumber(GridNumber);
             BossResolver.CacheFromScoring(bossModifiers);
             ScoringCaptureSession.OnScoringContext(previousWords, bossModifiers);

@@ -56,26 +56,6 @@ def test_submitted_path_is_valid(cobra_board_loadout):
     assert validator.word_ok(board, path, SUBMITTED_WORD, flags)
 
 
-@pytest.mark.legacy_search  # asserts legacy-search internals
-def test_find_best_words_finds_words_serial(cobra_board_loadout):
-    board, loadout, _data = cobra_board_loadout
-    rules = ScoringPipeline().rules
-    constraints = boss_word_constraints(loadout, rules, default_max_len=25)
-    dictionary = WordDictionary(ensure_wordlist())
-    searcher = WordSearcher(
-        dictionary=dictionary,
-        min_len=constraints.min_len,
-        max_len=min(25, constraints.max_len),
-        time_budget=60.0,
-        search_workers=1,
-    )
-    results = searcher.find_best_words(board, loadout, top_n=5)
-    assert results, "search must find at least one valid word on Cobra number+chess board"
-    timing = searcher.last_search_timing
-    assert timing is not None
-    assert timing.score_calls > 0
-
-
 @pytest.mark.skipif(
     not FIXTURE.exists(),
     reason="cobra number+chess fixture required",

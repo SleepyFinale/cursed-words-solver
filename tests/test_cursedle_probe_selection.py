@@ -23,6 +23,7 @@ from cursed_words_solver.models import Board, CurseType, Loadout, Tile, TileColo
 class _FakeDictionary:
     def __init__(self, words: set[str]) -> None:
         self._words = {w.lower() for w in words}
+        self.words = sorted(self._words)
 
     def contains(self, word: str) -> bool:
         return word.lower() in self._words

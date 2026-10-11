@@ -62,11 +62,41 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(marker)
 
 
-@pytest.fixture(autouse=True)
-def _legacy_search_marker(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``@pytest.mark.legacy_search``: WordSearcher uses the legacy heuristic search."""
-    if request.node.get_closest_marker("legacy_search") is None:
-        return
-    from cursed_words_solver.search import WordSearcher
+# Files the solver and melmod exchange at runtime. Tests must never touch the
+# player's real copies (a test run during play would clobber live suggestions),
+# and xdist workers must not race on one shared file.
+_REPO_ROOT = str(Path(__file__).resolve().parents[1])
+_STATE_PATH_NAMES = (
+    "CONFIG_PATH",
+    "RUN_STATE_PATH",
+    "F8_EXPORT_REQUEST_PATH",
+    "LAST_SUGGESTION_PATH",
+    "LAST_SUGGESTION_BLOCKED_PATH",
+    "SCORING_MISMATCHES_DIR",
+    "ROUND_LOG_DIR",
+    "ROUND_LOG_INDEX_PATH",
+    "DEBUG_DIR",
+    "_F8_SEQUENCE_PATH",
+)
 
-    monkeypatch.setattr(WordSearcher, "default_use_exact_engine", False)
+
+@pytest.fixture(autouse=True)
+def _isolated_state_files(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point every runtime state path at a per-test directory (wordlists stay shared)."""
+    import sys
+
+    from cursed_words_solver import config
+
+    state_dir = tmp_path_factory.mktemp("state")
+    originals = {name: getattr(config, name) for name in _STATE_PATH_NAMES if hasattr(config, name)}
+    replacements = {path: state_dir / path.relative_to(config.CONFIG_DIR) for path in originals.values()}
+    replacements[config.CONFIG_DIR / ".f8_sequence"] = state_dir / ".f8_sequence"
+    for module in list(sys.modules.values()):
+        name = getattr(module, "__name__", "") or ""
+        file = str(getattr(module, "__file__", "") or "")
+        if not (name.startswith("cursed_words_solver") or file.startswith(_REPO_ROOT)):
+            continue
+        for attr in _STATE_PATH_NAMES:
+            value = getattr(module, attr, None)
+            if isinstance(value, Path) and value in replacements:
+                monkeypatch.setattr(module, attr, replacements[value])

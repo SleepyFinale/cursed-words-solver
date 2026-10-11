@@ -24,12 +24,7 @@ from cursed_words_solver.loadout import (
 )
 from cursed_words_solver.rules.pipeline import ScoringPipeline
 from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags
-from cursed_words_solver.search import (
-    WordSearcher,
-    _nonadjacent_chess_path_viable,
-    _probe_nonadjacent_chess_paths,
-    neighbors_mask,
-)
+from cursed_words_solver.search import WordSearcher
 from cursed_words_solver.suggestion import path_is_submittable
 from cursed_words_solver.ui.board_geometry import path_from_melmod_indices
 
@@ -51,58 +46,6 @@ def _f8_run_state_from_round_log(data: dict) -> dict:
         if isinstance(entry, dict) and "f8" in entry and entry["f8"] not in (None, ""):
             ex[key] = entry["f8"]
     return prepare_run_state_dict_for_scoring(rs)
-
-
-@pytest.mark.skipif(
-    not FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="uvulectomy fixture and game wordlist required",
-)
-def test_hungry_snake_knight_wrap_reaches_final_tile():
-    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-    act = path_from_melmod_indices(board, data["actual"]["path"])
-    flags = stamp_search_flags(loadout)
-    graph = build_board_graph_context(board)
-    visited = 0
-    for idx in act[:-1]:
-        visited |= 1 << idx
-    nbr = neighbors_mask(
-        board,
-        visited,
-        cell_id=act[-2],
-        flags=flags,
-        graph_ctx=graph,
-        loadout=loadout,
-    )
-    assert nbr & (1 << act[-1]), (
-        f"knight at {act[-2]} must wrap-reach {act[-1]} with Hungry Snake"
-    )
-    assert path_is_submittable(
-        board, act, data["actual"]["word"], loadout, WordDictionary(GAME_WORDLIST_PATH), min_len=3
-    )
-
-
-@pytest.mark.skipif(
-    not FIXTURE.exists() or not GAME_WORDLIST_PATH.exists(),
-    reason="uvulectomy fixture and game wordlist required",
-)
-def test_nonadj_probe_includes_submitted_uvulectomy_path():
-    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    run_state = _f8_run_state_from_round_log(data)
-    board = parse_board_from_run_state(run_state)
-    loadout = parse_run_state(run_state)
-    assert board is not None and loadout is not None
-    assert _nonadjacent_chess_path_viable(board, loadout)
-    act = path_from_melmod_indices(board, data["actual"]["path"])
-    probes = _probe_nonadjacent_chess_paths(board, loadout, max_depth=10, max_paths=200)
-    assert any(list(p) == act for p in probes)
-    sc = ScoringPipeline().score_total_only(
-        board, act, data["actual"]["word"], loadout
-    )
-    assert int(sc) == SUBMITTED_SCORE
 
 
 @pytest.mark.skipif(
