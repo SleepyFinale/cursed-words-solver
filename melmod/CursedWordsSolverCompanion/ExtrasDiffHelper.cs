@@ -1548,11 +1548,28 @@ namespace CursedWordsSolverCompanion
         {
             if (f8Row == null || authRow == null)
                 return false;
+            // Tile-count fields only compared when both rows carry them
+            // (green_poison_only F8 rows omit red_tile_count).
             return HistoricFieldEquals(f8Row, authRow, "word")
                 && HistoricFieldEquals(f8Row, authRow, "score")
-                && HistoricFieldEquals(f8Row, authRow, "red_tile_count")
-                && HistoricFieldEquals(f8Row, authRow, "green_tile_count")
-                && HistoricFieldEquals(f8Row, authRow, "chess_take_value");
+                && HistoricOptionalFieldEquals(f8Row, authRow, "red_tile_count")
+                && HistoricOptionalFieldEquals(f8Row, authRow, "green_tile_count")
+                && HistoricOptionalFieldEquals(f8Row, authRow, "chess_take_value");
+        }
+
+        private static bool HistoricOptionalFieldEquals(
+            Dictionary<string, object> left,
+            Dictionary<string, object> right,
+            string key
+        )
+        {
+            object l;
+            object r;
+            left.TryGetValue(key, out l);
+            right.TryGetValue(key, out r);
+            if (l == null || r == null)
+                return true;
+            return HistoricFieldEquals(left, right, key);
         }
 
         private static bool HistoricFieldEquals(

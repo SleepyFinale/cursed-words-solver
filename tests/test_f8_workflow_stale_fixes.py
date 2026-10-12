@@ -544,3 +544,24 @@ def test_gather_completes_after_metadata_prune_without_reexport():
         ).gather_missing
         or []
     )
+
+
+def test_historic_metadata_ignores_tile_counts_missing_on_f8_row():
+    """green_poison_only F8 rows omit red_tile_count; same word/score still matches."""
+    f8 = json.dumps([{"word": "OWB", "score": 131580, "green_tile_count": 1}])
+    full = json.dumps(
+        [
+            {
+                "word": "OWB",
+                "score": 131580,
+                "path": [15, 21, 13],
+                "red_tile_count": 6,
+                "green_tile_count": 1,
+            }
+        ]
+    )
+    assert historic_metadata_matches_json(f8, full)
+    changed = json.dumps([{"word": "OWB", "score": 131580, "red_tile_count": 5, "green_tile_count": 1}])
+    assert not historic_metadata_matches_json(changed, full)
+    no_score = json.dumps([{"word": "OWB", "green_tile_count": 1}])
+    assert not historic_metadata_matches_json(no_score, full)

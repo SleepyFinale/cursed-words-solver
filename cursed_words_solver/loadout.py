@@ -972,7 +972,11 @@ def _historic_row_metadata_matches(
     left: dict[str, Any],
     right: dict[str, Any],
 ) -> bool:
-    """True when melmod-style historic row metadata matches (paths ignored)."""
+    """True when melmod-style historic row metadata matches (paths ignored).
+
+    ``word`` / ``score`` must agree; tile-count fields are compared only when
+    both rows carry them (``green_poison_only`` F8 rows omit ``red_tile_count``).
+    """
     if not left or not right:
         return False
     for key in (
@@ -989,7 +993,9 @@ def _historic_row_metadata_matches(
         if lv is None and rv is None:
             continue
         if lv is None or rv is None:
-            return False
+            if key in ("word", "score"):
+                return False
+            continue
         if str(lv).strip().lower() != str(rv).strip().lower():
             return False
     return True
