@@ -238,7 +238,7 @@ Stored at `%USERPROFILE%\.cursed_words_solver\config.json`:
 | `search_time_budget_sec` | `60`     | Seconds per solve for word search. Legacy values `2` / `15` / `30` / `45` auto-upgrade on startup |
 | `top_n_results`          | `3`      | Alternate words shown in the overlay                                                              |
 | `wordlist`               | `game`   | `game` → `game_words.txt`; `enable1` → offline fallback                                           |
-| `search_workers`         | `"auto"` | Parallel search processes: `"auto"` (up to 8 cores), `1` to disable, or integer `2`–`16`             |
+| `search_workers`         | `"auto"` | Parallel search processes: `"auto"` (up to 8 cores), `1` to disable, or integer `2`–`16`          |
 | `grid_reroll_gap_ratio`  | `0.3`    | Show "Reroll Grid" when best score is below this fraction of estimated grid target                |
 
 On startup the terminal prints the loaded word list, e.g. `Word list: game (120000 words)`. After each solve it prints the grid and `Board source: melmod`.
@@ -331,14 +331,14 @@ See `[scripts/README.md](scripts/README.md)` for profiling and mismatch triage s
 
 GitHub Actions runs `pytest tests/` on push and pull request to `main` / `master` (`[.github/workflows/test.yml](.github/workflows/test.yml)`).
 
-| Test area   | Location                                                                                                     | Purpose                                                                                  |
-| ----------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Catalog     | `tests/catalog/`                                                                                             | Per-character sticker/stamp scoring rules                                                |
-| Integration | `tests/integration/`                                                                                         | Melmod fingerprints, score traces, loadout scoring, round logs                           |
-| Regression  | `tests/regression/`                                                                                          | Mismatch captures (`tests/fixtures/mismatches/`) and round-log path replays              |
-| Sim         | `tests/sim/`                                                                                                 | Encounter simulator replay                                                               |
-| Unit        | `tests/test_*.py`                                                                                            | Search, bosses, dictionary, F8 snapshot, consumable placement, suggestion stale workflow |
-| Performance | `tests/test_tier2_two_phase.py`, `tests/test_search_performance.py` | Tier-2 bounds, search gating                              |
+| Test area | Location | Purpose |
+| --------- | -------- | ------- |
+| Catalog | `tests/catalog/` | Per-character sticker/stamp scoring rules |
+| Integration | `tests/integration/` | Melmod fingerprints, score traces, loadout scoring, round logs |
+| Regression | `tests/regression/` | Mismatch captures (`tests/fixtures/mismatches/`) and round-log path replays |
+| Sim | `tests/sim/` | Encounter simulator replay |
+| Unit | `tests/test_*.py` | Search, bosses, dictionary, F8 snapshot, consumable placement, suggestion stale workflow |
+| Performance | `tests/test_tier2_two_phase.py`, `tests/test_search_performance.py` | Tier-2 bounds, search gating |
 
 **Contributing a scoring fix:** F7 → F8 → play the highlighted word → collect mismatch JSON → `python scripts/mismatch_to_test.py …` → fix the engine from the decompile ([engine.md](docs/game-research/engine.md)) → `pytest tests/regression/ -k <fixture_id>` until green → remove that stem from `[tests/fixtures/known_failing.json](tests/fixtures/known_failing.json)` if it was quarantined. For path misses, promote round logs with `python scripts/round_log_to_test.py <round_log.json>` (see [melmod README — Round logs](melmod/README.md#round-logs-v12)).
 
