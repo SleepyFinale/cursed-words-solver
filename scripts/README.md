@@ -14,6 +14,7 @@ Partial refresh (encounter/sim types only): `.\scripts\decompile_sim_types.ps1`
 
 ```bash
 python scripts/extract_game_types.py   # also writes shop advice tags per Item subclass
+python scripts/extract_run_catalog.py  # rarity/cost/slot per item, characters, bosses (full-run sim)
 python scripts/generate_sticker_audit.py
 ```
 

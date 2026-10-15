@@ -29,6 +29,7 @@ ilspycmd $dll -t ScoreCalcVizInfo -o $out
 ilspycmd $dll -t WordBonusToken -o $out
 # Or: dotnet run --project scripts/decompile_type -- $dll ScoreCalculation Hanafuda ...
 python scripts/extract_game_types.py  # Item subclasses + shop advice tags
+python scripts/extract_run_catalog.py  # Run catalog for the full-run simulator
 python scripts/extract_stamp_types.py
 python scripts/extract_tile_enums.py
 python scripts/generate_sticker_audit.py
@@ -56,6 +57,7 @@ python scripts/generate_boss_audit.py
 | [bosses.md](bosses.md) | BossModifier taxonomy and scoring order |
 | [boss-audit.md](boss-audit.md) | Per-boss implementation status (generated) |
 | [sim-traceability.md](sim-traceability.md) | Simulator Stage 1 mechanic matrix (game → Python → wiki) |
+| [run-structure.md](run-structure.md) | Stages, targets, payouts, shop generation, boss drafts, pin draft |
 
 ## Solver mapping
 

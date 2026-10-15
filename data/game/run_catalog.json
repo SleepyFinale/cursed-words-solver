@@ -1,0 +1,8532 @@
+{
+ "_meta": {
+  "source": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Cursed Words\\Cursed Words_Data\\Managed\\Assembly-CSharp.dll",
+  "counts": {
+   "items": 300,
+   "characters": 11,
+   "bosses": 20
+  },
+  "failed": {
+   "items": [],
+   "characters": [],
+   "bosses": []
+  }
+ },
+ "items": [
+  {
+   "type": "Abacus",
+   "ok": true,
+   "name": "Abacus",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "pin",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    },
+    {
+     "level": 1,
+     "increment": 10,
+     "value": 10
+    }
+   ],
+   "tags": [
+    "NumbersBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "AkoyaPearl",
+   "ok": true,
+   "name": "Akoya Pearl",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ShinyBuild",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Shiny"
+   ],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "AlembicFlask",
+   "ok": true,
+   "name": "Alembic Flask",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 25,
+     "value": 25
+    }
+   ],
+   "tags": [
+    "NumbersBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Ambulance",
+   "ok": true,
+   "name": "Ambulance",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 100,
+     "value": 150
+    }
+   ],
+   "tags": [
+    "VoidBuild"
+   ],
+   "dependency_tags": [
+    "VoidGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Amphora",
+   "ok": true,
+   "name": "Amphora",
+   "rarity": "Common",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 2,
+     "value": 3
+    }
+   ],
+   "tags": [
+    "CurseBuild",
+    "CurseGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "AprilShower",
+   "ok": true,
+   "name": "April Shower",
+   "rarity": "Common",
+   "cost": 9,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 2,
+     "value": 3
+    }
+   ],
+   "tags": [
+    "BlueBuild",
+    "BlueGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Arrivals",
+   "ok": true,
+   "name": "Arrivals",
+   "rarity": "Common",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "ArtistsPalette",
+   "ok": true,
+   "name": "Artist's Palette",
+   "rarity": "Common",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 6,
+     "value": 6
+    }
+   ],
+   "tags": [
+    "RainbowBuild",
+    "BlueBuild",
+    "RedBuild",
+    "ShinyBuild",
+    "VoidBuild"
+   ],
+   "dependency_tags": [
+    "BlueGenerator",
+    "RedGenerator",
+    "ShinyGenerator",
+    "VoidGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Automobile",
+   "ok": true,
+   "name": "Suspension Bridge",
+   "rarity": "Common",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Avocado",
+   "ok": true,
+   "name": "Avocado",
+   "rarity": "Rare",
+   "cost": 20,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Axe",
+   "ok": true,
+   "name": "Axe",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BabyBottle",
+   "ok": true,
+   "name": "Baby Bottle",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 200
+    }
+   ],
+   "tags": [
+    "BlankBuild"
+   ],
+   "dependency_tags": [
+    "BlankGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Backpack",
+   "ok": true,
+   "name": "Backpack",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 2,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "ChessBuild",
+    "ChessGenerator",
+    "RedBuild",
+    "RedGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Bank",
+   "ok": true,
+   "name": "Bank",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CashBuild",
+    "CurrencyGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BarChart",
+   "ok": true,
+   "name": "Bar Chart",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "NumbersBuild",
+    "NumbersGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BarOfSoap",
+   "ok": true,
+   "name": "Bar Of Soap",
+   "rarity": "Legendary",
+   "cost": 41,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ConsumableBuild",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Shiny"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BaseCamp",
+   "ok": true,
+   "name": "Base Camp",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BeamMeUp",
+   "ok": true,
+   "name": "Beam Me Up",
+   "rarity": "Rare",
+   "cost": 20,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Beefeater",
+   "ok": true,
+   "name": "Beefeater",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CardsBuild",
+    "CardsGenerator",
+    "RedBuild",
+    "RedGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BentoBox",
+   "ok": true,
+   "name": "Bento Box",
+   "rarity": "Common",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlankBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Bicycle",
+   "ok": true,
+   "name": "Bicycle",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "pin",
+   "components": [
+    {
+     "level": 1,
+     "increment": 2,
+     "value": 2
+    },
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "CardsBuild",
+    "CardsGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BigBang",
+   "ok": true,
+   "name": "Big Bang",
+   "rarity": "Common",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild",
+    "RedGenerator"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BirthdayCake",
+   "ok": true,
+   "name": "Birthday Cake",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "NumbersBuild"
+   ],
+   "dependency_tags": [
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BlackHole",
+   "ok": true,
+   "name": "Black Hole",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "VoidBuild",
+    "VoidGenerator"
+   ],
+   "dependency_tags": [
+    "VoidGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BlessingOfTheFairies",
+   "ok": true,
+   "name": "Blessing of the Fairies",
+   "rarity": "Rare",
+   "cost": 20,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BlessingOfTheShopkeeper",
+   "ok": true,
+   "name": "Blessing Of The Shopkeeper",
+   "rarity": "Rare",
+   "cost": 20,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Blueberries",
+   "ok": true,
+   "name": "Blueberries",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "BlueBuild"
+   ],
+   "dependency_tags": [
+    "BlueGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Bomb",
+   "ok": true,
+   "name": "Bomb",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "VoidBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Bone",
+   "ok": true,
+   "name": "Bone",
+   "rarity": "Unique",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Boomerang",
+   "ok": true,
+   "name": "Boomerang",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "NumbersBuild"
+   ],
+   "dependency_tags": [
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Brain",
+   "ok": true,
+   "name": "Brain",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [
+    "NumbersBuild"
+   ],
+   "dependency_tags": [
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Brick",
+   "ok": true,
+   "name": "Brick",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 5,
+     "value": 5
+    }
+   ],
+   "tags": [
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Briefcase",
+   "ok": true,
+   "name": "Briefcase",
+   "rarity": "Common",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ScatteredItemsBuild",
+    "ItemScatterer"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Broom",
+   "ok": true,
+   "name": "Broom",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [
+    "CurseBuild"
+   ],
+   "dependency_tags": [
+    "CurseGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Bucket",
+   "ok": true,
+   "name": "Bucket",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "pin",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    },
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "CurseBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Builder",
+   "ok": true,
+   "name": "Builder",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BunchOfGrapes",
+   "ok": true,
+   "name": "Bubble Tea",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlankBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Burrito",
+   "ok": true,
+   "name": "Burrito",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 5,
+     "value": 5
+    }
+   ],
+   "tags": [
+    "ScatteredItemsBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "BusinessGoose",
+   "ok": true,
+   "name": "Business Goose",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ChessBuild"
+   ],
+   "dependency_tags": [
+    "ChessGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "BusySchedule",
+   "ok": true,
+   "name": "Busy Schedule",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "NumbersBuild",
+    "BigNumbersBuild"
+   ],
+   "dependency_tags": [
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "CableCar",
+   "ok": true,
+   "name": "Cable Car",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ScatteredItemsBuild"
+   ],
+   "dependency_tags": [
+    "ItemScatterer"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Candle",
+   "ok": true,
+   "name": "Candle",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 2,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "CashBuild",
+    "VoidBuild",
+    "CashGenerator"
+   ],
+   "dependency_tags": [
+    "VoidGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "CanOfBeans",
+   "ok": true,
+   "name": "Tin Of Beans",
+   "rarity": "Rare",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RainbowBuild",
+    "ShinyBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "CardShark",
+   "ok": true,
+   "name": "Card Shark",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "CarouselHorse",
+   "ok": true,
+   "name": "Carousel Horse",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "ChessBuild",
+    "ChessGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "CarpStreamers",
+   "ok": true,
+   "name": "Carp Streamers",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "pin",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    },
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "RedBuild",
+    "BlueBuild",
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [],
+   "relevant_colours": [
+    "Red",
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Cartwheeler",
+   "ok": true,
+   "name": "Cartwheeler",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlankBuild",
+    "VoidBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Castle",
+   "ok": true,
+   "name": "Castle",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 16,
+     "value": 16
+    }
+   ],
+   "tags": [
+    "ChessBuild"
+   ],
+   "dependency_tags": [
+    "ChessGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "CelestialBody",
+   "ok": true,
+   "name": "Celestial Body",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 10,
+     "value": 10
+    }
+   ],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Champagne",
+   "ok": true,
+   "name": "Champagne",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "ShinyBuild",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [
+    "RedGenerator",
+    "BlueGenerator",
+    "VoidGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Shiny"
+   ],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "ChequeredFlag",
+   "ok": true,
+   "name": "Chequered Flag",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Cherries",
+   "ok": true,
+   "name": "Cherries",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "RedBuild",
+    "RedGenerator"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "CherryPie",
+   "ok": true,
+   "name": "Cherry Pie",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "ChessBoard",
+   "ok": true,
+   "name": "Chess Board",
+   "rarity": "Legendary",
+   "cost": 36,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "VoidBuild",
+    "VoidGenerator",
+    "RainbowBuild",
+    "RedGenerator",
+    "BlueGenerator",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "ChessStrategyGuide",
+   "ok": true,
+   "name": "Book Of Openings",
+   "rarity": "Rare",
+   "cost": 20,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ChessBuild",
+    "ChessGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Chick",
+   "ok": true,
+   "name": "Chick",
+   "rarity": "Common",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "Chips",
+   "ok": true,
+   "name": "Chips",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "ChocolateCandy",
+   "ok": true,
+   "name": "Chocolate Candy",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RainbowBuild",
+    "RedGenerator",
+    "BlueGenerator",
+    "VoidGenerator",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "ChristmasTree",
+   "ok": true,
+   "name": "Christmas Tree",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "CircusTent",
+   "ok": true,
+   "name": "Circus Tent",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [
+    "RainbowBuild",
+    "RedBuild",
+    "BlueBuild"
+   ],
+   "dependency_tags": [
+    "BlueGenerator",
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [
+    "Blue",
+    "Red",
+    "Normal"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "ClapperBoard",
+   "ok": true,
+   "name": "Clapper Board",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "ChessBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Cocktail",
+   "ok": true,
+   "name": "Cocktail",
+   "rarity": "Common",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "CoinPurse",
+   "ok": true,
+   "name": "Piggy Bank",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RainbowBuild",
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [
+    "Pink"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "ConfettiItem",
+   "ok": true,
+   "name": "Confetti",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "RainbowBuild"
+   ],
+   "dependency_tags": [
+    "BlueGenerator",
+    "RedGenerator",
+    "ShinyGenerator",
+    "VoidGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "CreakyChair",
+   "ok": true,
+   "name": "Creaky Chair",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "CurseBuild"
+   ],
+   "dependency_tags": [
+    "CurseGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "CreditCard",
+   "ok": true,
+   "name": "Credit Card",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 2,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "CrystalBall",
+   "ok": true,
+   "name": "Crystal Ball",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 70,
+     "value": 70
+    }
+   ],
+   "tags": [
+    "CurseBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "CursedVHS",
+   "ok": true,
+   "name": "Cursed VHS",
+   "rarity": "Common",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "CurseBuild",
+    "CurseGenerator",
+    "ScatteredItemsBuild",
+    "ItemScatterer"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Dagger",
+   "ok": true,
+   "name": "Dagger",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 50
+    }
+   ],
+   "tags": [
+    "ChessBuild"
+   ],
+   "dependency_tags": [
+    "ChessGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Dancer",
+   "ok": true,
+   "name": "Dancer",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "ChessBuild",
+    "ChessGenerator",
+    "CardsBuild",
+    "CardsGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "DangerousSummit",
+   "ok": true,
+   "name": "Dangerous Summit",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "VoidBuild",
+    "VoidGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Dango",
+   "ok": true,
+   "name": "Dango",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlueBuild",
+    "RedBuild",
+    "ShinyBuild",
+    "VoidBuild",
+    "RainbowBuild"
+   ],
+   "dependency_tags": [
+    "BlueGenerator",
+    "RedGenerator",
+    "ShinyGenerator",
+    "VoidGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Dartboard",
+   "ok": true,
+   "name": "Dartboard",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 100,
+     "value": 101
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "DeepSeaHorror",
+   "ok": true,
+   "name": "Deep Sea Horror",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": -10,
+     "value": -10
+    }
+   ],
+   "tags": [
+    "VoidBuild",
+    "VoidGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "DeliveryTruck",
+   "ok": true,
+   "name": "Delivery Truck",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ConsumableBuild",
+    "ScatteredItemsBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Departures",
+   "ok": true,
+   "name": "Departures",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 100
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "DivingMask",
+   "ok": true,
+   "name": "Diving Mask",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 10,
+     "value": 10
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Diya",
+   "ok": true,
+   "name": "Diya",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Doughnut",
+   "ok": true,
+   "name": "Doughnut",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 5,
+     "value": 5
+    }
+   ],
+   "tags": [
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Dove",
+   "ok": true,
+   "name": "Dove",
+   "rarity": "Rare",
+   "cost": 20,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ChessBuild",
+    "CashGenerator"
+   ],
+   "dependency_tags": [
+    "ChessGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "DownwardTrendingChart",
+   "ok": true,
+   "name": "Downward Trending Chart",
+   "rarity": "Common",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Dragon",
+   "ok": true,
+   "name": "Dragon",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "DustyCoffin",
+   "ok": true,
+   "name": "Dusty Coffin",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 8,
+     "value": 8
+    }
+   ],
+   "tags": [
+    "VoidBuild"
+   ],
+   "dependency_tags": [
+    "VoidGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Eclipse",
+   "ok": true,
+   "name": "Eclipse",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "VoidBuild",
+    "VoidGenerator",
+    "ShinyBuild",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Shiny",
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "EfficientRecycler",
+   "ok": true,
+   "name": "Efficient Recycler",
+   "rarity": "Common",
+   "cost": 9,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Egg",
+   "ok": true,
+   "name": "Egg",
+   "rarity": "Common",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "EightBall",
+   "ok": true,
+   "name": "Magic 8 Ball",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 25,
+     "value": 25
+    }
+   ],
+   "tags": [
+    "ChessBuild"
+   ],
+   "dependency_tags": [
+    "ChessGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "ElectricGuitar",
+   "ok": true,
+   "name": "Electric Guitar",
+   "rarity": "Common",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 15,
+     "value": 15
+    }
+   ],
+   "tags": [
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "EmptyJar",
+   "ok": true,
+   "name": "Empty Jar",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Eraser",
+   "ok": true,
+   "name": "Eraser",
+   "rarity": "Rare",
+   "cost": 17,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "ErrorItem",
+   "ok": true,
+   "name": "Error",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [
+    "Glitch"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "EruptingVolcano",
+   "ok": true,
+   "name": "Disco Ball",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ShinyBuild",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Shiny"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FallingLeaf",
+   "ok": true,
+   "name": "Falling Leaf",
+   "rarity": "Common",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FamilyTicket",
+   "ok": true,
+   "name": "Family Ticket",
+   "rarity": "Common",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild",
+    "RedGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Fan",
+   "ok": true,
+   "name": "Fan",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ShinyBuild",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [
+    "ShinyGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Shiny"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FerrisWheel",
+   "ok": true,
+   "name": "Ferris Wheel",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [
+    "RainbowBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator",
+    "BlueGenerator",
+    "VoidGenerator",
+    "ShinyGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FilingCabinet",
+   "ok": true,
+   "name": "Filing Cabinet",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RainbowBuild",
+    "ScatteredItemsBuild",
+    "ItemScatterer"
+   ],
+   "dependency_tags": [
+    "RedGenerator",
+    "BlueGenerator",
+    "VoidGenerator",
+    "ShinyGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FireExtinguisher",
+   "ok": true,
+   "name": "Fire Extinguisher",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 5,
+     "value": 5
+    }
+   ],
+   "tags": [
+    "ColourlessBuild",
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Fireworks",
+   "ok": true,
+   "name": "Fireworks",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 2,
+     "value": 3
+    }
+   ],
+   "tags": [
+    "ShinyBuild",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Shiny"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FishCake",
+   "ok": true,
+   "name": "Fish Cake",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "ShinyBuild"
+   ],
+   "dependency_tags": [
+    "ShinyGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [
+    "Shiny"
+   ],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Flamingo",
+   "ok": true,
+   "name": "Flamingo",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ShinyBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Shiny"
+   ],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "FlashyFountainPen",
+   "ok": true,
+   "name": "Flashy Fountain Pen",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FleurDeLis",
+   "ok": true,
+   "name": "Fleur De Lis",
+   "rarity": "Rare",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild",
+    "BlueBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator",
+    "BlueGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Red",
+    "Blue",
+    "Purple"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FoodPoisoning",
+   "ok": true,
+   "name": "Food Poisoning",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CurseBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Green"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Footprints",
+   "ok": true,
+   "name": "Footprints",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "ChessBuild"
+   ],
+   "dependency_tags": [
+    "ChessGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FortuneCookie",
+   "ok": true,
+   "name": "Fortune Cookie",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Fountain",
+   "ok": true,
+   "name": "Fountain",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 2,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "BlueBuild",
+    "BlueGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FourLeafClover",
+   "ok": true,
+   "name": "Four Leaf Clover",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CardsBuild",
+    "CardsGenerator",
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue",
+    "Shiny",
+    "Red",
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FractionFrog",
+   "ok": true,
+   "name": "Fraction Frog",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ConsumableBuild",
+    "NumbersBuild",
+    "NumbersGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "Frankenstein",
+   "ok": true,
+   "name": "Frankenstein",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FriedShrimp",
+   "ok": true,
+   "name": "Fried Shrimp",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FullBattery",
+   "ok": true,
+   "name": "Full Battery",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "NumbersBuild"
+   ],
+   "dependency_tags": [
+    "NumbersBuild"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FullMoon",
+   "ok": true,
+   "name": "Full Moon",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "WordEntryManipulation",
+    "BlankBuild",
+    "ChessBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "FutureFunds",
+   "ok": true,
+   "name": "Angel Investment",
+   "rarity": "Rare",
+   "cost": 35,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CashBuild",
+    "CashGenerator"
+   ],
+   "dependency_tags": [
+    "CashGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "GamePad",
+   "ok": true,
+   "name": "Game Pad",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "BlueGenerator",
+    "RedGenerator",
+    "VoidBuild",
+    "VoidGenerator",
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Void",
+    "Red",
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Genie",
+   "ok": true,
+   "name": "Genie",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Ghost",
+   "ok": true,
+   "name": "Ghost",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "CurseBuild",
+    "CurseGenerator"
+   ],
+   "dependency_tags": [
+    "ArrowGenerator",
+    "BlankGenerator",
+    "CurseGenerator",
+    "ChessGenerator",
+    "NumbersGenerator",
+    "BlankGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Giraffe",
+   "ok": true,
+   "name": "Slide",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 150,
+     "value": 150
+    }
+   ],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "GlassOfMilk",
+   "ok": true,
+   "name": "Glass Of Milk",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 15,
+     "value": 15
+    }
+   ],
+   "tags": [
+    "BlankBuild"
+   ],
+   "dependency_tags": [
+    "BlankGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "GlobeTrotter",
+   "ok": true,
+   "name": "Globe Trotter",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CashBuild",
+    "CashGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "GoFish",
+   "ok": true,
+   "name": "Go Fish!",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CardsBuild",
+    "CardsGenerator",
+    "BlueBuild",
+    "BlueGenerator",
+    "NumbersBuild",
+    "NumbersGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "GoldenRecord",
+   "ok": true,
+   "name": "Golden Record",
+   "rarity": "Common",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "GoldenScales",
+   "ok": true,
+   "name": "Golden Scales",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CashBuild",
+    "CashGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "GoldFish",
+   "ok": true,
+   "name": "Gold Fish",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "CashBuild",
+    "ConsumableBuild",
+    "CashGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "Gorilla",
+   "ok": true,
+   "name": "Gorilla",
+   "rarity": "Common",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "ChessBuild",
+    "ChessGenerator",
+    "VoidBuild",
+    "VoidGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "GraduationCap",
+   "ok": true,
+   "name": "Graduation Cap",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 3,
+     "value": 3
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "HamSandwich",
+   "ok": true,
+   "name": "Ham Sandwich",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 25,
+     "value": 25
+    }
+   ],
+   "tags": [
+    "BlankBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Hanafuda",
+   "ok": true,
+   "name": "Hanafuda",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 12,
+     "value": 12
+    }
+   ],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "HauntedHouse",
+   "ok": true,
+   "name": "Haunted House",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CardsBuild",
+    "CardsGenerator",
+    "CurseBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "HauntedMirror",
+   "ok": true,
+   "name": "Haunted Mirror",
+   "rarity": "Common",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RainbowBuild",
+    "CurseBuild"
+   ],
+   "dependency_tags": [
+    "ArrowGenerator",
+    "BlankGenerator",
+    "CurseGenerator",
+    "ChessGenerator",
+    "NumbersGenerator",
+    "BlankGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "HeadInTheClouds",
+   "ok": true,
+   "name": "Head In The Clouds",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RainbowBuild",
+    "ChessBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [
+    "White"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "HeadTrauma",
+   "ok": true,
+   "name": "Head Trauma",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "VoidBuild",
+    "VoidGenerator",
+    "BlueBuild",
+    "BlueGenerator",
+    "BlankBuild",
+    "BlankGenerator",
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Void",
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "HeartOnFire",
+   "ok": true,
+   "name": "Heart On Fire",
+   "rarity": "Legendary",
+   "cost": 37,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "HiVisJacket",
+   "ok": true,
+   "name": "Hi Vis Jacket",
+   "rarity": "Rare",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 20,
+     "value": 20
+    }
+   ],
+   "tags": [
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [
+    "ConsumableGenerator"
+   ],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Honeypot",
+   "ok": true,
+   "name": "Honeypot",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Hourglass",
+   "ok": true,
+   "name": "Hourglass",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "HumanHands",
+   "ok": true,
+   "name": "Human Hands",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "pin",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 0
+    },
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "HungryHippo",
+   "ok": true,
+   "name": "Hungry Hippo",
+   "rarity": "Rare",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 20,
+     "value": 20
+    }
+   ],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "HungrySnake",
+   "ok": true,
+   "name": "Hungry Snake",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "WordEntryManipulation"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "IDCard",
+   "ok": true,
+   "name": "ID Card",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "JackOLantern",
+   "ok": true,
+   "name": "Jack-o'-Lantern",
+   "rarity": "Common",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "CashBuild",
+    "CurseBuild",
+    "CashGenerator"
+   ],
+   "dependency_tags": [
+    "ArrowGenerator",
+    "BlankGenerator",
+    "CurseGenerator",
+    "ChessGenerator",
+    "NumbersGenerator",
+    "BlankGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Jellyfish",
+   "ok": true,
+   "name": "Jellyfish",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ShinyGenerator",
+    "ShinyBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Shiny"
+   ],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "JigsawPiece",
+   "ok": true,
+   "name": "Jigsaw Piece",
+   "rarity": "Rare",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 100,
+     "value": 100
+    }
+   ],
+   "tags": [
+    "BlankBuild",
+    "VoidBuild"
+   ],
+   "dependency_tags": [
+    "BlankGenerator",
+    "VoidGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Joker",
+   "ok": true,
+   "name": "Joker",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "CardsBuild",
+    "CardsGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "JollyRoger",
+   "ok": true,
+   "name": "Jolly Roger",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ChessBuild",
+    "ChessGenerator",
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [
+    "ChessGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "JuiceBox",
+   "ok": true,
+   "name": "Juice Box",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Kadomatsu",
+   "ok": true,
+   "name": "Kadomatsu",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 80,
+     "value": 80
+    }
+   ],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Kangaroo",
+   "ok": true,
+   "name": "Kangaroo",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 5,
+     "value": 5
+    }
+   ],
+   "tags": [
+    "ChessBuild"
+   ],
+   "dependency_tags": [
+    "ChessGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "Kimono",
+   "ok": true,
+   "name": "Kimono",
+   "rarity": "Common",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlueBuild",
+    "BlankGenerator",
+    "BlankBuild"
+   ],
+   "dependency_tags": [
+    "BlueGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "KingOfTheBridge",
+   "ok": true,
+   "name": "King Of The Bridge",
+   "rarity": "Rare",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ChessBuild"
+   ],
+   "dependency_tags": [
+    "ChessGenerator"
+   ],
+   "function_tags": [],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "KokeshiDolls",
+   "ok": true,
+   "name": "Kokeshi Dolls",
+   "rarity": "Rare",
+   "cost": 20,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [
+    "CurrencyGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "LabCoat",
+   "ok": true,
+   "name": "Lab Coat",
+   "rarity": "Common",
+   "cost": 9,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "NumbersBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Ladybird",
+   "ok": true,
+   "name": "Ladybird",
+   "rarity": "Common",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "NumbersBuild",
+    "NumbersGenerator",
+    "RedGenerator",
+    "VoidGenerator",
+    "RedBuild",
+    "VoidBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red",
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "LasVegas",
+   "ok": true,
+   "name": "Las Vegas",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "LeftHumanHand",
+   "ok": true,
+   "name": "Left Hand",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 0,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": true
+  },
+  {
+   "type": "Limnophila",
+   "ok": true,
+   "name": "Limnophila",
+   "rarity": "Common",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Lipstick",
+   "ok": true,
+   "name": "Lipstick",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 2,
+     "value": 5
+    }
+   ],
+   "tags": [
+    "RedBuild",
+    "RedGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Lollipop",
+   "ok": true,
+   "name": "Lollipop",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 5,
+     "value": 5
+    }
+   ],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "LuckyDice",
+   "ok": true,
+   "error": "ECall methods must be packaged into a system module.",
+   "name": "Lucky Dice",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 50
+    }
+   ],
+   "tags": [
+    "NumbersBuild"
+   ],
+   "dependency_tags": [
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false,
+   "manual": true
+  },
+  {
+   "type": "LuckyScarf",
+   "ok": true,
+   "name": "Lucky Scarf",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "LuffingJibCrane",
+   "ok": true,
+   "name": "Luffing Jib Crane",
+   "rarity": "Rare",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 10,
+     "value": 10
+    }
+   ],
+   "tags": [
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MagiciansHat",
+   "ok": true,
+   "name": "Magician's Hat",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CardsBuild",
+    "CardsGenerator",
+    "VoidBuild"
+   ],
+   "dependency_tags": [
+    "VoidGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MagicWand",
+   "ok": true,
+   "name": "Magic Wand",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "ShinyBuild",
+    "RainbowBuild",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [
+    "BlueGenerator",
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red",
+    "Blue",
+    "Shiny"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Magnet",
+   "ok": true,
+   "name": "Magnet",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "NumbersBuild"
+   ],
+   "dependency_tags": [
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MahjongRedDragon",
+   "ok": true,
+   "name": "Mahjong Red Dragon",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "pin",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    },
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "RedBuild",
+    "RedGenerator",
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MapleLeaf",
+   "ok": true,
+   "name": "Maple Leaf",
+   "rarity": "Common",
+   "cost": 9,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Maracas",
+   "ok": true,
+   "name": "Maracas",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "RainbowBuild",
+    "RedGenerator",
+    "BlueGenerator",
+    "VoidGenerator",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [
+    "RedGenerator",
+    "BlueGenerator",
+    "VoidGenerator",
+    "ShinyGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Martini",
+   "ok": true,
+   "name": "Martini",
+   "rarity": "Common",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MichaelsBook",
+   "ok": true,
+   "name": "Michael's Book",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "CurseBuild",
+    "BlankBuild"
+   ],
+   "dependency_tags": [
+    "CurseGenerator",
+    "BlankGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Microphone",
+   "ok": true,
+   "name": "Microphone",
+   "rarity": "Legendary",
+   "cost": 25,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Microscope",
+   "ok": true,
+   "name": "Microscope",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MilkyWay",
+   "ok": true,
+   "name": "Milky Way",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "pin",
+   "components": [
+    {
+     "level": 1,
+     "increment": 2,
+     "value": 2
+    },
+    {
+     "level": 1,
+     "increment": 10,
+     "value": 10
+    }
+   ],
+   "tags": [
+    "VoidBuild",
+    "RainbowBuild",
+    "ShinyBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [],
+   "relevant_colours": [
+    "Void",
+    "Shiny"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MirrorBall",
+   "ok": true,
+   "name": "Banana",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlankBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MischievousImp",
+   "ok": true,
+   "name": "Mischievous Imp",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "CurseBuild"
+   ],
+   "dependency_tags": [
+    "ArrowGenerator",
+    "BlankGenerator",
+    "CardsGenerator",
+    "ChessGenerator",
+    "CurseGenerator",
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Moai",
+   "ok": true,
+   "name": "Moai",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 12,
+     "value": 12
+    }
+   ],
+   "tags": [
+    "CurseBuild",
+    "ColourlessBuild"
+   ],
+   "dependency_tags": [
+    "ArrowGenerator",
+    "BlankGenerator",
+    "CardsGenerator",
+    "ChessGenerator",
+    "CurseGenerator",
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MovieCamera",
+   "ok": true,
+   "name": "Movie Camera",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "ChessBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MushroomUpgrade",
+   "ok": true,
+   "name": "Mushroom Upgrade",
+   "rarity": "Rare",
+   "cost": 20,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild",
+    "RedGenerator"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MusicalNotes",
+   "ok": true,
+   "name": "Musical Notes",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 3
+    }
+   ],
+   "tags": [
+    "CardsBuild",
+    "CardsGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MutatingDNA",
+   "ok": true,
+   "name": "Mutating DNA",
+   "rarity": "Legendary",
+   "cost": 25,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MysteriousAmulet",
+   "ok": true,
+   "name": "Mysterious Amulet",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 8,
+     "value": 8
+    }
+   ],
+   "tags": [
+    "CurseBuild"
+   ],
+   "dependency_tags": [
+    "ArrowGenerator",
+    "BlankGenerator",
+    "CardsGenerator",
+    "ChessGenerator",
+    "CurseGenerator",
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "MysteryGift",
+   "ok": true,
+   "name": "Mystery Gift",
+   "rarity": "Common",
+   "cost": 5,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Neapolitan",
+   "ok": true,
+   "name": "Neapolitan",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "NestEgg",
+   "ok": true,
+   "name": "Nest Egg",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlueBuild",
+    "CashBuild",
+    "CashGenerator"
+   ],
+   "dependency_tags": [
+    "BlueGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "NewEruptingVolcano",
+   "ok": true,
+   "name": "Erupting Volcano",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Newspaper",
+   "ok": true,
+   "name": "Newspaper",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [
+    "ColourlessBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "NorthernCardinal",
+   "ok": true,
+   "name": "Young Cardinal",
+   "rarity": "Common",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "NumberFactory",
+   "ok": true,
+   "name": "Number Factory",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "NumbersGenerator",
+    "NumbersBuild",
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "NumberGoUp",
+   "ok": true,
+   "name": "Number Go Up",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "NumbersBuild",
+    "BigNumbersBuild"
+   ],
+   "dependency_tags": [
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "NumbersBunchOfGrapes",
+   "ok": true,
+   "name": "Bunch Of Grapes",
+   "rarity": "Common",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "NumbersBuild",
+    "NumbersGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "NumbersGiraffe",
+   "ok": true,
+   "name": "Giraffe",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "NumbersBuild"
+   ],
+   "dependency_tags": [
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "Oden",
+   "ok": true,
+   "name": "Oden",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CurseBuild"
+   ],
+   "dependency_tags": [
+    "CurseGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Ogre",
+   "ok": true,
+   "name": "Ogre",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Onigiri",
+   "ok": true,
+   "name": "Onigiri",
+   "rarity": "Common",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 40,
+     "value": 20
+    }
+   ],
+   "tags": [
+    "ColourlessBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "OrnateKey",
+   "ok": true,
+   "name": "Ornate Key",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [
+    "RedBuild",
+    "BlueBuild",
+    "VoidBuild",
+    "ShinyBuild",
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Overhand",
+   "ok": true,
+   "name": "Overhand",
+   "rarity": "Rare",
+   "cost": 30,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "PairOfSocks",
+   "ok": true,
+   "name": "Pair Of Socks",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 200
+    }
+   ],
+   "tags": [
+    "BlueBuild",
+    "RainbowBuild"
+   ],
+   "dependency_tags": [
+    "BlueGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "PaperLantern",
+   "ok": true,
+   "name": "Paper Lantern",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild",
+    "RedGenerator"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Parachute",
+   "ok": true,
+   "name": "Parachute",
+   "rarity": "Common",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Parrot",
+   "ok": true,
+   "name": "Parrot",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 8,
+     "value": 8
+    }
+   ],
+   "tags": [
+    "ColourlessBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator",
+    "BlueGenerator",
+    "VoidGenerator",
+    "ShinyGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "Peacock",
+   "ok": true,
+   "name": "Peacock",
+   "rarity": "Common",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "Pear",
+   "ok": true,
+   "name": "Pear",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "CashBuild",
+    "CardsBuild",
+    "CashGenerator"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "PeasOfAPod",
+   "ok": true,
+   "name": "Peas Of A Pod",
+   "rarity": "Common",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "PetriDish",
+   "ok": true,
+   "name": "Petri Dish",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 3
+    }
+   ],
+   "tags": [
+    "NumbersBuild",
+    "NumbersGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "PieceOfCake",
+   "ok": true,
+   "name": "Piece of Cake",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "PiggyBank",
+   "ok": true,
+   "name": "Coin Purse",
+   "rarity": "Rare",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "ShinyGenerator",
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Shiny"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Pinata",
+   "ok": true,
+   "name": "Pi\u00a4ata",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ShinyBuild",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Shiny"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "PizzaSlice",
+   "ok": true,
+   "name": "Pizza Slice",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "NumbersBuild",
+    "NumbersGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Pneumonia",
+   "ok": true,
+   "name": "Pneumonia",
+   "rarity": "Common",
+   "cost": 9,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 10,
+     "value": 10
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "PocketMoney",
+   "ok": true,
+   "name": "Pocket Money",
+   "rarity": "Rare",
+   "cost": 20,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "NumbersBuild"
+   ],
+   "dependency_tags": [
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "PokerFace",
+   "ok": true,
+   "name": "Poker Face",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "PostalHorn",
+   "ok": true,
+   "name": "Postal Horn",
+   "rarity": "Common",
+   "cost": 9,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 4,
+     "value": 4
+    }
+   ],
+   "tags": [
+    "CardsBuild",
+    "CardsGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Postbox",
+   "ok": true,
+   "name": "Postbox",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Printer",
+   "ok": true,
+   "name": "Printer",
+   "rarity": "Common",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "BlueBuild",
+    "ScatteredItemsBuild",
+    "ItemScatterer"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Queen",
+   "ok": true,
+   "name": "Queenie",
+   "rarity": "Rare",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "QueenBee",
+   "ok": true,
+   "name": "Queen Bee",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ChessBuild",
+    "ChessGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "QueenOfSpades",
+   "ok": true,
+   "name": "Down Under",
+   "rarity": "Common",
+   "cost": 9,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": -2,
+     "value": -3
+    }
+   ],
+   "tags": [
+    "VoidBuild"
+   ],
+   "dependency_tags": [
+    "VoidGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Raccoon",
+   "ok": true,
+   "name": "Raccoon",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "ChessBuild",
+    "ChessGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "Radio",
+   "ok": true,
+   "name": "Radio",
+   "rarity": "Common",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "ColourlessBuild",
+    "ScatteredItemsBuild",
+    "ItemScatterer"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Rainbow",
+   "ok": true,
+   "name": "Rainbow",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "pin",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    },
+    {
+     "level": 1,
+     "increment": 5,
+     "value": 5
+    }
+   ],
+   "tags": [
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [
+    "Cactus",
+    "Gold",
+    "Green",
+    "Pink",
+    "Purple",
+    "White"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "RainbowSprinkles",
+   "ok": true,
+   "name": "Rainbow Sprinkles",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 2,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "RainbowBuild",
+    "ShinyGenerator",
+    "ShinyBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator",
+    "BlueGenerator",
+    "VoidGenerator",
+    "ShinyGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Shiny"
+   ],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "RandomAccessMemory",
+   "ok": true,
+   "name": "Random Access Memory",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "pin",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    },
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Receipt",
+   "ok": true,
+   "name": "Receipt",
+   "rarity": "Rare",
+   "cost": 20,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "RedBalloon",
+   "ok": true,
+   "name": "Red Balloon",
+   "rarity": "Rare",
+   "cost": 9,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild",
+    "RedGenerator",
+    "NumbersBuild",
+    "BigNumbersBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "RedEnvelope",
+   "ok": true,
+   "name": "Red Envelope",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "RetroRaider",
+   "ok": true,
+   "name": "Retro Raider",
+   "rarity": "Common",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "VoidBuild",
+    "VoidGenerator",
+    "ScatteredItemsBuild",
+    "ItemScatterer"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Rex",
+   "ok": true,
+   "name": "Rex",
+   "rarity": "Rare",
+   "cost": 20,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "ScatteredItemsBuild",
+    "ItemScatterer"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech",
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "RightHumanHand",
+   "ok": true,
+   "name": "Right Hand",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": true
+  },
+  {
+   "type": "Rollercoaster",
+   "ok": true,
+   "name": "Rollercoaster",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "RollerSkate",
+   "ok": true,
+   "name": "Roller Skate",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "CashBuild",
+    "CurrencyGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Rolodex",
+   "ok": true,
+   "name": "Rolodex",
+   "rarity": "Common",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "CardsBuild",
+    "CardsGenerator",
+    "ScatteredItemsBuild",
+    "ItemScatterer"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Rosebud",
+   "ok": true,
+   "name": "Rosebud",
+   "rarity": "Rare",
+   "cost": 17,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild",
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Ruler",
+   "ok": true,
+   "name": "Ruler",
+   "rarity": "Common",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ChessBuild"
+   ],
+   "dependency_tags": [
+    "ChessGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SaguaroSeedling",
+   "ok": true,
+   "name": "Saguaro Seedling",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [
+    "Cactus"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Saxophone",
+   "ok": true,
+   "name": "Saxophone",
+   "rarity": "Common",
+   "cost": 7,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlueBuild"
+   ],
+   "dependency_tags": [
+    "BlueGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Scissors",
+   "ok": true,
+   "name": "Scissors",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 25,
+     "value": 25
+    }
+   ],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SequoiaSapling",
+   "ok": true,
+   "name": "Sequoia Sapling",
+   "rarity": "Rare",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 6,
+     "value": 6
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SewingNeedle",
+   "ok": true,
+   "name": "Sewing Needle",
+   "rarity": "Legendary",
+   "cost": 40,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "ShavedIce",
+   "ok": true,
+   "name": "Shaved Ice",
+   "rarity": "Common",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Shield",
+   "ok": true,
+   "name": "Shield",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 10,
+     "value": 10
+    }
+   ],
+   "tags": [
+    "BlueBuild"
+   ],
+   "dependency_tags": [
+    "BlueGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SignalReceiver",
+   "ok": true,
+   "name": "Signal Receiver",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "ScatteredItemsBuild"
+   ],
+   "dependency_tags": [
+    "ItemScatterer"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SillyPuppy",
+   "ok": true,
+   "name": "Silly Puppy",
+   "rarity": "Rare",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "SlotMachine",
+   "ok": true,
+   "name": "Slot Machine",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "VoidBuild",
+    "VoidGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SluggishZombie",
+   "ok": true,
+   "name": "Sluggish Zombie",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SlySpy",
+   "ok": true,
+   "name": "Sly Spy",
+   "rarity": "Rare",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SmartShirt",
+   "ok": true,
+   "name": "Smart Shirt",
+   "rarity": "Rare",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CardsBuild",
+    "CardsGenerator",
+    "RainbowBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator",
+    "BlueGenerator",
+    "VoidGenerator",
+    "ShinyGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Snail",
+   "ok": true,
+   "name": "Snail",
+   "rarity": "Common",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "Snapshot",
+   "ok": true,
+   "name": "Snapshot",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "ScatteredItemsBuild"
+   ],
+   "dependency_tags": [
+    "ItemScatterer"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Snowman",
+   "ok": true,
+   "name": "Snowman",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "CashBuild",
+    "CurrencyGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SoaringKite",
+   "ok": true,
+   "name": "Soaring Kite",
+   "rarity": "Common",
+   "cost": 9,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "BlueBuild",
+    "BlueGenerator",
+    "NumbersBuild",
+    "NumbersGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SpicyPepper",
+   "ok": true,
+   "name": "Spicy Pepper",
+   "rarity": "Common",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SpoutingWhale",
+   "ok": true,
+   "name": "Spouting Whale",
+   "rarity": "Rare",
+   "cost": 22,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlueBuild",
+    "BlankBuild",
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "StackOfPancakes",
+   "ok": true,
+   "name": "Stack Of Pancakes",
+   "rarity": "Legendary",
+   "cost": 22,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Stadium",
+   "ok": true,
+   "name": "Stadium",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "StampAlbum",
+   "ok": true,
+   "name": "Stamp Album",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "ScatteredItemsBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "StampPadlock",
+   "ok": true,
+   "name": "Padlock",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 8,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "StatueOfLiberty",
+   "ok": true,
+   "name": "Statue Of Liberty",
+   "rarity": "Legendary",
+   "cost": 30,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlueBuild",
+    "BlueGenerator",
+    "BlankGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Steak",
+   "ok": true,
+   "name": "Steak",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ScatteredItemsBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Stethoscope",
+   "ok": true,
+   "name": "Stethoscope",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "NumbersBuild",
+    "ScatteredItemsBuild",
+    "ItemScatterer"
+   ],
+   "dependency_tags": [
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "StickerPadlock",
+   "ok": true,
+   "name": "Padlock",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 8,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 8,
+     "value": 8
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "StickingPlaster",
+   "ok": true,
+   "name": "Sticky Plaster",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "NumbersBuild",
+    "NumbersGenerator"
+   ],
+   "dependency_tags": [
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive",
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Stiletto",
+   "ok": true,
+   "name": "Stiletto",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Stilton",
+   "ok": true,
+   "name": "Stilton",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 8,
+     "value": 8
+    }
+   ],
+   "tags": [
+    "BlueBuild"
+   ],
+   "dependency_tags": [
+    "BlueGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "StormCloud",
+   "ok": true,
+   "name": "Storm Cloud",
+   "rarity": "Rare",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "CurseBuild",
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Suitcase",
+   "ok": true,
+   "name": "Suitcase",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "ChessBuild",
+    "ChessGenerator",
+    "BlueBuild",
+    "BlueGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Sunflower",
+   "ok": true,
+   "name": "Sunflower",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SuperEight",
+   "ok": true,
+   "name": "Super 8",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "pin",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    },
+    {
+     "level": 1,
+     "increment": 8,
+     "value": 8
+    }
+   ],
+   "tags": [
+    "ChessBuild",
+    "ChessGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Supervillain",
+   "ok": true,
+   "name": "Supervillain",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CurseBuild",
+    "CurseGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "SurpriseDelivery",
+   "ok": true,
+   "name": "Surprise Delivery",
+   "rarity": "Common",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Sushi",
+   "ok": true,
+   "name": "Sushi",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 3
+    }
+   ],
+   "tags": [
+    "ColourlessBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "TakeoutBox",
+   "ok": true,
+   "name": "Takeout Box",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Teapot",
+   "ok": true,
+   "name": "Teapot",
+   "rarity": "Common",
+   "cost": 9,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlueBuild",
+    "BlueGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Telescope",
+   "ok": true,
+   "name": "Telescope",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Television",
+   "ok": true,
+   "name": "Television",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ChessBuild",
+    "ScatteredItemsBuild",
+    "ItemScatterer"
+   ],
+   "dependency_tags": [
+    "ChessGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "TenPinBowling",
+   "ok": true,
+   "name": "Ten Pin Bowling",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "NumbersBuild",
+    "NumbersGenerator",
+    "VoidBuild",
+    "VoidGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "TestTube",
+   "ok": true,
+   "name": "Test Tube",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "NumbersBuild"
+   ],
+   "dependency_tags": [
+    "NumbersGenerator"
+   ],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "TileNinja",
+   "ok": true,
+   "name": "Tile Ninja",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Tombstone",
+   "ok": true,
+   "name": "Tombstone",
+   "rarity": "Common",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 5,
+     "value": 5
+    }
+   ],
+   "tags": [
+    "VoidBuild"
+   ],
+   "dependency_tags": [
+    "VoidGenerator"
+   ],
+   "function_tags": [
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Toolbox",
+   "ok": true,
+   "name": "Toolbox",
+   "rarity": "Common",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    }
+   ],
+   "tags": [
+    "RedBuild",
+    "RedGenerator",
+    "ScatteredItemsBuild",
+    "ItemScatterer"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "ToriiGate",
+   "ok": true,
+   "name": "Torii Gate",
+   "rarity": "Rare",
+   "cost": 18,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RedBuild",
+    "RedGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "TrafficLights",
+   "ok": true,
+   "name": "Traffic Lights",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "NumbersBuild",
+    "NumbersGenerator",
+    "RainbowBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "TrophyOfWealth",
+   "ok": true,
+   "name": "Trophy Of Wealth",
+   "rarity": "Rare",
+   "cost": 15,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "RainbowBuild",
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "SpecificAdditive"
+   ],
+   "relevant_colours": [
+    "Gold"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "TwinkleToes",
+   "ok": true,
+   "name": "Twinkle Toes",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "UnderConstruction",
+   "ok": true,
+   "name": "Under Construction",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Underhand",
+   "ok": true,
+   "name": "Underhand",
+   "rarity": "Legendary",
+   "cost": 40,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Unicorn",
+   "ok": true,
+   "name": "Unicorn",
+   "rarity": "Common",
+   "cost": 20,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "ValentinesDayCard",
+   "ok": true,
+   "name": "Valentine's Day Card",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CardsBuild",
+    "CardsGenerator",
+    "RedBuild"
+   ],
+   "dependency_tags": [
+    "RedGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "WadOfCash",
+   "ok": true,
+   "name": "Wad of Cash",
+   "rarity": "Unique",
+   "cost": 0,
+   "sell_cost": 0,
+   "slot": "pin",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 1
+    },
+    {
+     "level": 1,
+     "increment": 10,
+     "value": 10
+    }
+   ],
+   "tags": [
+    "CashBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer",
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "WaxyVizor",
+   "ok": true,
+   "name": "Waxy Vizor",
+   "rarity": "Common",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlueBuild",
+    "BlueGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "WeeklyShop",
+   "ok": true,
+   "name": "Weekly Shop",
+   "rarity": "Rare",
+   "cost": 14,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "ColourlessBuild",
+    "ConsumableBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Wheel",
+   "ok": true,
+   "name": "Wheel",
+   "rarity": "Common",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "Tech"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "WheezyVixen",
+   "ok": true,
+   "name": "Wheezy Vixen",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "WindChime",
+   "ok": true,
+   "name": "Wind Chime",
+   "rarity": "Rare",
+   "cost": 13,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Window",
+   "ok": true,
+   "name": "Window",
+   "rarity": "Common",
+   "cost": 8,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlueBuild",
+    "BlueGenerator"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "WorkOfArt",
+   "ok": true,
+   "name": "Work of Art",
+   "rarity": "Rare",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "CardsBuild",
+    "RainbowBuild",
+    "RedGenerator",
+    "BlueGenerator",
+    "VoidGenerator",
+    "ShinyGenerator"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Red",
+    "Shiny",
+    "Blue",
+    "Void"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "WornOutJeans",
+   "ok": true,
+   "name": "Worn-out Jeans",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 1,
+     "value": 2
+    }
+   ],
+   "tags": [
+    "BlueBuild",
+    "BlankBuild",
+    "BlankGenerator"
+   ],
+   "dependency_tags": [
+    "BlueGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Wrestlers",
+   "ok": true,
+   "name": "Wrestlers",
+   "rarity": "Common",
+   "cost": 10,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [
+    "CardsBuild"
+   ],
+   "dependency_tags": [
+    "CardsGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "WrigglyWorm",
+   "ok": true,
+   "name": "Wriggly Worm",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [
+    "ChessBuild",
+    "BlankBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  },
+  {
+   "type": "Xray",
+   "ok": true,
+   "name": "Xray",
+   "rarity": "Common",
+   "cost": 16,
+   "sell_cost": 0,
+   "slot": "stamp",
+   "components": [],
+   "tags": [
+    "BlueBuild",
+    "BlankBuild",
+    "BlankGenerator"
+   ],
+   "dependency_tags": [
+    "BlueGenerator"
+   ],
+   "function_tags": [
+    "Scatterer"
+   ],
+   "relevant_colours": [
+    "Blue"
+   ],
+   "is_food": false,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "YellowGlasses",
+   "ok": true,
+   "name": "Yellow Glasses",
+   "rarity": "Common",
+   "cost": 11,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 50,
+     "value": 150
+    }
+   ],
+   "tags": [
+    "BlankBuild"
+   ],
+   "dependency_tags": [],
+   "function_tags": [
+    "GenericMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": true,
+   "is_animal": false,
+   "selling_prevented": false
+  },
+  {
+   "type": "Zebra",
+   "ok": true,
+   "name": "Zebra",
+   "rarity": "Common",
+   "cost": 12,
+   "sell_cost": 0,
+   "slot": "sticker",
+   "components": [
+    {
+     "level": 1,
+     "increment": 2,
+     "value": 3
+    }
+   ],
+   "tags": [
+    "ChessBuild"
+   ],
+   "dependency_tags": [
+    "ChessGenerator"
+   ],
+   "function_tags": [
+    "SpecificMultiplier"
+   ],
+   "relevant_colours": [],
+   "is_food": false,
+   "is_animal": true,
+   "selling_prevented": false
+  }
+ ],
+ "characters": [
+  {
+   "type": "BonesTheDog",
+   "ok": true,
+   "name": "Bones The Dog",
+   "pin": "Bicycle",
+   "intro_items": [
+    "MusicalNotes",
+    "PostalHorn",
+    "CelestialBody"
+   ],
+   "is_secret": false
+  },
+  {
+   "type": "HayleyBayles",
+   "ok": true,
+   "name": "Hayley Bayles",
+   "pin": "Abacus",
+   "intro_items": [
+    "LabCoat",
+    "Ladybird",
+    "TrafficLights",
+    "SoaringKite"
+   ],
+   "is_secret": false
+  },
+  {
+   "type": "NathaServo",
+   "ok": true,
+   "name": "Nat-H4",
+   "pin": "RandomAccessMemory",
+   "intro_items": [
+    "Printer",
+    "Toolbox",
+    "RetroRaider"
+   ],
+   "is_secret": true
+  },
+  {
+   "type": "NinaNix",
+   "ok": true,
+   "name": "Nina Nix",
+   "pin": "MilkyWay",
+   "intro_items": [
+    "Tombstone",
+    "DustyCoffin",
+    "GamePad",
+    "ArtistsPalette"
+   ],
+   "is_secret": false
+  },
+  {
+   "type": "Octacles",
+   "ok": true,
+   "name": "Octacles",
+   "pin": "Bucket",
+   "intro_items": [
+    "Amphora",
+    "MysteriousAmulet",
+    "Broom"
+   ],
+   "is_secret": false
+  },
+  {
+   "type": "PrismaticBean",
+   "ok": true,
+   "name": "Beans",
+   "pin": "Rainbow",
+   "intro_items": [
+    "FerrisWheel",
+    "Maracas",
+    "ArtistsPalette",
+    "GamePad"
+   ],
+   "is_secret": true
+  },
+  {
+   "type": "SamGambit",
+   "ok": true,
+   "name": "Sam Gambit",
+   "pin": "SuperEight",
+   "intro_items": [
+    "Raccoon",
+    "Gorilla",
+    "Suitcase",
+    "Backpack"
+   ],
+   "is_secret": false
+  },
+  {
+   "type": "SandySaguaro",
+   "ok": true,
+   "name": "Sandy Saguaro",
+   "pin": "MahjongRedDragon",
+   "intro_items": [
+    "MapleLeaf",
+    "Cherries"
+   ],
+   "is_secret": true
+  },
+  {
+   "type": "SockHead",
+   "ok": true,
+   "name": "Human Boy",
+   "pin": "HumanHands",
+   "intro_items": [],
+   "is_secret": true
+  },
+  {
+   "type": "Spike",
+   "ok": true,
+   "name": "Cretaceous Meg",
+   "pin": "WadOfCash",
+   "intro_items": [],
+   "is_secret": true
+  },
+  {
+   "type": "WetDennis",
+   "ok": true,
+   "name": "Rodman",
+   "pin": "CarpStreamers",
+   "intro_items": [
+    "Stilton",
+    "MapleLeaf",
+    "Telescope",
+    "WornOutJeans",
+    "ArtistsPalette",
+    "Cherries"
+   ],
+   "is_secret": false
+  }
+ ],
+ "bosses": [
+  {
+   "type": "AddNumbers",
+   "ok": true,
+   "name": "AddNumbers",
+   "banned_floor_indexes": [],
+   "difficulty_modifier": [
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "difficulty_increase": [
+    2,
+    2,
+    3,
+    3,
+    4,
+    4
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": true
+  },
+  {
+   "type": "BigBoss",
+   "ok": true,
+   "name": "BigBoss",
+   "banned_floor_indexes": [],
+   "difficulty_modifier": [
+    125,
+    135,
+    150,
+    160,
+    175,
+    200
+   ],
+   "difficulty_increase": [
+    10,
+    15,
+    25,
+    40,
+    50,
+    50
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": true
+  },
+  {
+   "type": "CretaceousMegBoss",
+   "ok": true,
+   "name": "Cretaceous Meg",
+   "banned_floor_indexes": [
+    1,
+    2,
+    5
+   ],
+   "difficulty_modifier": [
+    40,
+    80,
+    120,
+    160,
+    200,
+    240
+   ],
+   "difficulty_increase": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "is_secret_character": true,
+   "can_be_summoned_by_michael": false
+  },
+  {
+   "type": "DestroyGrid",
+   "ok": true,
+   "name": "DestroyGrid",
+   "banned_floor_indexes": [],
+   "difficulty_modifier": [
+    2,
+    2,
+    2,
+    3,
+    3,
+    4
+   ],
+   "difficulty_increase": [
+    1,
+    1,
+    1,
+    1,
+    2,
+    2
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": true
+  },
+  {
+   "type": "DiscolourTiles",
+   "ok": true,
+   "name": "DiscolourTiles",
+   "banned_floor_indexes": [],
+   "difficulty_modifier": [
+    2,
+    3,
+    4,
+    4,
+    5,
+    6
+   ],
+   "difficulty_increase": [
+    1,
+    1,
+    2,
+    3,
+    3,
+    4
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": true
+  },
+  {
+   "type": "ExtraQs",
+   "ok": true,
+   "name": "Extra Qs",
+   "banned_floor_indexes": [],
+   "difficulty_modifier": [
+    3,
+    4,
+    5,
+    5,
+    6,
+    7
+   ],
+   "difficulty_increase": [
+    2,
+    2,
+    3,
+    3,
+    4,
+    4
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": true
+  },
+  {
+   "type": "ExtraVoids",
+   "ok": true,
+   "name": "Extra Voids",
+   "banned_floor_indexes": [],
+   "difficulty_modifier": [
+    3,
+    4,
+    5,
+    5,
+    6,
+    7
+   ],
+   "difficulty_increase": [
+    2,
+    2,
+    3,
+    3,
+    4,
+    4
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": true
+  },
+  {
+   "type": "FewerGrids",
+   "ok": true,
+   "name": "FewerGrids",
+   "banned_floor_indexes": [],
+   "difficulty_modifier": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "difficulty_increase": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": true
+  },
+  {
+   "type": "ForcedSell",
+   "ok": true,
+   "name": "ForcedSell",
+   "banned_floor_indexes": [
+    0
+   ],
+   "difficulty_modifier": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "difficulty_increase": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": false
+  },
+  {
+   "type": "HumanBoyBoss",
+   "ok": true,
+   "name": "Human Boy",
+   "banned_floor_indexes": [
+    1,
+    2,
+    5
+   ],
+   "difficulty_modifier": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "difficulty_increase": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "is_secret_character": true,
+   "can_be_summoned_by_michael": false
+  },
+  {
+   "type": "MaxWordLength",
+   "ok": true,
+   "name": "Five Letter Maximum",
+   "banned_floor_indexes": [],
+   "difficulty_modifier": [
+    5,
+    5,
+    4,
+    4,
+    4,
+    4
+   ],
+   "difficulty_increase": [
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": true
+  },
+  {
+   "type": "MichaelBoss",
+   "ok": true,
+   "error": "Object reference not set to an instance of an object.",
+   "name": "MichaelBoss",
+   "banned_floor_indexes": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "difficulty_modifier": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    3,
+    4
+   ],
+   "difficulty_increase": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": false,
+   "manual": true
+  },
+  {
+   "type": "MinWordLength",
+   "ok": true,
+   "name": "Five Letter Minimum",
+   "banned_floor_indexes": [],
+   "difficulty_modifier": [
+    4,
+    5,
+    6,
+    6,
+    7,
+    7
+   ],
+   "difficulty_increase": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": true
+  },
+  {
+   "type": "NegativeMoney",
+   "ok": true,
+   "name": "NegativeMoney",
+   "banned_floor_indexes": [
+    4
+   ],
+   "difficulty_modifier": [
+    1,
+    5,
+    9,
+    15,
+    5,
+    6
+   ],
+   "difficulty_increase": [
+    1,
+    2,
+    3,
+    5,
+    2,
+    4
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": false
+  },
+  {
+   "type": "PrismaticBeanBoss",
+   "ok": true,
+   "name": "Prismatic Bean",
+   "banned_floor_indexes": [
+    1,
+    2,
+    5
+   ],
+   "difficulty_modifier": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "difficulty_increase": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "is_secret_character": true,
+   "can_be_summoned_by_michael": false
+  },
+  {
+   "type": "RandomiseItemOrder",
+   "ok": true,
+   "name": "RandomiseItemOrder",
+   "banned_floor_indexes": [
+    0
+   ],
+   "difficulty_modifier": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "difficulty_increase": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": true
+  },
+  {
+   "type": "ReducedLetterValue",
+   "ok": true,
+   "name": "-1 Letter Value",
+   "banned_floor_indexes": [],
+   "difficulty_modifier": [
+    1,
+    3,
+    5,
+    7,
+    9,
+    9
+   ],
+   "difficulty_increase": [
+    1,
+    1,
+    2,
+    2,
+    3,
+    3
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": true
+  },
+  {
+   "type": "SandySaguaroBoss",
+   "ok": true,
+   "name": "Sandy Saguaro",
+   "banned_floor_indexes": [
+    1,
+    2,
+    5
+   ],
+   "difficulty_modifier": [
+    2,
+    2,
+    2,
+    2,
+    2,
+    2
+   ],
+   "difficulty_increase": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "is_secret_character": true,
+   "can_be_summoned_by_michael": false
+  },
+  {
+   "type": "SmallGrid",
+   "ok": true,
+   "name": "4x4 Grid",
+   "banned_floor_indexes": [],
+   "difficulty_modifier": [
+    1,
+    1,
+    2,
+    2,
+    3,
+    3
+   ],
+   "difficulty_increase": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": true
+  },
+  {
+   "type": "StealsMoney",
+   "ok": true,
+   "name": "StealsMoney",
+   "banned_floor_indexes": [
+    4
+   ],
+   "difficulty_modifier": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    8
+   ],
+   "difficulty_increase": [
+    1,
+    2,
+    2,
+    3,
+    4,
+    5
+   ],
+   "is_secret_character": false,
+   "can_be_summoned_by_michael": false
+  }
+ ]
+}
