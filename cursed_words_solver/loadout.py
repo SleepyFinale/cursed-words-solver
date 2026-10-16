@@ -851,6 +851,16 @@ def board_tile_to_melmod_dict(
             entry["void_penalty_steps"] = int(void_steps)
         except (TypeError, ValueError):
             pass
+    # Signed GetValue() export: without it the engine's legacy-void heuristic
+    # rewrites a 0-value void letter to -(letter value) on replay.
+    if meta.get("value_exact"):
+        exact = float(tile.base_score)
+        entry["value_exact"] = int(exact) if exact.is_integer() else exact
+    if meta.get("value_modifier") is not None:
+        try:
+            entry["value_modifier"] = int(meta["value_modifier"])
+        except (TypeError, ValueError):
+            pass
     return entry
 
 

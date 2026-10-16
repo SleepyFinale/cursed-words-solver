@@ -157,3 +157,47 @@ def test_f8_embed_replay_matches_scoring_board() -> None:
     assert int(replay_score) == int(predicted)
 
 
+
+
+def test_board_round_trip_keeps_value_exact_on_zero_void_letter() -> None:
+    """Regression: void S worth 0 replayed as -1 (SEGNI 306 vs embed replay 294).
+
+    Dropping value_exact on embed lets the engine's legacy "every void letter
+    zeroed" heuristic rewrite the tile to -(letter value).
+    """
+    from cursed_words_solver.engine.model import EGrid
+
+    tiles = []
+    for row in range(5):
+        for col in range(5):
+            void = (row, col) == (1, 0)
+            tiles.append(
+                {
+                    "row": row,
+                    "col": col,
+                    "char": "s" if void else "e",
+                    "letter": "S" if void else "E",
+                    "base_score": 0.0 if void else 1.0,
+                    "color": "void" if void else "colorless",
+                    "curse": "letter",
+                    "active": True,
+                    "value_exact": 0 if void else 1,
+                    "value_modifier": 0,
+                }
+            )
+    run_state = {
+        "character": "Rodman",
+        "stickers": [],
+        "stamps": [],
+        "extras": {},
+        "board": {"source": "melmod", "row_order": "top_first", "rows": 5, "cols": 5, "tiles": tiles},
+    }
+    board = parse_board_from_run_state(run_state)
+    assert board is not None
+    embedded = deepcopy(run_state)
+    embedded["board"] = board_to_run_state_board(board, source_run_state=run_state)
+    void_entry = next(t for t in embedded["board"]["tiles"] if t["color"] == "void")
+    assert void_entry["value_exact"] == 0
+    replay_board = parse_board_from_run_state(embedded)
+    void_values = [t.value for t in EGrid(replay_board).tiles if t.tile_type == "void"]
+    assert void_values == [0]
