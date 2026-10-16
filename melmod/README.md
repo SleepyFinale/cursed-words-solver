@@ -78,6 +78,14 @@ the arguments `CalculateOverallScore` received (item order after Capybara's
 shuffle). The solver replays round logs from `capture` without reconstructing
 anything; see [`docs/game-research/engine.md`](../docs/game-research/engine.md).
 
+For the run simulator / live advisor (`python -m cursed_words_solver.sim.game.advise`,
+[`docs/game-research/sim-game.md`](../docs/game-research/sim-game.md)) `game_state`
+also carries each item's `times_upgraded`, `foil`, `money_invested`, `selling_prevented`
+and `discount`; `player.frozen_stickers` / `frozen_stamps` (frozen shop stock with
+`cost`); and `run.boss_draft` (the current floor's boss options), `run.has_faced_uncursed_boss`
+and `run.piggy_bank_saved`. Shop offers (`shop.offers[]`) add `game_class`,
+`first_discount`, `item_state` and, for tiles, `tile_state`.
+
 Turn any round log into a regression test:
 
 ```powershell

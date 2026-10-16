@@ -233,6 +233,12 @@ namespace CursedWordsSolverCompanion
             });
             Try(() =>
             {
+                // Shop items frozen across shops (ItemInStock per stock slot).
+                d["frozen_stickers"] = DescribeFrozen(player.FrozenStickers);
+                d["frozen_stamps"] = DescribeFrozen(player.FrozenStamps);
+            });
+            Try(() =>
+            {
                 // InventoryCache: words Vocabulary accepts before the dictionary.
                 var cache = new InventoryCache(new List<Tile>());
                 d["accumulator_words"] = cache.PertinentAccumulatorWords?.ToList() ?? new List<string>();
@@ -240,6 +246,23 @@ namespace CursedWordsSolverCompanion
                     ?? new List<object>();
             });
             return d;
+        }
+
+        private static List<object> DescribeFrozen(ItemInStock[] slots)
+        {
+            var list = new List<object>();
+            foreach (var stock in slots ?? new ItemInStock[0])
+            {
+                if (stock?.MyItem == null)
+                {
+                    list.Add(null);
+                    continue;
+                }
+                var item = ItemStateExporter.Describe(stock.MyItem, 0);
+                item["cost"] = stock.Cost;
+                list.Add(item);
+            }
+            return list;
         }
 
         private static object DescribeRun(Player player)
@@ -260,6 +283,22 @@ namespace CursedWordsSolverCompanion
                 if (progress.Challenge != null)
                     d["challenge"] = DescribeObject(progress.Challenge, typeof(ChallengeRun));
             });
+            Try(() =>
+            {
+                // Bosses offered on the current floor (map / boss draft screen).
+                var drafts = progress.BossDrafts;
+                var stage = progress.CurrentStage;
+                if (drafts != null && stage >= 1 && stage <= drafts.Count && drafts[stage - 1]?.AvailableBosses != null)
+                {
+                    var options = new List<object>();
+                    foreach (var boss in drafts[stage - 1].AvailableBosses)
+                        if (boss != null)
+                            options.Add(DescribeObject(boss, typeof(BossModifier)));
+                    d["boss_draft"] = options;
+                }
+            });
+            Try(() => d["has_faced_uncursed_boss"] = player.HasFacedUncursedBoss);
+            Try(() => d["piggy_bank_saved"] = SaveManager.MoneyInPiggyBank());
             return d;
         }
 

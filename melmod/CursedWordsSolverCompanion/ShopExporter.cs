@@ -27,6 +27,14 @@ namespace CursedWordsSolverCompanion
         public string letter;
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public double? base_score;
+        // Simulator rebuild: exact class, first-shop free pick, item state / tile glyphs.
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string game_class;
+        public bool first_discount;
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public Dictionary<string, object> item_state;
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public Dictionary<string, object> tile_state;
     }
 
     public sealed class InventorySellSnapshot
@@ -187,6 +195,9 @@ namespace CursedWordsSolverCompanion
                     free = stock.IsFree,
                     sold = false,
                     hippo_eligible = hippoEligible && slot == "sticker" && !isStamp,
+                    game_class = item.GetType().Name,
+                    first_discount = stock.IsFirstDiscount,
+                    item_state = SafeDescribe(item),
                 }
             );
         }
@@ -222,8 +233,33 @@ namespace CursedWordsSolverCompanion
                         curse = mapped.curse,
                         letter = mapped.letter,
                         base_score = mapped.base_score,
+                        tile_state = SafeDescribeTile(stock.MyTile),
                     }
                 );
+            }
+        }
+
+        private static Dictionary<string, object> SafeDescribe(Item item)
+        {
+            try
+            {
+                return ItemStateExporter.Describe(item, 0);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Dictionary<string, object> SafeDescribeTile(Tile tile)
+        {
+            try
+            {
+                return GameStateSerializer.DescribeTile(tile);
+            }
+            catch
+            {
+                return null;
             }
         }
 

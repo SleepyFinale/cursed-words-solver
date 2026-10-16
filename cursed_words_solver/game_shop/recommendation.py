@@ -660,6 +660,24 @@ def _tile_count_from_loadout(loadout: Loadout) -> int:
     return 0
 
 
+def _pin_slug(loadout: Loadout) -> str:
+    extras = loadout.extras or {}
+    pin = str(extras.get("pin_effect") or "").strip()
+    if pin:
+        return pin
+    raw = extras.get("item_states")
+    if isinstance(raw, str) and raw.strip():
+        import json
+
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            raw = None
+    if isinstance(raw, dict) and isinstance(raw.get("pin"), dict):
+        return str(raw["pin"].get("id") or "")
+    return ""
+
+
 def build_shop_context(
     loadout: Loadout,
     shop: ShopState,
@@ -670,6 +688,10 @@ def build_shop_context(
 
     q = quest if quest is not None else shop_quest_constraints(loadout)
     inventory: list[GameShopItem] = []
+    # ShopRecommendation reads Player.GetAllItems(): the pin counts toward builds too.
+    pin_id = _pin_slug(loadout)
+    if pin_id:
+        inventory.append(_game_item_from_loadout_item(pin_id, pin_id, "pin"))
     for sticker in loadout.stickers:
         inventory.append(
             _game_item_from_loadout_item(

@@ -88,6 +88,12 @@ namespace CursedWordsSolverCompanion
                 d["colours"] = colours;
             }
             d["fields"] = DescribeFields(item);
+            // Base Item economy fields (simulator / shop advice: upgrades, foil, sell value).
+            d["times_upgraded"] = item.TimesUpgraded;
+            d["foil"] = item.IsFoil;
+            d["money_invested"] = item.MoneyInvested != null ? new List<int>(item.MoneyInvested) : new List<int>();
+            d["selling_prevented"] = item.IsSellingPrevented;
+            d["discount"] = item.Discount;
             if (depth < 2)
             {
                 var nested = new List<object>();
@@ -142,6 +148,9 @@ namespace CursedWordsSolverCompanion
             return fields;
         }
 
+        [ThreadStatic]
+        private static int _fieldItemDepth;
+
         private static object ExportValue(object value)
         {
             if (value == null)
@@ -161,6 +170,22 @@ namespace CursedWordsSolverCompanion
                     return e.ToString();
                 case ScorePacket packet:
                     return packet.IsInfinite ? (object)(packet.IsNegative ? "-inf" : "inf") : packet.Score;
+                case Tile tile:
+                    // Bucket.TilesInBucket / TileToAddToBucket*: full tile for the simulator.
+                    return GameStateSerializer.DescribeTile(tile);
+                case Item item:
+                    // RandomAccessMemory.ItemToAddToMemory* (next pin-upgrade drafts).
+                    if (_fieldItemDepth > 0)
+                        return null;
+                    _fieldItemDepth++;
+                    try
+                    {
+                        return Describe(item, 2);
+                    }
+                    finally
+                    {
+                        _fieldItemDepth--;
+                    }
             }
             if (value is IDictionary dict)
             {
@@ -181,7 +206,9 @@ namespace CursedWordsSolverCompanion
                 foreach (var entry in list)
                 {
                     var v = ExportValue(entry);
-                    if (v == null || v is Dictionary<string, object> || v is List<object>)
+                    if (v == null || v is List<object>)
+                        continue;
+                    if (v is Dictionary<string, object> && !(entry is Tile) && !(entry is Item))
                         continue;
                     outList.Add(v);
                     if (outList.Count > 64)

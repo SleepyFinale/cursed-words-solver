@@ -34,6 +34,7 @@ Run all commands from the **repository root** (the folder containing `pyproject.
 | `python scripts/engine_replay.py [--since DATE] [--write-lists]` | Replay every capture through the engine: exact-score and path-validity rates by month; `--write-lists` regenerates `tests/engine/engine_*_captures.txt` |
 | `python scripts/capture_to_fixture.py <round_log.json>` / `--failing` | Copy captures (companion >= 1.4) into `tests/fixtures/captures/` — each file is a test; `--failing` adds every local capture the engine mis-scores |
 | `python scripts/search_benchmark.py --latest 30 [--budget 20]` | Re-solve recent rounds with the current search; compare with what was played and the F8 suggestion |
+| `python scripts/sim_validate.py scoring\|dynamics\|grids` | Check the run simulator (`sim/game`) against real captures: exact scores through sim state, money/rack/target across consecutive submits, first-grid tile statistics |
 | `python scripts/mismatch_to_test.py <mismatch.json>` | Copy a scoring mismatch into `tests/fixtures/mismatches/` |
 | `python scripts/compare_trace.py <mismatch.json> [--replay]` | Step-by-step predicted vs actual trace diff |
 | `python scripts/mismatch_to_round_log_fixture.py` | Build round-log fixture from mismatch JSON (see script) |

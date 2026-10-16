@@ -21,6 +21,7 @@ Requires the [MelonLoader companion mod](melmod/README.md), which reads the live
 - Always-on-top result overlay plus numbered, click-through path highlights on the game board
 - Scoring mismatch capture (melmod v1.1.6+) and per-submit round logs (v1.2+), with regression fixtures from real in-game submits
 - Shop advice (melmod shop export + F8 in Ej?A56): build-synergy recommendations ported from the in-game Advice button, plus encounter grid reroll hints
+- **Run simulator + AI** ([docs/game-research/sim-game.md](docs/game-research/sim-game.md)): a decompile-faithful port of the whole run (grids, every item's start-of-grid / shop / acquire hooks, shops, rerolls, freezes, bosses incl. cursed and secret ones, pin upgrades, all 11 characters, crowns 0–8, all 26 quests, Michael). It replays every captured real round exactly. `python -m cursed_words_solver.sim.game.advise` ranks the live game's options (words / reroll / buys / sells / boss / pin); `evaluate` and `learn` run self-play and train a value model
 - **Cursedle** (daily fairy trial): F8 runs a constraint-based word finder on the live 6×6 export and guess feedback (`encounter_mode: cursedle`); probes may be any valid word length (solution is 4–6 letters); scoring capture is disabled in that scene
 
 ## Quick start (contributors)
@@ -213,7 +214,8 @@ cursed_words_solver/   # Python package
   rules/               # Rule catalog lookup, boss/quest/stamp metadata
     rule_phase.py      # Static vs dynamic rule classification
   game_shop/           # Shop advice engine types and scoring
-  sim/                 # Experimental encounter simulator (see docs/game-research/sim-traceability.md)
+  sim/                 # Encounter replay harness (sim-traceability.md)
+    game/              # Full-run simulator, agent API, policies, advisor, self-play learning (sim-game.md)
   board_display.py     # ASCII grid formatting for logs
   ui/                  # Result overlay, board highlights, calibration, loadout dialog
 docs/                  # SEARCH_ARCHITECTURE.md, game-research/
@@ -349,6 +351,7 @@ New mismatch fixtures are **not** added to `known_failing.json` by default, so C
 - `[docs/SEARCH_ARCHITECTURE.md](docs/SEARCH_ARCHITECTURE.md)` — How the engine search enumerates, validates and scores paths
 - `[docs/game-research/engine.md](docs/game-research/engine.md)` — The game-port engine (scoring, movement, vocabulary) and the melmod capture format
 - `[docs/game-research/sim-traceability.md](docs/game-research/sim-traceability.md)` — Encounter simulator traceability
+- `[docs/game-research/sim-game.md](docs/game-research/sim-game.md)` — Full-run simulator, validation, advisor and training
 - `[thunderstore/README.md](thunderstore/README.md)` — Player install (mod manager and manual) and bug-report attachments
 - `[melmod/README.md](melmod/README.md)` — MelonLoader install, `run_state.json` schema, boss/pin extras, round logs
 - `[melmod/SCORING_HOOKS.md](melmod/SCORING_HOOKS.md)` — Harmony hook points for score capture
