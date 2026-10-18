@@ -9,7 +9,6 @@ common random numbers across candidates, so differences come from the action.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -17,7 +16,7 @@ from cursed_words_solver.sim.game.agent import Action, Candidates, apply, clone,
 from cursed_words_solver.sim.game.core import Rng
 from cursed_words_solver.sim.game.features import progress
 from cursed_words_solver.sim.game.player import Node
-from cursed_words_solver.sim.game.policy import AdvicePolicy, Policy, PowerConfig
+from cursed_words_solver.sim.game.policy import AdvicePolicy, FastAdvicePolicy, Policy, tuned_config
 
 if TYPE_CHECKING:  # pragma: no cover
     from cursed_words_solver.sim.game.run import Game
@@ -30,6 +29,10 @@ class RolloutConfig:
     money_weight: float = 0.002  # per $ left at the horizon (tie-break only)
     max_candidates: int = 5
     search_budget: float = 0.4  # word-search deadline inside rollouts
+    # Override the Advice suggestion only when another option beats it by this much
+    # (survival is worth 10 strength units). Stops noise-driven picks.
+    margin: float = 0.6
+    record: bool = False  # keep (afterstate features, score) for training
 
 
 def _horizon_reached(g: "Game", stage0: int, horizon: int) -> bool:
@@ -72,10 +75,11 @@ class RolloutPolicy(Policy):
     def __init__(self, cands: Candidates, cfg: RolloutConfig | None = None, seed: int = 0) -> None:
         self.cfg = cfg or RolloutConfig()
         self.fast = cands.with_budget(self.cfg.search_budget)
-        self.base = AdvicePolicy(self.fast, PowerConfig(probe_seeds=1, probe_grids=2), seed=seed)
-        self.play = AdvicePolicy(cands, PowerConfig(probe_seeds=1, probe_grids=2), seed=seed)
+        self.base = FastAdvicePolicy(self.fast, tuned_config(), seed=seed)
+        self.play = AdvicePolicy(cands, tuned_config(), seed=seed)
         self.seed = seed
         self._decision = 0
+        self.records: list[tuple] = []  # (decision id, afterstate features, scalar score, chosen)
 
     def candidates(self, game: "Game") -> list[Action]:
         ph = game.phase
@@ -118,19 +122,38 @@ class RolloutPolicy(Policy):
         n = float(self.cfg.samples)
         return (tot[0] / n, tot[1] / n + self.cfg.money_weight * tot[2] / n, 0.0)
 
+    @staticmethod
+    def scalar(sc: tuple[float, float, float]) -> float:
+        return 10.0 * sc[0] + sc[1]
+
     def act(self, game: "Game") -> Action:
         ph = game.phase
         if ph == "encounter":
-            return self.play.act(game)
-        cands = self.candidates(game)
+            enc = game.encounter
+            if enc is None or enc.michael_draft is None:
+                return self.play.act(game)
+            cands = [a for a in legal_actions(game) if a.kind == "michael_pick"]
+        else:
+            cands = self.candidates(game)
         if len(cands) <= 1:
             return cands[0] if cands else self.play.act(game)
         self._decision += 1
-        best, best_a = (-math.inf,), cands[0]
-        for a in cands:
-            sc = self.score(game, a)
-            if sc > best:
-                best, best_a = sc, a
+        scored = [(a, self.scalar(self.score(game, a))) for a in cands]
+        # cands[0] is the base policy's own choice (Advice suggestion / first option).
+        best_a, best = scored[0]
+        for a, v in scored[1:]:
+            if v > best + self.cfg.margin:
+                best_a, best = a, v
+        if self.cfg.record:
+            from cursed_words_solver.sim.game.features import encode
+
+            for a, v in scored:
+                g = clone(game, light=True)
+                try:
+                    apply(g, a)
+                except Exception:
+                    continue
+                self.records.append((self._decision, encode(g), v, a is best_a))
         if ph == "shop":
             # keep the base policy's per-shop bookkeeping consistent
             if best_a.kind == "leave":

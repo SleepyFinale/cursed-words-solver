@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from cursed_words_solver.sim.game.agent import Action, Candidates, WordOption, apply, clone, legal_actions
 from cursed_words_solver.sim.game.core import Rng
@@ -84,6 +85,29 @@ class PowerConfig:
     placement_targets: int = 3
     go_for_michael: bool = True  # at crown ≥ 1, take cursed bosses to reach Michael
     probe_budget: float = 0.25  # seconds per probe-grid search (best found so far)
+    boss_risk: str = ""  # bossrisk.py table: draft the boss least likely to end the run
+    pin_side: str = "lower"  # FastAdvicePolicy pin reward: "lower" side, or always "left" / "right"
+    cursed_margin: float = 0.05  # with boss_risk: take a cursed boss unless this much riskier
+    fast_placement: bool = False  # FastAdvicePolicy: place rack tiles when behind pace (probe search)
+    # FastAdvicePolicy encounter planner: compare the top words / reroll / best placement by
+    # playing the rest of the encounter out (see ``FastAdvicePolicy._plan``).
+    plan_encounter: bool = False
+    plan_words: int = 4
+    plan_samples: int = 2
+    plan_level_value: float = 3.0  # $ per item level gained (Bar Chart, Fountain Pen, ...)
+    plan_tile_value: float = 2.0  # $ per consumable tile still on the rack
+
+
+def tuned_config(**kw) -> PowerConfig:
+    """Fast Advice settings found best by deterministic benchmarks (Carpman crown 0): the
+    learned boss-risk table when one exists, rack-tile placement when behind pace (8 target
+    squares) and the encounter planner (top words / reroll / placement played out)."""
+    from cursed_words_solver.sim.game.bossrisk import DEFAULT_PATH
+
+    base = {"probe_seeds": 1, "probe_grids": 2, "fast_placement": True, "placement_targets": 8,
+            "plan_encounter": True,
+            "boss_risk": str(DEFAULT_PATH) if DEFAULT_PATH.is_file() else ""}
+    return PowerConfig(**{**base, **kw})
 
 
 def next_encounter_node(game: "Game") -> tuple[int, Node]:
@@ -388,6 +412,162 @@ class AdvicePolicy(PowerPolicy):
         _, slot = min(cands)
         self._sold_this_shop = True
         return Action("sell", ("sticker", slot), "advice: sell weakest sticker")
+
+
+class FastAdvicePolicy(AdvicePolicy):
+    """Advice shopping with no simulation anywhere: the cheap base policy for rollouts.
+
+    Boss: an uncursed option unless chasing Michael (crown ≥ 1, all cursed so far), else the
+    lower floor modification. Pin: the less-upgraded side. No consumable-placement search.
+    """
+
+    def _best_placement(self, game: "Game", base: int) -> Action | None:
+        return super()._best_placement(game, base) if self.cfg.fast_placement else None
+
+    def _boss(self, game: "Game") -> Action:
+        opts = game.boss_options()
+        p = game.player
+        if self.cfg.boss_risk:
+            return Action("boss", (self._risk_boss(game, opts),))
+        if self.cfg.go_for_michael and p.run.ascension >= 1 and not p.has_faced_uncursed_boss:
+            cursed = [i for i, b in enumerate(opts) if b.cursed]
+            if cursed:
+                return Action("boss", (cursed[0],))
+        ranked = sorted(range(len(opts)), key=lambda i: (opts[i].cursed, opts[i].game_class == "BigBoss"))
+        return Action("boss", (ranked[0],))
+
+    def _encounter(self, game: "Game") -> Action:
+        enc = game.encounter
+        if (self.cfg.plan_encounter and enc.michael_draft is None and not enc.finale
+                and not enc.awaiting_forced_sell):
+            a = self._plan(game)
+            if a is not None:
+                return a
+        return super()._encounter(game)
+
+    def _terminal_value(self, game: "Game") -> float:
+        p = game.player
+        levels = sum(it.level(i) for it in p.all_items(for_comparison=True) for i in range(len(it.components)))
+        return p.money + self.cfg.plan_level_value * levels + self.cfg.plan_tile_value * len(p.tiles())
+
+    def _plan(self, game: "Game") -> Action | None:
+        scored = self.plan_scores(game)
+        return scored[0][2] if scored else None
+
+    def plan_scores(self, game: "Game", samples: int | None = None) -> list[tuple[float, float, Action]]:
+        """Pick among the top words, a grid reroll and the best rack-tile placement by the
+        rest of the encounter: clearing dominates (a loss ends the run), then money, item
+        levels gained and rack tiles kept at the end of the encounter. A word that clears
+        is valued exactly; others by ``plan_samples`` greedy play-outs. ``plan_scores``
+        returns (value, P(clear), action), best first. A lower word that
+        does not clear is considered while the best one would, only if it earns more than
+        the $2 an unused grid pays (builds that make money per grid)."""
+        from cursed_words_solver.sim.game.core import Rng
+
+        enc = game.encounter
+        samples = samples or self.cfg.plan_samples
+        opts = self.cands.words(game, self.cfg.plan_words)
+        if not opts:
+            return []
+        if getattr(self, "_inner", None) is None:
+            self._inner = FastAdvicePolicy(self.probe_cands, PowerConfig(reroll_ratio=self.cfg.reroll_ratio))
+        LOSS = -1000.0
+        best_clears = opts[0].score >= enc.remaining_target
+        cands: list[tuple[Action, Any]] = []
+        for o in opts:
+            a = Action("submit", (tuple(o.path), tuple(o.words)), f"{o.word} ({o.score})")
+            cands.append((a, o))
+        if not best_clears:
+            if enc.can_reroll():
+                cands.append((Action("reroll_grid"), None))
+            if game.player.tiles():
+                place = super()._best_placement(game, opts[0].score)
+                if place is not None:
+                    cands.append((place, None))
+        if len(cands) == 1:
+            return [(0.0, 1.0, cands[0][0])]
+        money0 = game.player.money
+        scored: list[tuple[float, int, float, Action]] = []
+        for rank, (a, o) in enumerate(cands):
+            g = clone(game)
+            e = g.encounter
+            apply(g, a)
+            if e.won or e.lost or e.finale:
+                ok = bool(e.won or e.finale)
+                scored.append((self._terminal_value(g) if ok else LOSS, -rank, float(ok), a))
+                continue
+            if best_clears and a.kind == "submit" and g.player.money - money0 <= 2:
+                continue  # not clearing when we could, and the grid earns no more than its payout
+            tot, wins = 0.0, 0
+            for s in range(samples):
+                h = clone(g)
+                h.rng = Rng(f"plan|{s}|{len(e.previous_words)}")
+                h.encounter.rng = h.rng
+                f = h.encounter
+                for _ in range(40):
+                    if f.won or f.lost or f.finale or h.encounter is not f:
+                        break
+                    apply(h, self._inner.act(h))
+                ok = bool(f.won or f.finale)
+                wins += ok
+                tot += self._terminal_value(h) if ok else LOSS
+            scored.append((tot / samples, -rank, wins / samples, a))
+        scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+        return [(v, pc, a) for v, _, pc, a in scored]
+
+    def _risk_boss(self, game: "Game", opts: list) -> int:
+        """Lowest learned risk; a cursed boss is preferred while it is not much riskier
+        (``cursed_margin``) when chasing Michael (crown ≥ 1, every boss so far cursed), or
+        slightly when Blessing of the Fairies makes the fairy worth something."""
+        if getattr(self, "_boss_risk", None) is None:
+            from cursed_words_solver.sim.game.bossrisk import BossRisk
+
+            self._boss_risk = BossRisk.load(Path(self.cfg.boss_risk))
+        p = game.player
+        crown = p.run.ascension
+        risk = [self._boss_risk.risk(b, crown) for b in opts]
+        cursed = [i for i, b in enumerate(opts) if b.cursed]
+        clean = [i for i, b in enumerate(opts) if not b.cursed]
+        margin = None
+        if crown >= 1 and self.cfg.go_for_michael and not p.has_faced_uncursed_boss:
+            margin = self.cfg.cursed_margin
+        elif crown >= 1 and p.unpacked_of("BlessingOfTheFairies"):
+            margin = 0.02
+        best_clean = min(clean, key=lambda i: risk[i]) if clean else None
+        best_cursed = min(cursed, key=lambda i: risk[i]) if cursed else None
+        if best_cursed is not None and (best_clean is None or (
+                margin is not None and risk[best_cursed] <= risk[best_clean] + margin)):
+            return best_cursed
+        return best_clean if best_clean is not None else best_cursed
+
+    def _pin(self, game: "Game") -> Action:
+        opts = game.pin_options()
+        pin = game.player.pin
+        if "both" in opts:
+            return Action("pin", ("both",))
+        if pin is None or len(opts) < 2:
+            return Action("pin", (opts[0],))
+        side = self.cfg.pin_side
+        if side in ("left", "right") and side in opts:
+            return Action("pin", (side,))
+        return Action("pin", ("left" if pin.level(0) <= pin.level(1) else "right",))
+
+    def _cheapest_sell(self, game: "Game") -> Action | None:
+        from cursed_words_solver.sim.game.shop import can_sell
+
+        p = game.player
+        cands = [(it.level(0) if it.components else 1, kind, i)
+                 for kind, arr in (("sticker", p.stickers), ("stamp", p.stamps))
+                 for i, it in enumerate(arr) if it is not None and can_sell(p, it)]
+        if not cands:
+            return None
+        _, kind, i = min(cands)
+        return Action("sell", (kind, i))
+
+    def act(self, game: "Game") -> Action:
+        if game.phase == "encounter" and game.encounter.michael_draft is not None:
+            return Action("michael_pick", (0,))
+        return super().act(game)
 
 
 def shop_advice_inputs(game: "Game"):

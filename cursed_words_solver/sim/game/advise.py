@@ -3,9 +3,9 @@
     python -m cursed_words_solver.sim.game.advise            # reads ~/.cursed_words_solver/run_state.json
     python -m cursed_words_solver.sim.game.advise --file some_round_log.json
 
-- **Encounter**: each top engine word (and a grid reroll) is played out to the end of the
-  encounter several times in the simulator (fresh grids, greedy words) to estimate the
-  chance of clearing and the money left; the best option is recommended.
+- **Encounter**: the top engine words, a grid reroll and the best rack-tile placement are
+  played out to the end of the encounter (``FastAdvicePolicy.plan_scores``): chance of
+  clearing first, then money, item levels gained and rack tiles kept.
 - **Shop / boss draft / pin reward**: every option is played out several times with the
   Advice policy to the end of the next two stage bosses (``rollout.py``) and ranked by
   survival, then points-per-word vs targets (``--mode power`` for the older probe ranking).
@@ -19,8 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from cursed_words_solver.sim.game.agent import Action, Candidates, apply, clone, legal_actions
-from cursed_words_solver.sim.game.core import Rng
+from cursed_words_solver.sim.game.agent import Action, Candidates, apply, clone, legal_actions, spawn_pool
 from cursed_words_solver.sim.game.player import Node
 from cursed_words_solver.sim.game.policy import PowerConfig, PowerPolicy
 
@@ -54,54 +53,20 @@ def load_game(run_state: dict[str, Any], *, seed: int = 0):
     return g
 
 
-def _finish_encounter(g, cands: Candidates, max_steps: int = 30) -> tuple[bool, int]:
-    """Greedy rest-of-encounter: (cleared, money afterwards)."""
-    enc = g.encounter
-    for _ in range(max_steps):
-        if enc.won or enc.lost or enc.finale:
-            break
-        opts = cands.words(g, 1)
-        if not opts:
-            if enc.can_reroll():
-                enc.reroll()
-                continue
-            enc.skip()
-            continue
-        enc.submit(opts[0].path, opts[0].words)
-    return bool(enc.won or enc.finale), g.player.money
+def advise_encounter(game, cands: Candidates, *, top_n: int = 6, samples: int = 6) -> list[Advice]:
+    """Top words, a grid reroll and the best rack-tile placement, ranked by the encounter
+    planner (``FastAdvicePolicy.plan_scores``): P(clear) first, then money, item levels
+    gained and rack tiles kept when the encounter ends."""
+    from cursed_words_solver.sim.game.policy import FastAdvicePolicy, tuned_config
 
-
-def advise_encounter(game, cands: Candidates, *, top_n: int = 6, samples: int = 4) -> list[Advice]:
     enc = game.encounter
-    fast = cands.with_budget(0.3)
-    options: list[Action] = []
     if enc.michael_draft is not None or enc.finale or enc.awaiting_forced_sell:
         return [Advice(a) for a in legal_actions(game, cands, top_n=top_n)]
-    for opt in cands.words(game, top_n):
-        options.append(Action("submit", (tuple(opt.path), tuple(opt.words)), f"{opt.word} ({opt.score})"))
-    if enc.can_reroll():
-        options.append(Action("reroll_grid", (), "reroll grid"))
-    out: list[Advice] = []
-    for a in options:
-        wins = 0
-        money = 0.0
-        for s in range(samples):
-            g = clone(game)
-            g.rng = Rng(f"advise|{s}")
-            apply(g, a) if a.kind == "submit" else g.encounter.reroll()
-            if g.encounter is None or g.won is not None:
-                wins += 1 if (g.won is not False) else 0
-                money += g.player.money
-                continue
-            if g.encounter.won:
-                wins += 1
-                money += g.player.money
-                continue
-            ok, m = _finish_encounter(g, fast)
-            wins += ok
-            money += m
-        out.append(Advice(a, p_clear=wins / samples, exp_money=money / samples))
-    out.sort(key=lambda adv: (adv.p_clear or 0, adv.exp_money or 0), reverse=True)
+    pol = FastAdvicePolicy(cands, tuned_config(plan_words=top_n))
+    out = []
+    for value, p_clear, a in pol.plan_scores(game, samples=samples):
+        out.append(Advice(a, p_clear=p_clear, value=value,
+                          note="value = $ + item levels + rack tiles at encounter end"))
     return out
 
 
@@ -152,9 +117,7 @@ def advise_rollout(game, cands: Candidates, kinds: tuple[str, ...], *, samples: 
     """Rank options by playing each out (Advice base policy, two stage bosses ahead)."""
     acts = [a for a in legal_actions(game, cands) if a.kind in kinds]
     if workers > 1 and len(acts) > 1:
-        import multiprocessing as mp
-
-        with mp.get_context("spawn").Pool(min(workers, len(acts)), initializer=_pool_init,
+        with spawn_pool(min(workers, len(acts)), initializer=_pool_init,
                                           initargs=(str(cands.wordlist) if cands.wordlist else None,)) as pool:
             scores = pool.map(_pool_score, [(game, a, samples) for a in acts])
     else:
@@ -183,7 +146,16 @@ def advise(run_state: dict[str, Any], cands: Candidates | None = None, *, mode: 
         return "shop", rank(("buy", "sell", "hippo", "reroll_shop", "leave"))
     node = g.player.run.node
     if node == Node.BOSS_DRAFT:
-        return "boss_draft", rank(("boss",))
+        from cursed_words_solver.sim.game.bossrisk import BossRisk
+
+        ranked = rank(("boss",))
+        risk = BossRisk.load()
+        if risk.counts:
+            opts = g.boss_options()
+            for adv in ranked:
+                b = opts[adv.action.args[0]]
+                adv.note = f"{adv.note}; ends {risk.risk(b):.0%} of simulated runs".lstrip("; ")
+        return "boss_draft", ranked
     if node == Node.BOSS_REWARD:
         return "pin_reward", rank(("pin",))
     return node.name.lower(), []

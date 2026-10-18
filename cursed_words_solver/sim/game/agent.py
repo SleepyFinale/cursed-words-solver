@@ -34,28 +34,64 @@ class WordOption:
     placements: list[tuple[int, int, int]] = field(default_factory=list)  # (rack_idx, x, y)
 
 
-class Candidates:
-    """Top-K engine words for the current grid (cached per grid state)."""
+# Engine search limits scaled by ``Candidates.effort`` (deterministic, load-independent).
+_EFFORT_ATTRS = {
+    "subset_path_budget": 1, "exhaustive_node_budget": 1, "min_start_node_budget": 1,
+    "max_exact_paths": 2000, "beam_fixed_width": 32,
+}
 
-    def __init__(self, wordlist=None, time_budget: float = 8.0, *, dictionary=None) -> None:
+
+class Candidates:
+    """Top-K engine words for the current grid (cached per grid state).
+
+    ``effort`` (0–1] switches to a deterministic search: the engine's node / path / beam
+    limits scaled by ``effort`` and no deadline, so results do not depend on machine load
+    (0.05 ≈ 0.25 s per grid and beats a 0.6 s deadline). Otherwise ``time_budget`` seconds.
+    """
+
+    def __init__(self, wordlist=None, time_budget: float = 8.0, *, dictionary=None,
+                 effort: float | None = None) -> None:
         from cursed_words_solver.config import resolve_wordlist
         from cursed_words_solver.dictionary import WordDictionary
         from cursed_words_solver.search import WordSearcher
 
         self.wordlist = wordlist or resolve_wordlist(None)
         self.dictionary = dictionary or WordDictionary(self.wordlist)
-        self.searcher = WordSearcher(self.dictionary, time_budget=time_budget)
+        self.effort = effort
+        self.searcher = WordSearcher(self.dictionary, time_budget=0 if effort else time_budget)
 
     def with_budget(self, time_budget: float) -> "Candidates":
-        """Same dictionary, different search deadline (fast probes)."""
+        """Same dictionary, different search deadline (fast probes). In effort mode the
+        effort shrinks in proportion instead (a 0.6 s budget keeps it unchanged)."""
+        if self.effort:
+            return self.with_effort(max(0.01, self.effort * min(1.0, time_budget / 0.6)))
         return Candidates(self.wordlist, time_budget, dictionary=self.dictionary)
+
+    def with_effort(self, effort: float) -> "Candidates":
+        """Same dictionary, deterministic search at ``effort``."""
+        return Candidates(self.wordlist, dictionary=self.dictionary, effort=effort)
+
+    def _find(self, board, loadout, top_n: int):
+        if not self.effort:
+            return self.searcher.find_best_words(board, loadout, top_n=top_n)
+        from cursed_words_solver.engine.search import ExactSearch
+
+        saved = {k: getattr(ExactSearch, k) for k in _EFFORT_ATTRS}
+        try:
+            for k, floor in _EFFORT_ATTRS.items():
+                scale = 2 * self.effort if k == "beam_fixed_width" else self.effort
+                setattr(ExactSearch, k, max(floor, int(saved[k] * scale)))
+            return self.searcher.find_best_words(board, loadout, top_n=top_n)
+        finally:
+            for k, v in saved.items():
+                setattr(ExactSearch, k, v)
 
     def words(self, game: Game, top_n: int = 5) -> list[WordOption]:
         enc = game.encounter
         if enc is None:
             return []
         board, loadout = board_and_loadout(enc)
-        results = self.searcher.find_best_words(board, loadout, top_n=top_n)
+        results = self._find(board, loadout, top_n)
         out = []
         for r in results:
             out.append(WordOption(
@@ -65,6 +101,16 @@ class Candidates:
                 score=int(round(r.score)),
             ))
         return out
+
+
+def spawn_pool(workers: int, initializer=None, initargs: tuple = ()):
+    """``multiprocessing`` spawn pool whose workers share one string-hash seed, so set
+    iteration (and therefore every seeded run) is reproducible across processes."""
+    import multiprocessing as mp
+    import os
+
+    os.environ.setdefault("PYTHONHASHSEED", "0")
+    return mp.get_context("spawn").Pool(workers, initializer=initializer, initargs=initargs)
 
 
 def clone(game: Game, *, light: bool = False) -> Game:

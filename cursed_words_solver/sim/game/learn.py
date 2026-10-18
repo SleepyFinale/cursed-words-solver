@@ -28,7 +28,7 @@ from typing import Any
 
 import numpy as np
 
-from cursed_words_solver.sim.game.agent import Action, Candidates, apply, clone, legal_actions
+from cursed_words_solver.sim.game.agent import Action, Candidates, apply, clone, legal_actions, spawn_pool
 from cursed_words_solver.sim.game.core import Rng
 from cursed_words_solver.sim.game.features import encode, feature_names, progress
 from cursed_words_solver.sim.game.policy import Policy, PowerConfig, PowerPolicy
@@ -137,6 +137,64 @@ class MLP:
         m.mu, m.sd = d["mu"], d["sd"]
         m.y_mu, m.y_sd = float(d["y"][0]), float(d["y"][1])
         return m
+
+
+class Ridge:
+    """Linear model by closed-form ridge regression on standardised inputs.
+
+    Far more data-efficient than ``MLP`` when labels are noisy and features many (the
+    advantage targets from paired rollouts). ``threshold`` is the decision margin chosen
+    when the model was benchmarked; it travels with the saved file."""
+
+    def __init__(self, n_in: int, lam: float = 100.0) -> None:
+        self.w = np.zeros(n_in, dtype=np.float64)
+        self.mu = np.zeros(n_in, dtype=np.float64)
+        self.sd = np.ones(n_in, dtype=np.float64)
+        self.b = 0.0
+        self.lam = lam
+        self.threshold = 0.0
+
+    def fit(self, X: np.ndarray, y: np.ndarray, *, center: bool = True) -> "Ridge":
+        """``center=False`` keeps the intercept and input means at zero (advantage models:
+        a zero difference must predict zero advantage)."""
+        X = X.astype(np.float64)
+        y = y.astype(np.float64)
+        self.mu = X.mean(0) if center else np.zeros(X.shape[1])
+        sd = X.std(0)
+        live = sd > 1e-6
+        self.sd = np.where(live, sd, 1.0)
+        A = (X[:, live] - self.mu[live]) / self.sd[live]
+        self.b = float(y.mean()) if center else 0.0
+        G = A.T @ A + self.lam * len(A) / 1000.0 * np.eye(A.shape[1])
+        w = np.linalg.solve(G, A.T @ (y - self.b))
+        self.w = np.zeros(X.shape[1])
+        self.w[live] = w
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        X = np.atleast_2d(X).astype(np.float64)
+        return ((X - self.mu) / self.sd) @ self.w + self.b
+
+    def save(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(path, kind=np.array(["ridge"]), w=self.w, mu=self.mu, sd=self.sd,
+                 meta=np.array([self.b, self.lam, self.threshold]), names=np.array(feature_names()))
+
+    def top_features(self, k: int = 20) -> list[tuple[str, float]]:
+        names = feature_names()
+        order = np.argsort(-np.abs(self.w / self.sd))[:k]
+        return [(names[i], float(self.w[i] / self.sd[i])) for i in order]
+
+
+def load_model(path: Path):
+    """``MLP`` or ``Ridge`` from a saved ``.npz``."""
+    d = np.load(path, allow_pickle=False)
+    if "kind" in d and str(d["kind"][0]) == "ridge":
+        m = Ridge(len(d["w"]))
+        m.w, m.mu, m.sd = d["w"], d["mu"], d["sd"]
+        m.b, m.lam, m.threshold = (float(v) for v in d["meta"])
+        return m
+    return MLP.load(path)
 
 
 # ---------------------------------------------------------------------------- policies
@@ -299,7 +357,7 @@ def collect(jobs: list[dict[str, Any]], *, workers: int, wordlist: str | None, m
     prog = []
     errs = 0
     t0 = time.time()
-    with mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(wordlist, model)) as pool:
+    with spawn_pool(workers, initializer=_init, initargs=(wordlist, model)) as pool:
         for i, r in enumerate(pool.imap_unordered(_job, jobs)):
             Xs.append(r["X"])
             ys.append(r["y"])

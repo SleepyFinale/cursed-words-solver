@@ -19,11 +19,11 @@ from typing import Any
 _CANDS = None
 
 
-def _worker_init(wordlist: str | None) -> None:
+def _worker_init(wordlist: str | None, effort: float | None = None) -> None:
     global _CANDS
     from cursed_words_solver.sim.game.agent import Candidates
 
-    _CANDS = Candidates(Path(wordlist) if wordlist else None, time_budget=5.0)
+    _CANDS = Candidates(Path(wordlist) if wordlist else None, time_budget=5.0, effort=effort)
 
 
 def _make_policy(name: str, seed: int, cfg: dict | None = None):
@@ -111,11 +111,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--wordlist", default=None)
     ap.add_argument("--out", default="sim_runs.jsonl")
     ap.add_argument("--cfg", action="append", default=[], help="PowerConfig override key=value (repeatable)")
+    ap.add_argument("--effort", type=float, default=None,
+                    help="deterministic word search at this effort (e.g. 0.05) instead of a 5 s deadline")
     ap.add_argument("--verbose", action="store_true", help="print every decision (runs play in this process)")
     args = ap.parse_args(argv)
 
     if args.verbose:
-        _worker_init(args.wordlist)
+        _worker_init(args.wordlist, args.effort)
         for i in range(args.runs):
             res = play_one({"character": args.character, "crown": args.crown, "quest": args.quest,
                             "seed": args.seed + i, "policy": args.policy})
@@ -134,7 +136,9 @@ def main(argv: list[str] | None = None) -> int:
     wins = 0
     stages: list[int] = []
     out = Path(args.out)
-    with mp.get_context("spawn").Pool(args.workers, initializer=_worker_init, initargs=(args.wordlist,)) as pool, \
+    from cursed_words_solver.sim.game.agent import spawn_pool
+
+    with spawn_pool(args.workers, initializer=_worker_init, initargs=(args.wordlist, args.effort)) as pool, \
             out.open("a", encoding="utf-8") as fh:
         for res in pool.imap_unordered(play_one, jobs):
             wins += res["won"]

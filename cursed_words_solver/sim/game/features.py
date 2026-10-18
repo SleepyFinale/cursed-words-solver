@@ -156,3 +156,15 @@ def progress(game: "Game") -> float:
     if game.won:
         return 15.0 + (4.0 if game.end_reason == "michael" else 0.0)
     return float(base)
+
+
+def outcome(game: "Game") -> float:
+    """Final-run label: ``progress`` plus the share of the target reached in the encounter
+    that ended the run (a near miss scores more than a rout); a win scores 16."""
+    if game.won:
+        return 16.0 + (4.0 if game.end_reason == "michael" else 0.0)
+    base = progress(game)
+    enc = game.encounter
+    if game.won is False and enc is not None and enc.total_target > 0:
+        base += max(0.0, min(1.0, 1.0 - enc.remaining_target / enc.total_target))
+    return base

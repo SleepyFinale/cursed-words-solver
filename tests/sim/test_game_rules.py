@@ -308,3 +308,77 @@ def test_all_cursed_crown1_run_continues_past_stage5():
     enc._try_next_grid(SubmitResult(0, [], 0, p.money, p.money))
     assert enc.won and not enc.run_won
     assert run.cursed_bosses_defeated == [4]
+
+
+def test_net_policy_picks_from_candidates_and_trains():
+    import numpy as np
+
+    from cursed_words_solver.sim.game.agent import apply
+    from cursed_words_solver.sim.game.expert import NetPolicy, train
+    from cursed_words_solver.sim.game.features import feature_names
+    from cursed_words_solver.sim.game.learn import Ridge, load_model
+
+    g = _game(seed=31)
+    _clear(g)
+    width = len(feature_names())
+    model = Ridge(width)
+    model.w[:] = 0.01
+    pol = NetPolicy(_NoSearch(), model, threshold=0.0)
+    cands = pol.candidates(g)
+    assert cands[0].kind in ("buy", "leave", "reroll_shop", "sell", "freeze") and cands[-1].kind == "leave"
+    a, seen = pol.decide(g)
+    assert a in seen
+    apply(g, a)
+    # train() recovers a linear advantage from noisy pairs and round-trips through save/load
+    rng = np.random.default_rng(0)
+    dX = rng.normal(size=(3000, width)).astype(np.float32)
+    dy = (dX[:, 0] + rng.normal(scale=2.0, size=3000)).astype(np.float32)
+    m, fit = train(dX, dy)
+    assert fit["cv_corr"] > 0.2 and fit["switch_gain"] > 0
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as d:
+        m.threshold = 0.25
+        m.save(Path(d) / "m.npz")
+        m2 = load_model(Path(d) / "m.npz")
+        assert m2.threshold == 0.25 and np.allclose(m2.predict(dX[:5]), m.predict(dX[:5]))
+
+
+def test_effort_search_is_deterministic():
+    from cursed_words_solver.engine.search import ExactSearch
+    from cursed_words_solver.sim.game.agent import Candidates
+
+    g = _game(seed=5)
+    before = ExactSearch.subset_path_budget
+    c = Candidates(effort=0.02)
+    a, b = c.words(g, 3), c.words(g, 3)
+    assert a and [(o.word, o.score, o.path) for o in a] == [(o.word, o.score, o.path) for o in b]
+    assert ExactSearch.subset_path_budget == before  # limits restored after the search
+
+
+def test_boss_risk_counts_and_smoothing(tmp_path):
+    from cursed_words_solver.sim.game.bossrisk import BossRisk, boss_outcomes
+    from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig
+
+    g = _game(seed=11)
+    for _ in range(4):  # stage 1: three encounters with shops in between
+        if g.phase == "encounter":
+            _clear(g)
+        elif g.phase == "shop":
+            g.leave_shop()
+    assert g.phase == "boss_draft"
+    table = BossRisk({"SmallGrid": [100, 2], "NegativeMoney": [100, 40]})
+    assert table.risk_key("NegativeMoney") > table.risk_key("Unseen") > table.risk_key("SmallGrid")
+    path = tmp_path / "risk.json"
+    opts = g.boss_options()
+    table = BossRisk({f"{b.game_class}{'*' if b.cursed else ''}": [100, 90 - 10 * i] for i, b in enumerate(opts)})
+    table.save(path)
+    pol = FastAdvicePolicy(_NoSearch(), PowerConfig(boss_risk=str(path)))
+    a = pol.act(g)
+    uncursed = [i for i, b in enumerate(opts) if not b.cursed]
+    assert a.args[0] == max(uncursed)  # lowest risk among uncursed options
+    g.choose_boss(a.args[0])
+    g._end(False, "test")  # lost at the boss
+    g.player.run.node = Node.BOSS
+    assert boss_outcomes(g) == [(opts[a.args[0]].game_class, True)]

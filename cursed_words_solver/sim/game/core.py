@@ -49,6 +49,10 @@ class Rng:
     def fork(self, tag: str) -> "Rng":
         return Rng(f"{self._r.random()}|{tag}")
 
+    def reseed(self, key: int | str) -> None:
+        """Restart the stream from ``key`` in place (every holder of this Rng sees it)."""
+        self._r.seed(key)
+
     def getstate(self):
         return self._r.getstate()
 
