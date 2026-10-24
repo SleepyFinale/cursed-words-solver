@@ -147,22 +147,29 @@ def encode(game: "Game", *, form_ratio: float = 0.0) -> np.ndarray:
     return x
 
 
+# Extra outcome for beating Michael on top of a run win (16): a full win is worth 1.5 plain
+# wins, so the AI weighs chasing him (every boss cursed) against a safe stage-5 win.
+# Losing to Michael is still a run win ("michael_lost": the crown was beaten at stage 5).
+MICHAEL_BONUS = 8.0
+
+
 def progress(game: "Game") -> float:
-    """Training target: encounters cleared (15 for a stage-5 win, +Michael phases)."""
+    """Training target: encounters cleared (15 for a stage-5 win, + ``MICHAEL_BONUS`` for Michael)."""
     run = game.player.run
     order = {Node.ENCOUNTER_FIRST: 0, Node.SHOP_ONE: 1, Node.ENCOUNTER_SECOND: 1, Node.SHOP_TWO: 2,
              Node.BOSS_DRAFT: 2, Node.MEG_SHOP: 2, Node.BOSS: 2, Node.BOSS_REWARD: 3, Node.SHOP_ZERO: 0}
     base = (max(1, run.stage) - 1) * 3 + order.get(run.node, 0)
     if game.won:
-        return 15.0 + (4.0 if game.end_reason == "michael" else 0.0)
+        return 15.0 + (MICHAEL_BONUS if game.end_reason == "michael" else 0.0)
     return float(base)
 
 
 def outcome(game: "Game") -> float:
     """Final-run label: ``progress`` plus the share of the target reached in the encounter
-    that ended the run (a near miss scores more than a rout); a win scores 16."""
+    that ended the run (a near miss scores more than a rout); a win scores 16, beating
+    Michael 16 + ``MICHAEL_BONUS``."""
     if game.won:
-        return 16.0 + (4.0 if game.end_reason == "michael" else 0.0)
+        return 16.0 + (MICHAEL_BONUS if game.end_reason == "michael" else 0.0)
     base = progress(game)
     enc = game.encounter
     if game.won is False and enc is not None and enc.total_target > 0:

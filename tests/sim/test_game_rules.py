@@ -294,6 +294,24 @@ def test_michael_fight_phases_then_finale():
     assert g.won and g.end_reason == "michael"
 
 
+def test_losing_to_michael_still_wins_the_run():
+    from cursed_words_solver.sim.game.bossrisk import boss_outcomes
+    from cursed_words_solver.sim.game.features import MICHAEL_BONUS, outcome
+
+    g = _game(ascension=1, seed=4)
+    p, run = g.player, g.player.run
+    run.stage, run.node = 6, Node.SHOP_TWO
+    g.encounter = None
+    g.shop = Shop(p, g.rng)
+    g.leave_shop()
+    g.choose_michael_boss(0)
+    g.encounter.remaining_grids = 0
+    g.skip()
+    assert g.won and g.end_reason == "michael_lost"  # the crown was beaten at stage 5
+    assert outcome(g) == 16.0 < 16.0 + MICHAEL_BONUS
+    assert boss_outcomes(g)[-1] == ("MichaelBoss", True)
+
+
 def test_all_cursed_crown1_run_continues_past_stage5():
     g = _game(ascension=1, seed=4)
     p, run = g.player, g.player.run

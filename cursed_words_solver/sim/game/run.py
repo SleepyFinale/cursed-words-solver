@@ -169,6 +169,10 @@ class Game:
             self.shop = Shop(self.player, self.rng, character_never_won=self.config.character_never_won)
 
     def _end(self, won: bool, reason: str) -> None:
+        if not won and self.player.run.stage >= MICHAEL_STAGE:
+            # Losing to Michael still wins the run: the game records the crown as beaten
+            # when the fifth cursed boss falls (GoToNextSceneCoroutine), before Michael.
+            won, reason = True, "michael_lost"
         self.won = won
         self.end_reason = reason
         self.events.append(Event("end", {"won": won, "reason": reason, "stage": self.player.run.stage}))

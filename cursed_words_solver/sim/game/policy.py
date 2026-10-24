@@ -87,8 +87,9 @@ class PowerConfig:
     probe_budget: float = 0.25  # seconds per probe-grid search (best found so far)
     boss_risk: str = ""  # bossrisk.py table: draft the boss least likely to end the run
     pin_side: str = "lower"  # FastAdvicePolicy pin reward: "lower" side, "power" (probe), "left" / "right"
-    michael_aware: bool = True  # stage-5 draft: cursed only if surviving it AND Michael is likely enough
+    michael_aware: bool = True  # stage-5 draft: weigh surviving the cursed boss and the Michael bonus
     michael_prior_risk: float = 0.5
+    michael_value: float = 0.5  # extra run wins a Michael win is worth (features.MICHAEL_BONUS / 16)
     cursed_margin: float = 0.05  # with boss_risk: take a cursed boss unless this much riskier
     swap_sell: bool = False  # slots full: sell an owned item to buy a better one (probe-checked)
     power_override: float = 0.0  # replace Advice's buy when another adds this much more probe power
@@ -753,13 +754,15 @@ class FastAdvicePolicy(AdvicePolicy):
         best_cursed = min(cursed, key=lambda i: risk[i]) if cursed else None
         if (margin is not None and best_cursed is not None and best_clean is not None
                 and p.run.stage >= 5 and self.cfg.michael_aware):
-            # The fifth cursed boss commits the run to Michael: compare win chances.
+            # The fifth cursed boss commits the run to Michael. Losing to him still wins the
+            # run, so the cursed boss is worth its survival chance times (1 + the Michael
+            # bonus if he is beaten); the uncursed one only its survival chance.
             if self._boss_risk.counts.get("MichaelBoss", (0, 0))[0] >= 10:
                 michael = self._boss_risk.risk_key(f"MichaelBoss@c{crown}#{p.character}")
             else:
                 michael = self.cfg.michael_prior_risk  # too few simulated Michael fights yet
-            p_cursed = (1 - risk[best_cursed]) * (1 - michael)
-            return best_cursed if p_cursed >= (1 - risk[best_clean]) - margin else best_clean
+            v_cursed = (1 - risk[best_cursed]) * (1 + self.cfg.michael_value * (1 - michael))
+            return best_cursed if v_cursed >= (1 - risk[best_clean]) - margin else best_clean
         if best_cursed is not None and (best_clean is None or (
                 margin is not None and risk[best_cursed] <= risk[best_clean] + margin)):
             return best_cursed

@@ -30,13 +30,14 @@ def key(game_class: str, cursed: bool) -> str:
 def boss_outcomes(game) -> list[tuple[str, bool]]:
     """(boss key, ended the run) for each boss the finished run fought."""
     chosen = [key(e.data["boss"], bool(e.data.get("cursed"))) for e in game.events if e.kind == "boss"]
-    if not chosen:
-        return []
     node = game.player.run.node
-    if not game.won and node in (Node.BOSS_DRAFT, Node.MEG_SHOP):
+    if chosen and not game.won and node in (Node.BOSS_DRAFT, Node.MEG_SHOP):
         chosen = chosen[:-1]  # drafted but never fought
     died = game.won is False and node == Node.BOSS
-    return [(b, died and i == len(chosen) - 1) for i, b in enumerate(chosen)]
+    out = [(b, died and i == len(chosen) - 1) for i, b in enumerate(chosen)]
+    if game.end_reason in ("michael", "michael_lost"):  # Michael is summoned, not drafted
+        out.append(("MichaelBoss", game.end_reason == "michael_lost"))
+    return out
 
 
 class BossRisk:

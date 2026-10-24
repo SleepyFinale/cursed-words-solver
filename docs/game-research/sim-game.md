@@ -222,10 +222,20 @@ a causal estimate needs exploration (random buys) or paired play-outs, not more 
 same runs.
 
 **Boss draft extras:** Michael's three drafts take the option the risk table rates least
-run-ending; at the stage-5 draft while chasing Michael the cursed boss is taken only if
-P(survive it) × P(beat Michael) is within `cursed_margin` of P(survive the uncursed one)
-(`michael_aware`; Michael's risk comes from the table once it has 10 simulated fights,
-else 50%).
+run-ending; at the stage-5 draft while chasing Michael the cursed boss is taken when
+P(survive it) × (1 + `michael_value` × P(beat Michael)) is within `cursed_margin` of
+P(survive the uncursed one) (`michael_aware`; Michael's risk comes from the table once it
+has 10 simulated fights, else 50%).
+
+**Michael scoring (2026-10-24):** losing to Michael is still a run win — the game records
+the crown as beaten when the fifth cursed boss falls (`GoToNextSceneCoroutine`:
+`UpdateHighestAscensionBeaten` before the Michael scene). The sim used to end such runs as
+losses; now they end `won=True, end_reason="michael_lost"` (outcome 16), and beating him
+scores 16 + `features.MICHAEL_BONUS` (8: a full win is worth 1.5 plain wins; was +4).
+`michael_value` (0.5) is the same bonus in run wins for the boss draft. `boss_outcomes`
+also records Michael fights (`MichaelBoss`, ended the run = lost to him); before, none
+were recorded, so the draft always used the 50% prior. The Michael test above predates
+this: its 2 Michael losses were counted as lost runs.
 
 **Advice fallback** (`advice_fallback`): the game's own Advice (`ShopRecommendation`)
 returns "no build" — no recommendation at all — until an owned item carries a build tag.
@@ -327,6 +337,14 @@ expert labels with an MLP) are kept for reference; their labels correlated only 
 a held-out fit, and the trained networks lost to Fast Advice.
 
 ## Known gaps
+
+- **Pin side is not really chosen** (next to do when training resumes): the policy upgrades
+  the lower side (`pin_side="lower"`), for every character. The pin build steers which items
+  are worth buying, so this compounds over a run — e.g. Octacles' crown-8 win (seed
+  8004805) alternated Bucket sides and took whatever tile each had queued
+  (`Bucket.next_tiles`). The one-encounter probe (`pin_side="power"`) was neutral because it
+  misses the long-term effect; the choice needs a longer horizon (play each side out to the
+  next boss) and/or fit with the build tags Advice shops for, benchmarked per character.
 
 - Michael's finale puzzle grid (`GridGenerator.GetPuzzleGrid`) is not generated; reaching
   the finale counts as a win (the puzzle always has a 25-tile solution).
