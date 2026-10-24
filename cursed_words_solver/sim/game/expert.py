@@ -42,20 +42,33 @@ from cursed_words_solver.sim.game.agent import Action, Candidates, apply, clone,
 from cursed_words_solver.sim.game.bossrisk import DEFAULT_PATH as BOSS_RISK_PATH
 from cursed_words_solver.sim.game.core import Rng
 from cursed_words_solver.sim.game.features import encode, feature_names, outcome
+from cursed_words_solver.sim.game.itemvalue import RUN_LOG
 from cursed_words_solver.sim.game.learn import Ridge, load_model
-from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig
+from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig, offer_class
+
 
 DEFAULT_DIR = Path.home() / ".cursed_words_solver" / "sim_models" / "expert"
 SHOP_CAP = 14
 EFFORT = 0.05  # deterministic word search (load-independent, reproducible benchmarks)
 THRESHOLDS = (0.5, 1.0, 2.0)
 ROLL_EFFORT, ROLL_TARGETS = 0.02, 3  # play-out continuation (see _pairs_job)
-MIN_CORR = 0.03
-PROMOTE_T = 1.65  # one-sided ~95% on the paired per-seed outcome gain  # skip benchmarking a model whose cross-validated fit shows no signal
+MIN_CORR = 0.03  # skip benchmarking a model whose cross-validated fit shows no signal
+PROMOTE_T = 1.65  # one-sided ~95% on the paired per-seed outcome gain
+
+
+def same(a: Action, b: Action) -> bool:
+    """Same move (labels differ: Advice's suggestion vs the legal-action listing)."""
+    return a.kind == b.kind and tuple(a.args) == tuple(b.args)
+
+
+def _add(out: list[Action], a: Action) -> None:
+    if not any(same(a, b) for b in out):
+        out.append(a)
 
 
 def shop_candidates(game, suggestion: Action, max_candidates: int = 4) -> list[Action]:
-    """Suggestion first, then buys (upgrades of owned stickers first), a restock, leave."""
+    """Suggestion first, then buys (upgrades of owned stickers first), a restock, leave —
+    each move once."""
     acts = legal_actions(game)
     out = [suggestion]
     owned = {i.game_class for i in game.player.stickers_list(for_comparison=True)}
@@ -68,16 +81,14 @@ def shop_candidates(game, suggestion: Action, max_candidates: int = 4) -> list[A
         return 0 if (o is not None and o.item.game_class in owned) else 1
 
     for a in sorted((a for a in acts if a.kind in ("buy", "hippo")), key=key):
-        if a not in out:
-            out.append(a)
         if len(out) >= max_candidates:
             break
+        _add(out, a)
     for a in acts:
-        if a.kind == "reroll_shop" and a not in out:
-            out.append(a)
+        if a.kind == "reroll_shop":
+            _add(out, a)
             break
-    if Action("leave") not in out:
-        out.append(Action("leave"))
+    _add(out, Action("leave"))
     return out
 
 
@@ -95,8 +106,10 @@ class NetPolicy(FastAdvicePolicy):
 
     def __init__(self, cands: Candidates, model=None, *, seed: int = 0, threshold: float | None = None,
                  boss_risk: str = "") -> None:
-        super().__init__(cands, PowerConfig(probe_seeds=1, probe_grids=2, boss_risk=boss_risk or "", fast_placement=True,
-                                                 placement_targets=8), seed=seed)
+        cfg = PowerConfig(probe_seeds=1, probe_grids=2, boss_risk=boss_risk or "", fast_placement=True,
+                          placement_targets=8, advice_fallback=True, sort_items=True, spend_over=20,
+                          power_override=0.1, swap_sell=True)
+        super().__init__(cands, cfg, seed=seed)
         self.model = model
         self.threshold = threshold if threshold is not None else float(getattr(model, "threshold", 0.5))
         self._steps = 0
@@ -108,12 +121,14 @@ class NetPolicy(FastAdvicePolicy):
             return shop_candidates(game, self._advice_shop(game))
         if ph == "boss_draft":
             fb = FastAdvicePolicy._boss(self, game)
-            return [fb] + [a for a in legal_actions(game) if a.kind == "boss" and a != fb]
+            return [fb] + [a for a in legal_actions(game) if a.kind == "boss" and not same(a, fb)]
         if ph == "pin_reward":
             fp = FastAdvicePolicy._pin(self, game)
-            return [fp] + [a for a in legal_actions(game) if a.kind == "pin" and a != fp]
+            return [fp] + [a for a in legal_actions(game) if a.kind == "pin" and not same(a, fp)]
         if ph == "encounter" and game.encounter.michael_draft is not None:
-            return [a for a in legal_actions(game) if a.kind == "michael_pick"]
+            first = self.michael_pick(game)
+            picks = [a for a in legal_actions(game) if a.kind == "michael_pick"]
+            return [a for a in picks if a.args[0] == first] + [a for a in picks if a.args[0] != first]
         return []
 
     def pick(self, game, cands: list[Action]) -> Action:
@@ -152,7 +167,7 @@ class NetPolicy(FastAdvicePolicy):
         if not cands:
             return FastAdvicePolicy.act(self, game), []
         a = self.pick(game, cands)
-        if ph == "shop" and a != cands[0]:
+        if ph == "shop" and not same(a, cands[0]):
             self._record_override(game, a, memo)
         if a.kind == "leave":
             self._leave_now()
@@ -225,9 +240,10 @@ _CANDS: Candidates | None = None
 _MODEL = None
 
 
-def _init(wordlist: str | None, model_path: str | None, effort: float = EFFORT) -> None:
+def _init(wordlist: str | None, model_path: str | None, effort: float = EFFORT,
+          cheap: bool = False) -> None:
     global _CANDS, _MODEL
-    _CANDS = Candidates(Path(wordlist) if wordlist else None, effort=effort)
+    _CANDS = Candidates(Path(wordlist) if wordlist else None, effort=effort, cheap_floor=cheap)
     _MODEL = load_model(Path(model_path)) if model_path else None
 
 
@@ -246,7 +262,7 @@ def _pairs_job(job: dict[str, Any]) -> dict[str, Any]:
     pol = NetPolicy(_CANDS, _MODEL, seed=job["seed"], threshold=job.get("threshold"), boss_risk=job.get("boss_risk"))
     # Play-outs use a cheaper continuation (3.6x faster: search effort 0.02, 3 placement
     # squares): labels measure the decision under a slightly weaker but same-style policy.
-    roll = NetPolicy(_CANDS.with_effort(ROLL_EFFORT), _MODEL, seed=job["seed"] + 1, threshold=job.get("threshold"),
+    roll = NetPolicy(_CANDS.with_effort(ROLL_EFFORT, cheap_floor=True), _MODEL, seed=job["seed"] + 1, threshold=job.get("threshold"),
                      boss_risk=job.get("boss_risk"))
     roll.cfg.placement_targets = ROLL_TARGETS
     dX, dy, kinds = [], [], []
@@ -275,48 +291,101 @@ def _pairs_job(job: dict[str, Any]) -> dict[str, Any]:
     width = len(feature_names())
     return {"dX": np.stack(dX).astype(np.float32) if dX else np.zeros((0, width), np.float32),
             "dy": np.array(dy, np.float32), "kind": np.array(kinds, dtype="U12"),
-            "won": bool(g.won), "outcome": outcome(g), "err": err, "sec": time.time() - t0}
+            "won": bool(g.won), "outcome": outcome(g), "err": err, "sec": time.time() - t0, "seed": job["seed"]}
 
 
 def _eval_job(job: dict[str, Any]) -> dict[str, Any]:
+    from cursed_words_solver.sim.game.bossrisk import boss_outcomes
+
     g = _game(job)
     pol = NetPolicy(_CANDS, _MODEL, seed=job["seed"], threshold=job.get("threshold"), boss_risk=job.get("boss_risk"))
     for k, v in (job.get("cfg") or {}).items():  # PowerConfig overrides (tuning sweeps)
         setattr(pol.cfg, k, v)
+    buys: list[list[Any]] = []  # [stage, node, item class] per purchase (item-value data)
+    shops: list[list[Any]] = []  # [stage, node] per shop visited
+    error = None
     try:
         for _ in range(4000):
             if g.phase == "done":
                 break
-            apply(g, pol.act(g))
-    except Exception:
-        pass
-    return {"seed": job["seed"], "won": bool(g.won), "stage": g.player.run.stage, "outcome": outcome(g)}
+            a = pol.act(g)
+            run = g.player.run
+            cls = None
+            if g.phase == "shop":
+                if not shops or shops[-1] != [run.stage, run.node.name]:
+                    shops.append([run.stage, run.node.name])
+                cls = offer_class(g, a)
+            stage, node = run.stage, run.node.name
+            if apply(g, a) and cls:
+                buys.append([stage, node, cls])
+    except Exception as e:  # a crash ends the run as a loss; logged so it is not mistaken for one
+        error = repr(e)
+    return {"seed": job["seed"], "won": bool(g.won), "stage": g.player.run.stage, "outcome": outcome(g),
+            "character": g.player.character, "crown": g.player.run.ascension, "buys": buys,
+            "shops": shops, "bosses": boss_outcomes(g), "error": error}
 
 
 def collect(jobs, *, workers, wordlist, model, out: Path) -> dict[str, Any]:
+    """Run the data jobs; finished runs are checkpointed to ``<out>.partial.npz`` every 16
+    runs, so an interrupted iteration resumes where it stopped."""
+    partial = out.with_name(out.stem + ".partial.npz")
     dXs, dys, ks = [], [], []
+    done: set[int] = set()
     wins = 0
+    if partial.is_file():
+        with np.load(partial) as d:  # closes the file (Windows cannot delete it while open)
+            dXs, dys, ks = [d["dX"]], [d["dy"]], [d["kind"]]
+            done = set(int(x) for x in d["seeds"])
+            wins = int(d["wins"][0])
+        print(f"  resuming: {len(done)} runs already collected", flush=True)
+    todo = [j for j in jobs if j["seed"] not in done]
+
+    def save(path: Path) -> None:
+        width = len(feature_names())
+        dX = np.concatenate(dXs) if dXs else np.zeros((0, width), np.float32)
+        np.savez_compressed(path, dX=dX, dy=np.concatenate(dys) if dys else np.zeros(0, np.float32),
+                            kind=np.concatenate(ks) if ks else np.zeros(0, "U12"),
+                            seeds=np.array(sorted(done), np.int64), wins=np.array([wins]))
+
     t0 = time.time()
     with spawn_pool(workers, _init, (wordlist, model)) as pool:
-        for i, r in enumerate(pool.imap_unordered(_pairs_job, jobs)):
+        for i, r in enumerate(pool.imap_unordered(_pairs_job, todo)):
             dXs.append(r["dX"])
             dys.append(r["dy"])
             ks.append(r["kind"])
             wins += r["won"]
+            done.add(r["seed"])
             if r["err"]:
                 print("  error:", r["err"], flush=True)
-            if (i + 1) % 16 == 0 or i + 1 == len(jobs):
-                print(f"  run {i + 1}/{len(jobs)}: {sum(len(d) for d in dys)} pairs, {wins} wins "
-                      f"({time.time() - t0:.0f}s)", flush=True)
-    dX = np.concatenate(dXs)
-    np.savez_compressed(out, dX=dX, dy=np.concatenate(dys), kind=np.concatenate(ks))
-    return {"runs": len(jobs), "wins": wins, "pairs": len(dX)}
+            if (i + 1) % 16 == 0 or i + 1 == len(todo):
+                save(partial)
+                n = len(done)
+                eta = (time.time() - t0) / (i + 1) * (len(todo) - i - 1)
+                print(f"  run {n}/{len(jobs)}: {sum(len(d) for d in dys)} pairs, {wins} wins "
+                      f"({time.time() - t0:.0f}s, ~{eta / 60:.0f} min left)", flush=True)
+    save(out)
+    partial.unlink(missing_ok=True)
+    return {"runs": len(jobs), "wins": wins, "pairs": int(sum(len(d) for d in dys))}
 
 
-def evaluate(jobs, *, workers, wordlist, model, threshold: float | None = None) -> dict[str, Any]:
+def evaluate(jobs, *, workers, wordlist, model, threshold: float | None = None,
+             cheap: bool = False, run_log: Path | None = RUN_LOG) -> dict[str, Any]:
+    """Run full games; ``cheap`` uses the faster exact-scoring floor (long benchmarks).
+    Every run is appended to ``run_log`` (purchases, shops, bosses, outcome), the data the
+    item-value table learns from, so each benchmark also adds training data."""
     jobs = [{**j, "threshold": threshold if threshold is not None else j.get("threshold")} for j in jobs]
-    with spawn_pool(workers, _init, (wordlist, model)) as pool:
+    with spawn_pool(workers, _init, (wordlist, model, EFFORT, cheap)) as pool:
         res = pool.map(_eval_job, jobs)
+    errors = [r for r in res if r["error"]]
+    if errors:
+        print(f"  {len(errors)} runs crashed, e.g. seed {errors[0]['seed']}: {errors[0]['error']}", flush=True)
+    if run_log is not None:
+        run_log = Path(run_log)
+        run_log.parent.mkdir(parents=True, exist_ok=True)
+        with run_log.open("a", encoding="utf-8") as f:
+            for j, r in zip(jobs, res):
+                f.write(json.dumps({**r, "cfg": j.get("cfg") or {}, "model": bool(model),
+                                    "boss_risk": bool(j.get("boss_risk")), "cheap": cheap}) + "\n")
     return {"runs": len(res), "wins": sum(r["won"] for r in res),
             "win_rate": sum(r["won"] for r in res) / max(1, len(res)),
             "mean_outcome": float(np.mean([r["outcome"] for r in res])),
@@ -336,13 +405,15 @@ def load_pairs(out: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     width = len(feature_names())
     dXs, dys, ks = [], [], []
     for f in sorted(out.glob("pairs_it*.npz")):
-        d = np.load(f)
-        dX = d["dX"]
+        if f.name.endswith(".partial.npz"):
+            continue
+        with np.load(f) as d:
+            dX, dy, kind = d["dX"], d["dy"], d["kind"]
         if dX.shape[1] < width:
             dX = np.pad(dX, ((0, 0), (0, width - dX.shape[1])))
         dXs.append(dX.astype(np.float32))
-        dys.append(d["dy"])
-        ks.append(d["kind"])
+        dys.append(dy)
+        ks.append(kind)
     if not dXs:
         return np.zeros((0, width), np.float32), np.zeros(0, np.float32), np.zeros(0, "U12")
     return np.concatenate(dXs), np.concatenate(dys), np.concatenate(ks)
@@ -428,7 +499,7 @@ def main(argv: list[str] | None = None) -> int:
         history.append({"iteration": "recheck", "champion": champ is not None, "paired": test,
                         "confirm": cur if champ else base})
         hist_path.write_text(json.dumps(history, indent=1))
-    start = len(list(out.glob("pairs_it*.npz")))
+    start = len([f for f in out.glob("pairs_it*.npz") if not f.name.endswith(".partial.npz")])
     for it in range(start, start + args.iterations):
         print(f"iteration {it}: {args.runs} runs by {'champion' if champ else 'Fast Advice'}", flush=True)
         stats = collect(make_jobs(args.runs, 2000 + it, chars, crowns, p_sample=args.p_sample, boss_risk=risk,

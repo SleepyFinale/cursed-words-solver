@@ -47,10 +47,12 @@ class Candidates:
     ``effort`` (0–1] switches to a deterministic search: the engine's node / path / beam
     limits scaled by ``effort`` and no deadline, so results do not depend on machine load
     (0.05 ≈ 0.25 s per grid and beats a 0.6 s deadline). Otherwise ``time_budget`` seconds.
+    ``cheap_floor`` also scales the exact-scoring floor down with effort (about 2x faster
+    runs, slightly weaker play): meant for play-outs and long benchmarks, not live advice.
     """
 
     def __init__(self, wordlist=None, time_budget: float = 8.0, *, dictionary=None,
-                 effort: float | None = None) -> None:
+                 effort: float | None = None, cheap_floor: bool = False) -> None:
         from cursed_words_solver.config import resolve_wordlist
         from cursed_words_solver.dictionary import WordDictionary
         from cursed_words_solver.search import WordSearcher
@@ -58,6 +60,7 @@ class Candidates:
         self.wordlist = wordlist or resolve_wordlist(None)
         self.dictionary = dictionary or WordDictionary(self.wordlist)
         self.effort = effort
+        self.cheap_floor = cheap_floor
         self.searcher = WordSearcher(self.dictionary, time_budget=0 if effort else time_budget)
 
     def with_budget(self, time_budget: float) -> "Candidates":
@@ -67,9 +70,10 @@ class Candidates:
             return self.with_effort(max(0.01, self.effort * min(1.0, time_budget / 0.6)))
         return Candidates(self.wordlist, time_budget, dictionary=self.dictionary)
 
-    def with_effort(self, effort: float) -> "Candidates":
-        """Same dictionary, deterministic search at ``effort``."""
-        return Candidates(self.wordlist, dictionary=self.dictionary, effort=effort)
+    def with_effort(self, effort: float, cheap_floor: bool | None = None) -> "Candidates":
+        """Same dictionary, deterministic search at ``effort`` (floor mode kept unless given)."""
+        return Candidates(self.wordlist, dictionary=self.dictionary, effort=effort,
+                          cheap_floor=self.cheap_floor if cheap_floor is None else cheap_floor)
 
     def _find(self, board, loadout, top_n: int):
         if not self.effort:
@@ -80,6 +84,8 @@ class Candidates:
         try:
             for k, floor in _EFFORT_ATTRS.items():
                 scale = 2 * self.effort if k == "beam_fixed_width" else self.effort
+                if k == "max_exact_paths" and self.cheap_floor:  # exact scoring dominates cheap searches
+                    floor = max(500, int(floor * min(1.0, self.effort / 0.05)))
                 setattr(ExactSearch, k, max(floor, int(saved[k] * scale)))
             return self.searcher.find_best_words(board, loadout, top_n=top_n)
         finally:

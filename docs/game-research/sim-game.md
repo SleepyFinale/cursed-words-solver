@@ -87,10 +87,155 @@ Crowns 1–8 (Carpman, mixed): the old "always take the cursed boss while chasin
 rule won 1 / 512 (mean 8.2 encounters); learned risk with a 0.05 cursed margin won 9
 (mean 8.9) — cursed bosses vary from 10% (Small Grid*) to 47% (Negative Money*) run-ending.
 
-`policy.tuned_config()` holds these settings; the live advisor's rollouts use it.
+`policy.tuned_config()` holds these settings; the live advisor's rollouts use it, and
+`advise` prints an instant **AI pick** (tuned policy + boss risk + the newest
+`sim_models/*/champion.npz`) before the rollout ranking (`--mode quick` for only that).
 
-**Boss risk** (`bossrisk.py`): counts of (boss faced, run ended there) per boss and per
-crown from simulated runs, Beta-smoothed (crown → boss → average boss). The draft takes the
+**All characters** (48 seeds each at crowns 0 and 2, paired on the same seeds; mean
+encounters cleared):
+
+| Character | fixed boss rule | + boss risk | + Advice fallback |
+| --- | --- | --- | --- |
+| Bones The Dog | 12.91 | 13.94 | 14.01 |
+| Hayley Bayles | 12.40 | 12.75 | 12.53 |
+| Nat-H4 | 6.46 | 6.90 | **10.40** |
+| Nina Nix | 13.32 | 13.49 | 13.65 |
+| Octacles | 12.34 | 12.45 | 13.21 |
+| Beans | 11.82 | 12.14 | 12.14 |
+| Sam Gambit | 6.33 | 7.26 | **10.70** |
+| Sandy Saguaro | 10.27 | 10.75 | 10.62 |
+| Human Boy | 5.60 | 6.03 | **8.82** |
+| Cretaceous Meg | 11.81 | 12.32 | 12.42 |
+| Rodman / Carpman | 11.65 | 12.22 | 12.28 |
+| all (paired) | | +0.49 (t 5.0) | +0.96 (t 8.9) |
+
+Then **sticker ordering** (`sort_items`: before leaving a shop, up to two swaps that add
+probe-encounter points — Human Boy's hands boost the neighbouring sticker, Overhand /
+Underhand and left-to-right effects depend on order): +0.44 overall (t 5.1); Human Boy
++1.48, Sandy Saguaro +1.20, Beans +0.67, Hayley +0.64. A probe-based pin side
+(`pin_side="power"`) was neutral overall (+0.05, t 0.6) and stays off.
+
+Then **spend-down** (`spend_over=20`: when Advice says leave with more than $20, buy the
+item with the best probe gain or restock up to 3 times): +0.12 overall (t 3.7), wins
+132 → 151 / 1,056; Bones (died with $62 unspent on average) 21 → 27, Cretaceous Meg 6 → 11.
+A $40 reserve gained less (+0.04).
+
+Then **probe-checked purchases** (`power_override=0.1`: when Advice buys, every
+affordable sticker / stamp is tried in a probe encounter; Advice is overridden when an
+alternative adds 10 points-percent more than Advice's pick): +0.93 encounters (t 7.0), wins
+151 → 184 / 1,056; Nat-H4 +1.67, Human Boy +1.72 (3 → 11 wins), Octacles +1.61, Beans
++1.26. A 0.3 margin gained +0.78.
+
+A 0.03 margin was slightly worse (−0.11, t −1.2) and a 4× deeper probe (4 grids × 2
+seeds) no better (+0.05, t 0.4) on 8 characters.
+
+**Speed:** probe encounters dominate run time once purchases are probe-checked (52% in the
+sticker-order search, 31% in purchase checks). `PowerPolicy.power` is memoised per build
+signature (items in order with levels / foil / colours / counters, rack, money, position —
+identical decisions verified), the order search is skipped when the line-up has not
+changed since a search found nothing. `Candidates(cheap_floor=True)` also scales the
+exact-scoring floor (`max_exact_paths`) with search effort below 0.05: 279 s → 141 s per
+late-crown run, for a small cost in play (−0.12 encounters, t −1.6, 24 of 96 seeds differ).
+So it is opt-in: play-out continuations and long benchmarks (`expert.evaluate(cheap=True)`)
+use it; live advice and decision probes keep the full floor.
+
+**Sell-and-replace** (`swap_sell`, on by default): with every slot of a kind full no
+purchase is possible, so neither Advice nor the probe check ever upgraded a full build;
+the policy tries selling each owned item for each shop offer and makes the best swap
+that adds more than `power_override` probe points (at most one per shop). 352 paired
+seeds (32 per character, crown 0 or 2 each): +0.23 encounters (t 2.1; 135 seeds better,
+111 worse), wins 134 → 141 of 352. Sam Gambit gained most (+0.87, t 2.4), Natha Servo
++0.58; Prismatic Bean −0.42 (t −1.3) is the only notable loss.
+
+**Chasing cursed bosses** (crowns 1–8, 1,056 paired seeds): the cursed preference with the
+Michael-aware stage-5 rule won 108 vs 106 never chasing (−0.07 encounters, t −1.0), so
+the preference costs nothing and stays.
+
+**By crown** (12 seeds × 11 characters per crown, all of the above): wins 52 / 132 at
+crown 0, 40 at crown 1, 20 at 2, 12 / 16 / 11 at 3 / 4 / 5, 6 at 6, 1 at 7, 0 at 8.
+
+After the shop work (fallback, probe-checked buys, sort, spend-down, sell-and-replace;
+same seeds, cheap floor) the total rose from 156 to 197 of 1,188:
+
+| crown | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|---|
+| wins / 132 | 70 | 46 | 30 | 16 | 15 | 13 | 5 | 0 | 2 |
+| mean outcome | 14.5 | 13.8 | 12.6 | 11.8 | 11.2 | 10.8 | 10.2 | 7.9 | 7.9 |
+
+By character (all crowns): Octacles 35, Bones 35, Nina Nix 24, Hayley 24, Spike 17,
+Sock Head 16, Prismatic Bean 15, Natha Servo 11, Sandy 11, Sam Gambit 6, Wet Dennis 3.
+No run reached Michael: with no simulated Michael fights the stage-5 rule assumes 50%
+Michael risk and always takes the uncursed boss (see below). Checked on the crown 1–4
+seeds with `michael_prior_risk=0` (take the fifth cursed boss on the usual margin): 14 of
+528 runs reached stage 5 with every boss cursed, 4 fought Michael and 2 beat him, and run
+wins fell 107 → 104. Michael is roughly a coin flip for a build that got there, so the
+50% prior is about right and stays; going for him trades wins for the Michael bonus.
+
+**Carp Streamers pin side** (Rodman): one side ≥ 2 levels ahead turns the pin's build tags
+mono-colour (red or blue generator), which steers Advice. Always-left (+0.16, t 0.6) and
+always-right (−0.10, t −0.4) vs upgrading the lower side, 96 paired seeds at crowns 0 / 2:
+no effect, so Rodman's weakness is elsewhere. Stage-5 losses across characters are mostly
+near misses (median 52–87% of the final boss target reached).
+
+**Final-shop spend-down** (`final_spend`, off): at the stage-5 X-2 shop money is worthless
+afterwards, so spend to $0 (any +0.5% probe gain, up to 8 restocks, 3 swaps). 352 paired
+seeds: +0.01 encounters (t 0.8), wins 141 → 145; only 54 seeds changed at all. The final
+boss is not lost for want of the last purchases.
+
+**Deeper boss search** (`boss_effort=0.15`, 3× the search in boss encounters): −0.01
+(t −0.4), 35 of 352 seeds changed. Effort 0.05 already finds the boss words; the
+bottleneck is the build, not word search.
+
+**No reserve early** (spend-down with a $0 floor in stages 1–2): −0.68 encounters
+(t −4.5), wins 141 → 108 of 352. Logged winners buy more in stage 1 (3.0 vs 2.3 items),
+but forcing it fills slots with items that only just clear the 2% probe threshold; the
+$20 reserve keeps money for the items Advice wants later. Reverted. The opposite —
+spend-down buys only above 6% probe gain (`spend_threshold=0.06`) — changed 9 of 352
+seeds (+0.03, t 1.4; wins 141 → 144): spend-down rarely fires, so it is not the lever.
+
+**Losses now** (crown 0, 16 seeds per character, current base): 87 / 176 won. Losers
+die with little money ($1–20, was $10–62 before spend-down) and fewer item levels than
+winners (e.g. Rodman 12.1 vs 17.0, Natha Servo 13.5 vs 17.8).
+
+**Run log and learned item value** (`itemvalue.py`): `expert.evaluate` appends every run
+to `~/.cursed_words_solver/sim_models/runs.jsonl` (character, crown, config, purchases
+with stage / node, shops visited, bosses fought, outcome, and any crash — crashes used to
+be swallowed and counted as plain losses), so every benchmark adds training data. The
+item-value table scores each purchase as the run's outcome minus the mean outcome of the
+runs (same character) that reached a shop in that stage, and shrinks per key (item →
+item@stage → item@stage#character; a child adds its shrunk deviation from the parent's
+raw mean, so a purchase is not counted twice). `PowerConfig.item_value` /
+`item_value_weight` add it to probe gains in purchase checks, fallback buys and
+sell-and-replace, as a long-term prior the one-encounter probe misses. Rebuild with
+`python -m cursed_words_solver.sim.game.itemvalue`. The boss-risk table learns from the
+same log: `python -m cursed_words_solver.sim.game.bossrisk --from-log` counts the bosses
+of lines added since its last read (`logged` in `boss_risk.json` marks the offset).
+
+First table: 990 runs (90 per character, crowns 0–4, seeds 9,000,000+, ~4.5 h with the
+cheap floor). Top: Dango, Ruler, Rex, Oden, Cursed VHS, Queen Bee, Castle (+0.8–1.0
+encounters); bottom: Fried Shrimp, Piggy Bank, Pear, Automobile, Sunflower, Chips
+(−0.4–0.8). Economy items rank low because the policy buys them when it is short of power.
+Played as a prior (`item_value_weight=0.03`, ±3% probe gain per encounter of value) on the
+352 charbench seeds: −0.07 encounters (t −1.0; 59 seeds better, 61 worse; wins 141 → 146),
+so it stays off. The table mostly learns what the policy already buys when things go well;
+a causal estimate needs exploration (random buys) or paired play-outs, not more of the
+same runs.
+
+**Boss draft extras:** Michael's three drafts take the option the risk table rates least
+run-ending; at the stage-5 draft while chasing Michael the cursed boss is taken only if
+P(survive it) × P(beat Michael) is within `cursed_margin` of P(survive the uncursed one)
+(`michael_aware`; Michael's risk comes from the table once it has 10 simulated fights,
+else 50%).
+
+**Advice fallback** (`advice_fallback`): the game's own Advice (`ShopRecommendation`)
+returns "no build" — no recommendation at all — until an owned item carries a build tag.
+Human Boy, Sam Gambit and Nat-H4 start with none, so following Advice never bought
+anything. When Advice is silent the policy buys the affordable sticker / stamp that adds
+the most points to a probe encounter.
+
+**Boss risk** (`bossrisk.py`): counts of (boss faced, run ended there) per boss, per crown
+and per crown × character from simulated runs, Beta-smoothed down the chain average boss →
+boss → boss at this crown → boss at this crown for this character. The draft takes the
 lowest-risk boss, but a cursed one while chasing Michael unless it is more than
 `cursed_margin` riskier (or slightly riskier with Blessing of the Fairies). It improves as
 more runs are added: `python -m cursed_words_solver.sim.game.bossrisk --runs 1024 --crowns 1,2,3`.
@@ -117,9 +262,16 @@ The learning loop that improves with more runs:
 3. **Model:** ridge regression (`learn.Ridge`, λ by 5-fold CV). With ~1000 features and
    noisy labels an MLP could not even recover a one-feature synthetic signal; the linear
    model does.
-4. **Gate:** each model is benchmarked at margins 0.5 / 1 / 2 on 256 fixed seeds,
-   then the best margin is compared with the champion on 256 *different* seeds; only a
-   better model becomes the champion that generates the next iteration's data.
+4. **Gate:** each model is benchmarked at margins 0.5 / 1 / 2 on 256 fixed seeds, then
+   the best margin is compared with the champion on 256 *different* seeds by a paired
+   test (same seeds, deterministic runs): promoted only if the mean per-seed outcome gain
+   exceeds 1.65 standard errors. (Iteration 1 was promoted by the earlier "more wins"
+   rule on 56 vs 54; the loop re-checks such champions with the paired test.)
+
+Collection checkpoints every 16 runs (`pairs_itNNN.partial.npz`), so a restart resumes
+mid-iteration. Candidate lists hold each move once — Advice's suggestion and the
+legal-action listing carry different labels, and comparing `Action`s with labels had put
+the suggestion in the list twice (wasted pairs with an exactly-zero label).
 
 ```bash
 python -m cursed_words_solver.sim.game.expert --iterations 10 --runs 256 --characters WetDennis --crowns 0
@@ -129,6 +281,15 @@ Resumable; `history.json` tracks every iteration, `champion.npz` is the current 
 
 Play-outs continue with a cheaper copy of the policy (search effort 0.02, 3 placement
 squares: 9.7 s instead of 34.7 s per run; tile-placement probes dominate the cost).
+
+### Status (2026-10-22)
+
+Three keyed iterations (15,840 pairs) never produced a model that beats the base policy:
+CV correlation fell from 0.11 to 0.06 as data grew, and the iteration-2 model lost on the
+confirm seeds (−0.27 encounters, t −2.1). A linear advantage model over after-state
+feature differences cannot express what makes one shop choice better (it depends on the
+build, not on fixed per-item values). The loop is parked; the measurable gains came from
+diagnosing specific gaps (boss risk, tile use, planner, Advice fallback, sticker order).
 
 ### What went wrong with the first keyed model
 

@@ -355,6 +355,9 @@ def test_effort_search_is_deterministic():
     a, b = c.words(g, 3), c.words(g, 3)
     assert a and [(o.word, o.score, o.path) for o in a] == [(o.word, o.score, o.path) for o in b]
     assert ExactSearch.subset_path_budget == before  # limits restored after the search
+    assert not c.cheap_floor and c.with_effort(0.01).cheap_floor is False  # full floor by default
+    cheap = c.with_effort(0.02, cheap_floor=True)
+    assert cheap.with_budget(0.3).cheap_floor and cheap.words(g, 3)  # mode kept by probes
 
 
 def test_boss_risk_counts_and_smoothing(tmp_path):
@@ -382,3 +385,59 @@ def test_boss_risk_counts_and_smoothing(tmp_path):
     g._end(False, "test")  # lost at the boss
     g.player.run.node = Node.BOSS
     assert boss_outcomes(g) == [(opts[a.args[0]].game_class, True)]
+
+
+def test_item_value_baselines_and_shrinkage(tmp_path):
+    import json
+
+    from cursed_words_solver.sim.game.itemvalue import PRIOR_WEIGHT, ItemValue, read_runs
+
+    runs = [  # both runs reached a stage-2 shop (baseline 12); only the winner bought Gem
+        {"character": "A", "outcome": 16.0, "shops": [[1, "SHOP_ONE"], [2, "SHOP_ONE"]], "buys": [[2, "SHOP_ONE", "Gem"]]},
+        {"character": "A", "outcome": 8.0, "shops": [[1, "SHOP_ONE"], [2, "SHOP_TWO"]], "buys": [[1, "SHOP_ONE", "Rock"]]},
+        {"character": "A", "outcome": 0.0, "error": "boom", "shops": [[1, "SHOP_ONE"]], "buys": [[1, "SHOP_ONE", "Rock"]]},
+    ]
+    log = tmp_path / "runs.jsonl"
+    log.write_text("\n".join(json.dumps(r) for r in runs) + "\n{cut short")
+    kept = read_runs(log)
+    assert len(kept) == 2  # crashed and truncated lines skipped
+    t = ItemValue.build(kept)
+    assert t.sums["Gem"] == [1, 4.0] and t.sums["Rock"] == [1, -4.0]  # vs stage baselines 12 / 12
+    assert t.value("Gem") == 4.0 / (1 + PRIOR_WEIGHT) > 0 > t.value("Rock")
+    assert t.value("Gem", 2, "A") == t.value("Gem")  # the same purchase is not counted twice
+    assert t.value("Unseen", 3, "B") == 0.0
+    t.save(tmp_path / "iv.json")
+    assert ItemValue.load(tmp_path / "iv.json").sums == t.sums
+    kept[1]["buys"].append([1, "SHOP_ONE", "Gem"])  # the loser bought Gem too, at stage 1
+    t = ItemValue.build(kept)
+    assert t.value("Gem") == 0.0 and t.value("Gem", 2) > 0 > t.value("Gem", 1)
+
+
+def test_boss_risk_reads_the_run_log_once(tmp_path):
+    import json
+
+    from cursed_words_solver.sim.game.bossrisk import BossRisk
+
+    log = tmp_path / "runs.jsonl"
+    run = {"character": "A", "crown": 2, "bosses": [["SmallGrid", False], ["ExtraQs*", True]]}
+    log.write_text(json.dumps(run) + "\n" + json.dumps({**run, "error": "boom"}) + "\n")
+    t = BossRisk()
+    assert t.add_log(log) == 1
+    assert t.counts["ExtraQs*@c2#A"] == [1, 1] and t.counts["SmallGrid"] == [1, 0]
+    assert t.add_log(log) == 0  # already counted
+    with log.open("a") as f:
+        f.write(json.dumps(run) + "\n")
+    t.save(tmp_path / "br.json")
+    t = BossRisk.load(tmp_path / "br.json")
+    assert t.add_log(log) == 1 and t.counts["SmallGrid"] == [2, 0]
+
+
+def test_quick_pick_is_a_legal_shop_action(tmp_path):
+    from cursed_words_solver.sim.game.advise import quick_pick
+    from cursed_words_solver.sim.game.agent import legal_actions
+
+    g = _game(seed=13)
+    _clear(g)
+    assert g.phase == "shop"
+    a = quick_pick(g, _NoSearch(), model=None)
+    assert (a.kind, a.args) in {(b.kind, b.args) for b in legal_actions(g)} or a.kind == "leave"

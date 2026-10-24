@@ -101,13 +101,16 @@ class RolloutPolicy(Policy):
             o = stock[a.args[1]]
             return 0 if (o is not None and o.item.game_class in owned) else 1
 
+        def new(a: Action) -> bool:  # labels differ between the suggestion and legal actions
+            return all(a.kind != b.kind or tuple(a.args) != tuple(b.args) for b in out)
+
         for a in sorted(buys, key=key):
-            if a not in out:
+            if new(a):
                 out.append(a)
             if len(out) >= self.cfg.max_candidates:
                 break
         leave = Action("leave")
-        if leave not in out:
+        if new(leave):
             out.append(leave)
         return out
 

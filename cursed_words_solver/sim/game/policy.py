@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from cursed_words_solver.sim.game.agent import Action, Candidates, WordOption, apply, clone, legal_actions
 from cursed_words_solver.sim.game.core import Rng
 from cursed_words_solver.sim.game.encounter import Encounter
-from cursed_words_solver.sim.game.player import ENCOUNTER_NODES, Node
+from cursed_words_solver.sim.game.player import ENCOUNTER_NODES, NUMBER_OF_STAGES, Node
 
 if TYPE_CHECKING:  # pragma: no cover
     from cursed_words_solver.sim.game.run import Game
@@ -86,12 +86,25 @@ class PowerConfig:
     go_for_michael: bool = True  # at crown ≥ 1, take cursed bosses to reach Michael
     probe_budget: float = 0.25  # seconds per probe-grid search (best found so far)
     boss_risk: str = ""  # bossrisk.py table: draft the boss least likely to end the run
-    pin_side: str = "lower"  # FastAdvicePolicy pin reward: "lower" side, or always "left" / "right"
+    pin_side: str = "lower"  # FastAdvicePolicy pin reward: "lower" side, "power" (probe), "left" / "right"
+    michael_aware: bool = True  # stage-5 draft: cursed only if surviving it AND Michael is likely enough
+    michael_prior_risk: float = 0.5
     cursed_margin: float = 0.05  # with boss_risk: take a cursed boss unless this much riskier
+    swap_sell: bool = False  # slots full: sell an owned item to buy a better one (probe-checked)
+    power_override: float = 0.0  # replace Advice's buy when another adds this much more probe power
+    spend_over: int = 0  # Advice says leave but money > this: buy by probe power / restock (0 = off)
+    spend_threshold: float = 0.0  # spend-down buys need this relative probe gain (0 = buy_threshold)
+    item_value: str = ""  # learned item-value table (itemvalue.py); "" = off
+    item_value_weight: float = 0.0  # relative probe gain added per encounter of learned item value
+    boss_effort: float = 0.0  # effort-mode word search at this effort in boss encounters (0 = same)
+    final_spend: bool = False  # last shop before the final boss: money is worthless after it, spend it all
+    sort_items: bool = False  # before leaving a shop, swap stickers when it adds probe points
+    advice_fallback: bool = False  # Advice silent (no build yet): buy by probe-encounter power
     fast_placement: bool = False  # FastAdvicePolicy: place rack tiles when behind pace (probe search)
     # FastAdvicePolicy encounter planner: compare the top words / reroll / best placement by
     # playing the rest of the encounter out (see ``FastAdvicePolicy._plan``).
     plan_encounter: bool = False
+    plan_from_stage: int = 1  # plan only from this stage (the planner is ~4x slower per encounter)
     plan_words: int = 4
     plan_samples: int = 2
     plan_level_value: float = 3.0  # $ per item level gained (Bar Chart, Fountain Pen, ...)
@@ -105,9 +118,26 @@ def tuned_config(**kw) -> PowerConfig:
     from cursed_words_solver.sim.game.bossrisk import DEFAULT_PATH
 
     base = {"probe_seeds": 1, "probe_grids": 2, "fast_placement": True, "placement_targets": 8,
-            "plan_encounter": True,
+            "advice_fallback": True, "sort_items": True, "spend_over": 20, "power_override": 0.1,
+            "swap_sell": True, "plan_encounter": True,
             "boss_risk": str(DEFAULT_PATH) if DEFAULT_PATH.is_file() else ""}
     return PowerConfig(**{**base, **kw})
+
+
+def build_signature(game: "Game") -> tuple:
+    """Everything a probe encounter's score depends on: items in order with levels, foil,
+    colours and counters, the rack, money and crown / character."""
+    p = game.player
+
+    def sig(it):
+        if it is None:
+            return None
+        return (it.game_class, tuple(tuple(c) for c in it.components), it.is_foil,
+                tuple(it.relevant_colours), repr(sorted(it.state_fields().items())),
+                tuple(sig(n) for n in it.nested_items()))
+
+    return (p.character, p.run.ascension, p.money, sig(p.pin), tuple(sig(i) for i in p.stickers),
+            tuple(sig(i) for i in p.stamps), tuple((t.srep(), t.tile_type) if t else None for t in p.consumables))
 
 
 def next_encounter_node(game: "Game") -> tuple[int, Node]:
@@ -134,10 +164,35 @@ class PowerPolicy(Policy):
         self._shop_actions = 0
         self._probe_rng_seed = seed
 
+    def enc_cands(self, game: "Game") -> Candidates:
+        """Word search for the current encounter: deeper in boss fights (``boss_effort``)."""
+        if self.cfg.boss_effort and self.cands.effort and game.player.run.node == Node.BOSS:
+            if getattr(self, "_boss_cands", None) is None:
+                self._boss_cands = self.cands.with_effort(self.cfg.boss_effort)
+            return self._boss_cands
+        return self.cands
+
     # -- power -------------------------------------------------------------------
 
     def power(self, game: "Game", *, bosses: list | None = None, stage_node: tuple[int, Node] | None = None) -> float:
-        """Mean points a fresh probe encounter yields with this loadout (greedy words)."""
+        """Mean points a fresh probe encounter yields with this loadout (greedy words).
+
+        Deterministic for a given build / money / position (the probe RNG is keyed by
+        position), so results are memoised per build signature."""
+        key = None
+        if bosses is None:
+            key = (build_signature(game), stage_node or next_encounter_node(game))
+            cache = getattr(self, "_power_cache", None)
+            if cache is None or len(cache) > 4096:
+                cache = self._power_cache = {}
+            if key in cache:
+                return cache[key]
+        v = self._power(game, bosses=bosses, stage_node=stage_node)
+        if key is not None:
+            self._power_cache[key] = v
+        return v
+
+    def _power(self, game: "Game", *, bosses: list | None = None, stage_node: tuple[int, Node] | None = None) -> float:
         cfg = self.cfg
         total = 0.0
         stage, node = stage_node or next_encounter_node(game)
@@ -206,7 +261,7 @@ class PowerPolicy(Policy):
             return Action("finale")
         if enc.awaiting_forced_sell:
             return self._cheapest_sell(game) or Action("skip")
-        opts = self.cands.words(game, 3)
+        opts = self.enc_cands(game).words(game, 3)
         best = opts[0] if opts else None
         need = enc.remaining_target
         grids_left = enc.remaining_grids + 1
@@ -337,6 +392,10 @@ class AdvicePolicy(PowerPolicy):
         self._frozen_this_shop: set[tuple[str, int]] = set()
         self._bought_this_shop: set[str] = set()
         self._sold_this_shop = False
+        self._moves_this_shop = 0
+        self._spend_restocks = 0
+        self._swaps_this_shop = 0
+        self._pending_buy = None
 
     def act(self, game: "Game") -> Action:
         if game.phase != "shop":
@@ -353,12 +412,19 @@ class AdvicePolicy(PowerPolicy):
         self._frozen_this_shop = set()
         self._bought_this_shop = set()
         self._sold_this_shop = False
+        self._moves_this_shop = 0
+        self._spend_restocks = 0
+        self._swaps_this_shop = 0
+        self._pending_buy = None
         return Action("leave")
 
     def _advice_shop(self, game: "Game") -> Action:
         from cursed_words_solver.game_shop.recommendation import compute_shop_advice
 
         s = game.shop
+        pending, self._pending_buy = getattr(self, "_pending_buy", None), None
+        if pending is not None and s.can_buy(*pending):
+            return Action("buy", pending, "swap: buy replacement")
         loadout, state = shop_advice_inputs(game)
         try:
             adv = compute_shop_advice(loadout, state)
@@ -374,10 +440,13 @@ class AdvicePolicy(PowerPolicy):
                 if kind not in ("sticker", "stamp"):
                     continue
                 if (adv.should_buy or adv.should_upgrade) and s.can_buy(kind, it.index):
-                    stock = s.stickers if kind == "sticker" else s.stamps
-                    if stock[it.index] is not None:
-                        self._bought_this_shop.add(stock[it.index].item.game_class)
-                    return Action("buy", (kind, it.index), f"advice: buy {it.name}")
+                    pick = Action("buy", (kind, it.index), f"advice: buy {it.name}")
+                    if self.cfg.power_override:
+                        pick = self._power_check(game, pick)
+                    stock = s.stickers if pick.args[0] == "sticker" else s.stamps
+                    if stock[pick.args[1]] is not None:
+                        self._bought_this_shop.add(stock[pick.args[1]].item.game_class)
+                    return pick
             if adv.should_sell:
                 sell = self._weakest_sell(game, adv.recommended_items[0].price)
                 if sell is not None:
@@ -391,7 +460,154 @@ class AdvicePolicy(PowerPolicy):
                     return Action("freeze", key, f"advice: freeze {it.name}")
         if adv.should_restock and s.can_reroll():
             return Action("reroll_shop", (), "advice: restock")
+        if self.cfg.advice_fallback and not adv.recommended_items and not adv.recommended_tiles:
+            buy = self._fallback_buy(game)
+            if buy is not None:
+                return buy
+        final = self.cfg.final_spend and self._final_shop(game)
+        if self.cfg.swap_sell and self._swaps_this_shop < (3 if final else 1):
+            swap = self._best_swap(game)
+            if swap is not None:
+                self._swaps_this_shop += 1
+                return swap
+        floor = 0 if final else self.cfg.spend_over
+        if (self.cfg.spend_over or final) and game.player.money > floor:
+            buy = self._fallback_buy(game, threshold=0.005 if final else self.cfg.spend_threshold or None)
+            if buy is not None:
+                return buy
+            if s.can_reroll() and game.player.money - s.reroll_cost >= floor + (not final) and self._spend_restocks < (8 if final else 3):
+                self._spend_restocks += 1
+                return Action("reroll_shop", (), "spend down: restock")
+        if self.cfg.sort_items and self._moves_this_shop < 2:
+            move = self._best_move(game)
+            if move is not None:
+                self._moves_this_shop += 1
+                return move
         return self._leave()
+
+    @staticmethod
+    def _final_shop(game: "Game") -> bool:
+        run = game.player.run
+        return run.stage == NUMBER_OF_STAGES and run.node == Node.SHOP_TWO
+
+    def _best_swap(self, game: "Game") -> Action | None:
+        """With every slot of a kind full no purchase is possible: try selling each owned
+        sticker / stamp for each shop offer of that kind and, if the best pair adds more than
+        ``power_override`` probe points, sell now and buy the replacement next."""
+        from cursed_words_solver.sim.game.shop import can_sell
+
+        p, s = game.player, game.shop
+        base = max(1.0, self.power(game))
+        best, best_pair = max(self.cfg.power_override, self.cfg.buy_threshold), None
+        for kind, owned, stock in (("sticker", p.stickers, s.stickers), ("stamp", p.stamps, s.stamps)):
+            if any(o is not None and s.can_buy(kind, j) for j, o in enumerate(stock)):
+                continue  # something is buyable outright: ordinary buys handle it
+            for i, it in enumerate(owned):
+                if it is None or not can_sell(p, it) or it.game_class in self._bought_this_shop:
+                    continue
+                for j, o in enumerate(stock):
+                    if o is None or o.item.game_class == it.game_class:
+                        continue
+                    g = clone(game)
+                    if g.sell(kind, i) is None or not g.shop.can_buy(kind, j):
+                        continue
+                    if not apply(g, Action("buy", (kind, j))):
+                        continue
+                    gain = ((self.power(g) - base) / base + self._item_bonus(game, o.item.game_class)
+                            - self._item_bonus(game, it.game_class))
+                    if gain > best:
+                        best, best_pair = gain, (kind, i, j)
+        if best_pair is None:
+            return None
+        kind, i, j = best_pair
+        self._pending_buy = (kind, j)
+        self._sold_this_shop = True
+        return Action("sell", (kind, i), f"swap: sell {owned_name(p, kind, i)} for {stock_name(s, kind, j)} (+{best:.0%})")
+
+    def _best_move(self, game: "Game") -> Action | None:
+        """Sticker order matters (Human Boy's hands, Overhand / Underhand, left-to-right
+        effects): before leaving, take the swap that adds the most probe-encounter points."""
+        p = game.player
+        filled = [i for i, it in enumerate(p.stickers) if it is not None]
+        if len(filled) < 2:
+            return None
+        sig = tuple((it.game_class, tuple(tuple(c) for c in it.components)) if it else None for it in p.stickers)
+        if sig == getattr(self, "_sorted_sig", None):
+            return None  # no improving swap was found for exactly this line-up
+        base = max(1.0, self.power(game))
+        best, best_a = self.cfg.buy_threshold, None
+        for a in range(5):
+            for b in range(a + 1, 5):
+                if p.stickers[a] is None and p.stickers[b] is None:
+                    continue
+                src, dst = (a, b) if p.stickers[a] is not None else (b, a)
+                g = clone(game)
+                if not g.move("sticker", src, dst):
+                    continue
+                gain = (self.power(g) - base) / base
+                if gain > best:
+                    best, best_a = gain, Action("move", ("sticker", src, dst), f"swap stickers {src}<->{dst}")
+        if best_a is None:
+            self._sorted_sig = sig
+        return best_a
+
+    def _item_bonus(self, game: "Game", game_class: str | None) -> float:
+        """Learned long-term value of owning ``game_class`` (``item_value``), in probe-gain units."""
+        if not (self.cfg.item_value and self.cfg.item_value_weight and game_class):
+            return 0.0
+        if getattr(self, "_item_table", None) is None:
+            from cursed_words_solver.sim.game.itemvalue import ItemValue
+
+            self._item_table = ItemValue.load(Path(self.cfg.item_value))
+        p = game.player
+        return self.cfg.item_value_weight * self._item_table.value(game_class, p.run.stage, p.character)
+
+    def _power_gains(self, game: "Game", acts: list[Action]) -> list[tuple[float, Action]]:
+        """(relative probe-encounter points gained, action) for each buy that applies."""
+        base = max(1.0, self.power(game))
+        out = []
+        for a in acts:
+            g = clone(game)
+            bonus = self._item_bonus(game, offer_class(game, a))
+            if apply(g, a):
+                out.append(((self.power(g) - base) / base + bonus, a))
+        return out
+
+    def _power_check(self, game: "Game", pick: Action) -> Action:
+        """Advice's purchase unless another affordable sticker / stamp adds more than
+        ``power_override`` (relative probe points) beyond what Advice's pick adds."""
+        acts = [a for a in legal_actions(game) if a.kind == "buy" and a.args[0] in ("sticker", "stamp")]
+        gains = self._power_gains(game, acts)
+        mine = next((v for v, a in gains if a.args == pick.args), None)
+        if mine is None or not gains:
+            return pick
+        v, best = max(gains, key=lambda t: t[0])
+        if v > mine + self.cfg.power_override and best.args != pick.args:
+            return Action("buy", best.args, f"probe: {best.label} (+{v:.0%} vs Advice +{mine:.0%})")
+        return pick
+
+    def _fallback_buy(self, game: "Game", threshold: float | None = None) -> Action | None:
+        """The game's Advice has nothing to say until an owned item carries a build tag
+        (Human Boy, Sam Gambit, Nat-H4 start with none), so it would never buy. Then take
+        the affordable sticker / stamp that adds the most points to a probe encounter."""
+        acts = [a for a in legal_actions(game) if a.kind == "buy" and a.args[0] in ("sticker", "stamp")]
+        if not acts:
+            return None
+        base = max(1.0, self.power(game))
+        best, best_a = self.cfg.buy_threshold if threshold is None else threshold, None
+        for a in acts:
+            g = clone(game)
+            bonus = self._item_bonus(game, offer_class(game, a))
+            if not apply(g, a):
+                continue
+            gain = (self.power(g) - base) / base + bonus
+            if gain > best:
+                best, best_a = gain, a
+        if best_a is not None:
+            stock = game.shop.stickers if best_a.args[0] == "sticker" else game.shop.stamps
+            if stock[best_a.args[1]] is not None:
+                self._bought_this_shop.add(stock[best_a.args[1]].item.game_class)
+        return best_a
 
     def _weakest_sell(self, game: "Game", price: int) -> Action | None:
         """"Sell then buy": at most once per shop, only a level-1 sticker not bought here,
@@ -439,7 +655,7 @@ class FastAdvicePolicy(AdvicePolicy):
     def _encounter(self, game: "Game") -> Action:
         enc = game.encounter
         if (self.cfg.plan_encounter and enc.michael_draft is None and not enc.finale
-                and not enc.awaiting_forced_sell):
+                and not enc.awaiting_forced_sell and game.player.run.stage >= self.cfg.plan_from_stage):
             a = self._plan(game)
             if a is not None:
                 return a
@@ -466,7 +682,7 @@ class FastAdvicePolicy(AdvicePolicy):
 
         enc = game.encounter
         samples = samples or self.cfg.plan_samples
-        opts = self.cands.words(game, self.cfg.plan_words)
+        opts = self.enc_cands(game).words(game, self.cfg.plan_words)
         if not opts:
             return []
         if getattr(self, "_inner", None) is None:
@@ -525,7 +741,7 @@ class FastAdvicePolicy(AdvicePolicy):
             self._boss_risk = BossRisk.load(Path(self.cfg.boss_risk))
         p = game.player
         crown = p.run.ascension
-        risk = [self._boss_risk.risk(b, crown) for b in opts]
+        risk = [self._boss_risk.risk(b, crown, p.character) for b in opts]
         cursed = [i for i, b in enumerate(opts) if b.cursed]
         clean = [i for i, b in enumerate(opts) if not b.cursed]
         margin = None
@@ -535,6 +751,15 @@ class FastAdvicePolicy(AdvicePolicy):
             margin = 0.02
         best_clean = min(clean, key=lambda i: risk[i]) if clean else None
         best_cursed = min(cursed, key=lambda i: risk[i]) if cursed else None
+        if (margin is not None and best_cursed is not None and best_clean is not None
+                and p.run.stage >= 5 and self.cfg.michael_aware):
+            # The fifth cursed boss commits the run to Michael: compare win chances.
+            if self._boss_risk.counts.get("MichaelBoss", (0, 0))[0] >= 10:
+                michael = self._boss_risk.risk_key(f"MichaelBoss@c{crown}#{p.character}")
+            else:
+                michael = self.cfg.michael_prior_risk  # too few simulated Michael fights yet
+            p_cursed = (1 - risk[best_cursed]) * (1 - michael)
+            return best_cursed if p_cursed >= (1 - risk[best_clean]) - margin else best_clean
         if best_cursed is not None and (best_clean is None or (
                 margin is not None and risk[best_cursed] <= risk[best_clean] + margin)):
             return best_cursed
@@ -550,6 +775,14 @@ class FastAdvicePolicy(AdvicePolicy):
         side = self.cfg.pin_side
         if side in ("left", "right") and side in opts:
             return Action("pin", (side,))
+        if side == "power":
+            # Each side played into a probe encounter (RAM: which item joins the memory).
+            def gain(o: str) -> float:
+                g = clone(game)
+                apply(g, Action("pin", (o,)))
+                return self.power(g)
+            scored = [(gain(o), -(pin.level(0) if o == "left" else pin.level(1)), o) for o in opts]
+            return Action("pin", (max(scored)[2],))
         return Action("pin", ("left" if pin.level(0) <= pin.level(1) else "right",))
 
     def _cheapest_sell(self, game: "Game") -> Action | None:
@@ -564,10 +797,42 @@ class FastAdvicePolicy(AdvicePolicy):
         _, kind, i = min(cands)
         return Action("sell", (kind, i))
 
+    def michael_pick(self, game: "Game") -> int:
+        """Michael's draft: the boss effect the risk table rates least run-ending (first
+        option without a table)."""
+        draft = game.encounter.michael_draft
+        if not self.cfg.boss_risk or not draft:
+            return 0
+        if getattr(self, "_boss_risk", None) is None:
+            from cursed_words_solver.sim.game.bossrisk import BossRisk
+
+            self._boss_risk = BossRisk.load(Path(self.cfg.boss_risk))
+        p = game.player
+        return min(range(len(draft)), key=lambda i: self._boss_risk.risk(draft[i], p.run.ascension, p.character))
+
     def act(self, game: "Game") -> Action:
         if game.phase == "encounter" and game.encounter.michael_draft is not None:
-            return Action("michael_pick", (0,))
+            return Action("michael_pick", (self.michael_pick(game),))
         return super().act(game)
+
+
+def owned_name(p, kind: str, i: int) -> str:
+    arr = p.stickers if kind == "sticker" else p.stamps
+    return arr[i].game_class if arr[i] is not None else "?"
+
+
+def offer_class(game: "Game", a: Action) -> str | None:
+    """Item class a sticker / stamp ``buy`` action would purchase (None otherwise)."""
+    if a.kind != "buy" or a.args[0] not in ("sticker", "stamp") or game.shop is None:
+        return None
+    stock = game.shop.stickers if a.args[0] == "sticker" else game.shop.stamps
+    o = stock[a.args[1]] if 0 <= a.args[1] < len(stock) else None
+    return o.item.game_class if o is not None else None
+
+
+def stock_name(s, kind: str, j: int) -> str:
+    arr = s.stickers if kind == "sticker" else s.stamps
+    return arr[j].item.game_class if arr[j] is not None else "?"
 
 
 def shop_advice_inputs(game: "Game"):
