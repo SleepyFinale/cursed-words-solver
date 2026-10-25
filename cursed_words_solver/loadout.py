@@ -2208,6 +2208,40 @@ def _serialize_f8_embed_extra_value(val: Any) -> str:
     return str(val)
 
 
+def align_item_state_tile_ninja(extras: dict[str, Any], scoring_extras: dict[str, Any]) -> None:
+    """Copy Tile Ninja ``ConsumableTilesUsed`` (simulated placements) into the
+    embed's exact ``item_states``; the engine reads it over the legacy keys."""
+
+    def load(raw: Any) -> Any:
+        if isinstance(raw, str):
+            try:
+                return json.loads(raw)
+            except ValueError:
+                return None
+        return raw
+
+    embed = load(extras.get("item_states"))
+    scoring = load(scoring_extras.get("item_states"))
+    if not isinstance(embed, dict) or not isinstance(scoring, dict):
+        return
+    changed = False
+    for key in ("stickers", "stamps"):
+        rows = embed.get(key) or []
+        src_rows = scoring.get(key) or []
+        for row, src in zip(rows, src_rows):
+            if not (isinstance(row, dict) and isinstance(src, dict)):
+                continue
+            if row.get("class") != "TileNinja" or src.get("class") != "TileNinja":
+                continue
+            fields, src_fields = row.get("fields"), src.get("fields")
+            if isinstance(fields, dict) and isinstance(src_fields, dict) and "ConsumableTilesUsed" in src_fields:
+                if fields.get("ConsumableTilesUsed") != src_fields["ConsumableTilesUsed"]:
+                    fields["ConsumableTilesUsed"] = src_fields["ConsumableTilesUsed"]
+                    changed = True
+    if changed:
+        extras["item_states"] = _serialize_f8_embed_extra_value(embed)
+
+
 def align_embed_with_scoring_loadout(
     extras: dict[str, Any],
     scoring_extras: dict[str, Any] | None,
@@ -2285,6 +2319,7 @@ def align_embed_with_scoring_loadout(
         if val is None or str(val).strip() == "":
             continue
         extras[key] = _serialize_f8_embed_extra_value(val)
+    align_item_state_tile_ninja(extras, reconciled)
 
     for cap_key in cap_keys:
         rec_val = reconciled.get(cap_key)

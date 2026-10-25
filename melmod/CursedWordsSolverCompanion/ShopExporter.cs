@@ -83,7 +83,7 @@ namespace CursedWordsSolverCompanion
         private static int _lastKnownEncounterTotal = -1;
 
         /// <summary>Last good encounter score earned when remaining reads fail.</summary>
-        private static int _lastKnownEncounterScoreEarned = -1;
+        private static int _lastKnownEncounterScoreEarned = int.MinValue;
 
         public static void FillShopState(RunStateSnapshot snapshot, Player player)
         {
@@ -405,7 +405,7 @@ namespace CursedWordsSolverCompanion
                 if (_lastKnownEncounterTotal >= 0 && total != _lastKnownEncounterTotal)
                 {
                     _lastKnownRemainingTarget = -1;
-                    _lastKnownEncounterScoreEarned = -1;
+                    _lastKnownEncounterScoreEarned = int.MinValue;
                     BossResolver.ClearScoringCache();
                 }
                 _lastKnownEncounterTotal = (int)total;
@@ -435,13 +435,12 @@ namespace CursedWordsSolverCompanion
                 var twoWrongs = QuestExporter.IsTwoWrongsSnapshot(snapshot);
                 if (twoWrongs)
                     snapshot.extras["encounter_target_display"] = (-remaining).ToString();
-                if (twoWrongs || earned >= 0)
-                {
-                    snapshot.extras["encounter_score_earned"] = earned.ToString();
-                    _lastKnownEncounterScoreEarned = (int)earned;
-                }
+                // Negative is real: a word below zero (e.g. -1 Letter Value)
+                // raises _remainingTarget above _totalTarget.
+                snapshot.extras["encounter_score_earned"] = earned.ToString();
+                _lastKnownEncounterScoreEarned = (int)earned;
             }
-            else if (total >= 0 && _lastKnownEncounterScoreEarned >= 0)
+            else if (total >= 0 && _lastKnownEncounterScoreEarned != int.MinValue)
             {
                 snapshot.extras["encounter_score_earned"] =
                     _lastKnownEncounterScoreEarned.ToString();

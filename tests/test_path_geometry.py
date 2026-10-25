@@ -325,3 +325,17 @@ def test_nina_overlay_path_geometry_aligns_with_melmod_cell_centers():
         expected_y = float(cell["y"]) - region.y
         assert abs(step.x - expected_x) < 30.0
         assert abs(step.y - expected_y) < 30.0
+
+
+def test_hungry_snake_wrap_steps_are_marked():
+    """Regression: HUMPHING DOWNTHRUSTED's last step wrapped from the bottom-right
+    tile to the bottom-left one; drawn straight it crossed the whole row, and the
+    word was submitted one tile short."""
+    region = Region(0, 0, 500, 500)
+    # Storage indices, row 0 = top: (4,3) -> (4,4) -> wrap -> (4,0) -> (3,1),
+    # then (3,0) -> wrap left -> (2,4).
+    path = [23, 24, 20, 16, 15, 14]
+    plain = path_geometry(region, path)
+    assert [s.wrap for s in plain] == [0] * len(path)
+    steps = path_geometry(region, path, wrapping=True)
+    assert [s.wrap for s in steps] == [0, 0, 1, 0, 0, -1]

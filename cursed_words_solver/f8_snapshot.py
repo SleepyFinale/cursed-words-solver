@@ -498,6 +498,19 @@ def shop_extras_ready(run_state: dict[str, Any] | None) -> bool:
     return not _shop_quest_extras_missing(loadout, extras)
 
 
+def _parse_live_loadout(run_state: dict[str, Any]) -> Loadout:
+    """Loadout with the engine's exact ``game_state`` inputs, as the embed replay
+    (``prepare_run_state_dict_for_scoring``) parses it.
+
+    Without them the engine falls back to legacy extras, e.g. melmod's
+    ``previous_word_first_letter`` skips a leading currency tile, so Chips fired
+    after "₩EEPING$" (TWEENIE 63 vs embed replay 42).
+    """
+    from cursed_words_solver.game_state import apply_game_state
+
+    return parse_run_state(apply_game_state(run_state))
+
+
 def _build_snapshot_from_run_state(
     run_state: dict[str, Any] | None,
     *,
@@ -512,7 +525,7 @@ def _build_snapshot_from_run_state(
 
     mod_money = mod_money_from_run_state(run_state)
     loadout = merge_loadout_with_board(
-        parse_run_state(run_state),
+        _parse_live_loadout(run_state),
         board.money,
         mod_money=mod_money if mod_money > 0 else None,
     )
@@ -678,7 +691,7 @@ def gather_f8_snapshot(
                 return snapshot.loadout
             money = mod_money_from_run_state(fresh)
             return merge_loadout_with_board(
-                parse_run_state(fresh),
+                _parse_live_loadout(fresh),
                 b.money,
                 mod_money=money if money > 0 else None,
             )
@@ -915,6 +928,11 @@ def embed_f8_snapshot(
             scoring_board,
             source_run_state=source,
         )
+        gs = run_state.get("game_state")
+        if isinstance(gs, dict):
+            from cursed_words_solver.game_state import sync_game_state_grid_with_board
+
+            sync_game_state_grid_with_board(gs, scoring_board)
     export_fp = ""
     src_extras = source.get("extras")
     if isinstance(src_extras, dict):
@@ -952,7 +970,26 @@ def embed_f8_snapshot(
             extras, loadout, export_fingerprint=export_fp or None
         )
         sanitized["extras"] = extras
+        _sync_game_state_tile_ninja(sanitized, extras)
     return sanitized
+
+
+def _sync_game_state_tile_ninja(run_state: dict[str, Any], extras: dict[str, Any]) -> None:
+    """Re-parsing rebuilds ``item_states`` from ``game_state.player``: give its
+    Tile Ninja the embed's counter (simulated placements included)."""
+    gs = run_state.get("game_state")
+    player = gs.get("player") if isinstance(gs, dict) else None
+    if not isinstance(player, dict):
+        return
+    from cursed_words_solver.loadout import align_item_state_tile_ninja
+
+    rows = {"stickers": player.get("stickers") or [], "stamps": player.get("stamps") or []}
+    shadow: dict[str, Any] = {"item_states": rows}
+    align_item_state_tile_ninja(shadow, extras)
+    if shadow["item_states"] is not rows:
+        synced = json.loads(shadow["item_states"])
+        player["stickers"] = synced["stickers"]
+        player["stamps"] = synced["stamps"]
 
 
 def f8_embed_replay_score(

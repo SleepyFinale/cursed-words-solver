@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import time
 
@@ -278,6 +279,35 @@ def test_expired_deadline_returns_partial_not_crash() -> None:
     xs = _search(_SPLIT_ROWS, _SPLIT_WORDS)
     xs.run(top_n=0, deadline=time.perf_counter() - 1)
     assert xs.stats.extra.get("exhaustive") is False
+
+
+def test_slow_exact_checks_stop_at_the_deadline(monkeypatch) -> None:
+    """Regression: Mole + Honeypot + scattered items board searched 0 paths in 61s.
+
+    Paths through scattered items were all re-checked (and the shortlist scored)
+    before the deadline was looked at, so every parallel worker overran and the
+    collector dropped them all. With a deadline both are cut, best paths first.
+    """
+    rows = ["catdo", "xxxxg", "xxxxx", "xxxxx", "xxxxx"]
+    xs = _search(rows, {"cat", "dog", "at", "do"})
+    paths = {(0, 1, 2): "cat", (3, 4, 9): "dog", (1, 2): "at", (3, 4): "do"}
+    flagged = dict.fromkeys(itertools.islice(itertools.permutations(range(5, 25), 3), 4000), "xxx")
+    monkeypatch.setattr(xs, "_enumerate_all", lambda *a, **k: ({**paths, **flagged}, set(flagged)))
+    checks: list[tuple[int, ...]] = []
+
+    def slow_valid_word(p):
+        checks.append(p)
+        end = time.perf_counter() + 0.001  # busy-wait: Windows sleep() rounds up to ~15ms
+        while time.perf_counter() < end:
+            pass
+        return None
+
+    monkeypatch.setattr(xs, "valid_word", slow_valid_word)
+    t0 = time.perf_counter()
+    got = {c.word for c in xs.run(top_n=0, deadline=t0 + 0.3)}
+    assert time.perf_counter() - t0 < 2.5  # checking all 4000 takes 4s
+    assert len(checks) < len(flagged) // 2
+    assert {"cat", "dog"} <= got
 
 
 def test_parallel_exact_search_matches_serial(tmp_path, monkeypatch) -> None:

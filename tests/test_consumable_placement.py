@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import pytest
@@ -1051,6 +1052,37 @@ def test_loadout_after_consumable_placements_advances_tile_ninja():
     assert after.extras["consumable_rack_count"] == 4
 
 
+def test_loadout_after_consumable_placements_advances_exact_item_state_tile_ninja():
+    """Regression: Sandy Saguaro rounds predicted x1.20 Tile Ninja, game x1.22.
+
+    melmod 1.4 exports exact ``item_states``; the engine reads Tile Ninja's
+    ``ConsumableTilesUsed`` from there, so bumping only the legacy extras left
+    every simulated placement uncounted (buzzed 73 vs 74, antiblasts 405 vs 418).
+    """
+    import json
+
+    from cursed_words_solver.engine import EnginePlan
+    from cursed_words_solver.loadout import align_embed_with_scoring_loadout
+
+    states = {
+        "stickers": [],
+        "stamps": [{"id": "tile_ninja", "class": "TileNinja", "levels": [], "values": [], "fields": {"ConsumableTilesUsed": 4}}],
+    }
+    loadout = Loadout(
+        stamps=[LoadoutItem(id="tile_ninja", name="Tile Ninja", kind="stamp")],
+        extras={"item_states": json.dumps(states), "consumable_rack_count": 5},
+    )
+    after = loadout_after_consumable_placements(loadout, 2)
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    ninja = EnginePlan.build(board, after).stamps[0]
+    assert ninja.state["used"] == 6
+    assert json.loads(loadout.extras["item_states"])["stamps"][0]["fields"]["ConsumableTilesUsed"] == 4
+
+    embed_extras = {"item_states": json.dumps(states)}
+    align_embed_with_scoring_loadout(embed_extras, after.extras)
+    assert json.loads(embed_extras["item_states"])["stamps"][0]["fields"]["ConsumableTilesUsed"] == 6
+
+
 def test_consumables_placed_for_scoring_uses_placement_records():
     """Mismatch 20260619_011718: rack placements must bump Tile Ninja at F8 rescore."""
     import json
@@ -1444,6 +1476,78 @@ def test_variant_gen_budget_does_not_skip_k2_with_under_construction(
     assert 2 in k_values_called
 
 
+def test_finalize_keeps_screened_word_when_refine_runs_out_of_time(tmp_path, monkeypatch):
+    """Regression: Under Construction + 10-tile rack never placed consumables.
+
+    Refine searched past the solve deadline, found nothing and dropped the
+    screened placements (ceaze 739 kept over facet 3846)."""
+    from cursed_words_solver.models import WordResult
+
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\n", encoding="utf-8")
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    rack_a = Tile(-1, -1, "A", "A", 1, metadata={"rack_index": 0})
+    rack_b = Tile(-1, -1, "B", "B", 1, metadata={"rack_index": 1})
+    placements = [(6, rack_a), (8, rack_b)]
+    sim_board = apply_consumable_placements(board, placements)
+    screened_result = WordResult(word="axb", path=[6, 7, 8], score=3846.0, breakdown={})
+    searcher = WordSearcher(dictionary=WordDictionary(wl), min_len=3, max_len=5, time_budget=2.0)
+    monkeypatch.setattr(searcher, "find_best_words", lambda *a, **k: [])
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="under_construction", name="Under Construction", level=3)]
+    )
+    out_board, records, results = _finalize_placement_search(
+        searcher,
+        board,
+        loadout,
+        [(3846.0, 2, placements, sim_board, screened_result)],
+        time_budget=2.0,
+        top_n=1,
+        min_score=None,
+        min_rank_score=739.0,
+        require_placements_in_path=True,
+        base_required=frozenset(),
+        variant_gen_sec=0.0,
+        variant_screen_sec=0.0,
+        variants_screened=1,
+    )
+    assert out_board is sim_board
+    assert [r.index for r in records] == [6, 8]
+    assert results[0].word == "axb"
+
+
+def test_tier_generation_leaves_refine_time_before_solve_deadline(tmp_path, monkeypatch):
+    wl = tmp_path / "words.txt"
+    wl.write_text("cat\n", encoding="utf-8")
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    rack = [Tile(-1, -1, ch, ch, 1, metadata={"rack_index": i}) for i, ch in enumerate("ABCDEF")]
+    loadout = Loadout(
+        stickers=[LoadoutItem(id="under_construction", name="Under Construction", level=3)]
+    )
+    searcher = WordSearcher(dictionary=WordDictionary(wl), min_len=3, max_len=5, time_budget=2.0)
+    gen_deadlines: list[float] = []
+
+    def fake_top_variants(board_arg, rack_arg, cells_arg, k, **kwargs):
+        gen_deadlines.append(kwargs["gen_deadline"])
+        return []
+
+    monkeypatch.setattr(cp, "_top_variants_for_tier", fake_top_variants)
+    solve_deadline = time.monotonic() + 30.0
+    _run_tiered_placement_search(
+        searcher,
+        board,
+        loadout,
+        rack,
+        time_budget=30.0,
+        top_n=1,
+        min_rank_score=0.0,
+        rules=EngineScorer().rules,
+        solve_deadline=solve_deadline,
+    )
+    assert gen_deadlines
+    assert max(gen_deadlines) <= solve_deadline - 10.0
+
+
 def test_finalize_prefers_two_tiles_on_tie_with_under_construction(
     tmp_path, monkeypatch
 ):
@@ -1617,3 +1721,41 @@ def test_westernisations_consumable_fallback_finds_center_word() -> None:
     assert 12 in results[0].path, "Up and Up center tile must be in path"
     assert records
     assert all(idx in results[0].path for idx in (rec.index for rec in records))
+
+
+def _rack(letters: str) -> list[Tile]:
+    return [Tile(-1, -1, ch, ch, 1.0, metadata={"rack_index": i}) for i, ch in enumerate(letters)]
+
+
+def _variant_shape(variants) -> set[tuple]:
+    return {tuple(sorted((idx, t.letter) for idx, t in v)) for v in variants}
+
+
+def test_placement_variants_use_the_whole_rack_not_its_first_slots():
+    """Regression: only rack slots 0-2 were ever placed (T/V in slots 3-4 never).
+
+    Equal placement ranks kept the first combinations generated (rack order),
+    so a small tier cap was filled by combinations of the first slots."""
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    rack = _rack("ABCDEF")
+    cells = list(range(25))
+    variants = _top_variants_for_tier(board, rack, cells, 2, tier_cap=30)
+    used = {t.letter for v in variants for _, t in v}
+    assert used == set("ABCDEF")
+    reversed_variants = _top_variants_for_tier(board, list(reversed(rack)), cells, 2, tier_cap=30)
+    assert _variant_shape(reversed_variants) == _variant_shape(variants)
+
+
+def test_placement_variants_skip_duplicate_rack_tiles():
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    variants = _top_variants_for_tier(board, _rack("LLAA"), list(range(6)), 2, tier_cap=400)
+    combos = {tuple(sorted(t.letter for _, t in v)) for v in variants}
+    assert combos == {("A", "A"), ("A", "L"), ("L", "L")}
+
+
+def test_screening_cap_takes_turns_between_tile_combinations():
+    board = Board(tiles=[[_tile("x", r, c) for c in range(5)] for r in range(5)])
+    rack = _rack("ABCD")
+    variants = _top_variants_for_tier(board, rack, list(range(25)), 1, tier_cap=100)
+    capped = cp._cap_variants_for_screening(board, variants, max_screen=4)
+    assert {v[0][1].letter for v in capped} == set("ABCD")

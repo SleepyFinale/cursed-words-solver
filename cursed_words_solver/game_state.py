@@ -347,6 +347,45 @@ def attach_game_tiles(board: Board, gs: dict[str, Any]) -> int:
     return matched
 
 
+def sync_game_state_grid_with_board(gs: dict[str, Any], board: Board) -> int:
+    """Make ``game_state.grid`` agree with a solver-edited board (inverse of attach).
+
+    Simulated consumable placements replace board tiles but leave the export's
+    raw grid tile underneath; re-parsing would re-attach that stale tile and the
+    engine would score it instead. Each active cell takes the board tile's own
+    ``game_tile`` (re-positioned), or loses its raw entry when it has none so
+    the engine reads the board tile. Returns how many raw entries changed.
+    """
+    grid = gs.get("grid") if isinstance(gs, dict) else None
+    if not isinstance(grid, dict) or not isinstance(grid.get("tiles"), list):
+        return 0
+    storage = board.storage_rows
+    changed = 0
+    out: list[Any] = []
+    for raw in grid["tiles"]:
+        if not isinstance(raw, dict) or "x" not in raw or "y" not in raw:
+            out.append(raw)
+            continue
+        row, col = storage - 1 - int(raw["y"]), int(raw["x"])
+        if not (0 <= row < storage and 0 <= col < board.storage_cols):
+            out.append(raw)
+            continue
+        tile = board.tiles[row][col]
+        if tile is None or not board.is_active_index(row * board.storage_cols + col):
+            out.append(raw)
+            continue
+        own = (tile.metadata or {}).get("game_tile")
+        if own is raw:
+            out.append(raw)
+        elif isinstance(own, dict):
+            out.append({**own, "x": raw["x"], "y": raw["y"]})
+            changed += own != raw
+        else:
+            changed += 1
+    grid["tiles"] = out
+    return changed
+
+
 def apply_game_state(run_state: dict[str, Any]) -> dict[str, Any]:
     """Live ``run_state.json``: add the engine's exact inputs from its ``game_state``.
 

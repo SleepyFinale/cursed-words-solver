@@ -48,12 +48,15 @@ class BoardHighlightOverlay(QWidget):
         placements: list[Any] | None = None,
         twinkle_toes_swap: Any | None = None,
         cell_centers: dict[int, tuple[float, float]] | None = None,
+        wrapping: bool = False,
     ) -> None:
         if not region.is_valid() or (not path and not placements and not twinkle_toes_swap):
             self.hide()
             return
         self._steps = (
-            path_geometry(region, path, board, cell_centers=cell_centers) if path else []
+            path_geometry(region, path, board, cell_centers=cell_centers, wrapping=wrapping)
+            if path
+            else []
         )
         self._placements = (
             placement_geometry(region, placements, board, cell_centers=cell_centers)
@@ -109,9 +112,21 @@ class BoardHighlightOverlay(QWidget):
         painter.setPen(line_pen)
 
         points = [QPointF(s.x, s.y) for s in self._steps]
-        if len(points) >= 2:
-            for i in range(len(points) - 1):
-                painter.drawLine(points[i], points[i + 1])
+        wrap_pen = QPen(QColor(0, 255, 140, 240), 4, Qt.PenStyle.DashLine)
+        for i in range(1, len(points)):
+            a, b = points[i - 1], points[i]
+            wrap = self._steps[i].wrap
+            if not wrap:
+                painter.drawLine(a, b)
+                continue
+            # A straight line would cross the whole row; run off one side and
+            # back in from the other instead.
+            mid_y = (a.y() + b.y()) / 2.0
+            exit_x, enter_x = (float(self.width()), 0.0) if wrap > 0 else (0.0, float(self.width()))
+            painter.setPen(wrap_pen)
+            painter.drawLine(a, QPointF(exit_x, mid_y))
+            painter.drawLine(QPointF(enter_x, mid_y), b)
+            painter.setPen(line_pen)
 
         for step, pt in zip(self._steps, points, strict=True):
             painter.setBrush(fill)

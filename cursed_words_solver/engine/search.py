@@ -1179,12 +1179,15 @@ class ExactSearch:
     min_start_node_budget = 20_000
     # Time held back from enumeration to score up to ``max_exact_paths`` paths.
     score_reserve_sec = 2.0
+    # Paths always scored past the deadline so a late start still returns words.
+    min_scored_before_deadline = 256
 
     def _shortlist(self, items: list[tuple[tuple[int, ...], str]]) -> list[tuple[tuple[int, ...], str]]:
         """Too many paths to score exactly: keep the best by tile-value proxy.
 
         Keeps the top paths overall plus each distinct word's best path so a
         high-multiplier short word is never starved by long high-base paths.
+        The two groups are interleaved so a deadline cut scores both.
         """
         values = [t.value for t in self.tiles]
 
@@ -1192,15 +1195,17 @@ class ExactSearch:
             return (sum(values[i] for i in p), len(p))
 
         ranked = sorted(items, key=lambda kv: proxy(kv[0]), reverse=True)
-        keep: dict[tuple[int, ...], str] = dict(ranked[: self.max_exact_paths // 2])
+        top = ranked[: self.max_exact_paths // 2]
         best_per_word: dict[str, tuple[int, ...]] = {}
         for p, w in ranked:
             if w not in best_per_word:
                 best_per_word[w] = p
-        for w, p in best_per_word.items():
-            if len(keep) >= self.max_exact_paths:
-                break
-            keep.setdefault(p, w)
+        per_word = [(p, w) for w, p in best_per_word.items()]
+        keep: dict[tuple[int, ...], str] = {}
+        for i in range(max(len(top), len(per_word))):
+            for group in (top, per_word):
+                if i < len(group) and len(keep) < self.max_exact_paths:
+                    keep.setdefault(*group[i])
         return list(keep.items())
 
     # ------------------------------------------------------------------ beam
@@ -1371,18 +1376,22 @@ class ExactSearch:
         plan = self.plan
         scored: list[Candidate] = []
         # Paths that went through a scattered item were matched with the superset
-        # inventory; check those exactly. Everything else is already exact.
-        for p in needs_check:
-            exact = self.valid_word(p)
-            if exact is None:
-                found.pop(p, None)
-            else:
-                found[p] = exact
+        # inventory; check those exactly. Everything else is already exact. With a
+        # deadline the check is lazy (only paths reached in score order): checking
+        # every one up front can take minutes on item-dense boards.
+        unchecked: set[tuple[int, ...]] = set()
+        if deadline is None:
+            for p in needs_check:
+                exact = self.valid_word(p)
+                if exact is None:
+                    found.pop(p, None)
+                else:
+                    found[p] = exact
+        else:
+            unchecked = set(needs_check)
         items = list(found.items())
-        core = len(items)
-        if len(items) > self.max_exact_paths:
+        if deadline is not None or len(items) > self.max_exact_paths:
             short = self._shortlist(items)
-            core = len(short)
             if deadline is not None:
                 # Score the shortlist, then keep going down the proxy order until the deadline.
                 kept = set(p for p, _ in short)
@@ -1397,9 +1406,21 @@ class ExactSearch:
                 items = short
         n_scored = 0
         for n_scored, (p, word) in enumerate(items, 1):
-            if n_scored > core and n_scored % 512 == 0 and time.perf_counter() > deadline:
+            # Exact scoring can be slow (Honeypot splits score both words), so the
+            # shortlist is deadline-bound too: a worker that overruns is dropped
+            # by the parallel collector with everything it found.
+            if (
+                deadline is not None
+                and n_scored > self.min_scored_before_deadline
+                and n_scored % 64 == 0
+                and time.perf_counter() > deadline
+            ):
                 break
-            if not word:
+            if p in unchecked:
+                word = self.valid_word(p) or ""
+                if not word:
+                    continue
+            elif not word:
                 word = self.valid_word(p) or ""
                 if not word:
                     continue

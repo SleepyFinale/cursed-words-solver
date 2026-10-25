@@ -153,7 +153,7 @@ from cursed_words_solver.search import (
     format_microscope_position_hint,
     microscope_position_uses,
 )
-from cursed_words_solver.rules.stamp_behaviors import stamp_search_flags_mask
+from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp, stamp_search_flags_mask
 from cursed_words_solver.ui.board_highlight import BoardHighlightOverlay
 from cursed_words_solver.ui.rack_highlight import RackHighlightOverlay
 from cursed_words_solver.ui.layout import (
@@ -820,6 +820,7 @@ class SolverApp:
                 placements=update.consumable_placements,
                 twinkle_toes_swap=update.twinkle_toes_swap,
                 cell_centers=self._overlay_regions.board_cell_centers,
+                wrapping=loadout_has_stamp(update.loadout, "hungry_snake"),
             )
             if (
                 update.consumable_placements

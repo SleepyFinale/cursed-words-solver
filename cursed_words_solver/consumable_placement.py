@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import heapq
 import json
 import time
@@ -333,7 +334,44 @@ def loadout_after_consumable_placements(loadout: Loadout, num_placed: int) -> Lo
     if loadout_has_stamp(loadout, "tile_ninja"):
         used = _tile_ninja_used_count_from_extras(new_extras) + int(num_placed)
         _sync_tile_ninja_bonus_from_used(new_extras, used)
+        _bump_item_state_tile_ninja(new_extras, int(num_placed))
     return replace(loadout, extras=new_extras)
+
+
+def _bump_item_state_tile_ninja(extras: dict[str, Any], num_placed: int) -> None:
+    """Exact melmod ``item_states`` win over legacy extras in the engine: add the
+    simulated placements to each Tile Ninja's ``ConsumableTilesUsed`` there too."""
+    raw = extras.get("item_states")
+    if not raw:
+        return
+    try:
+        states = json.loads(raw) if isinstance(raw, str) else copy.deepcopy(raw)
+    except (TypeError, ValueError):
+        return
+    if not isinstance(states, dict):
+        return
+    changed = False
+
+    def bump(row: Any) -> None:
+        nonlocal changed
+        if not isinstance(row, dict):
+            return
+        fields = row.get("fields")
+        if row.get("class") == "TileNinja" and isinstance(fields, dict):
+            try:
+                fields["ConsumableTilesUsed"] = int(fields.get("ConsumableTilesUsed") or 0) + num_placed
+                changed = True
+            except (TypeError, ValueError):
+                pass
+        for nested in row.get("nested") or ():
+            bump(nested)
+
+    for key in ("stickers", "stamps"):
+        for row in states.get(key) or ():
+            bump(row)
+    bump(states.get("pin"))
+    if changed:
+        extras["item_states"] = json.dumps(states) if isinstance(raw, str) else states
 
 
 def consumable_placement_count_on_board(board: Board) -> int:
@@ -657,6 +695,98 @@ def _rack_index_sort_key(tile: Tile) -> int:
         return 999
 
 
+def _rack_tile_key(tile: Tile) -> tuple:
+    """Identity of a rack tile for scoring (two rack ``L`` tiles are one choice)."""
+    meta = tile.metadata or {}
+    return (
+        tile.letter,
+        tile.char,
+        tile.curse,
+        tile.color,
+        tile.base_score,
+        tile.number_value,
+        tile.fraction_value,
+        meta.get("card_suit") or "",
+        meta.get("card_rank") or "",
+        bool(meta.get("is_joker")),
+    )
+
+
+def _distinct_tile_combos(rack_tiles: list[Tile], k: int) -> list[tuple[Tile, ...]]:
+    """``combinations(rack_tiles, k)`` without combos of identical tiles."""
+    seen: set[tuple] = set()
+    out: list[tuple[Tile, ...]] = []
+    for combo in combinations(rack_tiles, k):
+        key = tuple(sorted((_rack_tile_key(t) for t in combo), key=repr))
+        if key not in seen:
+            seen.add(key)
+            out.append(combo)
+    return out
+
+
+def _distinct_rack_tiles(rack_tiles: list[Tile]) -> list[Tile]:
+    seen: set[tuple] = set()
+    out: list[Tile] = []
+    for tile in rack_tiles:
+        key = _rack_tile_key(tile)
+        if key not in seen:
+            seen.add(key)
+            out.append(tile)
+    return out
+
+
+def _variant_tiles_key(placements: list[tuple[int, Tile]]) -> tuple:
+    return tuple(sorted((_rack_tile_key(t) for _, t in placements), key=repr))
+
+
+def _tile_order(tiles: list[Tile]) -> dict[int, int]:
+    """Rank of each tile by identity (not rack slot), for tie-breaks."""
+    keys = sorted({repr(_rack_tile_key(t)) for t in tiles})
+    pos = {key: i for i, key in enumerate(keys)}
+    return {id(t): pos[repr(_rack_tile_key(t))] for t in tiles}
+
+
+def _tie_key(placements: list[tuple[int, Tile]], tile_order: dict[int, int]) -> tuple:
+    """Larger = preferred among equal ranks: lowest cells first, then tile
+    identity; never the rack slot, so a rearranged rack gives the same pick."""
+    return tuple((-idx, -tile_order[id(t)]) for idx, t in sorted(placements, key=lambda p: p[0]))
+
+
+def _round_robin_by_tiles(
+    ranked: list[tuple[float, tuple, list[tuple[int, Tile]]]],
+    limit: int,
+) -> list[list[tuple[int, Tile]]]:
+    """Best ``limit`` variants, taking turns between tile combinations.
+
+    Placement ranks tie a lot, and generation used to run in rack order, so a
+    plain top-N let the first rack slots fill every slot (later tiles were
+    never tried). Groups are visited best-first; each round takes one variant
+    from every group.
+    """
+    groups: dict[tuple, list[tuple[float, tuple, list[tuple[int, Tile]]]]] = {}
+    for row in ranked:
+        groups.setdefault(_variant_tiles_key(row[2]), []).append(row)
+    ordered = []
+    for key, rows in groups.items():
+        rows.sort(key=lambda row: (row[0], row[1]), reverse=True)
+        ordered.append((rows[0][0], rows[0][1], repr(key), rows))
+    ordered.sort(key=lambda g: (-g[0], tuple(-x for pair in g[1] for x in pair), g[2]))
+    out: list[list[tuple[int, Tile]]] = []
+    depth = 0
+    while len(out) < limit:
+        took = False
+        for _, _, _, rows in ordered:
+            if depth < len(rows):
+                out.append(rows[depth][2])
+                took = True
+                if len(out) >= limit:
+                    break
+        if not took:
+            break
+        depth += 1
+    return out
+
+
 def _distinct_rack_slots_screened(
     screened: list[tuple[float, int, list[tuple[int, Tile]], Board, WordResult]],
 ) -> int:
@@ -782,12 +912,26 @@ def _endpoint_placement_variants_for_tier(
     if len(directed_pairs) < _ENDPOINT_PAIR_MIN:
         return []
 
-    heap: list[tuple[float, tuple[int, ...], int, list[tuple[int, Tile]]]] = []
-    seq = count()
+    combos = _ordered_tile_combos(
+        board, rack_tiles, cells, 2, loadout=loadout, rules=rules
+    )
+    per_combo = _per_combo_cap(tier_cap, len(combos))
+    ranked: list[tuple[float, tuple, list[tuple[int, Tile]]]] = []
     loop_steps = 0
-    for tile_combo in combinations(rack_tiles, 2):
+    cell_scores: dict[tuple[int, int], float] = {}
+    tile_order = _tile_order(rack_tiles)
+
+    def cell_score(idx: int, tile: Tile) -> float:
+        key = (id(tile), idx)
+        if key not in cell_scores:
+            cell_scores[key] = _placement_cell_score(board, idx, tile, loadout=loadout, rules=rules)
+        return cell_scores[key]
+
+    for tile_combo in combos:
         if _variant_gen_past_deadline(gen_deadline):
             break
+        heap: list[tuple[float, tuple[int, ...], int, list[tuple[int, Tile]]]] = []
+        seq = count()
         for start, end in directed_pairs:
             if _variant_gen_past_deadline(gen_deadline):
                 break
@@ -799,17 +943,16 @@ def _endpoint_placement_variants_for_tier(
                 if loop_steps % _VARIANT_GEN_DEADLINE_CHECK_EVERY == 0:
                     if _variant_gen_past_deadline(gen_deadline):
                         break
-                rank = _placement_rank(
-                    board, placements, loadout=loadout, rules=rules
+                rank = sum(cell_score(i, t) for i, t in placements) + _endpoint_pair_bonus(
+                    board, placements, loadout=loadout
                 )
-                tie = (start, end)
-                entry = (-rank, tie, next(seq), placements)
-                if len(heap) < tier_cap:
+                entry = (rank, _tie_key(placements, tile_order), -next(seq), placements)
+                if len(heap) < per_combo:
                     heapq.heappush(heap, entry)
-                elif rank > -heap[0][0]:
+                elif entry[:3] > heap[0][:3]:
                     heapq.heapreplace(heap, entry)
-    heap.sort(key=lambda row: (row[0], row[1]))
-    return [placements for _, _, _, placements in heap]
+        ranked.extend((rank, tie, placements) for rank, tie, _, placements in heap)
+    return _round_robin_by_tiles(ranked, tier_cap)
 
 
 def _endpoint_pair_bonus(
@@ -945,11 +1088,11 @@ def _top_variants_for_tier(
                 _placement_cell_score(
                     board, idx, rack_tile, loadout=loadout, rules=rules
                 ),
-                _rack_index_sort_key(rack_tile),
+                repr(_rack_tile_key(rack_tile)),
                 idx,
                 [(idx, rack_tile)],
             )
-            for rack_tile in rack_tiles
+            for rack_tile in _distinct_rack_tiles(rack_tiles)
             for idx in cells
         ]
         ranked.sort(key=lambda row: (-row[0], row[1], row[2]))
@@ -972,29 +1115,76 @@ def _top_variants_for_tier(
         if endpoint_variants:
             return endpoint_variants
 
-    heap: list[tuple[float, tuple[int, ...], int, list[tuple[int, Tile]]]] = []
-    seq = count()
+    combos = _ordered_tile_combos(
+        board, rack_tiles, cells, k, loadout=loadout, rules=rules
+    )
+    per_combo = _per_combo_cap(tier_cap, len(combos))
+    ranked: list[tuple[float, tuple, list[tuple[int, Tile]]]] = []
     loop_steps = 0
-    for tile_combo in combinations(rack_tiles, k):
+    # _placement_rank for k >= 3 is a sum of per-cell scores: score each
+    # (tile, cell) once instead of once per permutation.
+    cell_scores: dict[tuple[int, int], float] = {}
+    tile_order = _tile_order(rack_tiles)
+
+    def cell_score(idx: int, tile: Tile) -> float:
+        key = (id(tile), idx)
+        if key not in cell_scores:
+            cell_scores[key] = _placement_cell_score(board, idx, tile, loadout=loadout, rules=rules)
+        return cell_scores[key]
+
+    for tile_combo in combos:
         if _variant_gen_past_deadline(gen_deadline):
             break
+        heap: list[tuple[float, tuple[int, ...], int, list[tuple[int, Tile]]]] = []
+        seq = count()
         for indices in permutations(cells, k):
             loop_steps += 1
             if loop_steps % _VARIANT_GEN_DEADLINE_CHECK_EVERY == 0:
                 if _variant_gen_past_deadline(gen_deadline):
                     break
             placements = list(zip(indices, tile_combo, strict=True))
-            rank = _placement_rank(
-                board, placements, loadout=loadout, rules=rules
-            )
-            tie = tuple(placement[0] for placement in placements)
-            entry = (-rank, tie, next(seq), placements)
-            if len(heap) < tier_cap:
+            rank = sum(cell_score(idx, tile) for idx, tile in placements)
+            if k == 2:
+                rank += _endpoint_pair_bonus(board, placements, loadout=loadout)
+            entry = (rank, _tie_key(placements, tile_order), -next(seq), placements)
+            if len(heap) < per_combo:
                 heapq.heappush(heap, entry)
-            elif rank > -heap[0][0]:
+            elif entry[:3] > heap[0][:3]:
                 heapq.heapreplace(heap, entry)
-    heap.sort(key=lambda row: (row[0], row[1]))
-    return [placements for _, _, _, placements in heap]
+        ranked.extend((rank, tie, placements) for rank, tie, _, placements in heap)
+    return _round_robin_by_tiles(ranked, tier_cap)
+
+
+def _per_combo_cap(tier_cap: int, n_combos: int) -> int:
+    """Variants each tile combination may keep (every combination gets a share)."""
+    return max(4, tier_cap // max(1, n_combos))
+
+
+def _ordered_tile_combos(
+    board: Board,
+    rack_tiles: list[Tile],
+    cells: list[int],
+    k: int,
+    *,
+    loadout: Loadout | None = None,
+    rules: dict[str, Any] | None = None,
+) -> list[tuple[Tile, ...]]:
+    """Distinct ``k``-tile combinations, most promising tiles first (not rack
+    order), so a generation deadline cuts the weakest combinations."""
+    best: dict[int, float] = {}
+    for tile in rack_tiles:
+        best[id(tile)] = max(
+            (_placement_cell_score(board, idx, tile, loadout=loadout, rules=rules) for idx in cells),
+            default=0.0,
+        )
+    combos = _distinct_tile_combos(rack_tiles, k)
+    combos.sort(
+        key=lambda combo: (
+            -sum(best[id(t)] for t in combo),
+            repr(sorted((_rack_tile_key(t) for t in combo), key=repr)),
+        )
+    )
+    return combos
 
 
 def apply_consumable_placements(
@@ -1106,6 +1296,9 @@ def _required_for_placements(
     return base_required
 
 
+# Share of the placement budget for generating + screening tiers (rest: refine).
+_PLACEMENT_TIERS_SHARE = 0.6
+
 _SCREEN_VARIANT_CAP_INVESTMENT = 32
 _SCREEN_VARIANT_CAP_DEFAULT = 24
 
@@ -1139,13 +1332,16 @@ def _cap_variants_for_screening(
 ) -> list[list[tuple[int, Tile]]]:
     if len(variants) <= max_screen:
         return variants
-    ranked = sorted(
-        variants,
-        key=lambda placements: -_placement_rank(
-            board, placements, loadout=loadout, rules=rules
-        ),
-    )
-    return ranked[:max_screen]
+    tile_order = _tile_order([t for placements in variants for _, t in placements])
+    ranked = [
+        (
+            _placement_rank(board, placements, loadout=loadout, rules=rules),
+            _tie_key(placements, tile_order),
+            placements,
+        )
+        for placements in variants
+    ]
+    return _round_robin_by_tiles(ranked, max_screen)
 
 
 def _placement_search_use_serial(
@@ -1270,6 +1466,16 @@ def _finalize_placement_search(
     finally:
         searcher.time_budget = prev_budget
         searcher.validator.required_consumable_indices = base_required
+
+    if not best_results:
+        # Refine ran out of time: the screening pass already searched each
+        # finalist board for real, so keep the best screened word.
+        _hint, tile_count, placements, sim_board, result = finalists[0]
+        best_rank = _quest_rank_score(result, loadout)
+        best_tile_count = tile_count
+        best_board = sim_board
+        best_records = placements_to_records(placements)
+        best_results = [result]
 
     variant_refine_sec = time.monotonic() - refine_started
     adopted = False
@@ -1462,9 +1668,20 @@ def _run_tiered_placement_search(
     variant_screen_sec = 0.0
     variant_gen_started = time.monotonic()
     base_required = searcher.validator.required_consumable_indices
+    # Generating and screening tiers must leave the refine pass time to run:
+    # with a 10-tile rack the high tiers alone could use the whole deadline,
+    # and refining past the deadline finds nothing (Under Construction boards
+    # then never suggested a placement).
+    tiers_deadline = variant_gen_started + total_budget * _PLACEMENT_TIERS_SHARE
+    if solve_deadline is not None:
+        tiers_deadline = min(
+            tiers_deadline,
+            variant_gen_started
+            + max(0.0, solve_deadline - variant_gen_started) * _PLACEMENT_TIERS_SHARE,
+        )
 
     for k in range(1, max_tier + 1):
-        if solve_deadline is not None and time.monotonic() >= solve_deadline:
+        if time.monotonic() >= tiers_deadline:
             break
         tier_cells = cells_full if hard and k <= 2 else cells
         tier_started = time.monotonic()
@@ -1476,7 +1693,7 @@ def _run_tiered_placement_search(
             tier_cap=tier_cap,
             loadout=loadout,
             rules=rules,
-            gen_deadline=solve_deadline,
+            gen_deadline=tiers_deadline,
         )
         variant_gen_sec += time.monotonic() - tier_started
         if not tier_variants:

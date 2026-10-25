@@ -133,6 +133,26 @@ class PathStep:
     x: float
     y: float
     step: int
+    # Hungry Snake: the move into this step wraps off a side edge (+1 leaves
+    # through the right edge and comes back in on the left, -1 the reverse).
+    wrap: int = 0
+
+
+def _wrap_direction(board: Board | None, prev: int, idx: int) -> int:
+    """+1/-1 when ``prev -> idx`` only connects by wrapping round the grid sides."""
+    cols = board.storage_cols if board else _GRID_SLOTS
+    lo = board.playable_min_col if board else 0
+    hi = board.playable_max_col if board else _GRID_SLOTS - 1
+    if hi - lo < 2:
+        return 0
+    (r0, c0), (r1, c1) = divmod(prev, cols), divmod(idx, cols)
+    if abs(r0 - r1) > 1:
+        return 0
+    if c0 == hi and c1 == lo:
+        return 1
+    if c0 == lo and c1 == hi:
+        return -1
+    return 0
 
 
 @dataclass(frozen=True)
@@ -348,8 +368,11 @@ def path_geometry(
     board: Board | None = None,
     *,
     cell_centers: dict[int, tuple[float, float]] | None = None,
+    wrapping: bool = False,
 ) -> list[PathStep]:
     """Map tile indices to centers within a board region (overlay-local coords).
+
+    ``wrapping`` (Hungry Snake) marks side-edge wrap moves on their ``PathStep``.
 
     Indices use the solver's 5×5 storage (row 0 = top). For shrunk Bat-style
     grids the active block may occupy storage rows 2–4 while the game renders
@@ -369,7 +392,8 @@ def path_geometry(
             cx, cy = _absolute_to_local(region, *cell_centers[idx])
         else:
             cx, cy = _index_center(idx, slot_w=slot_w, slot_h=slot_h, board=board)
-        steps.append(PathStep(x=cx, y=cy, step=step))
+        wrap = _wrap_direction(board, path[step - 2], idx) if wrapping and step > 1 else 0
+        steps.append(PathStep(x=cx, y=cy, step=step, wrap=wrap))
     return steps
 
 
