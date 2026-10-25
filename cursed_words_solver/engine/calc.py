@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -243,6 +244,46 @@ _ITEM_STATE_FIELDS: dict[str, str] = {
 }
 
 
+# ``Tile.GetStringRepresentation`` font-tagged forms (game keys, e.g. Mutating DNA's
+# ``LetterUseCounts``) -> ``ETile.srep`` tokens.
+_CHESS_FONT_LETTERS = {  # ChessPieces.ChessFontLettersWhite / Black
+    "p": ("pawn", True), "h": ("knight", True), "b": ("bishop", True), "r": ("rook", True),
+    "q": ("queen", True), "k": ("king", True),
+    "o": ("pawn", False), "j": ("knight", False), "n": ("bishop", False), "t": ("rook", False),
+    "w": ("queen", False), "l": ("king", False),
+}
+_FRACTION_GLYPHS = {  # Alphabet.FractionNumbers
+    "½": (1, 2), "⅓": (1, 3), "⅔": (2, 3), "¼": (1, 4), "¾": (3, 4),
+    "⅕": (1, 5), "⅖": (2, 5), "⅗": (3, 5), "⅘": (4, 5), "⅙": (1, 6),
+    "⅚": (5, 6), "⅛": (1, 8), "⅜": (3, 8), "⅝": (5, 8), "⅞": (7, 8),
+    "⅐": (1, 7), "⅑": (1, 9), "⅒": (1, 10),
+}
+_FONT_TAG = re.compile(r"^(?:<rotate=180>)?<font=([^>]+)>(.*?)</font>(?:</rotate>)?$", re.S)
+
+
+def game_srep_to_engine(rep: str) -> str:
+    """The engine's ``ETile.srep`` for a game ``GetStringRepresentation()`` string. Letters
+    and numbers are the same in both; engine tokens pass through unchanged. Inverted chess
+    pieces fold into the upright piece (the engine has no inversion)."""
+    m = _FONT_TAG.match(rep)
+    if not m:
+        return rep.lower() if len(rep) == 1 and rep.isalpha() else rep
+    font, body = m.group(1), m.group(2)
+    if font == "InterBold SDF":
+        return f"<cur:{body}>"
+    if font == "Borel SDF":
+        return f"<arrow:{body.upper()}>"
+    if font == "TTNormsPro-Bold SDF" and body in _FRACTION_GLYPHS:
+        a, b = _FRACTION_GLYPHS[body]
+        return f"<frac:{a}/{b}>"
+    if font == "ChessPiece SDF" and body in _CHESS_FONT_LETTERS:
+        piece, white = _CHESS_FONT_LETTERS[body]
+        return f"<chess:{piece}:{'w' if white else 'b'}>"
+    if font.startswith("NotoEmoji"):
+        return "<joker>"
+    return rep
+
+
 def _apply_item_state(inst: ItemInst, fields: dict[str, Any] | None) -> None:
     """Map raw game field values (melmod ``state`` export) onto engine counters."""
     if not isinstance(fields, dict):
@@ -258,6 +299,12 @@ def _apply_item_state(inst: ItemInst, fields: dict[str, Any] | None) -> None:
             value = value  # CurseType enum name, matches engine C_* constants
         if target == "current_word" and isinstance(value, str):
             value = value.lower()
+        if target == "letter_counts" and isinstance(value, dict):
+            counts: dict[str, int] = {}
+            for k, v in value.items():
+                rep = game_srep_to_engine(str(k))
+                counts[rep] = counts.get(rep, 0) + int(v)
+            value = counts
         inst.state[target] = value
     colours = fields.get("RelevantColours")
     if isinstance(colours, list) and colours:

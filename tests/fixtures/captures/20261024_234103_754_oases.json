@@ -1,0 +1,1408 @@
+{
+ "round_id": "20261024_234103_754",
+ "match_status": "score_mismatch",
+ "actual": {
+  "word": "oases",
+  "score": 4710
+ },
+ "solver": {
+  "word": "oases",
+  "predicted_score": 4677
+ },
+ "capture": {
+  "pre_submit": {
+   "schema": "game_state/1",
+   "captured_at": "2026-10-25T04:41:03.6341664Z",
+   "trigger": "pre_submit",
+   "companion_version": "1.4.0",
+   "grid": {
+    "width": 5,
+    "height": 5,
+    "grid_number": 1,
+    "tiles": [
+     {
+      "x": 0,
+      "y": 0,
+      "glyph": "Currency",
+      "type": "Normal",
+      "letter": "\u20a3",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 10,
+      "value_modifier": 10,
+      "cactus_growth": 0,
+      "srep": "<font=InterBold SDF>\u20a3</font>",
+      "srep_word": "\u20a3",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 1,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "a",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "a",
+      "srep_word": "a",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 2,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "e",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "e",
+      "srep_word": "e",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 3,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "d",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 2,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "d",
+      "srep_word": "d",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 4,
+      "y": 0,
+      "glyph": "Currency",
+      "type": "Normal",
+      "letter": "\u00a5",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 10,
+      "value_modifier": 10,
+      "cactus_growth": 0,
+      "srep": "<font=InterBold SDF>\u00a5</font>",
+      "srep_word": "\u00a5",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 0,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "i",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "i",
+      "srep_word": "i",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 1,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "e",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "e",
+      "srep_word": "e",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 2,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "a",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "a",
+      "srep_word": "a",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 3,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "l",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "l",
+      "srep_word": "l",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 4,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "o",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "o",
+      "srep_word": "o",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 0,
+      "y": 2,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "a",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "a",
+      "srep_word": "a",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 1,
+      "y": 2,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "s",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "s",
+      "srep_word": "s",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 2,
+      "y": 2,
+      "glyph": "Fraction",
+      "type": "Red",
+      "letter": null,
+      "number": -1000,
+      "fraction": [
+       2,
+       5
+      ],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 8,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=TTNormsPro-Bold SDF>\u2156</font>",
+      "srep_word": "!",
+      "cursed": true,
+      "flags": [
+       "was_consumable",
+       "on_rack"
+      ],
+      "available": true
+     },
+     {
+      "x": 3,
+      "y": 2,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "b",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 3,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "b",
+      "srep_word": "b",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 4,
+      "y": 2,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "k",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 5,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "k",
+      "srep_word": "k",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 0,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "n",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "n",
+      "srep_word": "n",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 1,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Red",
+      "letter": "o",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 2,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "o",
+      "srep_word": "o",
+      "cursed": false,
+      "flags": [
+       "was_consumable",
+       "on_rack"
+      ],
+      "available": true
+     },
+     {
+      "x": 2,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "o",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "o",
+      "srep_word": "o",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 3,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "t",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "t",
+      "srep_word": "t",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 4,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "f",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 4,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "f",
+      "srep_word": "f",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 0,
+      "y": 4,
+      "glyph": "Currency",
+      "type": "Normal",
+      "letter": "\u20ad",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 10,
+      "value_modifier": 10,
+      "cactus_growth": 0,
+      "srep": "<font=InterBold SDF>\u20ad</font>",
+      "srep_word": "\u20ad",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 1,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "m",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 3,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "m",
+      "srep_word": "m",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 2,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "m",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 3,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "m",
+      "srep_word": "m",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 3,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "e",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "e",
+      "srep_word": "e",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 4,
+      "y": 4,
+      "glyph": "Currency",
+      "type": "Normal",
+      "letter": "\u20a1",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 10,
+      "value_modifier": 10,
+      "cactus_growth": 0,
+      "srep": "<font=InterBold SDF>\u20a1</font>",
+      "srep_word": "\u20a1",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     }
+    ]
+   },
+   "encounter": {
+    "grids_generated": 1,
+    "total_target": 3511,
+    "remaining_target": 3511,
+    "remaining_grids": 4,
+    "total_grids": 5,
+    "rerolls": 1,
+    "piggy_bank_savings": 0,
+    "twinkle_toes_swap_available": false,
+    "thread_stage": "WaitingForWordSubmission",
+    "bosses": [],
+    "previous_words": []
+   },
+   "player": {
+    "money": 4,
+    "character": "SandySaguaro",
+    "stickers": [
+     {
+      "id": "gold_fish",
+      "class": "GoldFish",
+      "levels": [
+       3
+      ],
+      "values": [
+       3
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       12,
+       12,
+       12
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 0
+     },
+     {
+      "id": "hungry_hippo",
+      "class": "HungryHippo",
+      "levels": [
+       4
+      ],
+      "values": [
+       80
+      ],
+      "colours": [],
+      "fields": {
+       "_isOpenMouthed": false
+      },
+      "times_upgraded": 3,
+      "foil": false,
+      "money_invested": [
+       11,
+       9,
+       12,
+       10
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 1
+     },
+     {
+      "id": "under_construction",
+      "class": "UnderConstruction",
+      "levels": [
+       3
+      ],
+      "values": [
+       4
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       14,
+       14,
+       14
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 2
+     },
+     {
+      "id": "hi_vis_jacket",
+      "class": "HiVisJacket",
+      "levels": [
+       3
+      ],
+      "values": [
+       60
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       11,
+       11,
+       11
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 3
+     },
+     {
+      "id": "jack_o_lantern",
+      "class": "JackOLantern",
+      "levels": [
+       2
+      ],
+      "values": [
+       2
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 1,
+      "foil": false,
+      "money_invested": [
+       8,
+       8
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 4
+     }
+    ],
+    "stamps": [
+     {
+      "id": "globe_trotter",
+      "class": "GlobeTrotter",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       0
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 0
+     },
+     {
+      "id": "mutating_dna",
+      "class": "MutatingDNA",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {
+       "LetterUseCounts": {
+        "r": 2,
+        "e": 9,
+        "a": 5,
+        "<font=InterBold SDF>\u20b1</font>": 1,
+        "p": 2,
+        "s": 3,
+        "<font=InterBold SDF>\u20a9</font>": 1,
+        "g": 1,
+        "y": 1,
+        "u": 1,
+        "<font=InterBold SDF>\u0e3f</font>": 1,
+        "v": 1,
+        "d": 1,
+        "<font=InterBold SDF>\u20a1</font>": 1,
+        "z": 2,
+        "<font=ChessPiece SDF>q</font>": 1,
+        "4": 1,
+        "<font=TTNormsPro-Bold SDF>\u2150</font>": 1,
+        "<font=InterBold SDF>\u00a5</font>": 1,
+        "<font=TTNormsPro-Bold SDF>\u2156</font>": 1
+       }
+      },
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       25
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 1
+     },
+     {
+      "id": "tile_ninja",
+      "class": "TileNinja",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {
+       "ConsumableTilesUsed": 12
+      },
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       18
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 2
+     },
+     {
+      "id": "golden_record",
+      "class": "GoldenRecord",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       18
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 3
+     },
+     {
+      "id": "stadium",
+      "class": "Stadium",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       14
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 4
+     }
+    ],
+    "pin": {
+     "id": "mahjong_red_dragon",
+     "class": "MahjongRedDragon",
+     "levels": [
+      3,
+      3
+     ],
+     "values": [
+      3,
+      4
+     ],
+     "colours": [
+      "Red"
+     ],
+     "fields": {},
+     "times_upgraded": 0,
+     "foil": false,
+     "money_invested": [],
+     "selling_prevented": false,
+     "discount": 0
+    },
+    "consumables": [
+     null,
+     {
+      "x": 0,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Red",
+      "letter": "a",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 2,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "a",
+      "srep_word": "a",
+      "cursed": false,
+      "flags": [
+       "was_consumable",
+       "on_rack"
+      ]
+     },
+     {
+      "x": 0,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Red",
+      "letter": "l",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 2,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "l",
+      "srep_word": "l",
+      "cursed": false,
+      "flags": [
+       "was_consumable",
+       "on_rack"
+      ]
+     },
+     {
+      "x": 0,
+      "y": 0,
+      "glyph": "Chess",
+      "type": "Red",
+      "letter": null,
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Pawn",
+      "white": true,
+      "value": 2,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=ChessPiece SDF>p</font>",
+      "srep_word": "!",
+      "cursed": true,
+      "flags": [
+       "was_consumable",
+       "on_rack"
+      ]
+     },
+     {
+      "x": 0,
+      "y": 0,
+      "glyph": "Currency",
+      "type": "Red",
+      "letter": "\u0e3f",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=InterBold SDF>\u0e3f</font>",
+      "srep_word": "\u0e3f",
+      "cursed": true,
+      "flags": [
+       "was_consumable",
+       "on_rack"
+      ]
+     },
+     {
+      "x": 0,
+      "y": 0,
+      "glyph": "Currency",
+      "type": "Red",
+      "letter": "\u20b1",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 1,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=InterBold SDF>\u20b1</font>",
+      "srep_word": "\u20b1",
+      "cursed": true,
+      "flags": [
+       "was_consumable",
+       "on_rack"
+      ]
+     },
+     {
+      "x": 0,
+      "y": 0,
+      "glyph": "Currency",
+      "type": "Normal",
+      "letter": "\u0e3f",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 0,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=InterBold SDF>\u0e3f</font>",
+      "srep_word": "\u0e3f",
+      "cursed": true,
+      "flags": [
+       "was_consumable",
+       "on_rack"
+      ]
+     },
+     {
+      "x": 0,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Red",
+      "letter": "c",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 4,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "c",
+      "srep_word": "c",
+      "cursed": false,
+      "flags": [
+       "was_consumable",
+       "on_rack"
+      ]
+     },
+     null,
+     {
+      "x": 0,
+      "y": 0,
+      "glyph": "Chess",
+      "type": "Red",
+      "letter": null,
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Knight",
+      "white": false,
+      "value": 4,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=ChessPiece SDF>j</font>",
+      "srep_word": "!",
+      "cursed": true,
+      "flags": [
+       "was_consumable",
+       "on_rack"
+      ]
+     }
+    ],
+    "frozen_stickers": [
+     {
+      "id": "jack_o_lantern",
+      "class": "JackOLantern",
+      "levels": [
+       1
+      ],
+      "values": [
+       1
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [],
+      "selling_prevented": false,
+      "discount": 0,
+      "cost": 8
+     },
+     null,
+     null,
+     null
+    ],
+    "frozen_stamps": [
+     null,
+     null
+    ],
+    "accumulator_words": [],
+    "accumulator_pairs": []
+   },
+   "run": {
+    "stage": 5,
+    "node_type": "EncounterSecond",
+    "ascension": "None",
+    "cactus_growth_level": 0,
+    "cursed_bosses_defeated": [],
+    "available_colours": [
+     "Red",
+     "Blue",
+     "Void",
+     "Shiny"
+    ],
+    "embargoed_items": [],
+    "boss_draft": [
+     {
+      "class": "ReducedLetterValue",
+      "fields": {
+       "Name": "-1 Letter Value",
+       "PrefabFileName": "BossLessPoints",
+       "SpriteFileName": "Salamander",
+       "AudioPrefix": "Salamander",
+       "DifficultyModifier": [
+        1,
+        3,
+        5,
+        7,
+        9,
+        9
+       ],
+       "DifficultyIncrease": [
+        1,
+        1,
+        2,
+        2,
+        3,
+        3
+       ],
+       "FloorAdjustedModification": 9,
+       "IsCursed": false,
+       "IsSecretCharacter": false,
+       "BannedFloorIndexes": [],
+       "CanBeSummonedByMichael": true
+      }
+     },
+     {
+      "class": "FewerGrids",
+      "fields": {
+       "Name": "FewerGrids",
+       "PrefabFileName": "BossFewerGrids",
+       "SpriteFileName": "Badger",
+       "AudioPrefix": "Badger",
+       "DifficultyModifier": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+       ],
+       "DifficultyIncrease": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+       ],
+       "FloorAdjustedModification": 1,
+       "IsCursed": false,
+       "IsSecretCharacter": false,
+       "BannedFloorIndexes": [],
+       "CanBeSummonedByMichael": true
+      }
+     }
+    ],
+    "has_faced_uncursed_boss": true,
+    "piggy_bank_saved": 0
+   }
+  },
+  "submission": {
+   "method": "EncounterController.SubmitWord",
+   "words": [
+    "oases"
+   ],
+   "tiles": [
+    {
+     "x": 1,
+     "y": 3,
+     "method": "Initial"
+    },
+    {
+     "x": 0,
+     "y": 2,
+     "method": "Adjacent"
+    },
+    {
+     "x": 1,
+     "y": 2,
+     "method": "Adjacent"
+    },
+    {
+     "x": 1,
+     "y": 1,
+     "method": "Adjacent"
+    },
+    {
+     "x": 2,
+     "y": 2,
+     "method": "Adjacent"
+    }
+   ]
+  },
+  "scoring_call": {
+   "grid_number": 1,
+   "items": [
+    {
+     "class": "MahjongRedDragon",
+     "id": "mahjong_red_dragon"
+    },
+    {
+     "class": "GoldFish",
+     "id": "gold_fish"
+    },
+    {
+     "class": "HungryHippo",
+     "id": "hungry_hippo"
+    },
+    {
+     "class": "UnderConstruction",
+     "id": "under_construction"
+    },
+    {
+     "class": "HiVisJacket",
+     "id": "hi_vis_jacket"
+    },
+    {
+     "class": "JackOLantern",
+     "id": "jack_o_lantern"
+    },
+    {
+     "class": "GlobeTrotter",
+     "id": "globe_trotter"
+    },
+    {
+     "class": "MutatingDNA",
+     "id": "mutating_dna"
+    },
+    {
+     "class": "TileNinja",
+     "id": "tile_ninja"
+    },
+    {
+     "class": "GoldenRecord",
+     "id": "golden_record"
+    },
+    {
+     "class": "Stadium",
+     "id": "stadium"
+    }
+   ],
+   "item_states": {
+    "stickers": [
+     {
+      "id": "gold_fish",
+      "class": "GoldFish",
+      "levels": [
+       3
+      ],
+      "values": [
+       3
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       12,
+       12,
+       12
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 0
+     },
+     {
+      "id": "hungry_hippo",
+      "class": "HungryHippo",
+      "levels": [
+       4
+      ],
+      "values": [
+       80
+      ],
+      "colours": [],
+      "fields": {
+       "_isOpenMouthed": false
+      },
+      "times_upgraded": 3,
+      "foil": false,
+      "money_invested": [
+       11,
+       9,
+       12,
+       10
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 1
+     },
+     {
+      "id": "under_construction",
+      "class": "UnderConstruction",
+      "levels": [
+       3
+      ],
+      "values": [
+       4
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       14,
+       14,
+       14
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 2
+     },
+     {
+      "id": "hi_vis_jacket",
+      "class": "HiVisJacket",
+      "levels": [
+       3
+      ],
+      "values": [
+       60
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       11,
+       11,
+       11
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 3
+     },
+     {
+      "id": "jack_o_lantern",
+      "class": "JackOLantern",
+      "levels": [
+       2
+      ],
+      "values": [
+       2
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 1,
+      "foil": false,
+      "money_invested": [
+       8,
+       8
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 4
+     }
+    ],
+    "stamps": [
+     {
+      "id": "globe_trotter",
+      "class": "GlobeTrotter",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       0
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 0
+     },
+     {
+      "id": "mutating_dna",
+      "class": "MutatingDNA",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {
+       "LetterUseCounts": {
+        "r": 2,
+        "e": 9,
+        "a": 5,
+        "<font=InterBold SDF>\u20b1</font>": 1,
+        "p": 2,
+        "s": 3,
+        "<font=InterBold SDF>\u20a9</font>": 1,
+        "g": 1,
+        "y": 1,
+        "u": 1,
+        "<font=InterBold SDF>\u0e3f</font>": 1,
+        "v": 1,
+        "d": 1,
+        "<font=InterBold SDF>\u20a1</font>": 1,
+        "z": 2,
+        "<font=ChessPiece SDF>q</font>": 1,
+        "4": 1,
+        "<font=TTNormsPro-Bold SDF>\u2150</font>": 1,
+        "<font=InterBold SDF>\u00a5</font>": 1,
+        "<font=TTNormsPro-Bold SDF>\u2156</font>": 1
+       }
+      },
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       25
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 1
+     },
+     {
+      "id": "tile_ninja",
+      "class": "TileNinja",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {
+       "ConsumableTilesUsed": 12
+      },
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       18
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 2
+     },
+     {
+      "id": "golden_record",
+      "class": "GoldenRecord",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       18
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 3
+     },
+     {
+      "id": "stadium",
+      "class": "Stadium",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       14
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 4
+     }
+    ],
+    "pin": {
+     "id": "mahjong_red_dragon",
+     "class": "MahjongRedDragon",
+     "levels": [
+      3,
+      3
+     ],
+     "values": [
+      3,
+      4
+     ],
+     "colours": [
+      "Red"
+     ],
+     "fields": {},
+     "times_upgraded": 0,
+     "foil": false,
+     "money_invested": [],
+     "selling_prevented": false,
+     "discount": 0
+    }
+   }
+  }
+ }
+}

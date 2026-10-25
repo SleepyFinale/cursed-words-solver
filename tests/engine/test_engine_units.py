@@ -52,8 +52,27 @@ def test_packet_overflow_becomes_infinite() -> None:
 
 
 def test_packet_scale_uses_bankers_rounding() -> None:
-    assert P.scale(25, 0.1) == 2  # 2.5 -> 2
-    assert P.scale(35, 0.1) == 4  # 3.5 -> 4
+    assert P.scale(5, 0.5) == 2  # 2.5 -> 2
+    assert P.scale(7, 0.5) == 4  # 3.5 -> 4
+
+
+def test_game_string_representation_maps_to_engine_srep() -> None:
+    # Mutating DNA's LetterUseCounts keys are Tile.GetStringRepresentation() (font tagged).
+    from cursed_words_solver.engine.calc import game_srep_to_engine as f
+
+    assert f("<font=TTNormsPro-Bold SDF>⅖</font>") == "<frac:2/5>"
+    assert f("<font=InterBold SDF>₱</font>") == "<cur:₱>"
+    assert f("<font=ChessPiece SDF>q</font>") == "<chess:queen:w>"
+    assert f("<rotate=180><font=ChessPiece SDF>l</font></rotate>") == "<chess:king:b>"
+    assert f("<font=Borel SDF>n</font>") == "<arrow:N>"
+    assert f("e") == "e" and f("4") == "4" and f("<cur:$>") == "<cur:$>"
+
+
+def test_packet_scale_multiplies_float32_operands_in_double() -> None:
+    # Real capture (poison, 2026-10-25): 181265 * 0.1f = 18126.50027 in double -> 18127;
+    # a float32 product would be exactly 18126.5 and round to 18126.
+    assert P.scale(181265, 0.1) == 18127
+    assert P.scale(211929, 0.1) == 21193
 
 
 def test_final_score_applies_word_bonuses_in_step_order() -> None:

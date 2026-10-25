@@ -74,7 +74,10 @@ def replay_one(path_str: str) -> dict:
             got = -got if prep.two_wrongs else got
             out["got"], out["expected"] = got, prep.expected
             out["score"] = "ok" if got == prep.expected else "diff"
-        words = str((data.get("actual") or {}).get("word") or "").lower().replace(";", " ").split()
+        # Two-word submits: ``actual.word`` holds only the last word; the capture has both.
+        sub_words = ((data.get("capture") or {}).get("submission") or {}).get("words")
+        words = ([str(w).lower() for w in sub_words] if sub_words else
+                 str((data.get("actual") or {}).get("word") or "").lower().replace(";", " ").split())
         if not words or not all(w.isalpha() for w in words):
             out["valid"] = "skip"
         else:

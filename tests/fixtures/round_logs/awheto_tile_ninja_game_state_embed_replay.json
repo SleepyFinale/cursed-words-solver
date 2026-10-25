@@ -1,5 +1,5 @@
 {
- "note": "Sandy Saguaro: A+O placed; embed extras had Tile Ninja 10 used but game_state.player kept 8 (2793 vs embed replay 2713).",
+ "note": "Sandy Saguaro: A+O placed; embed extras had Tile Ninja 10 used but game_state.player kept 8 (2793 vs embed replay 2713). Expected is now 2825: Mutating DNA counts the ₩ currency tile by its font-tagged GetStringRepresentation key (+1 x 32); the old engine never matched symbol keys. Never submitted, so the score is the engine's, not the game's.",
  "run_state": {
   "schema_version": 1,
   "exported_at": "2026-10-25T04:26:10.7800664Z",
@@ -1911,5 +1911,5 @@
   17
  ],
  "word": "awheto",
- "expected_score": 2793
+ "expected_score": 2825
 }

@@ -44,6 +44,18 @@ its state as melmod `game_state/1`, the same format real captures replay from ex
   except for one Octacles run whose Bucket contents the old melmod export dropped (fixed in
   the mod; needs redeploy).
 
+**Human runs, 2026-10-24/25** (Rodman c1–2, Sam Gambit c0–1, Sandy c0–1, Nat-H4 c1, Beans c1,
+Bones c3; 305 captures, `scripts/record_run.py` journals of every export): the engine
+now scores all 305 exactly. Two engine fixes came out of them — Mutating DNA's
+`LetterUseCounts` keys are `GetStringRepresentation()` with font tags
+(`<font=TTNormsPro-Bold SDF>⅖</font>`), now mapped to engine `srep` tokens
+(`calc.game_srep_to_engine`), and `ScorePacket.Scale` multiplies its float32 operands in
+double precision (poison 181265 × 0.1f → 18127). Through sim state 302/305 (the 3 misses
+are Michael's finale puzzle, not modelled). Dynamics, 115 same-encounter pairs: money
+115/115, remaining target 109/115 (the 6 misses are Michael phases with Randomise Item
+Order), rack 105/115 (Sandy's manual rack placements between submits; the round log's
+`placements_this_round` is not per submit, so the check cannot subtract them).
+
 Tests: `tests/sim/test_game_sim.py`, `tests/sim/test_game_rules.py`.
 
 ## Policies so far (Carpman, crown 0, 16 seeds)

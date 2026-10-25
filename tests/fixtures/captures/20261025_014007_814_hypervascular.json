@@ -1,0 +1,2774 @@
+{
+ "round_id": "20261025_014007_814",
+ "match_status": "score_mismatch",
+ "actual": {
+  "word": "hypervascular",
+  "score": 211929
+ },
+ "solver": {
+  "word": "hypervascular",
+  "predicted_score": 211928
+ },
+ "capture": {
+  "pre_submit": {
+   "schema": "game_state/1",
+   "captured_at": "2026-10-25T06:40:07.4967959Z",
+   "trigger": "pre_submit",
+   "companion_version": "1.4.0",
+   "grid": {
+    "width": 5,
+    "height": 5,
+    "grid_number": 1,
+    "tiles": [
+     {
+      "x": 0,
+      "y": 0,
+      "glyph": "Currency",
+      "type": "Red",
+      "letter": "\u20b2",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 11,
+      "value_modifier": 10,
+      "cactus_growth": 0,
+      "srep": "<font=InterBold SDF>\u20b2</font>",
+      "srep_word": "\u20b2",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 1,
+      "y": 0,
+      "glyph": "Chess",
+      "type": "Blue",
+      "letter": null,
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "Rook",
+      "white": false,
+      "value": 66,
+      "value_modifier": 60,
+      "cactus_growth": 0,
+      "srep": "<font=ChessPiece SDF>t</font>",
+      "srep_word": "!",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 2,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Void",
+      "letter": "d",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": -47,
+      "value_modifier": 45,
+      "cactus_growth": 0,
+      "srep": "d",
+      "srep_word": "d",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 3,
+      "y": 0,
+      "glyph": "Letter",
+      "type": "Void",
+      "letter": "e",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": -46,
+      "value_modifier": 45,
+      "cactus_growth": 0,
+      "srep": "e",
+      "srep_word": "e",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 4,
+      "y": 0,
+      "glyph": "Currency",
+      "type": "Void",
+      "letter": "\u20ae",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": -10,
+      "value_modifier": 10,
+      "cactus_growth": 0,
+      "srep": "<font=InterBold SDF>\u20ae</font>",
+      "srep_word": "\u20ae",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 0,
+      "y": 1,
+      "glyph": "ScatteredItem",
+      "type": "Gold",
+      "letter": "n",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 0,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=TwemojiMozillaAll>\ud83e\ude87</font>",
+      "srep_word": "!",
+      "cursed": true,
+      "flags": [],
+      "item": {
+       "id": "maracas",
+       "class": "Maracas",
+       "levels": [
+        1
+       ],
+       "values": [
+        1
+       ],
+       "colours": [],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      "available": true
+     },
+     {
+      "x": 1,
+      "y": 1,
+      "glyph": "ScatteredItem",
+      "type": "Void",
+      "letter": "t",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 0,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=TwemojiMozillaAll>\ud83c\udfaa</font>",
+      "srep_word": "!",
+      "cursed": true,
+      "flags": [],
+      "item": {
+       "id": "circus_tent",
+       "class": "CircusTent",
+       "levels": [
+        1
+       ],
+       "values": [
+        150
+       ],
+       "colours": [
+        "Blue",
+        "Red",
+        "Normal"
+       ],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      "available": true
+     },
+     {
+      "x": 2,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Void",
+      "letter": "t",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": -61,
+      "value_modifier": 60,
+      "cactus_growth": 0,
+      "srep": "t",
+      "srep_word": "t",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 3,
+      "y": 1,
+      "glyph": "ScatteredItem",
+      "type": "Blue",
+      "letter": "o",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 0,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=TwemojiMozillaAll>\ud83e\ude87</font>",
+      "srep_word": "!",
+      "cursed": true,
+      "flags": [],
+      "item": {
+       "id": "maracas",
+       "class": "Maracas",
+       "levels": [
+        1
+       ],
+       "values": [
+        1
+       ],
+       "colours": [],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      "available": true
+     },
+     {
+      "x": 4,
+      "y": 1,
+      "glyph": "Letter",
+      "type": "Void",
+      "letter": "e",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": -46,
+      "value_modifier": 45,
+      "cactus_growth": 0,
+      "srep": "e",
+      "srep_word": "e",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 0,
+      "y": 2,
+      "glyph": "Currency",
+      "type": "Void",
+      "letter": "\u20ad",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": -60,
+      "value_modifier": 60,
+      "cactus_growth": 0,
+      "srep": "<font=InterBold SDF>\u20ad</font>",
+      "srep_word": "\u20ad",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 1,
+      "y": 2,
+      "glyph": "ScatteredItem",
+      "type": "Void",
+      "letter": "e",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 0,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=TwemojiMozillaAll>\ud83c\udfaa</font>",
+      "srep_word": "!",
+      "cursed": true,
+      "flags": [],
+      "item": {
+       "id": "circus_tent",
+       "class": "CircusTent",
+       "levels": [
+        1
+       ],
+       "values": [
+        150
+       ],
+       "colours": [
+        "Blue",
+        "Red",
+        "Normal"
+       ],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      "available": true
+     },
+     {
+      "x": 2,
+      "y": 2,
+      "glyph": "ScatteredItem",
+      "type": "Red",
+      "letter": "r",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 0,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=TwemojiMozillaAll>\ud83c\udf61</font>",
+      "srep_word": "!",
+      "cursed": true,
+      "flags": [],
+      "item": {
+       "id": "dango",
+       "class": "Dango",
+       "levels": [],
+       "values": [],
+       "colours": [],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      "available": true
+     },
+     {
+      "x": 3,
+      "y": 2,
+      "glyph": "ScatteredItem",
+      "type": "Pink",
+      "letter": "k",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 0,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=TwemojiMozillaAll>\ud83d\udddd\ufe0f</font>",
+      "srep_word": "!",
+      "cursed": true,
+      "flags": [],
+      "item": {
+       "id": "ornate_key",
+       "class": "OrnateKey",
+       "levels": [
+        1
+       ],
+       "values": [
+        150
+       ],
+       "colours": [],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      "available": true
+     },
+     {
+      "x": 4,
+      "y": 2,
+      "glyph": "Fraction",
+      "type": "Normal",
+      "letter": null,
+      "number": -1000,
+      "fraction": [
+       1,
+       9
+      ],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 55,
+      "value_modifier": 45,
+      "cactus_growth": 0,
+      "srep": "<font=TTNormsPro-Bold SDF>\u2151</font>",
+      "srep_word": "!",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 0,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Red",
+      "letter": "o",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 47,
+      "value_modifier": 45,
+      "cactus_growth": 0,
+      "srep": "o",
+      "srep_word": "o",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 1,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Red",
+      "letter": "x",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 54,
+      "value_modifier": 45,
+      "cactus_growth": 0,
+      "srep": "x",
+      "srep_word": "x",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 2,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Blue",
+      "letter": "v",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 50,
+      "value_modifier": 45,
+      "cactus_growth": 0,
+      "srep": "v",
+      "srep_word": "v",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 3,
+      "y": 3,
+      "glyph": "Letter",
+      "type": "Normal",
+      "letter": "a",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 61,
+      "value_modifier": 60,
+      "cactus_growth": 0,
+      "srep": "a",
+      "srep_word": "a",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 4,
+      "y": 3,
+      "glyph": "ScatteredItem",
+      "type": "Green",
+      "letter": "i",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 0,
+      "value_modifier": 0,
+      "cactus_growth": 0,
+      "srep": "<font=TwemojiMozillaAll>\ud83c\udfa8</font>",
+      "srep_word": "!",
+      "cursed": true,
+      "flags": [],
+      "item": {
+       "id": "artist_s_palette",
+       "class": "ArtistsPalette",
+       "levels": [
+        1
+       ],
+       "values": [
+        6
+       ],
+       "colours": [],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      "available": true
+     },
+     {
+      "x": 0,
+      "y": 4,
+      "glyph": "Currency",
+      "type": "Red",
+      "letter": "\u20a9",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 11,
+      "value_modifier": 10,
+      "cactus_growth": 0,
+      "srep": "<font=InterBold SDF>\u20a9</font>",
+      "srep_word": "\u20a9",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 1,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Blue",
+      "letter": "w",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 50,
+      "value_modifier": 45,
+      "cactus_growth": 0,
+      "srep": "w",
+      "srep_word": "w",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 2,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Void",
+      "letter": "n",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": -46,
+      "value_modifier": 45,
+      "cactus_growth": 0,
+      "srep": "n",
+      "srep_word": "n",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 3,
+      "y": 4,
+      "glyph": "Letter",
+      "type": "Void",
+      "letter": "t",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": -46,
+      "value_modifier": 45,
+      "cactus_growth": 0,
+      "srep": "t",
+      "srep_word": "t",
+      "cursed": false,
+      "flags": [],
+      "available": true
+     },
+     {
+      "x": 4,
+      "y": 4,
+      "glyph": "Currency",
+      "type": "Blue",
+      "letter": "\u00a5",
+      "number": -1000,
+      "fraction": [],
+      "suit": "None",
+      "piece": "None",
+      "white": false,
+      "value": 11,
+      "value_modifier": 10,
+      "cactus_growth": 0,
+      "srep": "<font=InterBold SDF>\u00a5</font>",
+      "srep_word": "\u00a5",
+      "cursed": true,
+      "flags": [],
+      "available": true
+     }
+    ]
+   },
+   "encounter": {
+    "grids_generated": 1,
+    "total_target": 28606,
+    "remaining_target": 28606,
+    "remaining_grids": 3,
+    "total_grids": 4,
+    "rerolls": 1,
+    "piggy_bank_savings": 0,
+    "twinkle_toes_swap_available": false,
+    "thread_stage": "WaitingForWordSubmission",
+    "bosses": [
+     {
+      "class": "FewerGrids",
+      "fields": {
+       "Name": "FewerGrids",
+       "PrefabFileName": "BossFewerGrids",
+       "SpriteFileName": "Badger",
+       "AudioPrefix": "Badger",
+       "DifficultyModifier": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+       ],
+       "DifficultyIncrease": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+       ],
+       "FloorAdjustedModification": 1,
+       "IsCursed": false,
+       "IsSecretCharacter": false,
+       "BannedFloorIndexes": [],
+       "CanBeSummonedByMichael": true
+      }
+     },
+     {
+      "class": "DiscolourTiles",
+      "fields": {
+       "Name": "DiscolourTiles",
+       "PrefabFileName": "BossNeutralise",
+       "SpriteFileName": "YetiCrab",
+       "AudioPrefix": "Yeti",
+       "DifficultyModifier": [
+        2,
+        3,
+        4,
+        4,
+        5,
+        6
+       ],
+       "DifficultyIncrease": [
+        1,
+        1,
+        2,
+        3,
+        3,
+        4
+       ],
+       "FloorAdjustedModification": 5,
+       "IsCursed": false,
+       "IsSecretCharacter": false,
+       "BannedFloorIndexes": [],
+       "CanBeSummonedByMichael": true
+      }
+     },
+     {
+      "class": "ExtraVoids",
+      "fields": {
+       "TileTypeToScatter": "Void",
+       "Name": "Extra Voids",
+       "PrefabFileName": "BossVoids",
+       "SpriteFileName": "Mole",
+       "AudioPrefix": "Mole",
+       "DifficultyModifier": [
+        3,
+        4,
+        5,
+        5,
+        6,
+        7
+       ],
+       "DifficultyIncrease": [
+        2,
+        2,
+        3,
+        3,
+        4,
+        4
+       ],
+       "FloorAdjustedModification": 5,
+       "IsCursed": false,
+       "IsSecretCharacter": false,
+       "BannedFloorIndexes": [],
+       "CanBeSummonedByMichael": true
+      }
+     }
+    ],
+    "previous_words": [
+     {
+      "words": [
+       "myoglobinuria"
+      ],
+      "skipped": false,
+      "score": 37345,
+      "remainder": -8739,
+      "round": 1,
+      "dims": [
+       5,
+       5
+      ],
+      "tiles": [
+       {
+        "x": 4,
+        "y": 3,
+        "glyph": "Letter",
+        "type": "Red",
+        "letter": "l",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 47,
+        "value_modifier": 45,
+        "cactus_growth": 0,
+        "srep": "l",
+        "srep_word": "l",
+        "cursed": true,
+        "flags": []
+       },
+       {
+        "x": 4,
+        "y": 2,
+        "glyph": "ScatteredItem",
+        "type": "Red",
+        "letter": "l",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 0,
+        "value_modifier": 0,
+        "cactus_growth": 0,
+        "srep": "<font=TwemojiMozillaAll>\ud83e\ude87</font>",
+        "srep_word": "!",
+        "cursed": true,
+        "flags": [],
+        "item": {
+         "id": "maracas",
+         "class": "Maracas",
+         "levels": [
+          1
+         ],
+         "values": [
+          1
+         ],
+         "colours": [],
+         "fields": {},
+         "times_upgraded": 0,
+         "foil": false,
+         "money_invested": [],
+         "selling_prevented": false,
+         "discount": 0
+        }
+       },
+       {
+        "x": 3,
+        "y": 3,
+        "glyph": "ScatteredItem",
+        "type": "Shiny",
+        "letter": "h",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 0,
+        "value_modifier": 0,
+        "cactus_growth": 0,
+        "srep": "<font=TwemojiMozillaAll>\ud83e\ude87</font>",
+        "srep_word": "!",
+        "cursed": true,
+        "flags": [],
+        "item": {
+         "id": "maracas",
+         "class": "Maracas",
+         "levels": [
+          1
+         ],
+         "values": [
+          1
+         ],
+         "colours": [],
+         "fields": {},
+         "times_upgraded": 0,
+         "foil": false,
+         "money_invested": [],
+         "selling_prevented": false,
+         "discount": 0
+        }
+       },
+       {
+        "x": 2,
+        "y": 3,
+        "glyph": "Letter",
+        "type": "Normal",
+        "letter": "g",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 47,
+        "value_modifier": 45,
+        "cactus_growth": 0,
+        "srep": "g",
+        "srep_word": "g",
+        "cursed": false,
+        "flags": []
+       },
+       {
+        "x": 2,
+        "y": 4,
+        "glyph": "Blank",
+        "type": "Red",
+        "letter": null,
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 46,
+        "value_modifier": 45,
+        "cactus_growth": 0,
+        "srep": "?",
+        "srep_word": "?",
+        "cursed": true,
+        "flags": []
+       },
+       {
+        "x": 1,
+        "y": 3,
+        "glyph": "Letter",
+        "type": "Blue",
+        "letter": "o",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 32,
+        "value_modifier": 30,
+        "cactus_growth": 0,
+        "srep": "o",
+        "srep_word": "o",
+        "cursed": false,
+        "flags": []
+       },
+       {
+        "x": 0,
+        "y": 3,
+        "glyph": "Letter",
+        "type": "Red",
+        "letter": "a",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 32,
+        "value_modifier": 30,
+        "cactus_growth": 0,
+        "srep": "a",
+        "srep_word": "a",
+        "cursed": true,
+        "flags": []
+       },
+       {
+        "x": 0,
+        "y": 2,
+        "glyph": "Letter",
+        "type": "Normal",
+        "letter": "i",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 31,
+        "value_modifier": 30,
+        "cactus_growth": 0,
+        "srep": "i",
+        "srep_word": "i",
+        "cursed": false,
+        "flags": []
+       },
+       {
+        "x": 1,
+        "y": 2,
+        "glyph": "Letter",
+        "type": "Normal",
+        "letter": "n",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 31,
+        "value_modifier": 30,
+        "cactus_growth": 0,
+        "srep": "n",
+        "srep_word": "n",
+        "cursed": false,
+        "flags": []
+       },
+       {
+        "x": 2,
+        "y": 1,
+        "glyph": "Letter",
+        "type": "Blue",
+        "letter": "u",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 32,
+        "value_modifier": 30,
+        "cactus_growth": 0,
+        "srep": "u",
+        "srep_word": "u",
+        "cursed": false,
+        "flags": []
+       },
+       {
+        "x": 3,
+        "y": 2,
+        "glyph": "ScatteredItem",
+        "type": "Blue",
+        "letter": "a",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 0,
+        "value_modifier": 0,
+        "cactus_growth": 0,
+        "srep": "<font=TwemojiMozillaAll>\ud83c\udf61</font>",
+        "srep_word": "!",
+        "cursed": true,
+        "flags": [],
+        "item": {
+         "id": "dango",
+         "class": "Dango",
+         "levels": [],
+         "values": [],
+         "colours": [],
+         "fields": {},
+         "times_upgraded": 0,
+         "foil": false,
+         "money_invested": [],
+         "selling_prevented": false,
+         "discount": 0
+        }
+       },
+       {
+        "x": 3,
+        "y": 1,
+        "glyph": "ScatteredItem",
+        "type": "Normal",
+        "letter": null,
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 0,
+        "value_modifier": 45,
+        "cactus_growth": 0,
+        "srep": "<font=TwemojiMozillaAll>\ud83c\udf5f</font>",
+        "srep_word": "!",
+        "cursed": true,
+        "flags": [],
+        "item": {
+         "id": "chips",
+         "class": "Chips",
+         "levels": [
+          1
+         ],
+         "values": [
+          150
+         ],
+         "colours": [],
+         "fields": {},
+         "times_upgraded": 0,
+         "foil": false,
+         "money_invested": [],
+         "selling_prevented": false,
+         "discount": 0
+        }
+       },
+       {
+        "x": 4,
+        "y": 1,
+        "glyph": "ScatteredItem",
+        "type": "Void",
+        "letter": "e",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 0,
+        "value_modifier": 0,
+        "cactus_growth": 0,
+        "srep": "<font=TwemojiMozillaAll>\ud83e\uddc1</font>",
+        "srep_word": "!",
+        "cursed": true,
+        "flags": [],
+        "item": {
+         "id": "rainbow_sprinkles",
+         "class": "RainbowSprinkles",
+         "levels": [
+          1
+         ],
+         "values": [
+          2
+         ],
+         "colours": [
+          "Shiny"
+         ],
+         "fields": {},
+         "times_upgraded": 0,
+         "foil": false,
+         "money_invested": [],
+         "selling_prevented": false,
+         "discount": 0
+        }
+       }
+      ],
+      "methods": [
+       "Initial",
+       "Adjacent",
+       "FullMoon",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent"
+      ],
+      "wobbly": [
+       true,
+       false,
+       false,
+       false,
+       false,
+       false,
+       true,
+       false,
+       false,
+       false,
+       false,
+       false,
+       false
+      ]
+     },
+     {
+      "words": [
+       "uterogestations"
+      ],
+      "skipped": false,
+      "score": 181265,
+      "remainder": -152659,
+      "round": 1,
+      "dims": [
+       5,
+       5
+      ],
+      "tiles": [
+       {
+        "x": 1,
+        "y": 1,
+        "glyph": "Letter",
+        "type": "Red",
+        "letter": "v",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 50,
+        "value_modifier": 45,
+        "cactus_growth": 0,
+        "srep": "v",
+        "srep_word": "v",
+        "cursed": true,
+        "flags": []
+       },
+       {
+        "x": 2,
+        "y": 1,
+        "glyph": "Currency",
+        "type": "Red",
+        "letter": "\u20ae",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 46,
+        "value_modifier": 45,
+        "cactus_growth": 0,
+        "srep": "<font=InterBold SDF>\u20ae</font>",
+        "srep_word": "\u20ae",
+        "cursed": true,
+        "flags": []
+       },
+       {
+        "x": 1,
+        "y": 2,
+        "glyph": "Letter",
+        "type": "Red",
+        "letter": "d",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 63,
+        "value_modifier": 60,
+        "cactus_growth": 0,
+        "srep": "d",
+        "srep_word": "d",
+        "cursed": true,
+        "flags": []
+       },
+       {
+        "x": 2,
+        "y": 2,
+        "glyph": "ScatteredItem",
+        "type": "Red",
+        "letter": "r",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 0,
+        "value_modifier": 0,
+        "cactus_growth": 0,
+        "srep": "<font=TwemojiMozillaAll>\ud83d\udddd\ufe0f</font>",
+        "srep_word": "!",
+        "cursed": true,
+        "flags": [],
+        "item": {
+         "id": "ornate_key",
+         "class": "OrnateKey",
+         "levels": [
+          1
+         ],
+         "values": [
+          150
+         ],
+         "colours": [],
+         "fields": {},
+         "times_upgraded": 0,
+         "foil": false,
+         "money_invested": [],
+         "selling_prevented": false,
+         "discount": 0
+        }
+       },
+       {
+        "x": 3,
+        "y": 2,
+        "glyph": "ScatteredItem",
+        "type": "Pink",
+        "letter": "o",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 0,
+        "value_modifier": 0,
+        "cactus_growth": 0,
+        "srep": "<font=TwemojiMozillaAll>\ud83c\udfa8</font>",
+        "srep_word": "!",
+        "cursed": true,
+        "flags": [],
+        "item": {
+         "id": "artist_s_palette",
+         "class": "ArtistsPalette",
+         "levels": [
+          1
+         ],
+         "values": [
+          6
+         ],
+         "colours": [],
+         "fields": {},
+         "times_upgraded": 0,
+         "foil": false,
+         "money_invested": [],
+         "selling_prevented": false,
+         "discount": 0
+        }
+       },
+       {
+        "x": 3,
+        "y": 1,
+        "glyph": "Letter",
+        "type": "Blue",
+        "letter": "g",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 63,
+        "value_modifier": 60,
+        "cactus_growth": 0,
+        "srep": "g",
+        "srep_word": "g",
+        "cursed": false,
+        "flags": []
+       },
+       {
+        "x": 3,
+        "y": 0,
+        "glyph": "Letter",
+        "type": "Shiny",
+        "letter": "e",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 50,
+        "value_modifier": 45,
+        "cactus_growth": 0,
+        "srep": "e",
+        "srep_word": "e",
+        "cursed": false,
+        "flags": []
+       },
+       {
+        "x": 4,
+        "y": 1,
+        "glyph": "ScatteredItem",
+        "type": "Void",
+        "letter": "a",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 0,
+        "value_modifier": 0,
+        "cactus_growth": 0,
+        "srep": "<font=TwemojiMozillaAll>\ud83e\ude87</font>",
+        "srep_word": "!",
+        "cursed": true,
+        "flags": [],
+        "item": {
+         "id": "maracas",
+         "class": "Maracas",
+         "levels": [
+          1
+         ],
+         "values": [
+          1
+         ],
+         "colours": [],
+         "fields": {},
+         "times_upgraded": 0,
+         "foil": false,
+         "money_invested": [],
+         "selling_prevented": false,
+         "discount": 0
+        }
+       },
+       {
+        "x": 4,
+        "y": 2,
+        "glyph": "ScatteredItem",
+        "type": "Blue",
+        "letter": "i",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 0,
+        "value_modifier": 0,
+        "cactus_growth": 0,
+        "srep": "<font=TwemojiMozillaAll>\ud83e\ude87</font>",
+        "srep_word": "!",
+        "cursed": true,
+        "flags": [],
+        "item": {
+         "id": "maracas",
+         "class": "Maracas",
+         "levels": [
+          1
+         ],
+         "values": [
+          1
+         ],
+         "colours": [],
+         "fields": {},
+         "times_upgraded": 0,
+         "foil": false,
+         "money_invested": [],
+         "selling_prevented": false,
+         "discount": 0
+        }
+       },
+       {
+        "x": 4,
+        "y": 3,
+        "glyph": "Letter",
+        "type": "Red",
+        "letter": "b",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 79,
+        "value_modifier": 75,
+        "cactus_growth": 0,
+        "srep": "b",
+        "srep_word": "b",
+        "cursed": true,
+        "flags": []
+       },
+       {
+        "x": 3,
+        "y": 4,
+        "glyph": "ScatteredItem",
+        "type": "Shiny",
+        "letter": "s",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 0,
+        "value_modifier": 0,
+        "cactus_growth": 0,
+        "srep": "<font=TwemojiMozillaAll>\ud83c\udf61</font>",
+        "srep_word": "!",
+        "cursed": true,
+        "flags": [],
+        "item": {
+         "id": "dango",
+         "class": "Dango",
+         "levels": [],
+         "values": [],
+         "colours": [],
+         "fields": {},
+         "times_upgraded": 0,
+         "foil": false,
+         "money_invested": [],
+         "selling_prevented": false,
+         "discount": 0
+        }
+       },
+       {
+        "x": 2,
+        "y": 4,
+        "glyph": "Letter",
+        "type": "Normal",
+        "letter": "i",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 46,
+        "value_modifier": 45,
+        "cactus_growth": 0,
+        "srep": "i",
+        "srep_word": "i",
+        "cursed": false,
+        "flags": []
+       },
+       {
+        "x": 2,
+        "y": 3,
+        "glyph": "Letter",
+        "type": "Red",
+        "letter": "p",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 49,
+        "value_modifier": 45,
+        "cactus_growth": 0,
+        "srep": "p",
+        "srep_word": "p",
+        "cursed": true,
+        "flags": []
+       },
+       {
+        "x": 3,
+        "y": 3,
+        "glyph": "ScatteredItem",
+        "type": "Gold",
+        "letter": "s",
+        "number": -1000,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 0,
+        "value_modifier": 0,
+        "cactus_growth": 0,
+        "srep": "<font=TwemojiMozillaAll>\ud83d\udddd\ufe0f</font>",
+        "srep_word": "!",
+        "cursed": true,
+        "flags": [],
+        "item": {
+         "id": "ornate_key",
+         "class": "OrnateKey",
+         "levels": [
+          1
+         ],
+         "values": [
+          150
+         ],
+         "colours": [],
+         "fields": {},
+         "times_upgraded": 0,
+         "foil": false,
+         "money_invested": [],
+         "selling_prevented": false,
+         "discount": 0
+        }
+       },
+       {
+        "x": 4,
+        "y": 4,
+        "glyph": "ScatteredItem",
+        "type": "Green",
+        "letter": "\u20a6",
+        "number": 2,
+        "fraction": [],
+        "suit": "None",
+        "piece": "None",
+        "white": false,
+        "value": 0,
+        "value_modifier": 0,
+        "cactus_growth": 0,
+        "srep": "<font=TwemojiMozillaAll>\ud83c\udfa1</font>",
+        "srep_word": "!",
+        "cursed": true,
+        "flags": [],
+        "item": {
+         "id": "ferris_wheel",
+         "class": "FerrisWheel",
+         "levels": [
+          1
+         ],
+         "values": [
+          150
+         ],
+         "colours": [],
+         "fields": {},
+         "times_upgraded": 0,
+         "foil": false,
+         "money_invested": [],
+         "selling_prevented": false,
+         "discount": 0
+        }
+       }
+      ],
+      "methods": [
+       "Initial",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "FullMoon",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent",
+       "Adjacent"
+      ],
+      "wobbly": [
+       true,
+       false,
+       true,
+       false,
+       false,
+       false,
+       false,
+       false,
+       false,
+       true,
+       false,
+       false,
+       true,
+       false,
+       false
+      ]
+     }
+    ]
+   },
+   "player": {
+    "money": 14,
+    "character": "NathaServo",
+    "stickers": [
+     {
+      "id": "game_pad",
+      "class": "GamePad",
+      "levels": [
+       3
+      ],
+      "values": [
+       3
+      ],
+      "colours": [
+       "Void",
+       "Red",
+       "Blue"
+      ],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       12,
+       12,
+       12
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 0
+     },
+     {
+      "id": "doughnut",
+      "class": "Doughnut",
+      "levels": [
+       3
+      ],
+      "values": [
+       15
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       12,
+       12,
+       12
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 1
+     },
+     {
+      "id": "artist_s_palette",
+      "class": "ArtistsPalette",
+      "levels": [
+       3
+      ],
+      "values": [
+       18
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       8,
+       8,
+       8
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 2
+     },
+     {
+      "id": "cocktail",
+      "class": "Cocktail",
+      "levels": [
+       3
+      ],
+      "values": [
+       4
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       14,
+       14,
+       14
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 3
+     },
+     {
+      "id": "circus_tent",
+      "class": "CircusTent",
+      "levels": [
+       3
+      ],
+      "values": [
+       250
+      ],
+      "colours": [
+       "Blue",
+       "Red",
+       "Normal"
+      ],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       11,
+       11,
+       11
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 4
+     }
+    ],
+    "stamps": [
+     {
+      "id": "globe_trotter",
+      "class": "GlobeTrotter",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       10
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 0
+     },
+     {
+      "id": "christmas_tree",
+      "class": "ChristmasTree",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       12
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 1
+     },
+     {
+      "id": "filing_cabinet",
+      "class": "FilingCabinet",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       16
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 2
+     },
+     {
+      "id": "suspension_bridge",
+      "class": "Automobile",
+      "levels": [],
+      "values": [],
+      "colours": [
+       "Red"
+      ],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       15
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 3
+     },
+     {
+      "id": "blessing_of_the_fairies",
+      "class": "BlessingOfTheFairies",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {
+       "ConsumableTilesUsed": 0
+      },
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       20
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 4
+     }
+    ],
+    "pin": {
+     "id": "random_access_memory",
+     "class": "RandomAccessMemory",
+     "levels": [
+      4,
+      3
+     ],
+     "values": [
+      4,
+      3
+     ],
+     "colours": [],
+     "fields": {
+      "BlacklistedItemTypes": [],
+      "ItemsInMemory": [
+       {
+        "id": "full_moon",
+        "class": "FullMoon",
+        "levels": [],
+        "values": [],
+        "colours": [],
+        "fields": {},
+        "times_upgraded": 0,
+        "foil": false,
+        "money_invested": [],
+        "selling_prevented": false,
+        "discount": 0
+       },
+       {
+        "id": "telescope",
+        "class": "Telescope",
+        "levels": [
+         1
+        ],
+        "values": [
+         1
+        ],
+        "colours": [
+         "Red"
+        ],
+        "fields": {},
+        "times_upgraded": 0,
+        "foil": false,
+        "money_invested": [],
+        "selling_prevented": false,
+        "discount": 0
+       },
+       {
+        "id": "teapot",
+        "class": "Teapot",
+        "levels": [],
+        "values": [],
+        "colours": [
+         "Blue"
+        ],
+        "fields": {},
+        "times_upgraded": 0,
+        "foil": false,
+        "money_invested": [],
+        "selling_prevented": false,
+        "discount": 0
+       },
+       {
+        "id": "amphora",
+        "class": "Amphora",
+        "levels": [
+         1
+        ],
+        "values": [
+         3
+        ],
+        "colours": [],
+        "fields": {},
+        "times_upgraded": 0,
+        "foil": false,
+        "money_invested": [],
+        "selling_prevented": false,
+        "discount": 0
+       },
+       {
+        "id": "lipstick",
+        "class": "Lipstick",
+        "levels": [
+         1
+        ],
+        "values": [
+         5
+        ],
+        "colours": [
+         "Red"
+        ],
+        "fields": {},
+        "times_upgraded": 0,
+        "foil": false,
+        "money_invested": [],
+        "selling_prevented": false,
+        "discount": 0
+       }
+      ],
+      "ItemToAddToMemory1": {
+       "id": "blueberries",
+       "class": "Blueberries",
+       "levels": [
+        1
+       ],
+       "values": [
+        2
+       ],
+       "colours": [
+        "Blue"
+       ],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      "ItemToAddToMemory2": {
+       "id": "april_shower",
+       "class": "AprilShower",
+       "levels": [
+        1
+       ],
+       "values": [
+        3
+       ],
+       "colours": [
+        "Blue"
+       ],
+       "fields": {
+        "ChosenLetters": []
+       },
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      "MostRecentUpgrade": 0
+     },
+     "times_upgraded": 0,
+     "foil": false,
+     "money_invested": [],
+     "selling_prevented": false,
+     "discount": 0,
+     "nested": [
+      {
+       "id": "full_moon",
+       "class": "FullMoon",
+       "levels": [],
+       "values": [],
+       "colours": [],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      {
+       "id": "telescope",
+       "class": "Telescope",
+       "levels": [
+        1
+       ],
+       "values": [
+        1
+       ],
+       "colours": [
+        "Red"
+       ],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      {
+       "id": "teapot",
+       "class": "Teapot",
+       "levels": [],
+       "values": [],
+       "colours": [
+        "Blue"
+       ],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      {
+       "id": "amphora",
+       "class": "Amphora",
+       "levels": [
+        1
+       ],
+       "values": [
+        3
+       ],
+       "colours": [],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      {
+       "id": "lipstick",
+       "class": "Lipstick",
+       "levels": [
+        1
+       ],
+       "values": [
+        5
+       ],
+       "colours": [
+        "Red"
+       ],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      }
+     ]
+    },
+    "consumables": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    "frozen_stickers": [
+     null,
+     null,
+     null,
+     null
+    ],
+    "frozen_stamps": [
+     null,
+     null
+    ],
+    "accumulator_words": [],
+    "accumulator_pairs": []
+   },
+   "run": {
+    "stage": 6,
+    "node_type": "Boss",
+    "ascension": "CursedBosses",
+    "cactus_growth_level": 0,
+    "cursed_bosses_defeated": [
+     0,
+     1,
+     2,
+     3,
+     4
+    ],
+    "available_colours": [
+     "Red",
+     "Blue",
+     "Void",
+     "Shiny",
+     "Gold",
+     "Green",
+     "Pink"
+    ],
+    "embargoed_items": [],
+    "boss_draft": [
+     {
+      "class": "MichaelBoss",
+      "fields": {
+       "ModifierDrafts": [
+        [
+         null,
+         null
+        ],
+        [
+         null,
+         null
+        ],
+        [
+         null,
+         null
+        ],
+        [
+         null,
+         null
+        ],
+        [
+         null,
+         null
+        ],
+        [
+         null,
+         null
+        ]
+       ],
+       "DraftedModifiers": [
+        null,
+        null,
+        null
+       ],
+       "All25LetterWords": [
+        "alkenylidenecyclopropanes",
+        "amygdalohippocampectomies",
+        "antidisestablishmentarian",
+        "antimetanitrobenzaldoxime",
+        "ballistocardiographically",
+        "cholinephosphotransferase",
+        "demethylchlortetracycline",
+        "dichlorotetrafluoroethane",
+        "diphenylhydroxyethylamine",
+        "electroencephalographical",
+        "formaldehydesulphoxylates",
+        "hypobetalipoproteinaemias",
+        "immunoelectrophoretically",
+        "intracerebroventricularly",
+        "microcrystallographically",
+        "microspectrophotometrical",
+        "monohydroxycorticosterone",
+        "octillionduotrigintillion",
+        "pancreaticoduodenectomies",
+        "phosphatidylethanolamines",
+        "quinquagintatrecentillion",
+        "quinquaquadragintillionth",
+        "scaphotrapeziotrapezoidal",
+        "tetraiodophenolphthaleins",
+        "undecillionsedecilliardth",
+        "uvulopalatopharyngoplasty"
+       ],
+       "DraftQuips": [
+        null,
+        null,
+        null,
+        null,
+        null
+       ],
+       "SummonedBossesDefeated": false,
+       "AllFriendsAgain": false,
+       "Name": "MichaelBoss",
+       "PrefabFileName": "BossMichael",
+       "SpriteFileName": "Michael",
+       "AudioPrefix": "Michael",
+       "DifficultyModifier": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        4
+       ],
+       "DifficultyIncrease": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+       ],
+       "FloorAdjustedModification": 3,
+       "IsCursed": false,
+       "IsSecretCharacter": false,
+       "BannedFloorIndexes": [
+        1,
+        2,
+        3,
+        4,
+        5
+       ],
+       "CanBeSummonedByMichael": false
+      }
+     }
+    ],
+    "has_faced_uncursed_boss": false,
+    "piggy_bank_saved": 1
+   }
+  },
+  "submission": {
+   "method": "EncounterController.SubmitWord",
+   "words": [
+    "hypervascular"
+   ],
+   "tiles": [
+    {
+     "x": 1,
+     "y": 0,
+     "method": "Initial"
+    },
+    {
+     "x": 1,
+     "y": 3,
+     "method": "ChessMove",
+     "wobbly": true
+    },
+    {
+     "x": 0,
+     "y": 3,
+     "method": "Adjacent",
+     "wobbly": true
+    },
+    {
+     "x": 1,
+     "y": 2,
+     "method": "Adjacent"
+    },
+    {
+     "x": 2,
+     "y": 2,
+     "method": "Adjacent"
+    },
+    {
+     "x": 2,
+     "y": 3,
+     "method": "Adjacent"
+    },
+    {
+     "x": 3,
+     "y": 3,
+     "method": "Adjacent"
+    },
+    {
+     "x": 4,
+     "y": 3,
+     "method": "Adjacent"
+    },
+    {
+     "x": 4,
+     "y": 2,
+     "method": "Adjacent"
+    },
+    {
+     "x": 3,
+     "y": 2,
+     "method": "Adjacent"
+    },
+    {
+     "x": 3,
+     "y": 1,
+     "method": "Adjacent"
+    },
+    {
+     "x": 0,
+     "y": 1,
+     "method": "FullMoon"
+    },
+    {
+     "x": 1,
+     "y": 1,
+     "method": "Adjacent"
+    }
+   ]
+  },
+  "scoring_call": {
+   "grid_number": 1,
+   "items": [
+    {
+     "class": "CircusTent",
+     "id": "circus_tent"
+    },
+    {
+     "class": "Dango",
+     "id": "dango"
+    },
+    {
+     "class": "ArtistsPalette",
+     "id": "artist_s_palette"
+    },
+    {
+     "class": "OrnateKey",
+     "id": "ornate_key"
+    },
+    {
+     "class": "Maracas",
+     "id": "maracas"
+    },
+    {
+     "class": "Maracas",
+     "id": "maracas"
+    },
+    {
+     "class": "CircusTent",
+     "id": "circus_tent"
+    },
+    {
+     "class": "RandomAccessMemory",
+     "id": "random_access_memory"
+    },
+    {
+     "class": "GamePad",
+     "id": "game_pad"
+    },
+    {
+     "class": "Doughnut",
+     "id": "doughnut"
+    },
+    {
+     "class": "ArtistsPalette",
+     "id": "artist_s_palette"
+    },
+    {
+     "class": "Cocktail",
+     "id": "cocktail"
+    },
+    {
+     "class": "CircusTent",
+     "id": "circus_tent"
+    },
+    {
+     "class": "GlobeTrotter",
+     "id": "globe_trotter"
+    },
+    {
+     "class": "ChristmasTree",
+     "id": "christmas_tree"
+    },
+    {
+     "class": "FilingCabinet",
+     "id": "filing_cabinet"
+    },
+    {
+     "class": "Automobile",
+     "id": "suspension_bridge"
+    },
+    {
+     "class": "BlessingOfTheFairies",
+     "id": "blessing_of_the_fairies"
+    }
+   ],
+   "item_states": {
+    "stickers": [
+     {
+      "id": "game_pad",
+      "class": "GamePad",
+      "levels": [
+       3
+      ],
+      "values": [
+       3
+      ],
+      "colours": [
+       "Void",
+       "Red",
+       "Blue"
+      ],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       12,
+       12,
+       12
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 0
+     },
+     {
+      "id": "doughnut",
+      "class": "Doughnut",
+      "levels": [
+       3
+      ],
+      "values": [
+       15
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       12,
+       12,
+       12
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 1
+     },
+     {
+      "id": "artist_s_palette",
+      "class": "ArtistsPalette",
+      "levels": [
+       3
+      ],
+      "values": [
+       18
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       8,
+       8,
+       8
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 2
+     },
+     {
+      "id": "cocktail",
+      "class": "Cocktail",
+      "levels": [
+       3
+      ],
+      "values": [
+       4
+      ],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       14,
+       14,
+       14
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 3
+     },
+     {
+      "id": "circus_tent",
+      "class": "CircusTent",
+      "levels": [
+       3
+      ],
+      "values": [
+       250
+      ],
+      "colours": [
+       "Blue",
+       "Red",
+       "Normal"
+      ],
+      "fields": {},
+      "times_upgraded": 2,
+      "foil": false,
+      "money_invested": [
+       11,
+       11,
+       11
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 4
+     }
+    ],
+    "stamps": [
+     {
+      "id": "globe_trotter",
+      "class": "GlobeTrotter",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       10
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 0
+     },
+     {
+      "id": "christmas_tree",
+      "class": "ChristmasTree",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       12
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 1
+     },
+     {
+      "id": "filing_cabinet",
+      "class": "FilingCabinet",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       16
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 2
+     },
+     {
+      "id": "suspension_bridge",
+      "class": "Automobile",
+      "levels": [],
+      "values": [],
+      "colours": [
+       "Red"
+      ],
+      "fields": {},
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       15
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 3
+     },
+     {
+      "id": "blessing_of_the_fairies",
+      "class": "BlessingOfTheFairies",
+      "levels": [],
+      "values": [],
+      "colours": [],
+      "fields": {
+       "ConsumableTilesUsed": 0
+      },
+      "times_upgraded": 0,
+      "foil": false,
+      "money_invested": [
+       20
+      ],
+      "selling_prevented": false,
+      "discount": 0,
+      "slot": 4
+     }
+    ],
+    "pin": {
+     "id": "random_access_memory",
+     "class": "RandomAccessMemory",
+     "levels": [
+      4,
+      3
+     ],
+     "values": [
+      4,
+      3
+     ],
+     "colours": [],
+     "fields": {
+      "BlacklistedItemTypes": [],
+      "ItemsInMemory": [
+       {
+        "id": "full_moon",
+        "class": "FullMoon",
+        "levels": [],
+        "values": [],
+        "colours": [],
+        "fields": {},
+        "times_upgraded": 0,
+        "foil": false,
+        "money_invested": [],
+        "selling_prevented": false,
+        "discount": 0
+       },
+       {
+        "id": "telescope",
+        "class": "Telescope",
+        "levels": [
+         1
+        ],
+        "values": [
+         1
+        ],
+        "colours": [
+         "Red"
+        ],
+        "fields": {},
+        "times_upgraded": 0,
+        "foil": false,
+        "money_invested": [],
+        "selling_prevented": false,
+        "discount": 0
+       },
+       {
+        "id": "teapot",
+        "class": "Teapot",
+        "levels": [],
+        "values": [],
+        "colours": [
+         "Blue"
+        ],
+        "fields": {},
+        "times_upgraded": 0,
+        "foil": false,
+        "money_invested": [],
+        "selling_prevented": false,
+        "discount": 0
+       },
+       {
+        "id": "amphora",
+        "class": "Amphora",
+        "levels": [
+         1
+        ],
+        "values": [
+         3
+        ],
+        "colours": [],
+        "fields": {},
+        "times_upgraded": 0,
+        "foil": false,
+        "money_invested": [],
+        "selling_prevented": false,
+        "discount": 0
+       },
+       {
+        "id": "lipstick",
+        "class": "Lipstick",
+        "levels": [
+         1
+        ],
+        "values": [
+         5
+        ],
+        "colours": [
+         "Red"
+        ],
+        "fields": {},
+        "times_upgraded": 0,
+        "foil": false,
+        "money_invested": [],
+        "selling_prevented": false,
+        "discount": 0
+       }
+      ],
+      "ItemToAddToMemory1": {
+       "id": "blueberries",
+       "class": "Blueberries",
+       "levels": [
+        1
+       ],
+       "values": [
+        2
+       ],
+       "colours": [
+        "Blue"
+       ],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      "ItemToAddToMemory2": {
+       "id": "april_shower",
+       "class": "AprilShower",
+       "levels": [
+        1
+       ],
+       "values": [
+        3
+       ],
+       "colours": [
+        "Blue"
+       ],
+       "fields": {
+        "ChosenLetters": []
+       },
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      "MostRecentUpgrade": 0
+     },
+     "times_upgraded": 0,
+     "foil": false,
+     "money_invested": [],
+     "selling_prevented": false,
+     "discount": 0,
+     "nested": [
+      {
+       "id": "full_moon",
+       "class": "FullMoon",
+       "levels": [],
+       "values": [],
+       "colours": [],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      {
+       "id": "telescope",
+       "class": "Telescope",
+       "levels": [
+        1
+       ],
+       "values": [
+        1
+       ],
+       "colours": [
+        "Red"
+       ],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      {
+       "id": "teapot",
+       "class": "Teapot",
+       "levels": [],
+       "values": [],
+       "colours": [
+        "Blue"
+       ],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      {
+       "id": "amphora",
+       "class": "Amphora",
+       "levels": [
+        1
+       ],
+       "values": [
+        3
+       ],
+       "colours": [],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      },
+      {
+       "id": "lipstick",
+       "class": "Lipstick",
+       "levels": [
+        1
+       ],
+       "values": [
+        5
+       ],
+       "colours": [
+        "Red"
+       ],
+       "fields": {},
+       "times_upgraded": 0,
+       "foil": false,
+       "money_invested": [],
+       "selling_prevented": false,
+       "discount": 0
+      }
+     ]
+    }
+   }
+  }
+ }
+}

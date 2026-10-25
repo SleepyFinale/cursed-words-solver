@@ -266,7 +266,7 @@ def test_board_round_trip_keeps_value_exact_on_zero_void_letter() -> None:
 
 
 def test_f8_embed_replay_tile_ninja_counter_reaches_game_state() -> None:
-    """Regression: AWHETO 2793 vs embed replay 2713.
+    """Regression: AWHETO 2793 vs embed replay 2713 (2825 once Mutating DNA reads the ₩ count).
 
     Two simulated placements bumped Tile Ninja to 10 in the embed's extras, but
     re-parsing rebuilt ``item_states`` from ``game_state.player`` (still 8).

@@ -78,11 +78,15 @@ def div(a: int | float, b: int | float) -> int | float:
 
 
 def scale(a: int | float, factor: float) -> int | float:
-    """``ScorePacket.Scale``: (long)Math.Round((float)Score * factor)."""
+    """``ScorePacket.Scale``: (long)Math.Round((float)Score * factor).
+
+    Both operands are float32, but the game multiplies them in double precision before
+    Math.Round (banker's): 181265 * 0.1f is 18126.50027 -> 18127 there, while a float32
+    product is exactly 18126.5 -> 18126 (poison damage, real capture 2026-10-25)."""
     if isinstance(a, float):
         return a
-    product = np.float32(a) * np.float32(factor)
-    return int(round(float(product)))
+    product = float(np.float32(a)) * float(np.float32(factor))
+    return int(round(product))
 
 
 def round_to_int(value: float) -> int:
