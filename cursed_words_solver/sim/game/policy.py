@@ -86,7 +86,14 @@ class PowerConfig:
     go_for_michael: bool = True  # at crown ≥ 1, take cursed bosses to reach Michael
     probe_budget: float = 0.25  # seconds per probe-grid search (best found so far)
     boss_risk: str = ""  # bossrisk.py table: draft the boss least likely to end the run
-    pin_side: str = "lower"  # FastAdvicePolicy pin reward: "lower" side, "power" (probe), "left" / "right"
+    pin_side: str = "lower"  # FastAdvicePolicy pin reward: "lower" side, "power" (probe), "left" / "right",
+    # "learned" (pinplan.py's model of the rollout choices), or "rollout" (NetPolicy:
+    # each side played to the end of the run on the same keyed futures; see expert._pin_rollout)
+    pin_samples: int = 2  # "rollout": keyed futures per side
+    # "rollout" horizon: 0 = run outcome at the end of the run (labels were pure noise,
+    # 2026-10-29); n = build strength after n more stages (expert.play_out ``stages``)
+    pin_horizon: int = 1
+    pin_playout_side: str = "lower"  # pin rule inside those play-outs (no nested rollouts)
     michael_aware: bool = True  # stage-5 draft: weigh surviving the cursed boss and the Michael bonus
     michael_prior_risk: float = 0.5
     michael_value: float = 0.5  # extra run wins a Michael win is worth (features.MICHAEL_BONUS / 16)
@@ -102,6 +109,20 @@ class PowerConfig:
     sort_items: bool = False  # before leaving a shop, swap stickers when it adds probe points
     advice_fallback: bool = False  # Advice silent (no build yet): buy by probe-encounter power
     fast_placement: bool = False  # FastAdvicePolicy: place rack tiles when behind pace (probe search)
+    # Rack tiles. Advice almost never buys them (20 of 944 offers in 22 runs, 2026-10-29):
+    # ``tile_buys`` buys an affordable one that, placed on a probe grid, lifts the best word by
+    # ``tile_buy_gain`` (relative), keeping ``tile_reserve`` money and at most ``tile_rack_max``.
+    # ``tile_buy_chars`` turns it on for those characters only. Benchmarked 2026-10-29: neutral
+    # overall with a $20 reserve (a $5 one starved item buys: -0.30), Spike 13 -> 18 of 32 wins.
+    tile_buys: bool = False
+    tile_buy_chars: tuple[str, ...] = ()
+    tile_buy_gain: float = 0.1  # median offer lifts 1.6%, p90 18% (44 offers, 3 runs)
+    tile_reserve: int = 20  # = spend_over: only money spend-down would have spent anyway
+    tile_rack_max: int = 3
+    # ``tile_save``: placing, use the least valuable rack tile (Tile.GetValue: shiny 50, gold =
+    # money, letter value + colour) among those within ``tile_save_ratio`` of the best gain.
+    tile_save: bool = False
+    tile_save_ratio: float = 0.85
     # FastAdvicePolicy encounter planner: compare the top words / reroll / best placement by
     # playing the rest of the encounter out (see ``FastAdvicePolicy._plan``).
     plan_encounter: bool = False
@@ -120,7 +141,7 @@ def tuned_config(**kw) -> PowerConfig:
 
     base = {"probe_seeds": 1, "probe_grids": 2, "fast_placement": True, "placement_targets": 8,
             "advice_fallback": True, "sort_items": True, "spend_over": 20, "power_override": 0.1,
-            "swap_sell": True, "plan_encounter": True,
+            "swap_sell": True, "plan_encounter": True, "tile_buy_chars": ("Spike",),
             "boss_risk": str(DEFAULT_PATH) if DEFAULT_PATH.is_file() else ""}
     return PowerConfig(**{**base, **kw})
 
@@ -198,22 +219,8 @@ class PowerPolicy(Policy):
         total = 0.0
         stage, node = stage_node or next_encounter_node(game)
         for s in range(cfg.probe_seeds):
-            g = clone(game)
-            g.rng = Rng(f"probe|{self._probe_rng_seed}|{stage}|{node}|{s}")
-            run = g.player.run
-            run.stage, run.node = stage, (Node.ENCOUNTER_SECOND if node == Node.BOSS and bosses is None else node)
-            g.shop = None
-            g.player._shop_listener = None
-            enc = Encounter(g)
-            enc.bosses = list(bosses or [])
-            g.player.active_bosses = []
-            g.encounter = enc
-            if bosses:
-                _probe_boss_setup(enc, bosses)
-            else:
-                enc._setup_rest()
-            enc.awaiting_forced_sell = False
-            enc.remaining_target = 10**15
+            g = self._probe_game(game, stage, node, s, bosses)
+            enc = g.encounter
             pts = 0
             for _ in range(min(cfg.probe_grids, enc.total_grids)):
                 if enc.lost or enc.won:
@@ -231,6 +238,44 @@ class PowerPolicy(Policy):
                     break
             total += pts
         return total / max(1, cfg.probe_seeds)
+
+    def _probe_game(self, game: "Game", stage: int, node: Node, s: int, bosses: list | None = None) -> "Game":
+        """A copy of ``game`` in a fresh probe encounter at (stage, node), probe RNG ``s``."""
+        g = clone(game)
+        g.rng = Rng(f"probe|{self._probe_rng_seed}|{stage}|{node}|{s}")
+        run = g.player.run
+        run.stage, run.node = stage, (Node.ENCOUNTER_SECOND if node == Node.BOSS and bosses is None else node)
+        g.shop = None
+        g.player._shop_listener = None
+        enc = Encounter(g)
+        enc.bosses = list(bosses or [])
+        g.player.active_bosses = []
+        g.encounter = enc
+        if bosses:
+            _probe_boss_setup(enc, bosses)
+        else:
+            enc._setup_rest()
+        enc.awaiting_forced_sell = False
+        enc.remaining_target = 10**15
+        return g
+
+    def _tile_lift(self, game: "Game", rack_index: int) -> float:
+        """Relative lift of the best word on a probe grid of the next encounter when the rack
+        tile ``rack_index`` is placed on the best of the lowest-value squares."""
+        stage, node = next_encounter_node(game)
+        g = self._probe_game(game, stage, node, 0)
+        opts = self.probe_cands.words(g, 1)
+        base = opts[0].score if opts else 0
+        p = g.player
+        squares = sorted((t for t in g.encounter.grid.available() if t.consumable_replacement_allowed(p)),
+                         key=lambda t: t.get_value(p))[: self.cfg.placement_targets]
+        best = base
+        for t in squares:
+            h = clone(g)
+            if h.place_consumable(rack_index, t.x, t.y):
+                o = self.probe_cands.words(h, 1)
+                best = max(best, o[0].score if o else 0)
+        return (best - base) / max(1, base)
 
     # -- decisions -------------------------------------------------------------------
 
@@ -293,7 +338,7 @@ class PowerPolicy(Policy):
             (t for t in enc.grid.available() if t.consumable_replacement_allowed(p)),
             key=lambda t: t.get_value(p),
         )[: self.cfg.placement_targets]
-        best_gain, best_act = 0.0, None
+        found: list[tuple[float, int, Action]] = []
         for ri in rack:
             for t in tiles:
                 g = clone(game)
@@ -301,10 +346,15 @@ class PowerPolicy(Policy):
                     continue
                 opts = self.probe_cands.words(g, 1)
                 if opts and opts[0].score > base * 1.15 + 2:
-                    gain = opts[0].score - base
-                    if gain > best_gain:
-                        best_gain, best_act = gain, Action("place", (ri, t.x, t.y), f"place rack {ri} on {t.x},{t.y}")
-        return best_act
+                    found.append((opts[0].score - base, ri, Action("place", (ri, t.x, t.y), f"place rack {ri} on {t.x},{t.y}")))
+        if not found:
+            return None
+        best_gain = max(f[0] for f in found)
+        if self.cfg.tile_save:
+            # keep the valuable rack tiles: the cheapest one that does nearly as well
+            near = [f for f in found if f[0] >= self.cfg.tile_save_ratio * best_gain]
+            return min(near, key=lambda f: (p.consumables[f[1]].get_value(p), -f[0]))[2]
+        return next(f[2] for f in found if f[0] == best_gain)
 
     def _cheapest_sell(self, game: "Game") -> Action | None:
         sells = [a for a in legal_actions(game) if a.kind == "sell"]
@@ -471,6 +521,10 @@ class AdvicePolicy(PowerPolicy):
             if swap is not None:
                 self._swaps_this_shop += 1
                 return swap
+        if self._tile_buys_on(game):
+            buy = self._tile_buy(game)
+            if buy is not None:
+                return buy
         floor = 0 if final else self.cfg.spend_over
         if (self.cfg.spend_over or final) and game.player.money > floor:
             buy = self._fallback_buy(game, threshold=0.005 if final else self.cfg.spend_threshold or None)
@@ -608,6 +662,36 @@ class AdvicePolicy(PowerPolicy):
             stock = game.shop.stickers if best_a.args[0] == "sticker" else game.shop.stamps
             if stock[best_a.args[1]] is not None:
                 self._bought_this_shop.add(stock[best_a.args[1]].item.game_class)
+        return best_a
+
+    def _tile_buys_on(self, game: "Game") -> bool:
+        return self.cfg.tile_buys or game.player.character in self.cfg.tile_buy_chars
+
+    def _tile_buy(self, game: "Game") -> Action | None:
+        """The affordable rack tile that lifts a probe grid's best word the most, if by at
+        least ``tile_buy_gain`` (results memoised per build and offer)."""
+        s, p = game.shop, game.player
+        if len(p.tiles()) >= self.cfg.tile_rack_max:
+            return None
+        cache = getattr(self, "_tile_cache", None)
+        if cache is None or len(cache) > 1024:
+            cache = self._tile_cache = {}
+        best, best_a = self.cfg.tile_buy_gain, None
+        for k, o in enumerate(s.tiles):
+            if o is None or not s.can_buy_tile(k) or p.money - o.get_price(p) < self.cfg.tile_reserve:
+                continue
+            sig = build_signature(game)
+            key = (sig[:2] + sig[3:], next_encounter_node(game), o.tile.srep(), o.tile.tile_type)  # not money
+            if key not in cache:
+                g = clone(game)
+                before = list(g.player.consumables)
+                lift = 0.0
+                if apply(g, Action("buy", ("tile", k))):
+                    new = [i for i, (a, b) in enumerate(zip(before, g.player.consumables)) if a is None and b is not None]
+                    lift = self._tile_lift(g, new[0]) if new else 0.0
+                cache[key] = lift
+            if cache[key] > best:
+                best, best_a = cache[key], Action("buy", ("tile", k), f"probe: tile {o.tile.srep()} (+{cache[key]:.0%})")
         return best_a
 
     def _weakest_sell(self, game: "Game", price: int) -> Action | None:
@@ -776,6 +860,16 @@ class FastAdvicePolicy(AdvicePolicy):
         if pin is None or len(opts) < 2:
             return Action("pin", (opts[0],))
         side = self.cfg.pin_side
+        if side == "learned":
+            from cursed_words_solver.sim.game.features import encode
+            from cursed_words_solver.sim.game.pinplan import choose
+
+            after = {}
+            for o in ("left", "right"):
+                g = clone(game, light=True)
+                apply(g, Action("pin", (o,)))
+                after[o] = encode(g)
+            side = choose(game.player.character, encode(game), after["right"] - after["left"]) or "lower"
         if side in ("left", "right") and side in opts:
             return Action("pin", (side,))
         if side == "power":

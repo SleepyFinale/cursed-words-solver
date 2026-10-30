@@ -205,6 +205,37 @@ $20 reserve keeps money for the items Advice wants later. Reverted. The opposite
 spend-down buys only above 6% probe gain (`spend_threshold=0.06`) — changed 9 of 352
 seeds (+0.03, t 1.4; wins 141 → 144): spend-down rarely fires, so it is not the lever.
 
+**Encounter planner from stage 4** (`plan_encounter=True, plan_from_stage=4`, rerun
+2026-10-28 after the Michael and engine fixes): −0.02 encounters (t −0.4), wins 140 → 140
+of 352, 101 seeds better / 117 worse. Per character −0.26 (Sandy) to +0.30 (Beans); only
+Natha Servo is significant (+0.28, t 2.1, 9 → 12 wins), which is what one of 11 should
+show by chance. Off; benchmark NetPolicy still runs without the planner.
+
+**Pin side per decision** (2026-10-28/29, 16 seeds × 11 characters, crowns 0/2, paired
+with the lower-side rule). `NetPolicy` with `pin_side="rollout"` plays each side forward on
+the same keyed futures (`play_out`) and logs every decision (`pin_log`: state, left/right
+difference incl. Random Access Memory's offered item and the Bucket's offered tile, both
+results) for `pinplan.py`'s learned model.
+- Played to the end of the run (`pin_horizon=0`, 2 futures per side): +0.14 (t 0.8), 77 vs
+  70 wins. The two futures of one decision agree on the better side at chance (corr −0.006),
+  so these picks were coin flips and the model trained on them sits at chance.
+- Label study (85 decisions, 4 futures per side): build strength after one stage (Σ score /
+  target + progress + alive) is repeatable (split-half corr 0.67; two stages 0.53), and the
+  better side flips with the situation inside every character (an Octacles Bucket offer
+  +55, Bones stage 3 +13.9 one run, −10.4 another).
+- One-stage strength (`pin_horizon=1`): overrides the lower side in 46% of decisions,
+  winning that stage by a median 1.1 strength, but −0.05 encounters (t −0.35), 71 vs 70
+  wins. Next-stage strength does not convert into run wins, and the model cannot predict
+  those labels from the state either (CV agreement 0.54). Default stays `pin_side="lower"`.
+- Headroom (same seeds, always one side): always left −0.02 (t −0.09), 73 wins; always
+  right −0.21 (t −1.08), 68 wins; no character beyond |t| 1.7. All five pin rules land at
+  68–77 wins and 13.65–14.01 mean, inside noise. The pin side as a whole moves a run by less
+  than ~0.4 encounters. A max-over-arms "oracle" reaches 121 wins, but that is chaos: any
+  changed decision reshuffles the run's future (per-seed sd 1.26 across arms), so it is not
+  reachable headroom. With the current policy the pin side is not where wins are, so it stays
+  "lower" for now; choosing it per situation should matter once the rest of the play is
+  strong enough to use it (revisit then, especially at higher crowns).
+
 **Losses now** (crown 0, 16 seeds per character, current base): 87 / 176 won. Losers
 die with little money ($1–20, was $10–62 before spend-down) and fewer item levels than
 winners (e.g. Rodman 12.1 vs 17.0, Natha Servo 13.5 vs 17.8).
@@ -248,6 +279,36 @@ scores 16 + `features.MICHAEL_BONUS` (8: a full win is worth 1.5 plain wins; was
 also records Michael fights (`MichaelBoss`, ended the run = lost to him); before, none
 were recorded, so the draft always used the 50% prior. The Michael test above predates
 this: its 2 Michael losses were counted as lost runs.
+
+**Michael after the fix** (2026-10-29, crowns 1–4, the same 528 seeds, current base,
+`michaelbench.py`): 106 wins (45 / 30 / 16 / 15 by crown; 104 before the fix, which
+counted Michael losses as lost runs). Only 10 runs reached the stage-5 draft with every
+boss cursed. There the rule took the cursed boss 8 times: 6 reached Michael and 3 beat him,
+so the 50% prior holds. Each of those 10 decisions was also played both ways to the end of
+the run on 3 keyed futures, through stage 6's shops and encounters before Michael:
+- cursed better in 5 (+0.1 to +8), worse in 3 (−0.2 to −0.8), tied in 2;
+- the rule picked the worse option only twice (Nina Nix −0.8, Sock Head −0.4);
+- its picks average +1.8 outcome per decision over always taking the uncursed boss.
+
+The stage-5 rule is sound. The limit is how rarely a run is still all-cursed at stage 5 (2%).
+
+**Rack tiles** (2026-10-29). Base play leaves almost every shop tile alone: 20 bought of
+944 offered in 22 runs. A probe lift study (44 offers, 3 runs) put the median offer at
++1.6% to one grid's best word and the 90th percentile at +18%. `tile_buys` buys the
+offer with the best probe lift ≥ 10%. `tile_save` places the least valuable rack tile
+within 85% of the best placement gain. Both on, 16 seeds per character against base:
+−0.30 (t −1.98), 66 wins vs 70, 42 better / 47 worse; Spike +0.70 (t 3.5), Natha Servo
+−0.88 (t −2.4), Sock Head −1.78. One likely cause is that the buy keeps only $5 and runs
+before spend-down, which keeps $20, so tiles take money that would otherwise buy items.
+Each on its own:
+- `tile_save` alone: +0.001 (t 0.3), only 5 of 176 runs differ. Base play rarely holds two
+  rack tiles at once, so there is seldom a choice.
+- `tile_buys` with `tile_reserve` 20 (money above the spend-down floor only): −0.001
+  (t −0.01), 10 better / 6 worse; Spike 5 → 9 wins again (+0.35, t 2.1). On all 32
+  cached Spike seeds: 13 → 18 wins, +0.24 (t 2.5), 6 better / 0 worse.
+
+`tile_save` stays off. Buying is on for Spike only (`tile_buy_chars`, in the benchmark
+policy and `tuned_config`), and `tile_reserve` now defaults to 20.
 
 **Advice fallback** (`advice_fallback`): the game's own Advice (`ShopRecommendation`)
 returns "no build" — no recommendation at all — until an owned item carries a build tag.

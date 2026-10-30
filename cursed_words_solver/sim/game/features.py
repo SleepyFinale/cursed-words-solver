@@ -59,6 +59,9 @@ def feature_names() -> list[str]:
     # v2 (appended so older datasets pad with zeros): frozen shop stock, piggy bank.
     names += ["frozen_n", "log_piggy_bank"]
     names += [f"frozen:{i}" for i in v["items"]]
+    # v3: Octacles' Bucket contents (the pin reward offers a tile per side; RAM's offered
+    # items already show up as item:* counts).
+    names += [f"bucket:{g}" for g in v["glyphs"]] + ["bucket_suited", "bucket_joker"]
     return names
 
 
@@ -144,6 +147,12 @@ def encode(game: "Game", *, form_ratio: float = 0.0) -> np.ndarray:
         i = idx.get(f"frozen:{f.item.game_class}")
         if i is not None:
             x[i] += 1
+    for t in getattr(p.pin, "tiles_in_bucket", None) or ():
+        i = idx.get(f"bucket:{t.get_glyph()}")
+        if i is not None:
+            x[i] += 1
+        x[idx["bucket_suited"]] += float(t.is_suited_card())
+        x[idx["bucket_joker"]] += float(t.suit == C.SUIT_JOKER)
     return x
 
 

@@ -33,6 +33,7 @@ import argparse
 import json
 import random
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +42,8 @@ import numpy as np
 from cursed_words_solver.sim.game.agent import Action, Candidates, apply, clone, legal_actions, spawn_pool
 from cursed_words_solver.sim.game.bossrisk import DEFAULT_PATH as BOSS_RISK_PATH
 from cursed_words_solver.sim.game.core import Rng
-from cursed_words_solver.sim.game.features import encode, feature_names, outcome
+from cursed_words_solver.sim.game.features import encode, feature_names, outcome, progress
+from cursed_words_solver.sim.game.player import Node
 from cursed_words_solver.sim.game.itemvalue import RUN_LOG
 from cursed_words_solver.sim.game.learn import Ridge, load_model
 from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig, offer_class
@@ -92,6 +94,11 @@ def shop_candidates(game, suggestion: Action, max_candidates: int = 4) -> list[A
     return out
 
 
+def _sparse(x: np.ndarray) -> dict[str, float]:
+    """Non-zero entries of a feature vector, {index: value} (compact run-log rows)."""
+    return {str(i): round(float(x[i]), 4) for i in np.flatnonzero(np.abs(x) > 1e-6)}
+
+
 def afterstate(game, a: Action) -> np.ndarray | None:
     g = clone(game, light=True)
     try:
@@ -108,11 +115,13 @@ class NetPolicy(FastAdvicePolicy):
                  boss_risk: str = "") -> None:
         cfg = PowerConfig(probe_seeds=1, probe_grids=2, boss_risk=boss_risk or "", fast_placement=True,
                           placement_targets=8, advice_fallback=True, sort_items=True, spend_over=20,
-                          power_override=0.1, swap_sell=True)
+                          power_override=0.1, swap_sell=True, tile_buy_chars=("Spike",))
         super().__init__(cands, cfg, seed=seed)
         self.model = model
         self.threshold = threshold if threshold is not None else float(getattr(model, "threshold", 0.5))
         self._steps = 0
+        self._playout: NetPolicy | None = None
+        self.pin_log: list[dict[str, Any]] = []  # cfg.pin_side == "rollout": one entry per decision
 
     def candidates(self, game) -> list[Action]:
         """Options at a run-level decision, the base (Advice / heuristic) choice first."""
@@ -123,13 +132,43 @@ class NetPolicy(FastAdvicePolicy):
             fb = FastAdvicePolicy._boss(self, game)
             return [fb] + [a for a in legal_actions(game) if a.kind == "boss" and not same(a, fb)]
         if ph == "pin_reward":
-            fp = FastAdvicePolicy._pin(self, game)
+            fp = self._pin_rollout(game) if self.cfg.pin_side == "rollout" else FastAdvicePolicy._pin(self, game)
             return [fp] + [a for a in legal_actions(game) if a.kind == "pin" and not same(a, fp)]
         if ph == "encounter" and game.encounter.michael_draft is not None:
             first = self.michael_pick(game)
             picks = [a for a in legal_actions(game) if a.kind == "michael_pick"]
             return [a for a in picks if a.args[0] == first] + [a for a in picks if a.args[0] != first]
         return []
+
+    def _pin_rollout(self, game) -> Action:
+        """Pin side for this situation: each side is played ``cfg.pin_horizon`` stages on
+        the same ``pin_samples`` keyed futures (``play_out``) and the stronger build wins
+        (0: the run's outcome); ties keep the lower side. The play-outs use ``cfg.pin_playout_side``, so they do not
+        recurse. Every decision is appended to ``pin_log`` (state, both sides' outcomes), the
+        training data for a learned pin model."""
+        base = FastAdvicePolicy._pin(self, game)  # lower side ("both" with the ID Card)
+        opts = [o for o in game.pin_options() if o in ("left", "right")]
+        if len(opts) < 2 or base.args[0] not in opts:
+            return base
+        if self._playout is None:
+            self._playout = NetPolicy(self.cands, None, seed=self._probe_rng_seed)
+            self._playout.cfg = replace(self.cfg, pin_side=self.cfg.pin_playout_side)
+        run, pin = game.player.run, game.player.pin
+        tag = f"{self._probe_rng_seed}|pin|{run.stage}|{run.node.name}"
+        res = {o: [round(play_out(game, Action("pin", (o,)), self._playout, f"{tag}|{k}", keyed=True,
+                                  stages=self.cfg.pin_horizon), 3)
+                   for k in range(self.cfg.pin_samples)] for o in opts}
+        mean = {o: float(np.mean(v)) for o, v in res.items()}
+        best = max(opts, key=lambda o: (mean[o], o == base.args[0]))
+        xl, xr = afterstate(game, Action("pin", ("left",))), afterstate(game, Action("pin", ("right",)))
+        x = encode(game)  # what pin_side="learned" sees when it decides
+        self.pin_log.append({
+            "stage": run.stage, "node": run.node.name, "money": game.player.money,
+            "levels": [pin.level(0), pin.level(1)], "base": base.args[0], "chosen": best, "outcomes": res,
+            "horizon": self.cfg.pin_horizon,
+            "x": _sparse(x),
+            "dx": None if xl is None or xr is None else _sparse(xr - xl)})
+        return Action("pin", (best,))
 
     def pick(self, game, cands: list[Action]) -> Action:
         """Keep ``cands[0]`` unless the model predicts an alternative beats it by more than
@@ -205,8 +244,14 @@ def _point(g) -> tuple:
 
 
 def play_out(game, action: Action, policy: NetPolicy, seed: str, max_steps: int = 4000,
-             keyed: bool = False) -> float:
+             keyed: bool = False, stages: int = 0) -> float:
     """``outcome`` after ``action`` then ``policy`` to the end of the run (own RNG stream).
+
+    ``stages`` > 0 stops after that many more stages and returns build strength instead:
+    the summed score / target of every word played, plus ``progress``, plus 5 if still
+    alive. Run outcome is too coarse to tell two close choices apart (two futures of the
+    same pin decision agreed on the better side no more than chance); one-stage strength
+    is repeatable (split-half corr 0.67 over 85 pin decisions).
 
     ``keyed``: the stream is reseeded before every action from (seed, stage, node, grid,
     grid rerolls, action kind, how many of that kind here), so two branches that reach the
@@ -223,16 +268,26 @@ def play_out(game, action: Action, policy: NetPolicy, seed: str, max_steps: int 
     if keyed:
         g.rng.reseed(f"pair|{seed}|decision")
     apply(g, action)
+    stage0 = g.player.run.stage
+    strength = 0.0
     seen: dict[tuple, int] = {}
     for _ in range(max_steps):
         if g.phase == "done":
+            break
+        run = g.player.run
+        if stages and run.stage >= stage0 + stages and run.node in (Node.SHOP_ZERO, Node.ENCOUNTER_FIRST):
             break
         a = policy.act(g)
         if keyed:
             k = (*_point(g), a.kind)
             seen[k] = seen.get(k, 0) + 1
             g.rng.reseed(f"pair|{seed}|{k}|{seen[k]}")
-        apply(g, a)
+        target = g.encounter.total_target if (stages and a.kind == "submit" and g.encounter is not None) else 0
+        res = apply(g, a)
+        if target > 0 and res is not None and hasattr(res, "score"):
+            strength += max(0, res.score) / target
+    if stages:
+        return strength + progress(g) + (0.0 if g.won is False else 5.0)
     return outcome(g)
 
 
@@ -303,6 +358,7 @@ def _eval_job(job: dict[str, Any]) -> dict[str, Any]:
         setattr(pol.cfg, k, v)
     buys: list[list[Any]] = []  # [stage, node, item class] per purchase (item-value data)
     shops: list[list[Any]] = []  # [stage, node] per shop visited
+    pins: list[str] = []  # pin reward choices in order
     error = None
     try:
         for _ in range(4000):
@@ -315,6 +371,8 @@ def _eval_job(job: dict[str, Any]) -> dict[str, Any]:
                 if not shops or shops[-1] != [run.stage, run.node.name]:
                     shops.append([run.stage, run.node.name])
                 cls = offer_class(g, a)
+            elif g.phase == "pin_reward" and a.kind == "pin":
+                pins.append(str(a.args[0]))
             stage, node = run.stage, run.node.name
             if apply(g, a) and cls:
                 buys.append([stage, node, cls])
@@ -322,7 +380,7 @@ def _eval_job(job: dict[str, Any]) -> dict[str, Any]:
         error = repr(e)
     return {"seed": job["seed"], "won": bool(g.won), "stage": g.player.run.stage, "outcome": outcome(g),
             "character": g.player.character, "crown": g.player.run.ascension, "buys": buys,
-            "shops": shops, "bosses": boss_outcomes(g), "error": error}
+            "shops": shops, "pins": pins, "pin_log": pol.pin_log, "bosses": boss_outcomes(g), "error": error}
 
 
 def collect(jobs, *, workers, wordlist, model, out: Path) -> dict[str, Any]:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import numpy as np
+
 from cursed_words_solver.sim.game.encounter import Encounter, SubmitResult
 from cursed_words_solver.sim.game.items import make_item
 from cursed_words_solver.sim.game.player import BossModifier, Node
@@ -450,6 +452,44 @@ def test_boss_risk_reads_the_run_log_once(tmp_path):
     assert t.add_log(log) == 1 and t.counts["SmallGrid"] == [2, 0]
 
 
+def test_pin_model_learns_the_side_from_the_situation_and_the_offers(tmp_path):
+    import json
+
+    from cursed_words_solver.sim.game import pinplan
+
+    # A wants "right" when feature 0 (say, money) is high and "left" when it is low.
+    # N (a random pin) wants whichever side offers item 2 (dx[2] = +1: right offers it).
+    rows = []
+    for seed in range(60):
+        rich = seed % 2 == 0
+        a_gain = 1.0 if rich else -1.0
+        rows.append({"character": "A", "crown": 0, "seed": seed, "pin_log": [
+            {"horizon": 1, "x": {"0": 1.0 if rich else 0.0, "3": 1.0}, "dx": {},
+             "outcomes": {"left": [10.0], "right": [10.0 + a_gain]}}]})
+        offer = 1.0 if seed % 3 else -1.0
+        rows.append({"character": "N", "crown": 0, "seed": seed, "pin_log": [
+            {"horizon": 1, "x": {"0": 1.0 if rich else 0.0}, "dx": {"2": offer},
+             "outcomes": {"left": [12.0], "right": [12.0 + 2 * offer]}}]})
+    rows.append({"character": "C", "crown": 0, "seed": 0, "pin_log": []})
+    log = tmp_path / "runs.jsonl"
+    log.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    decisions = pinplan.load_decisions(log)
+    assert len(decisions) == 120
+    model = pinplan.train(decisions, width=4)
+    assert model.info["cv"][model.info["lam"]]["agree"] > 0.9
+    pinplan.save(model, tmp_path / "pin.pkl")
+    x, dx = np.zeros(4), np.zeros(4)
+    x[3] = 1.0
+    assert pinplan.choose("A", x, dx, tmp_path / "pin.pkl") == "left"
+    x[0] = 1.0
+    assert pinplan.choose("A", x, dx, tmp_path / "pin.pkl") == "right"
+    dx[2] = 1.0
+    assert pinplan.choose("N", x, dx, tmp_path / "pin.pkl") == "right"
+    dx[2] = -1.0
+    assert pinplan.choose("N", x, dx, tmp_path / "pin.pkl") == "left"
+    assert pinplan.choose("C", x, dx, tmp_path / "pin.pkl") is None  # no data: caller keeps its rule
+
+
 def test_quick_pick_is_a_legal_shop_action(tmp_path):
     from cursed_words_solver.sim.game.advise import quick_pick
     from cursed_words_solver.sim.game.agent import legal_actions
@@ -459,3 +499,71 @@ def test_quick_pick_is_a_legal_shop_action(tmp_path):
     assert g.phase == "shop"
     a = quick_pick(g, _NoSearch(), model=None)
     assert (a.kind, a.args) in {(b.kind, b.args) for b in legal_actions(g)} or a.kind == "leave"
+
+
+def _letter(ch: str, tile_type: str = "normal"):
+    from cursed_words_solver.sim.game.core import Tile
+
+    t = Tile()
+    t.set_letter(ch)
+    t.tile_type = tile_type
+    return t
+
+
+def test_tile_buys_take_the_offer_that_lifts_a_probe_grid_most():
+    from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig
+    from cursed_words_solver.sim.game.shop import TileInStock
+
+    g = _game(seed=13)
+    s = _shop_at(g, Node.SHOP_ONE, 20)
+    s.tiles = [TileInStock(_letter("Q"), 4), TileInStock(_letter("E"), 3)]
+    pol = FastAdvicePolicy(_NoSearch(), PowerConfig(tile_buys=True, tile_buy_gain=0.25, tile_reserve=5))
+    lift = {"q": 0.2, "e": 0.6}
+    pol._tile_lift = lambda game, ri: lift[game.player.consumables[ri].srep()]
+    a = pol._tile_buy(g)
+    assert (a.kind, a.args) == ("buy", ("tile", 1))
+    lift["e"] = 0.1  # neither lifts enough (the memo is per build and offer: clear it)
+    pol._tile_cache = {}
+    assert pol._tile_buy(g) is None
+    lift["e"] = 0.6
+    pol._tile_cache = {}
+    g.player.money = 7  # buying E would leave $4, under the $5 reserve
+    assert pol._tile_buy(g) is None
+    g.player.money = 20
+    for ch in "ABC":  # rack already holds tile_rack_max tiles
+        g.player.add_tile(_letter(ch))
+    assert pol._tile_buy(g) is None
+
+
+def test_tile_buys_are_on_for_spike_only_in_the_benchmark_policy():
+    from cursed_words_solver.sim.game import expert as E
+    from cursed_words_solver.sim.game.policy import tuned_config
+
+    pol = E.NetPolicy(_NoSearch(), None)
+    assert pol._tile_buys_on(_game(character="Spike"))
+    assert not pol._tile_buys_on(_game(character="WetDennis"))
+    assert tuned_config().tile_buy_chars == ("Spike",)
+    assert pol.cfg.tile_reserve == pol.cfg.spend_over
+
+
+def test_tile_save_places_the_cheaper_rack_tile_when_it_does_nearly_as_well():
+    from types import SimpleNamespace
+
+    from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig
+
+    g = _game(seed=13)
+    assert g.phase == "encounter"
+    g.player.consumables = [None] * 5
+    g.player.add_tile(_letter("E", "shiny"))  # value 50
+    g.player.add_tile(_letter("E"))  # value 1
+
+    class _Probe(_NoSearch):
+        def words(self, game, _n=1):  # the shiny tile placed: 100, the plain one: 95, none: 50
+            rack = [t.tile_type for t in game.player.tiles()]
+            score = 50 if len(rack) == 2 else (95 if rack == ["shiny"] else 100)
+            return [SimpleNamespace(score=score)]
+
+    for save, used in ((False, 0), (True, 1)):
+        pol = FastAdvicePolicy(_Probe(), PowerConfig(fast_placement=True, placement_targets=2, tile_save=save))
+        a = pol._best_placement(g, 50)
+        assert a.kind == "place" and a.args[0] == used
