@@ -51,6 +51,8 @@ class MLP:
         self.sd = np.ones(n_in, dtype=np.float32)
         self.y_mu = 0.0
         self.y_sd = 1.0
+        self.target = "value"  # MLPs predict state values (see ``Ridge.target``)
+        self.threshold = 0.0
 
     def _forward(self, X: np.ndarray) -> tuple[np.ndarray, list[np.ndarray]]:
         acts = [X]
@@ -78,9 +80,11 @@ class MLP:
         self.y_sd = float(y.std() + 1e-6)
         return self._train(X, y, epochs=epochs, lr=lr, batch=batch, l2=l2, seed=seed, verbose=verbose)
 
-    def fit_continue(self, X: np.ndarray, y: np.ndarray, *, epochs: int = 5, seed: int = 0, lr: float = 1e-3) -> float:
+    def fit_continue(self, X: np.ndarray, y: np.ndarray, *, epochs: int = 5, seed: int = 0, lr: float = 1e-3,
+                     l2: float = 1e-5) -> float:
         """More epochs with the existing normalisation (fresh Adam moments)."""
-        return self._train(X.astype(np.float32), y.astype(np.float32), epochs=epochs, lr=lr, seed=seed, verbose=False)
+        return self._train(X.astype(np.float32), y.astype(np.float32), epochs=epochs, lr=lr, l2=l2, seed=seed,
+                           verbose=False)
 
     def _train(self, X: np.ndarray, y: np.ndarray, *, epochs: int, lr: float = 1e-3, batch: int = 256,
                l2: float = 1e-5, seed: int = 0, verbose: bool = False) -> float:
@@ -125,7 +129,8 @@ class MLP:
         path.parent.mkdir(parents=True, exist_ok=True)
         arrs = {f"W{i}": w for i, w in enumerate(self.W)} | {f"b{i}": b for i, b in enumerate(self.b)}
         np.savez(path, mu=self.mu, sd=self.sd, y=np.array([self.y_mu, self.y_sd]), n=np.array([len(self.W)]),
-                 names=np.array(feature_names()), **arrs)
+                 names=np.array(feature_names()), target=np.array([self.target]),
+                 threshold=np.array([self.threshold]), **arrs)
 
     @classmethod
     def load(cls, path: Path) -> "MLP":
@@ -136,6 +141,8 @@ class MLP:
         m.b = [d[f"b{i}"] for i in range(n)]
         m.mu, m.sd = d["mu"], d["sd"]
         m.y_mu, m.y_sd = float(d["y"][0]), float(d["y"][1])
+        m.target = str(d["target"][0]) if "target" in d.files else "value"
+        m.threshold = float(d["threshold"][0]) if "threshold" in d.files else 0.0
         return m
 
 
@@ -144,7 +151,9 @@ class Ridge:
 
     Far more data-efficient than ``MLP`` when labels are noisy and features many (the
     advantage targets from paired rollouts). ``threshold`` is the decision margin chosen
-    when the model was benchmarked; it travels with the saved file."""
+    when the model was benchmarked; it travels with the saved file. ``target`` says what it
+    predicts: "advantage" (the outcome difference of two after-states, from a feature
+    difference) or "value" (the expected run outcome of one after-state)."""
 
     def __init__(self, n_in: int, lam: float = 100.0) -> None:
         self.w = np.zeros(n_in, dtype=np.float64)
@@ -153,6 +162,7 @@ class Ridge:
         self.b = 0.0
         self.lam = lam
         self.threshold = 0.0
+        self.target = "advantage"
 
     def fit(self, X: np.ndarray, y: np.ndarray, *, center: bool = True) -> "Ridge":
         """``center=False`` keeps the intercept and input means at zero (advantage models:
@@ -178,7 +188,8 @@ class Ridge:
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez(path, kind=np.array(["ridge"]), w=self.w, mu=self.mu, sd=self.sd,
-                 meta=np.array([self.b, self.lam, self.threshold]), names=np.array(feature_names()))
+                 meta=np.array([self.b, self.lam, self.threshold]), names=np.array(feature_names()),
+                 target=np.array([self.target]))
 
     def top_features(self, k: int = 20) -> list[tuple[str, float]]:
         names = feature_names()
@@ -203,6 +214,7 @@ def load_model(path: Path):
         m = Ridge(len(d["w"]))
         m.w, m.mu, m.sd = d["w"], d["mu"], d["sd"]
         m.b, m.lam, m.threshold = (float(v) for v in d["meta"])
+        m.target = str(d["target"][0]) if "target" in d.files else "advantage"
         return m
     return MLP.load(path)
 
@@ -410,7 +422,8 @@ def load_dataset(out: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def fit_with_holdout(m: MLP, X: np.ndarray, y: np.ndarray, groups: np.ndarray, *, seed: int = 0,
-                     epochs: int = 60, holdout: float = 0.1) -> float:
+                     epochs: int = 60, holdout: float = 0.1, verbose: bool = True, l2: float = 1e-5,
+                     lr: float = 1e-3) -> float:
     """Train with a run-grouped holdout; keep the epoch with the best holdout MSE."""
     rng = np.random.default_rng(seed)
     runs = np.unique(groups)
@@ -420,9 +433,13 @@ def fit_with_holdout(m: MLP, X: np.ndarray, y: np.ndarray, groups: np.ndarray, *
     base = float(np.mean((yv - yt.mean()) ** 2))
     best, best_state = math.inf, None
     for ep in range(0, epochs, 5):
-        m.fit_continue(Xt, yt, epochs=5, seed=seed + ep) if ep else m.fit(Xt, yt, epochs=5, seed=seed, verbose=False)
+        if ep:
+            m.fit_continue(Xt, yt, epochs=5, seed=seed + ep, lr=lr, l2=l2)
+        else:
+            m.fit(Xt, yt, epochs=5, seed=seed, verbose=False, lr=lr, l2=l2)
         v = float(np.mean((m.predict(Xv) - yv) ** 2))
-        print(f"  epoch {ep + 5:3d} holdout mse {v:.3f} (predict-mean {base:.3f})", flush=True)
+        if verbose:
+            print(f"  epoch {ep + 5:3d} holdout mse {v:.3f} (predict-mean {base:.3f})", flush=True)
         if v < best:
             best = v
             best_state = ([w.copy() for w in m.W], [b.copy() for b in m.b])

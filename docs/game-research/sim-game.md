@@ -27,7 +27,7 @@ its state as melmod `game_state/1`, the same format real captures replay from ex
 | `learn.py` | — | self-play value learning: parallel collection, numpy MLP and `Ridge` (+ `load_model`), `ValuePolicy` (ε-greedy over learned values; shop rerolls valued by sampled restocks) |
 | `advise.py` | — | live advisor: `run_state.json` → simulator → ranked actions (encounter options by rollout P(clear)) |
 | `evaluate.py` | — | parallel seeded runs → win rate + JSONL decision logs (`--policy power / greedy / advice / value:<model>`, `--effort` for deterministic search) |
-| `expert.py` | — | the learning loop: `NetPolicy`, paired full-run rollouts, ridge advantage model, champion gating |
+| `expert.py` | — | the learning loop: `NetPolicy`, state-value training on λ-returns (default) or paired full-run rollouts, ridge models, champion gating |
 | `buildvalue.py` | — | long-horizon item value: leave-one-out contributions per stage, `ItemGrowth` (class growth model), survival weights |
 | `chartune.py` | — | per-character settings (L3): successive-halving search over `PowerConfig` knobs on paired seeds → `char_overrides` table |
 
@@ -704,6 +704,97 @@ python -m cursed_words_solver.sim.game.bench show <arm>
   valid base (`compare` warns on a code mismatch). The chartune `runs.jsonl` and the training
   `evals/` caches don't record the code they ran on. Start a fresh work dir for them after a
   play change.
+
+### State-value training (2026-10-31)
+
+`expert.py --target value` (now the default) learns a **state value** instead of an
+advantage. The paired loop above never beat the base: labels were ~21% signal, and every
+label cost two full play-outs.
+
+- **Acting.** `NetPolicy` values the after-state of each candidate. It switches from the
+  Advice suggestion when one is worth more than a margin (0.1 / 0.3 / 0.6 outcome units are
+  benchmarked). Shop stock is not a feature, so a restock only looks like money lost. A
+  suggested restock stands, and the model never picks a restock over the suggestion.
+- **Data.** The champion plays runs and takes a random alternative at `--epsilon` (0.1) of
+  its decisions, group-first like the pairs. The after-state of every run-level decision is
+  stored in order (`states_it<n>.npz`: features, run, shop visit, explored, crown, outcome).
+  One run costs one run and yields every decision's state.
+- **Labels.** λ-returns (`lambda_returns`, `--td-lambda` 0.8):
+  - the last state of a run gets the run's `outcome`
+  - inside one shop visit, a state takes the next state's label
+  - between visits, (1 − λ) × the model's value of the next state + λ × its label
+  So the label leans on the model for the far future rather than the noisy final outcome.
+  The plain Monte-Carlo value (`learn.py`, R² 0.3) lost to Advice.
+- **Fit.** `train_value`: ridge on every state so far, folds grouped by run, with Gram
+  matrices per fold (`_FoldGram`), so relabelling costs one solve.
+  - Sweep 0 labels with the outcome.
+  - Each later sweep (`--sweeps` 3) relabels from the previous fit's out-of-fold values, so
+    no label uses a model that saw its own run, and refits.
+- **Reported fit.**
+  - Out-of-fold R² against the outcome.
+  - `r2_within`: R² after removing the (crown, stage, node) means, the part the build has to
+    explain. Benchmarks are skipped below 0.01.
+  - `pairs_corr`: correlation of the model's predicted difference with the old keyed paired
+    play-outs (`--check-pairs`, Carpman crown 0). An independent, causal check of the
+    decisions it would make.
+- **Gate and resume.** The same as the paired loop: margins on the eval seeds, paired
+  promotion test on the confirm seeds, every step resumable. The default directory is
+  `sim_models/value`.
+- **Caveat.** The value is linear in the features. v4's synergy / unmet-dependency /
+  descriptor columns carry some interactions, but a build whose worth depends on item
+  combinations beyond those is out of reach of a ridge model. If the pilot shows the fit
+  stalling, the next step is an MLP value (many more, less noisy labels than the pairs
+  had).
+- **Pilot tools.** `--collect-only` plays and stores the iterations' data runs with no fit
+  or benchmark. A later normal run in the same directory reuses that data. `--curve
+  128,256,512` refits on the first n stored runs for each `--curve-lambdas` value and plays
+  nothing, so you can see whether the fit still improves with data and which λ labels best.
+  The smoke run used 16 runs (WetDennis / Spike, crowns 0–1): ~75 states and ~115 CPU-s
+  per run.
+
+**Pilot (2026-10-31):** 512 runs by the base policy with ε 0.1, all 11 characters, crowns
+0–7 (`sim_models/value_pilot`). 28,196 states and 51 wins. Collection took 60 min on
+8 workers, ~56 CPU-s per run (~55 states each).
+
+| Runs | λ | R² | R² within crown / stage / node | Pair corr. |
+|---|---|---|---|---|
+| 128 | 0.8 | 0.51 | 0.156 | 0.015 |
+| 128 | 0.95 | 0.54 | 0.180 | 0.019 |
+| 128 | 1 (Monte Carlo) | 0.48 | 0.034 | 0.017 |
+| 256 | 0.8 | 0.54 | 0.245 | 0.024 |
+| 256 | 0.95 | 0.53 | 0.219 | 0.021 |
+| 256 | 1 | 0.47 | 0.131 | 0.016 |
+| 512 | **0.8** | 0.53 | **0.249** | **0.043** |
+| 512 | 0.95 | 0.49 | 0.198 | 0.034 |
+| 512 | 1 | 0.48 | 0.155 | 0.029 |
+
+- λ-return labels clearly beat the Monte-Carlo outcome: R² within 0.25 vs 0.16 at 512 runs.
+  λ 0.8 is the best setting.
+- R² within levels off for the linear model (0.245 → 0.249 from 256 to 512 runs). The
+  causal check keeps rising (0.015 → 0.024 → 0.043), but it is small.
+  - The pairs are Carpman crown 0, a character the pilot never played.
+  - Their labels are 21% signal, so ~0.46 is the most any model could reach.
+- Part of R² within is luck that is already visible in the state (money, a run going
+  well), not the value of a decision. Only the benchmark can say whether it plays better.
+
+**MLP value (2026-10-31).** `--compare-mlp "64;128,64"` trains ridge and MLPs on the same
+80% of runs and scores them on the other 20%. `--value-model 64` trains with an MLP.
+
+- Plain MLPs relabelled by their own sweeps lose to ridge: R² within 0.11–0.16 vs 0.27.
+  They over-fit 410 runs of near-duplicate states, and their labels are worse.
+- The recipe now in `train_value_mlp`: one hidden layer of 64, weight decay 0.1, trained on
+  the ridge's λ-return labels. On 4 held-out splits it is a coin flip against ridge: −0.022,
+  +0.030, +0.003, −0.047.
+- An earlier quick test looked like a consistent +0.02. It labelled from the ridge's
+  in-sample values, a shortcut the trainer doesn't take, so that gain wasn't the network's.
+- At 512 runs, model capacity isn't the limit: ridge stays the default. Re-test once
+  training has gathered thousands of runs.
+
+
+```
+python -m cursed_words_solver.sim.game.expert --iterations 3 --runs 256 --eval-runs 256 \
+    --characters BonesTheDog,HayleyBayles,NathaServo,NinaNix,Octacles,PrismaticBean,SamGambit,SandySaguaro,SockHead,Spike,WetDennis --crowns 0,1,2,3,4,5,6,7
+```
 
 ## Known gaps
 

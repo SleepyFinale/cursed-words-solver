@@ -1,6 +1,25 @@
-"""Policy iteration from paired full-run rollouts: the AI that improves with more runs.
+"""Policy iteration from self-play: the AI that improves with more runs.
 
-    python -m cursed_words_solver.sim.game.expert --iterations 10 --runs 256
+    python -m cursed_words_solver.sim.game.expert --iterations 10 --runs 256            # state value
+    python -m cursed_words_solver.sim.game.expert --target pairs --dir <d> ...           # paired play-outs
+
+**State value (``--target value``, the default since 2026-10-31).** The model predicts the
+run outcome from the state after a decision; ``NetPolicy`` compares the after-states of the
+candidates and switches from the Advice suggestion when one is valued higher by more than a
+margin. Each iteration the champion plays runs, taking a random alternative (group-first,
+``sample_alternative``) at ``--epsilon`` of its decisions, and every run-level decision's
+after-state is stored (~1 run's cost for ~50 labelled states, against two full play-outs
+per pair below). Labels are λ-returns across decision points (``lambda_returns``): within one
+shop visit the next decision's label, between visits ``(1 − λ)`` × the model's value of the
+next state + ``λ`` × its label, ending at the run's ``outcome``. Bootstrapping on the model
+cuts the noise of the final outcome, which sank the plain Monte-Carlo value (``learn.py``,
+holdout R² 0.3, lost to Advice). The fit is ridge on all states so far (``train_value``:
+run-grouped folds, λ-returns recomputed from out-of-fold values for ``--sweeps`` rounds). It
+reports R² within (crown, stage, node), the part that has to come from the build, and the
+correlation with the keyed paired play-outs of the advantage experiments (``--check-pairs``),
+a causal check of the decisions the model would make.
+
+**Paired play-outs (``--target pairs``).** The older loop:
 
 The policy (``NetPolicy``) plays the in-game Advice suggestion at every run-level decision
 (shop buy / restock / sell / leave, boss draft, pin side, Michael's draft) unless its
@@ -57,15 +76,19 @@ from cursed_words_solver.sim.game.core import Rng
 from cursed_words_solver.sim.game.features import encode, feature_names, outcome, progress
 from cursed_words_solver.sim.game.player import Node
 from cursed_words_solver.sim.game.itemvalue import RUN_LOG
-from cursed_words_solver.sim.game.learn import Ridge, load_model
+from cursed_words_solver.sim.game.learn import MLP, Ridge, fit_width, fit_with_holdout, load_model
 from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig, load_char_tuning, offer_class
 
 
 DEFAULT_DIR = Path.home() / ".cursed_words_solver" / "sim_models" / "expert"
+VALUE_DIR = Path.home() / ".cursed_words_solver" / "sim_models" / "value"
+PAIRS_CHECK_DIR = Path.home() / ".cursed_words_solver" / "sim_models" / "keyed_carpman_c0"
 SHOP_CAP = 14
 SHOP_CANDIDATES = 16  # cap on full_shop_candidates per shop state
 EFFORT = 0.05  # deterministic word search (load-independent, reproducible benchmarks)
 THRESHOLDS = (0.5, 1.0, 2.0)
+VALUE_THRESHOLDS = (0.1, 0.3, 0.6)  # value margins (outcome units) a value model is benchmarked at
+MIN_R2_WITHIN = 0.01  # skip benchmarking a value model that explains nothing beyond crown / stage / node
 ROLL_EFFORT, ROLL_TARGETS = 0.02, 3  # play-out continuation (see _pairs_job)
 MIN_CORR = 0.03  # skip benchmarking a model whose cross-validated fit shows no signal
 PROMOTE_T = 1.65  # one-sided ~95% on the paired per-seed outcome gain
@@ -185,11 +208,13 @@ def afterstate(game, a: Action) -> np.ndarray | None:
 
 
 class NetPolicy(FastAdvicePolicy):
-    """Fast Advice everywhere; run-level choices overridden by a learned advantage model."""
+    """Fast Advice everywhere; run-level choices overridden by a learned model (advantage or
+    state value). ``explore`` > 0 takes a random alternative at that share of decisions
+    (training data); ``explored`` says whether the last decision was one."""
 
     def __init__(self, cands: Candidates, model=None, *, seed: int = 0, threshold: float | None = None,
                  boss_risk: str = "", boss_model: str | None = None, char_tuning: str = "",
-                 action_space: str = "full") -> None:
+                 action_space: str = "full", explore: float = 0.0) -> None:
         if boss_model is None:  # build-aware boss risk (on 2026-10-30); only used with a boss_risk table
             from cursed_words_solver.sim.game.bossmodel import DEFAULT_PATH
 
@@ -205,6 +230,9 @@ class NetPolicy(FastAdvicePolicy):
         self.action_space = action_space  # "full": full_shop_candidates; "advice": shop_candidates
         self.threshold = threshold if threshold is not None else float(getattr(model, "threshold", 0.5))
         self._steps = 0
+        self.explore = explore
+        self._explore_rng = random.Random(f"explore|{seed}")
+        self.explored = False
         self._playout: NetPolicy | None = None
         self.pin_log: list[dict[str, Any]] = []  # cfg.pin_side == "rollout": one entry per decision
 
@@ -262,6 +290,8 @@ class NetPolicy(FastAdvicePolicy):
         ``threshold`` (in outcome units: encounters cleared)."""
         if self.model is None or len(cands) == 1:
             return cands[0]
+        if getattr(self.model, "target", "advantage") == "value":
+            return self._pick_value(game, cands)
         base = afterstate(game, cands[0])
         if base is None:
             return cands[0]
@@ -274,6 +304,31 @@ class NetPolicy(FastAdvicePolicy):
         if not rows:
             return cands[0]
         adv = self.model.predict(np.stack(rows))
+        i = int(np.argmax(adv))
+        return acts[i] if adv[i] > self.threshold else cands[0]
+
+    def _pick_value(self, game, cands: list[Action]) -> Action:
+        """State-value model: the candidate whose after-state is valued highest, if it beats
+        the suggestion's by more than ``threshold``. Shop stock is not a feature, so a
+        restock only looks like money lost: a suggested restock stands, and a restock is
+        never picked over the suggestion."""
+        if cands[0].kind == "reroll_shop":
+            return cands[0]
+        base = afterstate(game, cands[0])
+        if base is None:
+            return cands[0]
+        rows, acts = [base], []
+        for a in cands[1:]:
+            if a.kind == "reroll_shop":
+                continue
+            x = afterstate(game, a)
+            if x is not None:
+                rows.append(x)
+                acts.append(a)
+        if not acts:
+            return cands[0]
+        v = self.model.predict(np.stack(rows))
+        adv = v[1:] - v[0]
         i = int(np.argmax(adv))
         return acts[i] if adv[i] > self.threshold else cands[0]
 
@@ -294,6 +349,10 @@ class NetPolicy(FastAdvicePolicy):
         if not cands:
             return FastAdvicePolicy.act(self, game), []
         a = self.pick(game, cands)
+        self.explored = False
+        if self.explore and len(cands) > 1 and self._explore_rng.random() < self.explore:
+            a = sample_alternative(self._explore_rng, cands)
+            self.explored = True
         if ph == "shop" and not same(a, cands[0]):
             self._record_override(game, a, memo)
         if a.kind == "leave":
@@ -439,6 +498,43 @@ def _pairs_job(job: dict[str, Any]) -> dict[str, Any]:
             "won": bool(g.won), "outcome": outcome(g), "err": err, "sec": time.time() - t0, "seed": job["seed"]}
 
 
+def _states_job(job: dict[str, Any]) -> dict[str, Any]:
+    """One run by the champion, exploring at ``job["epsilon"]`` of its decisions; the
+    after-state of every run-level decision, in order, with its shop visit / decision point
+    (``visit`` = stage × 16 + node) and whether it was a random alternative."""
+    t0 = time.time()
+    g = _game(job)
+    pol = NetPolicy(_CANDS, _MODEL, seed=job["seed"], threshold=job.get("threshold"), boss_risk=job.get("boss_risk"),
+                    explore=float(job.get("epsilon", 0.0)))
+    X, visit, explored = [], [], []
+    err = ""
+    try:
+        for _ in range(4000):
+            if g.phase == "done":
+                break
+            a, cands = pol.decide(g)
+            run = g.player.run
+            point = run.stage * 16 + int(run.node)
+            apply(g, a)
+            if cands:
+                X.append(encode(g))
+                visit.append(point)
+                explored.append(pol.explored)
+    except Exception as exc:  # pragma: no cover - surfaced in the log
+        err = f"{type(exc).__name__}: {exc}"
+    n = len(X)
+    out = outcome(g)
+    return {"X": np.stack(X).astype(np.float32) if X else np.zeros((0, len(feature_names())), np.float32),
+            "visit": np.array(visit, np.int16), "explored": np.array(explored, bool),
+            "run": np.full(n, job["seed"], np.int64), "crown": np.full(n, job["crown"], np.int8),
+            "outcome": np.full(n, out, np.float32),
+            "won": bool(g.won), "err": err, "sec": time.time() - t0, "seed": job["seed"]}
+
+
+PAIR_FIELDS = ("dX", "dy", "kind")
+STATE_FIELDS = ("X", "visit", "explored", "run", "crown", "outcome")
+
+
 def _eval_job(job: dict[str, Any]) -> dict[str, Any]:
     from cursed_words_solver.sim.game.bossrisk import boss_outcomes
 
@@ -494,53 +590,53 @@ def model_tag(model: str | None) -> str:
     return h.hexdigest()[:10]
 
 
-def collect(jobs, *, workers, wordlist, model, out: Path) -> dict[str, Any]:
-    """Run the data jobs; finished runs are checkpointed to ``<out>.partial.npz`` every 16
-    runs, so an interrupted iteration resumes where it stopped. A finished ``out`` is
-    reused as it is."""
+def collect(jobs, *, workers, wordlist, model, out: Path, job=_pairs_job, fields=PAIR_FIELDS,
+            label: str = "pairs") -> dict[str, Any]:
+    """Run the data jobs (``job`` returns one array per name in ``fields``, rows aligned);
+    finished runs are checkpointed to ``<out>.partial.npz`` every 16 runs, so an
+    interrupted iteration resumes where it stopped. A finished ``out`` is reused as it is."""
     if out.is_file():
         with np.load(out) as d:
-            stats = {"runs": int(len(d["seeds"])), "wins": int(d["wins"][0]), "pairs": int(len(d["dy"]))}
+            stats = {"runs": int(len(d["seeds"])), "wins": int(d["wins"][0]), label: int(len(d[fields[1]]))}
         print(f"  data already collected: {stats}", flush=True)
         return stats
     partial = out.with_name(out.stem + ".partial.npz")
-    dXs, dys, ks = [], [], []
+    cols: dict[str, list[np.ndarray]] = {f: [] for f in fields}
     done: set[int] = set()
     wins = 0
     if partial.is_file():
         with np.load(partial) as d:  # closes the file (Windows cannot delete it while open)
-            dXs, dys, ks = [d["dX"]], [d["dy"]], [d["kind"]]
+            cols = {f: [d[f]] for f in fields}
             done = set(int(x) for x in d["seeds"])
             wins = int(d["wins"][0])
         print(f"  resuming: {len(done)} runs already collected", flush=True)
     todo = [j for j in jobs if j["seed"] not in done]
 
+    def rows() -> int:
+        return int(sum(len(c) for c in cols[fields[1]]))
+
     def save(path: Path) -> None:
-        width = len(feature_names())
-        dX = np.concatenate(dXs) if dXs else np.zeros((0, width), np.float32)
-        np.savez_compressed(path, dX=dX, dy=np.concatenate(dys) if dys else np.zeros(0, np.float32),
-                            kind=np.concatenate(ks) if ks else np.zeros(0, "U12"),
+        np.savez_compressed(path, **{f: np.concatenate(cols[f]) for f in fields if cols[f]},
                             seeds=np.array(sorted(done), np.int64), wins=np.array([wins]))
 
     t0 = time.time()
-    with spawn_pool(workers, _init, (wordlist, model)) as pool:
-        for i, r in enumerate(pool.imap_unordered(_pairs_job, todo)):
-            dXs.append(r["dX"])
-            dys.append(r["dy"])
-            ks.append(r["kind"])
-            wins += r["won"]
-            done.add(r["seed"])
-            if r["err"]:
-                print("  error:", r["err"], flush=True)
-            if (i + 1) % 16 == 0 or i + 1 == len(todo):
-                save(partial)
-                n = len(done)
-                eta = (time.time() - t0) / (i + 1) * (len(todo) - i - 1)
-                print(f"  run {n}/{len(jobs)}: {sum(len(d) for d in dys)} pairs, {wins} wins "
-                      f"({time.time() - t0:.0f}s, ~{eta / 60:.0f} min left)", flush=True)
+    if todo:
+        with spawn_pool(workers, _init, (wordlist, model)) as pool:
+            for i, r in enumerate(pool.imap_unordered(job, todo)):
+                for f in fields:
+                    cols[f].append(r[f])
+                wins += r["won"]
+                done.add(r["seed"])
+                if r["err"]:
+                    print("  error:", r["err"], flush=True)
+                if (i + 1) % 16 == 0 or i + 1 == len(todo):
+                    save(partial)
+                    eta = (time.time() - t0) / (i + 1) * (len(todo) - i - 1)
+                    print(f"  run {len(done)}/{len(jobs)}: {rows()} {label}, {wins} wins "
+                          f"({time.time() - t0:.0f}s, ~{eta / 60:.0f} min left)", flush=True)
     save(out)
     partial.unlink(missing_ok=True)
-    return {"runs": len(jobs), "wins": wins, "pairs": int(sum(len(d) for d in dys))}
+    return {"runs": len(jobs), "wins": wins, label: rows()}
 
 
 def evaluate(jobs, *, workers, wordlist, model, threshold: float | None = None,
@@ -639,6 +735,254 @@ def train(dX: np.ndarray, dy: np.ndarray, *, seed: int = 0, lams=(100.0, 1000.0,
     return m, {**best[1], "pairs": int(len(dy)), "label_mean": float(dy.mean()), "label_sd": float(dy.std())}
 
 
+# ---------------------------------------------------------------------------- state values
+
+
+def load_states(out: Path) -> dict[str, np.ndarray]:
+    """Every finished ``states_it*.npz`` in ``out``, one run's rows kept together and in
+    order; older feature widths are zero-padded (features are only ever appended)."""
+    width = len(feature_names())
+    parts: dict[str, list[np.ndarray]] = {f: [] for f in STATE_FIELDS}
+    for f in sorted(out.glob("states_it*.npz")):
+        if f.name.endswith(".partial.npz"):
+            continue
+        with np.load(f) as d:
+            if "X" not in d.files:
+                continue
+            for k in STATE_FIELDS:
+                parts[k].append(d[k])
+        parts["X"][-1] = fit_width(parts["X"][-1], width).astype(np.float32)
+    if not parts["X"]:
+        return {"X": np.zeros((0, width), np.float32), "visit": np.zeros(0, np.int16), "explored": np.zeros(0, bool),
+                "run": np.zeros(0, np.int64), "crown": np.zeros(0, np.int8), "outcome": np.zeros(0, np.float32)}
+    return {k: np.concatenate(v) for k, v in parts.items()}
+
+
+def lambda_returns(value: np.ndarray, run: np.ndarray, visit: np.ndarray, final: np.ndarray, lam: float) -> np.ndarray:
+    """λ-return label of each state (rows grouped by run, in play order). The last state of a
+    run is labelled with the run's outcome; inside one shop visit (same ``visit``) a state
+    takes the next state's label (the visit's later moves are part of what it leads to);
+    across visits ``(1 − λ)`` × ``value`` of the next state + ``λ`` × its label. λ = 1 is
+    the plain Monte-Carlo outcome; smaller λ leans on the model and cuts outcome noise."""
+    y = np.empty(len(run), np.float64)
+    for i in range(len(run) - 1, -1, -1):
+        if i == len(run) - 1 or run[i + 1] != run[i]:
+            y[i] = final[i]
+        elif visit[i + 1] == visit[i]:
+            y[i] = y[i + 1]
+        else:
+            y[i] = (1.0 - lam) * value[i + 1] + lam * y[i + 1]
+    return y
+
+
+class _FoldGram:
+    """Ridge on standardised features with an unpenalised intercept, by Gram matrices per
+    run-grouped fold: every fold's fit (and every new set of labels) costs one solve, not
+    another pass building ``AᵀA`` over 100k+ rows."""
+
+    def __init__(self, X: np.ndarray, fold: np.ndarray, k: int, chunk: int = 8192) -> None:
+        self.X, self.fold, self.k, self.chunk = X, fold, k, chunk
+        n = len(X)
+        s = np.zeros(X.shape[1])
+        for i in range(0, n, chunk):
+            s += X[i:i + chunk].astype(np.float64).sum(0)
+        self.mu = s / max(1, n)
+        v = np.zeros(X.shape[1])
+        for i in range(0, n, chunk):
+            v += ((X[i:i + chunk].astype(np.float64) - self.mu) ** 2).sum(0)
+        sd = np.sqrt(v / max(1, n))
+        self.live = sd > 1e-6
+        self.sd = np.where(self.live, sd, 1.0)
+        p = int(self.live.sum()) + 1
+        self.n = np.bincount(fold, minlength=k)
+        self.G = np.zeros((k, p, p))
+        for i, A in self._chunks():
+            f = fold[i:i + chunk]
+            for j in range(k):
+                sel = f == j
+                if sel.any():
+                    self.G[j] += A[sel].T @ A[sel]
+
+    def _chunks(self):
+        for i in range(0, len(self.X), self.chunk):
+            a = (self.X[i:i + self.chunk, self.live].astype(np.float64) - self.mu[self.live]) / self.sd[self.live]
+            yield i, np.hstack([a, np.ones((len(a), 1))])
+
+    def h(self, y: np.ndarray) -> np.ndarray:
+        """``Aᵀy`` per fold."""
+        out = np.zeros((self.k, self.G.shape[1]))
+        for i, A in self._chunks():
+            f, yy = self.fold[i:i + self.chunk], y[i:i + self.chunk]
+            for j in range(self.k):
+                sel = f == j
+                if sel.any():
+                    out[j] += A[sel].T @ yy[sel]
+        return out
+
+    def solve(self, lam: float, h: np.ndarray, exclude: int | None = None) -> np.ndarray:
+        G, hh, n = self.G.sum(0), h.sum(0), int(self.n.sum())
+        if exclude is not None:
+            G, hh, n = G - self.G[exclude], hh - h[exclude], n - int(self.n[exclude])
+        P = np.eye(len(G)) * lam * n / 1000.0  # Ridge's penalty scale
+        P[-1, -1] = 0.0
+        return np.linalg.solve(G + P, hh)
+
+    def out_of_fold(self, lam: float, h: np.ndarray) -> np.ndarray:
+        """Each row predicted by the fit that left its fold out."""
+        B = np.stack([self.solve(lam, h, j) for j in range(self.k)], 1)
+        pred = np.empty(len(self.X))
+        for i, A in self._chunks():
+            f = self.fold[i:i + self.chunk]
+            pred[i:i + self.chunk] = (A @ B)[np.arange(len(A)), f]
+        return pred
+
+    def ridge(self, beta: np.ndarray, lam: float) -> Ridge:
+        m = Ridge(self.X.shape[1], lam)
+        m.mu, m.sd = self.mu.copy(), self.sd.copy()
+        m.w = np.zeros(self.X.shape[1])
+        m.w[self.live] = beta[:-1]
+        m.b = float(beta[-1])
+        m.target = "value"
+        return m
+
+
+def _r2(pred: np.ndarray, y: np.ndarray, groups: np.ndarray | None = None) -> float:
+    """R² of ``pred`` on ``y``; with ``groups``, of both after removing each group's mean
+    (what is left once crown / stage / node are known)."""
+    if groups is not None:
+        _, inv = np.unique(groups, return_inverse=True)
+        cnt = np.bincount(inv)
+        y = y - (np.bincount(inv, y) / cnt)[inv]
+        pred = pred - (np.bincount(inv, pred) / cnt)[inv]
+    ss = float(((y - y.mean()) ** 2).sum())
+    return 1.0 - float(((y - pred) ** 2).sum()) / ss if ss > 0 else 0.0
+
+
+def pairs_check(model, pairs_dir: Path | None) -> float | None:
+    """Correlation between a linear value model's predicted difference and the keyed paired
+    play-out label (``pairs_it*.npz``: same state, two actions, both played to the end): do
+    the decisions it would make point the right way? None without pair data."""
+    if pairs_dir is None or not Path(pairs_dir).is_dir() or not isinstance(model, Ridge):
+        return None
+    dX, dy, _ = load_pairs(Path(pairs_dir))
+    if len(dy) < 10:
+        return None
+    pred = (dX.astype(np.float64) / model.sd) @ model.w
+    return round(float(np.corrcoef(pred, dy)[0, 1]), 4) if np.std(pred) > 0 else 0.0
+
+
+def _value_labels(data: dict[str, np.ndarray], *, lam: float, sweeps: int, folds: int, seed: int, lams):
+    """(Gram, final λ-return labels, ridge λ, out-of-fold values) by ``train_value``'s sweeps."""
+    X, run, visit, final = data["X"], data["run"], data["visit"], data["outcome"].astype(np.float64)
+    runs, inv = np.unique(run, return_inverse=True)
+    fold = np.random.default_rng(seed).integers(0, folds, len(runs))[inv]
+    gram = _FoldGram(X, fold, folds)
+    y = final.copy()
+    best_lam, oof = lams[0], np.zeros(len(y))
+    for s in range(max(1, sweeps)):
+        h = gram.h(y)
+        best = None
+        for lm in lams:
+            pred = gram.out_of_fold(lm, h)
+            mse = float(((pred - y) ** 2).mean())
+            if best is None or mse < best[0]:
+                best = (mse, lm, pred)
+        _, best_lam, oof = best
+        if s < sweeps - 1:
+            y = lambda_returns(oof, run, visit, final, lam)
+    return gram, y, best_lam, oof
+
+
+def train_value(data: dict[str, np.ndarray], *, lam: float = 0.8, sweeps: int = 3, folds: int = 5, seed: int = 0,
+                lams=(1.0, 10.0, 100.0, 1000.0, 1e4, 1e5), pairs_dir: Path | None = None) -> tuple[Ridge, dict]:
+    """Ridge state-value model on λ-returns. Sweep 0 labels with the Monte-Carlo outcome;
+    each later sweep relabels with ``lambda_returns`` from the out-of-fold values of the
+    previous fit (a state's label never uses a model that saw its own run) and refits, the
+    ridge λ chosen by run-grouped CV each time. Reports out-of-fold R² against the final
+    outcome overall and within (crown, stage, node), and ``pairs_check``."""
+    run, visit, final = data["run"], data["visit"], data["outcome"].astype(np.float64)
+    gram, y, best_lam, oof = _value_labels(data, lam=lam, sweeps=sweeps, folds=folds, seed=seed, lams=lams)
+    runs = np.unique(run)
+    m = gram.ridge(gram.solve(best_lam, gram.h(y)), best_lam)
+    group = data["crown"].astype(np.int64) * 10_000 + visit.astype(np.int64)
+    stats = {"lam": best_lam, "td_lambda": lam, "sweeps": sweeps, "states": int(len(y)), "runs": int(len(runs)),
+             "explored": float(data["explored"].mean()) if len(y) else 0.0,
+             "r2": round(_r2(oof, final), 4), "r2_within": round(_r2(oof, final, group), 4),
+             "label_sd": round(float(y.std()), 3), "pairs_corr": pairs_check(m, pairs_dir)}
+    return m, stats
+
+
+def train_value_mlp(data: dict[str, np.ndarray], *, lam: float = 0.8, sweeps: int = 3, hidden: tuple[int, ...] = (64,),
+                    l2: float = 0.1, seed: int = 0, epochs: int = 60,
+                    lams=(1.0, 10.0, 100.0, 1000.0, 1e4, 1e5)) -> tuple[MLP, dict]:
+    """A small MLP state value (it can value item combinations a linear model cannot) on
+    ``train_value``'s λ-return labels, stopped early on a held-out tenth of the runs.
+
+    Pilot (512 runs, 4 held-out splits of 102 runs): no better than ridge, R² within −0.022,
+    +0.030, +0.003, −0.047 against it, with one hidden layer of 64 and weight decay 0.1.
+    Weaker decay over-fits (1e-5: 0.13 vs 0.27), and labels from the MLP's own relabelling
+    sweeps were worse than the ridge's. Worth re-testing once there are thousands of runs."""
+    X, run = data["X"], data["run"]
+    _, y, _, _ = _value_labels(data, lam=lam, sweeps=sweeps, folds=5, seed=seed, lams=lams)
+    m = MLP(X.shape[1], hidden, seed=seed)
+    fit_with_holdout(m, X, y, run, seed=seed, epochs=epochs, verbose=False, l2=l2)
+    m.target = "value"
+    return m, {"hidden": list(hidden), "l2": l2, "td_lambda": lam, "sweeps": sweeps, "states": int(len(y)),
+               "runs": int(len(np.unique(run))), "label_sd": round(float(y.std()), 3)}
+
+
+def compare_values(out: Path, *, lam: float = 0.8, sweeps: int = 3, hiddens=((64,), (128, 64)), share: float = 0.2,
+                   seed: int = 0, pairs_dir: Path | None = None, epochs: int = 60, l2: float = 0.1) -> list[dict[str, Any]]:
+    """Ridge vs MLP state values on the states in ``out``: each is trained on the same 80% of
+    runs and scored on the other 20% against the final outcome (R², and R² within crown /
+    stage / node). Plays nothing."""
+    data = load_states(out)
+    runs = np.unique(data["run"])
+    held = np.isin(data["run"], np.random.default_rng(seed).choice(runs, size=max(1, int(len(runs) * share)), replace=False))
+    train = {k: v[~held] for k, v in data.items()}
+    test = {k: v[held] for k, v in data.items()}
+    final = test["outcome"].astype(np.float64)
+    group = test["crown"].astype(np.int64) * 10_000 + test["visit"].astype(np.int64)
+    print(f"{len(runs)} runs: training on {len(np.unique(train['run']))}, scoring on {len(np.unique(test['run']))}", flush=True)
+    rows = []
+    fits = [("ridge", lambda: train_value(train, lam=lam, sweeps=sweeps, seed=seed, pairs_dir=pairs_dir))]
+    fits += [(f"mlp {h}", lambda h=h: train_value_mlp(train, lam=lam, sweeps=sweeps, hidden=h, seed=seed, epochs=epochs,
+                                                       l2=l2))
+             for h in hiddens]
+    for name, fit in fits:
+        t0 = time.time()
+        m, stats = fit()
+        pred = m.predict(test["X"])
+        row = {"model": name, "r2": round(_r2(pred, final), 4), "r2_within": round(_r2(pred, final, group), 4),
+               "pairs_corr": stats.get("pairs_corr"), "label_sd": stats["label_sd"], "secs": round(time.time() - t0)}
+        print(f"  {name:14s} held-out r2 {row['r2']:+.3f}  within {row['r2_within']:+.3f}  "
+              f"pairs {row['pairs_corr']}  ({row['secs']}s)", flush=True)
+        rows.append(row)
+    return rows
+
+
+def curve(out: Path, sizes: list[int], lambdas: list[float], *, sweeps: int = 3,
+          pairs_dir: Path | None = None) -> list[dict[str, Any]]:
+    """Learning curve on the states already collected in ``out``: ``train_value`` on the first
+    n runs (n in ``sizes``) for each label λ (λ = 1: Monte Carlo, one sweep). Does the fit
+    still improve with more runs, and which λ labels best? No runs are played."""
+    data = load_states(out)
+    runs = list(dict.fromkeys(data["run"].tolist()))
+    print(f"{len(runs)} runs, {len(data['run'])} states in {out}", flush=True)
+    rows = []
+    for n in sizes:
+        if n > len(runs):
+            continue
+        keep = np.isin(data["run"], runs[:n])
+        part = {k: v[keep] for k, v in data.items()}
+        for lam in lambdas:
+            _, fit = train_value(part, lam=lam, sweeps=1 if lam >= 1 else sweeps, pairs_dir=pairs_dir)
+            print(f"  runs {n:5d}  λ {lam:.2f}  r2 {fit['r2']:+.3f}  within {fit['r2_within']:+.3f}  "
+                  f"pairs {fit['pairs_corr']}  ridge {fit['lam']:g}  label sd {fit['label_sd']}", flush=True)
+            rows.append({"runs": n, **fit})
+    return rows
+
+
 def make_jobs(n: int, seed: int, characters: list[str], crowns: list[int], **extra) -> list[dict[str, Any]]:
     rng = random.Random(seed)
     return [{"character": rng.choice(characters), "crown": rng.choice(crowns), "seed": seed * 100_000 + i, **extra}
@@ -648,32 +992,64 @@ def make_jobs(n: int, seed: int, characters: list[str], crowns: list[int], **ext
 def main(argv: list[str] | None = None) -> int:
     import multiprocessing as mp
 
-    ap = argparse.ArgumentParser(description="policy iteration from paired full-run rollouts")
+    ap = argparse.ArgumentParser(description="policy iteration from self-play (state value or paired play-outs)")
+    ap.add_argument("--target", choices=("value", "pairs"), default="value",
+                    help="value: state value on λ-returns (default); pairs: advantage from paired play-outs")
     ap.add_argument("--iterations", type=int, default=3)
     ap.add_argument("--runs", type=int, default=256, help="data runs per iteration")
     ap.add_argument("--p-sample", type=float, default=0.3, help="share of decisions turned into pairs")
+    ap.add_argument("--epsilon", type=float, default=0.1, help="value: share of decisions taken at random")
+    ap.add_argument("--td-lambda", type=float, default=0.8, help="value: λ of the λ-return labels")
+    ap.add_argument("--sweeps", type=int, default=3, help="value: relabel-and-refit rounds per fit")
+    ap.add_argument("--check-pairs", default=str(PAIRS_CHECK_DIR),
+                    help="value: keyed pair data to check the model's decisions against ('' = none)")
     ap.add_argument("--plain-rng", action="store_true",
                     help="unkeyed play-outs (labels measured ~0 test-retest reliability vs 0.21 keyed)")
     ap.add_argument("--eval-runs", type=int, default=256)
     ap.add_argument("--characters", default="WetDennis")
     ap.add_argument("--crowns", default="0")
     ap.add_argument("--workers", type=int, default=max(1, (mp.cpu_count() or 2)))
-    ap.add_argument("--dir", default=str(DEFAULT_DIR))
+    ap.add_argument("--dir", default=None, help=f"default {VALUE_DIR} (value) / {DEFAULT_DIR} (pairs)")
     ap.add_argument("--wordlist", default=None)
     ap.add_argument("--boss-risk", default=str(BOSS_RISK_PATH),
                     help="bossrisk.py table for the boss draft ('' = Fast Advice's fixed rule)")
+    ap.add_argument("--collect-only", action="store_true",
+                    help="play and store the iterations' data runs, no fit or benchmark (a pilot; a later "
+                         "normal run reuses the data)")
+    ap.add_argument("--curve", default="", help="value: learning curve on the stored states at these run counts "
+                                                 "(e.g. 128,256,512), then exit")
+    ap.add_argument("--curve-lambdas", default="0.8,0.95,1", help="label λ values for --curve")
+    ap.add_argument("--compare-mlp", default="", help="value: ridge vs MLPs of these hidden sizes on held-out runs "
+                                                       "of the stored states (e.g. '64;128,64'), then exit")
+    ap.add_argument("--value-model", default="ridge", help="value: 'ridge' or MLP hidden sizes, e.g. '64'")
+    ap.add_argument("--mlp-l2", type=float, default=0.1, help="value: MLP weight decay")
     args = ap.parse_args(argv)
     risk = args.boss_risk if args.boss_risk and Path(args.boss_risk).is_file() else ""
 
-    out = Path(args.dir)
+    value = args.target == "value"
+    out = Path(args.dir or (VALUE_DIR if value else DEFAULT_DIR))
     out.mkdir(parents=True, exist_ok=True)
+    pairs_dir = Path(args.check_pairs) if value and args.check_pairs else None
+    if args.curve:
+        curve(out, [int(n) for n in args.curve.split(",")], [float(v) for v in args.curve_lambdas.split(",")],
+              sweeps=args.sweeps, pairs_dir=pairs_dir)
+        return 0
+    if args.compare_mlp:
+        hiddens = [tuple(int(v) for v in h.split(",")) for h in args.compare_mlp.split(";")]
+        compare_values(out, lam=args.td_lambda, sweeps=args.sweeps, hiddens=hiddens, pairs_dir=pairs_dir, l2=args.mlp_l2)
+        return 0
     chars = [c for c in args.characters.split(",") if c]
     crowns = [int(c) for c in args.crowns.split(",") if c]
     setup = {"characters": chars, "crowns": crowns, "runs": args.runs, "eval_runs": args.eval_runs,
-             "p_sample": args.p_sample, "keyed": not args.plain_rng}
+             "target": args.target}
+    if value:
+        setup |= {"epsilon": args.epsilon}
+    else:
+        setup |= {"p_sample": args.p_sample, "keyed": not args.plain_rng}
     cfg_path = out / "config.json"
     if cfg_path.is_file():
         old = json.loads(cfg_path.read_text())
+        old.setdefault("target", "pairs")  # directories from before the value target
         if old != setup:
             raise SystemExit(f"{out} was started with {old}; use those settings or another --dir")
     else:
@@ -688,7 +1064,7 @@ def main(argv: list[str] | None = None) -> int:
         return evaluate(jobs, model=model, threshold=threshold, cache=out / "evals" / f"{name}_{model_tag(model)}{th}.jsonl", **kw)
     champ_path = out / "champion.npz"
     champ = str(champ_path) if champ_path.is_file() else None
-    if not history:
+    if not history and not args.collect_only:
         base = ev(eval_jobs, "eval", None)
         base.pop("per_seed")
         print("baseline (Fast Advice):", base, flush=True)
@@ -696,7 +1072,7 @@ def main(argv: list[str] | None = None) -> int:
         atomic_write(hist_path, json.dumps(history, indent=1))
     confirm_jobs = make_jobs(args.eval_runs, 778, chars, crowns, boss_risk=risk)
     champ_confirm = next((h["confirm"] for h in reversed(history) if h.get("champion")), None)
-    if champ and not any(h.get("champion") and "paired" in h for h in history):
+    if champ and not args.collect_only and not any(h.get("champion") and "paired" in h for h in history):
         # Champion promoted by the old win-count rule: re-check it with the paired test.
         base = ev(confirm_jobs, "confirm", None)
         cur = ev(confirm_jobs, "confirm", champ)
@@ -715,25 +1091,46 @@ def main(argv: list[str] | None = None) -> int:
     start = len([h for h in history if isinstance(h.get("iteration"), int)])
     for it in range(start, start + args.iterations):
         print(f"iteration {it}: {args.runs} runs by {'champion' if champ else 'Fast Advice'}", flush=True)
-        stats = collect(make_jobs(args.runs, 2000 + it, chars, crowns, p_sample=args.p_sample, boss_risk=risk,
-                                  keyed=not args.plain_rng),
-                        model=champ, out=out / f"pairs_it{it:03d}.npz", **kw)
-        dX, dy, _ = load_pairs(out)
-        m, fit = train(dX, dy, seed=it)
+        if value:
+            stats = collect(make_jobs(args.runs, 2000 + it, chars, crowns, epsilon=args.epsilon, boss_risk=risk),
+                            model=champ, out=out / f"states_it{it:03d}.npz", job=_states_job, fields=STATE_FIELDS,
+                            label="states", **kw)
+            if args.collect_only:
+                print(f"  stored: {stats}", flush=True)
+                continue
+            if args.value_model == "ridge":
+                m, fit = train_value(load_states(out), lam=args.td_lambda, sweeps=args.sweeps, seed=it, pairs_dir=pairs_dir)
+                weak, why = fit["r2_within"] < MIN_R2_WITHIN, f"r2_within < {MIN_R2_WITHIN}"
+            else:
+                m, fit = train_value_mlp(load_states(out), lam=args.td_lambda, sweeps=args.sweeps, seed=it,
+                                         hidden=tuple(int(v) for v in args.value_model.split(",")), l2=args.mlp_l2)
+                weak, why = False, ""
+        else:
+            stats = collect(make_jobs(args.runs, 2000 + it, chars, crowns, p_sample=args.p_sample, boss_risk=risk,
+                                      keyed=not args.plain_rng),
+                            model=champ, out=out / f"pairs_it{it:03d}.npz", **kw)
+            if args.collect_only:
+                print(f"  stored: {stats}", flush=True)
+                continue
+            dX, dy, _ = load_pairs(out)
+            m, fit = train(dX, dy, seed=it)
+            weak, why = fit["cv_corr"] < MIN_CORR, f"cv_corr < {MIN_CORR}"
         print("  fit:", fit, flush=True)
-        print("  top features:", [(n, round(w, 3)) for n, w in m.top_features(12)], flush=True)
+        if hasattr(m, "top_features"):  # linear models
+            print("  top features:", [(n, round(w, 3)) for n, w in m.top_features(12)], flush=True)
         path = out / f"model_it{it:03d}.npz"
-        if fit["cv_corr"] < MIN_CORR:
-            m.threshold = 1.0
+        thresholds = VALUE_THRESHOLDS if value else THRESHOLDS
+        if weak:
+            m.threshold = thresholds[-1]
             m.save(path)
             row = {"iteration": it, "model": str(path), "champion": False, "data": stats, "fit": fit,
-                   "skipped": f"cv_corr < {MIN_CORR}: collecting more pairs before benchmarking"}
+                   "skipped": f"{why}: collecting more data before benchmarking"}
             print(json.dumps(row), flush=True)
             history.append(row)
             atomic_write(hist_path, json.dumps(history, indent=1))
             continue
         best_ev, best_th = None, None
-        for th in THRESHOLDS:
+        for th in thresholds:
             m.threshold = th
             m.save(path)
             res = ev(eval_jobs, "eval", str(path), th)

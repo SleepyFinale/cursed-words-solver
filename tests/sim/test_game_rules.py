@@ -831,6 +831,143 @@ def test_training_resumes_benchmarks_data_and_refuses_other_settings(tmp_path):
         E.main(["--dir", str(tmp_path), "--characters", "WetDennis", "--boss-risk", ""])
 
 
+def test_lambda_returns_follow_the_visit_inside_a_shop_and_bootstrap_between_visits():
+    import numpy as np
+
+    from cursed_words_solver.sim.game.expert import lambda_returns
+
+    run = np.array([1, 1, 1, 1, 2, 2])
+    visit = np.array([10, 10, 20, 30, 10, 20])
+    value = np.array([0.0, 0.0, 4.0, 8.0, 0.0, 3.0])
+    final = np.array([10.0, 10.0, 10.0, 10.0, 2.0, 2.0])
+    y = lambda_returns(value, run, visit, final, 0.5)
+    # run 1: last state -> outcome 10; state 2 -> .5*8 + .5*10 = 9; states 0, 1 share the visit
+    # with state 1 -> .5*4 + .5*9 = 6.5, and state 0 copies state 1
+    assert np.allclose(y, [6.5, 6.5, 9.0, 10.0, 2.5, 2.0])
+    assert np.allclose(lambda_returns(value, run, visit, final, 1.0), final)  # λ = 1: Monte Carlo
+
+
+def test_value_fit_matches_closed_form_ridge_and_finds_build_signal():
+    import numpy as np
+
+    from cursed_words_solver.sim.game.expert import _FoldGram, train_value
+    from cursed_words_solver.sim.game.learn import Ridge
+
+    rng = np.random.default_rng(0)
+    n, w = 3000, 12
+    X = rng.normal(size=(n, w)).astype(np.float32)
+    X[:, 5] = 0.0  # a dead column
+    y = X[:, 0] * 2 + rng.normal(size=n)
+    g = _FoldGram(X, rng.integers(0, 5, n), 5, chunk=700)
+    m = g.ridge(g.solve(10.0, g.h(y)), 10.0)
+    ref = Ridge(w, 10.0).fit(X, y)
+    assert np.allclose(m.predict(X), ref.predict(X), atol=1e-6)
+    # 400 runs of 6 states over 3 visits; every state of a run shares its outcome, which a
+    # hidden build strength drives and column 0 measures noisily at each state
+    runs = np.repeat(np.arange(400), 6)
+    visit = np.tile([1, 1, 2, 2, 3, 3], 400).astype(np.int16)
+    strength = np.repeat(rng.normal(size=400), 6)
+    Xs = rng.normal(size=(len(runs), w)).astype(np.float32)
+    Xs[:, 0] = strength + rng.normal(scale=0.5, size=len(runs))
+    final = 2 * strength + np.repeat(rng.normal(size=400), 6)
+    data = {"X": Xs, "run": runs, "visit": visit, "outcome": final.astype(np.float32),
+            "crown": np.zeros(len(runs), np.int8), "explored": np.zeros(len(runs), bool)}
+    model, fit = train_value(data, lam=0.8, sweeps=3)
+    _, mc = train_value(data, sweeps=1)
+    assert fit["r2_within"] > 0.4 and fit["runs"] == 400 and model.target == "value"
+    assert model.w[0] / model.sd[0] > 1 and fit["pairs_corr"] is None
+    assert abs(fit["r2_within"] - mc["r2_within"]) < 0.1
+
+
+def test_learning_curve_reads_stored_states_without_playing(tmp_path):
+    import numpy as np
+
+    from cursed_words_solver.sim.game import expert as E
+    from cursed_words_solver.sim.game.features import feature_names
+
+    rng = np.random.default_rng(1)
+    runs = np.repeat(np.arange(200), 4)
+    strength = np.repeat(rng.normal(size=200), 4)
+    X = np.zeros((len(runs), 30), np.float32)  # an older, narrower feature width: padded on load
+    X[:, 0] = strength + rng.normal(scale=0.3, size=len(runs))
+    np.savez(tmp_path / "states_it000.npz", X=X, visit=np.tile([17, 17, 18, 33], 200).astype(np.int16),
+             explored=np.zeros(len(runs), bool), run=runs, crown=np.zeros(len(runs), np.int8),
+             outcome=(3 * strength + rng.normal(size=len(runs)).repeat(1)).astype(np.float32),
+             seeds=np.arange(200), wins=np.array([0]))
+    np.savez(tmp_path / "states_it001.partial.npz", X=X[:4])  # an unfinished iteration is ignored
+    assert E.load_states(tmp_path)["X"].shape == (800, len(feature_names()))
+    rows = E.curve(tmp_path, [50, 200, 999], [0.8, 1.0])
+    assert [(r["runs"], r["td_lambda"]) for r in rows] == [(50, 0.8), (50, 1.0), (200, 0.8), (200, 1.0)]
+    assert rows[-1]["r2_within"] > 0.3 and rows[-1]["sweeps"] == 1
+
+
+def test_mlp_value_learns_an_interaction_the_linear_value_cannot(tmp_path):
+    import numpy as np
+
+    from cursed_words_solver.sim.game import expert as E
+
+    # the outcome depends on owning two items together (a combo), not on either alone
+    rng = np.random.default_rng(2)
+    n = 600
+    runs = np.repeat(np.arange(n), 3)
+    a, b = np.repeat(rng.integers(0, 2, n), 3), np.repeat(rng.integers(0, 2, n), 3)
+    X = rng.normal(scale=0.1, size=(len(runs), 8)).astype(np.float32)
+    X[:, 0], X[:, 1] = a, b
+    outcome = 6.0 * (a & b) + np.repeat(rng.normal(scale=0.5, size=n), 3)
+    np.savez(tmp_path / "states_it000.npz", X=X, visit=np.tile([17, 18, 33], n).astype(np.int16),
+             explored=np.zeros(len(runs), bool), run=runs, crown=np.zeros(len(runs), np.int8),
+             outcome=outcome.astype(np.float32), seeds=np.arange(n), wins=np.array([0]))
+    rows = E.compare_values(tmp_path, hiddens=((16,),), sweeps=2, epochs=60)
+    ridge, mlp = rows
+    assert mlp["model"] == "mlp (16,)" and mlp["r2"] > 0.8 and mlp["r2"] > ridge["r2"] + 0.1
+    m, fit = E.train_value_mlp(E.load_states(tmp_path), hidden=(16,), sweeps=1, epochs=20)
+    assert m.target == "value" and fit["runs"] == n
+
+
+def test_value_models_compare_after_states_skip_restocks_and_explore():
+    from cursed_words_solver.sim.game.agent import Action
+    from cursed_words_solver.sim.game.expert import NetPolicy
+    from cursed_words_solver.sim.game.features import feature_names
+
+    class Money:  # values money only: leaving (keeping the cash) beats any purchase
+        target = "value"
+
+        def predict(self, X):
+            return X[:, feature_names().index("log_money")]
+
+    g, _ = _full_shop()
+    pol = NetPolicy(_NoSearch(), Money(), threshold=0.0)
+    buy = next(a for a in pol.candidates(g) if a.kind == "buy")
+    restock = Action("reroll_shop")
+    assert pol.pick(g, [buy, Action("leave")]).kind == "leave"
+    assert pol.pick(g, [restock, Action("leave")]).kind == "reroll_shop"  # a suggested restock stands
+    assert pol.pick(g, [buy, restock]).kind == "buy"  # and is never picked over the suggestion
+    pol.threshold = 1e9
+    assert pol.pick(g, [buy, Action("leave")]).kind == "buy"  # inside the margin: keep the suggestion
+    explorer = NetPolicy(_NoSearch(), None, explore=1.0, seed=3)
+    a, cands = explorer.decide(g)
+    assert explorer.explored and len(cands) > 1 and a in cands[1:]
+
+
+def test_saved_models_say_what_they_predict(tmp_path):
+    import numpy as np
+
+    from cursed_words_solver.sim.game.learn import MLP, Ridge, load_model
+
+    r = Ridge(4)
+    r.save(tmp_path / "a.npz")
+    assert load_model(tmp_path / "a.npz").target == "advantage"
+    r.target, r.threshold = "value", 0.3
+    r.save(tmp_path / "v.npz")
+    assert (load_model(tmp_path / "v.npz").target, load_model(tmp_path / "v.npz").threshold) == ("value", 0.3)
+    m = MLP(4, hidden=(3,))
+    m.threshold = 0.6
+    m.save(tmp_path / "m.npz")
+    back = load_model(tmp_path / "m.npz")
+    assert back.target == "value" and back.threshold == 0.6
+    assert np.allclose(back.predict(np.ones((2, 4))), m.predict(np.ones((2, 4))))
+
+
 def test_quick_pick_is_a_legal_shop_action(tmp_path):
     from cursed_words_solver.sim.game.advise import quick_pick
     from cursed_words_solver.sim.game.agent import legal_actions

@@ -83,7 +83,7 @@ Status: ✅ on and measured; ➖ tried, neutral or worse; ⬜ not tried. Impact 
 
 | # | Lever | Now | Idea | Impact |
 |---|---|---|---|---|
-| L1 | Learned run decisions | ➖ ridge advantage model on paired play-outs: labels ~21% signal, never beat base | learn a **state value** (build strength vs upcoming targets) instead: one-stage strength is repeatable (split-half 0.67) | high |
+| L1 | Learned run decisions | ➖ ridge advantage model on paired play-outs: labels ~21% signal, never beat base | learn a **state value** (build strength vs upcoming targets) instead: one-stage strength is repeatable (split-half 0.67). ✅ built 2026-10-31: `expert.py --target value` (λ-returns, ridge, decisions checked against keyed pairs); pilot pending | high |
 | L2 | Item value | ➖ table from logged runs (confounded) | causal: exploration buys or paired play-outs | medium |
 | L3 | Per-character / per-crown settings | ✅ any setting per character or crown band (`char_overrides`); `chartune.py` successive-halving search over 13 knob changes per character, paired seeds, promote at t ≥ 2 + fresh half; first pass done 2026-10-31: only Spike `swap_sell` off promoted, and it fails on the benchmark (−0.20, t −0.5); table not enabled | validate the table on the 528 benchmark seeds; more passes; crown bands once a character has enough runs; the same overrides are the search space for L1 training | medium |
 | L4 | Human imitation | 12 journals, no shop offers in them | record shop offers too; compare "what would the AI buy here" | low–medium |
