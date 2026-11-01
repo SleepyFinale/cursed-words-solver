@@ -147,6 +147,37 @@ def test_exact_search_finds_best_adjacent_word() -> None:
     assert best.path == (0, 1, 2)
 
 
+def test_enumeration_is_reused_for_the_same_board_and_movement_items_only() -> None:
+    # The shop probes one grid under many loadouts: enumeration reads only the tiles and the
+    # movement / letter items, so a scoring item reuses it and scores differ; a movement
+    # item (Hungry Snake wraps the edges) or a deadline search enumerates afresh.
+    rows = ["atxxc", "xxxxx", "xxxxx", "xxxxx", "xxxxx"]
+    trie = CsrTrie.from_words({"cat", "at", "ta"})
+
+    def search(loadout=None) -> ExactSearch:  # one trie: it is part of what is reused
+        return ExactSearch(EnginePlan.build(_board(rows), loadout or Loadout()), trie)
+
+    ExactSearch._enum_cache.clear()
+    plain = {c.path: c.score for c in search().run(top_n=0)}
+    assert len(ExactSearch._enum_cache) == 1 and (4, 0, 1) not in plain
+    axe = Loadout(stickers=[LoadoutItem("axe", "axe", 1)])
+    reused = {c.path: c.score for c in search(axe).run(top_n=0)}
+    assert len(ExactSearch._enum_cache) == 1 and set(reused) == set(plain) and reused != plain
+    snake = {c.path for c in search(Loadout(stickers=[LoadoutItem("hungry_snake", "hungry_snake", 1)])).run(top_n=0)}
+    assert len(ExactSearch._enum_cache) == 2 and (4, 0, 1) in snake  # c -> a wraps around
+    before = dict(ExactSearch._enum_cache)
+    search().run(top_n=0, deadline=time.perf_counter() + 5)
+    assert ExactSearch._enum_cache == before
+    saved = ExactSearch.enum_cache_size
+    try:
+        ExactSearch.enum_cache_size = 0
+        ExactSearch._enum_cache.clear()
+        assert {c.path: c.score for c in search(axe).run(top_n=0)} == reused
+        assert not ExactSearch._enum_cache
+    finally:
+        ExactSearch.enum_cache_size = saved
+
+
 def test_exact_search_rejects_non_adjacent_paths() -> None:
     rows = ["cxxxx", "xxxxx", "xxaxx", "xxxxx", "xxxxt"]
     assert _search(rows, {"cat"}).run(top_n=0) == []

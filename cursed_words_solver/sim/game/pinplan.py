@@ -78,9 +78,14 @@ class PinModel:
         """Predicted outcome(right) − outcome(left); None for a character with no data."""
         if character not in self.bias:
             return None
-        z = np.r_[x, dx][: len(self.mu)]
-        z = np.pad(z, (0, len(self.mu) - len(z)))
+        n = len(self.mu) // 2  # fitted on (x, dx) of the feature width then; later features appended
+        z = np.r_[_fit_width(x, n), _fit_width(dx, n)]
         return float(((z - self.mu) / self.sd) @ self.w + self.bias[character])
+
+
+def _fit_width(v: np.ndarray, n: int) -> np.ndarray:
+    v = np.asarray(v)[:n]
+    return np.pad(v, (0, n - len(v)))
 
 
 def _fit(X: np.ndarray, y: np.ndarray, chars: list[str], lam: float) -> tuple[np.ndarray, dict[str, float]]:

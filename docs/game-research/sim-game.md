@@ -28,6 +28,8 @@ its state as melmod `game_state/1`, the same format real captures replay from ex
 | `advise.py` | — | live advisor: `run_state.json` → simulator → ranked actions (encounter options by rollout P(clear)) |
 | `evaluate.py` | — | parallel seeded runs → win rate + JSONL decision logs (`--policy power / greedy / advice / value:<model>`, `--effort` for deterministic search) |
 | `expert.py` | — | the learning loop: `NetPolicy`, paired full-run rollouts, ridge advantage model, champion gating |
+| `buildvalue.py` | — | long-horizon item value: leave-one-out contributions per stage, `ItemGrowth` (class growth model), survival weights |
+| `chartune.py` | — | per-character settings (L3): successive-halving search over `PowerConfig` knobs on paired seeds → `char_overrides` table |
 
 ## Validation (2026-10-16)
 
@@ -55,6 +57,42 @@ are Michael's finale puzzle, not modelled). Dynamics, 115 same-encounter pairs: 
 115/115, remaining target 109/115 (the 6 misses are Michael phases with Randomise Item
 Order), rack 105/115 (Sandy's manual rack placements between submits; the round log's
 `placements_this_round` is not per submit, so the check cannot subtract them).
+
+**P2 re-check, 2026-10-31** (`scripts/sim_validate.py`, all 156 shop visits / 454 captures
+of the 2026-10-24/25 journals plus the older round logs; run with `PYTHONIOENCODING=utf-8`):
+
+| check | result |
+|---|---|
+| `scoring` | 451/454 (the 3 misses are Michael's finale) |
+| `dynamics` | unchanged from 10-24 (money, rack, target as above) |
+| `grids` | in distribution once rack tiles already placed (`was_consumable`) are skipped; the leftovers are the 14 old-export Octacles/Bucket grids of 2026-10-11 and 3 chance outliers |
+| `clears` (new) | 156/156: replaying the winning submit from a capture gives the next shop / boss reward's money, rack size, stickers (with RAM memory, money invested, foil), stamps and pin |
+| `shops` (new) | base price (`GetCost`) 3566/3566 after the fix below; restock price 149/156 (the 7 are first-shop-of-stage exports taken after a restock) |
+
+- Fixed: Northern Cardinal's −$4 applies when `GetDescription()` contains "red" in any
+  case, so "coloured" and "Scattered" count. The sim only looked at colours and tags and
+  missed 15 classes (Parrot, Ferris Wheel, Chess Board, Traffic Lights, Rainbow Sprinkles,
+  Magnet, Saxophone, …: `items._RED_IN_DESCRIPTION`, from a decompile scan of description
+  literals).
+- Export notes: the shop offer's `price` is always 0 (not checked); `restock_cost` is
+  `_rerollPrice` *before* Fried Shrimp's −1 (the sim's `reroll_price`, as the game does).
+- Stock on entry vs 50 sim shops from the same state: 27 items the sim offers ≥ 2.5 times were
+  never offered (Sticking Plaster, Black Hole, Dragon, Castle, Ogre, Wriggly Worm, Radio,
+  Crystal Ball, Dartboard, Chick, Axe, …). Every one is unlock-gated (achievement, crown
+  reward or challenge) and locked on the user's save. The sim stays "everything unlocked" by
+  design. The locks also shrink the real tag pools, which plausibly explains the small
+  deficits in tag-matched stickers (245 vs 274, z −2.8) and Common stamps (196 vs 211, z −2.9).
+- **Open:** upgrade offers of owned stickers, 17 real vs 39 simulated (z −4.0), almost all
+  in shops with 5 stickers owned (12 vs 29.6). `GenerateStickerInStock`,
+  `GetRandomBuildBiasedSticker`, `GetNonMaxUpgradeSticker`, `GetItemWithTag`,
+  `GetMaxUpgradeCount` and `GetStickers` all match the port line for line, and locks would
+  push the other way. Suspects: the imported upgrade state, or which export counts as shop
+  entry. More shop visits with 5 stickers will show whether it is real.
+- Coverage: the AI buys 227 classes, real data has 107; 144 were never seen. Of the
+  AI-frequent ones with < 5 real captures, Radio, Wriggly Worm, Numbers Bunch Of Grapes,
+  Dartboard, Chick, Axe, Television, Arrivals and Crystal Ball are locked on this save
+  (Radio = Nat crown 4, Wriggly Worm = Sam crown 4, Arrivals = Nat crown 5, Grapes = Hayley
+  crown 6, Crystal Ball = Octacles crown 6). Their ports are checked against the decompile only.
 
 Tests: `tests/sim/test_game_sim.py`, `tests/sim/test_game_rules.py`.
 
@@ -310,6 +348,144 @@ Each on its own:
 `tile_save` stays off. Buying is on for Spike only (`tile_buy_chars`, in the benchmark
 policy and `tuned_config`), and `tile_reserve` now defaults to 20.
 
+**Stamp order** (`sort_stamps`, 2026-10-30): the order search also tries stamp swaps (Right
+Human Hand boosts the stamp to its right, Underhand targets the sticker in its slot, stamps
+apply left to right), up to 4 swaps per shop. 16 seeds per character vs base (Spike vs its
+tile-buying base): +0.02 (t 0.2), 69 vs 74 wins, 28 better / 34 worse. Only Sock Head
+(Human Boy, whose hands are order effects) stands out: +0.93 (t 1.7). On his 32 cached
+seeds: 9 → 15 wins, +1.31 (t 2.4), 13 better / 3 worse, so it goes on for Sock Head only.
+
+**Michael route** (2026-10-30, crowns 1–4, 6 seeds per character × crown = 264 runs of the
+Michael bench seeds; base = those runs, Spike rerun with its tile buying; 9 of 10 rerun
+check seeds reproduced exactly). `route_value`: in stages 1–4 while every boss was cursed,
+the cursed option is worth (1 − risk) × (1 + `michael_value` × P(beat Michael) × P(surviving
+the remaining floors at the average cursed risk, 0.20)) against the uncursed one's
+(1 − risk) − `cursed_margin`. `ogre`: buy Ogre while chasing (it curses both options of its
+floor and the next while held) and never otherwise. Both on:
+- all-cursed through five bosses 47 of 264 runs (base ≈ 2%); reached Michael 4 → 23, beat
+  him 3 → 5;
+- but run wins 57 → 50, outcome −0.12 (t −0.7). About half of the all-cursed runs died at
+  the fifth cursed boss. Ogre (bought in 58 runs) held through stage 4 curses the stage-5
+  draft, so the stage-5 rule never got to pick the safer boss.
+Now `ogre` sells Ogre from stage 4 on and buys it in stage 4 only while that floor still has
+an uncursed option. Rerun on the same seeds (base 57 wins, Michael reached 4, beaten 3):
+
+| arm | outcome | wins | reached Michael | beat Michael |
+|---|---|---|---|---|
+| route + Ogre held | −0.12 (t −0.7) | 50 | 23 | 5 |
+| route + Ogre sold in stage 4 | −0.09 (t −0.6) | 51 | 23 | 5 |
+| route alone | −0.03 (t −0.2) | 53 | 22 | 5 |
+
+Ogre adds nothing over the route rule (it reaches Michael just as often without it) and
+costs a stamp slot, so `ogre` stays off. The route rule is outcome-neutral: about 4 plain
+wins (mostly crown 1) traded for 5× the Michael fights and 2 Michael wins. The user chose
+more Michael fights: `route_value` is on in the benchmark policy and `tuned_config`; base
+caches from before 2026-10-30 predate it (and Sock Head's stamp order).
+
+**Build-aware boss risk** (`bossmodel.py`, `boss_model`, 2026-10-30). The risk table knows
+how often a boss ends runs on average, not how the build in hand does against it.
+`PowerPolicy.boss_strength` probes the build under each draft option's rules (2 probe
+encounters × 3 greedy grids: points per grid × that fight's grids / its target; 0.1 s per
+option). Training data (`bossdiag.py`, 352 base runs, crowns 0–7, seeds 9,500,000+): at every
+boss draft both options were fought once from the same state, so each option has a label
+(2,606 options, 351 fights lost). A logistic regression on log strength, logit table risk,
+cursed, stage and crown, 5-fold by run:
+
+| predictor | log loss | AUC | picks the cleared option* |
+|---|---|---|---|
+| table risk | 0.382 | 0.62 | 80% |
+| table + cursed / stage / crown | 0.282 | 0.87 | |
+| probe | 0.155 | 0.96 | 88% |
+| all | 0.146 | 0.97 | 90% |
+
+\* the 137 drafts where one option's fight was cleared and the other lost; the base
+policy's own picks got 63% (the route rule takes riskier cursed bosses on purpose).
+`python -m cursed_words_solver.sim.game.bossmodel <logs>` refits and saves
+`sim_models/boss_model.json`. First benchmark (264 new seeds, crowns 0–7, vs a fresh base
+with `route_value` on): +0.08 (t 0.6), wins 52 → 54, Michael reached 14 → 19. 264 more
+seeds: +0.06 (t 0.5). All 528: **+0.07 (t 0.8)**, wins 97 → 104, Michael reached 26 → 37,
+beaten 5 → 11, 137 better / 127 worse. Crowns 0–3 +0.12 to +0.34, crowns 4–7 −0.18 to
++0.11; Sock Head +0.57, Octacles +0.29 (wins 16 → 22), Sandy Saguaro −0.26, Sam Gambit
+−0.17 (all within noise per character). Small, same sign in both halves, not significant;
+runs are ~15% slower (probes at each boss draft). **On by default** (user's choice, 2026-10-30): `tuned_config` and
+`NetPolicy` use `sim_models/boss_model.json` when it exists (pass `boss_model=""` for the
+table only), so base caches before this predate it.
+
+**Long-horizon item value** (`buildvalue.py`, `build_value`, 2026-10-30). The shop judges a
+buy by its gain at the next encounter. `buildvalue collect` (132 base runs, crowns 0–3, seeds
+9,700,000+) measured each owned sticker / stamp's leave-one-out contribution (probe with it /
+without it − 1, same probe grids) when bought and at every later SHOP_TWO: 2,096 items. The
+gain at purchase predicts later contribution weakly (held-out R² 0.17 of log(1 + c)); adding
+the item class gives 0.39, and 0.52 (corr 0.72) on all ordered pairs. For 30% of pairs of
+items bought at the same stage, the bigger gain at purchase is worth less later. Growers:
+Radio, Haunted Mirror, Cursed VHS, Tombstone, Amphora, Rolodex (+0.4 to +2 at purchase,
+many × the build later); faders: Briefcase, Ham Sandwich, Candle, Head Trauma (+1 to +1.5,
+then ~0). `ItemGrowth` (ridge on log(1 + c_t) ~ log(1 + c_u), t − u, u, class offset and
+class × (t − u), λ by CV) turns a gain into the contribution averaged over the stages left;
+`build_value` uses it for Advice overrides, fallback buys and swaps. Benchmark (528 seeds,
+crowns 0–7, vs the boss-model base): **−0.11 (t −0.8)**, wins 104 → 101, Michael reached
+37 → 38, beaten 11 → 11, 225 better / 239 worse; first 264 −0.18, second −0.04. Crowns 0–2
+−0.54 (t −2.2, wins 80 → 67), crowns 3–7 +0.15 (t 0.9, wins 24 → 34, Michael reached
+10 → 15); that split was found after looking, so treat it as a lead. Bones +0.44 (wins
+16 → 22), Nina Nix −0.50 (13 → 8), Wet Dennis −0.49, Hayley Bayles −0.42 (per character all
+within noise). The fit's residuals show no crown trend on crowns 0–3, so a crown feature
+alone is unlikely to explain it; a likelier reason is that surviving the next fight matters
+more where the base already wins often, and a stage-averaged value discounts it. **Off by
+default.**
+
+**Survival-weighted** (`build_value_risk`, 2026-10-30): weight each stage's predicted log
+contribution by P(losing one of its remaining fights) instead of uniformly (d log P(clear) /
+d log strength ∝ P(lose) under a logistic). `buildvalue.stage_weights` takes the probe
+strength at the next fight (points per grid × 5 / target), projects it to each later fight
+by its target and the usual build growth per stage (×3.25, 2.27, 2.52, 1.67 from SHOP_TWO
+to SHOP_TWO, 132 base runs) and uses P(clear) = σ(3.63 log strength − 0.434 stage + 1.94)
+(2,606 boss-draft options of bossdiag). In play the weights follow the risk: early in a
+run nearly all on stage 5, nearer stages when the build falls behind. Benchmark (528 seeds
+vs the boss-model base): **−0.32 (t −2.1)**, wins 104 → 101, Michael reached 37 → 35, 215
+better / 271 worse; first 264 −0.47, second −0.17; negative at every crown (crowns 0–2
+−0.35, 3–7 −0.31) and −0.21 (t −1.6) against uniform `build_value`. Likely cause: early
+in a run it judges items almost entirely by the growth model's stage-5 prediction, the
+farthest extrapolation (stage 1 → 5) from the thinnest data (survivors only), so it buys
+on the model's least reliable output. **Off.** Both variants say the one-encounter probe
+plus Advice beats a class-level growth model; a long-horizon value would need to be
+learned on the outcomes of runs (L1), not extrapolated per item.
+
+**Per-character settings** (`chartune.py`, L3, 2026-10-30). `PowerConfig.char_overrides` maps
+a character (or "Character@lo-hi" for a crown band, applied after the character's own entry)
+to any settings that differ from the base; the policy switches to them at the first action
+of a run (`PowerPolicy._tune`), and `NetPolicy(char_tuning=path)` loads a table. With no
+overrides play is unchanged (stored base runs reproduce). The tuner tries, per character,
+every single-knob change to that character's current settings: `buy_threshold`,
+`power_override` (1.0 = follow Advice), `spend_over`, `reroll_reserve`, `money_weight`,
+`michael_value`, and flips of `swap_sell`, `final_spend`, `route_value`, rack-tile buys and
+stamp sorting. Successive halving on paired seeds (crowns 0–7, seeds 7,000,000+, apart from
+the benchmark): 13 arms × 16 runs, the best 5 (if ahead) × 32 more, the best 2 × 48 more;
+promote when ahead over all 96 by t ≥ 2 and on the last 48 alone (not used to select it).
+A paired difference has sd ~3.3, so one pass detects effects of about +0.7 outcome per
+character; each further pass (`--passes`) draws new seeds and re-tests every knob against
+the new champion. ~560 runs per character, ~2.9 h; one pass over 11 characters ~32 h,
+resumable (`runs.jsonl` in the work dir, table rewritten after each character).
+
+```bash
+python -m cursed_words_solver.sim.game.chartune run ~/.cursed_words_solver/chartune --passes 1
+python -m cursed_words_solver.sim.game.chartune show
+```
+
+**Run speed** (P1, 2026-10-30). Profile of one benchmark run (Nina Nix crown 2, 113 actions,
+357 s under the profiler): 97% word search, 92% of it the shop's probes (`power`, 418
+builds; sticker sorting and swaps alone ~70%); playing the encounters themselves 16 s.
+Enumeration was 2/3 of a search, and probes search the *same* probe grid under many
+loadouts: of 471 enumerations in 60 actions only 144 were distinct. Enumeration reads only
+the tiles, grid shape, movement / letter items (`_MOVE_CLASSES | _LETTER_CLASSES`) and their
+colours, word-length limits, challenge, tries and budgets, not scoring items, money or item
+states, so `ExactSearch._enumerate_all` reuses it for an identical `_enum_key` (64 boards
+kept per process; deterministic searches only, never with a deadline). The quest rank is
+also resolved once per search (`search_rank_function`) instead of per candidate. Three
+full runs played identically to the old code (every action equal), CPU 463 s → 262 s
+(×1.46 to ×2.2, ×1.77 overall). Left: exact scoring (~40% of a search now), enumeration of
+new boards, beam search; cutting further means cheaper probes, which changes play and
+needs a benchmark.
+
 **Advice fallback** (`advice_fallback`): the game's own Advice (`ShopRecommendation`)
 returns "no build" — no recommendation at all — until an owned item carries a build tag.
 Human Boy, Sam Gambit and Nat-H4 start with none, so following Advice never bought
@@ -409,6 +585,126 @@ The earlier attempts (Monte-Carlo value net `learn.py`; rollouts to one stage ah
 expert labels with an MLP) are kept for reference; their labels correlated only ~0.14 with
 a held-out fit, and the trained networks lost to Fast Advice.
 
+### Full action space and state features (P3 / P4, 2026-10-31)
+
+**Actions (P3).** `NetPolicy(action_space="full")` (the default) lists shop options with
+`full_shop_candidates` instead of the Advice-based `shop_candidates`. The Advice
+suggestion comes first, then leave (saving the money) and a restock. After those, five
+groups are dealt round-robin up to `SHOP_CANDIDATES` = 16, so no group crowds the others
+out:
+
+- every buy (tiles and Hungry Hippo feeds included)
+- **sell-then-buy swaps** (`Action("sell_buy", (kind, owned slot, offer))`, one step in
+  `agent.apply`), for offers that only fit once an owned item of that kind is sold, when
+  the sale pays for them
+- freezes and unfreezes
+- plain sells
+- **reorders** (a swap of two slots; scoring order matters)
+
+Before this, the learner never saw a sell, a swap, a reorder or a freeze it wasn't
+suggested. The boss draft, pin reward and Michael's draft already listed every legal
+option. Word play inside an encounter (words, skips, grid rerolls, rack tiles) stays
+with the search.
+
+- About 13.5 candidates per shop state; candidate listing plus after-states cost ~70 ms
+  per shop decision, mostly the Advice suggestion.
+- Without a model, play is action-for-action identical to the old space (2 seeds
+  checked), so benchmarks of the base policy do not move.
+- Training pairs draw their alternative group-first (`sample_alternative`), so the many
+  reorders and freezes do not drown the rarer, bigger choices.
+- `afterstate` drops an action whose `apply` returns False (a swap whose buy fails).
+
+**Features (P4, `features.py` v4; 1035 → 2088 columns).** Appended, so older pair files pad
+with zeros, and saved models read the prefix they were fitted on (`learn.fit_width`; the
+pin model splits its `(x, dx)` halves at its own width). Added:
+
+- crown one-hot
+- boss targets of the next two stages and the final one; stages and encounters left
+- Michael's route (crown ≥ 1 and no uncursed boss faced) and cursed bosses still needed
+- economy: free slots, inventory sell value, money invested, and in a shop the restock
+  cost, Angel Investment and free pick
+- generator present; rare and legendary counts
+- build-synergy tag rank and unmet dependency tags
+- per class:
+  - `pos:` slot position, so reorders are visible
+  - `ivar:` signed log of component values (growth)
+  - `ictr:` log of the item's state counters (`fields`, transient `_` ones left out)
+- **shared per-class descriptors**: `item_descriptors()` is a static vector per class
+  (tags, function tags, dependency tags, relevant colours, rarity, sticker / stamp,
+  food / animal, unsellable, log cost). `desc:*` is that vector summed over the inventory
+  by level, so a rarely seen class is valued through what it shares with common ones.
+
+**No shop stock in the features, on purpose:** a restock's after-state is built on a clone
+whose RNG then deals the real next stock. Seeing it would let the model peek at a draw
+the game hides until you pay.
+
+### Benchmarks, resumable training, cheap rule tests (P5 / P6 / P8, 2026-10-31)
+
+**Benchmark tool (`bench.py`).** One scoreboard for every policy change, replacing the
+scratchpad scripts:
+
+```
+python -m cursed_words_solver.sim.game.bench run <arm> --cfg '{"finish_early": 0.75}'
+python -m cursed_words_solver.sim.game.bench compare <base> <arm>
+python -m cursed_words_solver.sim.game.bench show <arm>
+```
+
+- An arm is `NetPolicy` plus `PowerConfig` overrides, an optional model and margin,
+  per-character settings and the action space.
+- Every arm plays the same 528 runs: 11 characters × crowns 0–7 × 6 seeds, seed
+  8,000,000 + 1000 × character + 100 × crown + i.
+- `compare` reports, run by run: mean, t, wins, Michael reached / beaten, and better /
+  worse. It breaks these down overall, by seed halves (a replication check), by crown and
+  by character.
+- Runs go to `~/.cursed_words_solver/bench/<arm>.jsonl` as they finish, so rerunning the
+  command resumes. `<arm>.json` keeps the arm's settings; reusing a name with other
+  settings is refused.
+- Each run stores a fingerprint of the package source. `compare` warns when the two arms
+  ran on different code. The scratchpad base (`bm_arm.jsonl`) predates the Northern
+  Cardinal fix, so it can't be a base any more.
+
+**Resumable training (`expert.py`).**
+
+- Data runs were already checkpointed every 16 runs.
+- **Fixed:** an iteration counted as done as soon as its data file existed, so a restart
+  between data and benchmark skipped that model's benchmark and promotion altogether. Now
+  an iteration is done only once its `history.json` row is written, and a finished data
+  file is reused.
+- Every benchmark run goes to `evals/<seed set>_<model>_<margin>.jsonl` and is reused.
+  Before, a restart lost the whole benchmark. A model is named by a hash of its arrays,
+  since `.npz` files carry their write time.
+- `history.json` and the chartune table are written atomically.
+- Each promoted model is kept as `champion_it<n>.npz`.
+- `config.json` refuses a rerun with other characters, crowns or run counts (they would
+  change the seed sets).
+
+**Cheap rule tests (P8).** E5 is on by default since 2026-10-31 (`finish_early` 0.75); S3 is off:
+
+- **E5 `finish_early`:** each unused grid pays $2. When the best word doesn't clear, reroll
+  the grid for one that does, if the best reaches `finish_early` × what is still needed.
+  On the last grid it always rerolls (rerolls left): there the old rule played a word
+  that doesn't clear, which loses the run, whenever it reached 0.55 of the need.
+- **S3 `late_swaps`:** sell-and-replace swaps allowed per shop from `late_swap_stage` (4).
+  Otherwise 1, or 3 in the final shop (`_swap_limit`).
+
+**Results (2026-10-31, 528 paired seeds, same code `00ce3dc755`, against base `{}`):**
+
+| Arm | Mean / run | t | Wins | Michael reached / beaten | Halves (t) |
+|---|---|---|---|---|---|
+| E5 `finish_early` 0.75 | **+0.245** | +2.02 | 104 → 110 | 37 → 35 / 11 → 9 | +1.15, +1.66 |
+| S3 `late_swaps` 3 | −0.047 | −1.26 | 104 → 103 | 37 → 35 / 11 → 9 | −1.66, −0.12 |
+| Spike `swap_sell` off (chartune), Spike's 48 runs | −0.195 | −0.48 | 10 → 8 | 1 → 1 / 1 → 0 | −0.36, −0.40 |
+
+- E5 is a small gain that holds in both seed halves. It is strongest at crowns 2 and 5 and
+  slightly negative at crown 0. Michael wins don't improve (11 → 9, within noise).
+- S3 changes only 62 of 528 runs and doesn't help. It stays off.
+- The only setting chartune's first pass promoted (it ran before the Northern Cardinal fix)
+  doesn't hold up on current code. The table is not enabled.
+- With E5 on by default, a `{}` arm now plays E5, and arms run on earlier code are no longer a
+  valid base (`compare` warns on a code mismatch). The chartune `runs.jsonl` and the training
+  `evals/` caches don't record the code they ran on. Start a fresh work dir for them after a
+  play change.
+
 ## Known gaps
 
 - **Pin side is not really chosen** (next to do when training resumes): the policy upgrades
@@ -426,7 +722,9 @@ a held-out fit, and the trained networks lost to Fast Advice.
 - `GetValidNextTiles` is only needed for Carousel Horse's knight squares; that uses plain
   knight moves (+ Hungry Snake wrap).
 - Unlock profile is "everything unlocked"; `RunConfig.unlocked_characters` controls secret
-  bosses and `character_never_won` the Shop Advice starter item.
+  bosses and `character_never_won` the Shop Advice starter item. This is on purpose (the AI is
+  for the full game); real shops on a partly unlocked save differ only by the locked items
+  and the smaller tag pools that follow.
 
 ## Usage
 

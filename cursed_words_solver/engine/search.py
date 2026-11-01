@@ -13,7 +13,8 @@ each path is scored once.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from collections import OrderedDict
+from dataclasses import dataclass, field, fields, replace
 from typing import Any, Callable
 
 from cursed_words_solver.engine import packet as P
@@ -104,6 +105,10 @@ class _Inventory:
 
 
 _CLASS_SLUG = {info.cls: slug for slug, info in ITEMS.items()}
+_COLOUR_CLASSES = ("RedEnvelope", "SpicyPepper", "Automobile", "Flamingo")  # colours enumeration reads
+_TILE_FIELDS = tuple(f.name for f in fields(ETile))
+# Search limits enumeration reads (the effort mode scales them per search).
+_ENUM_BUDGETS = ("subset_path_budget", "exhaustive_node_budget", "min_start_node_budget", "max_exact_paths")
 
 
 def _word_string(t: ETile) -> str:
@@ -1112,7 +1117,40 @@ class ExactSearch:
                     found[p] = w
         return found, exhaustive
 
+    def _enum_key(self, starts) -> tuple:
+        """Everything enumeration reads: the tiles and grid shape, the movement / letter
+        items (and their colours), word-length limits, challenge, tries and budgets. Scoring
+        items, money and item states are left out: they only matter when scoring."""
+        rel = _MOVE_CLASSES | _LETTER_CLASSES
+        inv = tuple((frozenset(i.classes & rel), tuple(tuple(i.colours.get(c, ())) for c in _COLOUR_CLASSES))
+                    for i in (self.base_inv, self.super_inv))
+        cursed = tuple(self.plan.is_cursed(t) for t in self.tiles) if self.challenge == "Cursophobia" else None
+        return (self.trie, tuple(self.plan.accumulator_words or ()), self.grid.width, self.grid.height,
+                tuple(tuple(getattr(t, f) for f in _TILE_FIELDS) for t in self.tiles), inv, self.challenge, cursed,
+                self.min_len, self.max_len, self.part_max_len, self.honeypot, self.finale, self.up_and_up_center,
+                tuple(getattr(self, k) for k in _ENUM_BUDGETS), tuple(starts) if starts is not None else None)
+
     def _enumerate_all(self, deadline, cancel_check, starts=None) -> tuple[dict[tuple[int, ...], str], set[tuple[int, ...]]]:
+        """``_enumerate_uncached``, reused for an identical board (``_enum_key``) when the
+        search is deterministic (no deadline): the shop's probes search the same probe grid
+        under many loadouts, and enumeration is most of a search's time."""
+        if deadline is not None or cancel_check is not None or self.enum_cache_size <= 0:
+            return self._enumerate_uncached(deadline, cancel_check, starts)
+        cache = ExactSearch._enum_cache
+        key = self._enum_key(starts)
+        hit = cache.get(key)
+        if hit is None:
+            found, needs_check = self._enumerate_uncached(deadline, cancel_check, starts)
+            cache[key] = (dict(found), frozenset(needs_check), replace(self.stats, extra=dict(self.stats.extra)))
+            while len(cache) > self.enum_cache_size:
+                cache.popitem(last=False)
+            return found, needs_check
+        cache.move_to_end(key)
+        found, needs_check, stats = hit
+        self.stats = replace(stats, extra=dict(stats.extra))
+        return dict(found), set(needs_check)
+
+    def _enumerate_uncached(self, deadline, cancel_check, starts=None) -> tuple[dict[tuple[int, ...], str], set[tuple[int, ...]]]:
         """Pass A: exact base inventory (always valid). Pass B: inventory widened by
         board scattered items, keeping only paths that pick one up (checked later).
         Extra items only ever add matches, so A + checked B is exactly the valid set.
@@ -1169,6 +1207,9 @@ class ExactSearch:
         self.stats.paths = len(found)
         return found, needs_check
 
+    # Enumerations kept for reuse (deterministic searches); 0 turns reuse off.
+    enum_cache_size = 64
+    _enum_cache: OrderedDict = OrderedDict()
     # Tile-path DFS nodes allowed for the vectorised subset tier.
     subset_path_budget = 400_000
     max_exact_paths = 25000

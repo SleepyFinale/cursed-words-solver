@@ -63,7 +63,7 @@ class MLP:
         return h[:, 0], acts
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        X = (np.atleast_2d(X).astype(np.float32) - self.mu) / self.sd
+        X = (fit_width(np.atleast_2d(X).astype(np.float32), len(self.mu)) - self.mu) / self.sd
         y, _ = self._forward(X)
         return y * self.y_sd + self.y_mu
 
@@ -172,7 +172,7 @@ class Ridge:
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        X = np.atleast_2d(X).astype(np.float64)
+        X = fit_width(np.atleast_2d(X).astype(np.float64), len(self.w))
         return ((X - self.mu) / self.sd) @ self.w + self.b
 
     def save(self, path: Path) -> None:
@@ -184,6 +184,16 @@ class Ridge:
         names = feature_names()
         order = np.argsort(-np.abs(self.w / self.sd))[:k]
         return [(names[i], float(self.w[i] / self.sd[i])) for i in order]
+
+
+def fit_width(X: np.ndarray, n: int) -> np.ndarray:
+    """Rows cut or zero-padded to ``n`` columns: features are only ever appended, so a model
+    saved at an older width reads the prefix it was fitted on."""
+    if X.shape[1] > n:
+        return X[:, :n]
+    if X.shape[1] < n:
+        return np.pad(X, ((0, 0), (0, n - X.shape[1])))
+    return X
 
 
 def load_model(path: Path):

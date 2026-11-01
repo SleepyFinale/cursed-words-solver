@@ -58,6 +58,14 @@ def slug_for(game_class: str) -> str:
 # ---------------------------------------------------------------------------- base
 
 
+# Items whose ``GetDescription`` literal text contains "red" in any case (decompile scan).
+_RED_IN_DESCRIPTION = frozenset({
+    "Abacus", "ArtistsPalette", "Champagne", "ChessBoard", "FerrisWheel", "FlashyFountainPen", "Magnet",
+    "Maracas", "NorthernCardinal", "Parrot", "RainbowSprinkles", "Saxophone", "SmartShirt", "Sushi",
+    "TrafficLights",
+})
+
+
 class Item:
     """One live game item (sticker: 1 component, stamp: 0, pin: 2)."""
 
@@ -155,8 +163,11 @@ class Item:
         return max(0, total)
 
     def mentions_red(self) -> bool:
-        """``GetDescription().Contains("red")`` — approximated from tags / colours."""
-        return "RedBuild" in self.tags or C.RED in self.relevant_colours
+        """``GetDescription().Contains("red")`` (any case, so "coloured" and "Scattered" count):
+        the classes whose fixed description text has it, else tags / colours for the
+        descriptions that name a tile colour."""
+        return (self.game_class in _RED_IN_DESCRIPTION or "RedBuild" in self.tags
+                or C.RED in self.relevant_colours)
 
     def get_cost(self, player: "Player") -> int:
         """``Item.GetCost``."""

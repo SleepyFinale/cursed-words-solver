@@ -24,14 +24,26 @@ Each iteration:
    champion, i.e. the policy that generates the next iteration's data.
 
 Data and models live in ``~/.cursed_words_solver/sim_models/expert/`` (``--dir``);
-``history.json`` records each iteration and the champion is ``champion.npz``.
+``history.json`` records each iteration and the champion is ``champion.npz`` (each
+promoted model is also kept as ``champion_it<n>.npz``).
+
+Resumable at every step (P6): rerun the same command after a restart. Data runs are
+checkpointed every 16 runs (``pairs_it<n>.partial.npz``); a finished data file is not
+collected again; every benchmark run is appended to ``evals/<seed set>_<model>_<margin>.jsonl``
+as it finishes and reused (the model is named by a hash of its file, so a refitted model
+never reuses another's runs); an iteration counts as done once its ``history.json`` row is
+written (atomically). ``config.json`` keeps the characters / crowns / run counts the
+directory was started with; a rerun with others is refused (the seed sets would change).
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import random
+import shutil
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -46,11 +58,12 @@ from cursed_words_solver.sim.game.features import encode, feature_names, outcome
 from cursed_words_solver.sim.game.player import Node
 from cursed_words_solver.sim.game.itemvalue import RUN_LOG
 from cursed_words_solver.sim.game.learn import Ridge, load_model
-from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig, offer_class
+from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig, load_char_tuning, offer_class
 
 
 DEFAULT_DIR = Path.home() / ".cursed_words_solver" / "sim_models" / "expert"
 SHOP_CAP = 14
+SHOP_CANDIDATES = 16  # cap on full_shop_candidates per shop state
 EFFORT = 0.05  # deterministic word search (load-independent, reproducible benchmarks)
 THRESHOLDS = (0.5, 1.0, 2.0)
 ROLL_EFFORT, ROLL_TARGETS = 0.02, 3  # play-out continuation (see _pairs_job)
@@ -94,15 +107,78 @@ def shop_candidates(game, suggestion: Action, max_candidates: int = 4) -> list[A
     return out
 
 
+# Action groups of the full shop space, in the order they share the candidate cap.
+SHOP_GROUPS = ("buy", "sell_buy", "freeze", "sell", "move")
+
+
+def _group(a: Action) -> str:
+    return "buy" if a.kind == "hippo" else a.kind
+
+
+def full_shop_candidates(game, suggestion: Action, cap: int = SHOP_CANDIDATES) -> list[Action]:
+    """Every kind of legal shop move (P3), the suggestion first: leave (saving the money) and
+    a restock always, then buys (tiles and Hungry Hippo feeds included), sell-then-buy swaps
+    for offers that only fit once an owned item of that kind is sold, freezes / unfreezes,
+    plain sells and reorders (a swap of two slots; scoring order matters), dealt round-robin
+    across those groups until ``cap`` so no group crowds the others out. A swap is listed
+    when the sale would pay for the offer; ``afterstate`` drops the ones that still fail."""
+    from cursed_words_solver.sim.game.shop import can_sell
+
+    acts = legal_actions(game)
+    out = [suggestion]
+    _add(out, Action("leave"))
+    for a in acts:
+        if a.kind == "reroll_shop":
+            _add(out, a)
+    groups: dict[str, list[Action]] = {g: [] for g in SHOP_GROUPS}
+    for a in acts:
+        if _group(a) in groups and a.kind != "move":
+            groups[_group(a)].append(a)
+    p, s = game.player, game.shop
+    for kind, owned, stock in (("sticker", p.stickers, s.stickers), ("stamp", p.stamps, s.stamps)):
+        for j, o in enumerate(stock):
+            if o is None or s.can_buy(kind, j):
+                continue
+            for i, it in enumerate(owned):
+                if (it is None or it.game_class == o.item.game_class or not can_sell(p, it)
+                        or p.money + max(0, it.sell_value(p)) < s.offer_cost(o)):
+                    continue
+                groups["sell_buy"].append(Action("sell_buy", (kind, i, j), f"sell {it.game_class}, buy {o.item.game_class}"))
+        n = sum(it is not None for it in owned)
+        for a_ in range(5):
+            for b_ in range(a_ + 1, 5):
+                if n >= 2 and (owned[a_] is not None or owned[b_] is not None):
+                    src, dst = (a_, b_) if owned[a_] is not None else (b_, a_)
+                    groups["move"].append(Action("move", (kind, src, dst), f"swap {kind}s {src}<->{dst}"))
+    pending = [list(groups[g]) for g in SHOP_GROUPS]
+    while len(out) < cap and any(pending):
+        for q in pending:
+            if q and len(out) < cap:
+                _add(out, q.pop(0))
+    return out
+
+
+def sample_alternative(rng: random.Random, cands: list[Action]) -> Action:
+    """An alternative to ``cands[0]`` for a training pair: a group (buy, swap, freeze, sell,
+    reorder, leave, restock, boss / pin option) uniformly, then a move in it, so the many
+    reorders and freezes do not drown the rarer, bigger choices."""
+    by: dict[str, list[Action]] = {}
+    for a in cands[1:]:
+        by.setdefault(_group(a), []).append(a)
+    return rng.choice(by[rng.choice(sorted(by))])
+
+
 def _sparse(x: np.ndarray) -> dict[str, float]:
     """Non-zero entries of a feature vector, {index: value} (compact run-log rows)."""
     return {str(i): round(float(x[i]), 4) for i in np.flatnonzero(np.abs(x) > 1e-6)}
 
 
 def afterstate(game, a: Action) -> np.ndarray | None:
+    """Features after ``a``; None when it fails (raises, or a buy / swap returns False)."""
     g = clone(game, light=True)
     try:
-        apply(g, a)
+        if apply(g, a) is False:
+            return None
     except Exception:
         return None
     return encode(g)
@@ -112,12 +188,21 @@ class NetPolicy(FastAdvicePolicy):
     """Fast Advice everywhere; run-level choices overridden by a learned advantage model."""
 
     def __init__(self, cands: Candidates, model=None, *, seed: int = 0, threshold: float | None = None,
-                 boss_risk: str = "") -> None:
-        cfg = PowerConfig(probe_seeds=1, probe_grids=2, boss_risk=boss_risk or "", fast_placement=True,
-                          placement_targets=8, advice_fallback=True, sort_items=True, spend_over=20,
-                          power_override=0.1, swap_sell=True, tile_buy_chars=("Spike",))
+                 boss_risk: str = "", boss_model: str | None = None, char_tuning: str = "",
+                 action_space: str = "full") -> None:
+        if boss_model is None:  # build-aware boss risk (on 2026-10-30); only used with a boss_risk table
+            from cursed_words_solver.sim.game.bossmodel import DEFAULT_PATH
+
+            boss_model = str(DEFAULT_PATH) if DEFAULT_PATH.is_file() else ""
+        cfg = PowerConfig(probe_seeds=1, probe_grids=2, boss_risk=boss_risk or "", boss_model=boss_model,
+                          fast_placement=True, placement_targets=8, advice_fallback=True, sort_items=True, spend_over=20,
+                          power_override=0.1, swap_sell=True, tile_buy_chars=("Spike",),
+                          sort_stamps_chars=("SockHead",), route_value=True)
+        if char_tuning:  # chartune.py's per-character settings
+            cfg.char_overrides = load_char_tuning(Path(char_tuning))
         super().__init__(cands, cfg, seed=seed)
         self.model = model
+        self.action_space = action_space  # "full": full_shop_candidates; "advice": shop_candidates
         self.threshold = threshold if threshold is not None else float(getattr(model, "threshold", 0.5))
         self._steps = 0
         self._playout: NetPolicy | None = None
@@ -127,6 +212,8 @@ class NetPolicy(FastAdvicePolicy):
         """Options at a run-level decision, the base (Advice / heuristic) choice first."""
         ph = game.phase
         if ph == "shop":
+            if self.action_space == "full":
+                return full_shop_candidates(game, self._advice_shop(game))
             return shop_candidates(game, self._advice_shop(game))
         if ph == "boss_draft":
             fb = FastAdvicePolicy._boss(self, game)
@@ -192,6 +279,7 @@ class NetPolicy(FastAdvicePolicy):
 
     def decide(self, game) -> tuple[Action, list[Action]]:
         """(action, candidates) — candidates empty when this is not a run-level decision."""
+        self._tune(game)
         ph = game.phase
         if ph != "shop":
             self._steps = 0
@@ -216,11 +304,13 @@ class NetPolicy(FastAdvicePolicy):
         """Advice books its per-shop plan (bought / sold / frozen) when it *suggests*; on an
         override undo that and book the action actually taken instead."""
         self._frozen_this_shop, self._bought_this_shop, self._sold_this_shop = memo
-        if a.kind == "buy" and a.args[0] in ("sticker", "stamp"):
+        self._pending_buy = None  # a swap Advice planned is not happening
+        if a.kind in ("buy", "sell_buy") and a.args[0] in ("sticker", "stamp"):
             stock = game.shop.stickers if a.args[0] == "sticker" else game.shop.stamps
-            if stock[a.args[1]] is not None:
-                self._bought_this_shop.add(stock[a.args[1]].item.game_class)
-        elif a.kind == "sell":
+            o = stock[a.args[-1]]
+            if o is not None:
+                self._bought_this_shop.add(o.item.game_class)
+        if a.kind in ("sell", "sell_buy"):
             self._sold_this_shop = True
         elif a.kind == "freeze":
             self._frozen_this_shop.add(tuple(a.args))
@@ -330,7 +420,7 @@ def _pairs_job(job: dict[str, Any]) -> dict[str, Any]:
             a, cands = pol.decide(g)
             if len(cands) > 1 and rng.random() < job["p_sample"]:
                 k += 1
-                alt = rng.choice(cands[1:])
+                alt = sample_alternative(rng, cands)
                 xa, xb = afterstate(g, cands[0]), afterstate(g, alt)
                 if xa is not None and xb is not None:
                     seed = f"{job['seed']}|{k}"
@@ -383,9 +473,36 @@ def _eval_job(job: dict[str, Any]) -> dict[str, Any]:
             "shops": shops, "pins": pins, "pin_log": pol.pin_log, "bosses": boss_outcomes(g), "error": error}
 
 
+def atomic_write(path: Path, text: str) -> None:
+    """Write via a temporary file and rename, so a restart mid-write never leaves half a file."""
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
+def model_tag(model: str | None) -> str:
+    """'base' or a short hash of the model's arrays (eval caches are keyed by it; the file
+    bytes would not do, ``.npz`` members carry the time they were written)."""
+    if not model:
+        return "base"
+    h = hashlib.sha1()
+    with np.load(model, allow_pickle=False) as d:
+        for k in sorted(d.files):
+            h.update(k.encode())
+            h.update(np.ascontiguousarray(d[k]).tobytes())
+    return h.hexdigest()[:10]
+
+
 def collect(jobs, *, workers, wordlist, model, out: Path) -> dict[str, Any]:
     """Run the data jobs; finished runs are checkpointed to ``<out>.partial.npz`` every 16
-    runs, so an interrupted iteration resumes where it stopped."""
+    runs, so an interrupted iteration resumes where it stopped. A finished ``out`` is
+    reused as it is."""
+    if out.is_file():
+        with np.load(out) as d:
+            stats = {"runs": int(len(d["seeds"])), "wins": int(d["wins"][0]), "pairs": int(len(d["dy"]))}
+        print(f"  data already collected: {stats}", flush=True)
+        return stats
     partial = out.with_name(out.stem + ".partial.npz")
     dXs, dys, ks = [], [], []
     done: set[int] = set()
@@ -427,21 +544,45 @@ def collect(jobs, *, workers, wordlist, model, out: Path) -> dict[str, Any]:
 
 
 def evaluate(jobs, *, workers, wordlist, model, threshold: float | None = None,
-             cheap: bool = False, run_log: Path | None = RUN_LOG) -> dict[str, Any]:
+             cheap: bool = False, run_log: Path | None = RUN_LOG, cache: Path | None = None) -> dict[str, Any]:
     """Run full games; ``cheap`` uses the faster exact-scoring floor (long benchmarks).
     Every run is appended to ``run_log`` (purchases, shops, bosses, outcome), the data the
-    item-value table learns from, so each benchmark also adds training data."""
+    item-value table learns from, so each benchmark also adds training data. With
+    ``cache`` (a ``.jsonl``) each finished run is appended there and runs already in it are
+    not played again (an interrupted benchmark resumes)."""
     jobs = [{**j, "threshold": threshold if threshold is not None else j.get("threshold")} for j in jobs]
-    with spawn_pool(workers, _init, (wordlist, model, EFFORT, cheap)) as pool:
-        res = pool.map(_eval_job, jobs)
+    done: dict[int, dict] = {}
+    if cache is not None and Path(cache).is_file():
+        for line in Path(cache).read_text().splitlines():
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue  # a line cut short by a restart
+            done[r["seed"]] = r
+    todo = [j for j in jobs if j["seed"] not in done]
+    if done:
+        print(f"  resuming benchmark: {len(jobs) - len(todo)} of {len(jobs)} runs done", flush=True)
+    if cache is not None:
+        Path(cache).parent.mkdir(parents=True, exist_ok=True)
+    fresh: list[tuple[dict, dict]] = []
+    if todo:
+        by_seed = {j["seed"]: j for j in todo}
+        with spawn_pool(workers, _init, (wordlist, model, EFFORT, cheap)) as pool:
+            for r in pool.imap_unordered(_eval_job, todo):
+                done[r["seed"]] = r
+                fresh.append((by_seed[r["seed"]], r))
+                if cache is not None:
+                    with Path(cache).open("a", encoding="utf-8") as f:
+                        f.write(json.dumps(r) + "\n")
+    res = [done[j["seed"]] for j in jobs]
     errors = [r for r in res if r["error"]]
     if errors:
         print(f"  {len(errors)} runs crashed, e.g. seed {errors[0]['seed']}: {errors[0]['error']}", flush=True)
-    if run_log is not None:
+    if run_log is not None and fresh:
         run_log = Path(run_log)
         run_log.parent.mkdir(parents=True, exist_ok=True)
         with run_log.open("a", encoding="utf-8") as f:
-            for j, r in zip(jobs, res):
+            for j, r in fresh:
                 f.write(json.dumps({**r, "cfg": j.get("cfg") or {}, "model": bool(model),
                                     "boss_risk": bool(j.get("boss_risk")), "cheap": cheap}) + "\n")
     return {"runs": len(res), "wins": sum(r["won"] for r in res),
@@ -528,24 +669,37 @@ def main(argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     chars = [c for c in args.characters.split(",") if c]
     crowns = [int(c) for c in args.crowns.split(",") if c]
+    setup = {"characters": chars, "crowns": crowns, "runs": args.runs, "eval_runs": args.eval_runs,
+             "p_sample": args.p_sample, "keyed": not args.plain_rng}
+    cfg_path = out / "config.json"
+    if cfg_path.is_file():
+        old = json.loads(cfg_path.read_text())
+        if old != setup:
+            raise SystemExit(f"{out} was started with {old}; use those settings or another --dir")
+    else:
+        atomic_write(cfg_path, json.dumps(setup, indent=1))
     hist_path = out / "history.json"
     history = json.loads(hist_path.read_text()) if hist_path.is_file() else []
     eval_jobs = make_jobs(args.eval_runs, 777, chars, crowns, boss_risk=risk)
     kw = {"workers": args.workers, "wordlist": args.wordlist}
+
+    def ev(jobs, name: str, model: str | None, threshold: float | None = None) -> dict[str, Any]:
+        th = "" if threshold is None else f"_th{threshold}"
+        return evaluate(jobs, model=model, threshold=threshold, cache=out / "evals" / f"{name}_{model_tag(model)}{th}.jsonl", **kw)
     champ_path = out / "champion.npz"
     champ = str(champ_path) if champ_path.is_file() else None
     if not history:
-        base = evaluate(eval_jobs, model=None, **kw)
+        base = ev(eval_jobs, "eval", None)
         base.pop("per_seed")
         print("baseline (Fast Advice):", base, flush=True)
         history.append({"iteration": "baseline", "eval": base})
-        hist_path.write_text(json.dumps(history, indent=1))
+        atomic_write(hist_path, json.dumps(history, indent=1))
     confirm_jobs = make_jobs(args.eval_runs, 778, chars, crowns, boss_risk=risk)
     champ_confirm = next((h["confirm"] for h in reversed(history) if h.get("champion")), None)
     if champ and not any(h.get("champion") and "paired" in h for h in history):
         # Champion promoted by the old win-count rule: re-check it with the paired test.
-        base = evaluate(confirm_jobs, model=None, **kw)
-        cur = evaluate(confirm_jobs, model=champ, **kw)
+        base = ev(confirm_jobs, "confirm", None)
+        cur = ev(confirm_jobs, "confirm", champ)
         test = paired_test(cur["per_seed"], base["per_seed"])
         print(f"re-check champion vs Fast Advice on confirm seeds: {test}", flush=True)
         if test["t"] < PROMOTE_T:
@@ -556,8 +710,9 @@ def main(argv: list[str] | None = None) -> int:
             champ_confirm = cur
         history.append({"iteration": "recheck", "champion": champ is not None, "paired": test,
                         "confirm": cur if champ else base})
-        hist_path.write_text(json.dumps(history, indent=1))
-    start = len([f for f in out.glob("pairs_it*.npz") if not f.name.endswith(".partial.npz")])
+        atomic_write(hist_path, json.dumps(history, indent=1))
+    # Iterations with a history row are done; a data file without one is reused by collect().
+    start = len([h for h in history if isinstance(h.get("iteration"), int)])
     for it in range(start, start + args.iterations):
         print(f"iteration {it}: {args.runs} runs by {'champion' if champ else 'Fast Advice'}", flush=True)
         stats = collect(make_jobs(args.runs, 2000 + it, chars, crowns, p_sample=args.p_sample, boss_risk=risk,
@@ -575,36 +730,37 @@ def main(argv: list[str] | None = None) -> int:
                    "skipped": f"cv_corr < {MIN_CORR}: collecting more pairs before benchmarking"}
             print(json.dumps(row), flush=True)
             history.append(row)
-            hist_path.write_text(json.dumps(history, indent=1))
+            atomic_write(hist_path, json.dumps(history, indent=1))
             continue
         best_ev, best_th = None, None
         for th in THRESHOLDS:
             m.threshold = th
             m.save(path)
-            ev = evaluate(eval_jobs, model=str(path), threshold=th, **kw)
-            ev.pop("per_seed")
-            print(f"  margin {th}: {ev}", flush=True)
-            if best_ev is None or (ev["wins"], ev["mean_outcome"]) > (best_ev["wins"], best_ev["mean_outcome"]):
-                best_ev, best_th = ev, th
+            res = ev(eval_jobs, "eval", str(path), th)
+            res.pop("per_seed")
+            print(f"  margin {th}: {res}", flush=True)
+            if best_ev is None or (res["wins"], res["mean_outcome"]) > (best_ev["wins"], best_ev["mean_outcome"]):
+                best_ev, best_th = res, th
         m.threshold = best_th
         m.save(path)
         # Margin chosen on the benchmark seeds; promotion is decided on fresh seeds by a
         # paired test (same seeds, deterministic runs): mean per-seed outcome gain > 1.65 SE.
-        conf = evaluate(confirm_jobs, model=str(path), **kw)
+        conf = ev(confirm_jobs, "confirm", str(path))
         if champ_confirm is None or "per_seed" not in champ_confirm:
-            champ_confirm = evaluate(confirm_jobs, model=champ, **kw)
+            champ_confirm = ev(confirm_jobs, "confirm", champ)
         test = paired_test(conf["per_seed"], champ_confirm["per_seed"])
         print(f"  confirm: {conf['wins']} wins / mean {conf['mean_outcome']:.3f} vs champion "
               f"{champ_confirm['wins']} / {champ_confirm['mean_outcome']:.3f}; paired {test}", flush=True)
         promoted = test["t"] >= PROMOTE_T
         if promoted:
             m.save(champ_path)
+            shutil.copyfile(champ_path, out / f"champion_it{it:03d}.npz")
             champ, champ_confirm = str(champ_path), conf
         row = {"iteration": it, "model": str(path), "threshold": best_th, "champion": promoted,
                "data": stats, "fit": fit, "eval": best_ev, "confirm": conf, "paired": test}
         print(json.dumps(row), flush=True)
         history.append(row)
-        hist_path.write_text(json.dumps(history, indent=1))
+        atomic_write(hist_path, json.dumps(history, indent=1))
     return 0
 
 

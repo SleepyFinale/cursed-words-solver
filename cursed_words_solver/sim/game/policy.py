@@ -11,14 +11,14 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cursed_words_solver.sim.game.agent import Action, Candidates, WordOption, apply, clone, legal_actions
 from cursed_words_solver.sim.game.core import Rng
 from cursed_words_solver.sim.game.encounter import Encounter
-from cursed_words_solver.sim.game.player import ENCOUNTER_NODES, NUMBER_OF_STAGES, Node
+from cursed_words_solver.sim.game.player import ENCOUNTER_NODES, GRIDS_PER_ROUND, NUMBER_OF_STAGES, Node
 
 if TYPE_CHECKING:  # pragma: no cover
     from cursed_words_solver.sim.game.run import Game
@@ -97,6 +97,25 @@ class PowerConfig:
     michael_aware: bool = True  # stage-5 draft: weigh surviving the cursed boss and the Michael bonus
     michael_prior_risk: float = 0.5
     michael_value: float = 0.5  # extra run wins a Michael win is worth (features.MICHAEL_BONUS / 16)
+    # ``route_value``: stages 1-4 while chasing, a cursed boss is worth its survival chance times
+    # (1 + the Michael bonus x P(surviving the remaining floors' cursed bosses at their average
+    # risk)), not just a fixed ``cursed_margin`` (2026-10-30: cursed bosses end 20% of runs that
+    # face them vs 12% uncursed, so a 0.05 margin took cursed only ~50% of the time per floor).
+    route_value: bool = False
+    # ``boss_model``: path of a ``bossmodel.BossModel``; boss drafts then use its build-aware
+    # risk (probe of this build under each option's rules + the table's risk) instead of the table.
+    boss_model: str = ""
+    # ``build_value``: path of a ``buildvalue.ItemGrowth``; shop buys, Advice overrides and swaps
+    # then judge an item by its contribution averaged over the stages left (measured now,
+    # predicted for later stages from its class), not by the next encounter's probe alone.
+    build_value: str = ""
+    # ``build_value_risk``: weight those stages by the chance of losing one of their fights
+    # (this build's probe strength at the next fight, projected by targets and usual growth).
+    build_value_risk: bool = False
+    # ``ogre``: Ogre curses both boss options of its floor (and the next one while held), so buy
+    # it while chasing (stages 1-4, a free stamp slot) and never otherwise: outside a chase it
+    # only makes bosses harder (bought by Advice in 62 of 2,388 crown >= 1 runs).
+    ogre: bool = False
     cursed_margin: float = 0.05  # with boss_risk: take a cursed boss unless this much riskier
     swap_sell: bool = False  # slots full: sell an owned item to buy a better one (probe-checked)
     power_override: float = 0.0  # replace Advice's buy when another adds this much more probe power
@@ -122,27 +141,72 @@ class PowerConfig:
     # ``tile_save``: placing, use the least valuable rack tile (Tile.GetValue: shiny 50, gold =
     # money, letter value + colour) among those within ``tile_save_ratio`` of the best gain.
     tile_save: bool = False
+    sort_stamps: bool = False  # ``sort_items`` also searches stamp swaps
+    # ... for these characters only: neutral overall, Sock Head 9 -> 15 of 32 wins (2026-10-30)
+    sort_stamps_chars: tuple[str, ...] = ()
     tile_save_ratio: float = 0.85
     # FastAdvicePolicy encounter planner: compare the top words / reroll / best placement by
     # playing the rest of the encounter out (see ``FastAdvicePolicy._plan``).
     plan_encounter: bool = False
+    # E5 finish early (each unused grid pays $2): when the best word does not clear, reroll
+    # the grid for one that does if it reaches ``finish_early`` x what is still needed, and
+    # always on the last grid, where a word that does not clear loses (0 = off). On since
+    # 2026-10-31: +0.245 / run over 528 benchmark seeds (t 2.0, both halves positive).
+    finish_early: float = 0.75
+    # S3 more swaps late: sell-and-replace swaps allowed per shop from ``late_swap_stage``
+    # (1 otherwise, 3 in the final shop; 0 = off).
+    late_swaps: int = 0
+    late_swap_stage: int = 4
     plan_from_stage: int = 1  # plan only from this stage (the planner is ~4x slower per encounter)
     plan_words: int = 4
     plan_samples: int = 2
     plan_level_value: float = 3.0  # $ per item level gained (Bar Chart, Fountain Pen, ...)
     plan_tile_value: float = 2.0  # $ per consumable tile still on the rack
+    # ``char_overrides``: settings that differ by character (L3; ``chartune.py`` searches them),
+    # {"Spike": {"buy_threshold": 0.06}, "Spike@3-7": {...}}. A "Character@lo-hi" entry applies
+    # at those crowns, after the character's own; any field but this one may be overridden.
+    char_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+def char_settings(overrides: dict[str, dict[str, Any]], character: str, crown: int) -> dict[str, Any]:
+    """The overrides that apply to ``character`` at ``crown`` (crown bands last)."""
+    out = dict(overrides.get(character, {}))
+    for key, kv in overrides.items():
+        name, _, band = key.partition("@")
+        if name == character and band:
+            lo, _, hi = band.partition("-")
+            if int(lo) <= crown <= int(hi or lo):
+                out.update(kv)
+    return out
+
+
+def with_overrides(cfg: PowerConfig, kv: dict[str, Any]) -> PowerConfig:
+    """``cfg`` with ``kv`` applied (JSON lists become tuples); unknown names are an error."""
+    bad = set(kv) - {f.name for f in fields(PowerConfig) if f.name != "char_overrides"}
+    if bad:
+        raise ValueError(f"unknown PowerConfig settings: {sorted(bad)}")
+    return replace(cfg, **{k: tuple(v) if isinstance(v, list) else v for k, v in kv.items()})
+
+
+def load_char_tuning(path: Path) -> dict[str, dict[str, Any]]:
+    """``chartune.py``'s table of per-character overrides."""
+    import json
+
+    return json.loads(Path(path).read_text())["overrides"]
 
 
 def tuned_config(**kw) -> PowerConfig:
     """Fast Advice settings found best by deterministic benchmarks (Carpman crown 0): the
-    learned boss-risk table when one exists, rack-tile placement when behind pace (8 target
+    learned boss-risk table and build-aware boss model when they exist, rack-tile placement when behind pace (8 target
     squares) and the encounter planner (top words / reroll / placement played out)."""
+    from cursed_words_solver.sim.game.bossmodel import DEFAULT_PATH as MODEL_PATH
     from cursed_words_solver.sim.game.bossrisk import DEFAULT_PATH
 
     base = {"probe_seeds": 1, "probe_grids": 2, "fast_placement": True, "placement_targets": 8,
             "advice_fallback": True, "sort_items": True, "spend_over": 20, "power_override": 0.1,
-            "swap_sell": True, "plan_encounter": True, "tile_buy_chars": ("Spike",),
-            "boss_risk": str(DEFAULT_PATH) if DEFAULT_PATH.is_file() else ""}
+            "swap_sell": True, "plan_encounter": True, "tile_buy_chars": ("Spike",), "sort_stamps_chars": ("SockHead",), "route_value": True,
+            "boss_risk": str(DEFAULT_PATH) if DEFAULT_PATH.is_file() else "",
+            "boss_model": str(MODEL_PATH) if MODEL_PATH.is_file() else ""}
     return PowerConfig(**{**base, **kw})
 
 
@@ -185,6 +249,17 @@ class PowerPolicy(Policy):
         self.probe_cands = cands.with_budget(self.cfg.probe_budget)
         self._shop_actions = 0
         self._probe_rng_seed = seed
+
+    def _tune(self, game: "Game") -> None:
+        """Switch to this character's / crown's settings (``char_overrides``) at a new run."""
+        p = game.player
+        key = (p.character, p.run.ascension)
+        if key == getattr(self, "_tune_key", None):
+            return
+        base = getattr(self, "_base_cfg", None) or self.cfg
+        self._base_cfg, self._tune_key = base, key
+        kv = char_settings(base.char_overrides, *key) if base.char_overrides else {}
+        self.cfg = with_overrides(base, kv) if kv else base
 
     def enc_cands(self, game: "Game") -> Candidates:
         """Word search for the current encounter: deeper in boss fights (``boss_effort``)."""
@@ -239,6 +314,31 @@ class PowerPolicy(Policy):
             total += pts
         return total / max(1, cfg.probe_seeds)
 
+    def boss_strength(self, game: "Game", boss, seeds: int = 2, grids: int = 3) -> float:
+        """How far this build gets against ``boss`` this stage: greedy probe points per grid
+        (``seeds`` probe encounters of ``grids`` grids under the boss's rules) times the grids
+        that boss fight allows, over its target (1 = on pace to clear)."""
+        import copy
+
+        stage = game.player.run.stage
+        rate, n = 0.0, 0
+        for s in range(seeds):
+            g = self._probe_game(game, stage, Node.BOSS, s, [copy.deepcopy(boss)])
+            enc = g.encounter
+            pts, k = 0, 0
+            for _ in range(min(grids, enc.total_grids)):
+                if enc.lost or enc.won or enc.remaining_grids <= 0:
+                    break
+                opts = self.probe_cands.words(g, 1)
+                k += 1
+                if not opts:
+                    enc.skip()
+                    continue
+                pts += max(0, enc.submit(opts[0].path, opts[0].words).score)
+            rate += pts / max(1, k)
+            n += 1
+        return rate / max(1, n) * enc.total_grids / max(1, enc.total_target)
+
     def _probe_game(self, game: "Game", stage: int, node: Node, s: int, bosses: list | None = None) -> "Game":
         """A copy of ``game`` in a fresh probe encounter at (stage, node), probe RNG ``s``."""
         g = clone(game)
@@ -280,6 +380,7 @@ class PowerPolicy(Policy):
     # -- decisions -------------------------------------------------------------------
 
     def act(self, game: "Game") -> Action:
+        self._tune(game)
         ph = game.phase
         if ph != "shop":
             self._shop_actions = 0
@@ -321,6 +422,8 @@ class PowerPolicy(Policy):
                 return place
         if enc.can_reroll() and (best is None or best.score < cfg.reroll_ratio * per_grid):
             return Action("reroll_grid")
+        if cfg.finish_early and enc.can_reroll() and (grids_left == 1 or best.score >= cfg.finish_early * need):
+            return Action("reroll_grid", (), "finish early: reroll for a word that clears")
         if best is None:
             return Action("skip")
         return Action("submit", (tuple(best.path), tuple(best.words)), best.word)
@@ -449,6 +552,7 @@ class AdvicePolicy(PowerPolicy):
         self._pending_buy = None
 
     def act(self, game: "Game") -> Action:
+        self._tune(game)
         if game.phase != "shop":
             self._n = 0
             self._frozen_this_shop = set()
@@ -476,7 +580,10 @@ class AdvicePolicy(PowerPolicy):
         pending, self._pending_buy = getattr(self, "_pending_buy", None), None
         if pending is not None and s.can_buy(*pending):
             return Action("buy", pending, "swap: buy replacement")
-        loadout, state = shop_advice_inputs(game)
+        ogre = self._ogre_buy(game)
+        if ogre is not None:
+            return ogre
+        loadout, state = shop_advice_inputs(game, frozenset({"Ogre"}) if self.cfg.ogre else frozenset())
         try:
             adv = compute_shop_advice(loadout, state)
         except Exception:
@@ -516,7 +623,7 @@ class AdvicePolicy(PowerPolicy):
             if buy is not None:
                 return buy
         final = self.cfg.final_spend and self._final_shop(game)
-        if self.cfg.swap_sell and self._swaps_this_shop < (3 if final else 1):
+        if self.cfg.swap_sell and self._swaps_this_shop < self._swap_limit(game, final):
             swap = self._best_swap(game)
             if swap is not None:
                 self._swaps_this_shop += 1
@@ -533,12 +640,21 @@ class AdvicePolicy(PowerPolicy):
             if s.can_reroll() and game.player.money - s.reroll_cost >= floor + (not final) and self._spend_restocks < (8 if final else 3):
                 self._spend_restocks += 1
                 return Action("reroll_shop", (), "spend down: restock")
-        if self.cfg.sort_items and self._moves_this_shop < 2:
+        if self.cfg.sort_items and self._moves_this_shop < (4 if self._sort_stamps_on(game) else 2):
             move = self._best_move(game)
             if move is not None:
                 self._moves_this_shop += 1
                 return move
         return self._leave()
+
+    def _swap_limit(self, game: "Game", final: bool) -> int:
+        """Sell-and-replace swaps per shop: 3 in the final shop, ``late_swaps`` from
+        ``late_swap_stage`` (S3), else 1."""
+        if final:
+            return 3
+        if self.cfg.late_swaps and game.player.run.stage >= self.cfg.late_swap_stage:
+            return self.cfg.late_swaps
+        return 1
 
     @staticmethod
     def _final_shop(game: "Game") -> bool:
@@ -560,16 +676,23 @@ class AdvicePolicy(PowerPolicy):
             for i, it in enumerate(owned):
                 if it is None or not can_sell(p, it) or it.game_class in self._bought_this_shop:
                     continue
+                sold = None
                 for j, o in enumerate(stock):
-                    if o is None or o.item.game_class == it.game_class:
+                    if o is None or o.item.game_class == it.game_class or not self._offer_ok(game, o.item.game_class):
                         continue
                     g = clone(game)
                     if g.sell(kind, i) is None or not g.shop.can_buy(kind, j):
                         continue
+                    if self.cfg.build_value and sold is None:
+                        sold = max(1.0, self.power(g))  # build without the item: both contributions
                     if not apply(g, Action("buy", (kind, j))):
                         continue
-                    gain = ((self.power(g) - base) / base + self._item_bonus(game, o.item.game_class)
-                            - self._item_bonus(game, it.game_class))
+                    if self.cfg.build_value:  # new item's value over the old one's (both long-horizon)
+                        gain = ((1 + self._horizon(game, o.item.game_class, self.power(g) / sold - 1))
+                                / (1 + self._horizon(game, it.game_class, base / sold - 1)) - 1)
+                    else:
+                        gain = (self.power(g) - base) / base
+                    gain += self._item_bonus(game, o.item.game_class) - self._item_bonus(game, it.game_class)
                     if gain > best:
                         best, best_pair = gain, (kind, i, j)
         if best_pair is None:
@@ -581,27 +704,32 @@ class AdvicePolicy(PowerPolicy):
 
     def _best_move(self, game: "Game") -> Action | None:
         """Sticker order matters (Human Boy's hands, Overhand / Underhand, left-to-right
-        effects): before leaving, take the swap that adds the most probe-encounter points."""
+        effects), and with ``sort_stamps`` stamp order too (Right Human Hand boosts the stamp to
+        its right, Underhand targets the sticker in its slot, stamps apply left to right):
+        before leaving, take the swap that adds the most probe-encounter points."""
         p = game.player
-        filled = [i for i, it in enumerate(p.stickers) if it is not None]
-        if len(filled) < 2:
+        kinds = [("sticker", p.stickers)] + ([("stamp", p.stamps)] if self._sort_stamps_on(game) else [])
+        kinds = [(k, arr) for k, arr in kinds if sum(it is not None for it in arr) >= 2]
+        if not kinds:
             return None
-        sig = tuple((it.game_class, tuple(tuple(c) for c in it.components)) if it else None for it in p.stickers)
+        sig = tuple(tuple((it.game_class, tuple(tuple(c) for c in it.components)) if it else None for it in arr)
+                    for arr in (p.stickers, p.stamps))
         if sig == getattr(self, "_sorted_sig", None):
             return None  # no improving swap was found for exactly this line-up
         base = max(1.0, self.power(game))
         best, best_a = self.cfg.buy_threshold, None
-        for a in range(5):
-            for b in range(a + 1, 5):
-                if p.stickers[a] is None and p.stickers[b] is None:
-                    continue
-                src, dst = (a, b) if p.stickers[a] is not None else (b, a)
-                g = clone(game)
-                if not g.move("sticker", src, dst):
-                    continue
-                gain = (self.power(g) - base) / base
-                if gain > best:
-                    best, best_a = gain, Action("move", ("sticker", src, dst), f"swap stickers {src}<->{dst}")
+        for kind, arr in kinds:
+            for a in range(5):
+                for b in range(a + 1, 5):
+                    if arr[a] is None and arr[b] is None:
+                        continue
+                    src, dst = (a, b) if arr[a] is not None else (b, a)
+                    g = clone(game)
+                    if not g.move(kind, src, dst):
+                        continue
+                    gain = (self.power(g) - base) / base
+                    if gain > best:
+                        best, best_a = gain, Action("move", (kind, src, dst), f"swap {kind}s {src}<->{dst}")
         if best_a is None:
             self._sorted_sig = sig
         return best_a
@@ -617,21 +745,43 @@ class AdvicePolicy(PowerPolicy):
         p = game.player
         return self.cfg.item_value_weight * self._item_table.value(game_class, p.run.stage, p.character)
 
+    def _horizon(self, game: "Game", game_class: str | None, gain: float) -> float:
+        """``gain`` (relative probe points an item adds now) as its long-horizon value
+        (``build_value``: averaged over the stages left); unchanged when off."""
+        if not (self.cfg.build_value and game_class):
+            return gain
+        if getattr(self, "_growth", None) is None:
+            from cursed_words_solver.sim.game.buildvalue import ItemGrowth
+
+            self._growth = ItemGrowth.load(Path(self.cfg.build_value))
+        weights = self._stage_weights(game) if self.cfg.build_value_risk else None
+        return self._growth.value(game_class, gain, next_encounter_node(game)[0], weights)
+
+    def _stage_weights(self, game: "Game") -> dict[int, float]:
+        """``buildvalue.stage_weights`` for this build (probe strength at the next fight)."""
+        from cursed_words_solver.sim.game.buildvalue import stage_weights
+
+        stage, node = next_encounter_node(game)
+        p = game.player
+        strength = self.power(game) / max(1, self.cfg.probe_grids) * GRIDS_PER_ROUND / max(1, p.run.encounter_target(stage, node, p))
+        return stage_weights(strength, stage, node, lambda t, n: p.run.encounter_target(t, n, p))
+
     def _power_gains(self, game: "Game", acts: list[Action]) -> list[tuple[float, Action]]:
         """(relative probe-encounter points gained, action) for each buy that applies."""
         base = max(1.0, self.power(game))
         out = []
         for a in acts:
             g = clone(game)
-            bonus = self._item_bonus(game, offer_class(game, a))
+            cls = offer_class(game, a)
             if apply(g, a):
-                out.append(((self.power(g) - base) / base + bonus, a))
+                out.append((self._horizon(game, cls, (self.power(g) - base) / base) + self._item_bonus(game, cls), a))
         return out
 
     def _power_check(self, game: "Game", pick: Action) -> Action:
         """Advice's purchase unless another affordable sticker / stamp adds more than
         ``power_override`` (relative probe points) beyond what Advice's pick adds."""
-        acts = [a for a in legal_actions(game) if a.kind == "buy" and a.args[0] in ("sticker", "stamp")]
+        acts = [a for a in legal_actions(game) if a.kind == "buy" and a.args[0] in ("sticker", "stamp")
+                and self._offer_ok(game, offer_class(game, a))]
         gains = self._power_gains(game, acts)
         mine = next((v for v, a in gains if a.args == pick.args), None)
         if mine is None or not gains:
@@ -645,17 +795,18 @@ class AdvicePolicy(PowerPolicy):
         """The game's Advice has nothing to say until an owned item carries a build tag
         (Human Boy, Sam Gambit, Nat-H4 start with none), so it would never buy. Then take
         the affordable sticker / stamp that adds the most points to a probe encounter."""
-        acts = [a for a in legal_actions(game) if a.kind == "buy" and a.args[0] in ("sticker", "stamp")]
+        acts = [a for a in legal_actions(game) if a.kind == "buy" and a.args[0] in ("sticker", "stamp")
+                and self._offer_ok(game, offer_class(game, a))]
         if not acts:
             return None
         base = max(1.0, self.power(game))
         best, best_a = self.cfg.buy_threshold if threshold is None else threshold, None
         for a in acts:
             g = clone(game)
-            bonus = self._item_bonus(game, offer_class(game, a))
+            cls = offer_class(game, a)
             if not apply(g, a):
                 continue
-            gain = (self.power(g) - base) / base + bonus
+            gain = self._horizon(game, cls, (self.power(g) - base) / base) + self._item_bonus(game, cls)
             if gain > best:
                 best, best_a = gain, a
         if best_a is not None:
@@ -664,8 +815,47 @@ class AdvicePolicy(PowerPolicy):
                 self._bought_this_shop.add(stock[best_a.args[1]].item.game_class)
         return best_a
 
+    def _sort_stamps_on(self, game: "Game") -> bool:
+        return self.cfg.sort_stamps or game.player.character in self.cfg.sort_stamps_chars
+
     def _tile_buys_on(self, game: "Game") -> bool:
         return self.cfg.tile_buys or game.player.character in self.cfg.tile_buy_chars
+
+    def _chasing(self, game: "Game") -> bool:
+        """Crown >= 1 and every boss so far cursed: the run can still reach Michael."""
+        p = game.player
+        return self.cfg.go_for_michael and p.run.ascension >= 1 and not p.has_faced_uncursed_boss
+
+    def _ogre_wanted(self, game: "Game") -> bool:
+        """Stages 1-3, or stage 4 while its own draft still has an uncursed option. Held past
+        stage 4 it would curse the stage-5 draft too and take that choice from the stage-5 rule."""
+        p = game.player
+        run = p.run
+        if not self._chasing(game) or run.stage > 4 or p.unpacked_of("Ogre"):
+            return False
+        return run.stage < 4 or not all(b.cursed for b in run.boss_drafts[run.stage - 1].options)
+
+    def _offer_ok(self, game: "Game", game_class: str | None) -> bool:
+        """With ``ogre`` on, an Ogre is only ever bought by ``_ogre_buy``."""
+        return not (self.cfg.ogre and game_class == "Ogre")
+
+    def _ogre_buy(self, game: "Game") -> Action | None:
+        """Buy Ogre while it is wanted; sell it from stage 4 on (the floors it cursed stay cursed)."""
+        from cursed_words_solver.sim.game.shop import can_sell
+
+        if not self.cfg.ogre:
+            return None
+        p, s = game.player, game.shop
+        if p.run.stage >= 4:
+            for i, it in enumerate(p.stamps):
+                if it is not None and it.game_class == "Ogre" and can_sell(p, it):
+                    return Action("sell", ("stamp", i), "michael: sell Ogre, stage 5 decides itself")
+        if not self._ogre_wanted(game):
+            return None
+        for j, o in enumerate(s.stamps):
+            if o is not None and o.item.game_class == "Ogre" and s.can_buy("stamp", j):
+                return Action("buy", ("stamp", j), "michael: Ogre curses both boss options")
+        return None
 
     def _tile_buy(self, game: "Game") -> Action | None:
         """The affordable rack tile that lifts a probe grid's best word the most, if by at
@@ -816,6 +1006,11 @@ class FastAdvicePolicy(AdvicePolicy):
         scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
         return [(v, pc, a) for v, _, pc, a in scored]
 
+    def _michael_risk(self, crown: int, character: str) -> float:
+        if self._boss_risk.counts.get("MichaelBoss", (0, 0))[0] >= 10:
+            return self._boss_risk.risk_key(f"MichaelBoss@c{crown}#{character}")
+        return self.cfg.michael_prior_risk  # too few simulated Michael fights yet
+
     def _risk_boss(self, game: "Game", opts: list) -> int:
         """Lowest learned risk; a cursed boss is preferred while it is not much riskier
         (``cursed_margin``) when chasing Michael (crown ≥ 1, every boss so far cursed), or
@@ -827,6 +1022,13 @@ class FastAdvicePolicy(AdvicePolicy):
         p = game.player
         crown = p.run.ascension
         risk = [self._boss_risk.risk(b, crown, p.character) for b in opts]
+        if self.cfg.boss_model:
+            if getattr(self, "_boss_model", None) is None:
+                from cursed_words_solver.sim.game.bossmodel import BossModel
+
+                self._boss_model = BossModel.load(Path(self.cfg.boss_model))
+            risk = [self._boss_model.risk(self.boss_strength(game, b), r, b.cursed, p.run.stage, crown)
+                    for b, r in zip(opts, risk)]
         cursed = [i for i, b in enumerate(opts) if b.cursed]
         clean = [i for i, b in enumerate(opts) if not b.cursed]
         margin = None
@@ -841,11 +1043,14 @@ class FastAdvicePolicy(AdvicePolicy):
             # The fifth cursed boss commits the run to Michael. Losing to him still wins the
             # run, so the cursed boss is worth its survival chance times (1 + the Michael
             # bonus if he is beaten); the uncursed one only its survival chance.
-            if self._boss_risk.counts.get("MichaelBoss", (0, 0))[0] >= 10:
-                michael = self._boss_risk.risk_key(f"MichaelBoss@c{crown}#{p.character}")
-            else:
-                michael = self.cfg.michael_prior_risk  # too few simulated Michael fights yet
+            michael = self._michael_risk(crown, p.character)
             v_cursed = (1 - risk[best_cursed]) * (1 + self.cfg.michael_value * (1 - michael))
+            return best_cursed if v_cursed >= (1 - risk[best_clean]) - margin else best_clean
+        if (margin is not None and best_cursed is not None and best_clean is not None
+                and p.run.stage < 5 and self.cfg.route_value and not p.has_faced_uncursed_boss):
+            michael = self._michael_risk(crown, p.character)
+            reach = (1 - self._boss_risk.mean(True)) ** (5 - p.run.stage)
+            v_cursed = (1 - risk[best_cursed]) * (1 + self.cfg.michael_value * (1 - michael) * reach)
             return best_cursed if v_cursed >= (1 - risk[best_clean]) - margin else best_clean
         if best_cursed is not None and (best_clean is None or (
                 margin is not None and risk[best_cursed] <= risk[best_clean] + margin)):
@@ -908,6 +1113,7 @@ class FastAdvicePolicy(AdvicePolicy):
         return min(range(len(draft)), key=lambda i: self._boss_risk.risk(draft[i], p.run.ascension, p.character))
 
     def act(self, game: "Game") -> Action:
+        self._tune(game)
         if game.phase == "encounter" and game.encounter.michael_draft is not None:
             return Action("michael_pick", (self.michael_pick(game),))
         return super().act(game)
@@ -919,11 +1125,11 @@ def owned_name(p, kind: str, i: int) -> str:
 
 
 def offer_class(game: "Game", a: Action) -> str | None:
-    """Item class a sticker / stamp ``buy`` action would purchase (None otherwise)."""
-    if a.kind != "buy" or a.args[0] not in ("sticker", "stamp") or game.shop is None:
+    """Item class a sticker / stamp ``buy`` (or ``sell_buy`` swap) would purchase (None otherwise)."""
+    if a.kind not in ("buy", "sell_buy") or a.args[0] not in ("sticker", "stamp") or game.shop is None:
         return None
     stock = game.shop.stickers if a.args[0] == "sticker" else game.shop.stamps
-    o = stock[a.args[1]] if 0 <= a.args[1] < len(stock) else None
+    o = stock[a.args[-1]] if 0 <= a.args[-1] < len(stock) else None
     return o.item.game_class if o is not None else None
 
 
@@ -932,8 +1138,9 @@ def stock_name(s, kind: str, j: int) -> str:
     return arr[j].item.game_class if arr[j] is not None else "?"
 
 
-def shop_advice_inputs(game: "Game"):
-    """Sim shop → (``Loadout``, ``ShopState``) for ``game_shop.recommendation``."""
+def shop_advice_inputs(game: "Game", hide: frozenset[str] = frozenset()):
+    """Sim shop → (``Loadout``, ``ShopState``) for ``game_shop.recommendation``; offers of the
+    ``hide`` classes are left out."""
     from cursed_words_solver.game_state import loadout_from_game_state
     from cursed_words_solver.models import ShopOffer, ShopState
     from cursed_words_solver.sim.game.bridge import player_state, run_state
@@ -945,7 +1152,7 @@ def shop_advice_inputs(game: "Game"):
     offers: list[ShopOffer] = []
     for kind, stock in (("sticker", s.stickers), ("stamp", s.stamps)):
         for i, o in enumerate(stock):
-            if o is None:
+            if o is None or o.item.game_class in hide:
                 continue
             offers.append(ShopOffer(
                 slot=kind, index=i, id=o.item.slug, name=o.item.name,

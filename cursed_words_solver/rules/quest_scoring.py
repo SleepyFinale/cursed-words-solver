@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Callable
 
 from cursed_words_solver.models import Loadout, Tile
 from cursed_words_solver.rules.quest_effects import (
@@ -108,6 +109,18 @@ def search_rank_for_quest(
     if quest_inverts_search_rank(loadout):
         return -float(raw_rank)
     return float(raw_rank)
+
+
+def search_rank_function(loadout: Loadout | None, *, quest_target: float | None = None) -> Callable[[float], float]:
+    """``search_rank_for_quest`` with the quest checks done once (they depend only on the
+    loadout): the search ranks every candidate it scores."""
+    target = _resolve_quest_target(loadout, quest_target)
+    if bullseye_active(loadout) and target is not None and target > 0:
+        t = float(target)
+        return lambda raw: bullseye_heap_rank(float(raw), t)
+    if quest_inverts_search_rank(loadout):
+        return lambda raw: -float(raw)
+    return float
 
 
 def display_score_for_quest(raw_score: float, loadout: Loadout | None) -> float:

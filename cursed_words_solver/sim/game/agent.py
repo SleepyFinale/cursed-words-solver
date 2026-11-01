@@ -221,6 +221,10 @@ def apply(game: Game, action: Action) -> Any:
         return True
     if k == "sell":
         return game.sell(*a)
+    if k == "sell_buy":  # (kind, owned slot, offer index): swap an owned item for an offer
+        if game.sell(a[0], a[1]) is None:
+            return False
+        return game.buy(a[0], a[2])
     if k == "move":
         return game.move(*a)
     if k == "buy":

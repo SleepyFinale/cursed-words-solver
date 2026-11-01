@@ -71,6 +71,17 @@ def test_reroll_price_climbs_and_fried_shrimp_discounts():
     assert s.reroll_cost == 1
 
 
+def test_northern_cardinal_discounts_any_description_with_red_in_it():
+    # GetDescription().Contains("red"): "coloured" and "Scattered" count, as the shop exports show
+    g = _game()
+    p = g.player
+    base = {c: make_item(c).get_cost(p) for c in ("Parrot", "Magnet", "Candle")}
+    p.stamps[0] = make_item("NorthernCardinal")
+    assert make_item("Parrot").get_cost(p) == base["Parrot"] - 4
+    assert make_item("Magnet").get_cost(p) == max(0, base["Magnet"] - 4)
+    assert make_item("Candle").get_cost(p) == base["Candle"]
+
+
 def test_crown2_rerolls_start_at_two_and_no_free_pick():
     g = _game(ascension=2)
     s = _shop_at(g, Node.SHOP_ONE, 40)
@@ -345,14 +356,15 @@ def test_net_policy_picks_from_candidates_and_trains():
     model.w[:] = 0.01
     pol = NetPolicy(_NoSearch(), model, threshold=0.0)
     cands = pol.candidates(g)
-    assert cands[0].kind in ("buy", "leave", "reroll_shop", "sell", "freeze") and cands[-1].kind == "leave"
+    assert cands[0].kind in ("buy", "leave", "reroll_shop", "sell", "freeze", "move")
+    assert any(c.kind == "leave" for c in cands)
     a, seen = pol.decide(g)
     assert a in seen
     apply(g, a)
     # train() recovers a linear advantage from noisy pairs and round-trips through save/load
     rng = np.random.default_rng(0)
-    dX = rng.normal(size=(3000, width)).astype(np.float32)
-    dy = (dX[:, 0] + rng.normal(scale=2.0, size=3000)).astype(np.float32)
+    dX = rng.normal(size=(8000, width)).astype(np.float32)
+    dy = (dX[:, 0] + rng.normal(scale=2.0, size=8000)).astype(np.float32)
     m, fit = train(dX, dy)
     assert fit["cv_corr"] > 0.2 and fit["switch_gain"] > 0
     import tempfile
@@ -405,6 +417,157 @@ def test_boss_risk_counts_and_smoothing(tmp_path):
     g._end(False, "test")  # lost at the boss
     g.player.run.node = Node.BOSS
     assert boss_outcomes(g) == [(opts[a.args[0]].game_class, True)]
+
+
+def test_route_value_takes_a_somewhat_riskier_cursed_boss_while_chasing_michael():
+    from types import SimpleNamespace
+
+    from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig
+
+    g = _game(seed=11, ascension=2)
+    for _ in range(4):
+        if g.phase == "encounter":
+            _clear(g)
+        elif g.phase == "shop":
+            g.leave_shop()
+    assert g.phase == "boss_draft"
+    opts = g.boss_options()
+    cursed = next(i for i, b in enumerate(opts) if b.cursed)
+    # cursed 0.2 vs uncursed 0.1: outside the 0.05 margin, but staying on the Michael route is
+    # worth 0.8 x (1 + 0.5 x 0.5 x 0.8^4) = 0.882 >= 0.9 - 0.05
+    table = SimpleNamespace(risk=lambda b, *_: 0.2 if b.cursed else 0.1, mean=lambda cursed=None: 0.2, counts={})
+    for route, want in ((False, 1 - cursed), (True, cursed)):
+        pol = FastAdvicePolicy(_NoSearch(), PowerConfig(boss_risk="x", route_value=route))
+        pol._boss_risk = table
+        assert pol._risk_boss(g, opts) == want
+    g.player.has_faced_uncursed_boss = True  # off the route: the safer boss
+    assert pol._risk_boss(g, opts) == 1 - cursed
+
+
+def test_ogre_is_bought_only_while_chasing_michael():
+    from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig, shop_advice_inputs
+    from cursed_words_solver.sim.game.shop import ItemInStock
+
+    g = _game(seed=13, ascension=1)
+    s = _shop_at(g, Node.SHOP_ONE, 30)
+    s.stamps[0] = ItemInStock(make_item("Ogre"), 12)
+    pol = FastAdvicePolicy(_NoSearch(), PowerConfig(ogre=True))
+    a = pol._ogre_buy(g)
+    assert (a.kind, a.args) == ("buy", ("stamp", 0))
+    assert all(o.name != "Ogre" for o in shop_advice_inputs(g, frozenset({"Ogre"}))[1].offers)
+    assert not pol._offer_ok(g, "Ogre") and pol._offer_ok(g, "Dragon")
+    g.player.has_faced_uncursed_boss = True
+    assert pol._ogre_buy(g) is None
+    g.player.has_faced_uncursed_boss = False
+    run = g.player.run
+    run.stage = 4
+    for b in run.boss_drafts[3].options:
+        b.make_cursed()
+    assert pol._ogre_buy(g) is None  # stage 4's draft is already all cursed
+    assert g.buy("stamp", 0)
+    a = pol._ogre_buy(g)  # held into stage 4: sell it so the stage-5 draft stays a choice
+    assert (a.kind, a.args[0], g.player.stamps[a.args[1]].game_class) == ("sell", "stamp", "Ogre")
+    run.stage = 5
+    g.player.stamps[a.args[1]] = None
+    assert pol._ogre_buy(g) is None
+
+
+def test_boss_model_learns_that_stronger_builds_clear_and_round_trips(tmp_path):
+    from cursed_words_solver.sim.game.bossmodel import BossModel, features
+
+    rng = np.random.default_rng(0)
+    X, y = [], []
+    for _ in range(600):
+        st, r = float(np.exp(rng.normal(0, 0.6))), float(rng.uniform(0.05, 0.4))
+        X.append(features(st, r, bool(rng.integers(2)), int(rng.integers(1, 6)), int(rng.integers(0, 8))))
+        y.append(float(rng.random() < 1 / (1 + np.exp(-4 * np.log(st)))))  # clears when strength > 1
+    m = BossModel.fit(np.array(X), np.array(y))
+    assert m.risk(2.0, 0.2, False, 3, 1) < 0.2 < 0.8 < m.risk(0.5, 0.2, False, 3, 1)
+    m.save(tmp_path / "bm.json")
+    assert BossModel.load(tmp_path / "bm.json").risk(1.3, 0.1, True, 4, 2) == m.risk(1.3, 0.1, True, 4, 2)
+
+
+def test_boss_model_replaces_table_risk_in_the_draft():
+    from types import SimpleNamespace
+
+    from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig
+
+    g = _game(seed=11)
+    for _ in range(4):
+        if g.phase == "encounter":
+            _clear(g)
+        elif g.phase == "shop":
+            g.leave_shop()
+    opts = g.boss_options()
+    table = SimpleNamespace(risk=lambda b, *_: 0.1 if b is opts[0] else 0.3, mean=lambda cursed=None: 0.2, counts={})
+    pol = FastAdvicePolicy(_NoSearch(), PowerConfig(boss_risk="x"))
+    pol._boss_risk = table
+    assert pol._risk_boss(g, opts) == 0  # the table alone: the first option is safer
+    pol = FastAdvicePolicy(_NoSearch(), PowerConfig(boss_risk="x", boss_model="m"))
+    pol._boss_risk = table
+    pol._boss_model = SimpleNamespace(risk=lambda st, *_: 1 / (1 + st))  # stronger build vs it = safer
+    pol.boss_strength = lambda game, b: 0.5 if b is opts[0] else 3.0
+    assert pol._risk_boss(g, opts) == 1
+
+
+def test_item_growth_learns_which_items_grow_and_round_trips(tmp_path):
+    import json
+
+    import pytest
+    from cursed_words_solver.sim.game.buildvalue import ItemGrowth, rows
+
+    runs = []
+    for k in range(30):  # Grower doubles its contribution each stage, Fader halves it
+        items = []
+        for cls, f in (("Grower", 2.0), ("Fader", 0.5)):
+            c0 = 0.2 + 0.01 * k
+            items.append({"cls": cls, "contrib": [[s, "SHOP_TWO", c0 * f ** (s - 1), 1, 0, 100] for s in range(1, 6)]})
+        runs.append({"items": items})
+    log = tmp_path / "c.jsonl"
+    log.write_text("\n".join(json.dumps(r) for r in runs))
+    data = rows([log])
+    assert len(data) == 30 * 2 * 10  # every ordered pair of stages, per item
+    m = ItemGrowth.fit(data, lam=1.0)
+    assert m.value("Grower", 0.3, 1) > 0.3 > m.value("Fader", 0.3, 1)
+    assert m.value("Grower", 0.3, 5) == pytest.approx(0.3) == m.value("Fader", 0.3, 5)  # last stage: measured only
+    m.save(tmp_path / "bv.json")
+    assert ItemGrowth.load(tmp_path / "bv.json").value("Grower", 0.3, 2) == m.value("Grower", 0.3, 2)
+
+
+def test_build_value_turns_a_probe_gain_into_its_long_horizon_value():
+    from types import SimpleNamespace
+
+    from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig
+
+    g = _game()
+    off = FastAdvicePolicy(_NoSearch(), PowerConfig())
+    assert off._horizon(g, "Grower", 0.25) == 0.25
+    on = FastAdvicePolicy(_NoSearch(), PowerConfig(build_value="bv"))
+    on._growth = SimpleNamespace(value=lambda cls, c, stage, weights=None: c * (4 if cls == "Grower" else 0.5))
+    assert on._horizon(g, "Grower", 0.25) == 1.0 and on._horizon(g, "Fader", 0.25) == 0.125
+    assert on._horizon(g, None, 0.25) == 0.25
+
+
+def test_survival_weights_put_the_horizon_where_fights_can_be_lost():
+    import math
+
+    import pytest
+
+    from cursed_words_solver.sim.game.buildvalue import ItemGrowth, stage_weights
+    from cursed_words_solver.sim.game.player import Node
+
+    target = lambda t, n: 100 * 3.8 ** (t - 1) * (1 + 0.1 * int(n == Node.BOSS))
+    weak = stage_weights(0.8, 2, Node.ENCOUNTER_SECOND, target)
+    strong = stage_weights(6.0, 2, Node.ENCOUNTER_SECOND, target)
+    assert sorted(weak) == [2, 3, 4, 5] and weak[2] > 0.5 > strong[2]
+    assert all(strong[t] <= weak[t] for t in weak)
+    assert strong[5] > strong[2]  # targets outgrow the build: late fights are the risky ones
+    # grows x2 per stage from a 0.0 log contribution
+    m = ItemGrowth(["Grower"], [1.0, 0.0, 0.0, 0.0, 0.0, math.log(2)], 1.0)
+    assert m.value("Grower", 0.0, 3) == pytest.approx(1.0)  # uniform: mean of 0, 1, 2 stages of growth
+    assert m.value("Grower", 0.0, 3, {3: 1.0, 4: 0.0, 5: 0.0}) == pytest.approx(0.0, abs=1e-9)  # only now counts
+    assert m.value("Grower", 0.0, 3, {5: 1.0}) == pytest.approx(3.0, rel=1e-3)
+    assert m.value("Grower", 0.0, 3, {}) == m.value("Grower", 0.0, 3)  # no risk anywhere: uniform
 
 
 def test_item_value_baselines_and_shrinkage(tmp_path):
@@ -490,6 +653,184 @@ def test_pin_model_learns_the_side_from_the_situation_and_the_offers(tmp_path):
     assert pinplan.choose("C", x, dx, tmp_path / "pin.pkl") is None  # no data: caller keeps its rule
 
 
+def _full_shop():
+    """Shop with every sticker slot full and an unowned sticker offer that fits only after a sale."""
+    from cursed_words_solver.sim.game.shop import ItemInStock
+
+    g = _game(seed=31)
+    s = _shop_at(g, Node.SHOP_TWO, 40)
+    p = g.player
+    for k, cls in enumerate(("Candle", "GamePad", "Backpack", "Ruler", "Zebra")):
+        p.stickers[k] = make_item(cls)
+    s.stickers[0] = ItemInStock(make_item("Parrot"), 12)
+    return g, s
+
+
+def test_full_shop_candidates_cover_every_kind_of_move_within_the_cap():
+    from cursed_words_solver.sim.game.agent import Action, apply
+    from cursed_words_solver.sim.game.expert import SHOP_CANDIDATES, afterstate, full_shop_candidates, shop_candidates
+
+    g, s = _full_shop()
+    cands = full_shop_candidates(g, Action("leave"))
+    kinds = {c.kind for c in cands}
+    assert {"leave", "reroll_shop", "sell_buy", "freeze", "sell", "move"} <= kinds
+    assert len(cands) <= SHOP_CANDIDATES and len({(c.kind, c.args) for c in cands}) == len(cands)
+    assert not {"sell_buy", "sell", "move"} & {c.kind for c in shop_candidates(g, Action("leave"))}
+    swap = next(c for c in cands if c.kind == "sell_buy" and c.args[2] == 0)
+    assert all(afterstate(g, c) is not None for c in cands if c.kind != "sell_buy")
+    sold = g.player.stickers[swap.args[1]].game_class
+    assert apply(g, swap) is not False
+    owned = {i.game_class for i in g.player.stickers_list()}
+    assert "Parrot" in owned and sold not in owned
+
+
+def test_training_alternatives_are_drawn_group_first():
+    import collections
+    import random
+
+    from cursed_words_solver.sim.game.agent import Action
+    from cursed_words_solver.sim.game.expert import sample_alternative
+
+    cands = [Action("leave")] + [Action("move", ("sticker", i, i + 1)) for i in range(10)] + [Action("buy", ("sticker", 0))]
+    rng = random.Random(0)
+    n = collections.Counter(sample_alternative(rng, cands).kind for _ in range(2000))
+    assert 800 < n["buy"] < 1200  # half the draws, though it is 1 move in 11
+
+
+def test_v4_features_see_order_growth_crown_route_and_shared_descriptors():
+    from cursed_words_solver.sim.game.agent import Action, apply
+    from cursed_words_solver.sim.game.features import encode, feature_names, item_descriptors
+    from cursed_words_solver.sim.game.learn import Ridge
+
+    names = feature_names()
+    col = {n: i for i, n in enumerate(names)}
+    g, s = _full_shop()
+    g.player.run.ascension = 3
+    g.player.has_faced_uncursed_boss = False  # set when crown 0 drafted its uncursed bosses
+    x = encode(g)
+    assert x[col["crown:3"]] == 1 and x[col["michael_route"]] == 1 and x[col["free_sticker_slots"]] == 0
+    assert x[col["pos:Candle"]] == 0.2 and x[col["pos:Zebra"]] == 1.0
+    apply(g, Action("move", ("sticker", 0, 4)))
+    y = encode(g)
+    assert y[col["pos:Candle"]] == 1.0 and y[col["pos:Zebra"]] == 0.2  # reorders are visible
+    rows, D = item_descriptors()
+    desc = [col[n] for n in names if n.startswith("desc:")]
+    want = sum(D[rows[c]] for c in ("Candle", "GamePad", "Backpack", "Ruler", "Zebra"))
+    assert np.allclose(y[desc], want)
+    before = y[col["ivar:Candle"]]
+    g.player.stickers[4].upgrade()
+    assert encode(g)[col["ivar:Candle"]] > before  # component value (growth) is visible
+    g.player.has_faced_uncursed_boss = True
+    assert encode(g)[col["michael_route"]] == 0
+    old = Ridge(1035)  # a model saved before v4 reads the prefix it was fitted on
+    old.w[:] = 1.0
+    assert np.isclose(old.predict(y)[0], old.predict(y[:1035])[0])
+
+
+class _FixedWords(_NoSearch):
+    """Candidates stand-in whose best word scores ``score``."""
+
+    def __init__(self, score):
+        self.score = score
+
+    def words(self, _game, _n=1):
+        from cursed_words_solver.sim.game.agent import WordOption
+
+        return [WordOption("cat", ["cat"], [(0, 0), (1, 0), (2, 0)], self.score)]
+
+
+def test_finish_early_rerolls_for_a_clearing_word_and_never_submits_a_losing_last_word():
+    from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig
+
+    def kind(score, grids_after, finish_early):
+        g = _game(seed=41)
+        enc = g.encounter
+        enc.remaining_target, enc.remaining_grids, enc.rerolls = 100, grids_after, 1
+        g.player.consumables = [None] * len(g.player.consumables)
+        return FastAdvicePolicy(_FixedWords(score), PowerConfig(finish_early=finish_early)).act(g).kind
+
+    assert kind(60, 0, 0.0) == "submit"  # last grid, 60 of 100: the old rule plays it and loses
+    assert kind(60, 0, 0.75) == "reroll_grid"
+    assert kind(60, 2, 0.75) == "submit"  # 3 grids left and far from clearing: keep playing
+    assert kind(80, 2, 0.75) == "reroll_grid"  # close: hunt for a word that clears now
+    assert kind(120, 0, 0.75) == "submit"  # it clears
+
+
+def test_late_swaps_raise_the_swap_limit_from_the_given_stage():
+    from cursed_words_solver.sim.game.policy import AdvicePolicy, PowerConfig
+
+    def limit(stage, late, final=False):
+        g = _game(seed=31)
+        g.player.run.stage = stage
+        return AdvicePolicy(_NoSearch(), PowerConfig(late_swaps=late))._swap_limit(g, final)
+
+    assert limit(4, 0) == 1 and limit(3, 3) == 1 and limit(4, 3) == 3 and limit(5, 2) == 2
+    assert limit(5, 0, final=True) == 3
+
+
+def test_bench_seeds_report_and_settings_guard(tmp_path):
+    import json
+
+    import pytest
+
+    from cursed_words_solver.sim.game import bench
+
+    ss = bench.seeds()
+    assert len(ss) == 528 and len(set(ss)) == 528
+    assert ("Spike", 3, 8_000_000 + 1000 * bench.CHARS.index("Spike") + 300 + 5) in ss
+
+    def row(ch, cr, sd, out, reason="out_of_grids"):
+        return {"char": ch, "crown": cr, "seed": sd, "won": out >= 16, "reason": reason, "outcome": out, "stage": 5}
+
+    base = {(c, r, s): row(c, r, s, 10.0) for c, r, s in ss}
+    arm = {k: row(*k, 10.0 + (1.0 if k[1] < 4 else 0.0)) for k in base}
+    arm[ss[0]] = row(*ss[0], 24.0, "michael")
+    rep = bench.compare(base, arm)
+    assert rep["all"]["n"] == 528 and rep["crown 0"]["mean"] > 1 and rep["crown 7"]["mean"] == 0
+    assert rep["all"]["michael_beaten"] == (0, 1) and rep["all"]["wins"] == (0, 1)
+    assert rep["first half"]["n"] == rep["second half"]["n"] == 264
+    # results files skip a line cut short; another arm under the same name is refused
+    path = tmp_path / "a.jsonl"
+    path.write_text(json.dumps(row(*ss[0], 3.0)) + "\n" + '{"char": "Sp')
+    assert list(bench.load(path)) == [ss[0]]
+    (tmp_path / "a.json").write_text(json.dumps({"spec": bench.spec({"late_swaps": 3})}))
+    with pytest.raises(SystemExit):
+        bench.run("a", bench.spec({"finish_early": 0.75}), out_dir=tmp_path)
+    assert len(bench.code_fingerprint()) == 10
+
+
+def test_training_resumes_benchmarks_data_and_refuses_other_settings(tmp_path):
+    import json
+
+    import pytest
+
+    from cursed_words_solver.sim.game import expert as E
+    from cursed_words_solver.sim.game.learn import Ridge
+
+    # a benchmark whose runs are all cached plays nothing (no worker pool) and keeps job order
+    jobs = [{"character": "WetDennis", "crown": 0, "seed": s} for s in (5, 3)]
+    cache = tmp_path / "evals" / "eval_base.jsonl"
+    cache.parent.mkdir()
+    cache.write_text("".join(json.dumps({"seed": s, "won": s == 3, "outcome": float(s), "error": None}) + "\n" for s in (3, 5)))
+    res = E.evaluate(jobs, workers=1, wordlist=None, model=None, run_log=None, cache=cache)
+    assert res["per_seed"] == [5.0, 3.0] and res["wins"] == 1
+    # a finished data file is reused, not collected again
+    out = tmp_path / "pairs_it000.npz"
+    np.savez(out, dX=np.zeros((2, 3), np.float32), dy=np.ones(2, np.float32), kind=np.array(["shop", "shop"]),
+             seeds=np.array([1, 2]), wins=np.array([1]))
+    assert E.collect([], workers=1, wordlist=None, model=None, out=out) == {"runs": 2, "wins": 1, "pairs": 2}
+    # a model is named by its arrays, not the file's write time
+    m = Ridge(4)
+    m.w[:] = 0.5
+    m.save(tmp_path / "m1.npz")
+    m.save(tmp_path / "m2.npz")
+    assert E.model_tag(str(tmp_path / "m1.npz")) == E.model_tag(str(tmp_path / "m2.npz")) != "base"
+    # a directory started with other characters / crowns is refused before anything runs
+    (tmp_path / "config.json").write_text(json.dumps({"characters": ["Spike"], "crowns": [0]}))
+    with pytest.raises(SystemExit):
+        E.main(["--dir", str(tmp_path), "--characters", "WetDennis", "--boss-risk", ""])
+
+
 def test_quick_pick_is_a_legal_shop_action(tmp_path):
     from cursed_words_solver.sim.game.advise import quick_pick
     from cursed_words_solver.sim.game.agent import legal_actions
@@ -535,7 +876,7 @@ def test_tile_buys_take_the_offer_that_lifts_a_probe_grid_most():
     assert pol._tile_buy(g) is None
 
 
-def test_tile_buys_are_on_for_spike_only_in_the_benchmark_policy():
+def test_per_character_settings_in_the_benchmark_policy():
     from cursed_words_solver.sim.game import expert as E
     from cursed_words_solver.sim.game.policy import tuned_config
 
@@ -544,6 +885,30 @@ def test_tile_buys_are_on_for_spike_only_in_the_benchmark_policy():
     assert not pol._tile_buys_on(_game(character="WetDennis"))
     assert tuned_config().tile_buy_chars == ("Spike",)
     assert pol.cfg.tile_reserve == pol.cfg.spend_over
+    assert pol._sort_stamps_on(_game(character="SockHead"))
+    assert not pol._sort_stamps_on(_game(character="Spike"))
+    assert tuned_config().sort_stamps_chars == ("SockHead",)
+    assert pol.cfg.route_value and tuned_config().route_value and not pol.cfg.ogre
+    from cursed_words_solver.sim.game.bossmodel import DEFAULT_PATH
+
+    want = str(DEFAULT_PATH) if DEFAULT_PATH.is_file() else ""  # CI has no fitted model: table only
+    assert pol.cfg.boss_model == tuned_config().boss_model == want
+    assert E.NetPolicy(_NoSearch(), None, boss_model="").cfg.boss_model == ""
+
+
+def test_sort_stamps_searches_stamp_swaps_too():
+    from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig
+
+    g = _game(seed=13)
+    _shop_at(g, Node.SHOP_ONE, 0)
+    g.player.stamps[0] = make_item("Dragon")
+    g.player.stamps[1] = make_item("RightHumanHand")
+    for on in (False, True):
+        pol = FastAdvicePolicy(_NoSearch(), PowerConfig(sort_items=True, sort_stamps=on))
+        # probe points: 100, or 150 with the hand left of the Dragon (it boosts the stamp to its right)
+        pol.power = lambda game: 150.0 if [getattr(x, "game_class", None) for x in game.player.stamps[:2]] == ["RightHumanHand", "Dragon"] else 100.0
+        a = pol._best_move(g)
+        assert (a is not None and (a.kind, a.args) == ("move", ("stamp", 0, 1))) == on
 
 
 def test_tile_save_places_the_cheaper_rack_tile_when_it_does_nearly_as_well():
@@ -567,3 +932,49 @@ def test_tile_save_places_the_cheaper_rack_tile_when_it_does_nearly_as_well():
         pol = FastAdvicePolicy(_Probe(), PowerConfig(fast_placement=True, placement_targets=2, tile_save=save))
         a = pol._best_placement(g, 50)
         assert a.kind == "place" and a.args[0] == used
+
+
+def test_char_overrides_switch_settings_by_character_and_crown():
+    import pytest
+
+    from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig, char_settings, with_overrides
+
+    over = {"Spike": {"buy_threshold": 0.06, "tile_buy_chars": []}, "Spike@3-7": {"spend_over": 40}, "Carpman@0": {"swap_sell": True}}
+    assert char_settings(over, "Spike", 1) == {"buy_threshold": 0.06, "tile_buy_chars": []}
+    assert char_settings(over, "Spike", 5) == {"buy_threshold": 0.06, "tile_buy_chars": [], "spend_over": 40}
+    assert char_settings(over, "Carpman", 0) == {"swap_sell": True} and char_settings(over, "Carpman", 1) == {}
+    cfg = with_overrides(PowerConfig(tile_buy_chars=("Spike",)), char_settings(over, "Spike", 5))
+    assert (cfg.buy_threshold, cfg.spend_over, cfg.tile_buy_chars) == (0.06, 40, ())
+    with pytest.raises(ValueError):
+        with_overrides(PowerConfig(), {"no_such_knob": 1})
+    pol = FastAdvicePolicy(_NoSearch(), PowerConfig(char_overrides={"WetDennis": {"buy_threshold": 0.5}}))
+    pol._tune(_game())  # Wet Dennis, crown 0
+    assert pol.cfg.buy_threshold == 0.5 and pol._base_cfg.buy_threshold == 0.02
+    pol._tune(_game(character="HumanBoy"))
+    assert pol.cfg is pol._base_cfg
+
+
+def test_chartune_seeds_arms_and_promotion(tmp_path):
+    from cursed_words_solver.sim.game import chartune as C
+    from cursed_words_solver.sim.game.policy import PowerConfig
+
+    all_seeds = [s for p in range(3) for r in range(3) for _, s in C.seeds("Spike", p, r)]
+    assert len(all_seeds) == len(set(all_seeds)) == 3 * 96 and all(7_000_000 <= s < 8_000_000 for s in all_seeds)
+    labels = dict(C.arms(PowerConfig(tile_buy_chars=("Spike",)), "Spike"))
+    assert labels["tile_buys=False"] == {"tile_buys": False, "tile_buy_chars": []}
+    assert "buy_threshold=0.02" not in labels and labels["swap_sell=True"] == {"swap_sell": True}
+
+    t = C.Tuner(tmp_path / "work", tmp_path / "table.json")
+
+    def play(char, overs, ss):  # buy_threshold=0.06 is worth +1.5, everything else noise
+        for o in overs:
+            for _, s in ss:
+                noise = ((s * 7919 + len(C.key(o)) * 104729) % 1000) / 250 - 2
+                t.runs[(char, s, C.key(o))] = {"outcome": 8 + noise + 1.5 * (o.get("buy_threshold") == 0.06)}
+
+    t.play = play
+    rec = t.tune("Spike", 0, PowerConfig(tile_buy_chars=("Spike",)))
+    assert rec["promoted"] == "buy_threshold=0.06" and t.table["overrides"]["Spike"] == {"buy_threshold": 0.06}
+    assert rec["stats"]["n"] == 96 and rec["fresh"]["n"] == 48
+    rec = t.tune("Spike", 1, PowerConfig(tile_buy_chars=("Spike",)))  # now the champion: going back loses
+    assert "promoted" not in rec and t.table["overrides"]["Spike"] == {"buy_threshold": 0.06}

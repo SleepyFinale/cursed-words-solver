@@ -188,7 +188,7 @@ class WordSearcher:
         from cursed_words_solver.rules.quest_scoring import (
             bullseye_active,
             encounter_remaining_from_loadout,
-            search_rank_for_quest,
+            search_rank_function,
         )
 
         start = time.monotonic()
@@ -221,7 +221,7 @@ class WordSearcher:
             required_indices=frozenset(self.validator.required_consumable_indices or ()),
             deadline=perf_deadline,
             cancel_check=cancel,
-            rank=lambda s: search_rank_for_quest(float(s), loadout, quest_target=quest_target),
+            rank=search_rank_function(loadout, quest_target=quest_target),
             parallel=parallel,
         )
         info.pop("plan", None)
