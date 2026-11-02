@@ -82,12 +82,31 @@ of the 2026-10-24/25 journals plus the older round logs; run with `PYTHONIOENCOD
   reward or challenge) and locked on the user's save. The sim stays "everything unlocked" by
   design. The locks also shrink the real tag pools, which plausibly explains the small
   deficits in tag-matched stickers (245 vs 274, z −2.8) and Common stamps (196 vs 211, z −2.9).
-- **Open:** upgrade offers of owned stickers, 17 real vs 39 simulated (z −4.0), almost all
-  in shops with 5 stickers owned (12 vs 29.6). `GenerateStickerInStock`,
-  `GetRandomBuildBiasedSticker`, `GetNonMaxUpgradeSticker`, `GetItemWithTag`,
-  `GetMaxUpgradeCount` and `GetStickers` all match the port line for line, and locks would
-  push the other way. Suspects: the imported upgrade state, or which export counts as shop
-  entry. More shop visits with 5 stickers will show whether it is real.
+- **Closed 2026-11-02: upgrade offers of owned stickers.** The validator counted 17 real vs
+  39 simulated (z −4.0), almost all in shops with 5 stickers. The sim was right, and the
+  validator's choice of shop entry was wrong:
+  - **Selection.** 37 of the 156 "entry" exports came after a buy or sell, and 7 after a
+    restock. The game nulls a bought slot, and buys favour upgrade offers, so those exports
+    lose exactly the offers being counted. `shops` now compares stock only on clean entries:
+    no restock yet, and the same items as the export before. On those 112, stamp Common and
+    tag-match deficits vanish (z −0.3, −1.5); sticker upgrades are 15 vs 26.2 (z −2.5).
+  - **Ground truth from the game's own log.** `GetRandomBuildBiasedSticker` logs each
+    branch, and `ShopItemSlot.Populate` logs "No space" (5 stickers) for each slot.
+    `sim_validate.py gamelog` reads Unity's Player.log / Player-prev.log (the last two
+    sessions; the 2026-10-25 pair is kept in `~/.cursed_words_solver/game_logs/2026-10-25`, pass `--game-log-dir`):
+    - Dependency roll: 64 / 732 = 0.087 (1 in 10 expected, z −1.1).
+    - Upgrade roll with 5 stickers: 37 / 427 = 0.087 (z −0.9).
+    - A roll finds a non-max sticker 28 / 37 = 0.76 of the time; the sim gives 0.82 on the
+      clean entries.
+    - All 17 rolls with fewer than 5 stickers stop at "Player stickers not yet full", as
+      the code says.
+  - **Slot by slot.** I aligned the log's slots with the 23 clean five-sticker entries it
+    covers (by item name and index). The game rolled the upgrade 5 times against the sim's
+    7.7 expected, and returned 2 offers against 5.7. Each of its 3 empty rolls fell in a
+    state where the sim also has no candidate: every sticker maxed, or the one non-max
+    sticker frozen in stock. Owned offers from the other branches are 3 vs 2.9.
+  - **What's left** of the deficit on clean entries is the dice: fewer upgrade rolls than
+    average in these sessions. The sim is unchanged.
 - Coverage: the AI buys 227 classes, real data has 107; 144 were never seen. Of the
   AI-frequent ones with < 5 real captures, Radio, Wriggly Worm, Numbers Bunch Of Grapes,
   Dartboard, Chick, Axe, Television, Arrivals and Crystal Ball are locked on this save
@@ -789,6 +808,256 @@ label cost two full play-outs.
   in-sample values, a shortcut the trainer doesn't take, so that gain wasn't the network's.
 - At 512 runs, model capacity isn't the limit: ridge stays the default. Re-test once
   training has gathered thousands of runs.
+
+**Benchmark of the pilot model (2026-11-01): it loses at every margin.** The ridge model was
+fitted on all 512 pilot runs and played the gate's 256 eval seeds (all characters, crowns
+0–7). The confirm step was stopped once the outcome was clear.
+
+| Policy | Wins | Mean outcome |
+|---|---|---|
+| Base (Fast Advice) | **37** | **11.36** |
+| Value model, margin 0.6 | 22 | 10.59 |
+| Value model, margin 0.3 | 20 | 9.79 |
+| Value model, margin 0.1 | 5 | 8.24 |
+
+The more decisions the model makes, the worse the play. One run's overrides (seed
+77700001, margin 0.1, 29 overrides) show three failure modes:
+
+1. **Advice's swaps are refused** (7 of 29 were sell → leave). Advice swaps in two steps,
+   sell then buy, and the model values the after-state of the sell alone: an item gone,
+   nothing in its place. A suggested swap needs to be valued as the `sell_buy` it is.
+2. **Confounded features.** The model prefers expensive buys (Rolodex $18 over a probe-
+   checked Crystal Ball at $0) and freezes the very item Advice says to buy. In
+   on-policy data, money invested, sell value and frozen stock mark runs that were
+   already going well. They don't make runs go well.
+3. **Churn / optimiser's curse.** A shop visit goes freeze → reorder → freeze → buy, each
+   step +0.2–0.3 predicted. The best of up to 16 candidates is the one the model
+   overrates most, and most predicted gains (0.2–0.7) are inside the model's error.
+
+The causal check warned of this: a 0.04 pair correlation means the model's differences
+between after-states barely point the right way, even though R² within (0.25) looks
+fine. R² within measures how well the model recognises good states, not whether it can
+rank actions.
+
+**Fixes for those three failure modes (2026-11-01), and the result: closer, still a loss.**
+
+- `VALUE_KINDS`: the model decides only buys, Hippo feeds, swaps, leave, boss picks, pins
+  and Michael picks. Freezes, reorders and restocks stay Advice's, which ends the churn.
+- Swaps are valued whole: a suggested sell followed by its planned buy (`_pending_buy`) is
+  valued as the `sell_buy` it is.
+- `VALUE_DROP`: the fit leaves out `frozen_n`, `log_sell_value`, `log_invested`,
+  `shop_restock_cost` and every `frozen:` column. Those mark runs already going well; they
+  don't make runs go well. The MLP zeroes their input weights.
+
+Refit on the same 512 pilot runs (`model_fixed.npz`): ridge 100, R² within 0.267,
+pairs_corr 0.034. Same 256 eval seeds, paired against the base:
+
+| Policy | Wins | Mean outcome | Paired Δ / run |
+|---|---|---|---|
+| Base (Fast Advice) | **37** | **11.36** | |
+| Fixed value model, margin 0.3 | 35 | 10.69 | −0.67 (t −3.26; 89 better, 140 worse) |
+| Fixed value model, margin 0.6 | 27 | 10.88 | −0.48 (t −2.84; 83 better, 134 worse) |
+
+At margin 0.3 the fixes cut the win gap from 17 to 2, but the model still loses on outcome at both margins, and the loss is broad.
+By crown (margin 0.3): 0 −0.49, 1 +0.81, 2 −1.27, 3 −0.88, 4 −2.38, 5 +0.11, 6 −0.73,
+7 −0.38. Only Octacles comes out ahead (+0.38); Prismatic Bean (−1.72), Wet Dennis (−1.32)
+and Sock Head (−1.15) lose the most.
+
+**Feature sets don't rescue it** (offline, same states, out-of-fold):
+
+| Feature set | Live columns | Best R² within | pairs_corr |
+|---|---|---|---|
+| Current (spend / frozen dropped) | 910 | 0.267 | 0.034 |
+| − `pos:` | 652 | 0.268 | 0.036 |
+| − `pos:` / `foil:` / `ivar:` / `ictr:` | 461 | 0.263 | 0.044 |
+| Shared only (no per-class columns) | 201 | 0.245 | 0.011 |
+
+Every variant recognises good states about equally well, and none ranks actions (pair
+correlations of 0.01–0.04, against a reliability ceiling of about 0.46). An MLP (64 hidden)
+is no better than ridge (see above).
+
+**Conclusion:** a state value fitted to on-policy outcomes can't pick between a shop's
+candidates. The after-states of two candidates differ in a handful of columns, and what
+those columns are worth is confounded with how the run was already going. Exploration at
+ε = 0.1 is too thin to break that confound. Whatever replaces it needs causal labels: paired
+play-outs from the same state (the keyed `pairs` target, label noise permitting), a much
+larger ε on fewer decisions, or a value trained off-policy on many randomised decisions per
+state. The value model stays opt-in (`--target value`); default play is unchanged.
+
+### Randomised decisions (`--target rct`, 2026-11-01)
+
+The value model's failure points to causal labels. The new target collects them at the
+cost of one run per run, and needs no paired play-outs:
+
+- **Trials.** In each data run, `--p-random` (default 0.15) of the champion's run-level
+  decisions are trials (`NetPolicy._trial`). A trial keeps the champion's own choice
+  (`--control`, 25% of trials) or takes a random alternative, picked group-first. Both
+  after-states are stored (`rct_it*.npz`: `t_xa` control, `t_xt` taken). Only choices whose
+  after-state shows their effect take part (`VALUE_KINDS`), and Advice's swap step counts as
+  the whole swap. About 10 trials per run.
+- **Label.** The run's final outcome minus a baseline: the λ-return state value (fitted on
+  the same runs' after-states, all columns) at the control's after-state, from the fold fit
+  that never saw that run (`_FoldGram.predict_folds`). The baseline only cuts noise: the
+  choice was random, so it can't bias the label.
+- **Model.** Ridge of the label on (taken − control after-state), run-grouped CV
+  (`train_rct`, `target = "rct"`). The randomisation makes the difference independent of how
+  the run was going, so the coefficients estimate what each change causes, relative to the
+  champion. At play time an `rct` model ranks candidates by predicted advantage over the
+  suggestion (`_pick_value`; the intercept cancels).
+- **Fit report.** `deviation` is the average label of a random deviation minus a control's:
+  are effects measurable at all? `oof_corr` / `oof_t` give the out-of-fold correlation
+  between predicted advantage and label over deviations: the causal ranking check the
+  value model failed. `switch_gain` is the label gain of the deviations the model would
+  take, against controls. `by_kind` breaks the deviation effect down by kind, and
+  `pairs_corr` is reported as before.
+- **Gate.** The same as the other targets: `oof_corr` < 0.03 skips the benchmark; otherwise
+  margins 0.1 / 0.3 / 0.6, then a paired confirm.
+
+```
+python -m cursed_words_solver.sim.game.expert --target rct --dir ~/.cursed_words_solver/sim_models/rct_pilot \
+    --runs 512 --iterations 1 --collect-only --characters <all 11> --crowns 0,1,2,3,4,5,6,7
+```
+
+**Pilot (2026-11-01):** 512 runs, all 11 characters, crowns 0–7, 64 min on 8 cores. That gave
+4,528 trials (1,117 controls) and 27,280 after-states. Baseline R² is 0.50 on the trials, and
+the label SD is 2.18.
+
+*Correction (2026-11-02):* 2,054 of those 4,528 trials are copies (see "Duplicated trials and
+lower-noise labels" below). The real count is 2,474 trials (632 controls). The numbers in this
+paragraph and the next two are from the inflated set.
+
+- **Effects are measurable.** A random deviation from the champion costs −0.27 / run
+  (t −3.8). By kind of alternative taken: boss −0.41 (t −4.5), swap −0.48 (t −3.8), an
+  unplanned leave −0.30 (t −3.4), buy −0.07 (n.s.). A random pin side does *better* than the
+  lower-side rule: +0.47 (t 2.4, 147 trials). Within pin decisions alone (raw outcome
+  against the 65 pin controls) it's +0.67, t 1.4. That fits the user's view that the pin
+  side matters, but it's a lead, not proof.
+- **Ranking: weak but real.** Out-of-fold correlation of predicted advantage with the label
+  is +0.054 / +0.049 / +0.049 (t ≈ 3) over three fold seeds. On half the runs it was −0.076,
+  so 256 runs are too few. Holding `pos:`, `frozen:` or all per-class columns equal doesn't
+  change it (+0.044 to +0.057).
+- **Cut-off.** Every deviation the model rates above 0 does worse than the controls (−0.19).
+  Deviation cost the features can't explain sits in the intercept and inflates each predicted
+  advantage. At the play margins, the deviations it would take beat the controls out of fold:
+  0.3 → +0.12 / +0.35 (n 144 / 136), 0.6 → +0.47 / +0.57 (n 18 / 19). The third seed chose a
+  ridge so strong that nothing passes 0.3. `switch_by_margin` now reports this.
+
+| Policy (256 eval seeds) | Wins | Mean outcome | Paired Δ / run |
+|---|---|---|---|
+| Base (Fast Advice) | **37** | **11.36** | |
+| rct model, margin 0.3 | 8 | 9.76 | −1.60 (t −9.55; 49 better, 177 worse) |
+| rct model, margin 0.6 | 33 | 10.93 | −0.43 (t −3.38; 45 better, 97 worse, 114 unchanged) |
+| rct model, shared columns only, margin 0.3 | 37 | 11.17 | −0.19 (t −1.81; 38 better, 50 worse, 168 unchanged) |
+
+Both margins lose; margin 0.3 loses badly, at every crown and for every character, and margin 0.6 changes fewer runs but still loses. Boss choices barely change
+(68–69% cursed picks under both), so the loss is in the shop. The model swaps one buy for
+another (more Giraffe, Soaring Kite, Wrestlers, Retro Raider; less Broom, Bunch Of Grapes,
+Circus Tent, Cursed VHS, Axe; seed 77700001 has 4 overrides, all buy → buy). Its runs end
+earlier (stage 3.61 vs 4.04). Those choices turn on per-class weights estimated from about
+600 buy trials spread over about 250 classes, and the best of up to 16 candidates is the
+one whose weight is noisiest. The weak out-of-fold ranking (+0.05) must come from coarse
+differences, such as which kind of move it is, not from item-level ones. Trial-level
+effects can be measured with 4.5k trials, but item-level advantages can't.
+
+Next options: an rct model without per-class columns (the offline variant ranked as well,
++0.044 to +0.057, and can't chase item noise; the data is already collected, so it costs one
+benchmark); many more trials (an overnight collection is about 5k runs / 45k trials, still
+only ~25 buy trials per class); or item effects through shared item properties instead of
+one weight per class. The pin-side lead is cheap to settle with trials on pin decisions only.
+
+**Shared columns only (`--rct-shared`, 2026-11-01).** The per-class columns are left out of
+the difference (`per_class_mask`), so the model can't chase item noise. Its top weights are
+the boss targets (`log_target_*`, about +1.2 each), then rack and colour columns. Out of fold
+it ranks as well as before (+0.046 / +0.057 / +0.044 over three seeds). The switch gain at
+margin 0.3 is inconsistent (−0.30 / +0.38 / −0.51, n 24–31). On the eval seeds it ties on
+wins (37 vs 37) and costs −0.19 / run (t −1.8). It changes only 88 of 256 runs, with buys per
+run and stage reached unchanged and slightly more cursed bosses (68.8% vs 67.6%). Dropping
+the per-class weights removes the damage (−1.60 → −0.19) but finds no gain. With ~4.5k trials
+the advantage signal is too weak to act on: the effect of a typical choice is a fraction of
+the run-to-run noise (label SD 2.2). Not promoted; default play is unchanged.
+
+**Pin side trials (`--p-random 1 --control 0.5 --trial-kinds pin`, 2026-11-01).** These
+settle the pilot's pin lead. Every pin decision is randomised 50/50 between the lower side
+(the control) and the other side, and nothing else changes. The run took 512 runs (all
+characters, crowns 0–7, 78 min) and gave 1,581 pin trials: 810 other side, 771 lower side.
+Baseline R² is 0.51.
+
+- **Overall: no effect.** Other side − lower side is +0.18 raw (t 1.0) and **−0.000**
+  baseline-adjusted (t 0.0). The adjusted SE is roughly 0.12, so a pin side is worth less
+  than about ±0.25 encounters per decision. The pilot's +0.47 (147 trials) was noise.
+- **No subgroup holds up.** By stage, adjusted effects run from −0.22 to +0.19, all with
+  |t| < 1. By character, the largest is Sandy Saguaro at +0.64 (t 1.6). By crown, crown 5 is
+  −1.13 (t −2.9) and crown 2 is +0.63 (t 1.9). That's the extreme of 24 subgroup tests, with
+  opposite signs in neighbouring crowns, so it is not a rule.
+- **The situation doesn't predict the better side.** Both ridge models give out-of-fold
+  correlation within ±0.03 for every λ: +0.011 (t 0.3) with per-class columns, −0.014
+  (t −0.4) with shared columns only. They switch about 37% of decisions, for a gain of −0.03
+  and −0.05.
+
+These trials, the five fixed and rollout rules (above) and the probe all agree: with the
+current policy, the pin side has no measurable effect on a run. `pin_side="lower"` stays.
+
+### Duplicated trials and lower-noise labels (2026-11-02)
+
+**Bug: trials recorded more than once.** `NetPolicy.decide` cleared `trial` only on a
+run-level decision. A step without one (an encounter's word, the shop step cap) kept the last
+trial, and `_rct_job` stored it again at every such step. Every leave and boss trial was
+repeated once per word of the encounter after it. In the pilot, 2,054 of 4,528 trials are
+copies, leaving 2,474 real ones: 921 buy, 623 leave, 454 sell → buy, 257 boss, 212 pin, 632 of
+them controls. The pin-only run has none, because a shop decision follows each pin.
+`decide` now clears `trial` and `explored` on every step, and `load_trials` drops a trial
+identical to the one before it in the same run (kind, control, both after-states), so older
+files load correctly. On the deduplicated set, the outcome-label model ranks better out of
+fold: +0.093 / +0.065 / +0.077 over three fold seeds, against +0.05 before.
+
+**Lower-noise labels (`train_rct(label_lam=…)`, `--rct-label-lam`).** The run's outcome
+carries the luck of every later decision and encounter: label SD 2.2, against effects of 0.1–0.3
+per decision. The alternative label is the λ-return from the end of the trial's shop visit,
+using the out-of-fold state values, minus the same baseline. λ = 0 is the value after the next
+visit, and λ = 1 is the outcome. Models are trained on that label, but every check scores them
+against the outcome label, which a biased value can't fake.
+
+| label (deduplicated pilot) | label SD | out-of-fold rank corr. vs outcome, 3 fold seeds | half the runs, 2 seeds |
+|---|---|---|---|
+| run outcome (as before) | 2.18 | +0.093 / +0.065 / +0.077 | −0.012 / +0.050 |
+| λ-return, λ = 0.8 | 1.07 | +0.115 / +0.092 / +0.094 | +0.030 / +0.094 |
+| λ-return, λ = 0.5 | 0.82 | **+0.128 / +0.099 / +0.086** | +0.045 / +0.097 |
+| λ-return, λ = 0.2 | 0.75 | +0.123 / +0.093 / +0.080 | +0.044 / +0.095 |
+| value after the next stage | 1.22 | +0.113 / — / — | +0.041 / +0.095 |
+| *no advantage model: the state value's own V(taken) − V(control)* | — | +0.109 / +0.129 / +0.111 | +0.065 / +0.165 |
+
+Shared-columns-only models rank lower: +0.099 / +0.084 / +0.054 at λ 0.5, against +0.057 /
++0.037 / +0.037 on the outcome. The smoothed labels give the ranking a consistent gain of about
+a third, and half the data already gets most of it. They don't beat the plain state value,
+which learns from all 27k after-states and ranks random deviations as well. When V(taken) −
+V(control) exceeds 0.3, those random deviations beat the controls by +0.38 / +0.45 (t ≈ 2,
+n ≈ 175, with or without the dropped columns).
+
+**In play, they lose** (256 eval seeds, paired against the cached base: 37 wins, mean 11.36):
+
+| Policy | Wins | Mean outcome | Paired Δ / run |
+|---|---|---|---|
+| rct, λ 0.5 label, all columns, margin 0.1 | 21 | 9.90 | −1.46 (t −7.4; 73 better, 168 worse) |
+| rct, λ 0.5 label, all columns, margin 0.3 | 20 | 10.44 | −0.93 (t −5.1; 79 better, 149 worse) |
+| rct, λ 0.5 label, shared columns, margin 0.3 | **43** | 11.34 | −0.02 (t −0.1; 82 better, 80 worse) |
+| *(for comparison) rct, outcome label, shared columns, margin 0.3, before deduplication* | 37 | 11.17 | −0.19 (t −1.8) |
+
+With all columns, the top weights are per-class position and freeze columns (`pos:TrophyOfWealth` −3.4,
+`pos:DownwardTrendingChart` +1.8, `frozen:Supervillain` −0.9, …), each from a handful of
+trials. Ranking *random* deviations is not the decision play makes. Play takes the best of up
+to 16 candidates, which favours whichever per-class weight is most overestimated (the winner's
+curse), and it does so at every decision of the run. Out-of-fold ranking of random deviations
+therefore overstates what a model gains in play. Lower label noise doesn't fix that; what's
+needed is a choice rule that discounts poorly measured directions (an uncertainty penalty from
+the ridge posterior, so a deviation is taken only when its lower bound beats the margin), or
+far more trials per class.
+
+The shared-columns model with the smoothed label is the first learned model that doesn't lose
+in play. It ties on the mean, and its +6 wins are within noise. Its weights are build-level:
+`syn:BigNumbersBuild` +1.6, the colour and rack columns, and the boss targets. It isn't
+promoted, but it points to the setup for long training: randomised trials, the λ 0.5 label,
+shared columns only (`--target rct --rct-shared --rct-label-lam 0.5`), with the paired
+benchmark as the gate.
 
 
 ```

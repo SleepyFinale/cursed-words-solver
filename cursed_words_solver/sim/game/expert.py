@@ -2,6 +2,7 @@
 
     python -m cursed_words_solver.sim.game.expert --iterations 10 --runs 256            # state value
     python -m cursed_words_solver.sim.game.expert --target pairs --dir <d> ...           # paired play-outs
+    python -m cursed_words_solver.sim.game.expert --target rct ...                       # randomised decisions
 
 **State value (``--target value``, the default since 2026-10-31).** The model predicts the
 run outcome from the state after a decision; ``NetPolicy`` compares the after-states of the
@@ -18,6 +19,22 @@ run-grouped folds, λ-returns recomputed from out-of-fold values for ``--sweeps`
 reports R² within (crown, stage, node), the part that has to come from the build, and the
 correlation with the keyed paired play-outs of the advantage experiments (``--check-pairs``),
 a causal check of the decisions the model would make.
+
+**Randomised decisions (``--target rct``, 2026-11-01).** The state value above recognises
+good states but cannot rank a shop's candidates: in the champion's own runs what an
+after-state's columns are worth is confounded with how the run was already going (pilot
+benchmark: it lost at every margin). Here the champion plays runs in which a share
+(``--p-random``) of the run-level decisions is a trial: the champion's own choice (the
+control, ``--control`` of trials) or a random alternative, both after-states recorded
+(``NetPolicy.trial``). The label is the run's outcome minus a baseline, the out-of-fold
+state value of the control's after-state (``train_rct``: a control variate fitted on the same
+runs' states). Because the choice was random, the difference of the two after-states is
+independent of everything else in the run, so a ridge fit of the label on it estimates what
+each change *causes* (the advantage over the champion's choice), however noisy. Every
+other decision of the run is the champion's, so this is one step of policy iteration.
+The model (``target = "rct"``) plays like a value model, on after-state differences.
+``--rct-label-lam`` trains it on the λ-return after the trial's shop visit instead of the
+outcome: it ranks about a third better out of fold, but still loses in play (sim-game.md).
 
 **Paired play-outs (``--target pairs``).** The older loop:
 
@@ -83,12 +100,33 @@ from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig, l
 DEFAULT_DIR = Path.home() / ".cursed_words_solver" / "sim_models" / "expert"
 VALUE_DIR = Path.home() / ".cursed_words_solver" / "sim_models" / "value"
 PAIRS_CHECK_DIR = Path.home() / ".cursed_words_solver" / "sim_models" / "keyed_carpman_c0"
+RCT_DIR = Path.home() / ".cursed_words_solver" / "sim_models" / "rct"
 SHOP_CAP = 14
 SHOP_CANDIDATES = 16  # cap on full_shop_candidates per shop state
 EFFORT = 0.05  # deterministic word search (load-independent, reproducible benchmarks)
 THRESHOLDS = (0.5, 1.0, 2.0)
 VALUE_THRESHOLDS = (0.1, 0.3, 0.6)  # value margins (outcome units) a value model is benchmarked at
 MIN_R2_WITHIN = 0.01  # skip benchmarking a value model that explains nothing beyond crown / stage / node
+# Moves a value model may choose (see NetPolicy._pick_value).
+VALUE_KINDS = frozenset({"buy", "hippo", "sell_buy", "leave", "boss", "pin", "michael_pick"})
+# Features a value model does not see: money invested / sell value / frozen stock / the
+# restock price mark runs that were already going well (they rise with income), so a model
+# fitted on its own play learns "spend more, freeze more" (pilot benchmark, 2026-11-01).
+VALUE_DROP = frozenset({"frozen_n", "log_sell_value", "log_invested", "shop_restock_cost"})
+VALUE_DROP_PREFIXES = ("frozen:",)
+
+
+RCT_PER_CLASS = ("pos:", "frozen:", "foil:", "ivar:", "ictr:", "item:")  # one column per item class
+
+
+def per_class_mask() -> np.ndarray:
+    """Columns that describe one item class each (``RCT_PER_CLASS``)."""
+    return np.array([n.startswith(RCT_PER_CLASS) for n in feature_names()])
+
+
+def value_drop_mask() -> np.ndarray:
+    """Columns of ``features.encode`` left out of value models (``VALUE_DROP``)."""
+    return np.array([n in VALUE_DROP or n.startswith(VALUE_DROP_PREFIXES) for n in feature_names()])
 ROLL_EFFORT, ROLL_TARGETS = 0.02, 3  # play-out continuation (see _pairs_job)
 MIN_CORR = 0.03  # skip benchmarking a model whose cross-validated fit shows no signal
 PROMOTE_T = 1.65  # one-sided ~95% on the paired per-seed outcome gain
@@ -210,11 +248,14 @@ def afterstate(game, a: Action) -> np.ndarray | None:
 class NetPolicy(FastAdvicePolicy):
     """Fast Advice everywhere; run-level choices overridden by a learned model (advantage or
     state value). ``explore`` > 0 takes a random alternative at that share of decisions
-    (training data); ``explored`` says whether the last decision was one."""
+    (training data); ``explored`` says whether the last decision was one. ``randomise`` > 0
+    turns that share of decisions into trials (``_trial``) and leaves the last one in
+    ``trial``."""
 
     def __init__(self, cands: Candidates, model=None, *, seed: int = 0, threshold: float | None = None,
                  boss_risk: str = "", boss_model: str | None = None, char_tuning: str = "",
-                 action_space: str = "full", explore: float = 0.0) -> None:
+                 action_space: str = "full", explore: float = 0.0, randomise: float = 0.0,
+                 control: float = 0.25, trial_kinds: frozenset[str] | None = None) -> None:
         if boss_model is None:  # build-aware boss risk (on 2026-10-30); only used with a boss_risk table
             from cursed_words_solver.sim.game.bossmodel import DEFAULT_PATH
 
@@ -233,6 +274,9 @@ class NetPolicy(FastAdvicePolicy):
         self.explore = explore
         self._explore_rng = random.Random(f"explore|{seed}")
         self.explored = False
+        self.randomise, self.control = randomise, control
+        self.trial_kinds = VALUE_KINDS if not trial_kinds else VALUE_KINDS & frozenset(trial_kinds)
+        self.trial: tuple[np.ndarray, np.ndarray, str, bool] | None = None
         self._playout: NetPolicy | None = None
         self.pin_log: list[dict[str, Any]] = []  # cfg.pin_side == "rollout": one entry per decision
 
@@ -290,7 +334,7 @@ class NetPolicy(FastAdvicePolicy):
         ``threshold`` (in outcome units: encounters cleared)."""
         if self.model is None or len(cands) == 1:
             return cands[0]
-        if getattr(self.model, "target", "advantage") == "value":
+        if getattr(self.model, "target", "advantage") in ("value", "rct"):
             return self._pick_value(game, cands)
         base = afterstate(game, cands[0])
         if base is None:
@@ -307,19 +351,33 @@ class NetPolicy(FastAdvicePolicy):
         i = int(np.argmax(adv))
         return acts[i] if adv[i] > self.threshold else cands[0]
 
+    def _whole(self, a: Action) -> Action:
+        """Advice's swap step (a sell, its planned buy next) as the ``sell_buy`` it is."""
+        pending = getattr(self, "_pending_buy", None)
+        if a.kind == "sell" and pending is not None and pending[0] == a.args[0]:
+            return Action("sell_buy", (a.args[0], a.args[1], pending[1]), a.label)
+        return a
+
     def _pick_value(self, game, cands: list[Action]) -> Action:
         """State-value model: the candidate whose after-state is valued highest, if it beats
-        the suggestion's by more than ``threshold``. Shop stock is not a feature, so a
-        restock only looks like money lost: a suggested restock stands, and a restock is
-        never picked over the suggestion."""
-        if cands[0].kind == "reroll_shop":
+        the suggestion's by more than ``threshold``. An ``rct`` model predicts the advantage
+        from the difference of the two after-states instead.
+
+        Only choices whose after-state shows their effect are compared (``VALUE_KINDS``: buys,
+        swaps, leave, boss / pin / Michael picks). A suggested freeze, sell, reorder or
+        restock stands, and none is picked over the suggestion. Shop stock is not a feature,
+        so a restock only looks like money lost and a freeze like nothing at all. Advice's
+        swap (a sell now, the replacement next step) is valued as the whole swap: the sell
+        alone looks like an item lost (pilot benchmark, 2026-11-01)."""
+        first = self._whole(cands[0])
+        if first.kind not in VALUE_KINDS:
             return cands[0]
-        base = afterstate(game, cands[0])
+        base = afterstate(game, first)
         if base is None:
             return cands[0]
         rows, acts = [base], []
         for a in cands[1:]:
-            if a.kind == "reroll_shop":
+            if a.kind not in VALUE_KINDS or same(a, first):
                 continue
             x = afterstate(game, a)
             if x is not None:
@@ -327,14 +385,20 @@ class NetPolicy(FastAdvicePolicy):
                 acts.append(a)
         if not acts:
             return cands[0]
-        v = self.model.predict(np.stack(rows))
-        adv = v[1:] - v[0]
+        X = np.stack(rows)
+        if self.model.target == "rct":
+            adv = self.model.predict(X[1:] - X[0]) - self.model.predict(np.zeros((1, X.shape[1])))[0]
+        else:
+            v = self.model.predict(X)
+            adv = v[1:] - v[0]
         i = int(np.argmax(adv))
         return acts[i] if adv[i] > self.threshold else cands[0]
 
     def decide(self, game) -> tuple[Action, list[Action]]:
         """(action, candidates) — candidates empty when this is not a run-level decision."""
         self._tune(game)
+        self.explored = False
+        self.trial = None  # a step without a run-level decision must not repeat the last trial
         ph = game.phase
         if ph != "shop":
             self._steps = 0
@@ -349,8 +413,9 @@ class NetPolicy(FastAdvicePolicy):
         if not cands:
             return FastAdvicePolicy.act(self, game), []
         a = self.pick(game, cands)
-        self.explored = False
-        if self.explore and len(cands) > 1 and self._explore_rng.random() < self.explore:
+        if self.randomise and len(cands) > 1 and self._explore_rng.random() < self.randomise:
+            a = self._trial(game, cands, a)
+        elif self.explore and len(cands) > 1 and self._explore_rng.random() < self.explore:
             a = sample_alternative(self._explore_rng, cands)
             self.explored = True
         if ph == "shop" and not same(a, cands[0]):
@@ -358,6 +423,31 @@ class NetPolicy(FastAdvicePolicy):
         if a.kind == "leave":
             self._leave_now()
         return a, cands
+
+    def _trial(self, game, cands: list[Action], a: Action) -> Action:
+        """A randomised decision: the champion's choice ``a`` (the control, ``control`` of
+        trials) or a random alternative (group-first), ``trial`` = (control after-state, taken
+        after-state, kind taken, control?). Only choices whose after-state shows their effect
+        (``VALUE_KINDS``, narrowed by ``trial_kinds``) take part; Advice's swap step is the whole swap."""
+        first = self._whole(a) if same(a, cands[0]) else a
+        if first.kind not in self.trial_kinds:
+            return a
+        alts = [c for c in cands if c.kind in self.trial_kinds and not same(c, first) and not same(c, a)]
+        if not alts:
+            return a
+        xa = afterstate(game, first)
+        if xa is None:
+            return a
+        if self._explore_rng.random() < self.control:
+            self.trial = (xa, xa, first.kind, True)
+            return a
+        take = sample_alternative(self._explore_rng, [first] + alts)
+        xt = afterstate(game, take)
+        if xt is None:
+            return a
+        self.trial = (xa, xt, take.kind, False)
+        self.explored = True
+        return take
 
     def _record_override(self, game, a: Action, memo) -> None:
         """Advice books its per-shop plan (bought / sold / frozen) when it *suggests*; on an
@@ -531,8 +621,59 @@ def _states_job(job: dict[str, Any]) -> dict[str, Any]:
             "won": bool(g.won), "err": err, "sec": time.time() - t0, "seed": job["seed"]}
 
 
+def _rct_job(job: dict[str, Any]) -> dict[str, Any]:
+    """One run by the champion with ``job["p_random"]`` of its decisions randomised
+    (``NetPolicy._trial``): every trial (control and taken after-states, kind, decision point),
+    and every decision's after-state as in ``_states_job`` (the baseline value's data)."""
+    t0 = time.time()
+    g = _game(job)
+    pol = NetPolicy(_CANDS, _MODEL, seed=job["seed"], threshold=job.get("threshold"), boss_risk=job.get("boss_risk"),
+                    randomise=float(job["p_random"]), control=float(job.get("control", 0.25)),
+                    trial_kinds=frozenset(job.get("trial_kinds") or ()))
+    X, visit, explored = [], [], []
+    xa, xt, kind, control, tvisit = [], [], [], [], []
+    err = ""
+    try:
+        for _ in range(4000):
+            if g.phase == "done":
+                break
+            a, cands = pol.decide(g)
+            run = g.player.run
+            point = run.stage * 16 + int(run.node)
+            if pol.trial is not None:
+                xa.append(pol.trial[0])
+                xt.append(pol.trial[1])
+                kind.append(pol.trial[2])
+                control.append(pol.trial[3])
+                tvisit.append(point)
+            apply(g, a)
+            if cands:
+                X.append(encode(g))
+                visit.append(point)
+                explored.append(pol.explored)
+    except Exception as exc:  # pragma: no cover - surfaced in the log
+        err = f"{type(exc).__name__}: {exc}"
+    width = len(feature_names())
+    n, m = len(X), len(xa)
+    out = outcome(g)
+
+    def stack(rows):
+        return np.stack(rows).astype(np.float32) if rows else np.zeros((0, width), np.float32)
+
+    return {"X": stack(X), "visit": np.array(visit, np.int16), "explored": np.array(explored, bool),
+            "run": np.full(n, job["seed"], np.int64), "crown": np.full(n, job["crown"], np.int8),
+            "outcome": np.full(n, out, np.float32),
+            "t_xa": stack(xa), "t_xt": stack(xt), "t_kind": np.array(kind, dtype="U12"),
+            "t_control": np.array(control, bool), "t_visit": np.array(tvisit, np.int16),
+            "t_run": np.full(m, job["seed"], np.int64), "t_crown": np.full(m, job["crown"], np.int8),
+            "t_outcome": np.full(m, out, np.float32),
+            "won": bool(g.won), "err": err, "sec": time.time() - t0, "seed": job["seed"]}
+
+
 PAIR_FIELDS = ("dX", "dy", "kind")
 STATE_FIELDS = ("X", "visit", "explored", "run", "crown", "outcome")
+TRIAL_FIELDS = ("t_xa", "t_xt", "t_kind", "t_control", "t_visit", "t_run", "t_crown", "t_outcome")
+RCT_FIELDS = ("t_xt", "t_xa") + TRIAL_FIELDS[2:] + STATE_FIELDS  # fields[1] counts the trials
 
 
 def _eval_job(job: dict[str, Any]) -> dict[str, Any]:
@@ -738,12 +879,12 @@ def train(dX: np.ndarray, dy: np.ndarray, *, seed: int = 0, lams=(100.0, 1000.0,
 # ---------------------------------------------------------------------------- state values
 
 
-def load_states(out: Path) -> dict[str, np.ndarray]:
-    """Every finished ``states_it*.npz`` in ``out``, one run's rows kept together and in
-    order; older feature widths are zero-padded (features are only ever appended)."""
+def load_states(out: Path, pattern: str = "states_it*.npz") -> dict[str, np.ndarray]:
+    """Every finished ``states_it*.npz`` (``pattern``) in ``out``, one run's rows kept together
+    and in order; older feature widths are zero-padded (features are only ever appended)."""
     width = len(feature_names())
     parts: dict[str, list[np.ndarray]] = {f: [] for f in STATE_FIELDS}
-    for f in sorted(out.glob("states_it*.npz")):
+    for f in sorted(out.glob(pattern)):
         if f.name.endswith(".partial.npz"):
             continue
         with np.load(f) as d:
@@ -754,6 +895,35 @@ def load_states(out: Path) -> dict[str, np.ndarray]:
         parts["X"][-1] = fit_width(parts["X"][-1], width).astype(np.float32)
     if not parts["X"]:
         return {"X": np.zeros((0, width), np.float32), "visit": np.zeros(0, np.int16), "explored": np.zeros(0, bool),
+                "run": np.zeros(0, np.int64), "crown": np.zeros(0, np.int8), "outcome": np.zeros(0, np.float32)}
+    return {k: np.concatenate(v) for k, v in parts.items()}
+
+
+def load_trials(out: Path) -> dict[str, np.ndarray]:
+    """The trials of every finished ``rct_it*.npz`` in ``out`` (``TRIAL_FIELDS``, the ``t_``
+    dropped: xa, xt, kind, control, visit, run, crown, outcome). Files collected before
+    2026-11-02 repeat a leave / boss trial at every encounter step after it; those copies
+    (same run, kind, control and after-states as the trial before) are dropped."""
+    width = len(feature_names())
+    parts: dict[str, list[np.ndarray]] = {f[2:]: [] for f in TRIAL_FIELDS}
+    for f in sorted(out.glob("rct_it*.npz")):
+        if f.name.endswith(".partial.npz"):
+            continue
+        with np.load(f) as d:
+            if "t_xa" not in d.files:
+                continue
+            cols = {k: d[k] for k in TRIAL_FIELDS}
+        xa, xt = cols["t_xa"], cols["t_xt"]
+        copy = np.zeros(len(xa), bool)
+        copy[1:] = ((cols["t_run"][1:] == cols["t_run"][:-1]) & (cols["t_kind"][1:] == cols["t_kind"][:-1])
+                    & (cols["t_control"][1:] == cols["t_control"][:-1])
+                    & (xa[1:] == xa[:-1]).all(1) & (xt[1:] == xt[:-1]).all(1))
+        for k, v in cols.items():
+            v = v[~copy]
+            parts[k[2:]].append(fit_width(v, width).astype(np.float32) if k in ("t_xa", "t_xt") else v)
+    if not parts["xa"]:
+        return {"xa": np.zeros((0, width), np.float32), "xt": np.zeros((0, width), np.float32),
+                "kind": np.zeros(0, "U12"), "control": np.zeros(0, bool), "visit": np.zeros(0, np.int16),
                 "run": np.zeros(0, np.int64), "crown": np.zeros(0, np.int8), "outcome": np.zeros(0, np.float32)}
     return {k: np.concatenate(v) for k, v in parts.items()}
 
@@ -780,7 +950,8 @@ class _FoldGram:
     run-grouped fold: every fold's fit (and every new set of labels) costs one solve, not
     another pass building ``AᵀA`` over 100k+ rows."""
 
-    def __init__(self, X: np.ndarray, fold: np.ndarray, k: int, chunk: int = 8192) -> None:
+    def __init__(self, X: np.ndarray, fold: np.ndarray, k: int, chunk: int = 8192,
+                 drop: np.ndarray | None = None) -> None:
         self.X, self.fold, self.k, self.chunk = X, fold, k, chunk
         n = len(X)
         s = np.zeros(X.shape[1])
@@ -792,6 +963,8 @@ class _FoldGram:
             v += ((X[i:i + chunk].astype(np.float64) - self.mu) ** 2).sum(0)
         sd = np.sqrt(v / max(1, n))
         self.live = sd > 1e-6
+        if drop is not None:  # columns the model must not use (weight 0)
+            self.live &= ~drop
         self.sd = np.where(self.live, sd, 1.0)
         p = int(self.live.sum()) + 1
         self.n = np.bincount(fold, minlength=k)
@@ -836,6 +1009,14 @@ class _FoldGram:
             pred[i:i + self.chunk] = (A @ B)[np.arange(len(A)), f]
         return pred
 
+    def predict_folds(self, X: np.ndarray, fold: np.ndarray, lam: float, h: np.ndarray) -> np.ndarray:
+        """Rows of another matrix, each by the fit that left out its ``fold`` (rows from the
+        same runs as a fold are never predicted by a fit that saw those runs)."""
+        B = np.stack([self.solve(lam, h, j) for j in range(self.k)], 1)
+        A = np.hstack([(X[:, self.live].astype(np.float64) - self.mu[self.live]) / self.sd[self.live],
+                       np.ones((len(X), 1))])
+        return (A @ B)[np.arange(len(X)), fold]
+
     def ridge(self, beta: np.ndarray, lam: float) -> Ridge:
         m = Ridge(self.X.shape[1], lam)
         m.mu, m.sd = self.mu.copy(), self.sd.copy()
@@ -844,6 +1025,12 @@ class _FoldGram:
         m.b = float(beta[-1])
         m.target = "value"
         return m
+
+
+def _drop_mask(width: int) -> np.ndarray:
+    """``value_drop_mask`` cut or padded to ``width`` columns (synthetic data in tests is narrower)."""
+    m = value_drop_mask()
+    return m[:width] if len(m) >= width else np.pad(m, (0, width - len(m)))
 
 
 def _r2(pred: np.ndarray, y: np.ndarray, groups: np.ndarray | None = None) -> float:
@@ -871,12 +1058,15 @@ def pairs_check(model, pairs_dir: Path | None) -> float | None:
     return round(float(np.corrcoef(pred, dy)[0, 1]), 4) if np.std(pred) > 0 else 0.0
 
 
-def _value_labels(data: dict[str, np.ndarray], *, lam: float, sweeps: int, folds: int, seed: int, lams):
+def _value_labels(data: dict[str, np.ndarray], *, lam: float, sweeps: int, folds: int, seed: int, lams,
+                  drop: np.ndarray | None = None):
     """(Gram, final λ-return labels, ridge λ, out-of-fold values) by ``train_value``'s sweeps."""
     X, run, visit, final = data["X"], data["run"], data["visit"], data["outcome"].astype(np.float64)
     runs, inv = np.unique(run, return_inverse=True)
-    fold = np.random.default_rng(seed).integers(0, folds, len(runs))[inv]
-    gram = _FoldGram(X, fold, folds)
+    run_fold = np.random.default_rng(seed).integers(0, folds, len(runs))
+    fold = run_fold[inv]
+    gram = _FoldGram(X, fold, folds, drop=drop)
+    gram.runs, gram.run_fold = runs, run_fold  # other rows of the same runs (``train_rct``) share the folds
     y = final.copy()
     best_lam, oof = lams[0], np.zeros(len(y))
     for s in range(max(1, sweeps)):
@@ -894,27 +1084,124 @@ def _value_labels(data: dict[str, np.ndarray], *, lam: float, sweeps: int, folds
 
 
 def train_value(data: dict[str, np.ndarray], *, lam: float = 0.8, sweeps: int = 3, folds: int = 5, seed: int = 0,
-                lams=(1.0, 10.0, 100.0, 1000.0, 1e4, 1e5), pairs_dir: Path | None = None) -> tuple[Ridge, dict]:
+                lams=(1.0, 10.0, 100.0, 1000.0, 1e4, 1e5), pairs_dir: Path | None = None,
+                drop: bool = True) -> tuple[Ridge, dict]:
     """Ridge state-value model on λ-returns. Sweep 0 labels with the Monte-Carlo outcome;
     each later sweep relabels with ``lambda_returns`` from the out-of-fold values of the
     previous fit (a state's label never uses a model that saw its own run) and refits, the
     ridge λ chosen by run-grouped CV each time. Reports out-of-fold R² against the final
     outcome overall and within (crown, stage, node), and ``pairs_check``."""
     run, visit, final = data["run"], data["visit"], data["outcome"].astype(np.float64)
-    gram, y, best_lam, oof = _value_labels(data, lam=lam, sweeps=sweeps, folds=folds, seed=seed, lams=lams)
+    mask = _drop_mask(data["X"].shape[1]) if drop else None
+    gram, y, best_lam, oof = _value_labels(data, lam=lam, sweeps=sweeps, folds=folds, seed=seed, lams=lams, drop=mask)
     runs = np.unique(run)
     m = gram.ridge(gram.solve(best_lam, gram.h(y)), best_lam)
     group = data["crown"].astype(np.int64) * 10_000 + visit.astype(np.int64)
     stats = {"lam": best_lam, "td_lambda": lam, "sweeps": sweeps, "states": int(len(y)), "runs": int(len(runs)),
              "explored": float(data["explored"].mean()) if len(y) else 0.0,
              "r2": round(_r2(oof, final), 4), "r2_within": round(_r2(oof, final, group), 4),
-             "label_sd": round(float(y.std()), 3), "pairs_corr": pairs_check(m, pairs_dir)}
+             "label_sd": round(float(y.std()), 3), "pairs_corr": pairs_check(m, pairs_dir),
+             "dropped": int(mask.sum()) if mask is not None else 0}
+    return m, stats
+
+
+def _mean_diff(a: np.ndarray, b: np.ndarray) -> tuple[float, float]:
+    """mean(a) − mean(b) and its t (Welch)."""
+    if len(a) < 2 or len(b) < 2:
+        return 0.0, 0.0
+    d = float(a.mean() - b.mean())
+    se = float(np.sqrt(a.var(ddof=1) / len(a) + b.var(ddof=1) / len(b)))
+    return round(d, 4), round(d / se, 2) if se > 0 else 0.0
+
+
+def train_rct(states: dict[str, np.ndarray], trials: dict[str, np.ndarray], *, lam: float = 0.8, sweeps: int = 3,
+              folds: int = 5, seed: int = 0, lams=(1.0, 10.0, 100.0, 1000.0, 1e4, 1e5),
+              pairs_dir: Path | None = None, shared: bool = False,
+              label_lam: float | None = None) -> tuple[Ridge, dict]:
+    """Advantage over the champion's choice, from randomised decisions (``_rct_job``).
+
+    ``shared``: the per-class columns (``per_class_mask``) are left out of the difference, so
+    the model ranks by what all items share (money, counts, tags, targets, …). The pilot's
+    per-class weights came from ~600 buy trials over ~250 classes and lost (sim-game.md).
+
+    ``label_lam``: train on the λ-return from the end of the trial's shop visit (the state
+    values out of fold, ``lambda_returns`` with this λ; 0 = the value after the next visit)
+    instead of the run's outcome. It cuts the label noise (SD 2.2 → 0.8 at 0.5 on the pilot)
+    at the price of leaning on the value model. Every ranking check below still scores
+    against the outcome label, which a biased value cannot fake.
+
+    Baseline: ``train_value``'s λ-return value on the same runs' states, all columns (it only
+    has to predict, not rank), applied to each trial's control after-state by the fold fit
+    that never saw that run. Label: the run's outcome minus that baseline. Model: ridge of the
+    label on (taken − control after-state), run-grouped CV on the same folds; the advantage
+    of a change is its prediction minus the prediction for no change. Reports the average
+    effect of a random deviation (``deviation``: label of deviations − label of controls, a
+    check that effects are measurable at all), the out-of-fold correlation of the predicted
+    advantage with the label over deviations (``oof_corr``, the causal ranking check, with
+    its t), the label gain of the deviations the model would take (``switch_gain``; at each
+    benchmark margin, ``switch_by_margin``: [count, gain over controls, t]), the
+    deviation effect per kind, and ``pairs_check``."""
+    gram, y, vlam, oof = _value_labels(states, lam=lam, sweeps=sweeps, folds=folds, seed=seed, lams=lams)
+    pos = np.searchsorted(gram.runs, trials["run"])
+    assert len(trials["run"]) == 0 or np.array_equal(gram.runs[np.minimum(pos, len(gram.runs) - 1)], trials["run"]), \
+        "every trial's run needs its states"
+    tfold = gram.run_fold[pos]
+    base = gram.predict_folds(trials["xa"], tfold, vlam, gram.h(y))
+    out = trials["outcome"].astype(np.float64)
+    r = out - base
+    fit_label = r
+    if label_lam is not None:
+        last = {(int(a), int(b)): i for i, (a, b) in enumerate(zip(states["run"], states["visit"]))}
+        row = np.array([last.get((int(a), int(b)), -1) for a, b in zip(trials["run"], trials["visit"])], np.int64)
+        G = lambda_returns(oof, states["run"], states["visit"], states["outcome"].astype(np.float64), label_lam)
+        fit_label = np.where(row >= 0, G[np.maximum(row, 0)], out) - base
+    D = trials["xt"] - trials["xa"]
+    if shared:
+        mask = per_class_mask()
+        D[:, mask[:D.shape[1]] if len(mask) >= D.shape[1] else np.pad(mask, (0, D.shape[1] - len(mask)))] = 0.0
+    dev, ctl = ~trials["control"], trials["control"]
+    g2 = _FoldGram(D, tfold, folds)
+    h2 = g2.h(fit_label)
+    zero = np.zeros_like(D[:1]).repeat(len(D), 0)
+    best, corr_by = None, {}
+    for lm in lams:
+        pred = g2.out_of_fold(lm, h2)
+        adv = g2.predict_folds(D, tfold, lm, h2) - g2.predict_folds(zero, tfold, lm, h2)
+        c = float(np.corrcoef(adv[dev], r[dev])[0, 1]) if dev.sum() > 2 and adv[dev].std() > 0 else 0.0
+        corr_by[f"{lm:g}"] = round(c, 4)
+        mse = float(((pred - fit_label) ** 2).mean())
+        if best is None or mse < best[0]:
+            best = (mse, lm, adv, c)
+    _, alam, adv, corr = best
+    m = g2.ridge(g2.solve(alam, h2), alam)
+    m.target = "rct"
+    n = int(dev.sum())
+    sw = dev & (adv > 0)
+    kinds = {}
+    for k in sorted(set(trials["kind"][dev].tolist())):
+        sel = dev & (trials["kind"] == k)
+        kinds[k] = [int(sel.sum()), *_mean_diff(r[sel], r[ctl])]
+    deviation, deviation_t = _mean_diff(r[dev], r[ctl])
+    gain, gain_t = _mean_diff(r[sw], r[ctl])
+    stats = {"lam": alam, "value_lam": vlam, "trials": int(len(r)), "deviations": n,
+             "runs": int(len(np.unique(trials["run"]))) if len(r) else 0,
+             "baseline_r2": round(_r2(base, out), 4) if len(r) else 0.0,
+             "label_sd": round(float(r.std()), 3) if len(r) else 0.0, "label_lam": label_lam,
+             "fit_label_sd": round(float(fit_label.std()), 3) if len(r) else 0.0,
+             "deviation": deviation, "deviation_t": deviation_t,
+             "oof_corr": round(corr, 4), "oof_t": round(float(corr * np.sqrt(max(n - 2, 1)) / np.sqrt(max(1e-9, 1 - corr ** 2))), 2),
+             "corr_by_lam": corr_by, "switch_rate": round(float(sw.sum()) / max(1, n), 3),
+             "switch_gain": gain, "switch_gain_t": gain_t,
+             "switch_by_margin": {f"{th:g}": [int((dev & (adv > th)).sum()), *_mean_diff(r[dev & (adv > th)], r[ctl])]
+                                  for th in VALUE_THRESHOLDS},
+             "by_kind": kinds,
+             "pairs_corr": pairs_check(m, pairs_dir), "shared": shared}
     return m, stats
 
 
 def train_value_mlp(data: dict[str, np.ndarray], *, lam: float = 0.8, sweeps: int = 3, hidden: tuple[int, ...] = (64,),
                     l2: float = 0.1, seed: int = 0, epochs: int = 60,
-                    lams=(1.0, 10.0, 100.0, 1000.0, 1e4, 1e5)) -> tuple[MLP, dict]:
+                    lams=(1.0, 10.0, 100.0, 1000.0, 1e4, 1e5), drop: bool = True) -> tuple[MLP, dict]:
     """A small MLP state value (it can value item combinations a linear model cannot) on
     ``train_value``'s λ-return labels, stopped early on a held-out tenth of the runs.
 
@@ -923,9 +1210,15 @@ def train_value_mlp(data: dict[str, np.ndarray], *, lam: float = 0.8, sweeps: in
     Weaker decay over-fits (1e-5: 0.13 vs 0.27), and labels from the MLP's own relabelling
     sweeps were worse than the ridge's. Worth re-testing once there are thousands of runs."""
     X, run = data["X"], data["run"]
-    _, y, _, _ = _value_labels(data, lam=lam, sweeps=sweeps, folds=5, seed=seed, lams=lams)
+    mask = _drop_mask(X.shape[1]) if drop else None
+    _, y, _, _ = _value_labels(data, lam=lam, sweeps=sweeps, folds=5, seed=seed, lams=lams, drop=mask)
+    if mask is not None:  # train on the dropped columns as constant zero
+        X = X.copy()
+        X[:, mask] = 0.0
     m = MLP(X.shape[1], hidden, seed=seed)
     fit_with_holdout(m, X, y, run, seed=seed, epochs=epochs, verbose=False, l2=l2)
+    if mask is not None:
+        m.W[0][mask] = 0.0  # live values of a dropped column must not reach untrained weights
     m.target = "value"
     return m, {"hidden": list(hidden), "l2": l2, "td_lambda": lam, "sweeps": sweeps, "states": int(len(y)),
                "runs": int(len(np.unique(run))), "label_sd": round(float(y.std()), 3)}
@@ -993,12 +1286,20 @@ def main(argv: list[str] | None = None) -> int:
     import multiprocessing as mp
 
     ap = argparse.ArgumentParser(description="policy iteration from self-play (state value or paired play-outs)")
-    ap.add_argument("--target", choices=("value", "pairs"), default="value",
-                    help="value: state value on λ-returns (default); pairs: advantage from paired play-outs")
+    ap.add_argument("--target", choices=("value", "pairs", "rct"), default="value",
+                    help="value: state value on λ-returns (default); pairs: advantage from paired play-outs; "
+                         "rct: advantage from randomised decisions")
     ap.add_argument("--iterations", type=int, default=3)
     ap.add_argument("--runs", type=int, default=256, help="data runs per iteration")
     ap.add_argument("--p-sample", type=float, default=0.3, help="share of decisions turned into pairs")
     ap.add_argument("--epsilon", type=float, default=0.1, help="value: share of decisions taken at random")
+    ap.add_argument("--p-random", type=float, default=0.15, help="rct: share of decisions made trials")
+    ap.add_argument("--control", type=float, default=0.25, help="rct: share of trials that keep the champion's choice")
+    ap.add_argument("--rct-shared", action="store_true", help="rct: leave per-class columns out of the model")
+    ap.add_argument("--rct-label-lam", type=float, default=None,
+                    help="rct: train on the λ-return after the trial's visit (λ, e.g. 0.5) instead of the run outcome")
+    ap.add_argument("--trial-kinds", default="", help="rct: only these decision kinds are trials, e.g. 'pin' "
+                                                      "(default: every kind in VALUE_KINDS)")
     ap.add_argument("--td-lambda", type=float, default=0.8, help="value: λ of the λ-return labels")
     ap.add_argument("--sweeps", type=int, default=3, help="value: relabel-and-refit rounds per fit")
     ap.add_argument("--check-pairs", default=str(PAIRS_CHECK_DIR),
@@ -1009,7 +1310,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--characters", default="WetDennis")
     ap.add_argument("--crowns", default="0")
     ap.add_argument("--workers", type=int, default=max(1, (mp.cpu_count() or 2)))
-    ap.add_argument("--dir", default=None, help=f"default {VALUE_DIR} (value) / {DEFAULT_DIR} (pairs)")
+    ap.add_argument("--dir", default=None, help=f"default {VALUE_DIR} (value) / {DEFAULT_DIR} (pairs) / {RCT_DIR} (rct)")
     ap.add_argument("--wordlist", default=None)
     ap.add_argument("--boss-risk", default=str(BOSS_RISK_PATH),
                     help="bossrisk.py table for the boss draft ('' = Fast Advice's fixed rule)")
@@ -1026,10 +1327,10 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     risk = args.boss_risk if args.boss_risk and Path(args.boss_risk).is_file() else ""
 
-    value = args.target == "value"
-    out = Path(args.dir or (VALUE_DIR if value else DEFAULT_DIR))
+    value, rct = args.target == "value", args.target == "rct"
+    out = Path(args.dir or (VALUE_DIR if value else RCT_DIR if rct else DEFAULT_DIR))
     out.mkdir(parents=True, exist_ok=True)
-    pairs_dir = Path(args.check_pairs) if value and args.check_pairs else None
+    pairs_dir = Path(args.check_pairs) if (value or rct) and args.check_pairs else None
     if args.curve:
         curve(out, [int(n) for n in args.curve.split(",")], [float(v) for v in args.curve_lambdas.split(",")],
               sweeps=args.sweeps, pairs_dir=pairs_dir)
@@ -1044,6 +1345,10 @@ def main(argv: list[str] | None = None) -> int:
              "target": args.target}
     if value:
         setup |= {"epsilon": args.epsilon}
+    elif rct:
+        setup |= {"p_random": args.p_random, "control": args.control}
+        if args.trial_kinds:
+            setup["trial_kinds"] = sorted(args.trial_kinds.split(","))
     else:
         setup |= {"p_sample": args.p_sample, "keyed": not args.plain_rng}
     cfg_path = out / "config.json"
@@ -1105,6 +1410,19 @@ def main(argv: list[str] | None = None) -> int:
                 m, fit = train_value_mlp(load_states(out), lam=args.td_lambda, sweeps=args.sweeps, seed=it,
                                          hidden=tuple(int(v) for v in args.value_model.split(",")), l2=args.mlp_l2)
                 weak, why = False, ""
+        elif rct:
+            stats = collect(make_jobs(args.runs, 2000 + it, chars, crowns, p_random=args.p_random, control=args.control,
+                                      trial_kinds=sorted(args.trial_kinds.split(",")) if args.trial_kinds else None,
+                                      boss_risk=risk),
+                            model=champ, out=out / f"rct_it{it:03d}.npz", job=_rct_job, fields=RCT_FIELDS,
+                            label="trials", **kw)
+            if args.collect_only:
+                print(f"  stored: {stats}", flush=True)
+                continue
+            m, fit = train_rct(load_states(out, "rct_it*.npz"), load_trials(out), lam=args.td_lambda,
+                               sweeps=args.sweeps, seed=it, pairs_dir=pairs_dir, shared=args.rct_shared,
+                               label_lam=args.rct_label_lam)
+            weak, why = fit["oof_corr"] < MIN_CORR, f"oof_corr < {MIN_CORR}"
         else:
             stats = collect(make_jobs(args.runs, 2000 + it, chars, crowns, p_sample=args.p_sample, boss_risk=risk,
                                       keyed=not args.plain_rng),
@@ -1119,7 +1437,7 @@ def main(argv: list[str] | None = None) -> int:
         if hasattr(m, "top_features"):  # linear models
             print("  top features:", [(n, round(w, 3)) for n, w in m.top_features(12)], flush=True)
         path = out / f"model_it{it:03d}.npz"
-        thresholds = VALUE_THRESHOLDS if value else THRESHOLDS
+        thresholds = VALUE_THRESHOLDS if value or rct else THRESHOLDS
         if weak:
             m.threshold = thresholds[-1]
             m.save(path)

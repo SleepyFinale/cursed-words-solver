@@ -5,6 +5,7 @@
     python scripts/sim_validate.py grids      # real first grids vs simulated grids (z-scores)
     python scripts/sim_validate.py clears     # winning submit → next shop / boss reward (journals)
     python scripts/sim_validate.py shops      # shop prices, restock cost, stock vs simulated stock
+    python scripts/sim_validate.py gamelog    # sticker-stock branch rates from the game's Player.log
 
 Reads round logs with a ``capture`` block (melmod 1.4+) from
 ``~/.cursed_words_solver/round_logs`` (``--logs`` to override).
@@ -250,18 +251,30 @@ def _offer_feats(player, kind: str, item, foil: bool) -> collections.Counter:
     return c
 
 
+def _owned(gs: dict) -> list:
+    p = gs["player"]
+    return sorted((str(r.get("class")), r.get("times_upgraded")) for k in ("stickers", "stamps") for r in p.get(k) or [] if r)
+
+
 def shop_stats(journal: Path, samples: int = 50) -> dict:
     """Shop exports (``record_run.py`` journals) against the sim: every offer's base price
     (``GetCost``), the restock price on entry, and the stock generated on entry against
     ``samples`` shops the sim generates from the same state. The export's ``price`` is
     always 0 and its ``restock_cost`` is ``_rerollPrice`` before Fried Shrimp, so the shown
     price is not checked and the restock check uses ``Shop.reroll_price``. Frozen slots
-    (carried over, not generated) are left out on both sides."""
+    (carried over, not generated) are left out on both sides.
+
+    The stock is compared only on clean entries: the shop's first export, with no restock yet
+    (restock at the base price) and the same items as the export before it. An export taken
+    after a buy has lost the bought slot (the game nulls it), and buys favour upgrade offers,
+    so counting those exports undercounts upgrades on entry (17 vs 39 before this filter)."""
     from cursed_words_solver.sim.game.core import Rng
     from cursed_words_solver.sim.game.importer import game_from_game_state, item_from_row
     from cursed_words_solver.sim.game.shop import Shop
 
-    exports = [rs for rs in _journal_exports(journal) if isinstance(rs.get("shop"), dict)
+    every = _journal_exports(journal)
+    before = {id(b): a for a, b in zip(every, every[1:])}  # each export -> the one just before it
+    exports = [rs for rs in every if isinstance(rs.get("shop"), dict)
                and str(rs["game_state"]["run"].get("node_type", "")).startswith("Shop")]
     out = {"stats": collections.Counter(), "bad": collections.defaultdict(list), "obs": collections.Counter(),
            "exp": collections.Counter(), "var": collections.Counter(), "class_obs": collections.Counter(),
@@ -295,6 +308,13 @@ def shop_stats(journal: Path, samples: int = 50) -> dict:
         stats["restock price"] += ok
         if not ok:
             bad["restock price"].append((key, f"sim {Shop(p, Rng(0)).reroll_price} real {snap.get('restock_cost')}"))
+            stats["skipped: restocked before the export"] += 1
+            continue
+        last = before.get(id(rs))
+        if last is None or _owned(last["game_state"]) != _owned(gs):
+            stats["skipped: bought / sold before the export"] += 1
+            continue
+        stats["stock compared"] += 1
         frozen = {(o["slot"], int(o.get("index", 0))) for o in offers if o.get("frozen")}
         real = collections.Counter()
         for o in offers:
@@ -339,6 +359,69 @@ def shops(journal: Path, samples: int = 50) -> int:
     print("    " + ", ".join(f"{c} {ce[c]:.1f}" for c in never))
     unknown = sorted(c for c in co if ce[c] < 0.05)
     print(f"  offered but (almost) never by the sim ({len(unknown)}):", ", ".join(f"{c} {co[c]}" for c in unknown))
+    return 0
+
+
+GAME_LOG_DIR = Path.home() / "AppData" / "LocalLow" / "Buried Things" / "Cursed Words"
+
+
+def game_log_slots(log_dir: Path) -> list[dict]:
+    """Sticker slots generated in the shop (``GenerateStickerInStock``), from the game's
+    Player.log / Player-prev.log debug lines: which ``GetRandomBuildBiasedSticker`` branches
+    rolled, what it returned, and whether the sticker bar was full (``ShopItemSlot.Populate``'s
+    "No space", true at 5 stickers)."""
+    import re
+
+    marks = (("Bias for build? True", "bias"), ("Rolled dependency", "dep"), ("Rolled upgrade", "up"),
+             ("Player stickers not yet full", "not full"), ("Rolled first", "tag"), ("Rolled second", "tag"),
+             ("Rolled third", "tag"), ("Rolled generator", "gen"), ("Getting biased sticker", "got"),
+             ("Getting unbiased sticker", "random"))
+    out = []
+    for name in ("Player-prev.log", "Player.log"):
+        f = log_dir / name
+        if not f.exists():
+            continue
+        cur = None
+        for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("Generating sticker at index"):
+                cur = {"path": [], "item": None, "full": None, "first": line.endswith("True")}
+                out.append(cur)
+                continue
+            if cur is None or cur["item"] is not None:
+                continue
+            for prefix, tag in marks:
+                if line.startswith(prefix):
+                    cur["path"].append(tag)
+            m = re.match(r"Item = (.*)\. No space = (\w+)", line)
+            if m:
+                cur["item"], cur["full"] = m.group(1), m.group(2) == "True"
+    return [s for s in out if s["item"] is not None]
+
+
+def gamelog(log_dir: Path) -> int:
+    """Branch rates of the real sticker stock against ``GetRandomBuildBiasedSticker``: the
+    dependency roll is 1 in 10, and with 5 stickers so is the upgrade roll (reached when the
+    dependency branch returned nothing). Unity's log keeps only the last two sessions."""
+    slots = [s for s in game_log_slots(log_dir) if "bias" not in s["path"]]
+    print(f"gamelog: {len(slots)} unbiased sticker slots in {log_dir}")
+
+    def rate(name, hits, n, p):
+        z = (hits - n * p) / (n * p * (1 - p)) ** 0.5 if n else 0.0
+        print(f"  {name:44s} {hits:4d} / {n:4d} = {hits / max(n, 1):.3f}  (expected {p:.3f}, z {z:+.1f})")
+
+    rate("dependency roll", sum("dep" in s["path"] for s in slots), len(slots), 0.1)
+    for full in (True, False):
+        reach = [s for s in slots if s["full"] is full and s["path"][:2] != ["dep", "got"]]
+        ups = [s for s in reach if "up" in s["path"]]
+        got = [s for s in ups if s["path"][s["path"].index("up") + 1:][:1] == ["got"]]
+        label = "5 stickers" if full else "< 5 stickers"
+        if full:
+            rate(f"upgrade roll, {label}", len(ups), len(reach), 0.1)
+        else:
+            print(f"  upgrade roll, {label:30s} {len(ups):4d} / {len(reach):4d} (1 in 15-30 by count; "
+                  f"{sum('not full' in s['path'] for s in ups)} stopped: not yet full)")
+        print(f"    upgrade offers returned ({label})            {len(got):4d}  "
+              f"({len(ups) - len(got)} rolls found no non-max sticker)")
     return 0
 
 
@@ -400,15 +483,18 @@ def grids(logs: Path, samples: int = 100) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("check", choices=("scoring", "dynamics", "grids", "clears", "shops"))
+    ap.add_argument("check", choices=("scoring", "dynamics", "grids", "clears", "shops", "gamelog"))
     ap.add_argument("--logs", default=str(Path.home() / ".cursed_words_solver" / "round_logs"))
     ap.add_argument("--journal", default=str(Path.home() / ".cursed_words_solver" / "run_journal"))
+    ap.add_argument("--game-log-dir", default=str(GAME_LOG_DIR))
     args = ap.parse_args(argv)
     logs = Path(args.logs)
     if args.check == "clears":
         return clears(logs, Path(args.journal))
     if args.check == "shops":
         return shops(Path(args.journal))
+    if args.check == "gamelog":
+        return gamelog(Path(args.game_log_dir))
     return {"scoring": scoring, "dynamics": dynamics, "grids": grids}[args.check](logs)
 
 

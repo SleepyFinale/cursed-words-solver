@@ -949,6 +949,166 @@ def test_value_models_compare_after_states_skip_restocks_and_explore():
     assert explorer.explored and len(cands) > 1 and a in cands[1:]
 
 
+def test_value_models_value_advice_swaps_whole_and_leave_freezes_and_sells_to_advice():
+    from cursed_words_solver.sim.game.agent import Action
+    from cursed_words_solver.sim.game.expert import NetPolicy, full_shop_candidates
+    from cursed_words_solver.sim.game.features import feature_names
+
+    def model(name):
+        class M:
+            target = "value"
+
+            def predict(self, X):
+                return X[:, feature_names().index(name)]
+
+        return M()
+
+    g, _ = _full_shop()  # 5 stickers owned, Parrot on offer that fits only after a sale
+    pol = NetPolicy(_NoSearch(), model("n_stickers"), threshold=0.0)
+    sell, leave = Action("sell", ("sticker", 0), "swap: sell Candle for Parrot"), Action("leave")
+    # the sell alone looks like a sticker lost; with the planned buy it is a like-for-like swap
+    pol._pending_buy = ("sticker", 0)
+    assert pol.pick(g, [sell, leave]).kind == "sell"
+    pol._pending_buy = None  # a plain sell is Advice's call
+    assert pol.pick(g, [sell, leave]).kind == "sell"
+    money = NetPolicy(_NoSearch(), model("log_money"), threshold=0.0)
+    money._pending_buy = ("sticker", 0)  # valued as a whole, the swap costs money: a money-only model leaves
+    assert money.pick(g, [sell, leave]).kind == "leave"
+    money._pending_buy = None
+    cands = full_shop_candidates(g, leave)
+    freeze = next(a for a in cands if a.kind == "freeze")
+    buy = next(a for a in cands if a.kind in ("buy", "sell_buy"))
+    assert money.pick(g, [freeze, leave]).kind == "freeze"  # a suggested freeze stands
+    assert money.pick(g, [buy, freeze]) == buy  # a freeze is never picked (it looks free)
+
+
+def test_value_fits_leave_out_spending_and_frozen_stock():
+    import numpy as np
+
+    from cursed_words_solver.sim.game.expert import train_value, value_drop_mask
+    from cursed_words_solver.sim.game.features import feature_names
+
+    names = feature_names()
+    mask = value_drop_mask()
+    assert mask[names.index("log_invested")] and mask[names.index("frozen:Candle")] and not mask[names.index("log_money")]
+    rng = np.random.default_rng(3)
+    runs = np.repeat(np.arange(300), 2)
+    X = np.zeros((len(runs), len(names)), np.float32)
+    rich = np.repeat(rng.normal(size=300), 2)
+    X[:, names.index("log_invested")] = rich  # tracks the outcome perfectly, but is not allowed
+    X[:, names.index("log_money")] = rich + rng.normal(scale=1.0, size=len(runs))
+    data = {"X": X, "run": runs, "visit": np.tile([17, 33], 300).astype(np.int16), "outcome": (2 * rich).astype(np.float32),
+            "crown": np.zeros(len(runs), np.int8), "explored": np.zeros(len(runs), bool)}
+    m, fit = train_value(data, sweeps=1)
+    assert m.w[names.index("log_invested")] == 0 and m.w[names.index("log_money")] > 0 and fit["dropped"] == mask.sum()
+    _, open_fit = train_value(data, sweeps=1, drop=False)
+    assert open_fit["r2"] > fit["r2"]
+
+
+def test_trials_randomise_choices_that_show_their_effect_and_keep_controls():
+    import numpy as np
+
+    from cursed_words_solver.sim.game.agent import Action
+    from cursed_words_solver.sim.game import expert as E
+    from cursed_words_solver.sim.game.expert import NetPolicy, afterstate, full_shop_candidates
+
+    g, _ = _full_shop()
+    leave = Action("leave")
+    cands = full_shop_candidates(g, leave)
+    pol = NetPolicy(_NoSearch(), None, randomise=1.0, control=0.0, seed=4)
+    take = pol._trial(g, cands, leave)
+    xa, xt, kind, control = pol.trial
+    assert take.kind in E.VALUE_KINDS - {"leave"} and kind == take.kind and not control and pol.explored
+    assert np.array_equal(xa, afterstate(g, leave)) and np.array_equal(xt, afterstate(g, take))
+    keep = NetPolicy(_NoSearch(), None, randomise=1.0, control=1.0, seed=4)
+    assert keep._trial(g, cands, leave) == leave and keep.trial[3] and np.array_equal(keep.trial[0], keep.trial[1])
+    freeze = next(a for a in cands if a.kind == "freeze")
+    pol.trial = None
+    assert pol._trial(g, cands, freeze) == freeze and pol.trial is None  # a freeze's effect is not in the features
+    pins_only = NetPolicy(_NoSearch(), None, randomise=1.0, control=0.0, seed=4, trial_kinds=frozenset({"pin"}))
+    assert pins_only._trial(g, cands, leave) == leave and pins_only.trial is None  # shop choices stay the champion's
+    from cursed_words_solver.sim.game.expert import SHOP_CAP
+
+    pol._steps = SHOP_CAP  # a step that is no run-level decision (here: the shop's step cap)
+    assert pol.decide(g)[1] == [] and pol.trial is None and not pol.explored  # the last trial is not recorded again
+
+
+def test_rct_models_pick_on_after_state_differences():
+    from cursed_words_solver.sim.game.agent import Action
+    from cursed_words_solver.sim.game.expert import NetPolicy
+    from cursed_words_solver.sim.game.features import feature_names
+
+    class Money:  # an advantage model: keeping cash is good; its intercept must not count
+        target = "rct"
+
+        def predict(self, X):
+            return X[:, feature_names().index("log_money")] + 5.0
+
+    g, _ = _full_shop()
+    pol = NetPolicy(_NoSearch(), Money(), threshold=0.0)
+    buy = next(a for a in pol.candidates(g) if a.kind in ("buy", "sell_buy"))
+    assert pol.pick(g, [buy, Action("leave")]).kind == "leave"
+    assert pol.pick(g, [Action("leave"), buy]).kind == "leave"
+
+
+def test_rct_fit_finds_the_effect_a_confounded_state_value_misses(tmp_path):
+    import numpy as np
+
+    from cursed_words_solver.sim.game import expert as E
+    from cursed_words_solver.sim.game.features import feature_names
+
+    rng = np.random.default_rng(5)
+    n, width = 600, 6
+    strength = rng.normal(size=n)
+    # column 1: an item that adds +1.5 when a trial buys it; column 2: one that adds nothing,
+    # but strong runs own more of it (the confound a state value learns)
+    xa = np.zeros((2 * n, width), np.float32)
+    trun = np.repeat(np.arange(n), 2)
+    xa[:, 0] = strength[trun] + rng.normal(scale=0.5, size=2 * n)
+    xa[:, 2] = strength[trun]
+    change = rng.integers(0, 4, 2 * n)  # 0 control, 1 +col1, 2 −col1, 3 +col2
+    xt = xa.copy()
+    xt[change == 1, 1] += 1
+    xt[change == 2, 1] -= 1
+    xt[change == 3, 2] += 1
+    effect = np.select([change == 1, change == 2], [1.5, -1.5], 0.0)
+    final = 3 * strength + np.bincount(trun, effect, n) + rng.normal(scale=0.5, size=n)
+    X = np.concatenate([xa, xt])
+    srun = np.concatenate([trun, trun])
+    order = np.argsort(srun, kind="stable")
+    rep = np.insert(np.arange(2 * n), 1, 0)  # older files repeat a trial at the steps after it: dropped on load
+    kinds = np.where(change == 0, "leave", "buy")
+    np.savez(tmp_path / "rct_it000.npz", X=X[order], visit=np.tile([17, 33], 2 * n).astype(np.int16),
+             explored=np.zeros(4 * n, bool), run=srun[order], crown=np.zeros(4 * n, np.int8),
+             outcome=final[srun[order]].astype(np.float32),
+             t_xa=xa[rep], t_xt=xt[rep], t_kind=kinds[rep], t_control=(change == 0)[rep],
+             t_visit=np.full(2 * n + 1, 17, np.int16), t_run=trun[rep], t_crown=np.zeros(2 * n + 1, np.int8),
+             t_outcome=final[trun[rep]].astype(np.float32), seeds=np.arange(n), wins=np.array([0]))
+    np.savez(tmp_path / "rct_it001.partial.npz", t_xa=xa[:2])  # an unfinished iteration is ignored
+    trials, states = E.load_trials(tmp_path), E.load_states(tmp_path, "rct_it*.npz")
+    assert trials["xa"].shape == (2 * n, len(feature_names())) and len(states["run"]) == 4 * n
+    m, fit = E.train_rct(states, trials, sweeps=1)
+    W = len(feature_names())
+
+    def adv(col, d):
+        x = np.zeros((1, W), np.float32)
+        x[0, col] = d
+        return float(m.predict(x)[0] - m.predict(np.zeros((1, W), np.float32))[0])
+
+    assert m.target == "rct" and fit["deviations"] == int((change != 0).sum())
+    assert adv(1, 1.0) > 1.0 and abs(adv(2, 1.0)) < 0.5 and fit["oof_corr"] > 0.3 and fit["baseline_r2"] > 0.5
+    assert fit["switch_gain"] > 0.5 and fit["switch_gain_t"] > 3 and set(fit["by_kind"]) == {"buy"}
+    assert fit["switch_by_margin"]["0.3"][0] > 0 and fit["switch_by_margin"]["0.3"][1] > 0.5
+    _, lfit = E.train_rct(states, trials, sweeps=1, label_lam=0.5)  # trained on λ-returns, still checked on outcomes
+    assert lfit["label_lam"] == 0.5 and lfit["label_sd"] == fit["label_sd"] and lfit["fit_label_sd"] < fit["fit_label_sd"]
+    assert lfit["oof_corr"] > 0.3
+    names = feature_names()
+    xt2 = trials["xt"].copy()
+    xt2[:, names.index("item:Candle")] += 1  # a per-class change: a shared model cannot see it
+    shared, sfit = E.train_rct(states, {**trials, "xt": xt2}, sweeps=1, shared=True)
+    assert sfit["shared"] and shared.w[names.index("item:Candle")] == 0 and shared.w[1] > 0
+
+
 def test_saved_models_say_what_they_predict(tmp_path):
     import numpy as np
 
