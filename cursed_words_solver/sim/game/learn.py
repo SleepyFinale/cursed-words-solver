@@ -153,7 +153,11 @@ class Ridge:
     advantage targets from paired rollouts). ``threshold`` is the decision margin chosen
     when the model was benchmarked; it travels with the saved file. ``target`` says what it
     predicts: "advantage" (the outcome difference of two after-states, from a feature
-    difference) or "value" (the expected run outcome of one after-state)."""
+    difference) or "value" (the expected run outcome of one after-state).
+
+    ``cov`` (optional): the posterior covariance of the weights on the standardised live
+    columns ``live_idx``, so ``se`` gives the standard error of a predicted difference;
+    ``penalty`` is how many of those a choice must clear (0: not used)."""
 
     def __init__(self, n_in: int, lam: float = 100.0) -> None:
         self.w = np.zeros(n_in, dtype=np.float64)
@@ -163,6 +167,18 @@ class Ridge:
         self.lam = lam
         self.threshold = 0.0
         self.target = "advantage"
+        self.cov: np.ndarray | None = None
+        self.live_idx: np.ndarray | None = None
+        self.penalty = 0.0
+
+    def se(self, D: np.ndarray) -> np.ndarray:
+        """Standard error of the predicted difference for each row of ``D`` (a feature
+        difference): ``sqrt(z C z)`` with ``z`` = the difference in standardised units."""
+        if self.cov is None:
+            return np.zeros(len(np.atleast_2d(D)))
+        D = fit_width(np.atleast_2d(D).astype(np.float64), len(self.w))
+        z = D[:, self.live_idx] / self.sd[self.live_idx]
+        return np.sqrt(np.maximum(0.0, np.einsum("ij,jk,ik->i", z, self.cov, z)))
 
     def fit(self, X: np.ndarray, y: np.ndarray, *, center: bool = True) -> "Ridge":
         """``center=False`` keeps the intercept and input means at zero (advantage models:
@@ -187,9 +203,11 @@ class Ridge:
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        extra = {} if self.cov is None else {"cov": self.cov.astype(np.float32), "live_idx": self.live_idx,
+                                             "penalty": np.array([self.penalty])}
         np.savez(path, kind=np.array(["ridge"]), w=self.w, mu=self.mu, sd=self.sd,
                  meta=np.array([self.b, self.lam, self.threshold]), names=np.array(feature_names()),
-                 target=np.array([self.target]))
+                 target=np.array([self.target]), **extra)
 
     def top_features(self, k: int = 20) -> list[tuple[str, float]]:
         names = feature_names()
@@ -215,6 +233,8 @@ def load_model(path: Path):
         m.w, m.mu, m.sd = d["w"], d["mu"], d["sd"]
         m.b, m.lam, m.threshold = (float(v) for v in d["meta"])
         m.target = str(d["target"][0]) if "target" in d.files else "advantage"
+        if "cov" in d.files:
+            m.cov, m.live_idx, m.penalty = d["cov"].astype(np.float64), d["live_idx"], float(d["penalty"][0])
         return m
     return MLP.load(path)
 

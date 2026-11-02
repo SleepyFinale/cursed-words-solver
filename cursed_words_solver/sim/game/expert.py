@@ -105,6 +105,7 @@ SHOP_CAP = 14
 SHOP_CANDIDATES = 16  # cap on full_shop_candidates per shop state
 EFFORT = 0.05  # deterministic word search (load-independent, reproducible benchmarks)
 THRESHOLDS = (0.5, 1.0, 2.0)
+LCB_PENALTIES = (1.0, 2.0)  # standard errors an rct choice must clear (``lcb_by_margin``)
 VALUE_THRESHOLDS = (0.1, 0.3, 0.6)  # value margins (outcome units) a value model is benchmarked at
 MIN_R2_WITHIN = 0.01  # skip benchmarking a value model that explains nothing beyond crown / stage / node
 # Moves a value model may choose (see NetPolicy._pick_value).
@@ -368,7 +369,9 @@ class NetPolicy(FastAdvicePolicy):
         restock stands, and none is picked over the suggestion. Shop stock is not a feature,
         so a restock only looks like money lost and a freeze like nothing at all. Advice's
         swap (a sell now, the replacement next step) is valued as the whole swap: the sell
-        alone looks like an item lost (pilot benchmark, 2026-11-01)."""
+        alone looks like an item lost (pilot benchmark, 2026-11-01). An ``rct`` model with a
+        ``penalty`` ranks by the advantage minus ``penalty`` × its standard error, so a choice
+        resting on a few trials' weights (a per-class column) needs a larger predicted gain."""
         first = self._whole(cands[0])
         if first.kind not in VALUE_KINDS:
             return cands[0]
@@ -388,6 +391,9 @@ class NetPolicy(FastAdvicePolicy):
         X = np.stack(rows)
         if self.model.target == "rct":
             adv = self.model.predict(X[1:] - X[0]) - self.model.predict(np.zeros((1, X.shape[1])))[0]
+            k = float(getattr(self.model, "penalty", 0.0) or 0.0)
+            if k > 0:  # the best of 16 noisy predictions is not trusted: discount each by its SE
+                adv = adv - k * self.model.se(X[1:] - X[0])
         else:
             v = self.model.predict(X)
             adv = v[1:] - v[0]
@@ -1017,6 +1023,14 @@ class _FoldGram:
                        np.ones((len(X), 1))])
         return (A @ B)[np.arange(len(X)), fold]
 
+    def cov(self, lam: float, sigma2: float) -> np.ndarray:
+        """Posterior covariance of the weights (live columns, intercept marginalised) of the
+        all-folds fit at ``lam``, for labels with residual variance ``sigma2``."""
+        n = int(self.n.sum())
+        P = np.eye(self.G.shape[1]) * lam * n / 1000.0
+        P[-1, -1] = 0.0
+        return sigma2 * np.linalg.inv(self.G.sum(0) + P)[:-1, :-1]
+
     def ridge(self, beta: np.ndarray, lam: float) -> Ridge:
         m = Ridge(self.X.shape[1], lam)
         m.mu, m.sd = self.mu.copy(), self.sd.copy()
@@ -1172,9 +1186,11 @@ def train_rct(states: dict[str, np.ndarray], trials: dict[str, np.ndarray], *, l
         mse = float(((pred - fit_label) ** 2).mean())
         if best is None or mse < best[0]:
             best = (mse, lm, adv, c)
-    _, alam, adv, corr = best
+    mse, alam, adv, corr = best
     m = g2.ridge(g2.solve(alam, h2), alam)
     m.target = "rct"
+    m.cov, m.live_idx = g2.cov(alam, mse), np.flatnonzero(g2.live)
+    se = m.se(D)
     n = int(dev.sum())
     sw = dev & (adv > 0)
     kinds = {}
@@ -1195,6 +1211,9 @@ def train_rct(states: dict[str, np.ndarray], trials: dict[str, np.ndarray], *, l
              "switch_by_margin": {f"{th:g}": [int((dev & (adv > th)).sum()), *_mean_diff(r[dev & (adv > th)], r[ctl])]
                                   for th in VALUE_THRESHOLDS},
              "by_kind": kinds,
+             "lcb_by_margin": {f"{k:g}": {f"{th:g}": [int((dev & (adv - k * se > th)).sum()),
+                                                     *_mean_diff(r[dev & (adv - k * se > th)], r[ctl])]
+                                          for th in (0.0, *VALUE_THRESHOLDS)} for k in LCB_PENALTIES},
              "pairs_corr": pairs_check(m, pairs_dir), "shared": shared}
     return m, stats
 
@@ -1287,7 +1306,7 @@ def main(argv: list[str] | None = None) -> int:
 
     ap = argparse.ArgumentParser(description="policy iteration from self-play (state value or paired play-outs)")
     ap.add_argument("--target", choices=("value", "pairs", "rct"), default="value",
-                    help="value: state value on λ-returns (default); pairs: advantage from paired play-outs; "
+                    help="value: state value on lambda-returns (default); pairs: advantage from paired play-outs; "
                          "rct: advantage from randomised decisions")
     ap.add_argument("--iterations", type=int, default=3)
     ap.add_argument("--runs", type=int, default=256, help="data runs per iteration")
@@ -1296,17 +1315,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--p-random", type=float, default=0.15, help="rct: share of decisions made trials")
     ap.add_argument("--control", type=float, default=0.25, help="rct: share of trials that keep the champion's choice")
     ap.add_argument("--rct-shared", action="store_true", help="rct: leave per-class columns out of the model")
+    ap.add_argument("--rct-penalty", type=float, default=0.0,
+                    help="rct: a choice must beat the margin by this many standard errors of its predicted advantage")
     ap.add_argument("--rct-label-lam", type=float, default=None,
-                    help="rct: train on the λ-return after the trial's visit (λ, e.g. 0.5) instead of the run outcome")
+                    help="rct: train on the lambda-return after the trial's visit (lambda, e.g. 0.5) instead of the run outcome")
     ap.add_argument("--trial-kinds", default="", help="rct: only these decision kinds are trials, e.g. 'pin' "
                                                       "(default: every kind in VALUE_KINDS)")
-    ap.add_argument("--td-lambda", type=float, default=0.8, help="value: λ of the λ-return labels")
+    ap.add_argument("--td-lambda", type=float, default=0.8, help="value: lambda of the lambda-return labels")
     ap.add_argument("--sweeps", type=int, default=3, help="value: relabel-and-refit rounds per fit")
     ap.add_argument("--check-pairs", default=str(PAIRS_CHECK_DIR),
                     help="value: keyed pair data to check the model's decisions against ('' = none)")
     ap.add_argument("--plain-rng", action="store_true",
                     help="unkeyed play-outs (labels measured ~0 test-retest reliability vs 0.21 keyed)")
     ap.add_argument("--eval-runs", type=int, default=256)
+    ap.add_argument("--margins", default="",
+                    help="margins to benchmark a model at, e.g. '0.3' (default: 0.1,0.3,0.6 for value / rct); "
+                         "with one margin the eval step is skipped and the model goes straight to the confirm test")
     ap.add_argument("--characters", default="WetDennis")
     ap.add_argument("--crowns", default="0")
     ap.add_argument("--workers", type=int, default=max(1, (mp.cpu_count() or 2)))
@@ -1319,7 +1343,7 @@ def main(argv: list[str] | None = None) -> int:
                          "normal run reuses the data)")
     ap.add_argument("--curve", default="", help="value: learning curve on the stored states at these run counts "
                                                  "(e.g. 128,256,512), then exit")
-    ap.add_argument("--curve-lambdas", default="0.8,0.95,1", help="label λ values for --curve")
+    ap.add_argument("--curve-lambdas", default="0.8,0.95,1", help="label lambda values for --curve")
     ap.add_argument("--compare-mlp", default="", help="value: ridge vs MLPs of these hidden sizes on held-out runs "
                                                        "of the stored states (e.g. '64;128,64'), then exit")
     ap.add_argument("--value-model", default="ridge", help="value: 'ridge' or MLP hidden sizes, e.g. '64'")
@@ -1422,6 +1446,7 @@ def main(argv: list[str] | None = None) -> int:
             m, fit = train_rct(load_states(out, "rct_it*.npz"), load_trials(out), lam=args.td_lambda,
                                sweeps=args.sweeps, seed=it, pairs_dir=pairs_dir, shared=args.rct_shared,
                                label_lam=args.rct_label_lam)
+            m.penalty = args.rct_penalty
             weak, why = fit["oof_corr"] < MIN_CORR, f"oof_corr < {MIN_CORR}"
         else:
             stats = collect(make_jobs(args.runs, 2000 + it, chars, crowns, p_sample=args.p_sample, boss_risk=risk,
@@ -1438,6 +1463,8 @@ def main(argv: list[str] | None = None) -> int:
             print("  top features:", [(n, round(w, 3)) for n, w in m.top_features(12)], flush=True)
         path = out / f"model_it{it:03d}.npz"
         thresholds = VALUE_THRESHOLDS if value or rct else THRESHOLDS
+        if args.margins:
+            thresholds = tuple(float(v) for v in args.margins.split(","))
         if weak:
             m.threshold = thresholds[-1]
             m.save(path)
@@ -1447,8 +1474,8 @@ def main(argv: list[str] | None = None) -> int:
             history.append(row)
             atomic_write(hist_path, json.dumps(history, indent=1))
             continue
-        best_ev, best_th = None, None
-        for th in thresholds:
+        best_ev, best_th = None, thresholds[0]
+        for th in thresholds if len(thresholds) > 1 else ():  # one margin: nothing to choose, confirm only
             m.threshold = th
             m.save(path)
             res = ev(eval_jobs, "eval", str(path), th)

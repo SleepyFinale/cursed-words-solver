@@ -1050,6 +1050,16 @@ def test_rct_models_pick_on_after_state_differences():
     assert pol.pick(g, [buy, Action("leave")]).kind == "leave"
     assert pol.pick(g, [Action("leave"), buy]).kind == "leave"
 
+    import numpy as np
+
+    class Unsure(Money):  # the same advantage, but too uncertain to act on
+        penalty = 1.0
+
+        def se(self, D):
+            return np.full(len(D), 100.0)
+
+    assert NetPolicy(_NoSearch(), Unsure(), threshold=0.0).pick(g, [buy, Action("leave")]) == buy
+
 
 def test_rct_fit_finds_the_effect_a_confounded_state_value_misses(tmp_path):
     import numpy as np
@@ -1099,6 +1109,16 @@ def test_rct_fit_finds_the_effect_a_confounded_state_value_misses(tmp_path):
     assert adv(1, 1.0) > 1.0 and abs(adv(2, 1.0)) < 0.5 and fit["oof_corr"] > 0.3 and fit["baseline_r2"] > 0.5
     assert fit["switch_gain"] > 0.5 and fit["switch_gain_t"] > 3 and set(fit["by_kind"]) == {"buy"}
     assert fit["switch_by_margin"]["0.3"][0] > 0 and fit["switch_by_margin"]["0.3"][1] > 0.5
+    x1 = np.zeros((1, W), np.float32)
+    x1[0, 1] = 1.0
+    se1 = float(m.se(x1)[0])
+    assert 0 < se1 < adv(1, 1.0) / 3 and set(fit["lcb_by_margin"]) == {"1", "2"}
+    m.penalty = 2.0
+    m.save(tmp_path / "m.npz")
+    from cursed_words_solver.sim.game.learn import load_model
+
+    back = load_model(tmp_path / "m.npz")
+    assert back.penalty == 2.0 and abs(float(back.se(x1)[0]) - se1) < 1e-4 * se1 + 1e-6
     _, lfit = E.train_rct(states, trials, sweeps=1, label_lam=0.5)  # trained on λ-returns, still checked on outcomes
     assert lfit["label_lam"] == 0.5 and lfit["label_sd"] == fit["label_sd"] and lfit["fit_label_sd"] < fit["fit_label_sd"]
     assert lfit["oof_corr"] > 0.3

@@ -1059,6 +1059,46 @@ promoted, but it points to the setup for long training: randomised trials, the �
 shared columns only (`--target rct --rct-shared --rct-label-lam 0.5`), with the paired
 benchmark as the gate.
 
+### Training setup checks (2026-11-02)
+
+**More decisions randomised per run (`--p-random 0.35`, `sim_models/rct_p35`).** The 512
+runs use the pilot's run seeds and took 50 min. They gave 5,054 trials against the pilot's
+2,474, so 2.0× per run. The runs are weaker (25 wins against 65, mean outcome 9.45 against
+10.87), and fewer of the extra trials come from late stages. Stages 1–3 have 2.2× as many,
+stage 4 1.9×, stage 5 1.3×.
+
+- **Across datasets.** Each dataset's model ranks the *other* dataset's deviations at about
+  half its own out-of-fold figure. The 35% model scores +0.066 on the pilot, and the pilot
+  model scores +0.061 on the 35% runs. Heavier randomisation changes what follows a trial, so
+  it partly measures a different advantage.
+- **Pooled with the pilot, the extra runs help.** The pilot's own deviations are ranked out of
+  fold, with folds grouped by game seed so a game's two runs never straddle a fold:
+
+  | columns | pilot alone, 3 fold seeds | pilot + 35% runs |
+  |---|---|---|
+  | all | +0.128 / +0.087 / +0.086 | **+0.153 / +0.143 / +0.152** |
+  | shared | +0.099 / +0.084 / +0.054 | **+0.108 / +0.108 / +0.113** |
+
+  This is the first sign that the ranking keeps improving with data. The 35% runs are cheaper
+  per trial and still useful, despite the shift.
+
+**Margins (`--margins`).** Each training iteration benchmarked three margins, about 40 min each
+on 8 cores, so with 512 runs per iteration the benchmarks cost more CPU than the data.
+`--margins 0.3` benchmarks one margin. With one margin the eval step is skipped and the model
+goes straight to the paired confirm test on fresh seeds, which stays the promotion gate.
+
+**Uncertainty-penalised choice (`--rct-penalty k`).** `train_rct` now stores the ridge
+posterior covariance of the weights (`Ridge.cov`, `live_idx`, `Ridge.se`). An rct model with
+`penalty` k ranks candidates by the advantage minus k × its standard error, and deviates only
+when that clears the margin. A change resting on a few trials' weights (a per-class column)
+then needs a larger predicted gain, which is the winner's-curse fix. The fit report gains
+`lcb_by_margin`: the deviations the penalised rule would take, by k and margin, with their
+gain over the controls. On the pilot (λ 0.5 label, all columns), k = 1 at margin 0.1 takes 64
+of 1,842 deviations (+0.44, t 1.4); k = 2 at margin 0 takes 18 (+0.57, t 0.9). Shared columns,
+k = 1 at margin 0.1: 39 (+0.91, t 2.5).
+
+LCB_RESULTS
+
 
 ```
 python -m cursed_words_solver.sim.game.expert --iterations 3 --runs 256 --eval-runs 256 \
