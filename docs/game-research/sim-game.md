@@ -1097,7 +1097,43 @@ gain over the controls. On the pilot (λ 0.5 label, all columns), k = 1 at margi
 of 1,842 deviations (+0.44, t 1.4); k = 2 at margin 0 takes 18 (+0.57, t 0.9). Shared columns,
 k = 1 at margin 0.1: 39 (+0.91, t 2.5).
 
-LCB_RESULTS
+In play (pilot model, λ 0.5 label, 256 eval seeds, paired against the cached base: 37 wins,
+mean 11.36):
+
+| Policy | Wins | Mean outcome | Paired Δ / run | Wins only model / only base |
+|---|---|---|---|---|
+| all columns, no penalty, margin 0.3 (above) | 20 | 10.44 | −0.93 (t −5.1) | — |
+| all columns, k = 1, margin 0.1 | 44 | 11.24 | −0.12 (t −0.7; 90 better, 100 worse) | 23 / 16 (p 0.34) |
+| all columns, k = 2, margin 0 | 45 | 11.40 | +0.04 (t 0.3; 51 better, 47 worse) | 13 / 5 (p 0.10) |
+| **shared columns, k = 1, margin 0.1** | **51** | 11.39 | +0.03 (t 0.2; 97 better, 88 worse) | 28 / 14 (p 0.044) |
+
+The penalty removes the per-class damage entirely: −0.93 becomes −0.12 / +0.04. Every
+penalised model wins more often than the base, while the mean outcome (encounters cleared)
+stays flat. The shared model's p 0.044 comes after eight variants were tried on these seeds,
+so it is checked on the trainer's fresh confirm seeds (`make_jobs(256, 778, …)`):
+
+| Confirm seeds (256) | Wins | Mean outcome | Paired Δ / run | Wins only model / only base |
+|---|---|---|---|---|
+| Base | 49 | 11.94 | | |
+| shared columns, k = 1, margin 0.1 | 48 | 11.72 | −0.22 (t −1.3; 81 better, 111 worse) | 21 / 22 (p 1.0) |
+
+**It does not hold.** The +14 wins on the eval seeds were the pick of eight tries. Taken
+together: the penalty makes a learned model safe (no model loses badly any more, all columns
+included), and pooling more trials keeps improving out-of-fold ranking (+0.10 → +0.15). No
+model beats the base in play yet. Default play is unchanged.
+
+**Setup for the long run** (what these checks support):
+
+```
+python -m cursed_words_solver.sim.game.expert --target rct --dir ~/.cursed_words_solver/sim_models/rct_long     --runs 1024 --iterations 10 --p-random 0.35 --rct-label-lam 0.5 --rct-penalty 1 --margins 0.1     --characters <all 11> --crowns 0,1,2,3,4,5,6,7
+```
+
+All columns or `--rct-shared`: both are neutral with the penalty, all columns rank better out
+of fold (+0.15 against +0.11 pooled), and per-class weights are the only way the model learns
+items. An iteration is about 1 h 40 min of collection plus a 1 h 20 min confirm (the model
+and, the first time, the champion, on 256 fresh seeds), so about 3 h, or 8 a day. Each
+iteration refits on all trials so far (~10k per 1,024 runs) and promotes only on the paired
+confirm (t ≥ 1.65).
 
 
 ```
