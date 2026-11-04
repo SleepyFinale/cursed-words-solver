@@ -225,9 +225,41 @@ def fit_width(X: np.ndarray, n: int) -> np.ndarray:
     return X
 
 
+class TreeAdvantage:
+    """Boosted trees (LightGBM, imported only when one is used): a move's advantage over the
+    suggestion from (taken − suggestion after-state, suggestion after-state, kind of the move).
+    Unlike ``Ridge``'s difference, it can make a move's worth depend on the build."""
+
+    target = "rct_tree"
+    threshold = 0.0
+
+    def __init__(self, booster, kinds: list[str]) -> None:
+        self.booster, self.kinds = booster, list(kinds)
+        self.index = {k: i for i, k in enumerate(self.kinds)}
+
+    def rows(self, xa: np.ndarray, xt: np.ndarray, kinds: list[str]) -> np.ndarray:
+        """Model inputs of the moves ``xt`` (one row each, ``kinds``) from the after-state ``xa``.
+        A kind the model never saw counts as missing."""
+        k = np.array([self.index.get(a, np.nan) for a in kinds], np.float32)[:, None]
+        return np.hstack([xt - xa, np.tile(xa, (len(xt), 1)), k])
+
+    def advantage(self, xa: np.ndarray, xt: np.ndarray, kinds: list[str]) -> np.ndarray:
+        width = (self.booster.num_feature() - 1) // 2
+        return self.booster.predict(self.rows(fit_width(xa[None, :], width)[0], fit_width(xt, width), kinds), num_threads=1)
+
+    def save(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(path, kind=np.array(["trees"]), kinds=np.array(self.kinds),
+                            booster=np.frombuffer(self.booster.model_to_string().encode(), np.uint8))
+
+
 def load_model(path: Path):
-    """``MLP`` or ``Ridge`` from a saved ``.npz``."""
+    """``MLP``, ``Ridge`` or ``TreeAdvantage`` from a saved ``.npz``."""
     d = np.load(path, allow_pickle=False)
+    if "kind" in d and str(d["kind"][0]) == "trees":
+        import lightgbm as lgb
+
+        return TreeAdvantage(lgb.Booster(model_str=d["booster"].tobytes().decode()), d["kinds"].tolist())
     if "kind" in d and str(d["kind"][0]) == "ridge":
         m = Ridge(len(d["w"]))
         m.w, m.mu, m.sd = d["w"], d["mu"], d["sd"]

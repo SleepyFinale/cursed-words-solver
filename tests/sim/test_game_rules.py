@@ -1060,6 +1060,51 @@ def test_rct_models_pick_on_after_state_differences():
 
     assert NetPolicy(_NoSearch(), Unsure(), threshold=0.0).pick(g, [buy, Action("leave")]) == buy
 
+    class ByKind:  # a tree model: told the suggestion's after-state and each move's kind
+        target = "rct_tree"
+        threshold = 0.0
+
+        def advantage(self, xa, xt, kinds):
+            assert xa.ndim == 1 and len(xt) == len(kinds)
+            return np.array([0.5 if k == "leave" else -0.5 for k in kinds])
+
+    assert NetPolicy(_NoSearch(), ByKind(), threshold=0.0).pick(g, [buy, Action("leave")]).kind == "leave"
+    assert NetPolicy(_NoSearch(), ByKind(), threshold=0.6).pick(g, [buy, Action("leave")]) == buy
+    assert NetPolicy(_NoSearch(), ByKind(), threshold=0.0).pick(g, [Action("leave"), buy]).kind == "leave"
+
+
+def test_tree_advantage_depends_on_the_build_and_survives_a_save(tmp_path):
+    import numpy as np
+    import pytest
+
+    lgb = pytest.importorskip("lightgbm")
+    from cursed_words_solver.sim.game.learn import TreeAdvantage, load_model
+
+    rng = np.random.default_rng(3)
+    n, width = 2000, 4
+    xa = rng.normal(size=(n, width)).astype(np.float32)
+    xt = xa.copy()
+    xt[:, 1] += rng.choice((0.0, 1.0), n).astype(np.float32)  # some moves add one of item 1
+    kinds = rng.choice(["buy", "leave"], n).tolist()
+    # item 1 pays only in builds with a high column 0 (no linear difference model can say this)
+    y = (xt[:, 1] - xa[:, 1]) * np.where(xa[:, 0] > 0, 1.0, -1.0)
+    m = TreeAdvantage(None, ["buy", "leave"])
+    X = m.rows(xa[0], xt[:1], kinds[:1])
+    assert X.shape == (1, 2 * width + 1)
+    X = np.vstack([m.rows(a, t[None, :], [k]) for a, t, k in zip(xa, xt, kinds)])
+    m.booster = lgb.train({"objective": "regression", "verbosity": -1, "min_data_in_leaf": 10, "num_threads": 1},
+                          lgb.Dataset(X, y), 60)
+    high, low = np.array([2.0, 0, 0, 0], np.float32), np.array([-2.0, 0, 0, 0], np.float32)
+    move = np.array([[0, 1.0, 0, 0]], np.float32)
+    assert m.advantage(high, high + move, ["buy"])[0] > 0.5
+    assert m.advantage(low, low + move, ["buy"])[0] < -0.5
+    path = tmp_path / "trees.npz"
+    m.save(path)
+    loaded = load_model(path)
+    assert loaded.target == "rct_tree" and loaded.kinds == ["buy", "leave"]
+    assert loaded.advantage(high, high + move, ["buy"]) == pytest.approx(m.advantage(high, high + move, ["buy"]))
+    assert np.isfinite(loaded.advantage(high, high + move, ["never_seen"])).all()
+
 
 def test_rct_fit_finds_the_effect_a_confounded_state_value_misses(tmp_path):
     import numpy as np

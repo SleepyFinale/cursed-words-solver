@@ -335,7 +335,7 @@ class NetPolicy(FastAdvicePolicy):
         ``threshold`` (in outcome units: encounters cleared)."""
         if self.model is None or len(cands) == 1:
             return cands[0]
-        if getattr(self.model, "target", "advantage") in ("value", "rct"):
+        if getattr(self.model, "target", "advantage") in ("value", "rct", "rct_tree"):
             return self._pick_value(game, cands)
         base = afterstate(game, cands[0])
         if base is None:
@@ -371,7 +371,9 @@ class NetPolicy(FastAdvicePolicy):
         swap (a sell now, the replacement next step) is valued as the whole swap: the sell
         alone looks like an item lost (pilot benchmark, 2026-11-01). An ``rct`` model with a
         ``penalty`` ranks by the advantage minus ``penalty`` × its standard error, so a choice
-        resting on a few trials' weights (a per-class column) needs a larger predicted gain."""
+        resting on a few trials' weights (a per-class column) needs a larger predicted gain.
+        An ``rct_tree`` model (``learn.TreeAdvantage``) also sees the suggestion's after-state
+        and the move's kind, so a move's worth can depend on the build."""
         first = self._whole(cands[0])
         if first.kind not in VALUE_KINDS:
             return cands[0]
@@ -394,6 +396,8 @@ class NetPolicy(FastAdvicePolicy):
             k = float(getattr(self.model, "penalty", 0.0) or 0.0)
             if k > 0:  # the best of 16 noisy predictions is not trusted: discount each by its SE
                 adv = adv - k * self.model.se(X[1:] - X[0])
+        elif self.model.target == "rct_tree":
+            adv = self.model.advantage(X[0], X[1:], [a.kind for a in acts])
         else:
             v = self.model.predict(X)
             adv = v[1:] - v[0]
