@@ -25,7 +25,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[str(root / "thunderstore" / "pyi_rth_stdio.py")],
-    excludes=["pytest"],
+    excludes=["pytest", "lightgbm"],  # only the simulator's AI uses it; the app never loads that
     noarchive=False,
 )
 pyz = PYZ(a.pure)

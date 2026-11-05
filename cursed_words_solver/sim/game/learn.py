@@ -228,13 +228,13 @@ def fit_width(X: np.ndarray, n: int) -> np.ndarray:
 class TreeAdvantage:
     """Boosted trees (LightGBM, imported only when one is used): a move's advantage over the
     suggestion from (taken − suggestion after-state, suggestion after-state, kind of the move).
-    Unlike ``Ridge``'s difference, it can make a move's worth depend on the build."""
+    Unlike ``Ridge``'s difference, it can make a move's worth depend on the build. ``threshold``
+    is the decision margin it plays at when no other is given."""
 
     target = "rct_tree"
-    threshold = 0.0
 
-    def __init__(self, booster, kinds: list[str]) -> None:
-        self.booster, self.kinds = booster, list(kinds)
+    def __init__(self, booster, kinds: list[str], threshold: float = 0.0) -> None:
+        self.booster, self.kinds, self.threshold = booster, list(kinds), threshold
         self.index = {k: i for i, k in enumerate(self.kinds)}
 
     def rows(self, xa: np.ndarray, xt: np.ndarray, kinds: list[str]) -> np.ndarray:
@@ -249,7 +249,7 @@ class TreeAdvantage:
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(path, kind=np.array(["trees"]), kinds=np.array(self.kinds),
+        np.savez_compressed(path, kind=np.array(["trees"]), kinds=np.array(self.kinds), threshold=np.array([self.threshold]),
                             booster=np.frombuffer(self.booster.model_to_string().encode(), np.uint8))
 
 
@@ -259,7 +259,8 @@ def load_model(path: Path):
     if "kind" in d and str(d["kind"][0]) == "trees":
         import lightgbm as lgb
 
-        return TreeAdvantage(lgb.Booster(model_str=d["booster"].tobytes().decode()), d["kinds"].tolist())
+        return TreeAdvantage(lgb.Booster(model_str=d["booster"].tobytes().decode()), d["kinds"].tolist(),
+                             float(d["threshold"][0]) if "threshold" in d.files else 0.0)
     if "kind" in d and str(d["kind"][0]) == "ridge":
         m = Ridge(len(d["w"]))
         m.w, m.mu, m.sd = d["w"], d["mu"], d["sd"]

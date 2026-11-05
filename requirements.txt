@@ -1,6 +1,7 @@
 mss>=9.0.0
 opencv-python>=4.8.0
 numpy>=1.24.0
+lightgbm>=4.0.0
 Pillow>=10.0.0
 keyboard>=0.13.5
 PySide6>=6.6.0

@@ -1098,12 +1098,18 @@ def test_tree_advantage_depends_on_the_build_and_survives_a_save(tmp_path):
     move = np.array([[0, 1.0, 0, 0]], np.float32)
     assert m.advantage(high, high + move, ["buy"])[0] > 0.5
     assert m.advantage(low, low + move, ["buy"])[0] < -0.5
+    assert m.threshold == 0.0
+    m.threshold = 0.3
     path = tmp_path / "trees.npz"
     m.save(path)
     loaded = load_model(path)
-    assert loaded.target == "rct_tree" and loaded.kinds == ["buy", "leave"]
+    assert loaded.target == "rct_tree" and loaded.kinds == ["buy", "leave"] and loaded.threshold == 0.3
     assert loaded.advantage(high, high + move, ["buy"]) == pytest.approx(m.advantage(high, high + move, ["buy"]))
     assert np.isfinite(loaded.advantage(high, high + move, ["never_seen"])).all()
+    old = dict(np.load(path))  # a file saved before margins were stored plays at 0
+    del old["threshold"]
+    np.savez_compressed(path, **old)
+    assert load_model(path).threshold == 0.0
 
 
 def test_rct_fit_finds_the_effect_a_confounded_state_value_misses(tmp_path):
