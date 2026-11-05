@@ -162,10 +162,44 @@ class PowerConfig:
     plan_samples: int = 2
     plan_level_value: float = 3.0  # $ per item level gained (Bar Chart, Fountain Pen, ...)
     plan_tile_value: float = 2.0  # $ per consumable tile still on the rack
+    # S2 whole-run build plan: one of ``BUILD_PLANS`` followed from the first shop (AdvicePolicy
+    # ``_build_plan_step``). Off-plan items are never bought; a plan offer goes first, replaces a
+    # non-plan item when slots are full, and is restocked for, keeping ``build_plan_reserve``.
+    build_plan: str = ""
+    build_plan_restocks: int = 2  # per shop
+    build_plan_reserve: int = 5
     # ``char_overrides``: settings that differ by character (L3; ``chartune.py`` searches them),
     # {"Spike": {"buy_threshold": 0.06}, "Spike@3-7": {...}}. A "Character@lo-hi" entry applies
     # at those crowns, after the character's own; any field but this one may be overridden.
     char_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+_GENERIC_FUNCTIONS = frozenset({"GenericAdditive", "GenericMultiplier"})
+# Build direction -> (its build tag, the tags of the items that generate what it scores on)
+BUILD_PLANS: dict[str, tuple[str, tuple[str, ...]]] = {
+    **{n: (f"{n}Build", (f"{n}Generator",)) for n in (
+        "Red", "Blue", "Void", "Shiny", "Blank", "Rainbow", "Numbers", "Chess", "Cards", "Curse", "Consumable")},
+    "Cash": ("CashBuild", ("CashGenerator", "CurrencyGenerator")),
+    "ScatteredItems": ("ScatteredItemsBuild", ("ItemScatterer",)),
+}
+
+
+def plan_class(plan: str, game_class: str) -> str:
+    """An item's place in a build plan: "generator" or "fits" (the plan's), "off" (only another
+    build's) or "neutral" (no build, or generic points that help any build)."""
+    from cursed_words_solver.sim.game.items import catalog_rows
+
+    row = catalog_rows().get(game_class) or {}
+    tags, deps = row.get("tags") or (), row.get("dependency_tags") or ()
+    build, generators = BUILD_PLANS[plan]
+    if any(g in tags for g in generators):
+        return "generator"
+    if build in tags or any(g in deps for g in generators):
+        return "fits"
+    if any(t.endswith(("Build", "Generator")) or t == "ItemScatterer" for t in tags) \
+            and not _GENERIC_FUNCTIONS.intersection(row.get("function_tags") or ()):
+        return "off"
+    return "neutral"
 
 
 def char_settings(overrides: dict[str, dict[str, Any]], character: str, crown: int) -> dict[str, Any]:
@@ -550,6 +584,7 @@ class AdvicePolicy(PowerPolicy):
         self._spend_restocks = 0
         self._swaps_this_shop = 0
         self._pending_buy = None
+        self._plan_restocks = 0
 
     def act(self, game: "Game") -> Action:
         self._tune(game)
@@ -571,6 +606,7 @@ class AdvicePolicy(PowerPolicy):
         self._spend_restocks = 0
         self._swaps_this_shop = 0
         self._pending_buy = None
+        self._plan_restocks = 0
         return Action("leave")
 
     def _advice_shop(self, game: "Game") -> Action:
@@ -583,7 +619,12 @@ class AdvicePolicy(PowerPolicy):
         ogre = self._ogre_buy(game)
         if ogre is not None:
             return ogre
-        loadout, state = shop_advice_inputs(game, frozenset({"Ogre"}) if self.cfg.ogre else frozenset())
+        step = self._build_plan_step(game)
+        if step is not None:
+            return step
+        hide = frozenset(o.item.game_class for stock in (s.stickers, s.stamps) for o in stock
+                         if o is not None and not self._offer_ok(game, o.item.game_class))
+        loadout, state = shop_advice_inputs(game, hide)
         try:
             adv = compute_shop_advice(loadout, state)
         except Exception:
@@ -646,6 +687,47 @@ class AdvicePolicy(PowerPolicy):
                 self._moves_this_shop += 1
                 return move
         return self._leave()
+
+    def _build_plan_step(self, game: "Game") -> Action | None:
+        """The ``build_plan``'s move in this shop, if it has one (else Advice goes on, without
+        off-plan offers): buy the plan offer adding most to a probe encounter, generators first
+        until two are owned; else sell a non-plan item for an offer that does not fit in; else
+        restock for one."""
+        from cursed_words_solver.sim.game.shop import can_sell
+
+        plan = self.cfg.build_plan
+        if not plan:
+            return None
+        p, s = game.player, game.shop
+        offers = [(kind, j, o) for kind, stock in (("sticker", s.stickers), ("stamp", s.stamps))
+                  for j, o in enumerate(stock) if o is not None and plan_class(plan, o.item.game_class) in ("generator", "fits")]
+        buys = [Action("buy", (kind, j)) for kind, j, _ in offers if s.can_buy(kind, j)]
+        if buys:
+            owned = [it for it in (*p.stickers, *p.stamps) if it is not None]
+            if sum(plan_class(plan, it.game_class) == "generator" for it in owned) < 2:
+                buys = [a for a in buys if plan_class(plan, offer_class(game, a)) == "generator"] or buys
+            gains = self._power_gains(game, buys)
+            if gains:
+                _, best = max(gains, key=lambda t: t[0])
+                cls = offer_class(game, best)
+                self._bought_this_shop.add(cls)
+                return Action("buy", best.args, f"plan {plan}: buy {cls}")
+        if not self._sold_this_shop:
+            for kind, j, o in sorted(offers, key=lambda t: s.offer_cost(t[2])):
+                owned = p.stickers if kind == "sticker" else p.stamps
+                sells = sorted((it.sell_value(p), i) for i, it in enumerate(owned)
+                               if it is not None and can_sell(p, it) and it.game_class not in self._bought_this_shop
+                               and plan_class(plan, it.game_class) not in ("generator", "fits"))
+                for _, i in sells:
+                    g = clone(game)
+                    if g.sell(kind, i) is not None and g.shop.can_buy(kind, j):
+                        self._pending_buy, self._sold_this_shop = (kind, j), True
+                        return Action("sell", (kind, i), f"plan {plan}: sell {owned[i].game_class} for {o.item.game_class}")
+        if (not buys and self._plan_restocks < self.cfg.build_plan_restocks and s.can_reroll()
+                and p.money - s.reroll_cost >= self.cfg.build_plan_reserve):
+            self._plan_restocks += 1
+            return Action("reroll_shop", (), f"plan {plan}: restock")
+        return None
 
     def _swap_limit(self, game: "Game", final: bool) -> int:
         """Sell-and-replace swaps per shop: 3 in the final shop, ``late_swaps`` from
@@ -836,8 +918,11 @@ class AdvicePolicy(PowerPolicy):
         return run.stage < 4 or not all(b.cursed for b in run.boss_drafts[run.stage - 1].options)
 
     def _offer_ok(self, game: "Game", game_class: str | None) -> bool:
-        """With ``ogre`` on, an Ogre is only ever bought by ``_ogre_buy``."""
-        return not (self.cfg.ogre and game_class == "Ogre")
+        """With ``ogre`` on, an Ogre is only ever bought by ``_ogre_buy``; with a ``build_plan``,
+        nothing off the plan is bought."""
+        if self.cfg.ogre and game_class == "Ogre":
+            return False
+        return not (self.cfg.build_plan and game_class and plan_class(self.cfg.build_plan, game_class) == "off")
 
     def _ogre_buy(self, game: "Game") -> Action | None:
         """Buy Ogre while it is wanted; sell it from stage 4 on (the floors it cursed stay cursed)."""

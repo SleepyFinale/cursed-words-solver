@@ -27,6 +27,7 @@ its state as melmod `game_state/1`, the same format real captures replay from ex
 | `learn.py` | — | self-play value learning: parallel collection, numpy MLP and `Ridge` (+ `load_model`), `ValuePolicy` (ε-greedy over learned values; shop rerolls valued by sampled restocks) |
 | `advise.py` | — | live advisor: `run_state.json` → simulator → ranked actions (encounter options by rollout P(clear)) |
 | `evaluate.py` | — | parallel seeded runs → win rate + JSONL decision logs (`--policy power / greedy / advice / value:<model>`, `--effort` for deterministic search) |
+| `plantest.py` | — | whole-run build plans (`PowerConfig.build_plan`) against the rules player, per character, resumable |
 | `expert.py` | — | the learning loop: `NetPolicy`, state-value training on λ-returns (default) or paired full-run rollouts, ridge models, champion gating |
 | `buildvalue.py` | — | long-horizon item value: leave-one-out contributions per stage, `ItemGrowth` (class growth model), survival weights |
 | `chartune.py` | — | per-character settings (L3): successive-halving search over `PowerConfig` knobs on paired seeds → `char_overrides` table |
@@ -1140,6 +1141,121 @@ confirm (t ≥ 1.65).
 python -m cursed_words_solver.sim.game.expert --iterations 3 --runs 256 --eval-runs 256 \
     --characters BonesTheDog,HayleyBayles,NathaServo,NinaNix,Octacles,PrismaticBean,SamGambit,SandySaguaro,SockHead,Spike,WetDennis --crowns 0,1,2,3,4,5,6,7
 ```
+
+### Boosted trees and the first promoted model (2026-11-05)
+
+`learn.TreeAdvantage` (LightGBM) sees the move, the suggestion's after-state and the kind of
+move, so a move's worth can depend on the build. It stores its margin in its file.
+
+- **Offline**, ~76k deviations: within-kind ranking 0.19 against 0.156 for ridge. The edge is
+  in boss, leave and pin choices; on buys it is no better (0.13 vs 0.14).
+- **In play**, margin 0.3 on 1,024 fresh seeds: +0.152 / run (SE 0.078, t 1.96), wins 190 vs
+  190, Michael wins 18 vs 22. Lost runs go further; NathaServo is two-thirds of the gain.
+- Promoted: `sim_models/rct_nonlinear/champion.npz`, the advisor's AI pick. On 256 seeds it is
+  level with the linear model, whose 1,024-seed result is unknown.
+- 256 seeds cannot show a true +0.2 reliably (per-seed SD ~2.5): decide such gaps on ~1,000.
+
+### Whole-run build plans (S2, `plantest.py`, 2026-11-05)
+
+The learned models only fine-tune the rules player: their trials change one move of its games,
+so they have never seen a run with a different plan. `PowerConfig.build_plan` commits a run to
+one of `policy.BUILD_PLANS` from the first shop:
+
+- Items of only another build are never bought (generic points and items with no build still
+  are, and Advice goes on choosing among what is left).
+- A plan offer is bought first, the best by probe, generators first until two are owned.
+- With no room or money, a non-plan item is sold for it (once per shop).
+- With no plan offer, up to `build_plan_restocks` (2) restocks per shop, keeping
+  `build_plan_reserve` ($5).
+
+Models are not plan-aware yet: test plans without one (a model could pick an off-plan offer).
+
+```
+python -m cursed_words_solver.sim.game.plantest --out ~/.cursed_words_solver/sim_models/plans --n 16 --workers 8
+python -m cursed_words_solver.sim.game.plantest --out ~/.cursed_words_solver/sim_models/plans --report
+```
+
+All 13 plans and the rules player play 16 seeds per character (crowns cycling) = 2,464 runs, ~8 h,
+a screen. A plan changes the whole run, so expect a per-seed SD well above the model's ~2.5
+(estimate ~5, to measure): ~0.4 per plan, too noisy for one character × plan. Add seeds for the
+leaders (`--plans A,B --start 16 --n 48`), then confirm on seeds no choice was based on. Confounded
+look at the rules player's 1,024 runs, by the build it bought most of: Curse 47% wins, Cards 36%,
+Scattered 33%, Void 30%, Red 10%, Blue 7%, Cash 3%.
+
+**Screen result (2026-11-05, seeds 0-15, 0 crashes; a lead, not yet confirmed on fresh seeds):**
+
+| Plan | Gain | t | Wins of 176 (rules 36) |
+|---|---|---|---|
+| Curse | +0.49 | 1.22 | 68 (44 only-plan, 12 only-rules, McNemar p 2e-5) |
+| Numbers | +0.10 | 0.34 | 43 |
+| Chess | +0.01 | 0.05 | 41 |
+| ScatteredItems | -1.28 | -4.08 | 39 |
+| Cards | -1.13 | -3.77 | 27 |
+| Void | -1.82 | -5.08 | 26 |
+| Rainbow | -1.62 | -5.78 | 18 |
+| Red | -2.19 | -8.12 | 15 |
+| Blue | -1.84 | -7.06 | 10 |
+| Shiny | -2.87 | -10.13 | 9 |
+| Consumable | -3.61 | -12.63 | 7 |
+| Blank | -3.60 | -14.32 | 4 |
+| Cash | -4.70 | -18.28 | 2 |
+
+Curse wins far more with hardly more mean outcome because it is all or nothing: Michael wins
+19 vs 2 and crowns 4-7 wins 19 vs 6, but stage-2 deaths 32 vs 10 (outcome SD 5.7, wins mean 18.2,
+losses 8.8 vs 10.8). So mean outcome, the gate's primary test, misses it. Spike is 15/16 on it
+(rules 4/16), from one small cell picked out of 143. Plan-vs-rules difference SD is 3.3-5.3, 4.2 pooled.
+FoodPoisoning and HauntedMirror match the decompiled game, and Oden's text and rule were read;
+no real-game log has Oden, so Curse builds have no real-game check yet.
+
+### Promotion gate (`bench.py gate`, 2026-11-05)
+
+Picking the best of 16 candidates on shared seeds passes t 1.65 about 56% of the time when none
+is better, and +0.2 took about 1,000 seeds of a fixed test, so `bench.py` gained:
+
+- **`--keyed`:** the stream restarts before each action from where the run is, as `play_out`
+  does. Arms must agree on it. Pool-indexed picks still shift when a pool changes; a second stage
+  (per-event streams, hashed ranks) waits for the pilot's result.
+- **`--salt`:** other games on the same seeds. Base vs salted base is the A/A check; base vs an
+  identical base must differ by exactly zero.
+- **`gate <base> <arm>`:** plays one block at a time (one seed per character and crown, 88 runs),
+  deciding on LLR = δ / var × (S − nδ / 2) with δ 0.2: accept at 2.77, reject at −1.56, undecided
+  at 1.5× a fixed test's runs. Pentanomial modelling adds nothing, since the paired variance
+  already holds it.
+- **Promoting takes three things:** accept; lower bound on win and Michael win rate change above
+  −2 points, which needs about 10 blocks at the usual 12% discordant runs; and single-use seeds.
+- **Seeds:** search on 7M (`--first-seed`), 8M is regression only, promotion on `--block K` =
+  9,000,000 + 20,000 × K. `seed_blocks.json` refuses a block to a second candidate. A block spans
+  11,000 seeds, so a step of 10,000 would overlap.
+- **Reported:** raw gain and t, seeds, candidates searched (`--searched`), the gain shrunk with a
+  prior SD of 0.15, and a bootstrap interval stratified by character and crown. Figures use every
+  complete block; the decision is the first to cross a bound.
+
+**Pilot (`~/.cursed_words_solver/bench2/pilot.py`, 2026-11-05, 1,408 runs, thresholds set before the runs):
+keying does not help, so `bench` stays on the legacy stream and keying stays in `play_out` labels only.**
+
+| Check | Stop if | Result |
+|---|---|---|
+| `k_base` vs `k_repeat` | Any difference | Pass: 88 of 88 identical |
+| `k_base` vs `k_salt` | SD outside about 3.1-3.9 | Pass: 3.67 |
+| `k_base` vs `k_e5off`, against `l_base` vs `l_e5off` | Keyed SD not clearly below legacy | **Stop:** 2.81 keyed vs 2.55 legacy, ratio 1.10 (95% 0.89-1.36) |
+| `k_base` against `l_base` | Mean differs by over 2 SE | Pass: 11.75 vs 11.94, about 0.8 SE |
+
+The per-event streams and hashed picks planned as a second stage are not worth building. `finish_early`
+held up on current code in both streams: off is -0.19 keyed, -0.18 legacy. The interval still allows up
+to about 20% less variance, but the estimate is 21% more, and this one pair is the only evidence.
+
+Sequential test, 600 replays per row resampling these differences (δ 0.2), against about 1,000 seeds for
+a fixed test at SD 2.55:
+
+| True gain | Accepted | Mean seeds, SD 2.55 | Mean seeds, SD 3.67 |
+|---|---|---|---|
+| 0 | 3.8% | 563 | 1,116 |
+| +0.2 | 75% | 788 | 1,518 |
+| +0.4 | 100% | 371 | 697 |
+| -0.2 | 0% | 244 | 434 |
+
+Power at +0.2 is 75%, below the design's 80%, because of the cap. Mean outcome also misses gains in wins:
+the Curse plan above nearly doubled wins at t 1.22, so a wins test is still to add.
 
 ## Known gaps
 

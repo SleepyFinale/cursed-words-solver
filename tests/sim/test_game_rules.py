@@ -756,6 +756,198 @@ def test_finish_early_rerolls_for_a_clearing_word_and_never_submits_a_losing_las
     assert kind(120, 0, 0.75) == "submit"  # it clears
 
 
+def test_bench_sequential_test_stops_on_a_real_gain_a_loss_or_no_effect():
+    import random
+
+    from cursed_words_solver.sim.game.bench import sequential
+
+    def blocks(mean, n=60, sd=2.5, seed=1):
+        rng = random.Random(seed)
+        return [[rng.gauss(mean, sd) for _ in range(88)] for _ in range(n)]
+
+    good, bad = sequential(blocks(0.6)), sequential(blocks(-0.6))
+    assert good["decision"] == "accept" and good["llr"] >= 2.77 and good["blocks"] < 10
+    assert bad["decision"] == "reject" and bad["llr"] <= -1.56 and bad["blocks"] < 10
+    assert sequential(blocks(0.0))["decision"] in ("reject", "cap", "continue")
+    assert sequential([[0.0] * 88])["decision"] == "reject"  # the change never affected a run
+    assert sequential([])["decision"] == "continue"
+    # no bound crossed and the runs of a fixed-sample test passed: undecided, not accepted
+    assert sequential([[0.1, -0.1] * 44] * 2, delta=0.2)["decision"] != "accept"
+    # false positives near the design's 5%
+    trials = [sequential(blocks(0.0, 25, seed=i))["decision"] for i in range(200)]
+    assert trials.count("accept") / len(trials) < 0.12
+
+
+def test_bench_gate_figures_and_seed_rules(tmp_path):
+    import json
+
+    import pytest
+
+    from cursed_words_solver.sim.game import bench
+
+    assert bench.shrunk(0.152, 0.078) == pytest.approx(0.1198, abs=0.001)
+    rc = bench.rate_change([True] * 62 + [False] * 62 + [True] * 100, [False] * 62 + [True] * 62 + [True] * 100)
+    assert rc["change"] == 0 and rc["se"] > 0 and rc["lower"] < 0
+    lo, hi = bench.bootstrap_interval({("a", 0): [1.0, 1.0], ("b", 0): [1.0]})
+    assert lo == hi == 1.0
+
+    # promotion blocks never overlap each other or the older seeds
+    every = [set(s for _, _, s in bench.seeds(100, first=f)) for f in
+             (bench.FIRST_SEED, bench.SEARCH_SEED, bench.block_first_seed(0), bench.block_first_seed(1))]
+    assert sum(map(len, every)) == len(set().union(*every))
+
+    def row(ch, cr, sd, out, won=False):
+        return {"char": ch, "crown": cr, "seed": sd, "won": won, "reason": "x", "outcome": out, "stage": 5}
+
+    ss = bench.seeds(4)
+    base = {k: row(*k, 10.0) for k in ss}
+    arm = {k: row(*k, 10.0 + (1.2 if k[1] % 2 else 0.6)) for k in ss}
+    rep = bench.gate_report(base, arm, single_use=True, searched=3)
+    assert rep["decision"] == "accept" and rep["promote"] and rep["searched"] == 3
+    assert rep["blocks"] == 1 and rep["n"] == 4 * 88 and 0 < rep["shrunk"] < rep["gain"]  # all blocks count in the figures
+    assert not bench.gate_report(base, arm, single_use=False)["promote"]  # search seeds cannot promote
+    losing = {k: row(*k, 11.0, won=False) for k in ss}
+    winning = {k: row(*k, 10.0, won=True) for k in ss}
+    assert not bench.gate_report(winning, losing, single_use=True)["promote"]  # higher mean, fewer wins
+    # a block with a run missing does not count yet
+    assert bench.gate_report(base, {k: v for k, v in arm.items() if k != ss[0]})["n"] == 0
+
+    bench.claim_block(3, "base", "a", tmp_path)
+    bench.claim_block(3, "base", "a", tmp_path)  # resuming the same candidate is fine
+    with pytest.raises(SystemExit):
+        bench.claim_block(3, "base", "b", tmp_path)
+    with pytest.raises(SystemExit):
+        bench.same_stream(bench.spec(keyed=True), bench.spec())
+    bench.same_stream(bench.spec(keyed=True), bench.spec(keyed=True, salt=1))
+
+    # an arm made before the keyed setting existed still resumes, and is not keyed
+    old = bench.spec({"late_swaps": 3})
+    del old["keyed"], old["salt"]
+    (tmp_path / "a.json").write_text(json.dumps({"spec": old}))
+    assert bench._spec_settings(old) == bench._spec_settings(bench.spec({"late_swaps": 3}))
+    with pytest.raises(SystemExit):
+        bench.run("a", bench.spec({"late_swaps": 3}, keyed=True), out_dir=tmp_path)
+
+
+def test_bench_keyed_stream_follows_the_point_of_the_run_not_what_came_before():
+    from cursed_words_solver.sim.game.bench import reseed_for
+
+    a, b = _game(seed=41), _game(seed=41)
+    b.rng.range(0, 10)  # this run has drawn more by now
+    seen_a, seen_b = {}, {}
+    reseed_for(a, 41, 0, seen_a, "leave")
+    reseed_for(b, 41, 0, seen_b, "leave")
+    assert a.rng.range(0, 10 ** 9) == b.rng.range(0, 10 ** 9)
+    reseed_for(a, 41, 0, seen_a, "leave")  # the same action again at the same point is a new draw
+    first = a.rng.range(0, 10 ** 9)
+    c = _game(seed=41)
+    reseed_for(c, 41, 0, {}, "leave")
+    assert c.rng.range(0, 10 ** 9) != first
+    d = _game(seed=41)
+    reseed_for(d, 41, 1, {}, "leave")  # a salt is another game
+    e = _game(seed=41)
+    reseed_for(e, 41, 0, {}, "leave")
+    assert d.rng.range(0, 10 ** 9) != e.rng.range(0, 10 ** 9)
+
+
+def test_plan_class_sorts_items_by_a_build_plan():
+    import pytest
+
+    from cursed_words_solver.sim.game.items import catalog_rows
+    from cursed_words_solver.sim.game.policy import plan_class
+
+    assert plan_class("Curse", "Amphora") == "generator"
+    assert plan_class("Curse", "Broom") == "fits"
+    assert plan_class("Red", "Broom") == "off"
+    assert plan_class("Red", "Avocado") == "neutral"  # no build tag
+    generic = next(k for k, r in catalog_rows().items() if {"GenericMultiplier", "GenericAdditive"} & set(r["function_tags"])
+                   and any(t.endswith("Build") and t != "RedBuild" for t in r["tags"]) and "RedBuild" not in r["tags"]
+                   and "RedGenerator" not in r["dependency_tags"])
+    assert plan_class("Red", generic) == "neutral"  # generic points help any build
+    with pytest.raises(KeyError):
+        plan_class("NoSuchPlan", "Broom")
+
+
+def _plan_shop(plan: str, money: int = 60, **cfg):
+    from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig
+
+    g = _game(seed=31)
+    s = _shop_at(g, Node.SHOP_ONE, money)
+    s.stickers[:] = [None] * len(s.stickers)
+    s.stamps[:] = [None] * len(s.stamps)
+    return g, s, FastAdvicePolicy(_NoSearch(), PowerConfig(build_plan=plan, **cfg))
+
+
+def test_build_plan_buys_its_generators_first_and_refuses_other_builds():
+    from cursed_words_solver.sim.game.shop import ItemInStock
+
+    g, s, pol = _plan_shop("Curse")
+    s.stickers[0] = ItemInStock(make_item("Broom"), 12)
+    s.stickers[1] = ItemInStock(make_item("Amphora"), 13)
+    a = pol._advice_shop(g)
+    assert (a.kind, a.args) == ("buy", ("sticker", 1)) and "Amphora" in a.label
+    assert not pol._offer_ok(g, "Beefeater") and pol._offer_ok(g, "Broom") and pol._offer_ok(g, "Avocado")
+    _, _, off = _plan_shop("")
+    assert off._build_plan_step(g) is None and off._offer_ok(g, "Beefeater")
+
+
+def test_build_plan_replaces_a_non_plan_item_when_slots_are_full_and_keeps_its_own():
+    from cursed_words_solver.sim.game.shop import ItemInStock, can_sell
+
+    g, s, pol = _plan_shop("Curse")
+    p = g.player
+    names = ["Amphora", "Avocado", "Chips", "Dartboard", "Eraser", "Egg", "Chick", "Axe"]
+    p.stickers[:] = [make_item(n) for n in names[:len(p.stickers)]]
+    p.stickers[1].sell_cost = 1  # any non-plan item may go, but never the plan's generator
+    assert can_sell(p, p.stickers[0])
+    s.stickers[0] = ItemInStock(make_item("Broom"), 12)
+    a = pol._advice_shop(g)
+    assert a.kind == "sell" and a.args[0] == "sticker" and a.args[1] != 0
+    assert pol._pending_buy == ("sticker", 0) and pol._sold_this_shop
+    assert g.sell(*a.args) is not None
+    bought = pol._advice_shop(g)
+    assert (bought.kind, bought.args) == ("buy", ("sticker", 0))
+
+
+def test_build_plan_restocks_for_an_offer_up_to_its_limit_and_reserve():
+    g, s, pol = _plan_shop("Curse", build_plan_restocks=2)
+    assert pol._build_plan_step(g).kind == "reroll_shop"
+    assert pol._build_plan_step(g).kind == "reroll_shop"
+    assert pol._build_plan_step(g) is None
+    pol._leave()
+    assert pol._build_plan_step(g).kind == "reroll_shop"  # a new shop, new restocks
+    pol._leave()
+    g.player.money = s.reroll_cost + pol.cfg.build_plan_reserve - 1
+    assert pol._build_plan_step(g) is None
+
+
+def test_plantest_pairs_every_plan_with_the_rules_player_on_the_same_runs(tmp_path):
+    import json
+
+    from cursed_words_solver.sim.game import plantest as T
+
+    jobs = T.make_jobs([T.BASE, "Cards"], ["Spike", "SockHead"], 0, 16)
+    assert len(jobs) == 2 * 2 * 16 and len({(j["plan"], j["seed"]) for j in jobs}) == len(jobs)
+    assert sorted(j["crown"] for j in jobs if j["plan"] == "Cards" and j["character"] == "Spike") == sorted(list(range(8)) * 2)
+    assert next(j for j in jobs if j["plan"] == "Cards")["cfg"] == {"build_plan": "Cards"}
+    assert next(j for j in jobs if j["plan"] == T.BASE)["cfg"] == {}
+    more = T.make_jobs([T.BASE], ["Spike"], 16, 4)
+    assert not {j["seed"] for j in more} & {j["seed"] for j in jobs}
+
+    path = tmp_path / "runs.jsonl"
+    rows = [{"plan": j["plan"], "character": j["character"], "crown": j["crown"], "seed": j["seed"], "error": None,
+             "outcome": 10.0 + (j["plan"] == "Cards") * (1 + (j["seed"] % 2) / 10), "won": j["plan"] == "Cards" and j["crown"] == 0}
+            for j in jobs]
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n{cut short", encoding="utf-8")
+    runs = T.load_runs(path)
+    assert len(runs) == len(jobs)
+    g = T.gains(runs, "Cards")
+    assert g["n"] == 32 and abs(g["gain"] - 1.05) < 1e-9 and g["t"] > 10 and (g["wins"], g["base_wins"]) == (4, 0)
+    assert T.gains(runs, "Cards", lambda r: r["crown"] == 0)["n"] == 4
+    text = "\n".join(T.report(runs))
+    assert "Cards" in text and "Spike" in text and "SockHead" in text
+
+
 def test_late_swaps_raise_the_swap_limit_from_the_given_stage():
     from cursed_words_solver.sim.game.policy import AdvicePolicy, PowerConfig
 
