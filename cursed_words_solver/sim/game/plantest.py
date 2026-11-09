@@ -6,7 +6,10 @@ an interrupted test resumes. ``--start`` / ``--n`` pick the seeds per character:
 seeds for the plans worth a closer look (rules-player runs are shared). The many gains this reports
 come from one set of seeds, so confirm the best on fresh ones (``--start`` past those used) first.
 
-usage: python -m cursed_words_solver.sim.game.plantest --out DIR --n 16 --workers 8 [--plans Cards,Curse]
+``--arm name=Plan:key=value,...`` adds a plan with other ``PowerConfig`` settings, played on the same
+seeds, e.g. ``--arm g1=Curse:build_plan_commit=1``. ``--versus`` reports against another arm than rules.
+
+usage: python -m cursed_words_solver.sim.game.plantest --out DIR --n 16 --workers 8 [--plans Cards,Curse] [--arm ...]
        python -m cursed_words_solver.sim.game.plantest --out DIR --report
 """
 from __future__ import annotations
@@ -24,15 +27,35 @@ SEED_BASE = 779_000_000
 BANDS = ((0, 2), (3, 5), (6, 7))
 
 
-def make_jobs(plans: list[str], characters: list[str], start: int, n: int, boss_risk: str = "") -> list[dict[str, Any]]:
+def parse_arm(spec: str) -> tuple[str, dict[str, Any]]:
+    """``name=Plan:key=value,...`` -> (name, ``PowerConfig`` overrides)."""
+    name, _, rest = spec.partition("=")
+    plan, _, settings = rest.partition(":")
+    if not name or not plan:
+        raise ValueError(f"bad arm {spec!r}: expected name=Plan:key=value,...")
+    cfg: dict[str, Any] = {"build_plan": plan, "build_plan_chars": {}}
+    for kv in filter(None, settings.split(",")):
+        key, _, value = kv.partition("=")
+        cfg[key] = json.loads(value)
+    return name, cfg
+
+
+def plan_cfg(plan: str) -> dict[str, Any]:
+    """``PowerConfig`` overrides that play ``plan`` for every character (``BASE``: no plan)."""
+    return {"build_plan": ""} if plan == BASE else {"build_plan": plan, "build_plan_chars": {}}
+
+
+def make_jobs(plans: list[str], characters: list[str], start: int, n: int, boss_risk: str = "",
+              arms: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """One run per plan × character × seed; crowns cycle, so each plan and character sees them evenly."""
+    arms = arms or {}
     jobs = []
     for c, character in enumerate(characters):
         for i in range(start, start + n):
             for plan in plans:
                 jobs.append({"plan": plan, "character": character, "crown": CROWNS[i % len(CROWNS)],
                              "seed": SEED_BASE + 10_000 * c + i, "boss_risk": boss_risk,
-                             "cfg": {} if plan == BASE else {"build_plan": plan}})
+                             "cfg": arms.get(plan) or plan_cfg(plan)})
     return jobs
 
 
@@ -75,17 +98,50 @@ def play(jobs: list[dict[str, Any]], path: Path, workers: int) -> None:
                 print(f"{k} of {len(todo)} new runs", flush=True)
 
 
-def gains(runs: dict[tuple[str, int], dict[str, Any]], plan: str, keep=lambda r: True) -> dict[str, Any] | None:
-    """Plan − rules on the seeds both finished: paired gain and t, and each side's wins."""
+def gains(runs: dict[tuple[str, int], dict[str, Any]], plan: str, keep=lambda r: True, base: str = BASE) -> dict[str, Any] | None:
+    """Plan − base on the seeds both finished: paired gain and t, and each side's wins."""
     import numpy as np
 
-    pairs = [(r, runs[BASE, seed]) for (p, seed), r in runs.items() if p == plan and (BASE, seed) in runs and keep(r)]
+    pairs = [(r, runs[base, seed]) for (p, seed), r in runs.items() if p == plan and (base, seed) in runs and keep(r)]
     if len(pairs) < 2:
         return None
     d = np.array([r["outcome"] - b["outcome"] for r, b in pairs])
     se = float(d.std(ddof=1) / np.sqrt(len(d)))
     return {"n": len(d), "gain": float(d.mean()), "se": se, "t": float(d.mean() / se) if se > 0 else 0.0,
-            "wins": sum(r["won"] for r, _ in pairs), "base_wins": sum(b["won"] for _, b in pairs)}
+            "wins": sum(r["won"] for r, _ in pairs), "base_wins": sum(b["won"] for _, b in pairs),
+            "only_plan": sum(r["won"] and not b["won"] for r, b in pairs),
+            "only_base": sum(b["won"] and not r["won"] for r, b in pairs),
+            "michael": sum(r["outcome"] >= 24 for r, _ in pairs), "base_michael": sum(b["outcome"] >= 24 for _, b in pairs),
+            "early": sum(not r["won"] and r["stage"] <= 2 for r, _ in pairs),
+            "base_early": sum(not b["won"] and b["stage"] <= 2 for _, b in pairs)}
+
+
+def versus(runs: dict[tuple[str, int], dict[str, Any]], base: str) -> list[str]:
+    """Every arm against ``base``, wins first, with the wins bound and per-character changes."""
+    from cursed_words_solver.sim.game.bench import rate_change
+
+    rows = []
+    for plan in sorted({p for p, _ in runs} - {base}):
+        g = gains(runs, plan, base=base)
+        if g:
+            pairs = [(runs[base, seed]["won"], r["won"]) for (p, seed), r in runs.items() if p == plan and (base, seed) in runs]
+            rows.append((plan, g, rate_change([a for a, _ in pairs], [b for _, b in pairs])))
+    rows.sort(key=lambda t: -t[2]["change"])
+    out = [f"Against {base}: wins, change in points (one-sided 95% lower bound), won only by each side, Michael wins, dead by stage 2, outcome.",
+           f"{'arm':12s} {'runs':>5s} {'wins':>9s} {'change':>7s} {'lower':>6s} {'only':>8s} {'Michael':>9s} {'early':>9s} {'outcome':>8s} {'t':>6s}"]
+    for plan, g, w in rows:
+        out.append(f"{plan:12s} {g['n']:5d} {g['wins']:4d}/{g['base_wins']:<4d} {100 * w['change']:+7.1f} {100 * w['lower']:+6.1f}"
+                   f" {g['only_plan']:3d}/{g['only_base']:<4d} {g['michael']:4d}/{g['base_michael']:<4d} {g['early']:4d}/{g['base_early']:<4d}"
+                   f" {g['gain']:+8.2f} {g['t']:+6.2f}")
+    out.append("Wins per character, arm/base:")
+    for character in sorted({r["character"] for r in runs.values()}):
+        cols = []
+        for plan, _, _ in rows:
+            c = gains(runs, plan, lambda r, c=character: r["character"] == c, base=base)
+            if c:
+                cols.append(f"{plan} {c['wins']}/{c['base_wins']}")
+        out.append(f"  {character:15s} " + "  ".join(cols))
+    return out
 
 
 def report(runs: dict[tuple[str, int], dict[str, Any]]) -> list[str]:
@@ -118,7 +174,9 @@ def main() -> None:
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--plans", default="", help="comma-separated (default: all but Colourless)")
+    ap.add_argument("--plans", default="", help="comma-separated (default: all but Colourless, or none with --arm)")
+    ap.add_argument("--arm", action="append", default=[], help="name=Plan:key=value,... (repeatable)")
+    ap.add_argument("--versus", default="", help="also report every arm against this one")
     ap.add_argument("--start", type=int, default=0, help="first seed per character")
     ap.add_argument("--n", type=int, default=16, help="seeds per character")
     ap.add_argument("--workers", type=int, default=8)
@@ -126,13 +184,17 @@ def main() -> None:
     args = ap.parse_args()
     path = args.out / "runs.jsonl"
     if not args.report:
-        plans = args.plans.split(",") if args.plans else sorted(BUILD_PLANS)
-        unknown = set(plans) - set(BUILD_PLANS)
+        arms = dict(parse_arm(a) for a in args.arm)
+        plans = args.plans.split(",") if args.plans else ([] if arms else sorted(BUILD_PLANS))
+        unknown = (set(plans) | {c["build_plan"] for c in arms.values()}) - set(BUILD_PLANS)
         if unknown:
             ap.error(f"unknown plans {sorted(unknown)}; known: {sorted(BUILD_PLANS)}")
         risk = str(RISK) if RISK.is_file() else ""
-        play(make_jobs([BASE, *plans], list(CHARS), args.start, args.n, risk), path, args.workers)
-    print("\n".join(report(load_runs(path))), flush=True)
+        play(make_jobs([BASE, *plans, *arms], list(CHARS), args.start, args.n, risk, arms), path, args.workers)
+    runs = load_runs(path)
+    print("\n".join(report(runs)), flush=True)
+    if args.versus:
+        print("\n".join(versus(runs, args.versus)), flush=True)
     if not args.report:
         print("done", flush=True)
 

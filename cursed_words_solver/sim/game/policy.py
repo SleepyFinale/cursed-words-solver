@@ -168,11 +168,31 @@ class PowerConfig:
     build_plan: str = ""
     build_plan_restocks: int = 2  # per shop
     build_plan_reserve: int = 5
+    # Softer commitment. ``build_plan_commit``: what the plan's tiles must come from before it
+    # commits (generators owned, plus the pin if it makes them; 0 = from the first shop). Until
+    # then it only seeks generators and the rules player buys as usual, off-plan items included.
+    # ``build_plan_stage``: the first stage the plan acts in; the rules player plays before it.
+    build_plan_commit: int = 0
+    build_plan_stage: int = 1
+    # ``build_plan_chars``: another plan for these characters, used only while ``build_plan`` is set
+    # (so ``build_plan=""`` is the rules player for everyone).
+    build_plan_chars: dict[str, str] = field(default_factory=dict)
+    # ``build_plan_gen_reserve``: while the plan owns no generator, no buy or restock other than a
+    # generator buy or the plan's own restock may leave less money than this, and an unaffordable
+    # generator offer is frozen for later (0 = off). Losing Curse runs spent their money on
+    # payoff items before a generator showed up (docs: Curse shop diagnosis).
+    build_plan_gen_reserve: int = 0
     # ``char_overrides``: settings that differ by character (L3; ``chartune.py`` searches them),
     # {"Spike": {"buy_threshold": 0.06}, "Spike@3-7": {...}}. A "Character@lo-hi" entry applies
     # at those crowns, after the character's own; any field but this one may be overridden.
     char_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
 
+
+# The default AI's plan (2026-11-08, user's decision): Curse, Chess for SamGambit and SockHead.
+# Curse 37% wins vs the rules player's 19% (1,232 runs); Chess confirmed on fresh seeds 144-223
+# for those two (38 vs 31, 30 vs 23 wins). Benchmarks of the rules player pass build_plan="".
+DEFAULT_PLAN = "Curse"
+DEFAULT_PLAN_CHARS = {"SamGambit": "Chess", "SockHead": "Chess"}
 
 _GENERIC_FUNCTIONS = frozenset({"GenericAdditive", "GenericMultiplier"})
 # Build direction -> (its build tag, the tags of the items that generate what it scores on)
@@ -182,6 +202,11 @@ BUILD_PLANS: dict[str, tuple[str, tuple[str, ...]]] = {
     "Cash": ("CashBuild", ("CashGenerator", "CurrencyGenerator")),
     "ScatteredItems": ("ScatteredItemsBuild", ("ItemScatterer",)),
 }
+
+
+# Pins that scatter cursed tiles by themselves (measured with an empty inventory: 1-2 a grid at
+# level 1, 0 for the other six). These characters already have what Curse items need.
+_CURSED_TILE_PINS = frozenset({"Abacus", "Bicycle", "Bucket", "SuperEight", "WadOfCash"})
 
 
 def plan_class(plan: str, game_class: str) -> str:
@@ -239,6 +264,7 @@ def tuned_config(**kw) -> PowerConfig:
     base = {"probe_seeds": 1, "probe_grids": 2, "fast_placement": True, "placement_targets": 8,
             "advice_fallback": True, "sort_items": True, "spend_over": 20, "power_override": 0.1,
             "swap_sell": True, "plan_encounter": True, "tile_buy_chars": ("Spike",), "sort_stamps_chars": ("SockHead",), "route_value": True,
+            "build_plan": DEFAULT_PLAN, "build_plan_chars": dict(DEFAULT_PLAN_CHARS),
             "boss_risk": str(DEFAULT_PATH) if DEFAULT_PATH.is_file() else "",
             "boss_model": str(MODEL_PATH) if MODEL_PATH.is_file() else ""}
     return PowerConfig(**{**base, **kw})
@@ -293,7 +319,9 @@ class PowerPolicy(Policy):
         base = getattr(self, "_base_cfg", None) or self.cfg
         self._base_cfg, self._tune_key = base, key
         kv = char_settings(base.char_overrides, *key) if base.char_overrides else {}
-        self.cfg = with_overrides(base, kv) if kv else base
+        cfg = with_overrides(base, kv) if kv else base
+        plan = cfg.build_plan and cfg.build_plan_chars.get(p.character)
+        self.cfg = replace(cfg, build_plan=plan) if plan else cfg
 
     def enc_cands(self, game: "Game") -> Candidates:
         """Word search for the current encounter: deeper in boss fights (``boss_effort``)."""
@@ -597,6 +625,49 @@ class AdvicePolicy(PowerPolicy):
             return self._leave()
         return self._advice_shop(game)
 
+    def _reserve_ok(self, game: "Game", a: Action) -> bool:
+        """``a`` keeps the money ``_gen_reserve`` asks for (plan moves and swap buys always do)."""
+        keep = self._gen_reserve(game)
+        return not keep or a.label.startswith(("plan", "swap")) or game.player.money - self._spend(game, a) >= keep
+
+    def _gen_reserve(self, game: "Game") -> int:
+        """Money to keep for a generator: ``build_plan_gen_reserve`` while the plan acts and no
+        generator is owned, else 0."""
+        cfg = self.cfg
+        if not cfg.build_plan_gen_reserve or not self._plan_phase(game):
+            return 0
+        p = game.player
+        if any(plan_class(cfg.build_plan, it.game_class) == "generator" for it in (*p.stickers, *p.stamps) if it is not None):
+            return 0
+        return cfg.build_plan_gen_reserve
+
+    def _spend(self, game: "Game", a: Action) -> int:
+        """What ``a`` costs now; 0 for a generator buy and for moves that cost nothing."""
+        s = game.shop
+        if a.kind == "reroll_shop":
+            return s.reroll_cost
+        if a.kind != "buy":
+            return 0
+        kind, j = a.args[0], a.args[1]
+        if kind == "tile":
+            o = s.tiles[j]
+            return o.get_price(game.player) if o is not None else 0
+        o = (s.stickers if kind == "sticker" else s.stamps)[j]
+        if o is None or plan_class(self.cfg.build_plan, o.item.game_class) == "generator":
+            return 0
+        return s.offer_cost(o)
+
+    def _hold_generator(self, game: "Game") -> Action | None:
+        """Freeze a plan generator on offer that cannot be bought yet, to buy it later."""
+        s = game.shop
+        for kind, stock in (("sticker", s.stickers), ("stamp", s.stamps)):
+            for j, o in enumerate(stock):
+                if (o is not None and not o.frozen and (kind, j) not in self._frozen_this_shop
+                        and plan_class(self.cfg.build_plan, o.item.game_class) == "generator" and not s.can_buy(kind, j)):
+                    self._frozen_this_shop.add((kind, j))
+                    return Action("freeze", (kind, j), f"plan: hold {o.item.game_class}")
+        return None
+
     def _leave(self) -> Action:
         self._n = 0
         self._frozen_this_shop = set()
@@ -610,6 +681,14 @@ class AdvicePolicy(PowerPolicy):
         return Action("leave")
 
     def _advice_shop(self, game: "Game") -> Action:
+        if self._gen_reserve(game):
+            hold = self._hold_generator(game)
+            if hold is not None:
+                return hold
+        a = self._shop_move(game)
+        return a if self._reserve_ok(game, a) else self._leave()
+
+    def _shop_move(self, game: "Game") -> Action:
         from cursed_words_solver.game_shop.recommendation import compute_shop_advice
 
         s = game.shop
@@ -688,6 +767,21 @@ class AdvicePolicy(PowerPolicy):
                 return move
         return self._leave()
 
+    def _plan_phase(self, game: "Game") -> str:
+        """Where the ``build_plan`` stands: "" (not acting), "seek" (only after generators) or
+        "commit" (the whole plan, off-plan items refused)."""
+        cfg = self.cfg
+        if not cfg.build_plan or game.player.run.stage < cfg.build_plan_stage:
+            return ""
+        if not cfg.build_plan_commit:
+            return "commit"
+        p = game.player
+        sources = sum(plan_class(cfg.build_plan, it.game_class) == "generator"
+                      for it in (*p.stickers, *p.stamps) if it is not None)
+        if cfg.build_plan == "Curse" and p.pin is not None and p.pin.game_class in _CURSED_TILE_PINS:
+            sources += 1
+        return "commit" if sources >= cfg.build_plan_commit else "seek"
+
     def _build_plan_step(self, game: "Game") -> Action | None:
         """The ``build_plan``'s move in this shop, if it has one (else Advice goes on, without
         off-plan offers): buy the plan offer adding most to a probe encounter, generators first
@@ -696,12 +790,17 @@ class AdvicePolicy(PowerPolicy):
         from cursed_words_solver.sim.game.shop import can_sell
 
         plan = self.cfg.build_plan
-        if not plan:
+        phase = self._plan_phase(game)
+        if not phase:
             return None
+        wanted = ("generator", "fits") if phase == "commit" else ("generator",)
         p, s = game.player, game.shop
         offers = [(kind, j, o) for kind, stock in (("sticker", s.stickers), ("stamp", s.stamps))
-                  for j, o in enumerate(stock) if o is not None and plan_class(plan, o.item.game_class) in ("generator", "fits")]
+                  for j, o in enumerate(stock) if o is not None and plan_class(plan, o.item.game_class) in wanted]
         buys = [Action("buy", (kind, j)) for kind, j, _ in offers if s.can_buy(kind, j)]
+        keep = self._gen_reserve(game)
+        if keep:
+            buys = [a for a in buys if p.money - self._spend(game, a) >= keep]
         if buys:
             owned = [it for it in (*p.stickers, *p.stamps) if it is not None]
             if sum(plan_class(plan, it.game_class) == "generator" for it in owned) < 2:
@@ -714,6 +813,8 @@ class AdvicePolicy(PowerPolicy):
                 return Action("buy", best.args, f"plan {plan}: buy {cls}")
         if not self._sold_this_shop:
             for kind, j, o in sorted(offers, key=lambda t: s.offer_cost(t[2])):
+                if keep and plan_class(plan, o.item.game_class) != "generator":
+                    continue
                 owned = p.stickers if kind == "sticker" else p.stamps
                 sells = sorted((it.sell_value(p), i) for i, it in enumerate(owned)
                                if it is not None and can_sell(p, it) and it.game_class not in self._bought_this_shop
@@ -918,11 +1019,11 @@ class AdvicePolicy(PowerPolicy):
         return run.stage < 4 or not all(b.cursed for b in run.boss_drafts[run.stage - 1].options)
 
     def _offer_ok(self, game: "Game", game_class: str | None) -> bool:
-        """With ``ogre`` on, an Ogre is only ever bought by ``_ogre_buy``; with a ``build_plan``,
-        nothing off the plan is bought."""
+        """With ``ogre`` on, an Ogre is only ever bought by ``_ogre_buy``; with a committed
+        ``build_plan``, nothing off the plan is bought."""
         if self.cfg.ogre and game_class == "Ogre":
             return False
-        return not (self.cfg.build_plan and game_class and plan_class(self.cfg.build_plan, game_class) == "off")
+        return not (game_class and self._plan_phase(game) == "commit" and plan_class(self.cfg.build_plan, game_class) == "off")
 
     def _ogre_buy(self, game: "Game") -> Action | None:
         """Buy Ogre while it is wanted; sell it from stage 4 on (the floors it cursed stay cursed)."""

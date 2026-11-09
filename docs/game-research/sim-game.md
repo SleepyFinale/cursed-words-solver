@@ -1204,8 +1204,157 @@ Curse wins far more with hardly more mean outcome because it is all or nothing: 
 19 vs 2 and crowns 4-7 wins 19 vs 6, but stage-2 deaths 32 vs 10 (outcome SD 5.7, wins mean 18.2,
 losses 8.8 vs 10.8). So mean outcome, the gate's primary test, misses it. Spike is 15/16 on it
 (rules 4/16), from one small cell picked out of 143. Plan-vs-rules difference SD is 3.3-5.3, 4.2 pooled.
-FoodPoisoning and HauntedMirror match the decompiled game, and Oden's text and rule were read;
-no real-game log has Oden, so Curse builds have no real-game check yet.
+The audit below checks these items against the decompile and real captures.
+
+**Curse confirmed on fresh seeds (2026-11-05, seeds 16-63, 528 pairs, 0 crashes;
+`sim_models/plans_curse_confirm`).** Bar set before the runs: one-sided 95% lower bound on the paired
+win-rate change above 0.
+
+| | Curse | Rules |
+|---|---|---|
+| Wins | 201 (38.1%) | 109 (20.6%) |
+| Won only by this side | 138 | 46 |
+| Michael wins (outcome ≥ 24) | 52 | 7 |
+| Dead by stage 2 | 102 | 31 |
+
+Win change +17.4 points, lower bound +13.4, McNemar p 7e-12; outcome +0.48 (t 1.94, paired SD 5.66).
+
+Wins of 66 per crown, Curse vs rules: 0: 43/39, 1: 37/23, 2: 36/13, 3: 28/11, 4: 18/7, 5: 20/11, 6: 13/3, 7: 6/2.
+Wins of 48 per character, with outcome change: Spike 25/7 (+2.98), Nat-H4 15/3 (+1.32), Hayley 25/12 (+1.22),
+Bones 30/19 (+1.37), Octacles 30/20 (+0.97), Beans 17/8 (-0.40), Sam 16/8 (+1.97), Sandy 8/3 (+0.02),
+Rodman 9/6 (-1.51), Nina Nix 14/12 (-2.37, t -3.2), Human Boy 12/11 (-0.31).
+
+Not on by default. No real-game run has tested the plan itself. The early deaths suggest softer commitment
+might keep the wins, untested.
+
+**Curse item audit (2026-11-07): no simulator error favouring Curse found, so no re-measure needed.**
+
+| Check | Result |
+|---|---|
+| Core rules vs decompile: `IsCursed`, `GetCurseTypes` (Tile, TileSelection), `RandomlyCurseTile`, `SetAsCopy`, `GetTileForItemScatter`, coloured tile weights, `GetRandomCursedBuildItem` | Same |
+| Word matching vs decompile: `IsWildcard`, `IsTileMatchingChar`, `GetStringRepresentation` | Same. This covers words the game would reject, which replays cannot test |
+| All 17 Curse items, plus GlobeTrotter, Burrito, YellowGlasses, GraduationCap, Postbox | Same |
+| Scripted rules through sim, bridge and engine (`test_curse_items_follow_the_game_through_the_simulator`) | Pass |
+| Round logs from 2026-08 on holding a Curse item, replayed | 445 of 447 exact |
+| Full-state captures (`pre_submit`), all items | 485 of 485 exact |
+| Cursed tiles on 91 real boards vs simulated boards with the same items, pin levels and character, no boss | Excluding Octacles, 54 boards, simulator +0.07 per board. Octacles, 37 boards, simulator 2.31 fewer |
+
+Curse-reading code outside the items does not favour the build: Michael's `GetCurseLevel` use is dialogue only,
+and Lexographer and Cursophobia are challenges, not normal-run bosses. No normal boss penalises cursed tiles.
+
+Limits:
+
+- CrystalBall, FoodPoisoning and StormCloud appear in no real capture: decompile and scripted checks only (StormCloud and FoodPoisoning decompile only).
+- Octacles' gap is probably the Bucket, empty in that test and full of carried tiles in real runs; not confirmed. It runs against Curse if anything.
+- The 2 round-log misses: -27 vs -29 and HauntedMirror 14,947 vs 62,777 (2026-08-16), the second not investigated.
+- 34 captures in the mismatch folders from 2026-07 on hold a Curse item and disagree, with the engine high in 30. For 27 of them the round log of the same moment matches exactly, 1 does not, 6 have none. May-June captures disagree far more often (784 of 2,315) and were not reviewed.
+- Shop offer rates are not audited here (see the shop validator notes above). Win rates and AI play are simulator results only: this audit shows the rules agree, not that a real Curse run wins 38%.
+
+Why Michael wins rose (7 to 52), crowns 1+: 92 runs reach him vs 35, and 57% of those beat him vs 20%. Runs with a
+cursed first five bosses: 101 vs 44. Michael phases are not logged, so the 57% is not broken down further.
+Spike's outlier gain is a weak baseline: 25 of 48 on Curse is in line with HayleyBayles 25 and BonesTheDog 30, while
+rules wins only 7. Spike's class adds no rule, and her pin scatters currencies.
+
+**Commitment dial (2026-11-07).** Two `PowerConfig` settings soften the plan, both off (0 / stage 1) by default:
+
+- `build_plan_commit` N: until the run owns N plan generators (a pin that makes cursed tiles counts as one for Curse:
+  Abacus, Bicycle, Bucket, SuperEight, WadOfCash), the plan only seeks generators and the rules player buys as usual,
+  off-plan items included.
+- `build_plan_stage` K: the plan starts at stage K.
+
+`plantest --arm "name=Plan:key=value,..."` plays a configured plan on the same seeds, and `--versus Plan` reports
+every arm against it: wins change and one-sided 95% lower bound, wins only each side has, Michael wins
+(outcome ≥ 24), dead by stage 2, and wins per character. The rules were set before any arm was played
+(`~/.cursed_words_solver/sim_models/plans_dial/PLAN.md`).
+
+The lead: on the earlier 528 Curse runs, the characters whose pins make cursed tiles won 126 of 240 with 16 dead by
+stage 2, the others 75 of 288 with 86. Screen on seeds 16-39, 264 runs per arm, against Curse's 99 wins (`g1` equals
+Curse on all 120 runs of the five pin characters, so cached runs replay):
+
+| Arm | Settings | Wins | Change (lower) | Michael wins | Dead by stage 2 |
+|---|---|---|---|---|---|
+| r13 | `build_plan_reserve=13` | 103 | +1.5 (-3.8) | 34 vs 27 | 48 vs 50 |
+| g1r13 | `build_plan_commit=1`, reserve 13 | 91 | -3.0 (-8.6) | 29 | 39 |
+| g1 | `build_plan_commit=1` | 83 | -6.1 (-9.5) | 20 | 41 |
+| s2 | `build_plan_stage=2` | 77 | -8.3 (-13.7) | 21 | 27 |
+| rules | | 54 | -17.0 | 2 | 16 |
+
+Softer commitment lost wins: it saves some early deaths, but fewer runs go on to win (`g1` on the six other
+characters: 23 wins vs 39). The early deaths were a symptom, not the cost. The pick was r13, which keeps $13, the
+cheapest generator's price, when restocking.
+
+Confirmation on fresh seeds 64-111, 528 runs each (`plans_r13_confirm`), bar set before: lower bound on the wins
+change above 0 and on the Michael-wins change above -2 points.
+
+| Against Curse | Wins | Change (SE, lower) | Only each side | Michael wins | Change (SE, lower) | Dead by stage 2 |
+|---|---|---|---|---|---|---|
+| r13 | 215 vs 189 | +4.9 (2.05, **+1.6**) | 72 / 46 | 66 vs 69 | -0.6 (1.53, **-3.1**) | 78 vs 80 |
+| rules | 94 | -18.0 | 33 / 128 | 10 | -11.2 | 32 |
+
+**Wins pass, Michael misses, so r13 is not promoted.** The Michael bar could not be met at this size: with 1.53 SE,
+even no change has a lower bound of -2.5, and passing at zero needs about 840 runs (the gate's "about 10 blocks").
+The bar was set too tight for 528 runs; that is a design miss, not evidence r13 hurts Michael. The gain is spread:
+pin characters 139 vs 122, others 76 vs 67; crowns 0-2 119 vs 114, 3-5 74 vs 58, 6-7 22 vs 17. Mean outcome +0.30
+(t 1.43). The gate's wins route (`WIN_ROUTE_MIN_N` 528) has the same limit: at 528 runs it passes only when Michael
+wins also rise.
+
+Extension (set before the new runs, one look only): seeds 112-143, r13 and Curse, pooled to 880 pairs.
+
+| Seeds | Pairs | Wins | Change (SE, lower) | Michael wins | Change (SE, lower) | Outcome |
+|---|---|---|---|---|---|---|
+| 64-111 | 528 | 215 vs 189 | +4.9 (2.05, +1.6) | 66 vs 69 | -0.6 (1.53, -3.1) | +0.30 (t 1.43) |
+| 112-143 | 352 | 148 vs 143 | +1.4 (2.56, -2.8) | 44 vs 46 | -0.6 (1.97, -3.8) | +0.21 (t 0.83) |
+| Pooled | 880 | 363 vs 332 | +3.5 (1.60, **+0.9**) | 110 vs 115 | -0.6 (1.21, **-2.6**) | +0.27 (t 1.64) |
+
+**Final: r13 is not promoted.** Wins pass, Michael misses by 0.6 points, and the gain shrank on the new seeds.
+The Michael estimate is -0.6 in both halves: r13 may cost a few Michael wins, or nothing; the data cannot tell.
+Per character, pooled, r13 vs Curse wins: Human Boy 26 vs 19, Rodman 23 vs 16, the rest within 5.
+
+**Per-character plans (2026-11-08).** Rules in `sim_models/plans_bychar/PLAN.md`, set before the runs.
+Shortlist: each character's two best non-Curse plans from the 16-seed screen, plus rules. Screen on seeds 16-63
+(Curse and rules reused; 22 of 22 replayed exactly): switch from Curse only on 4+ more wins of 48.
+
+| Character | Curse | Best alternative | Pick |
+|---|---|---|---|
+| SamGambit | 16 | Chess 22 | Chess |
+| SockHead | 12 | Chess 16 | Chess |
+| BonesTheDog | 30 | Cards 31 | Curse |
+| WetDennis | 9 | Numbers 12 | Curse |
+| SandySaguaro | 8 | Numbers 10 | Curse |
+| Spike, Octacles, NathaServo, NinaNix, HayleyBayles, PrismaticBean | 25, 30, 15, 14, 25, 17 | all lower | Curse |
+
+Confirmation on fresh seeds 144-223, the two switched characters (other characters count as identical pairs,
+880 character-seeds): SamGambit Chess 38 vs Curse 31 (Michael 3 vs 7), SockHead 30 vs 23 (Michael 8 vs 8).
+Wins +1.6 points overall (lower **+0.3**), Michael -0.45 (lower **-1.2**): **passes**. The Michael bar is easier here
+than for r13 because 9 characters are unchanged; SamGambit's Michael wins fell 7 to 3, too few to judge.
+Setting: `build_plan="Curse"` with `char_overrides={"SamGambit": {"build_plan": "Chess"}, "SockHead": {"build_plan":
+"Chess"}}` (replays the confirmation runs exactly).
+
+**Default since 2026-11-08 (user's decision):** `policy.DEFAULT_PLAN` ("Curse") and `DEFAULT_PLAN_CHARS`
+(SamGambit, SockHead: "Chess") in `tuned_config` (live advisor) and `NetPolicy` (simulated runs, bench, training).
+`PowerConfig.build_plan_chars` holds the per-character plans and applies only while `build_plan` is set, so
+`build_plan=""` is the rules player for everyone: plantest's rules arm uses it (`plantest.plan_cfg`), and plan arms
+clear `build_plan_chars`. Cached rules, Curse and Chess runs replay exactly under the new defaults. A learned model
+may no longer pick a shop move the plan refuses (`NetPolicy.candidates`). Bench results and caches made before
+this compare against the old default. Open: the promoted model was trained on rules-player games and has not been
+tested on top of the plan; the plan itself has had no real-game run.
+
+**Curse loss diagnosis (2026-11-08,** 528 Curse runs on seeds 64-111 replayed with a per-encounter log; all 528 match
+the cached outcome). Every loss is out of grids. Words that score 0 are not logged (only score changes are).
+
+- Losers fall behind on cursed tiles, not on payoff items. Crowns 0-2, alive at stage 3: cursed tiles per grid 7.3
+  (runs that win) vs 3.7 (runs that lose), generators 1.4 vs 0.9, payoff items 3.4 vs 3.2. The same split holds at
+  every crown and stage from 2 on. Money at each fight is about $4 for both.
+- High crowns raise targets faster than words grow. Target / (grids x best word) in the first stage-3 fight: 0.16 at
+  crowns 0-2, 0.25 at 3-5, 0.39 at 6-7 (best word 242 vs 175; crowns 6-7 average 4.5 grids).
+- Many deaths are near misses: at crowns 3-7, 135 of 255 losses ended under 25% of the target short.
+- Deaths at stage 2 rise with crown: 10, 29, 36 of the band's losses.
+- 9 of 339 losses scored 0 in the fatal fight, 8 of them holding Oden (word score x unique curse types, so x0 with
+  no cursed tile in the word), as in a SockHead crown-0 Five Letter Minimum fight on 0-of-25 cursed grids.
+- Fatal bosses: ForcedSell 32 of 142 boss deaths, then RandomiseItemOrder 14.
+
+Causality is not shown (cursed tiles both cause and reflect a good run). Generator offers are not logged, so whether
+losers were offered fewer generators or passed them is open; that is the next check.
 
 ### Promotion gate (`bench.py gate`, 2026-11-05)
 
@@ -1255,7 +1404,9 @@ a fixed test at SD 2.55:
 | -0.2 | 0% | 244 | 434 |
 
 Power at +0.2 is 75%, below the design's 80%, because of the cap. Mean outcome also misses gains in wins:
-the Curse plan above nearly doubled wins at t 1.22, so a wins test is still to add.
+the Curse plan above nearly doubled wins at t 1.22. **Wins route (2026-11-07):** with at least `WIN_ROUTE_MIN_N`
+(528) runs, a single-use arm also promotes when the wins lower bound is above 0, the Michael lower bound above
+-2 points, and the mean's upper bound (+1.645 SE) above 0. `gate_report` returns `wins_pass`.
 
 ## Known gaps
 
@@ -1294,3 +1445,81 @@ print(g.won, g.end_reason)
 ```bash
 python -m cursed_words_solver.sim.game.evaluate --character Carpman --crown 0 --runs 16
 ```
+
+### Curse shop diagnosis (2026-11-08)
+
+The same 528 Curse runs (seeds 64–111) were replayed with every shop logged: each stock seen, money, slots and
+moves. All 528 reproduce the cached outcomes, with no errors. Generators for Curse are CursedVHS, Amphora,
+Supervillain and Ghost.
+
+- **Offers are not the problem.** Of runs that reached a stage-3 shop, 90–97% had been offered at least one
+  generator in stages 1–2, winners and losers alike (2.3–2.5 offers per losing run, 2.5–3.1 per winning run).
+  Losers see slightly fewer generator offers per stage-1 shop (0.33–0.45 vs 0.41–0.61).
+- **Losers do not skip affordable generators.** With no generator owned, an affordable generator offer was
+  passed only 5–6% of the time in both groups.
+- **They cannot pay for them.** With no generator owned, 47% of losers' generator offers were unaffordable
+  (35% for winners). 270 of those 307 appeared after the AI had already bought or restocked in that shop, and
+  236 would have been affordable with the money the run brought in. Before the generator showed, about $9–10
+  went on buys (mostly payoff items) and $3–4 on restocks; the median shortfall was $7.
+- **Result:** 74 of 259 losers that reached stage 3 owned no generator there (29%), vs 17 of 189 winners (9%).
+  47 of those 74 had missed a generator they could have bought with their entry money.
+- Buying a payoff item before any generator is normal in stage 1 for both groups (about 0.6 per shop), so it is
+  not a loss signal on its own; the cost is spending the money that a generator later needs.
+
+Next lever: while no generator is owned, keep enough money to buy one (a reserve on payoff buys and plan
+restocks), or restock for a generator before buying payoff items. Untested.
+
+### Generator reserve (2026-11-08, not promoted)
+
+`PowerConfig.build_plan_gen_reserve` (default 0 = off) acts while the plan owns no generator:
+- no buy or restock may leave less than that much money, except a generator buy, the plan's own restock and a swap buy;
+- a generator on offer that can't be afforded yet is frozen.
+
+The rule also applies to the model's shop candidates. With the default of 0, play is unchanged: 11 of 11 runs replay identically, shop logs included.
+
+The screen compares Default with reserves of 12 and 18 on fresh seeds 224–247, 264 runs per arm. The pick goes to an 880-pair confirmation on seeds 248–327. Rules are in `plans_reserve/PLAN.md`.
+
+Screen result: 792 runs, 0 errors. Neither reserve beat Default, so there was no confirmation and the setting stays at 0 (off).
+
+| Arm | Wins of 264 | Michael wins | Paired win change |
+|---|---|---|---|
+| Default | 106 | 35 | — |
+| R12 | 100 | 26 | −2.3 points (se 2.8) |
+| R18 | 96 | 20 | −3.8 points (se 3.0) |
+
+The rule did what it was built to do, but that didn't help. Across the 216 runs per arm of characters on the Curse plan:
+- runs owning a generator by stage 2 rose from 78% to 90% (R12) and 88% (R18);
+- runs reaching stage 3 fell from 185 to 167 and 157.
+
+Payoff items bought before any generator keep stage 1–2 fights alive. Too few generators by stage 3 looks like a consequence of an early build that is weak overall, not a shopping mistake that rearranging spending can fix.
+
+### Scope: training the model on Curse play (2026-11-08, not started)
+
+The promoted model is the LightGBM advantage model in `rct_nonlinear/champion.npz`, used at margin 0.3. It learned from about 76k random deviations, all taken while the rules player was playing. The plan results so far were measured without any model. The live AI pick in `advise.py` runs the plan with that model on top, and that combination has never been tested.
+
+Steps, in order. Time is measured at about 12.3 s per run with 8 workers, so 1,024 runs take about 3.5 h. The machine has 8 cores, so jobs run one after another.
+
+1. **Old model on the plan.** Default with the champion vs Default without, on 528 fresh paired seeds (328–375). About 3.6 h. This decides which policy collects the new data, and whether the live AI pick should turn the model off.
+2. **Collect trials under the plan.** Use `expert.py --target rct`, with p_random 0.35, label_lam 0.5, shared and per-class columns as before. Run 4,096 runs on fresh seeds in a new directory. About 14 h, resumable. This should give roughly a third of the old model's data.
+3. **Fit trees.** One fit on plan data only, and one on plan data pooled with the old trials. Compare out-of-fold within-kind ranking, split by kind (boss, leave, buy, sell_buy, pin). About 15 min.
+4. **In-play test on 1,024 fresh paired seeds.** Default vs Default with the new model, about 7 h. The bar is set before the runs: one-sided 95% lower bound on the paired win change above 0, and on the Michael-win change above −2 points.
+
+Total is about 25 h of compute.
+
+Expectation, based on past results: the last model added +0.15 per run but no wins. The strongest offline signal was boss choice (0.32), and boss deaths such as Forced Sell are a large share of Curse losses. That is where a gain would most likely show up.
+
+**Step 1 result (2026-11-09).** Fresh seeds 328–375, 528 pairs, 0 errors. The rules are in `plans_champ/PLAN.md`.
+
+| | Default | Default + champion |
+|---|---|---|
+| Wins of 528 | 201 | 213 |
+| Seeds won only by this arm | 24 | 36 |
+| Michael wins | 45 | 45 |
+
+- **Wins:** +2.3 points, se 1.5, 90% interval −0.1 to +4.7.
+- **Mean outcome:** +0.18 (t 1.31), the same size as the champion's +0.15 against the rules player. 189 runs changed.
+- **Verdict:** inconclusive by the rule. The result leans positive, and the interval just touches 0.
+
+Per the pre-set rule, step 2 collects with Default without the model, and the live AI pick keeps the model on top of the plan.
+
+**Step 2 started (2026-11-09).** `sim_models/rct_plan`: 4 × 1,024 collect-only runs, played by the plan with no model, at p_random 0.35. A 16-run smoke test took 13 s per run and gave 9.7 trials per run, so the full collection is about 15 h and about 40k trials. To resume after a restart, run `command.txt`; that folder's `README.md` has the details.

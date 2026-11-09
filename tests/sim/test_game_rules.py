@@ -891,6 +891,28 @@ def test_build_plan_buys_its_generators_first_and_refuses_other_builds():
     assert off._build_plan_step(g) is None and off._offer_ok(g, "Beefeater")
 
 
+def test_generator_reserve_keeps_money_for_a_generator_and_holds_one_it_cannot_buy():
+    from cursed_words_solver.sim.game.agent import apply
+    from cursed_words_solver.sim.game.shop import ItemInStock
+
+    def shop(**cfg):
+        g, s, pol = _plan_shop("Curse", money=20, **cfg)
+        s.stickers[0] = ItemInStock(make_item("Broom"), 12)  # payoff item
+        s.stickers[1] = ItemInStock(make_item("Amphora"), 25)  # generator, not affordable yet
+        return g, pol
+
+    g, pol = shop()
+    assert "Broom" in pol._advice_shop(g).label  # no reserve: the payoff item is bought
+    g, pol = shop(build_plan_gen_reserve=15)
+    a = pol._advice_shop(g)
+    assert (a.kind, a.args) == ("freeze", ("sticker", 1))  # hold the generator for later
+    apply(g, a)
+    a = pol._advice_shop(g)
+    assert a.kind == "reroll_shop" and a.label.startswith("plan")  # and look for another, not Broom
+    g.player.stickers[0] = make_item("CursedVHS")  # owning a generator lifts the reserve
+    assert pol._gen_reserve(g) == 0
+
+
 def test_build_plan_replaces_a_non_plan_item_when_slots_are_full_and_keeps_its_own():
     from cursed_words_solver.sim.game.shop import ItemInStock, can_sell
 
@@ -929,13 +951,13 @@ def test_plantest_pairs_every_plan_with_the_rules_player_on_the_same_runs(tmp_pa
     jobs = T.make_jobs([T.BASE, "Cards"], ["Spike", "SockHead"], 0, 16)
     assert len(jobs) == 2 * 2 * 16 and len({(j["plan"], j["seed"]) for j in jobs}) == len(jobs)
     assert sorted(j["crown"] for j in jobs if j["plan"] == "Cards" and j["character"] == "Spike") == sorted(list(range(8)) * 2)
-    assert next(j for j in jobs if j["plan"] == "Cards")["cfg"] == {"build_plan": "Cards"}
-    assert next(j for j in jobs if j["plan"] == T.BASE)["cfg"] == {}
+    assert next(j for j in jobs if j["plan"] == "Cards")["cfg"] == {"build_plan": "Cards", "build_plan_chars": {}}
+    assert next(j for j in jobs if j["plan"] == T.BASE)["cfg"] == {"build_plan": ""}  # the rules player, not the default plan
     more = T.make_jobs([T.BASE], ["Spike"], 16, 4)
     assert not {j["seed"] for j in more} & {j["seed"] for j in jobs}
 
     path = tmp_path / "runs.jsonl"
-    rows = [{"plan": j["plan"], "character": j["character"], "crown": j["crown"], "seed": j["seed"], "error": None,
+    rows = [{"plan": j["plan"], "character": j["character"], "crown": j["crown"], "seed": j["seed"], "error": None, "stage": 5,
              "outcome": 10.0 + (j["plan"] == "Cards") * (1 + (j["seed"] % 2) / 10), "won": j["plan"] == "Cards" and j["crown"] == 0}
             for j in jobs]
     path.write_text("\n".join(json.dumps(r) for r in rows) + "\n{cut short", encoding="utf-8")
@@ -1538,3 +1560,206 @@ def test_chartune_seeds_arms_and_promotion(tmp_path):
     assert rec["stats"]["n"] == 96 and rec["fresh"]["n"] == 48
     rec = t.tune("Spike", 1, PowerConfig(tile_buy_chars=("Spike",)))  # now the champion: going back loses
     assert "promoted" not in rec and t.table["overrides"]["Spike"] == {"buy_threshold": 0.06}
+
+
+def test_curse_items_follow_the_game_through_the_simulator():
+    """Decompiled rules for the Curse items, scored by the real sim -> bridge -> engine path."""
+    from cursed_words_solver.sim.game import core as C
+    from cursed_words_solver.sim.game.items import make_item
+
+    def letter(c):
+        return lambda t: t.set_letter(c)
+
+    def blank(t):
+        t.set_glyph(C.G_BLANK)
+
+    def chess(t):
+        t.set_chess("knight", True)
+
+    def card(t):
+        t.set_letter("a")
+        t.set_suit(C.HEARTS)
+
+    def red_blank(t):
+        blank(t)
+        t.tile_type = C.RED
+
+    def setup(names, spec, fields=None):
+        g = _game(character="WetDennis", seed=7, ascension=0)
+        p = g.player
+        p.stickers, p.stamps = [None] * 5, [None] * 5
+        made = [make_item(n) for n in names]
+        for it in made:
+            assert p.add_item(it, g.rng, acquire=False)
+        enc = Encounter(g)
+        g.encounter = enc
+        enc.setup()
+        enc.bosses = []
+        enc.remaining_target = 10**9
+        for t in enc.grid.available():
+            t.set_as_copy(C.Tile(letter="z", x=t.x, y=t.y), False)
+        for x, f in enumerate(spec):
+            f(enc.grid.at(x, 0))
+        for it in made:  # after generation: the Crystal Ball rolls at the start of each grid
+            it.fields.update(fields or {})
+        return g, enc, [(x, 0) for x in range(len(spec))], made
+
+    def score(names, spec, fields=None):
+        _, enc, path, _ = setup(names, spec, fields)
+        return enc.score_preview(path, ["cat"]).int_score
+
+    plain = [letter("c"), letter("a"), letter("t")]
+    one = [blank, letter("a"), letter("t")]
+    two = [blank, card, letter("t")]
+    three = [blank, card, chess]
+    same_ends = [blank, letter("a"), blank]
+    diff_ends = [blank, letter("a"), chess]
+
+    assert score(["Oden"], plain) == 0  # no curse types: x0
+    assert score(["Oden"], one) == score([], one)  # one type: unchanged
+    assert score(["Oden"], two) == 2 * score([], two)
+    assert score(["MischievousImp"], one) == score([], one)
+    assert score(["MischievousImp"], three) == 2 * score([], three)
+    assert score(["CreakyChair"], two) == score([], two)
+    assert score(["CreakyChair"], three) == 2 * score([], three)
+    assert score(["Broom"], same_ends) == score([], same_ends)
+    assert score(["Broom"], diff_ends) == int(1.5 * score([], diff_ends))
+    assert score(["Broom"], [letter("c"), letter("a"), blank]) == score([], [letter("c"), letter("a"), blank])
+    assert score(["CrystalBall"], one, {"ChosenCurseType": "Blank"}) == score([], one) + 70
+    assert score(["CrystalBall"], one, {"ChosenCurseType": "Chess"}) == score([], one)
+    assert score(["MysteriousAmulet"], plain) == score([], plain)
+    assert score(["MysteriousAmulet"], one) > score([], one)
+    assert score(["Moai"], one) > score([], one)
+    coloured = [red_blank, letter("a"), letter("t")]
+    assert score(["Moai"], coloured) == score([], coloured)
+
+    g, enc, path, _ = setup(["JackOLantern"], one)
+    with_jack = enc.submit(path, ["cat"])
+    g2, enc2, path2, _ = setup([], one)
+    without = enc2.submit(path2, ["cat"])
+    assert (with_jack.money_after - with_jack.money_before) - (without.money_after - without.money_before) == 1
+
+    g, enc, path, (book,) = setup(["MichaelsBook"], plain, {"CurrentWord": "cat", "WordLength": 3})
+    assert enc.submit(path, ["cat"]).score == score([], plain) + 30
+    assert book.fields["Count"] == 1 and len(book.fields["CurrentWord"]) == 4
+
+
+def test_soft_commitment_seeks_generators_until_the_plan_has_a_source():
+    from dataclasses import replace
+
+    from cursed_words_solver.sim.game.items import make_item
+    from cursed_words_solver.sim.game.shop import ItemInStock
+
+    g, s, pol = _plan_shop("Curse")
+    pol.cfg = replace(pol.cfg, build_plan_commit=1)
+    g.player.pin = make_item("CarpStreamers")  # makes no cursed tiles
+    assert pol._plan_phase(g) == "seek"
+    assert pol._offer_ok(g, "Beefeater")  # off-plan items stay open while seeking
+    s.stickers[0] = ItemInStock(make_item("Broom"), 12)
+    for j in range(1, len(s.stickers)):
+        s.stickers[j] = None
+    for j in range(len(s.stamps)):
+        s.stamps[j] = None
+    step = pol._build_plan_step(g)
+    assert step is None or step.kind == "reroll_shop"  # a payoff item alone is not the plan's to buy yet
+    s.stickers[1] = ItemInStock(make_item("Amphora"), 13)
+    step = pol._build_plan_step(g)
+    assert (step.kind, step.args) == ("buy", ("sticker", 1))
+    assert g.player.add_item(make_item("Amphora"), g.rng, acquire=False)
+    assert pol._plan_phase(g) == "commit" and not pol._offer_ok(g, "Beefeater")
+
+    g2, _, pol2 = _plan_shop("Curse")
+    pol2.cfg = replace(pol2.cfg, build_plan_commit=1)
+    g2.player.pin = make_item("Bicycle")  # scatters suited, so cursed, tiles by itself
+    assert pol2._plan_phase(g2) == "commit"
+
+    g3, _, pol3 = _plan_shop("Curse")
+    pol3.cfg = replace(pol3.cfg, build_plan_stage=2)
+    g3.player.run.stage = 1
+    assert pol3._plan_phase(g3) == "" and pol3._build_plan_step(g3) is None and pol3._offer_ok(g3, "Beefeater")
+    g3.player.run.stage = 2
+    assert pol3._plan_phase(g3) == "commit"
+
+
+def test_plantest_arms_share_seeds_and_report_against_any_arm():
+    from cursed_words_solver.sim.game import plantest as T
+
+    name, cfg = T.parse_arm("g1=Curse:build_plan_commit=1,build_plan_reserve=13")
+    assert name == "g1" and cfg == {"build_plan": "Curse", "build_plan_chars": {}, "build_plan_commit": 1, "build_plan_reserve": 13}
+    jobs = T.make_jobs([T.BASE, "Curse", "g1"], ["Spike"], 0, 8, arms={"g1": cfg})
+    seeds = {p: {j["seed"] for j in jobs if j["plan"] == p} for p in (T.BASE, "Curse", "g1")}
+    assert seeds["Curse"] == seeds["g1"] == seeds[T.BASE]
+    assert next(j for j in jobs if j["plan"] == "g1")["cfg"] == cfg
+    assert next(j for j in jobs if j["plan"] == "Curse")["cfg"] == {"build_plan": "Curse", "build_plan_chars": {}}
+    runs = {(j["plan"], j["seed"]): {"plan": j["plan"], "seed": j["seed"], "character": j["character"], "crown": j["crown"],
+                                     "error": None, "stage": 5, "outcome": 10.0 + (j["plan"] == "g1"),
+                                     "won": j["plan"] == "g1" and j["seed"] % 2 == 0}
+            for j in jobs}
+    g = T.gains(runs, "g1", base="Curse")
+    assert g["only_plan"] == 4 and g["only_base"] == 0 and g["wins"] == 4
+    text = "\n".join(T.versus(runs, "Curse"))
+    assert "Against Curse" in text and "g1" in text and "Spike" in text
+
+
+def test_gate_wins_route_passes_a_big_win_gain_with_no_mean_gain_and_needs_seeds():
+    from cursed_words_solver.sim.game import bench
+
+    def row(k, out, won):
+        return {"char": k[0], "crown": k[1], "seed": k[2], "won": won, "reason": "x", "outcome": out, "stage": 5}
+
+    ss = bench.seeds(8)  # 704 seeds
+    # all or nothing: the arm's wins come with losses that cancel the mean
+    base = {k: row(k, 10.0, False) for k in ss}
+    arm = {k: row(k, 18.0 if i % 4 == 0 else 7.33, i % 4 == 0) for i, k in enumerate(ss)}
+    rep = bench.gate_report(base, arm, single_use=True)
+    assert rep["wins_pass"] and rep["promote"] and rep["decision"] != "accept"
+    assert not bench.gate_report(base, arm, single_use=False)["promote"]
+    few = bench.seeds(2)
+    rep = bench.gate_report({k: base[k] for k in few}, {k: arm[k] for k in few}, single_use=True)
+    assert not rep["wins_pass"]  # too few seeds
+    # wins bought with a clearly lower mean do not pass
+    worse = {k: row(k, 18.0 if i % 4 == 0 else 2.0, i % 4 == 0) for i, k in enumerate(ss)}
+    assert not bench.gate_report(base, worse, single_use=True)["wins_pass"]
+
+
+def test_default_ai_plays_curse_with_chess_for_sam_gambit_and_human_boy():
+    from cursed_words_solver.sim.game import plantest as T
+    from cursed_words_solver.sim.game.expert import NetPolicy
+    from cursed_words_solver.sim.game.policy import tuned_config
+
+    assert tuned_config().build_plan == "Curse"
+    assert tuned_config().build_plan_chars == {"SamGambit": "Chess", "SockHead": "Chess"}
+    for ch, want in (("SamGambit", "Chess"), ("SockHead", "Chess"), ("Spike", "Curse")):
+        g, _, _ = _plan_shop("Curse")
+        g.player.character = ch
+        pol = NetPolicy(_NoSearch(), None, seed=1)
+        pol._tune(g)
+        assert pol.cfg.build_plan == want
+    # no plan is the rules player for every character, the Chess pair included
+    g, _, _ = _plan_shop("Curse")
+    g.player.character = "SamGambit"
+    pol = NetPolicy(_NoSearch(), None, seed=1)
+    for k, v in T.plan_cfg(T.BASE).items():
+        setattr(pol.cfg, k, v)
+    pol._tune(g)
+    assert pol.cfg.build_plan == ""
+    # a plan arm plays that plan for everyone
+    pol = NetPolicy(_NoSearch(), None, seed=1)
+    for k, v in T.plan_cfg("Curse").items():
+        setattr(pol.cfg, k, v)
+    pol._tune(g)
+    assert pol.cfg.build_plan == "Curse"
+
+
+def test_model_candidates_keep_to_the_plan():
+    from cursed_words_solver.sim.game.expert import NetPolicy
+    from cursed_words_solver.sim.game.items import make_item
+    from cursed_words_solver.sim.game.policy import offer_class
+    from cursed_words_solver.sim.game.shop import ItemInStock
+
+    g, s, _ = _plan_shop("Curse")
+    s.stickers[0] = ItemInStock(make_item("Beefeater"), 5)  # another build's item
+    pol = NetPolicy(_NoSearch(), None, seed=1)
+    pol._tune(g)
+    cands = pol.candidates(g)
+    assert all(offer_class(g, a) != "Beefeater" for a in cands[1:])

@@ -55,6 +55,7 @@ SALT_STEP = 1_000_000_007
 ACCEPT_LLR, REJECT_LLR = 2.77, -1.56  # sequential test at 5% false positives, 80% power
 CAP_FACTOR = 1.5  # a sequential test stops undecided at this many times the fixed-sample size
 FIXED_Z = 1.645 + 0.842
+WIN_ROUTE_MIN_N = 528  # six promotion blocks: a win change needs seeds a mean test may stop short of
 GATE_FLOOR = -0.02  # a promotion's one-sided 95% lower bound on win and Michael win rate change
 SHRINK_PRIOR_SD = 0.15  # most policy changes are worth little: the reported gain is pulled to 0
 CHARS = ["BonesTheDog", "HayleyBayles", "NathaServo", "NinaNix", "Octacles", "PrismaticBean",
@@ -312,7 +313,11 @@ def gate_report(base: dict, arm: dict, *, delta: float = 0.2, searched: int = 1,
     """The promotion decision on the complete blocks both arms played, with the figures a promotion
     must report (see ``sim-game.md``). The decision is the first block to cross a bound; the figures
     use every complete block, since stopping at a crossing flatters the gain and the win floor
-    needs more seeds than the mean."""
+    needs more seeds than the mean.
+
+    A change can also pass on wins: all-or-nothing builds win far more with little mean gain, which
+    the mean test misses. That route needs at least ``WIN_ROUTE_MIN_N`` seeds, the wins lower bound
+    above 0, Michael wins holding the floor and a mean gain that is not clearly negative."""
     keys = sorted(set(base) & set(arm))
     by_block: dict[int, list] = {}
     for k in keys:
@@ -335,8 +340,10 @@ def gate_report(base: dict, arm: dict, *, delta: float = 0.2, searched: int = 1,
     wins = rate_change([base[k]["won"] for k in used], [arm[k]["won"] for k in used])
     michael = rate_change([beat_michael(base[k]) for k in used], [beat_michael(arm[k]) for k in used])
     holds = wins["lower"] > GATE_FLOOR and michael["lower"] > GATE_FLOOR
-    return {"decision": seq["decision"], "promote": seq["decision"] == "accept" and holds and single_use,
-            "holds": holds, "single_use": single_use, "sequential": seq, "searched": searched,
+    wins_pass = (st["n"] >= WIN_ROUTE_MIN_N and wins["lower"] > 0 and michael["lower"] > GATE_FLOOR
+                 and st["mean"] + 1.645 * se > 0)
+    return {"decision": seq["decision"], "promote": (seq["decision"] == "accept" and holds or wins_pass) and single_use,
+            "holds": holds, "wins_pass": wins_pass, "single_use": single_use, "sequential": seq, "searched": searched,
             "n": st["n"], "blocks": seq["blocks"], "gain": st["mean"], "sd": st["sd"], "t": st["t"],
             "shrunk": round(shrunk(st["mean"], se), 3), "interval": tuple(round(v, 3) for v in bootstrap_interval(cells)),
             "wins": st["wins"], "win_change": wins, "michael_beaten": st["michael_beaten"], "michael_change": michael}
@@ -353,6 +360,8 @@ def print_gate(rep: dict[str, Any]) -> None:
     print(f"  wins {rep['wins'][0]}->{rep['wins'][1]}, change {100 * rep['win_change']['change']:+.1f} points"
           f" (lower bound {100 * rep['win_change']['lower']:+.1f}); Michael wins {rep['michael_beaten'][0]}->{rep['michael_beaten'][1]}"
           f" (lower bound {100 * rep['michael_change']['lower']:+.1f}); floor {100 * GATE_FLOOR:+.0f} points: {'holds' if rep['holds'] else 'not shown'}")
+    print(f"  wins route (at least {WIN_ROUTE_MIN_N} seeds, wins lower bound above 0, Michael floor, mean not clearly lower):"
+          f" {'passes' if rep['wins_pass'] else 'does not pass'}")
     single = "single-use seeds" if rep["single_use"] else "search seeds, cannot promote"
     print(f"  {'PROMOTE' if rep['promote'] else 'do not promote'} ({single})")
 

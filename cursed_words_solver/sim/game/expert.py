@@ -94,7 +94,8 @@ from cursed_words_solver.sim.game.features import encode, feature_names, outcome
 from cursed_words_solver.sim.game.player import Node
 from cursed_words_solver.sim.game.itemvalue import RUN_LOG
 from cursed_words_solver.sim.game.learn import MLP, Ridge, fit_width, fit_with_holdout, load_model
-from cursed_words_solver.sim.game.policy import FastAdvicePolicy, PowerConfig, load_char_tuning, offer_class
+from cursed_words_solver.sim.game.policy import (DEFAULT_PLAN, DEFAULT_PLAN_CHARS, FastAdvicePolicy, PowerConfig, load_char_tuning,
+                                                 offer_class)
 
 
 DEFAULT_DIR = Path.home() / ".cursed_words_solver" / "sim_models" / "expert"
@@ -264,7 +265,8 @@ class NetPolicy(FastAdvicePolicy):
         cfg = PowerConfig(probe_seeds=1, probe_grids=2, boss_risk=boss_risk or "", boss_model=boss_model,
                           fast_placement=True, placement_targets=8, advice_fallback=True, sort_items=True, spend_over=20,
                           power_override=0.1, swap_sell=True, tile_buy_chars=("Spike",),
-                          sort_stamps_chars=("SockHead",), route_value=True)
+                          sort_stamps_chars=("SockHead",), route_value=True,
+                          build_plan=DEFAULT_PLAN, build_plan_chars=dict(DEFAULT_PLAN_CHARS))
         if char_tuning:  # chartune.py's per-character settings
             cfg.char_overrides = load_char_tuning(Path(char_tuning))
         super().__init__(cands, cfg, seed=seed)
@@ -286,8 +288,12 @@ class NetPolicy(FastAdvicePolicy):
         ph = game.phase
         if ph == "shop":
             if self.action_space == "full":
-                return full_shop_candidates(game, self._advice_shop(game))
-            return shop_candidates(game, self._advice_shop(game))
+                cands = full_shop_candidates(game, self._advice_shop(game))
+            else:
+                cands = shop_candidates(game, self._advice_shop(game))
+            if self.cfg.build_plan:  # the model may not buy what the plan refuses
+                cands = cands[:1] + [a for a in cands[1:] if self._offer_ok(game, offer_class(game, a)) and self._reserve_ok(game, a)]
+            return cands
         if ph == "boss_draft":
             fb = FastAdvicePolicy._boss(self, game)
             return [fb] + [a for a in legal_actions(game) if a.kind == "boss" and not same(a, fb)]
