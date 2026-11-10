@@ -307,5 +307,17 @@ def game_from_game_state(gs: dict[str, Any], *, seed: int | str = 0, wordlist=No
     apply_encounter(enc, gs)
     if g.player.run.node == Node.BOSS and enc.bosses and enc.bosses[0].game_class == "MichaelBoss":
         enc.michael = enc.bosses[0]
+    mrow = (gs.get("encounter") or {}).get("michael")
+    if isinstance(mrow, dict):  # melmod 1.5+: Michael's drafts (each phase's pair) and picks
+        m = enc.michael or BossModifier("MichaelBoss")
+        m.drafts = [[b for b in (boss_from_row(r) for r in pair if isinstance(r, dict)) if b is not None]
+                    for pair in mrow.get("drafts") or [] if isinstance(pair, list)]
+        m.drafted = [b for b in (boss_from_row(r) for r in mrow.get("drafted") or [] if isinstance(r, dict)) if b is not None]
+        m.floor_mod = _int(mrow.get("floor_mod"), m.floor_mod)
+        enc.michael = m
+        if m.drafted:
+            enc.bosses = list(m.drafted)
+        if mrow.get("awaiting_draft") and len(m.drafts) > len(m.drafted):
+            enc.michael_draft = list(m.drafts[len(m.drafted)])
     g.encounter = enc
     return g

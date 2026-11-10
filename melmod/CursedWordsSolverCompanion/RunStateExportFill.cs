@@ -272,6 +272,94 @@ namespace CursedWordsSolverCompanion
             return "none";
         }
 
+        /// <summary>What the player is deciding now, for the run assistant:
+        /// encounter | shop | boss_draft | pin_reward | michael_draft | cursedle | none.</summary>
+        public static string DetectDecision(Player player, string encounterMode)
+        {
+            if (encounterMode == "cursedle" || encounterMode == "shop")
+                return encounterMode;
+            var node = TryGetCurrentNodeType(player);
+            if (node == "BossDraft")
+                return "boss_draft";
+            if (node == "BossReward")
+                return "pin_reward";
+            if (encounterMode == "encounter")
+            {
+                try
+                {
+                    var michael = player?.ActiveBossModifiers != null && player.ActiveBossModifiers.Count > 0
+                        ? player.ActiveBossModifiers[0] as MichaelBoss
+                        : null;
+                    var enc = BossResolver.TryGetEncounter();
+                    if (michael != null && enc != null && michael.DraftedModifiers.Count < michael.FloorAdjustedModification)
+                    {
+                        var f = enc.GetType().GetField("_rerollParent", MemberFlags);
+                        var go = f?.GetValue(enc) as GameObject;
+                        if (go != null && !go.activeSelf)
+                            return "michael_draft";
+                    }
+                }
+                catch
+                {
+                    // optional
+                }
+                return "encounter";
+            }
+            return "none";
+        }
+
+        /// <summary>Node type, shop stock (frozen flags, prices) and restock cost: decisions that
+        /// change none of the other fingerprint parts (draft / reward screens, freezes, restocks)
+        /// still trigger an auto-export.</summary>
+        public static void AppendDecisionFingerprint(System.Text.StringBuilder sb, Player player)
+        {
+            sb.Append('|');
+            sb.Append(TryGetCurrentNodeType(player));
+            try
+            {
+                foreach (var list in new[] { player.FrozenStickers, player.FrozenStamps })
+                    if (list != null)
+                        foreach (var it in list)
+                            sb.Append(it == null ? "-" : it.GetType().Name).Append(',');
+            }
+            catch
+            {
+                // optional
+            }
+            // ComputeFingerprint runs every frame: the shop scan (object search + full offer
+            // export) is cached and refreshed at most every ShopFingerprintIntervalSec.
+            float now = UnityEngine.Time.unscaledTime;
+            if (_shopFingerprint == null || now - _shopFingerprintTime >= ShopFingerprintIntervalSec)
+            {
+                _shopFingerprintTime = now;
+                var part = new System.Text.StringBuilder();
+                try
+                {
+                    var shop = UnityEngine.Object.FindAnyObjectByType<ShopController>();
+                    if (shop != null && shop.isActiveAndEnabled)
+                    {
+                        var snap = ShopExporter.TryExport(player);
+                        if (snap != null)
+                        {
+                            part.Append('|').Append(snap.restock_cost);
+                            foreach (var o in snap.offers)
+                                part.Append(';').Append(o.name).Append(o.frozen ? "*" : "").Append(o.price);
+                        }
+                    }
+                }
+                catch
+                {
+                    // optional
+                }
+                _shopFingerprint = part.ToString();
+            }
+            sb.Append(_shopFingerprint);
+        }
+
+        private const float ShopFingerprintIntervalSec = 0.25f;
+        private static string _shopFingerprint;
+        private static float _shopFingerprintTime = -1f;
+
         private static bool IsRunProgressShopNode(Player player)
         {
             var progress = TryGetRunProgress(player);
@@ -470,6 +558,7 @@ namespace CursedWordsSolverCompanion
         private static void FillEncounterMode(RunStateSnapshot snapshot, Player player)
         {
             snapshot.extras["encounter_mode"] = DetectEncounterMode(player);
+            snapshot.extras["decision"] = DetectDecision(player, snapshot.extras["encounter_mode"]);
         }
 
         private static void FillRunProgressExtras(RunStateSnapshot snapshot, Player player)

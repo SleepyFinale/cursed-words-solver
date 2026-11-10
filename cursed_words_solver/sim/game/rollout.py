@@ -12,8 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from cursed_words_solver.sim.game.agent import Action, Candidates, apply, clone, legal_actions
-from cursed_words_solver.sim.game.core import Rng
+from cursed_words_solver.sim.game.agent import Action, Candidates, apply, clone, determinize, legal_actions
 from cursed_words_solver.sim.game.features import progress
 from cursed_words_solver.sim.game.player import Node
 from cursed_words_solver.sim.game.policy import AdvicePolicy, FastAdvicePolicy, Policy, tuned_config
@@ -45,12 +44,7 @@ def _horizon_reached(g: "Game", stage0: int, horizon: int) -> bool:
 def rollout(game: "Game", action: Action | None, base: Policy, *, seed: str, horizon: int,
             max_steps: int = 2000) -> tuple[float, float, int]:
     """(survived, progress, money) after applying ``action`` then playing ``base``."""
-    g = clone(game)
-    g.rng = Rng(f"rollout|{seed}")
-    if g.shop is not None:
-        g.shop.rng = g.rng
-    if g.encounter is not None:
-        g.encounter.rng = g.rng
+    g = determinize(clone(game), f"rollout|{seed}")
     stage0 = g.player.run.stage
     if hasattr(base, "_leave"):
         base._leave()  # fresh per-shop bookkeeping for this sampled future

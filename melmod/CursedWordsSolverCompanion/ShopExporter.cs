@@ -108,6 +108,13 @@ namespace CursedWordsSolverCompanion
             }
         }
 
+        /// <summary>Current shop stock, or null outside a shop (fingerprint use).</summary>
+        public static ShopStateSnapshot TryExport(Player player)
+        {
+            var shop = UnityEngine.Object.FindAnyObjectByType<ShopController>();
+            return shop != null && player != null ? ExportShop(shop, player) : null;
+        }
+
         private static ShopStateSnapshot ExportShop(ShopController shop, Player player)
         {
             var result = new ShopStateSnapshot

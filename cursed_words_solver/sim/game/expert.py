@@ -87,7 +87,7 @@ from typing import Any
 
 import numpy as np
 
-from cursed_words_solver.sim.game.agent import Action, Candidates, apply, clone, legal_actions, spawn_pool
+from cursed_words_solver.sim.game.agent import Action, Candidates, apply, clone, determinize, legal_actions, spawn_pool
 from cursed_words_solver.sim.game.bossrisk import DEFAULT_PATH as BOSS_RISK_PATH
 from cursed_words_solver.sim.game.core import Rng
 from cursed_words_solver.sim.game.features import encode, feature_names, outcome, progress
@@ -513,12 +513,7 @@ def play_out(game, action: Action, policy: NetPolicy, seed: str, max_steps: int 
     same point of the run draw the same grids, shops and restocks (leaving a shop after one
     more purchase still deals the same next grid) — the paired difference then measures the
     decision, not which future happened to be sampled."""
-    g = clone(game)
-    g.rng = Rng(f"pair|{seed}")
-    if g.shop is not None:
-        g.shop.rng = g.rng
-    if g.encounter is not None:
-        g.encounter.rng = g.rng
+    g = determinize(clone(game), f"pair|{seed}")  # fresh RNG + resampled future boss drafts
     policy._leave_now()
     if keyed:
         g.rng.reseed(f"pair|{seed}|decision")

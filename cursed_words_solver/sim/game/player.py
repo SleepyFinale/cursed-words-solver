@@ -294,12 +294,28 @@ class RunProgress:
 
     # -- bosses ------------------------------------------------------------------
 
-    def generate_boss_drafts(self, rng: Rng, player: "Player") -> None:
-        """``RunProgress.GetRandomBossDrafts``."""
+    def generate_boss_drafts(self, rng: Rng, player: "Player", start_floor: int = 0) -> None:
+        """``RunProgress.GetRandomBossDrafts``.
+
+        ``start_floor`` > 0 keeps the drafts of earlier floors and re-rolls only the later
+        ones (a player can't see future drafts, so search/rollouts must resample them —
+        ``agent.determinize``). With 0 the RNG use is the game's exactly."""
         harder = self.asc(Ascension.HARDER_BOSSES)
         remaining = [b for b in boss_rows() if b not in SECRET_BOSSES and b != "MichaelBoss"]
         drafts: list[BossDraft] = []
-        for floor in range(NUMBER_OF_STAGES):
+        # classes drawn per floor at generation (before any secret-boss swap edits a draft)
+        drawn: list[list[str]] = []
+        if start_floor > 0:
+            drafts = list(self.boss_drafts[:start_floor])
+            known = list(getattr(self, "boss_draft_classes", None) or [])
+            for f, d in enumerate(drafts):
+                classes = known[f] if f < len(known) else [b.game_class for b in d.options]
+                drawn.append(list(classes))
+                for i, cls in enumerate(classes):
+                    if i == 0 and self.challenge_is("MunchTime"):
+                        continue
+                    remaining = [c for c in remaining if c != cls]
+        for floor in range(start_floor, NUMBER_OF_STAGES):
             draft = BossDraft()
             banned = set()
             if self.challenge is not None:
@@ -319,15 +335,17 @@ class RunProgress:
                 _randomise_extra_voids(second, rng)
             if self.asc(Ascension.CURSED_BOSSES):
                 draft.options[rng.range(0, 2)].make_cursed()
-            else:
+            elif start_floor == 0:
                 player.has_faced_uncursed_boss = True
             for b in draft.options:
                 b.set_floor(floor, harder)
             drafts.append(draft)
+            drawn.append([first.game_class, second.game_class])
         michael = BossModifier("MichaelBoss")
         michael.set_floor(5, harder)
         drafts.append(BossDraft([michael]))
         self.boss_drafts = drafts
+        self.boss_draft_classes = drawn
 
     def curse_current_stage_bosses(self) -> None:
         if 0 < self.stage <= len(self.boss_drafts):

@@ -317,6 +317,7 @@ namespace CursedWordsSolverCompanion
             sb.Append('|');
             sb.Append(ComputeBoardFingerprint(player));
             RunStateExportFill.AppendEncounterFingerprint(sb, player);
+            RunStateExportFill.AppendDecisionFingerprint(sb, player);
             AppendMutatingDnaFingerprint(sb, player);
             return sb.ToString();
         }

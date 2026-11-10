@@ -135,6 +135,67 @@ def clone(game: Game, *, light: bool = False) -> Game:
     return copy.deepcopy(game, memo)
 
 
+def determinize(game: Game, key: str) -> Game:
+    """Replace everything a player can't know with a fresh sample, in place.
+
+    Search, rollouts and advice play clones forward; a plain clone carries the real RNG
+    stream (next grid, next shop stock, item rolls) and the pre-rolled boss drafts of later
+    floors — information a human doesn't have. This rebinds one fresh ``Rng(key)`` for the
+    game, shop and encounter and re-rolls the drafts of floors after the current one (the
+    current stage's draft is shown to the player, so it is kept). Use the same ``key`` for
+    every candidate of one decision so they face the same sampled future (common random
+    numbers)."""
+    from cursed_words_solver.sim.game.core import Rng
+    from cursed_words_solver.sim.game.player import NUMBER_OF_STAGES
+
+    game.rng = Rng(key)
+    if game.shop is not None:
+        game.shop.rng = game.rng
+    if game.encounter is not None:
+        game.encounter.rng = game.rng
+    run = game.player.run
+    start = max(run.stage, 1)
+    if start < NUMBER_OF_STAGES and len(run.boss_drafts) >= start:
+        run.generate_boss_drafts(game.rng, game.player, start_floor=start)
+    enc = game.encounter
+    m = getattr(enc, "michael", None) if enc is not None else None
+    if m is not None and getattr(m, "drafts", None):
+        _resample_michael_drafts(m, enc, game.rng)
+    return game
+
+
+def _resample_michael_drafts(m, enc, rng) -> None:
+    """Michael pre-rolls every draft pair at setup; only the drafted ones and the pair on
+    screen are visible. Re-roll the rest from the pool minus what the player has seen
+    (keeping the Min/Max-length exclusion consistent with anything already shown)."""
+    from cursed_words_solver.sim.game.player import BossModifier, boss_rows
+
+    keep =len(m.drafted) + (1 if enc.michael_draft is not None else 0)
+    if keep >= len(m.drafts):
+        return
+    seen = {b.game_class for pair in m.drafts[:keep] for b in pair} | {b.game_class for b in m.drafted}
+    pool = [BossModifier(b) for b in boss_rows() if b != "MichaelBoss"]
+    pool = [b for b in pool if b.summonable and b.game_class not in seen]
+    if "MinWordLength" in seen:
+        drop = "MaxWordLength"
+    elif "MaxWordLength" in seen:
+        drop = "MinWordLength"
+    else:
+        drop = "MinWordLength" if rng.range(0, 2) == 0 else "MaxWordLength"
+    pool = [b for b in pool if b.game_class != drop]
+    drafts = [list(p) for p in m.drafts[:keep]]
+    for n in range(keep, len(m.drafts)):
+        pair = []
+        for _ in range(2):
+            if not pool:
+                break
+            b = pool.pop(rng.range(0, len(pool)))
+            b.set_floor(5 - n, False)
+            pair.append(b)
+        drafts.append(pair)
+    m.drafts = drafts
+
+
 # ---------------------------------------------------------------------------- legal actions
 
 
@@ -227,6 +288,8 @@ def apply(game: Game, action: Action) -> Any:
         return game.buy(a[0], a[2])
     if k == "move":
         return game.move(*a)
+    if k == "discard":
+        return game.discard_tile(a[0])
     if k == "buy":
         return game.buy(*a)
     if k == "hippo":

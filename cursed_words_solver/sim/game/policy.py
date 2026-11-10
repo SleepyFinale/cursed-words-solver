@@ -15,7 +15,7 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cursed_words_solver.sim.game.agent import Action, Candidates, WordOption, apply, clone, legal_actions
+from cursed_words_solver.sim.game.agent import Action, Candidates, WordOption, apply, clone, determinize, legal_actions
 from cursed_words_solver.sim.game.core import Rng
 from cursed_words_solver.sim.game.encounter import Encounter
 from cursed_words_solver.sim.game.player import ENCOUNTER_NODES, GRIDS_PER_ROUND, NUMBER_OF_STAGES, Node
@@ -1165,8 +1165,9 @@ class FastAdvicePolicy(AdvicePolicy):
             return [(0.0, 1.0, cands[0][0])]
         money0 = game.player.money
         scored: list[tuple[float, int, float, Action]] = []
+        pre_key = f"plan|pre|{game.player.run.stage}|{game.player.run.node}|{len(enc.previous_words)}|{enc.rerolls}"
         for rank, (a, o) in enumerate(cands):
-            g = clone(game)
+            g = determinize(clone(game), pre_key)  # a reroll / next grid must not see the real RNG
             e = g.encounter
             apply(g, a)
             if e.won or e.lost or e.finale:

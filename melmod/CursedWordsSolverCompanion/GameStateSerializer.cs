@@ -173,6 +173,41 @@ namespace CursedWordsSolverCompanion
             });
             Try(() =>
             {
+                // Michael's drafts (Plain() drops BossModifier lists): every phase's pair,
+                // what has been drafted, and whether the draft screen is waiting now.
+                var player = GameStatics.GetPlayer();
+                var michael = player?.ActiveBossModifiers != null && player.ActiveBossModifiers.Count > 0
+                    ? player.ActiveBossModifiers[0] as MichaelBoss
+                    : null;
+                if (michael == null)
+                    return;
+                var drafts = new List<object>();
+                foreach (var pair in michael.ModifierDrafts ?? new List<List<BossModifier>>())
+                {
+                    var opts = new List<object>();
+                    if (pair != null)
+                        foreach (var b in pair)
+                            if (b != null)
+                                opts.Add(DescribeObject(b, typeof(BossModifier)));
+                    drafts.Add(opts);
+                }
+                var drafted = new List<object>();
+                foreach (var b in michael.DraftedModifiers ?? new List<BossModifier>())
+                    if (b != null)
+                        drafted.Add(DescribeObject(b, typeof(BossModifier)));
+                var reroll = GetField(encounter, "_rerollParent") as UnityEngine.GameObject;
+                bool waiting = drafted.Count < michael.FloorAdjustedModification && drafts.Count > drafted.Count
+                               && reroll != null && !reroll.activeSelf;
+                d["michael"] = new Dictionary<string, object>
+                {
+                    ["drafts"] = drafts,
+                    ["drafted"] = drafted,
+                    ["floor_mod"] = michael.FloorAdjustedModification,
+                    ["awaiting_draft"] = waiting,
+                };
+            });
+            Try(() =>
+            {
                 var words = new List<object>();
                 if (GetField(encounter, "_previousWords") is IList list)
                     foreach (var entry in list)

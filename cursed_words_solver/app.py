@@ -6,6 +6,7 @@ import argparse
 import atexit
 import copy
 import json
+import os
 import signal
 import sys
 import threading
@@ -954,15 +955,129 @@ class SolverApp:
             curse=CurseType.LETTER,
         )
         empty_board = Board(tiles=[[placeholder for _ in range(5)] for _ in range(5)])
-        self._bridge.solve_finished.emit(
-            _SolveUIUpdate(
-                board=empty_board,
-                results=[],
-                board_bgr=None,
-                warnings_html="<br>".join(advice.warnings) if advice.warnings else "",
-                on_game_highlight=False,
-                shop_advice_html=format_shop_advice_html(advice),
+        my_gen = self._solve_generation
+        shop_html = format_shop_advice_html(advice)
+
+        def emit(html: str) -> None:
+            self._bridge.solve_finished.emit(
+                _SolveUIUpdate(
+                    board=empty_board,
+                    results=[],
+                    board_bgr=None,
+                    warnings_html="<br>".join(advice.warnings) if advice.warnings else "",
+                    on_game_highlight=False,
+                    shop_advice_html=html,
+                )
             )
+
+        html = self._with_ai_html(run_state_data, shop_html)
+        if self._solve_cancelled(my_gen):
+            return
+        emit(html)
+
+        def look_ahead() -> None:   # after the solve returns: F8 stays responsive
+            better = self._with_ai_html(run_state_data, shop_html, search=True, quiet_fail=True)
+            if better is not None and not self._solve_cancelled(my_gen):
+                emit(better)
+
+        self._run_ai_search(look_ahead, my_gen)
+
+    def _append_ai_line(self, ui_update, run_state_data: dict | None, my_gen) -> None:
+        """Re-emit an encounter solve with the run assistant's pick appended (never raises)."""
+        try:
+            import dataclasses
+            import html as _html
+
+            from cursed_words_solver.rl.assistant import app_advice
+
+            def ai_line(ai) -> str:
+                line = (f"<span style='color:#7f7'>AI: {_html.escape(ai.pick.action.label or ai.pick.action.kind)}"
+                        f" &middot; win {ai.p_win:.0%}</span>")
+                if ai.pick.note:
+                    line += f" <span style='color:#9ab'>{_html.escape(ai.pick.note)}</span>"
+                return line
+
+            def emit(line: str) -> None:
+                w = ui_update.warnings_html
+                self._bridge.solve_finished.emit(
+                    dataclasses.replace(ui_update, warnings_html=f"{w}<br>{line}" if w else line))
+
+            ai = app_advice(run_state_data or {})
+            if ai is None or ai.pick is None or self._solve_cancelled(my_gen):
+                return
+            print(ai.text(4), flush=True)
+            plain = ai_line(ai)
+            if not self._ai_wants_search:
+                emit(plain)
+                return
+            emit(plain + " <span style='color:#888'>(look-ahead running...)</span>")
+
+            def look_ahead() -> None:   # after the solve returns: F8 stays responsive
+                deep = None
+                try:
+                    deep = app_advice(run_state_data or {}, search=True)
+                except Exception as exc:  # pragma: no cover - advisory only
+                    print(f"  AI look-ahead failed: {exc}", flush=True)
+                if self._solve_cancelled(my_gen):
+                    return
+                if deep is None or deep.pick is None:
+                    emit(plain)   # drop the "running" note
+                    return
+                print(deep.text(4), flush=True)
+                emit(ai_line(deep))
+
+            self._run_ai_search(look_ahead, my_gen)
+        except Exception as exc:  # pragma: no cover - advisory only
+            print(f"  AI advice failed: {exc}", flush=True)
+
+    # Decision-time look-ahead after the plain AI advice (rl.search; ~10-30 s per call).
+    _ai_wants_search = os.environ.get("CWS_AI_SEARCH", "1") != "0"
+
+    _ai_search_lock = threading.Lock()
+
+    def _run_ai_search(self, fn, my_gen: int) -> None:
+        """Run the look-ahead pass on its own thread, one at a time; a pass whose solve was
+        superseded (F8 again) is skipped before it starts."""
+        if not self._ai_wants_search:
+            return
+
+        def run() -> None:
+            with self._ai_search_lock:
+                if self._solve_cancelled(my_gen) or getattr(self, "_shutting_down", False):
+                    return
+                try:
+                    fn()
+                except Exception as exc:  # pragma: no cover - advisory only
+                    print(f"  AI look-ahead failed: {exc}", flush=True)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _with_ai_html(self, run_state_data: dict | None, html: str, *, search: bool = False,
+                      quiet_fail: bool = False) -> str | None:
+        """Prepend the trained AI's advice (rl.assistant) when a policy is available.
+        ``quiet_fail``: None instead of the unchanged html when there is no advice."""
+        from cursed_words_solver.rl.assistant import app_advice
+
+        t0 = time.monotonic()
+        ai = app_advice(run_state_data or {}, search=search)
+        if ai is None:
+            return None if quiet_fail else html
+        print(ai.text(), flush=True)
+        print(f"  (AI advice in {time.monotonic() - t0:.1f}s)", flush=True)
+        return ai.html() + ("<hr>" + html if html else "")
+
+    def _assistant_worker(self, run_state_data: dict | None) -> None:
+        """Boss draft / pin reward / Michael draft: the trained AI's ranked options."""
+        html = self._with_ai_html(run_state_data, "")
+        if not html:
+            print("No AI policy yet (train one: python -m cursed_words_solver.rl.bc), or melmod too old.", flush=True)
+            return
+        placeholder = Tile(row=0, col=0, char=".", letter=".", base_score=0, color=TileColor.COLORLESS,
+                           curse=CurseType.LETTER)
+        empty_board = Board(tiles=[[placeholder for _ in range(5)] for _ in range(5)])
+        self._bridge.solve_finished.emit(
+            _SolveUIUpdate(board=empty_board, results=[], board_bgr=None, warnings_html="",
+                           on_game_highlight=False, shop_advice_html=html)
         )
 
     def _cursedle_worker(self, run_state_data: dict | None) -> None:
@@ -1096,6 +1211,11 @@ class SolverApp:
 
             run_state_data = load_run_state_raw()
             mode = encounter_mode_from_run_state(run_state_data)
+            from cursed_words_solver.rl.assistant import ASSISTANT_DECISIONS, decision_of
+
+            if decision_of(run_state_data) in ASSISTANT_DECISIONS:
+                self._assistant_worker(run_state_data)
+                return
             if mode == "shop":
                 self._shop_advisor_worker(run_state_data)
                 return
@@ -2515,6 +2635,7 @@ class SolverApp:
                     warnings = (
                         f"{warnings}<br>{reroll_warn}" if warnings else reroll_warn
                     )
+            want_ai = bool(results) and encounter_mode_from_run_state(run_state_data) == "encounter"
             block_warn_html = format_f8_block_reason_html(block_f8_reason)
             if block_warn_html:
                 warnings = (
@@ -2533,23 +2654,25 @@ class SolverApp:
             trusted = not block_f8_save if results else True
             if self._solve_cancelled(my_gen):
                 return
-            self._bridge.solve_finished.emit(
-                _SolveUIUpdate(
-                    board=search_board,
-                    results=results,
-                    board_bgr=board_img,
-                    warnings_html=warnings,
-                    on_game_highlight=highlight,
-                    consumable_placements=placement_records or None,
-                    twinkle_toes_swap=twinkle_swap_record,
-                    melmod_board_fingerprint=melmod_board_fp,
-                    melmod_loadout_fingerprint=melmod_loadout_fp,
-                    trusted_suggestion=trusted,
-                    block_reason=block_f8_reason,
-                    loadout=loadout,
-                    active_session=f8_active_session if results else None,
-                )
+            ui_update = _SolveUIUpdate(
+                board=search_board,
+                results=results,
+                board_bgr=board_img,
+                warnings_html=warnings,
+                on_game_highlight=highlight,
+                consumable_placements=placement_records or None,
+                twinkle_toes_swap=twinkle_swap_record,
+                melmod_board_fingerprint=melmod_board_fp,
+                melmod_loadout_fingerprint=melmod_loadout_fp,
+                trusted_suggestion=trusted,
+                block_reason=block_f8_reason,
+                loadout=loadout,
+                active_session=f8_active_session if results else None,
             )
+            self._bridge.solve_finished.emit(ui_update)
+            if want_ai:
+                # the run assistant takes a few seconds: show the solve first, then add its line
+                self._append_ai_line(ui_update, run_state_data, my_gen)
         except Exception as exc:
             if self._shutting_down and isinstance(exc, RuntimeError) and (
                 "cannot schedule new futures after shutdown" in str(exc)
