@@ -27,7 +27,8 @@ FIRST_SEED = 30_000_000
 
 
 def jobs(n: int, quest_share: float = 0.1, crowns: tuple[int, ...] = tuple(range(9))) -> list[dict[str, Any]]:
-    """Deterministic job list (prefix-stable: more runs = same first ones)."""
+    """Deterministic job list (prefix-stable: more runs = same first ones). The default keeps
+    crowns 0-8 only so job i still names the shard on disk; bc.py skips the crown-8 shards."""
     from cursed_words_solver.sim.game.challenges import QUESTS
 
     quests = sorted(QUESTS)

@@ -8,6 +8,9 @@ every policy sees the same top-K words for a grid.
 from __future__ import annotations
 
 import copy
+import os
+import pickle
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
@@ -106,7 +109,101 @@ class Candidates:
                 path=[index_to_coords(enc, i) for i in r.path],
                 score=int(round(r.score)),
             ))
+        if not out:
+            out = self.placement_words(game, top_n)
         return out
+
+    def placement_words(self, game: Game, top_n: int = 5) -> list[WordOption]:
+        """Words that need rack tiles placed first (board-only search found none).
+
+        Empty Grid boards hold no letters and Advent Calendar boards are numbers that
+        only count as the Nth letter, so a grid often has no word until consumables are
+        placed (``ApplyConsumableTile``). Up to 9 rack tiles go in a compact block
+        (snake order, so consecutive rack tiles touch: 1-2-3 number tiles chain) at a few
+        anchors, the engine searches each variant board, and each word keeps only the
+        placements on its path (in path order). Deterministic and cheap: at most
+        ``len(_ANCHORS)`` extra searches, and only on grids with no board word.
+        """
+        enc = game.encounter
+        if enc is None or enc.grid is None or enc.finale or not enc.can_submit or enc.awaiting_forced_sell:
+            return []
+        p = game.player
+        # every rack tile, duplicates too (words repeat letters: "lilac" from l ? a i l)
+        rack: list[tuple[int, Any]] = [(i, t) for i, t in enumerate(p.consumables) if t is not None]
+        if not rack:
+            return []
+        rack.sort(key=lambda it: _rack_order_key(it[1]))
+        rack = rack[:9]
+        n = len(rack)
+        w, h = (2, 1) if n <= 2 else (2, 2) if n <= 4 else (3, 2) if n <= 6 else (3, 3)
+        allowed = {(t.x, t.y) for t in enc.grid.available() if t.consumable_replacement_allowed(p)}
+        width = max((x for x, _ in allowed), default=-1) + 1
+        height = max((y for _, y in allowed), default=-1) + 1
+        if width < w or height < h:
+            w, h = min(w, width), min(h, height)
+        cells_by_anchor: list[list[tuple[int, int]]] = []
+        letters_on_board = any(not t.empty for t in enc.grid.available())
+        anchors = _ANCHORS if letters_on_board else _ANCHORS[:1]
+        for ax, ay in anchors:
+            x0 = {"lo": 0, "mid": (width - w) // 2, "hi": width - w}[ax]
+            y0 = {"lo": 0, "mid": (height - h) // 2, "hi": height - h}[ay]
+            snake = []
+            for dy in range(h):
+                xs = range(w) if dy % 2 == 0 else range(w - 1, -1, -1)
+                snake.extend((x0 + dx, y0 + dy) for dx in xs)
+            cells = [c for c in snake if c in allowed][:n]
+            if cells and cells not in cells_by_anchor:
+                cells_by_anchor.append(cells)
+        best: dict[tuple, WordOption] = {}
+        for cells in cells_by_anchor:
+            g = clone(game, light=True)
+            placed: dict[tuple[int, int], int] = {}
+            for (ri, _t), (x, y) in zip(rack, cells):
+                if g.encounter.place_consumable(ri, x, y):
+                    placed[(x, y)] = ri
+            if not placed:
+                continue
+            board, loadout = board_and_loadout(g.encounter)
+            for r in self._find(board, loadout, top_n):
+                path = [index_to_coords(g.encounter, i) for i in r.path]
+                used = [(placed[xy], xy[0], xy[1]) for xy in path if xy in placed]
+                if not used:
+                    continue
+                opt = WordOption(word=r.word, words=r.word.split(), path=path,
+                                 score=int(round(r.score)), placements=used)
+                # the same word at another anchor is the same play (centre anchor kept)
+                key = (r.word, opt.score, len(used))
+                if key not in best:
+                    best[key] = opt
+        # fewest rack tiles spent breaks score ties
+        return sorted(best.values(), key=lambda o: (-o.score, len(o.placements)))[:top_n]
+
+
+# Block anchors for ``Candidates.placement_words``: centre first (most neighbours), then
+# two corners so board tiles on either side can extend a placed word.
+_ANCHORS = (("mid", "mid"), ("lo", "lo"), ("hi", "hi"))
+
+
+def _rack_order_key(t) -> tuple:
+    """Numbers / fractions ascending first (so they chain as positional wildcards), then the rest."""
+    try:
+        if t.is_number():
+            return (0, float(t.number_float()), "")
+    except Exception:
+        pass
+    return (1, 0.0, t.srep())
+
+
+def submit_action(o: WordOption, label: str | None = None) -> Action:
+    """Submit ``o``; a word that needs rack tiles placed first carries them as a third arg."""
+    args = (tuple(o.path), tuple(o.words))
+    if o.placements:
+        args += (tuple(tuple(pl) for pl in o.placements),)
+    if label is None:
+        label = f"{o.word} ({o.score})"
+        if o.placements:
+            label = f"{o.word} [+{len(o.placements)} rack] ({o.score})"
+    return Action("submit", args, label)
 
 
 def spawn_pool(workers: int, initializer=None, initargs: tuple = ()):
@@ -125,7 +222,56 @@ def clone(game: Game, *, light: bool = False) -> Game:
     ``light`` also shares the run's word history and the encounter's previous words —
     for evaluate-only copies (apply one shop / boss / pin action and read the state);
     never play words on a light copy.
+
+    One C pickle round-trip (~2-3x faster than ``copy.deepcopy``, same result: both go
+    through ``__reduce_ex__``). ``CWS_DEEPCOPY_CLONE=1`` selects the deepcopy reference;
+    anything that does not pickle falls back to it.
     """
+    if os.environ.get("CWS_DEEPCOPY_CLONE") != "1":
+        try:
+            return _pickle_clone(game, light)
+        except Exception:
+            pass
+    return _deepcopy_clone(game, light)
+
+
+_CLONE_LOCK = threading.Lock()   # the dump briefly detaches attributes of the source game
+
+
+def _pickle_clone(game: Game, light: bool) -> Game:
+    with _CLONE_LOCK:
+        return _pickle_clone_locked(game, light)
+
+
+def _pickle_clone_locked(game: Game, light: bool) -> Game:
+    # Shared objects are detached for the dump and re-attached to both games. Matches the
+    # deepcopy memo only while each is reachable solely via its own attribute
+    # (tests/sim/test_clone_parity.py checks that).
+    words, run, enc = game.words, game.player.run, game.encounter
+    stats = prev = None
+    game.words = None
+    if light:
+        stats, run.stats = run.stats, None
+        if enc is not None:
+            prev, enc.previous_words = enc.previous_words, None
+    try:
+        data = pickle.dumps(game, pickle.HIGHEST_PROTOCOL)
+    finally:
+        game.words = words
+        if light:
+            run.stats = stats
+            if enc is not None:
+                enc.previous_words = prev
+    g = pickle.loads(data)
+    g.words = words
+    if light:
+        g.player.run.stats = stats
+        if g.encounter is not None:
+            g.encounter.previous_words = prev
+    return g
+
+
+def _deepcopy_clone(game: Game, light: bool) -> Game:
     memo = {id(game.words): game.words}
     if light:
         stats = game.player.run.stats
@@ -211,7 +357,7 @@ def legal_actions(game: Game, cands: Candidates | None = None, *, top_n: int = 5
             return [Action("finale", (), "Solve Michael's puzzle grid")]
         if not enc.awaiting_forced_sell and cands is not None:
             for opt in cands.words(game, top_n):
-                out.append(Action("submit", (tuple(opt.path), tuple(opt.words)), f"{opt.word} ({opt.score})"))
+                out.append(submit_action(opt))
         if not enc.awaiting_forced_sell:
             out.append(Action("skip", (), "skip grid"))
             if enc.can_reroll():
@@ -266,6 +412,8 @@ def _sell_actions(game: Game) -> Iterable[Action]:
 def apply(game: Game, action: Action) -> Any:
     k, a = action.kind, action.args
     if k == "submit":
+        for ri, x, y in (a[2] if len(a) > 2 else ()):  # rack tiles the word needs placed first
+            game.place_consumable(ri, x, y)
         return game.submit([tuple(c) for c in a[0]], list(a[1]))
     if k == "skip":
         return game.skip()

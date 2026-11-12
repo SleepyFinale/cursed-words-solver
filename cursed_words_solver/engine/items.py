@@ -8,6 +8,7 @@ as Ruler distance); the engine works on per-submit copies so this never leaks.
 
 from __future__ import annotations
 
+import os
 from typing import Callable
 
 import numpy as np
@@ -102,12 +103,32 @@ def _is_take(ctx: Ctx, i: int) -> bool:
     return ctx.sels[i].method in (SEL_TAKE, SEL_EN_PASSANT)
 
 
-def _selection_curse_types(ctx: Ctx, i: int) -> list[str]:
+def _selection_curse_types_ref(ctx: Ctx, i: int) -> list[str]:
     """``TileSelection.GetCurseTypes`` (adds Wobbly when the selection is wobbly)."""
     out = ctx.tiles[i].curse_types(ctx.variable_letter[i])
     if ctx.sels[i].wobbly and "Wobbly" not in out:
         out.append("Wobbly")
     return out
+
+
+# GetCurseTypes reads only suit / glyph / variable letter / wobbly. Memoized as a tuple:
+# callers only read it (iterate, ``in``, dict.fromkeys, set.update).
+_CURSE_TYPES_MEMO: dict[tuple, tuple[str, ...]] = {}
+
+
+def _selection_curse_types_memo(ctx: Ctx, i: int) -> tuple[str, ...]:
+    t = ctx.tiles[i]
+    key = (t.suit, t.glyph, bool(ctx.variable_letter[i]), bool(ctx.sels[i].wobbly))
+    out = _CURSE_TYPES_MEMO.get(key)
+    if out is None:
+        out = _CURSE_TYPES_MEMO[key] = tuple(_selection_curse_types_ref(ctx, i))
+    return out
+
+
+# Hooks call this module global; ``calc.use_fastcalc`` rebinds it (CWS_NO_FASTCALC=1: reference).
+_selection_curse_types = (
+    _selection_curse_types_ref if os.environ.get("CWS_NO_FASTCALC") == "1" else _selection_curse_types_memo
+)
 
 
 def _scattered_on_path(ctx: Ctx) -> list[tuple[ETile, ItemInst | None]]:
@@ -1194,3 +1215,15 @@ def scissors_steps(inst: ItemInst, prev: Step, ctx: Ctx) -> list[Step]:
 
 
 SCORING_CLASSES = frozenset(TILE_HOOKS) | frozenset(WORD_HOOKS) | {"Scissors", "Snapshot"}
+
+# Tile hooks whose effect on tile i depends only on ctx.tiles[i], ctx.cursed[i] and the
+# item's own (never mutated) levels / variables / colours / state, and which touch only
+# step.ts[i] (via _tadd / _tmul). The fast scorer (calc.py) precomputes per (item, grid
+# tile) whether such a hook can change anything and skips the tiles where it cannot.
+# Editing one of these hooks to read anything else (other tiles, sels, words, money...)
+# means removing it from this set.
+LOCAL_TILE_HOOKS = frozenset({
+    "Abacus", "ArtistsPalette", "CelestialBody", "DeepSeaHorror", "EightBall", "ElectricGuitar",
+    "FishCake", "GlassOfMilk", "LabCoat", "MahjongRedDragon", "Moai", "MysteriousAmulet", "Queen",
+    "QueenOfSpades", "SequoiaSapling", "SlySpy", "Stilton", "WadOfCash",
+})

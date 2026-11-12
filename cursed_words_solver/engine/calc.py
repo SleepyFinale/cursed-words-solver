@@ -12,19 +12,26 @@
    Frankenstein / Snapshot / Overhand / Human Boy replays.
 6. Reversed bosses (Hourglass), Lexographer, green poison.
 7. Final fold: sum last step's tile scores, then apply word bonuses in order.
+
+``EnginePlan.score`` is the plan-cached fast path (``_score_fast``, bottom of this
+module); ``_score_ref`` is the straight port it must match bit for bit (full
+``EngineResult``). ``CWS_NO_FASTCALC=1`` at import, or ``use_fastcalc(False)``, makes
+the reference the live one (tests/engine/test_fastcalc_parity.py compares both).
 """
 
 from __future__ import annotations
 
 import copy
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from cursed_words_solver.engine import items as _items
 from cursed_words_solver.engine import packet as P
 from cursed_words_solver.engine.item_data import CLASS_TO_SLUG, ITEMS, POOLS
-from cursed_words_solver.engine.items import TILE_HOOKS, WORD_HOOKS, scissors_steps
+from cursed_words_solver.engine.items import LOCAL_TILE_HOOKS, TILE_HOOKS, WORD_HOOKS, scissors_steps
 from cursed_words_solver.engine.model import (
     G_ARROW,
     G_BLANK,
@@ -637,7 +644,7 @@ class EnginePlan:
             return True
         return False
 
-    def is_cursed(self, t: ETile) -> bool:
+    def _is_cursed_ref(self, t: ETile) -> bool:
         """``Tile.IsCursed()``."""
         if t.glyph != G_LETTER:
             return True
@@ -729,7 +736,17 @@ class EnginePlan:
 
     # ------------------------------------------------------------- scoring
 
-    def score(self, path: list[int], word: str = "", *, words: list[str] | None = None) -> EngineResult:
+    def __getstate__(self) -> dict[str, Any]:
+        # The fast-path cache is identity-keyed: never copy or pickle it.
+        state = dict(self.__dict__)
+        state.pop("_fastcalc", None)
+        return state
+
+    def invalidate_score_cache(self) -> None:
+        """Drop the fast-path cache; call after mutating anything ``score`` reads (see ``_PlanCache``)."""
+        self.__dict__.pop("_fastcalc", None)
+
+    def _score_ref(self, path: list[int], word: str = "", *, words: list[str] | None = None) -> EngineResult:
         grid = self.grid
         tiles = [grid.tiles[i] for i in path]
         path_items = [t for t in tiles if t.glyph == G_ITEM and t.item]
@@ -764,7 +781,7 @@ class EnginePlan:
         else:
             ctx.grid_data_number = self.grid_number
         ctx.variable_letter = [self.variable_letter(t) for t in tiles]
-        ctx.cursed = [self.is_cursed(t) for t in tiles]
+        ctx.cursed = [self._is_cursed_ref(t) for t in tiles]
 
         steps: list[Step] = []
         if any(t.tile_type == GLITCH for t in tiles):
@@ -1051,3 +1068,460 @@ def _historic_words(extras: dict[str, Any]) -> list[HistWord]:
         target.first_srep = first
         target.first_is_letter = len(first) == 1 and first.isalpha()
     return out
+
+
+# --------------------------------------------------------------------- fast path
+#
+# ``_score_fast`` is ``_score_ref`` with everything that depends only on the plan cached
+# on the plan (``_PlanCache``, built on the first score). Invariants it relies on:
+#
+# * A plan is not mutated after its first score: grid tiles, board metadata (scattered
+#   item states), extras, items (levels / variables / colours / state) and the scalar
+#   fields. The one exception is ``solver._expected_score`` swapping ``plan.stickers`` /
+#   ``plan.stamps`` for Capybara orderings: the slot-order cache is keyed on the identity
+#   of those lists and their items, so a swap just selects (or builds) another entry.
+#   Anything else that mutates a scored plan must call ``plan.invalidate_score_cache()``.
+# * Items outside ``_STATEFUL`` (and without nested items) never mutate themselves in a
+#   hook (the reference shares them across submits too), so per-slot resolved hooks and
+#   scattered-item templates can be shared; ``_STATEFUL`` / container items are still
+#   cloned per call exactly like ``_fresh``.
+# * Hooks only read ``ctx.sels`` and curse-type lists, so tiles share ``Selection``
+#   objects where they cannot differ and ``items._selection_curse_types`` is memoized.
+# * ``items.LOCAL_TILE_HOOKS`` (see there): per (item, grid tile) we probe whether the
+#   hook can change the step at all and skip it where it cannot; where it can, the hook
+#   itself runs, so the arithmetic is still the game's.
+
+
+class _TileRec:
+    """Per grid tile facts the scorer reads on every call."""
+
+    __slots__ = ("value", "vl", "cursed", "sel", "bits")
+
+    def __init__(self, plan: EnginePlan, t: ETile) -> None:
+        self.value = t.value
+        self.vl = plan.variable_letter(t)
+        self.cursed = True if t.glyph != G_LETTER or t.suit != SUIT_NONE else self.vl
+        self.sel = Selection(wobbly=self.vl)  # shared by every path without chess / path items
+        item = t.glyph == G_ITEM and bool(t.item)
+        self.bits = ((_B_GLITCH if t.tile_type == GLITCH else 0) | (_B_PINK if t.tile_type == PINK else 0)
+                     | (_B_ITEM if item else 0) | (_B_CHESS if t.glyph == G_CHESS else 0)
+                     | (_B_CURRENCY if t.glyph == G_CURRENCY else 0))
+
+
+_B_GLITCH, _B_PINK, _B_ITEM, _B_CHESS, _B_CURRENCY = 1, 2, 4, 8, 16
+_ORDERS_MAX = 512  # Capybara scores up to 20k orderings on one plan
+
+
+class _PlanCache:
+    __slots__ = ("recs", "rack", "gdn", "scat", "orders", "masks", "vlx", "chess")
+
+    def __init__(self, plan: EnginePlan) -> None:
+        self.recs = [_TileRec(plan, t) for t in plan.grid.tiles]
+        self.rack = min(10, plan.rack_count)
+        michael = str(plan.extras.get("michael_summoned_bosses_defeated") or "").lower() == "true"
+        self.gdn = 0 if michael else plan.grid_number
+        self.scat: dict[int, ItemInst] = {}  # tile idx -> scattered item template
+        self.orders: dict[tuple, tuple] = {}  # (id stickers, id stamps, id pin) -> (identity, entries)
+        self.masks: dict[int, tuple] = {}  # id(item) -> (item, per grid tile "hook can act")
+        self.vlx: dict[tuple, bool] = {}  # (tile idx, path item classes) -> variable letter
+        self.chess: dict[tuple, Selection] = {}  # (prev idx, cur idx, wobbly) -> selection
+
+
+def _plan_cache(plan: EnginePlan) -> _PlanCache:
+    pc = plan.__dict__.get("_fastcalc")
+    if pc is None:
+        pc = plan.__dict__["_fastcalc"] = _PlanCache(plan)
+    return pc
+
+
+def _is_cursed_fast(self: EnginePlan, t: ETile) -> bool:
+    gt = self.grid.tiles
+    k = t.idx
+    if 0 <= k < len(gt) and gt[k] is t:
+        return _plan_cache(self).recs[k].cursed
+    return self._is_cursed_ref(t)
+
+
+def _hook_mask(plan: EnginePlan, pc: _PlanCache, target: ItemInst, hook) -> list[bool]:
+    """Per grid tile: can local tile ``hook`` change the step there (probed on 1-tile contexts)."""
+    hit = pc.masks.get(id(target))
+    if hit is not None and hit[0] is target:
+        return hit[1]
+    grid = plan.grid
+    mask = []
+    for t in grid.tiles:
+        rec = pc.recs[t.idx]
+        ctx = Ctx(grid, [t], [rec.sel], [], plan.grid_number, plan.prev_words, [], [], None, [],
+                  plan.hungry_snake, plan.martini_all, 0, plan.challenge)
+        ctx.cursed = [rec.cursed]
+        ctx.variable_letter = [rec.vl]
+        acts = False
+        for probe in (7, -3, 1000003):
+            s = Step([probe], 5, 1)
+            hook(target, s, 0, ctx)
+            v = s.ts[0]
+            if (type(v) is not int or v != probe or s.wb is not None or s.money != 5 or s.consumables != 1
+                    or s.float_mult or s.item or s.note or ctx.nondeterministic or ctx.flags):
+                acts = True
+                break
+        mask.append(acts)
+    pc.masks[id(target)] = (target, mask)
+    return mask
+
+
+def _resolve(plan: EnginePlan, pc: _PlanCache, inst: ItemInst):
+    """``_apply`` pre-resolved for a shared (uncloned) item: (inst, target, tile hook, word
+    hook, label, mask | None); target None = Scissors; None = ``_apply`` is a no-op."""
+    if inst.cls == "Scissors":
+        return (inst, None, None, None, None, None)
+    target = inst
+    if inst.cls == "Snapshot":
+        if not inst.nested:
+            return None
+        target = inst.nested[0]
+    tcls = target.cls
+    th = TILE_HOOKS.get(tcls)
+    wh = WORD_HOOKS.get(tcls)
+    if th is None and wh is None:
+        return None
+    label = inst.slug if target is inst else f"{inst.slug}>{target.slug}"
+    mask = None
+    if th is not None and tcls in LOCAL_TILE_HOOKS and tcls not in _STATEFUL:
+        mask = _hook_mask(plan, pc, target, th)
+    return (inst, target, th, wh, label, mask)
+
+
+def _order_template(plan: EnginePlan) -> list[tuple[str, int]]:
+    """GetAllItems slot order of ``_score_ref`` as (kind, slot)."""
+    stickers, stamps = plan.stickers, plan.stamps
+    out: list[tuple[str, int]] = []
+    if plan.character_item is not None:
+        out.append(("pin", -1))
+    if plan.challenge == "PlayingFavourites":
+        out += [("sticker", i) for i, s in enumerate(stickers)
+                if s is not None and i + 1 < len(stickers) and stickers[i + 1] is not None
+                and stickers[i + 1].cls == "LeftHumanHand"]
+        out += [("sticker", i) for i, s in enumerate(stickers) if s is not None and s.cls == "LeftHumanHand"][:1]
+        right = [i for i, s in enumerate(stamps) if s is not None and s.cls == "RightHumanHand"][:1]
+        out += [("stamp", i) for i in right]
+        if right and right[0] < 4 and right[0] + 1 < len(stamps) and stamps[right[0] + 1] is not None:
+            out.append(("stamp", right[0] + 1))
+    else:
+        out += [("sticker", i) for i, s in enumerate(stickers) if s is not None]
+        out += [("stamp", i) for i, s in enumerate(stamps) if s is not None]
+    return out
+
+
+def _needs_clone(inst: ItemInst | None) -> bool:
+    return inst is not None and (inst.cls in _STATEFUL or bool(inst.nested))
+
+
+def _orders(plan: EnginePlan, pc: _PlanCache):
+    """(sticker slots to clone, stamp slots to clone, clone pin, entries) for the current
+    slots; entries are (kind, slot, repeats, resolved | None = per-call instance)."""
+    stickers, stamps, ch = plan.stickers, plan.stamps, plan.character_item
+    key = (id(stickers), id(stamps), id(ch))
+    hit = pc.orders.get(key)
+    if hit is not None:
+        ident, val = hit
+        if (ident[0] is ch and len(ident[1]) == len(stickers) and len(ident[2]) == len(stamps)
+                and all(a is b for a, b in zip(ident[1], stickers))
+                and all(a is b for a, b in zip(ident[2], stamps))):
+            return val
+    clone_st = [i for i, s in enumerate(stickers) if _needs_clone(s)]
+    clone_sp = [i for i, s in enumerate(stamps) if _needs_clone(s)]
+    clone_ch = _needs_clone(ch)
+    human_boy = max(0, ch.var(1) - 1) if plan.favourite_stamps and ch is not None else 0
+    entries = []
+    for kind, slot in _order_template(plan):
+        inst = ch if kind == "pin" else (stickers[slot] if kind == "sticker" else stamps[slot])
+        if inst.cls in ("RandomAccessMemory", "Frankenstein"):
+            entries.append((kind, slot, -1, None))  # parts applied per call, no repeats
+            continue
+        reps = 1
+        if kind == "stamp" and slot in plan.favourite_stamps:
+            reps += human_boy
+        if kind == "stamp" and slot in plan.overhand:
+            reps += plan.overhand[slot]
+        cloned = clone_ch if kind == "pin" else (slot in clone_st if kind == "sticker" else slot in clone_sp)
+        if cloned:
+            entries.append((kind, slot, reps, None))
+            continue
+        r = _resolve(plan, pc, inst)
+        if r is not None:
+            entries.append((kind, slot, reps, r))
+    val = (clone_st, clone_sp, clone_ch, entries)
+    if len(pc.orders) >= _ORDERS_MAX:
+        pc.orders.clear()
+    # The identity entry keeps the keyed lists alive, so their ids cannot be reused.
+    pc.orders[key] = ((ch, tuple(stickers), tuple(stamps), stickers, stamps), val)
+    return val
+
+
+def _scattered(plan: EnginePlan, pc: _PlanCache, t: ETile) -> ItemInst:
+    """On-path scattered item as ``_score_ref`` builds it; shared unless it needs a clone."""
+    tmpl = pc.scat.get(t.idx)
+    if tmpl is None:
+        state = (plan.grid.board.tiles[t.row][t.col].metadata or {}).get("scattered_item_state")
+        tmpl = inst_from_state(state) if isinstance(state, dict) else make_item(t.item, plan._scatter_level(t))
+        tmpl.is_scattered = True
+        for _ in range(plan.cable_cars):
+            if tmpl.is_sticker:
+                tmpl.upgrade(0)
+        pc.scat[t.idx] = tmpl
+    return tmpl.clone() if _needs_clone(tmpl) else tmpl
+
+
+def _final_score_fast(steps: list[Step]) -> int | float:
+    """``final_score``: plain ``sum`` when no partial sum can clamp."""
+    ts = steps[-1].ts
+    total: int | float = sum(ts) if ts else 0
+    # All plain ints (else the sum is a float / numpy scalar) and every partial sum bounded
+    # below int64: identical to the clamped ScorePacket fold.
+    if not (type(total) is int and (not ts or len(ts) * max(max(ts), -min(ts)) < P.INT64_MAX)):
+        total = 0
+        for v in ts:
+            total = P.add(total, v)
+    for step in steps:
+        wb = step.wb
+        if wb is None:
+            continue
+        if wb.mult:
+            total = P.div(P.mul(total, wb.value), 100)
+        else:
+            total = P.add(total, wb.value)
+    return total
+
+
+def _chess_selection(plan: EnginePlan, prev: ETile, cur: ETile, tiles: list[ETile], i: int, sel: Selection) -> None:
+    """Chess part of ``EnginePlan.selections`` (depends only on (prev, cur) unless Full Moon)."""
+    if cur.glyph == G_CHESS and (cur.white != prev.white or plan.king_of_bridge):
+        sel.method = SEL_TAKE
+    elif not plan.sicilian and plan._chess_moves_generated(prev, tiles[:i]):
+        ep = plan._en_passant(prev, cur)
+        if ep is not None:
+            sel.method = SEL_EN_PASSANT
+            sel.en_passant = ep
+    if not plan.sicilian and prev.piece in ("rook", "bishop", "queen") and plan._chess_moves_generated(prev, tiles[:i]):
+        sel.move_distance = plan._slide_distance(prev, cur)
+
+
+def _apply_dyn(inst: ItemInst, steps: list[Step], ctx: Ctx, n: int) -> None:
+    """``EnginePlan._apply`` for a per-call (cloned or scattered) instance."""
+    cls = inst.cls
+    if cls == "Scissors":
+        steps.extend(scissors_steps(inst, steps[-1], ctx))
+        return
+    target = inst
+    if cls == "Snapshot":
+        if not inst.nested:
+            return
+        target = inst.nested[0]
+    th = TILE_HOOKS.get(target.cls)
+    wh = WORD_HOOKS.get(target.cls)
+    if th is None and wh is None:
+        return
+    prev = steps[-1]
+    step = Step(list(prev.ts), prev.money, prev.consumables)
+    if th is not None:
+        for i in range(n):
+            th(target, step, i, ctx)
+    if wh is not None:
+        wh(target, step, ctx)
+    step.item = inst.slug if target is inst else f"{inst.slug}>{target.slug}"
+    steps.append(step)
+
+
+def _score_fast(self: EnginePlan, path: list[int], word: str = "", *, words: list[str] | None = None) -> EngineResult:
+    pc = self.__dict__.get("_fastcalc") or _plan_cache(self)
+    grid = self.grid
+    gt = grid.tiles
+    recs = pc.recs
+    tiles = [gt[i] for i in path]
+    trecs = [recs[i] for i in path]
+    n = len(tiles)
+
+    bits = 0
+    npink = 0
+    for r in trecs:
+        b = r.bits
+        if b:
+            bits |= b
+            if b & _B_PINK:
+                npink += 1
+
+    # selections(): shared per-tile Selection unless path items or a chess predecessor matter.
+    if bits & _B_ITEM:
+        path_items = [t for t in tiles if t.glyph == G_ITEM and t.item]
+        path_classes = {ITEMS[t.item].cls for t in path_items if t.item in ITEMS}
+    else:
+        path_items = ()
+        path_classes = None
+    if not path_classes and not bits & _B_CHESS:
+        sels = [r.sel for r in trecs]
+    else:
+        sels = []
+        prev = None
+        wkey = frozenset(path_classes) if path_classes else None
+        for i, cur in enumerate(tiles):
+            if wkey is not None:
+                vk = (cur.idx, wkey)
+                wob = pc.vlx.get(vk)
+                if wob is None:
+                    wob = pc.vlx[vk] = self.variable_letter(cur, path_classes)
+            elif prev is None or prev.glyph != G_CHESS:
+                sels.append(trecs[i].sel)
+                prev = cur
+                continue
+            else:
+                wob = trecs[i].vl
+            if prev is not None and prev.glyph == G_CHESS:
+                if self.full_moon:
+                    sel = Selection(wobbly=wob)
+                    _chess_selection(self, prev, cur, tiles, i, sel)
+                else:
+                    ck = (prev.idx, cur.idx, wob)
+                    sel = pc.chess.get(ck)
+                    if sel is None:
+                        sel = pc.chess[ck] = Selection(wobbly=wob)
+                        _chess_selection(self, prev, cur, tiles, i, sel)
+            else:
+                sel = Selection(wobbly=wob)
+            sels.append(sel)
+            prev = cur
+
+    word_list = words if words is not None else (word.lower().split() if word else [])
+
+    clone_st, clone_sp, clone_ch, entries = _orders(self, pc)
+    stickers = list(self.stickers)
+    for i in clone_st:
+        stickers[i] = stickers[i].clone()
+    stamps = list(self.stamps)
+    for i in clone_sp:
+        stamps[i] = stamps[i].clone()
+    character_item = self.character_item
+    if clone_ch:
+        character_item = character_item.clone()
+
+    ctx = Ctx(grid, tiles, sels, word_list, self.grid_number, self.prev_words, stickers, stamps,
+              character_item, self.unpacked, self.hungry_snake, self.martini_all,
+              self.cursed_bosses_defeated, self.challenge)
+    ctx.grid_data_number = pc.gdn
+    ctx.variable_letter = [r.vl for r in trecs]
+    ctx.cursed = [r.cursed for r in trecs]
+    if bits & _B_GLITCH:
+        ctx.nondeterministic = True
+
+    steps: list[Step] = [Step([r.value for r in trecs], self.money, pc.rack)]
+
+    hourglass_odd = self.hourglass_odd
+    if not hourglass_odd:
+        for name, mod in self.boss_mods:
+            steps.append(self._boss_step(steps[-1], name, mod, tiles))
+
+    if self.challenge == "TheBonesRound" and any(t.suit != SUIT_NONE for t in tiles):
+        from cursed_words_solver.engine.poker import HAND_POINTS, poker_hand
+
+        step = steps[-1].next()
+        hand, kind = poker_hand(tiles, 3 if self.martini_all else 5)
+        if hand is not None and kind in HAND_POINTS:
+            step.wb = WordBonus(HAND_POINTS[kind], False)
+            step.note = kind
+        steps.append(step)
+
+    if bits & _B_CURRENCY:
+        step = steps[-1].next()
+        for t in tiles:
+            if t.glyph == G_CURRENCY:
+                step.money += LETTER_VALUES.get(t.letter, 1) if self.kokeshi else 1
+        steps.append(step)
+    if npink:
+        step = steps[-1].next()
+        for _ in range(npink):
+            if step.money > 0:
+                step.money -= 1
+        steps.append(step)
+
+    # Item order: scattered path items, then GetAllItems(), as (resolved | None, inst, repeats).
+    order: list[tuple] = [(None, _scattered(self, pc, t), 1) for t in path_items]
+    for kind, slot, reps, r in entries:
+        if r is not None:
+            order.append((r, None, reps))
+        else:
+            inst = character_item if kind == "pin" else (stickers[slot] if kind == "sticker" else stamps[slot])
+            order.append((None, inst, reps))
+    if hourglass_odd:
+        order.reverse()
+
+    for r, inst, reps in order:
+        if r is None:
+            if inst.cls in ("RandomAccessMemory", "Frankenstein"):
+                for part in inst.nested:
+                    _apply_dyn(part, steps, ctx, n)
+            else:
+                for _ in range(reps):
+                    _apply_dyn(inst, steps, ctx, n)
+            continue
+        inst, target, th, wh, label, mask = r
+        if target is None:  # Scissors
+            for _ in range(reps):
+                steps.extend(scissors_steps(inst, steps[-1], ctx))
+            continue
+        for _ in range(reps):
+            prev = steps[-1]
+            step = Step(list(prev.ts), prev.money, prev.consumables)
+            if th is not None:
+                if mask is None:
+                    for i in range(n):
+                        th(target, step, i, ctx)
+                else:
+                    for i in range(n):
+                        if mask[path[i]]:
+                            th(target, step, i, ctx)
+            if wh is not None:
+                wh(target, step, ctx)
+            step.item = label
+            steps.append(step)
+
+    if hourglass_odd:
+        for name, mod in reversed(self.boss_mods):
+            steps.append(self._boss_step(steps[-1], name, mod, tiles))
+
+    if self.challenge == "Lexographer":
+        step = steps[-1].next()
+        for i in range(n):
+            if sels[i].wobbly or ctx.cursed[i]:
+                step.ts[i] = 0
+        steps.append(step)
+
+    for prev in self.prev_words:
+        if prev.green_count > 0:
+            step = steps[-1].next()
+            step.wb = WordBonus(P.mul(prev.green_count, P.scale(prev.score, 0.1)), False, True)
+            step.note = "poison"
+            steps.append(step)
+
+    final_states: dict[str, dict[str, Any]] = {}
+    if character_item is not None:
+        final_states[character_item.slug] = character_item.state
+    for it in stickers:
+        if it is not None:
+            final_states.setdefault(it.slug, it.state)
+    for it in stamps:
+        if it is not None:
+            final_states.setdefault(it.slug, it.state)
+    return EngineResult(_final_score_fast(steps), steps, ctx.nondeterministic, final_states)
+
+
+def use_fastcalc(enabled: bool) -> None:
+    """Switch ``EnginePlan.score`` / ``is_cursed`` and the curse-type memo (process-wide)."""
+    EnginePlan.score = _score_fast if enabled else EnginePlan._score_ref
+    EnginePlan.is_cursed = _is_cursed_fast if enabled else EnginePlan._is_cursed_ref
+    _items._selection_curse_types = (
+        _items._selection_curse_types_memo if enabled else _items._selection_curse_types_ref
+    )
+
+
+# Reference switch: CWS_NO_FASTCALC=1 scores with the straight port only.
+FASTCALC = os.environ.get("CWS_NO_FASTCALC") != "1"
+use_fastcalc(FASTCALC)

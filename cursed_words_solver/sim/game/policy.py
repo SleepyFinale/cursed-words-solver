@@ -15,7 +15,7 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cursed_words_solver.sim.game.agent import Action, Candidates, WordOption, apply, clone, determinize, legal_actions
+from cursed_words_solver.sim.game.agent import Action, Candidates, WordOption, apply, clone, determinize, legal_actions, submit_action
 from cursed_words_solver.sim.game.core import Rng
 from cursed_words_solver.sim.game.encounter import Encounter
 from cursed_words_solver.sim.game.player import ENCOUNTER_NODES, GRIDS_PER_ROUND, NUMBER_OF_STAGES, Node
@@ -62,7 +62,7 @@ class GreedyPolicy(Policy):
             if not opts:
                 return Action("reroll_grid") if enc.can_reroll() else Action("skip")
             o = opts[0]
-            return Action("submit", (tuple(o.path), tuple(o.words)), o.word)
+            return submit_action(o, o.word)
         if ph == "shop":
             return Action("leave")
         if ph == "boss_draft":
@@ -476,7 +476,7 @@ class PowerPolicy(Policy):
         grids_left = enc.remaining_grids + 1
         per_grid = need / max(1, grids_left)
         if best is not None and best.score >= need:
-            return Action("submit", (tuple(best.path), tuple(best.words)), best.word)
+            return submit_action(best, best.word)
         # Consumables: when behind pace, try placing rack tiles where they lift the best word most.
         if game.player.tiles() and (best is None or best.score < per_grid):
             place = self._best_placement(game, best.score if best else 0)
@@ -488,7 +488,7 @@ class PowerPolicy(Policy):
             return Action("reroll_grid", (), "finish early: reroll for a word that clears")
         if best is None:
             return Action("skip")
-        return Action("submit", (tuple(best.path), tuple(best.words)), best.word)
+        return submit_action(best, best.word)
 
     def _best_placement(self, game: "Game", base: int) -> Action | None:
         enc = game.encounter
@@ -1152,7 +1152,7 @@ class FastAdvicePolicy(AdvicePolicy):
         best_clears = opts[0].score >= enc.remaining_target
         cands: list[tuple[Action, Any]] = []
         for o in opts:
-            a = Action("submit", (tuple(o.path), tuple(o.words)), f"{o.word} ({o.score})")
+            a = submit_action(o)
             cands.append((a, o))
         if not best_clears:
             if enc.can_reroll():

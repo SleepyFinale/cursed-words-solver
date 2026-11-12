@@ -16,6 +16,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# compiled word search (engine/_jit.py, ~3x faster, identical results); optional: Python fallback.
+# numba 0.68 pins numpy < 2.5 in its metadata but works with 2.5: pip install --no-deps numba==0.68.1 llvmlite==0.50.0
+fast = ["numba>=0.68"]
 
 [project.scripts]
 cursed-solver = "cursed_words_solver.app:main"

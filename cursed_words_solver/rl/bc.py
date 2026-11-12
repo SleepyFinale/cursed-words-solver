@@ -22,7 +22,8 @@ import torch
 import torch.nn.functional as F
 
 from cursed_words_solver.rl import store
-from cursed_words_solver.rl.model import Policy, collate, default_config, load_policy, save_policy, ModelConfig
+from cursed_words_solver.rl.model import (Policy, collate, default_config, load_policy, save_policy, ModelConfig,
+                                          upgrade_optimizer_state)
 
 
 def run_index(path: Path) -> int:
@@ -41,6 +42,8 @@ class Dataset:
     def refresh(self) -> int:
         added = 0
         for p in sorted(self.dir.glob("*.npz")):
+            if "_c8_" in p.name:   # crown 8 is not playable (old teacher runs)
+                continue
             if p.name in self.eps:
                 continue
             try:
@@ -161,7 +164,7 @@ def main(argv: list[str] | None = None) -> None:
         model = Policy(ModelConfig(**ck["config"])).to(device)
         model.load_state_dict(ck["state"])
         opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
-        opt.load_state_dict(ck["opt"])
+        opt.load_state_dict(upgrade_optimizer_state(ck["opt"], model))   # v1 widths -> current
         epoch, best = ck["epoch"], ck.get("best", math.inf)
         start_step, best_val_n = ck.get("step", 0), ck.get("best_val_n", -1)
         random.setstate(ck["py_rng"])

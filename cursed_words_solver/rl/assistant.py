@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -217,7 +218,16 @@ def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps:
     return adv
 
 
-SEARCH_DEFAULT = {"top": 2, "sims": 2, "horizon": 1.0}   # paired eval 2026-11-10: +6.4% wins, t=2.0
+# fresh-seed paired evals of champion u225 (2026-11-11, 125 runs each, vs plain 40.0% wins):
+#   top 3 / 4 futures / horizon 2: 46.4% (t=1.86), ~5-36 s per shop call;  top 2 / 2 / 1: 41.6% (t=0.44), ~1-5 s
+SEARCH_DEEP = {"top": 3, "sims": 4, "horizon": 2.0}
+SEARCH_FAST = {"top": 2, "sims": 2, "horizon": 1.0}
+# noise-aware: Gumbel-top-3, 4 shared futures each, +8 for the best two, override the policy only at paired t >= 1
+SEARCH_HALVING = {"mode": "halving", "k": 3, "sims0": 4, "sims1": 4, "switch_t": 1.0, "horizon": 2.0}
+# CWS_AI_SEARCH=fast picks the quick look-ahead, =halving the noise-aware one (default: deep;
+# the app shows the plain advice first either way)
+SEARCH_DEFAULT = dict({"fast": SEARCH_FAST, "halving": SEARCH_HALVING}.get(os.environ.get("CWS_AI_SEARCH", "").lower(),
+                                                                         SEARCH_DEEP))
 
 
 def _look_ahead(adv: Advice, actor, env, st, probs, cands) -> None:
@@ -229,16 +239,34 @@ def _look_ahead(adv: Advice, actor, env, st, probs, cands) -> None:
         return
     sub = CWEnv(_fast(cands))
     sub.attach(env.game)
-    sc = Searcher(actor, cfg).scores(sub, st, probs, "assist|search")
+    sr = Searcher(actor, cfg)
+    info = None
+    if cfg.mode == "halving":
+        if len(sr.candidates(probs, "assist|search")) < 2:
+            return   # nothing to compare: the policy pick stands
+        info = sr.halving(sub, st, probs, "assist|search")
+        sc = info["scores"]
+    else:
+        sc = sr.scores(sub, st, probs, "assist|search")
     if not sc:
         return
-    by_action = {id(st.cands[i].action): v for i, v in sc.items()}
+    by_action = {id(st.cands[i].action): i for i in sc}
     for o in adv.options:
-        v = by_action.get(id(o.action))
-        if v is not None:
-            o.exp_outcome = v
+        i = by_action.get(id(o.action))
+        if i is None:
+            continue
+        v = sc[i]
+        o.exp_outcome = v
+        if info is not None:
+            se = info["se"].get(i, 0.0)
+            if i == info["policy"]:
+                extra = f" n={info['n'][i]}"
+            else:
+                extra = f" ±{se:.2f} vs policy pick (t={info['t'][i]:.1f}) n={info['n'][i]}"
+            o.note = (o.note + f" look-ahead {v:.1f}{extra}").strip()
+        else:
             o.note = (o.note + f" look-ahead {v:.1f}").strip()
-    best = max(sc, key=lambda i: (sc[i], probs[i]))
+    best = info["pick"] if info is not None else max(sc, key=lambda i: (sc[i], probs[i]))
     pick = next(o for o in adv.options if o.action is st.cands[best].action)
     if pick is not adv.pick:
         pick.note = (pick.note + " (look-ahead overrides the policy)").strip()
@@ -308,11 +336,33 @@ def _shop_plan(actor, game, cands, steps: int, first: Action | None = None) -> l
     return out
 
 
+def placement_note(game, action: Action) -> str:
+    """'place c at row 1 col 2, ...' for a submit that needs rack tiles placed first
+    (rows counted from the top, columns from the left, both 1-based)."""
+    if action.kind != "submit" or len(action.args) < 3 or not action.args[2]:
+        return ""
+    enc = game.encounter
+    height = enc.grid.height if enc is not None and enc.grid is not None else 5
+    bits = []
+    for ri, x, y in action.args[2]:
+        rack = game.player.consumables
+        face = rack[ri].srep() if 0 <= ri < len(rack) and rack[ri] is not None else "?"
+        bits.append(f"{face or '?'} at row {height - y} col {x + 1}")
+    return "first place " + ", ".join(bits)
+
+
 def _encounter_notes(adv: Advice, game) -> None:
     enc = game.encounter
+    for o in adv.options:
+        pn = placement_note(game, o.action)
+        if pn and pn not in o.note:
+            o.note = (pn + "; " + o.note).strip("; ")
     top = adv.pick.action if adv.pick else None
     if top is None:
         return
+    pn = placement_note(game, top)
+    if pn and pn not in adv.pick.note:
+        adv.pick.note = (pn + "; " + adv.pick.note).strip("; ")
     words = [o for o in adv.options if o.action.kind == "submit"]
     if top.kind == "submit" and words and words[0].action is not top:
         pass

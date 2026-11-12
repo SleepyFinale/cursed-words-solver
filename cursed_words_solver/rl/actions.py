@@ -6,8 +6,11 @@ word scores, the cost, and a *visible* summary of what the action changes (money
 levels / counters, rack, slots), measured on a clone whose hidden state is resampled
 (``agent.determinize``) so nothing unseen leaks in.
 
-"Anytime" actions (sell, reorder, discard a rack tile) are offered in every phase but
-capped per decision point so an episode can't loop forever.
+"Anytime" actions (sell, reorder, discard a rack tile) are offered in encounters and shops,
+capped per decision point so an episode can't loop forever. Boss drafts and pin rewards
+list only their options (``Limits.draft_anytime`` restores the old padded set: the teacher
+picked boss / pin there 100% of the time), and shops no longer list sell-and-buy swaps
+(``Limits.sell_buy``; the teacher picked them 0.0%: sell, then buy, covers it).
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from cursed_words_solver.sim.game.agent import Action, apply, clone, determinize
+from cursed_words_solver.sim.game.agent import Action, apply, clone, determinize, submit_action
 from cursed_words_solver.sim.game.features import _counter
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -31,6 +34,7 @@ ACTION_TYPES = ("submit", "skip", "reroll_grid", "place", "discard", "sell", "mo
 ATYPE = {k: i for i, k in enumerate(ACTION_TYPES)}
 N_ACTION_TYPES = len(ACTION_TYPES)
 ANYTIME = ("sell", "move", "discard")
+LEGACY_ACTION = ()   # n_action_features() of older layouts (none yet), for model.upgrade_config
 
 
 @lru_cache(maxsize=1)
@@ -68,6 +72,9 @@ class Limits:
     anytime_per_point: int = 6     # sells / moves / discards between two progress actions
     shop_actions: int = 24         # then only leave (and buys stay possible? no: leave only)
     afterstates: bool = True
+    draft_anytime: bool = False    # sells / moves / discards at boss drafts and pin rewards too
+    sell_buy: bool = False         # shop swaps (sell an owned item for an offer when that row is full)
+    probes: bool = True            # probe-strength observation features (obs.set_probe_cands)
 
 
 def _lg(x: float) -> float:
@@ -114,6 +121,10 @@ class CandidateBuilder:
         self.lim = limits or Limits()
         self.col = action_columns()
         self.last_words: list = []
+        if self.lim.probes:
+            from cursed_words_solver.rl.obs import set_probe_cands
+
+            set_probe_cands(cands)
 
     def _new(self, a: Action, kind: str, ref1=None, ref2=None) -> Cand:
         return Cand(a, ATYPE[kind], ref1, ref2, np.zeros(len(self.col), dtype=np.float32))
@@ -139,7 +150,7 @@ class CandidateBuilder:
         best = opts[0].score if opts else 0
         cells = {(t.x, t.y): t for t in enc.grid.available()} if enc.grid is not None else {}
         for r, o in enumerate(opts):
-            a = Action("submit", (tuple(o.path), tuple(o.words)), f"{o.word} ({o.score})")
+            a = submit_action(o)
             c = self._new(a, "submit")
             self.word_feat(game, c, o.score, o.path, o.words, r, best, cells)
             self._after(game, c, base, light=False, key=key)
@@ -347,7 +358,7 @@ class CandidateBuilder:
                         c.feat[col["cost"]] = _lg(cost)
                         self._after(game, c, base, light=True, key=key)
                         out.append(c)
-                elif full:
+                elif full and self.lim.sell_buy:
                     # swap: sell an owned item for this offer (only when that row is full)
                     from cursed_words_solver.sim.game.shop import can_sell
 
@@ -423,7 +434,8 @@ class CandidateBuilder:
                 c = self._new(Action("boss", (i,), f"fight {b.game_class}{' (cursed)' if b.cursed else ''}"), "boss", ("boss", i))
                 c.feat[col["boss_cursed"]] = float(bool(b.cursed))
                 out.append(c)
-            self._anytime(game, out, base, key, point_anytime)
+            if self.lim.draft_anytime:
+                self._anytime(game, out, base, key, point_anytime)
         elif ph == "pin_reward":
             pin = game.player.pin
             for ch in game.pin_options():
@@ -433,7 +445,8 @@ class CandidateBuilder:
                 if pin is not None and len(pin.components) == 2 and ch in ("left", "right"):
                     c.feat[col["pin_side_level"]] = pin.level(0 if ch == "left" else 1) / 5.0
                 out.append(c)
-            self._anytime(game, out, base, key, point_anytime)
+            if self.lim.draft_anytime:
+                self._anytime(game, out, base, key, point_anytime)
         return out
 
 
@@ -469,7 +482,7 @@ def cand_for(builder: "CandidateBuilder", game: "Game", a: Action, key: str = "a
         if a.kind == "submit":
             import re
 
-            path, words = a.args
+            path, words = a.args[0], a.args[1]
             m = re.search(r"\((-?\d+)\)\s*$", a.label or "")
             score = float(m.group(1)) if m else 0.0
             ws = builder.last_words or []

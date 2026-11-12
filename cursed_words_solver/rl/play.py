@@ -53,6 +53,22 @@ def _model(path: str):
     return hit[1]
 
 
+def soft_target_row(last: dict, k: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """One halving-search decision as fixed-width rows: candidate indices (-1 = pad), mean Q,
+    number of futures and paired SE vs the policy argmax (pads: 0)."""
+    cands = list(last.get("cands") or last["q"].keys())
+    k = max(int(k), len(cands))
+    qi = np.full(k, -1, np.int16)
+    qv = np.zeros(k, np.float32)
+    qn = np.zeros(k, np.int16)
+    qs = np.zeros(k, np.float32)
+    for j, c in enumerate(cands):
+        qi[j], qv[j], qn[j] = c, last["q"][c], last["n"][c]
+        se = float(last.get("se", {}).get(c, 0.0))
+        qs[j] = se if np.isfinite(se) else 0.0
+    return qi, qv, qn, qs
+
+
 def play(job: dict[str, Any]) -> dict[str, Any]:
     """``job``: character, crown, seed, quest, policy ('teacher' or a .pt path), greedy,
     record (return the trajectory), temperature."""
@@ -106,6 +122,12 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                     traj.setdefault("search_pick", []).append(i)
                     traj.setdefault("search_margin", []).append(float(searcher.last["margin"]))
                     traj.setdefault("search_changed", []).append(i != searcher.last["policy"])
+                    if "q" in searcher.last:   # halving mode: soft targets (candidate idx, mean Q, n; padded to k)
+                        qi, qv, qn, qs = soft_target_row(searcher.last, searcher.cfg.k)
+                        traj.setdefault("search_q_idx", []).append(qi)
+                        traj.setdefault("search_q_val", []).append(qv)
+                        traj.setdefault("search_q_n", []).append(qn)
+                        traj.setdefault("search_q_se", []).append(qs)
                 r, _ = env.step(st.cands[i].action)
                 if rec:
                     traj["steps"].append(pk)

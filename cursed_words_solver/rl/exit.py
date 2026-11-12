@@ -7,7 +7,10 @@ starts from a stronger policy.
 
 Resumable: ``state.json`` counts started runs; a run in flight at a kill is replayed with a
 new seed. ``STOP`` file in the dir = finish nothing more and exit. Output: ``shards/*.npz``
-(env.pack steps + ``chosen`` = look-ahead pick, ``margin``, ``changed``) and ``runs.jsonl``.
+(env.pack steps + ``chosen`` = look-ahead pick, ``margin``, ``changed``, ``obs_version``) and
+``runs.jsonl``. With a halving search (``--search '{"mode": "halving"}'``) shards also hold
+soft targets ``q_idx`` / ``q_val`` / ``q_n`` / ``q_se`` (see ``soft_targets``; PPO ``--distill-soft``).
+Jobs follow PPO's curriculum (``--curriculum``, ppo1/curriculum.json, re-read as it changes): the same character / quest weights, so the labels cover the slices PPO is weak on.
 """
 
 from __future__ import annotations
@@ -24,7 +27,24 @@ import numpy as np
 from cursed_words_solver.rl import store
 
 EXIT_SEED0 = 60_000_000
-SEARCH = {"top": 2, "sims": 2, "horizon": 1.0}
+SEARCH = {"top": 3, "sims": 4, "horizon": 2.0}   # deep look-ahead: +6.4% wins on fresh seeds (2026-11-11)
+
+
+def soft_targets(tr: dict) -> dict[str, np.ndarray]:
+    """Halving-mode search (``"mode": "halving"``): per-decision soft targets, (decisions, k)
+    arrays ``q_idx`` (searched candidate indices, -1 = pad), ``q_val`` (mean Q), ``q_n``
+    (futures) and ``q_se`` (paired SE vs the policy argmax). Empty for top-k search, and only
+    when every decision of the run has a row (so rows line up with ``chosen``)."""
+    rows = tr.get("search_q_idx")
+    if not rows or len(rows) != len(tr.get("search_steps") or []):
+        return {}
+    w = max(len(r) for r in rows)
+
+    def pad(xs, fill, dt):
+        return np.stack([np.pad(np.asarray(x, dt), (0, w - len(x)), constant_values=fill) for x in xs]).astype(dt)
+
+    return {"q_idx": pad(rows, -1, np.int16), "q_val": pad(tr["search_q_val"], 0, np.float32),
+            "q_n": pad(tr["search_q_n"], 0, np.int16), "q_se": pad(tr["search_q_se"], 0, np.float32)}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -34,8 +54,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--workers", type=int, default=3)
     ap.add_argument("--runs", type=int, default=10**9)
     ap.add_argument("--search", default=json.dumps(SEARCH), help="JSON SearchConfig")
-    ap.add_argument("--quest-share", type=float, default=0.1)
-    ap.add_argument("--crown-weights", default="1,1,1,1,1,1,1,1,1")
+    ap.add_argument("--quest-share", type=float, default=0.25)
+    ap.add_argument("--crown-weights", default="1,1,1,1,1,1,1,1")   # crowns 0-7
+    ap.add_argument("--curriculum", default="", help="PPO curriculum.json (default: next to --policy; '-' = off)")
     args = ap.parse_args(argv)
     out = Path(args.dir).expanduser()
     (out / "shards").mkdir(parents=True, exist_ok=True)
@@ -43,7 +64,22 @@ def main(argv: list[str] | None = None) -> None:
     state = json.loads(st_path.read_text()) if st_path.is_file() else {"started": 0, "saved": 0}
     search = json.loads(args.search)
     policy = str(Path(args.policy).expanduser())
+    curr_path = None if args.curriculum == "-" else Path(args.curriculum or Path(policy).parent / "curriculum.json").expanduser()
+    curr = {"mtime": None, "char": None, "quest": None}
 
+    def weights() -> tuple[dict | None, dict | None]:
+        """Character / quest weights from PPO's curriculum.json (cached by mtime; missing = uniform)."""
+        try:
+            mt = curr_path.stat().st_mtime if curr_path is not None else None
+            if mt is not None and mt != curr["mtime"]:
+                c = json.loads(curr_path.read_text())
+                on = c.get("enabled", True)
+                curr.update(mtime=mt, char=c.get("char") if on else None, quest=c.get("quest") if on else None)
+        except (OSError, ValueError):
+            pass   # being replaced: keep the last weights
+        return curr["char"], curr["quest"]
+
+    from cursed_words_solver.rl.obs import OBS_VERSION
     from cursed_words_solver.rl.play import init_worker, play
     from cursed_words_solver.rl.ppo import sample_job
     from cursed_words_solver.sim.game.agent import spawn_pool
@@ -61,7 +97,7 @@ def main(argv: list[str] | None = None) -> None:
             return
         n = state["started"]
         rng = random.Random(n * 104729 + 7)
-        j = sample_job(rng, n, args.quest_share, [float(x) for x in args.crown_weights.split(",")])
+        j = sample_job(rng, n, args.quest_share, [float(x) for x in args.crown_weights.split(",")], *weights())
         j["seed"] = EXIT_SEED0 + n
         state["started"] += 1
         store.atomic_write_json(st_path, state)
@@ -85,7 +121,8 @@ def main(argv: list[str] | None = None) -> None:
                     data = store.pack_episode(tr["search_steps"], {
                         "chosen": np.asarray(tr["search_pick"], np.int16),
                         "margin": np.asarray(tr["search_margin"], np.float32),
-                        "changed": np.asarray(tr["search_changed"], np.bool_)})
+                        "changed": np.asarray(tr["search_changed"], np.bool_),
+                        "obs_version": np.asarray([OBS_VERSION], np.int16), **soft_targets(tr)})
                     store.atomic_write_bytes(out / "shards" / f"{res['seed']}.npz", data)
                     state["saved"] += 1
                     store.atomic_write_json(st_path, state)
@@ -96,7 +133,7 @@ def main(argv: list[str] | None = None) -> None:
                 store.append_jsonl(out / "runs.jsonl", res)
                 done += 1
                 if done % 10 == 0:
-                    rows = [r for r in store.read_jsonl(out / "runs.jsonl")[-200:] if not r.get("error")]
+                    rows = [r for r in store.read_jsonl(out / "runs.jsonl")[-200:] if not r.get("error") and r.get("crown", 0) <= 7]
                     win = np.mean([bool(r["won"]) for r in rows]) if rows else float("nan")
                     print(f"[exit] {state['saved']} shards, {done / (time.time() - t0) * 3600:.0f} runs/h, "
                           f"recent win {win:.3f}", flush=True)

@@ -5,7 +5,7 @@ compared paired (same character / crown / quest / seed) against another arm.
     python -m cursed_words_solver.rl.evaluate run --arm teacher --policy teacher
     python -m cursed_words_solver.rl.evaluate compare bc1 teacher
 
-Seed sets: ``main`` = 11 characters Ã— crowns 0-8 Ã— ``--per`` seeds (block 40,000,000) plus
+Seed sets: ``main`` = 11 characters Ã— crowns 0-7 Ã— ``--per`` seeds (block 40,000,000) plus
 26 quests Ã— ``--per-quest``. ``fresh<K>`` = a different block for confirmation.
 """
 
@@ -24,7 +24,12 @@ from cursed_words_solver.rl.teacher import CHARS
 EVAL_HOME = store.RL_HOME / "eval"
 
 
-def eval_jobs(per: int = 3, per_quest: int = 1, block: int = 0, crowns=range(9)) -> list[dict[str, Any]]:
+# playable crowns: GameStatics.HighestCrownAvailable = 7. AscensionLevel 8 (HarderBosses: every boss
+# at the next floor's strength) exists in code only, so no run is ever played or scored there.
+CROWNS = range(8)
+
+
+def eval_jobs(per: int = 3, per_quest: int = 1, block: int = 0, crowns=CROWNS) -> list[dict[str, Any]]:
     from cursed_words_solver.sim.game.challenges import QUESTS
 
     base = 40_000_000 + 1_000_000 * block
@@ -100,7 +105,25 @@ def paired(a: list[dict], b: list[dict]) -> dict:
     se_w = math.sqrt(max(1, disc)) / n
     return {"n": n, "wins_a": wa, "wins_b": wb, "win_diff": round((wa - wb) / n, 4),
             "win_diff_lb90": round((wa - wb) / n - 1.645 * se_w, 4), "only_a": only_a, "only_b": only_b,
+            "win_z": round((only_a - only_b) / math.sqrt(disc), 2) if disc else 0.0,
             "outcome_diff": round(mean, 3), "t": round(mean / (sd / math.sqrt(n)) if sd > 0 else 0.0, 2)}
+
+
+# PPO gate: block 1, 4 seeds per character x crown + 2 per quest = 404 runs. eval_jobs seeds are
+# prefix-stable in per / per_quest, so the earlier 202-run gate (2 / 1) rows are reused.
+GATE_PER, GATE_PER_QUEST = 4, 2
+
+
+def gate_jobs(per: int = GATE_PER, per_quest: int = GATE_PER_QUEST) -> list[dict[str, Any]]:
+    return eval_jobs(per=per, per_quest=per_quest, block=1)
+
+
+def promote_ok(cmp: dict, min_z: float = 1.0) -> bool:
+    """Candidate beats the champion paired: more wins and more outcome, and at least one of the
+    two differences is >= ``min_z`` standard errors (outcome t, or win z = win_diff / (sqrt(disc) / n))."""
+    if not cmp.get("n"):
+        return False
+    return cmp["win_diff"] > 0 and cmp["outcome_diff"] > 0 and max(cmp["t"], cmp.get("win_z", 0.0)) >= min_z
 
 
 def table(rows: list[dict], by: str) -> dict:
@@ -137,11 +160,12 @@ def main(argv: list[str] | None = None) -> None:
     elif args.cmd == "compare":
         a = store.read_jsonl(EVAL_HOME / f"{args.a}.jsonl")
         b = store.read_jsonl(EVAL_HOME / f"{args.b}.jsonl")
-        a = [x for x in a if not x.get("error")]
-        b = [x for x in b if not x.get("error")]
+        a = [x for x in a if not x.get("error") and x["crown"] in CROWNS]
+        b = [x for x in b if not x.get("error") and x["crown"] in CROWNS]
         print("A", summarize(a), "\nB", summarize(b), "\npaired", paired(a, b))
     else:
-        rows = [x for x in store.read_jsonl(EVAL_HOME / f"{args.arm}.jsonl") if not x.get("error")]
+        rows = [x for x in store.read_jsonl(EVAL_HOME / f"{args.arm}.jsonl")
+                if not x.get("error") and x["crown"] in CROWNS]
         print(summarize(rows))
         for by in ("crown", "character", "quest"):
             print(by, table(rows, by))

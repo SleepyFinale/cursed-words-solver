@@ -12,6 +12,7 @@ each path is scored once.
 
 from __future__ import annotations
 
+import os
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field, fields, replace
@@ -57,6 +58,32 @@ _LETTER_CLASSES = frozenset({
     "CardShark", "NumbersBunchOfGrapes", "Queen", "NumberGoUp", "TestTube",
     "Flamingo", "Microscope",
 })
+
+# Deterministic searches run the letter / subset DFS and trie stepping as numba kernels
+# (engine/_jit.py, bit-identical). CWS_NO_JIT=1 (or ``USE_JIT = False``) keeps the Python
+# code below, which stays the reference; it is also used when numba is missing.
+USE_JIT = os.environ.get("CWS_NO_JIT", "").strip().lower() not in ("1", "true", "yes")
+_JIT_MOD: list = []
+
+
+def _jit():
+    """The kernel module, or None (switched off / numba not importable)."""
+    if not USE_JIT:
+        return None
+    if not _JIT_MOD:
+        try:
+            from cursed_words_solver.engine import _jit as mod
+        except Exception:  # numba missing or broken: Python fallback
+            mod = None
+        _JIT_MOD.append(mod)
+    return _JIT_MOD[0]
+
+
+def _jit_failed(exc: Exception) -> None:
+    """A kernel raised (numba compile / cache / typing problem): Python from here on."""
+    global USE_JIT
+    USE_JIT = False
+    print(f"engine JIT disabled, using the Python search: {type(exc).__name__}: {exc}", flush=True)
 
 
 @dataclass
@@ -161,6 +188,12 @@ def _np_advance(arrays, nodes, wild: bool, codes: bytes, tokens: tuple[str, ...]
     starts_np, counts_np, childs_np, edge_keys = arrays[0], arrays[1], arrays[2], arrays[3]
     if not len(edge_keys):
         return None  # empty dictionary
+    # Kernel once a deterministic enumeration has loaded it (deadline searches never wait on numba's import).
+    if not tokens and USE_JIT and _JIT_MOD and (jit := _JIT_MOD[0]) is not None:
+        try:
+            return jit.advance(arrays, nodes, wild, codes)
+        except Exception as exc:  # pragma: no cover - numba runtime failure
+            _jit_failed(exc)
 
     def step_letter(ns, code: int):
         keys = ns.astype(np.int64) * 32 + (code - 97)
@@ -699,6 +732,14 @@ class ExactSearch:
         ``node_budget`` DFS nodes are exceeded (wildcard / chess-dense boards);
         ``stats.extra["exhaustive"]`` reports it.
         """
+        if deadline is None and cancel_check is None and (jit := _jit()) is not None:
+            try:
+                found = jit.letter_enum(self, inv or self.base_inv, require_pickup, starts, node_budget)
+            except Exception as exc:  # pragma: no cover - numba runtime failure
+                _jit_failed(exc)
+                found = None
+            if found is not None:
+                return found
         start_tiles = self._available_allowed if starts is None else starts
         trie = self.trie
         starts, counts, chars, childs, is_word = trie.starts, trie.counts, trie.chars, trie.childs, trie.is_word
@@ -866,6 +907,14 @@ class ExactSearch:
         deadline (``subset_path_budget`` tile paths when there is none) and
         returns ``(found, complete)``; partial results are kept.
         """
+        if deadline is None and cancel_check is None and (jit := _jit()) is not None:
+            try:
+                res = jit.subset_enum(self, inv or self.base_inv, require_pickup, starts, path_budget)
+            except Exception as exc:  # pragma: no cover - numba runtime failure
+                _jit_failed(exc)
+                res = None
+            if res is not None:
+                return res
         import numpy as np
 
         arrays = _numpy_trie(self.trie)

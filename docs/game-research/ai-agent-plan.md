@@ -234,5 +234,62 @@ champion with distillation; outcome +1.10 vs the teacher, t = 2.8; crowns 0-8 wi
 of 22, quests 12/26). 57% of losses run out of grids, so training runs are now weighted toward
 high crowns (`--crown-weights 0.4,...,1.6`, gates stay uniform) and the distillation batch is 128.
 
+2026-11-11 diagnostics (u225 on fresh block-2 seeds, 125 runs): **40.0% wins** (45.5% on the gate
+set it was selected on: ~5 points of selection bias, so judge final strength on fresh blocks).
+Word-search effort 0.30 vs 0.05: 40.8% vs 40.0%, t = 0.15, so the engine is not the bottleneck;
+losses at crowns 3-8 are spread over stages 2-5 (build / economy falls behind the targets).
+u250-u300 did not beat u225 (PPO plateau ~43-45% on gates).
+Look-ahead depth on the same fresh seeds (paired vs plain u225, 40.0%): top 2 / 2 futures / horizon 1
+= 41.6% (t = 0.44, ~50 s/run); top 3 / 4 futures / horizon 2 = **46.4%** (t = 1.86, lb90 +0.5%,
+~180 s/run, 5-36 s per assistant shop call). The deep config is now the assistant default
+(`CWS_AI_SEARCH=fast` = shallow, `=0` = off) and the ExIt collector's search, so distillation
+targets come from the stronger teacher (collector ~4x slower). Pipeline resumed 2026-11-11 at u301.
+Crown 8 dropped 2026-11-11 (u306): only crowns 0-7 are playable (`HighestCrownAvailable = 7`;
+level 8 `HarderBosses` = every boss at the next floor's strength, code only). Training weights now
+cover crowns 0-7 and the gate set is 202 runs (was 224; earlier gate numbers include 22 crown-8
+runs, ~all losses). Same gate on crowns 0-7: champion u225 50.0% (101/202), teacher 39.6%.
+Old crown-8 look-ahead shards and teacher shards are skipped; `evaluate compare/show` filter to 0-7.
+`rl/pipeline.lock` (OS file lock) stops a second pipeline starting while one still drains after STOP.
+Exact speed-ups (2026-11-11, u398; identical words / scores / decisions, parity tests in
+tests/engine/test_jit_parity.py, tests/engine/test_fastcalc_parity.py, tests/sim/test_clone_parity.py):
+numba letter / subset DFS and trie stepping (engine/_jit.py, `CWS_NO_JIT=1` = Python reference; deadline
+searches stay on Python), plan-cached `EnginePlan.score` (`CWS_NO_FASTCALC=1`), pickle `clone()`
+(`CWS_DEEPCOPY_CLONE=1`). Six uncontended training games: 108 s -> 47 s (2.27x), same outcomes.
+Deep look-ahead games: 746 s -> 278 s (2.68x). Live pipeline: PPO update 170-250 s -> ~79 s,
+look-ahead collector ~53 -> ~145 runs/h.
+Rejected as not worth it: word-search result cache (~1 repeat per game), gate early stop (exact
+version saves 0.3%; statistical one flips promotions), champion-trajectory sharing in gates (~3%).
+Gates u325-u375 (crowns 0-7): 47-49.5%, none beat u225's 50.0%.
+
+**v2 training setup (2026-11-11, restart at u601; no promotion u250-u600).** Diagnosis (4 analyses):
+distillation dominated the update (grad norm 14x the next term; 83% of look-ahead labels just confirm
+the policy's pick), entropy collapsed 0.40 -> 0.06 (2 exploratory decisions per run), 56-run batches
+were below the gradient noise scale, 57% of look-ahead rollouts went to single-candidate decisions,
+the policy could not see build strength vs targets, weak slices (Human Boy 13%, Rodman 24%, Sam Gambit
+28%, 10 quests at 0-5%) got no extra training, and the 202-seed gate could not see < ~6 points. Changes:
+- search: < 2 qualifying candidates -> policy argmax, no rollouts, no label.
+- distillation: changed labels weight 1, agreeing 0.1, margin-0 dropped, newest 20k, coef 0.15;
+  v1 shards kept (zero-padded).
+- adaptive entropy coefficient (target 0.2 nats), 112 episodes per update, k3 approx-KL per epoch,
+  KL anchor = champion (reloaded on promotion).
+- curriculum: character / quest weights inverse to recent win rate (clamp 0.5-2), crown weights
+  0.4..1.6,2.0, quest share 0.25; written to ppo1/curriculum.json and followed by the collector.
+- gate: 404 runs (per 4 / per-quest 2, old 202 a subset); promote if win_diff > 0, outcome_diff > 0
+  and max(outcome t, win z) >= 1.
+- obs v2 (global 208 -> 241, token 146 -> 206, new columns zero-initialised so old weights load
+  unchanged): last-encounter scores vs target, quest-rule flags, per-instance colours/tags, probe
+  strength and per-boss strength (probes OFF by default: +116-249% run time with 1 torch thread;
+  CWS_RL_PROBES=1). Draft candidate sets pruned to boss / pin only; sell_buy dropped.
+First v2 gate: u625 promoted on the 404-run gate (49.5% vs u225 47.8%, outcome t = 1.63).
+Search modes on fresh block 2 (u225, 114 runs, current code): plain 43.0%, deep topk 3/4/2.0
+50.9% (+7.9, t = 2.44), "halving" (Gumbel top-3, common random numbers, 4+4 sims, override only at
+paired t >= 1) 44.7%: worse than deep (-6.1, t = -2.0). It changes the pick in 24% of searched
+decisions vs deep's 45%: acting on the plain mean beats waiting for significance here. Halving stays
+opt-in (SearchConfig mode, CWS_AI_SEARCH=halving, --distill-soft); deep stays the default.
+Next candidates: learned probe-strength auxiliary head (cheap), privileged critic, deeper topk search.
+Paused 2026-11-11 at u636 (champion u625). Unfinished: fresh-seed test of topk 3/8/2.0
+(arm u225v2_t3s8h2 in ppo1/eval_fresh, resumable via scratch eval_search.py); entropy only reached
+~0.10 with ent_coef at its 0.2 cap: if it stays low, weaken the champion KL anchor / distill coef.
+
 Open items: numba port of the trie search (only if PPO throughput limits), privileged critic, the cursed-margin (5 points) as a user setting, in-game test of
 melmod 1.5's Michael draft flag (`awaiting_draft` uses the hidden reroll button as the signal).

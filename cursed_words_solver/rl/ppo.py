@@ -1,7 +1,14 @@
 """PPO self-improvement: CPU actor processes play runs with the current policy (sampled),
-the GPU learner updates it, the anchor term (KL to the starting policy) is annealed so the
-agent is free to find its own play. Every ``--eval-every`` updates the greedy policy plays the
-gate seed set; it becomes the champion when it beats the current champion paired.
+the GPU learner updates it. Every ``--eval-every`` updates the greedy policy plays the gate seed
+set (``evaluate.gate_jobs``, 404 runs); it becomes the champion when it beats the current champion
+paired (``evaluate.promote_ok``: more wins and more outcome, one of them >= 1 SE).
+
+Loss: PPO clip + value + adaptive entropy bonus (coefficient moved in log space each update so
+the mean policy entropy stays near ``--ent-target``) + KL anchor + look-ahead distillation.
+Anchor: KL(policy || ref) with ref = ``--kl-ref`` (champion.pt, reloaded on every promotion, or
+the BC init.pt); coefficient ``--kl-coef`` * 0.5 ** (update / ``--kl-halflife``).
+Curriculum: characters and quests are sampled inversely to their recent training win rate
+(``curriculum_weights``), written to ``curriculum.json`` each update for the rl.exit collector.
 
 Pause / resume: rerun the same command (``command.txt``). State is checkpointed after every
 update (model, optimiser, counters, RNG); episodes in flight at a kill are simply replayed
@@ -28,20 +35,96 @@ import torch.nn.functional as F
 
 from cursed_words_solver.rl import store
 from cursed_words_solver.rl.bc import VALUE_SCALE
-from cursed_words_solver.rl.model import Policy, ModelConfig, collate, load_policy, save_policy
+from cursed_words_solver.rl.evaluate import GATE_PER, GATE_PER_QUEST
+from cursed_words_solver.rl.obs import OBS_VERSION
+from cursed_words_solver.rl.model import (Policy, ModelConfig, collate, load_policy, save_policy,
+                                          upgrade_optimizer_state)
 from cursed_words_solver.rl.teacher import CHARS
 
 TRAIN_SEED0 = 50_000_000
+LEGACY_OBS_VERSION = 1      # rl.exit shards without an ``obs_version`` array were written at this version
+CURR_WINDOW = 3000          # recent non-quest training episodes behind the character weights
+CURR_QUEST_WINDOW = 1500    # recent quest episodes behind the quest weights (~60 per quest)
+CURR_PRIOR = 10             # pseudo-episodes at the mean win rate (few-sample slices stay near 1)
 
 
-def sample_job(rng: random.Random, n: int, quest_share: float, crown_weights: list[float]) -> dict[str, Any]:
+def sample_job(rng: random.Random, n: int, quest_share: float, crown_weights: list[float],
+               char_w: dict[str, float] | None = None, quest_w: dict[str, float] | None = None) -> dict[str, Any]:
+    """Training job; ``char_w`` / ``quest_w`` (curriculum) weight the draws, None = uniform (old draws)."""
     from cursed_words_solver.sim.game.challenges import QUESTS
 
-    ch = CHARS[rng.randrange(len(CHARS))]
+    if char_w:
+        ch = rng.choices(CHARS, weights=[char_w.get(c, 1.0) for c in CHARS])[0]
+    else:
+        ch = CHARS[rng.randrange(len(CHARS))]
     if rng.random() < quest_share:
-        return {"character": ch, "crown": 0, "quest": sorted(QUESTS)[rng.randrange(len(QUESTS))], "seed": TRAIN_SEED0 + n}
+        qs = sorted(QUESTS)
+        q = rng.choices(qs, weights=[quest_w.get(x, 1.0) for x in qs])[0] if quest_w else qs[rng.randrange(len(qs))]
+        return {"character": ch, "crown": 0, "quest": q, "seed": TRAIN_SEED0 + n}
     cr = rng.choices(range(len(crown_weights)), weights=crown_weights)[0]
     return {"character": ch, "crown": cr, "quest": None, "seed": TRAIN_SEED0 + n}
+
+
+def curriculum_weights(rows, keys, lo: float = 0.5, hi: float = 2.0) -> tuple[dict[str, float], dict[str, float]]:
+    """``rows`` = (key, won) pairs -> (weight, smoothed win rate) per key.
+    w = clamp((mean_win + 0.1) / (win + 0.1), lo, hi); win is shrunk toward the mean by CURR_PRIOR."""
+    rows = list(rows)
+    if not rows:
+        return {k: 1.0 for k in keys}, {}
+    mean = sum(bool(w) for _, w in rows) / len(rows)
+    n: dict[str, int] = {}
+    wins: dict[str, int] = {}
+    for k, w in rows:
+        n[k] = n.get(k, 0) + 1
+        wins[k] = wins.get(k, 0) + bool(w)
+    wt, wr = {}, {}
+    for k in keys:
+        r = (wins.get(k, 0) + CURR_PRIOR * mean) / (n.get(k, 0) + CURR_PRIOR)
+        wr[k] = round(r, 4)
+        wt[k] = round(min(hi, max(lo, (mean + 0.1) / (r + 0.1))), 4)
+    return wt, wr
+
+
+class Curriculum:
+    """Rolling (character, won) / (quest, won) tallies of training episodes; saved in the checkpoint."""
+
+    def __init__(self, char_rows=(), quest_rows=()) -> None:
+        self.chars: deque = deque((tuple(r) for r in char_rows), maxlen=CURR_WINDOW)
+        self.quests: deque = deque((tuple(r) for r in quest_rows), maxlen=CURR_QUEST_WINDOW)
+
+    @classmethod
+    def from_episodes(cls, path: Path) -> "Curriculum":
+        c = cls()
+        for r in store.read_jsonl(path):
+            c.add(r)
+        return c
+
+    def add(self, r: dict) -> None:
+        if r.get("error") or r.get("crown", 0) > 7:
+            return
+        if r.get("quest"):
+            self.quests.append((r["quest"], int(bool(r["won"]))))
+        else:
+            self.chars.append((r["character"], int(bool(r["won"]))))
+
+    def state(self) -> dict:
+        return {"chars": [list(x) for x in self.chars], "quests": [list(x) for x in self.quests]}
+
+    def weights(self) -> dict:
+        from cursed_words_solver.sim.game.challenges import QUESTS
+
+        cw, cr = curriculum_weights(self.chars, CHARS)
+        qw, qr = curriculum_weights(self.quests, sorted(QUESTS))
+        return {"char": cw, "quest": qw, "char_win": cr, "quest_win": qr,
+                "n_char": len(self.chars), "n_quest": len(self.quests)}
+
+
+def adapt_ent_coef(coef: float, ent: float, target: float, lr: float, lo: float = 1e-4, hi: float = 0.2) -> float:
+    """Log-space step toward the entropy target: entropy below target -> larger bonus."""
+    if target <= 0 or not math.isfinite(ent):
+        return coef
+    step = lr * max(-1.0, min(1.0, (target - ent) / target))
+    return float(min(hi, max(lo, coef * math.exp(step))))
 
 
 def gae(rew: np.ndarray, val: np.ndarray, lam: float, gamma: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
@@ -57,38 +140,146 @@ def gae(rew: np.ndarray, val: np.ndarray, lam: float, gamma: float = 1.0) -> tup
 
 
 class DistillBuffer:
-    """Look-ahead picks from ``rl.exit`` shards (expert iteration); newest ``cap`` decisions."""
+    """Look-ahead picks from ``rl.exit`` shards (expert iteration), newest ``cap`` decisions by shard
+    mtime. Weight 1 where the look-ahead changed the policy's pick, ``same_w`` where it agreed;
+    labels with margin 0 (one candidate scored, or a tie) carry nothing and are dropped. Shards
+    whose obs version or feature widths differ from the model's are skipped."""
 
-    def __init__(self, root: Path, cap: int = 200_000) -> None:
+    def __init__(self, root: Path, cap: int = 20_000, same_w: float = 0.1,
+                 widths: tuple[int, int, int] | None = None, version: int = OBS_VERSION) -> None:
         self.dir = Path(root) / "shards"
         self.cap = cap
+        self.same_w = same_w
+        self.widths = widths      # (global, token, action) feature widths; None = current obs / actions
+        self.version = version
         self.seen: set[str] = set()
         self.items: deque = deque(maxlen=cap)
-        self.n_changed = 0
+        self.n_skipped = 0        # shards dropped for format
+
+    def _widths(self) -> tuple[int, int, int]:
+        if self.widths is None:
+            from cursed_words_solver.rl.actions import n_action_features
+            from cursed_words_solver.rl.obs import n_global_features, n_token_features
+
+            self.widths = (n_global_features(), n_token_features(), n_action_features())
+        return self.widths
+
+    def format_ok(self, ep: dict) -> bool:
+        v = ep.get("obs_version")
+        v = int(np.asarray(v).reshape(-1)[0]) if v is not None else LEGACY_OBS_VERSION
+        G, Ft, Fa = self._widths()
+        if v != self.version:
+            # v1 shards (pre-2026-11-11 labels) are kept: collate / forward zero-pad their
+            # narrower columns, i.e. they read as "new features unknown"
+            from cursed_words_solver.rl.obs import LEGACY_GLOBAL, LEGACY_TOKEN
+
+            if v != LEGACY_OBS_VERSION or self.version != LEGACY_OBS_VERSION + 1:
+                return False
+            G, Ft = LEGACY_GLOBAL[0], LEGACY_TOKEN[0]
+        g, tf, af = ep.get("glob"), ep.get("tok_feat"), ep.get("act_feat")
+        if g is None or af is None or g.ndim != 2 or g.shape[1] != G or af.ndim != 2 or af.shape[1] != Fa:
+            return False
+        return tf is not None and ((tf.ndim == 2 and tf.shape[1] == Ft) or tf.size == 0)
+
+    def _items(self, ep: dict) -> list[dict]:
+        margin = ep.get("margin")
+        changed = ep.get("changed")
+        q_idx, q_val = ep.get("q_idx"), ep.get("q_val")   # halving search soft targets (rl.exit.soft_targets)
+        if q_idx is None or q_val is None or q_idx.ndim != 2 or len(q_idx) != len(ep["chosen"]) or q_val.shape != q_idx.shape:
+            q_idx = q_val = None
+        out = []
+        for i in range(len(ep["chosen"])):
+            if margin is not None and float(margin[i]) == 0.0:
+                continue
+            w = 1.0 if changed is not None and bool(changed[i]) else self.same_w
+            if w <= 0:
+                continue
+            st = store.unpack_step(ep, i)
+            if len(st["act_type"]) <= 1:
+                continue
+            it = {**st, "chosen": int(ep["chosen"][i]), "w": float(w)}
+            if q_idx is not None:
+                ok = (q_idx[i] >= 0) & (q_idx[i] < len(st["act_type"]))
+                if ok.sum() >= 2:
+                    it["q_idx"] = q_idx[i][ok].astype(np.int64)
+                    it["q_val"] = q_val[i][ok].astype(np.float32)
+            out.append(it)
+        return out
 
     def refresh(self) -> int:
         if not self.dir.is_dir():
             return 0
-        new = 0
-        for f in sorted(self.dir.glob("*.npz"), key=lambda p: p.stat().st_mtime):
-            if f.name in self.seen:
+        # runs.jsonl maps shard seed -> crown; crown 8 is not playable (old collector runs)
+        skip = {f"{r['seed']}.npz" for r in store.read_jsonl(self.dir.parent / "runs.jsonl")
+                if r.get("crown", 0) > 7}
+        mt = {}
+        for f in self.dir.glob("*.npz"):
+            if f.name not in self.seen:
+                try:
+                    mt[f] = f.stat().st_mtime
+                except OSError:
+                    pass
+        got: list[list[dict]] = []
+        total = 0
+        for f in sorted(mt, key=lambda p: (mt[p], p.name), reverse=True):   # newest first, stop at the cap
+            if f.name in skip or total >= self.cap:
+                self.seen.add(f.name)
                 continue
             try:
                 ep = store.load_episode(f)
             except Exception:
                 continue   # being written
             self.seen.add(f.name)
-            for i in range(len(ep["chosen"])):
-                st = store.unpack_step(ep, i)
-                if len(st["act_type"]) <= 1:
-                    continue
-                self.items.append({**st, "chosen": int(ep["chosen"][i])})
-                new += 1
-        return new
+            if not self.format_ok(ep):
+                self.n_skipped += 1
+                continue
+            its = self._items(ep)
+            got.append(its)
+            total += len(its)
+        for its in reversed(got):   # oldest first, so the deque drops the oldest
+            self.items.extend(its)
+        return total
+
+    @property
+    def n_changed(self) -> int:
+        return sum(it["w"] >= 1.0 for it in self.items)
 
     def sample(self, n: int) -> list[dict]:
         k = len(self.items)
         return [self.items[i] for i in np.random.randint(0, k, size=min(n, k))] if k else []
+
+
+def soft_distill_targets(items: list[dict], width: int, temp: float, mix: float) -> np.ndarray:
+    """Distillation targets (len(items), width). An item with search Q values (``q_idx`` /
+    ``q_val``, halving search) gets ``(1 - mix) * onehot(chosen) + mix * softmax(Q / temp)``
+    over its searched candidates; others get ``onehot(chosen)`` (= the hard CE). As
+    ``temp -> 0`` the soft part tends to onehot(argmax Q), i.e. the hard label whenever the
+    pick is the best mean (the halving switch rule can keep the policy argmax instead)."""
+    tgt = np.zeros((len(items), width), np.float64)
+    for r, it in enumerate(items):
+        tgt[r, it["chosen"]] = 1.0
+        qi, qv = it.get("q_idx"), it.get("q_val")
+        if qi is None or qv is None or len(qi) < 2 or temp <= 0 or mix <= 0:
+            continue
+        z = np.asarray(qv, np.float64) / temp
+        z = np.exp(z - z.max())
+        tgt[r] *= 1.0 - mix
+        np.add.at(tgt[r], np.asarray(qi, np.int64), mix * z / z.sum())
+    return tgt.astype(np.float32)
+
+
+def distill_loss(logits: torch.Tensor, items: list[dict], temp: float = 0.0, mix: float = 0.5) -> torch.Tensor:
+    """Weighted distillation loss over the label items (weights ``w``). ``temp <= 0``: hard
+    cross-entropy on ``chosen`` (the default); ``temp > 0``: soft targets (``soft_distill_targets``)."""
+    device = logits.device
+    dw = torch.tensor([it.get("w", 1.0) for it in items], device=device)
+    if temp <= 0:
+        dch = torch.tensor([it["chosen"] for it in items], device=device)
+        ce = F.cross_entropy(logits, dch, reduction="none")
+    else:
+        tgt = torch.from_numpy(soft_distill_targets(items, logits.shape[1], temp, mix)).to(device)
+        ce = -(tgt * F.log_softmax(logits, -1)).sum(-1)
+    return (dw * ce).sum() / dw.sum().clamp_min(1e-9)
 
 
 def ppo_update(model: Policy, ref: Policy | None, opt, batch: list[dict], args, device,
@@ -99,6 +290,7 @@ def ppo_update(model: Policy, ref: Policy | None, opt, batch: list[dict], args, 
     beta = args.kl_coef
     for _ in range(args.epochs):
         np.random.shuffle(idx)
+        ep_kl: list[float] = []
         for s in range(0, len(idx), args.mb):
             items = [batch[i] for i in idx[s:s + args.mb]]
             b = collate(items, device)
@@ -127,20 +319,29 @@ def ppo_update(model: Policy, ref: Policy | None, opt, batch: list[dict], args, 
                 ditems = distill.sample(args.distill_mb)
                 if ditems:
                     db = collate(ditems, device)
-                    dch = torch.tensor([it["chosen"] for it in ditems], device=device)
-                    dist = F.cross_entropy(model(db)["logits"], dch)
+                    soft_t = float(getattr(args, "distill_soft", 0.0) or 0.0)
+                    if soft_t > 0:
+                        dist = distill_loss(model(db)["logits"], ditems, soft_t, float(getattr(args, "distill_soft_mix", 0.5)))
+                    else:
+                        dch = torch.tensor([it["chosen"] for it in ditems], device=device)
+                        dw = torch.tensor([it.get("w", 1.0) for it in ditems], device=device)
+                        ce = F.cross_entropy(model(db)["logits"], dch, reduction="none")
+                        dist = (dw * ce).sum() / dw.sum().clamp_min(1e-9)
                     loss = loss + args.distill_coef * dist
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad)
             opt.step()
             with torch.no_grad():
-                approx_kl = (old_logp - logp).mean().item()
+                # KL(old || new) of the PPO ratio alone (k3 estimator, >= 0), before this step
+                lr_ = logp - old_logp
+                approx_kl = (torch.exp(lr_) - 1 - lr_).mean().item()
+                ep_kl.append(approx_kl)
                 clipfrac = ((ratio - 1).abs() > args.clip).float().mean().item()
             for k, v in (("pg", pg.item()), ("v", vloss.item()), ("ent", ent.item()), ("kl_ref", kl_ref.item()), ("distill", dist.item()),
                          ("approx_kl", approx_kl), ("clipfrac", clipfrac)):
                 stats.setdefault(k, []).append(v)
-        if np.mean(stats.get("approx_kl", [0])) > args.target_kl:
+        if ep_kl and np.mean(ep_kl) > args.target_kl:   # this epoch moved the policy enough
             break
     return {k: round(float(np.mean(v)), 4) for k, v in stats.items()}
 
@@ -173,28 +374,45 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--init", default=str(store.RL_HOME / "bc" / "best.pt"))
     ap.add_argument("--workers", type=int, default=7)
     ap.add_argument("--updates", type=int, default=100000, help="total updates (absolute)")
-    ap.add_argument("--episodes", type=int, default=56, help="episodes per update")
+    ap.add_argument("--episodes", type=int, default=112, help="episodes per update")
     ap.add_argument("--lr", type=float, default=5e-5)
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--mb", type=int, default=512)
     ap.add_argument("--clip", type=float, default=0.15)
     ap.add_argument("--lam", type=float, default=0.95)
     ap.add_argument("--vf-coef", type=float, default=0.5)
-    ap.add_argument("--ent-coef", type=float, default=0.003)
-    ap.add_argument("--kl-coef", type=float, default=0.1, help="start of the anchor to the init policy")
+    ap.add_argument("--ent-coef", type=float, default=0.003, help="starting entropy coefficient (adapted after)")
+    ap.add_argument("--ent-target", type=float, default=0.2, help="mean policy entropy (nats) to hold; 0 = fixed coef")
+    ap.add_argument("--ent-lr", type=float, default=0.3, help="max log-space change of the entropy coef per update")
+    ap.add_argument("--kl-ref", choices=("champion", "init"), default="champion",
+                    help="anchor policy: champion.pt (reloaded on promotion) or the BC init.pt")
+    ap.add_argument("--kl-coef", type=float, default=0.1,
+                    help="anchor coefficient base: kl_coef * 0.5 ** (update / kl_halflife)")
     ap.add_argument("--kl-halflife", type=float, default=300.0, help="updates for the anchor to halve")
-    ap.add_argument("--target-kl", type=float, default=0.03)
+    ap.add_argument("--target-kl", type=float, default=0.03, help="stop the epochs once one moves the PPO ratio this far")
     ap.add_argument("--max-grad", type=float, default=0.5)
-    ap.add_argument("--quest-share", type=float, default=0.1)
+    ap.add_argument("--quest-share", type=float, default=0.25)
+    ap.add_argument("--no-curriculum", action="store_true", help="uniform characters / quests")
     ap.add_argument("--eval-every", type=int, default=25)
-    ap.add_argument("--eval-per", type=int, default=2)
+    ap.add_argument("--gate-per", type=int, default=GATE_PER, help="gate seeds per character x crown")
+    ap.add_argument("--gate-per-quest", type=int, default=GATE_PER_QUEST, help="gate seeds per quest")
+    ap.add_argument("--eval-per", type=int, default=None, help=argparse.SUPPRESS)   # old name of --gate-per
     ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument("--distill-dir", default="", help="rl.exit dir: also learn the look-ahead's picks")
-    ap.add_argument("--distill-coef", type=float, default=0.5)
+    ap.add_argument("--distill-coef", type=float, default=0.15)
     ap.add_argument("--distill-mb", type=int, default=128)
-    ap.add_argument("--crown-weights", default="1,1,1,1,1,1,1,1,1",
-                    help="sampling weight of crowns 0-8 for training runs (comma list)")
+    ap.add_argument("--distill-same-w", type=float, default=0.1, help="weight of labels where the look-ahead agreed")
+    ap.add_argument("--distill-cap", type=int, default=20000, help="newest look-ahead decisions kept")
+    ap.add_argument("--distill-soft", type=float, default=0.0, metavar="TEMP",
+                    help="> 0: labels with search Q values (halving search shards) are learned as "
+                         "(1 - mix) * onehot(pick) + mix * softmax(Q / TEMP) over the searched candidates "
+                         "(Q in outcome points); 0 = hard cross-entropy on the pick")
+    ap.add_argument("--distill-soft-mix", type=float, default=0.5, help="share of softmax(Q / TEMP) in the soft target")
+    ap.add_argument("--crown-weights", default="1,1,1,1,1,1,1,1",
+                    help="sampling weight of crowns 0-7 for training runs (comma list; 7 = top playable)")
     args = ap.parse_args(argv)
+    if args.eval_per is not None:
+        args.gate_per = args.eval_per
     out = Path(args.dir).expanduser()
     out.mkdir(parents=True, exist_ok=True)
     (out / "command.txt").write_text("python -m cursed_words_solver.rl.ppo " + " ".join(argv or __import__("sys").argv[1:]) + "\n")
@@ -205,9 +423,12 @@ def main(argv: list[str] | None = None) -> None:
         model = Policy(ModelConfig(**ck["config"])).to(device)
         model.load_state_dict(ck["state"])
         opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.0)
-        opt.load_state_dict(ck["opt"])
+        opt.load_state_dict(upgrade_optimizer_state(ck["opt"], model))   # v1 widths -> current
         state = {k: ck[k] for k in ("update", "episodes_started", "episodes_done", "champion_update", "init")}
         state["pending_gate"] = ck.get("pending_gate", 0)
+        state["ent_coef"] = float(ck.get("ent_coef", args.ent_coef))
+        if "curriculum" in ck:
+            state["curriculum"] = ck["curriculum"]
         random.setstate(ck["py_rng"])
         np.random.set_state(ck["np_rng"])
         torch.set_rng_state(ck["torch_rng"])
@@ -217,25 +438,29 @@ def main(argv: list[str] | None = None) -> None:
         model, _ = load_policy(init, device=str(device))
         opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.0)
         state = {"update": 0, "episodes_started": 0, "episodes_done": 0, "champion_update": 0, "init": init,
-                 "pending_gate": 0}
+                 "pending_gate": 0, "ent_coef": args.ent_coef}
         shutil.copyfile(init, out / "init.pt")
         shutil.copyfile(init, out / "champion.pt")
         random.seed(1)
         np.random.seed(1)
-    ref = None
-    if args.kl_coef > 0:
-        ref, _ = load_policy(out / "init.pt", device=str(device))
-        for p in ref.parameters():
-            p.requires_grad_(False)
+    # rolling win tallies (from episodes.jsonl the first time a checkpoint lacks them)
+    if "curriculum" in state:
+        curr = Curriculum(state["curriculum"]["chars"], state["curriculum"]["quests"])
+    else:
+        curr = Curriculum.from_episodes(out / "episodes.jsonl")
     weights = out / "weights.pt"
     save_policy(model, weights, {"update": state["update"]})
-    distill = DistillBuffer(Path(args.distill_dir).expanduser()) if args.distill_dir else None
-    from cursed_words_solver.rl.evaluate import eval_jobs, paired, run_arm, summarize
+    distill = None
+    if args.distill_dir:
+        c = model.cfg
+        distill = DistillBuffer(Path(args.distill_dir).expanduser(), cap=args.distill_cap, same_w=args.distill_same_w,
+                                widths=(c.n_global, c.n_tok_feat, c.n_act_feat))
+    from cursed_words_solver.rl.evaluate import gate_jobs as make_gate_jobs, paired, promote_ok, run_arm, summarize
     from cursed_words_solver.rl.play import init_worker, play
     from cursed_words_solver.sim.game.agent import spawn_pool
 
     pool = spawn_pool(args.workers, init_worker, ())
-    gate_jobs = eval_jobs(per=args.eval_per, per_quest=1, block=1)
+    gate_jobs = make_gate_jobs(args.gate_per, args.gate_per_quest)
     eval_dir = out / "eval"
     # finish a promotion a crash interrupted (state is saved before the files are copied)
     cu = state["champion_update"]
@@ -244,34 +469,64 @@ def main(argv: list[str] | None = None) -> None:
         if (eval_dir / f"u{cu}.jsonl").is_file():
             shutil.copyfile(eval_dir / f"u{cu}.jsonl", eval_dir / f"champion_u{cu}.jsonl")
         (out / f"cand_u{cu}.pt").unlink(missing_ok=True)
-    # champion's gate results (the init policy at first)
-    champ_arm = f"champion_u{state['champion_update']}"
-    if state["update"] == 0 or not (eval_dir / f"{champ_arm}.jsonl").is_file():
+    ref = None
+
+    def load_ref() -> None:
+        nonlocal ref
+        if args.kl_coef <= 0:
+            return
+        ref, _ = load_policy(out / ("champion.pt" if args.kl_ref == "champion" else "init.pt"), device=str(device))
+        for p in ref.parameters():
+            p.requires_grad_(False)
+
+    load_ref()
+
+    def champion_rows() -> list[dict]:
+        """The champion on every gate job (run_arm plays only the missing ones, e.g. after the gate grew)."""
+        return run_arm(f"champion_u{state['champion_update']}", str(out / "champion.pt"), gate_jobs,
+                       out_dir=eval_dir, pool=pool, verbose=False)
+
+    if state["update"] == 0 or not (eval_dir / f"champion_u{state['champion_update']}.jsonl").is_file():
         print("evaluating the starting champion on the gate set...", flush=True)
-        run_arm(champ_arm, str(out / "champion.pt"), gate_jobs, out_dir=eval_dir, pool=pool, verbose=False)
+        champion_rows()
     rng = random.Random(state["episodes_started"] * 7919 + 13)
     crown_w = [float(x) for x in args.crown_weights.split(",")]
-    assert len(crown_w) == 9, "--crown-weights needs 9 values"
+    assert len(crown_w) == 8, "--crown-weights needs 8 values (crowns 0-7)"
+    cw = {"char": None, "quest": None}
     in_flight: deque = deque()
     recent: deque = deque(maxlen=500)
 
+    def set_curriculum() -> dict:
+        w = curr.weights()
+        if not args.no_curriculum:
+            cw["char"], cw["quest"] = w["char"], w["quest"]
+        store.atomic_write_json(out / "curriculum.json", {
+            "update": state["update"], "enabled": not args.no_curriculum, "quest_share": args.quest_share,
+            "crown_weights": crown_w, **w})
+        return w
+
+    set_curriculum()
+
     def submit() -> None:
-        j = sample_job(rng, state["episodes_started"], args.quest_share, crown_w)
+        j = sample_job(rng, state["episodes_started"], args.quest_share, crown_w, cw["char"], cw["quest"])
         state["episodes_started"] += 1
         in_flight.append(pool.apply_async(play, ({**j, "policy": str(weights), "record": True,
                                                    "temperature": args.temperature},)))
+
+    def ckpt() -> None:
+        save_ckpt(ck_path, model, opt, {**state, "curriculum": curr.state()})
 
     def gate(u: int) -> None:
         """Paired eval of candidate cand_u{u}.pt vs the champion; resumable (run_arm appends)."""
         arm = f"u{u}"
         cand = out / f"cand_{arm}.pt"
+        champ = [r for r in champion_rows() if not r.get("error")]
         rows = run_arm(arm, str(cand), gate_jobs, out_dir=eval_dir, pool=pool, verbose=False)
-        champ = store.read_jsonl(eval_dir / f"champion_u{state['champion_update']}.jsonl")
-        champ = [r for r in champ if not r.get("error")]
         cmp = paired(rows, champ)
-        promote = cmp.get("n", 0) > 0 and cmp["outcome_diff"] > 0 and cmp["t"] >= 1.0 and cmp["win_diff"] >= 0
+        promote = promote_ok(cmp)
         teacher = [r for r in store.read_jsonl(eval_dir / "teacher.jsonl") if not r.get("error")]
         grow = {"update": u, "eval": summarize(rows), "vs_champion": cmp, "promoted": promote,
+                "rule": "win_diff>0 & outcome_diff>0 & max(t, win_z)>=1", "gate_n": len(gate_jobs),
                 "champion_update": state["champion_update"],
                 "vs_teacher": paired(rows, teacher) if teacher else None}
         print("GATE", grow, flush=True)
@@ -279,11 +534,13 @@ def main(argv: list[str] | None = None) -> None:
         state["pending_gate"] = 0
         if promote:
             state["champion_update"] = u
-            save_ckpt(ck_path, model, opt, state)   # commit the decision, then move files
+            ckpt()   # commit the decision, then move files
             shutil.copyfile(eval_dir / f"{arm}.jsonl", eval_dir / f"champion_u{u}.jsonl")
             shutil.copyfile(cand, out / "champion.pt")
+            if args.kl_ref == "champion":
+                load_ref()
         else:
-            save_ckpt(ck_path, model, opt, state)
+            ckpt()
         cand.unlink(missing_ok=True)
 
     if state.get("pending_gate"):
@@ -321,7 +578,8 @@ def main(argv: list[str] | None = None) -> None:
                     state["episodes_done"] += 1
             # learn
             args.kl_coef_now = args.kl_coef * 0.5 ** (state["update"] / max(1e-9, args.kl_halflife))
-            a2 = argparse.Namespace(**{**vars(args), "kl_coef": args.kl_coef_now})
+            ent_coef = state["ent_coef"]
+            a2 = argparse.Namespace(**{**vars(args), "kl_coef": args.kl_coef_now, "ent_coef": ent_coef})
             if buf_items:
                 advs = np.asarray([it["adv"] for it in buf_items], np.float32)
                 mu, sd = float(advs.mean()), float(advs.std() + 1e-6)
@@ -332,10 +590,16 @@ def main(argv: list[str] | None = None) -> None:
                 st = ppo_update(model, ref, opt, buf_items, a2, device, distill)
                 if distill is not None:
                     st["distill_n"] = len(distill.items)
+                    st["distill_changed"] = distill.n_changed
+                if args.ent_target > 0 and "ent" in st:
+                    state["ent_coef"] = adapt_ent_coef(ent_coef, st["ent"], args.ent_target, args.ent_lr)
             else:
                 st = {}
             state["update"] += 1
             save_policy(model, weights, {"update": state["update"]})
+            for r in buf_eps:
+                curr.add(r)
+            w = set_curriculum()
             dt = time.time() - t_last
             t_last = time.time()
             row = {"update": state["update"], "episodes": state["episodes_done"], "steps": len(buf_items),
@@ -343,13 +607,15 @@ def main(argv: list[str] | None = None) -> None:
                    **{f"train_{k}": v for k, v in summarize(buf_eps).items()},
                    "recent_win": round(float(np.mean([bool(r["won"]) for r in recent])), 4),
                    "recent_outcome": round(float(np.mean([r["outcome"] for r in recent])), 3),
-                   "kl_coef": round(args.kl_coef_now, 4), **st}
+                   "kl_coef": round(args.kl_coef_now, 4), "kl_ref_src": args.kl_ref,
+                   "ent_coef": round(ent_coef, 5), "ent_coef_next": round(state["ent_coef"], 5),
+                   "curr_char_w": {k: v for k, v in w["char"].items() if v != 1.0}, **st}
             print(row, flush=True)
             due = state["update"] % args.eval_every == 0
             if due:
                 shutil.copyfile(weights, out / f"cand_u{state['update']}.pt")
                 state["pending_gate"] = state["update"]
-            save_ckpt(ck_path, model, opt, state)
+            ckpt()
             # logs after the checkpoint: a crash can drop a row, never duplicate one
             store.append_jsonl(out / "history.jsonl", row)
             for r in buf_eps:
