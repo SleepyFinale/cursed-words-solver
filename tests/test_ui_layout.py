@@ -1,3 +1,4 @@
+import pytest
 """Tests for melmod ui_layout overlay region resolution."""
 
 
@@ -192,8 +193,9 @@ def test_parse_ui_layout_remaps_shrunk_3x3_cell_centers():
     assert 0 not in centers
     assert 10 in centers
     assert 20 in centers
-    assert centers[10] == (829.0, 316.0)
-    assert centers[20] == (823.0, 590.0)
+    # Straightened onto a fitted grid: within a few px of the raw export.
+    assert centers[10] == pytest.approx((829.0, 316.0), abs=5.0)
+    assert centers[20] == pytest.approx((823.0, 590.0), abs=5.0)
 
 
 def test_parse_ui_layout_filters_collapsed_rack_slots():
@@ -375,8 +377,8 @@ def test_parse_ui_layout_repairs_degenerate_board_rect():
     assert parsed.board.width > 540 + 40
     assert parsed.board.height > 540 + 40
     assert len(parsed.board_cell_centers or {}) == 25
-    assert parsed.board_cell_centers[0] == (687.0, 183.0)
-    assert parsed.board_cell_centers[24] == (687.0 + 4 * 135, 183.0 + 4 * 135)
+    assert parsed.board_cell_centers[0] == pytest.approx((687.0, 183.0))
+    assert parsed.board_cell_centers[24] == pytest.approx((687.0 + 4 * 135, 183.0 + 4 * 135))
 
 
 def test_parse_ui_layout_keeps_valid_board_rect():
@@ -552,3 +554,103 @@ def test_degenerate_collapsed_rack_uses_manual_fallback():
     assert parsed.rack_slot_corrected is True
     assert parsed.rack_slot_centers is not None
     assert parsed.rack.width >= 200
+
+
+def _stadium_1080p_run_state(consumable_indices: list[int], rack_slots: list[dict]) -> dict:
+    rack = ",".join(f'{{"rack_index":{i}}}' for i in consumable_indices)
+    return {
+        "extras": {"consumable_rack": f"[{rack}]"},
+        "ui_layout": {
+            "board": {"x": 514, "y": 1, "width": 891, "height": 879},
+            "consumable_rack": {
+                "x": 1604,
+                "y": 560,
+                "width": 232,
+                "height": 71,
+                "slot_count": len(rack_slots),
+                "rack_slots": rack_slots,
+            },
+        },
+    }
+
+
+def test_parse_ui_layout_keeps_tight_stadium_second_row():
+    """Real 1080p Stadium export: rows only 71px apart must not be dropped."""
+    from cursed_words_solver.ui.board_geometry import rack_placement_geometry
+
+    slots = [
+        {"rack_index": i, "x": 1604 + 58 * (i % 5), "y": 560 if i < 5 else 631,
+         "width": 48, "height": 48}
+        for i in range(10)
+    ]
+    parsed = parse_ui_layout(_stadium_1080p_run_state([0, 1, 2, 3, 4, 5, 6], slots))
+    assert parsed is not None
+    centers = parsed.rack_slot_centers or {}
+    assert set(centers) == set(range(10))
+    markers = rack_placement_geometry(
+        parsed.rack,
+        [1, 2, 3],
+        [{"index": 1, "rack_index": 5, "letter": "D"}],
+        rack_slot_centers=centers,
+    )
+    assert len(markers) == 1
+    # Lower row, left column, fully inside the overlay window.
+    assert markers[0].y > centers[0][1] - parsed.rack.y + 40
+    assert 0 < markers[0].x < parsed.rack.width
+    assert 0 < markers[0].y < parsed.rack.height
+
+
+def test_parse_ui_layout_synthesizes_missing_second_row_slot():
+    """Consumable on slot 5 but export has first row only → estimate row 2."""
+    slots = [
+        {"rack_index": i, "x": 1604 + 58 * i, "y": 560, "width": 48, "height": 48}
+        for i in range(5)
+    ]
+    parsed = parse_ui_layout(_stadium_1080p_run_state([0, 2, 5], slots))
+    assert parsed is not None
+    centers = parsed.rack_slot_centers or {}
+    assert 5 in centers
+    assert centers[5][0] == centers[0][0]
+    assert 55 < centers[5][1] - centers[0][1] < 90
+    assert parsed.rack_slot_corrected
+
+
+def test_rack_badge_layout_stays_inside_window():
+    from cursed_words_solver.ui.board_geometry import rack_badge_layout, rack_tile_side
+
+    tile = rack_tile_side(58.0, 71.0, {0: (48.0, 48.0)})
+    assert tile == 48.0
+    cx, cy, r = rack_badge_layout(5.0, 5.0, tile, 100.0, 100.0)
+    assert cx - r >= 0 and cy - r >= 0
+    cx, cy, r = rack_badge_layout(80.0, 80.0, tile, 100.0, 100.0)
+    # Badge sits up-left of the tile center (on the corner, not over the letter).
+    assert cx < 80.0 and cy < 80.0
+
+
+def test_straighten_cell_centers_removes_tile_wobble():
+    """Bobbing tiles export a few px off-grid; the fit puts them back in line."""
+    from cursed_words_solver.ui.layout import _straighten_cell_centers
+
+    wobble = [3, -4, 2, -1, 5, -3, 0, 4, -2, 1]
+    centers = {}
+    for idx in range(25):
+        r, c = divmod(idx, 5)
+        centers[idx] = (
+            671 + 142.7 * c - 0.5 * r + wobble[idx % 10],
+            155 + 143.6 * r + wobble[(idx + 3) % 10],
+        )
+    fitted = _straighten_cell_centers(centers, 5)
+    assert fitted is not None and set(fitted) == set(centers)
+    # Every row now lies on one straight line (equal Y spacing per column step).
+    for r in range(5):
+        ys = [fitted[r * 5 + c][1] for c in range(5)]
+        steps = [b - a for a, b in zip(ys, ys[1:])]
+        assert max(steps) - min(steps) < 1e-6
+
+
+def test_straighten_cell_centers_keeps_non_grid_layout():
+    from cursed_words_solver.ui.layout import _straighten_cell_centers
+
+    centers = {i: (float(divmod(i, 5)[1] * 100), float(divmod(i, 5)[0] * 100)) for i in range(25)}
+    centers[12] = (260.0, 240.0)  # far off-grid: not a wobble, keep raw data
+    assert _straighten_cell_centers(centers, 5) == centers

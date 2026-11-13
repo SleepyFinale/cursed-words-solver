@@ -224,6 +224,11 @@ def _placement_record_rack_index(placement: Any) -> int:
         return -1
 
 
+def placement_rack_index(placement: Any) -> int:
+    """Consumable rack slot a placement draws from (-1 when not from the rack)."""
+    return _placement_record_rack_index(placement)
+
+
 def _absolute_to_local(
     region: Region,
     abs_x: float,
@@ -296,6 +301,51 @@ def rack_marker_radius(
     if max_r < RACK_MARKER_RADIUS_MIN:
         return max(0.0, max_r)
     return min(radius, max_r)
+
+
+RACK_BADGE_RADIUS_MIN = 10.0
+RACK_BADGE_RADIUS_MAX = 15.0
+
+
+def rack_tile_side(
+    slot_w: float,
+    slot_h: float,
+    rack_slot_sizes: dict[int, tuple[float, float]] | None = None,
+) -> float:
+    """Visible tile edge length for the highlight box.
+
+    Prefers melmod's per-slot sizes; otherwise ~82% of the slot pitch (tiles
+    have a gap between them). ``slot_h`` alone is unreliable for Stadium racks
+    because the exported rack height spans both rows.
+    """
+    if rack_slot_sizes:
+        sides = [min(w, h) for w, h in rack_slot_sizes.values() if w > 0 and h > 0]
+        median = _median(sides)
+        if median is not None:
+            return median
+    return max(16.0, min(slot_w * 0.82, slot_h if slot_h > 0 else slot_w))
+
+
+def rack_badge_layout(
+    x: float,
+    y: float,
+    tile_side: float,
+    region_w: float,
+    region_h: float,
+) -> tuple[float, float, float]:
+    """Badge (cx, cy, radius) sitting on the tile's top-left corner.
+
+    Placing the number on the corner keeps the tile letter readable; the
+    badge is clamped so it never clips outside the overlay window.
+    """
+    radius = max(RACK_BADGE_RADIUS_MIN, min(RACK_BADGE_RADIUS_MAX, tile_side * 0.3))
+    half = tile_side / 2.0
+    cx = x - half + radius * 0.25
+    cy = y - half + radius * 0.25
+    pad = radius + 1.0
+    cx = min(max(cx, pad), max(pad, region_w - pad))
+    cy = min(max(cy, pad), max(pad, region_h - pad))
+    return cx, cy, radius
 
 
 def rack_slot_center(
@@ -483,3 +533,60 @@ def swap_geometry(
             cx, cy = _index_center(int(idx), slot_w=slot_w, slot_h=slot_h, board=board)
         markers.append(PlacementMarker(x=cx, y=cy, letter=""))
     return markers
+
+
+def board_cell_pitch(
+    region: Region,
+    board: Board | None = None,
+    cell_centers: dict[int, tuple[float, float]] | None = None,
+) -> float:
+    """Distance between neighbouring tile centers (overlay pixels).
+
+    Uses exported centers when available (the overlay region carries marker
+    margins, so ``region / cols`` overestimates the tile size).
+    """
+    cols = board.storage_cols if board else _GRID_SLOTS
+    if cell_centers and len(cell_centers) >= 2:
+        dists: list[float] = []
+        for idx, (x, y) in cell_centers.items():
+            right = cell_centers.get(idx + 1)
+            if right is not None and (idx + 1) % cols != 0:
+                dists.append(((right[0] - x) ** 2 + (right[1] - y) ** 2) ** 0.5)
+            below = cell_centers.get(idx + cols)
+            if below is not None:
+                dists.append(((below[0] - x) ** 2 + (below[1] - y) ** 2) ** 0.5)
+        med = _median([d for d in dists if d > 1.0])
+        if med is not None:
+            return med
+    rows = board.storage_rows if board else _GRID_SLOTS
+    return min(float(region.width) / cols, float(region.height) / rows)
+
+
+def trim_segment(
+    a: tuple[float, float],
+    b: tuple[float, float],
+    start_gap: float,
+    end_gap: float,
+) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    """Shorten segment a→b so it starts/ends on the tile rings, not over letters."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = (dx * dx + dy * dy) ** 0.5
+    if length <= start_gap + end_gap + 1.0:
+        return None
+    ux, uy = dx / length, dy / length
+    return (
+        (a[0] + ux * start_gap, a[1] + uy * start_gap),
+        (b[0] - ux * end_gap, b[1] - uy * end_gap),
+    )
+
+
+def path_step_hue(step_index: int, total: int) -> float:
+    """Hue (degrees) along the path: green at the first letter → blue at the last.
+
+    Lets the eye follow order on long, self-crossing words without reading
+    every number.
+    """
+    if total <= 1:
+        return 135.0
+    t = step_index / float(total - 1)
+    return 135.0 + t * (225.0 - 135.0)
