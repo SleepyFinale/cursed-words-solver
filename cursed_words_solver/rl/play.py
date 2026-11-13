@@ -69,18 +69,36 @@ def soft_target_row(last: dict, k: int) -> tuple[np.ndarray, np.ndarray, np.ndar
     return qi, qv, qn, qs
 
 
+def targeted_teacher(cands, seed: int, target: str, character: str, quest: str | None):
+    """The teacher (rules player + champion override, as ``teacher.teacher_policy``) playing the
+    build ``targets.teacher_plan(target, ...)`` for every character (no per-character defaults)."""
+    import cursed_words_solver.rl.teacher as T
+    from cursed_words_solver.rl.targets import teacher_plan
+    from cursed_words_solver.sim.game.bossrisk import DEFAULT_PATH
+    from cursed_words_solver.sim.game.expert import NetPolicy
+
+    return NetPolicy(cands, T._TEACHER_MODEL, seed=seed, boss_risk=str(DEFAULT_PATH) if DEFAULT_PATH.is_file() else "",
+                     build_plan=teacher_plan(target, character, quest), build_plan_chars={})
+
+
 def play(job: dict[str, Any]) -> dict[str, Any]:
     """``job``: character, crown, seed, quest, policy ('teacher' or a .pt path), greedy,
-    record (return the trajectory), temperature."""
-    from cursed_words_solver.rl.env import CWEnv, pack
+    record (return the trajectory), temperature, target (build target, default FREE; an obs
+    input for a net, the rules player's ``build_plan`` for the teacher), shaping (CWEnv
+    potential per on-target item)."""
+    from cursed_words_solver.rl.env import CWEnv, pack, potential
     from cursed_words_solver.rl.model import Actor
 
+    from cursed_words_solver.rl.targets import FREE
+
     t0 = time.time()
-    env = CWEnv(_CANDS)
+    target = job.get("target") or FREE
+    env = CWEnv(_CANDS, shaping=float(job.get("shaping") or 0.0))
     rec = bool(job.get("record"))
     traj: dict[str, list] = {"steps": [], "chosen": [], "logp": [], "value": [], "reward": []}
     try:
-        env.reset(character=job["character"], crown=job["crown"], seed=job["seed"], quest=job.get("quest"))
+        env.reset(character=job["character"], crown=job["crown"], seed=job["seed"], quest=job.get("quest"),
+                  target=target)
         if job["policy"] == "teacher":
             from cursed_words_solver.rl.teacher import _init_worker, teacher_policy
             import cursed_words_solver.rl.teacher as T
@@ -95,7 +113,10 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                     T._TEACHER_MODEL = load_model(p) if p else None
                 except Exception:
                     T._TEACHER_MODEL = None
-            pol = teacher_policy(_CANDS, job["seed"])
+            if target:
+                pol = targeted_teacher(_CANDS, job["seed"], target, job["character"], job.get("quest"))
+            else:
+                pol = teacher_policy(_CANDS, job["seed"])
             while not env.done:
                 env.step(pol.act(env.game))
         else:
@@ -128,6 +149,9 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                         traj.setdefault("search_q_val", []).append(qv)
                         traj.setdefault("search_q_n", []).append(qn)
                         traj.setdefault("search_q_se", []).append(qs)
+                # shaping part of the potential before the step (ppo trains the value head on
+                # the UNSHAPED return-to-go, so search / assistant can add the plain potential)
+                bonus = env.potential(env.game) - potential(env.game) if env.shaping else 0.0
                 r, _ = env.step(st.cands[i].action)
                 if rec:
                     traj["steps"].append(pk)
@@ -135,13 +159,14 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                     traj["logp"].append(logp)
                     traj["value"].append(v)
                     traj["reward"].append(r)
+                    traj.setdefault("bonus", []).append(float(bonus))
         res = {**{k: job[k] for k in ("character", "crown", "seed") }, "quest": job.get("quest"), **env.result(),
                "secs": round(time.time() - t0, 1), "error": ""}
         if job["policy"] != "teacher" and job.get("search") is not None:
             res["search"] = dict(searcher.stats)
     except Exception as exc:
         res = {**{k: job.get(k) for k in ("character", "crown", "seed")}, "quest": job.get("quest"),
-               "won": False, "outcome": 0.0, "error": f"{type(exc).__name__}: {exc}",
+               "target": target, "won": False, "outcome": 0.0, "error": f"{type(exc).__name__}: {exc}",
                "trace": traceback.format_exc()[-1200:], "secs": round(time.time() - t0, 1)}
         traj = {"steps": [], "chosen": [], "logp": [], "value": [], "reward": []}
     if rec or job.get("record_search"):

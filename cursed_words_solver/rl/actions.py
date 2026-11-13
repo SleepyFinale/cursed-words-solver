@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from cursed_words_solver.sim.game.agent import Action, apply, clone, determinize, submit_action
+from cursed_words_solver.sim.game.agent import Action, apply, clears, clone, determinize, submit_action
 from cursed_words_solver.sim.game.features import _counter
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -169,7 +169,7 @@ class CandidateBuilder:
         f[col["w_over_remaining"]] = min(4.0, score / rem)
         f[col["w_over_per_grid"]] = min(8.0, score / max(1.0, per))
         f[col["w_log"]] = _lg(score) / 10
-        f[col["w_clears"]] = float(score >= enc.remaining_target)
+        f[col["w_clears"]] = float(clears(game, score))
         f[col["w_rank"]] = min(rank, 8) / 8.0
         f[col["w_len"]] = len(path) / 10.0
         f[col["w_nwords"]] = len(words)
@@ -342,7 +342,7 @@ class CandidateBuilder:
             owned = p.stickers if kind == "sticker" else p.stamps
             full = all(it is not None for it in owned)
             for k, o in enumerate(offers):
-                if o is None:
+                if o is None or s.slots_hidden(kind):  # Masochist / In The Beginning / Antiphilatelist
                     continue
                 cost = s.offer_cost(o)
                 if s.can_buy(kind, k):

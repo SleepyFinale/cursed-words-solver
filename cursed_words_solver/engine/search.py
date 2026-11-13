@@ -279,8 +279,9 @@ class ExactSearch:
         self.finale = str(extras.get("michael_summoned_bosses_defeated") or "").lower() == "true"
         self.up_and_up_center = _extra_int(extras, "up_and_up_center_index")
         self.stats = SearchStats()
-        # Tiles a word may never contain under the active challenge (static prune).
-        ch = self.challenge
+        # Tiles a word may never contain under the active challenge (static prune). Michael's
+        # finale grid skips every challenge rule (PopulateValidityAndScore's if / else).
+        ch = "" if self.finale else self.challenge
         allowed = []
         for t in grid.tiles:
             ok = self.clickable[t.idx]
@@ -701,7 +702,10 @@ class ExactSearch:
         return _np_spell(arrays, int(words.min()))
 
     def path_allowed(self, path: tuple[int, ...]) -> bool:
-        """Challenge / boss word restrictions (TileSelectionManager.PopulateValidityAndScore)."""
+        """Challenge / boss word restrictions (TileSelectionManager.PopulateValidityAndScore);
+        none apply on Michael's finale grid."""
+        if self.finale:
+            return True
         ch = self.challenge
         if ch == "UpAndUp" and self.up_and_up_center is not None and self.up_and_up_center not in path:
             return False
@@ -1285,15 +1289,24 @@ class ExactSearch:
             return (sum(values[i] for i in p), len(p))
 
         ranked = sorted(items, key=lambda kv: proxy(kv[0]), reverse=True)
-        top = ranked[: self.max_exact_paths // 2]
         best_per_word: dict[str, tuple[int, ...]] = {}
         for p, w in ranked:
             if w not in best_per_word:
                 best_per_word[w] = p
         per_word = [(p, w) for w, p in best_per_word.items()]
+        groups = [ranked[: self.max_exact_paths // 2], per_word]
+        if self.challenge == "TwoWrongs":
+            # The most negative word wins: Void tiles have negative values, so the lowest
+            # proxies matter; Cartwheeler's sign flip keeps the highest ones in play too.
+            q = self.max_exact_paths // 4
+            low_per_word: dict[str, tuple[int, ...]] = {}
+            for p, w in reversed(ranked):
+                if w not in low_per_word:
+                    low_per_word[w] = p
+            groups = [ranked[:q], ranked[::-1][:q], per_word, [(p, w) for w, p in low_per_word.items()]]
         keep: dict[tuple[int, ...], str] = {}
-        for i in range(max(len(top), len(per_word))):
-            for group in (top, per_word):
+        for i in range(max(len(g) for g in groups)):
+            for group in groups:
                 if i < len(group) and len(keep) < self.max_exact_paths:
                     keep.setdefault(*group[i])
         return list(keep.items())

@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -50,16 +51,151 @@ def policy_path() -> Path | None:
     return bc if bc.is_file() else None
 
 
-def _load(path: Path):
-    from cursed_words_solver.rl.model import load_policy
+def _model_entry(path: Path) -> tuple[Any, bool]:
+    """(policy, trained with target-build inputs) for a checkpoint, cached by mtime. ``Policy``
+    widens old configs on load, so "conditioned" is read from the SAVED config."""
+    import torch
+
+    from cursed_words_solver.rl.model import ModelConfig, Policy, conditioned
 
     mt = path.stat().st_mtime
     hit = _MODEL_CACHE.get(str(path))
     if hit is None or hit[0] != mt:
-        m, _ = load_policy(path)
-        _MODEL_CACHE[str(path)] = (mt, m)
+        ck = torch.load(path, map_location="cpu", weights_only=False)
+        m = Policy(ModelConfig(**ck["config"]))
+        m.load_state_dict(ck["state"])
+        m.eval()
+        _MODEL_CACHE[str(path)] = (mt, m, conditioned(ck["config"], ck["state"]))
         hit = _MODEL_CACHE[str(path)]
-    return hit[1]
+    return hit[1], hit[2]
+
+
+def _load(path: Path):
+    return _model_entry(path)[0]
+
+
+# --- target build (build-conditioned policies) ------------------------------------------------
+# The live game is rebuilt from the export on every call, so the run's target is chosen once
+# and persisted in RL_HOME/assistant_run_target.json until a new run is detected.
+TARGET_ENV = "CWS_AI_TARGET"   # a plan ("Cards", "Red+Blue"), "free", or "auto" (default: the table)
+
+
+def _target_table_path() -> Path:
+    return store.RL_HOME / "target_table.json"
+
+
+def _run_target_path() -> Path:
+    return store.RL_HOME / "assistant_run_target.json"
+
+
+def _env_target() -> str | None:
+    """CWS_AI_TARGET: None = auto (not set / "auto" / invalid), else the target ("" = FREE)."""
+    from cursed_words_solver.rl.targets import FREE, canonical
+
+    raw = os.environ.get(TARGET_ENV, "").strip()
+    if not raw or raw.lower() == "auto":
+        return None
+    if raw.lower() in ("free", "none"):
+        return FREE
+    try:
+        return canonical(raw.replace("-", "+"))
+    except ValueError:
+        print(f"  {TARGET_ENV}={raw!r} is not a build plan; using auto", flush=True)
+        return None
+
+
+def _crown_matches(key: str, crown: int) -> bool:
+    key = str(key).strip()
+    if "-" in key:
+        lo, _, hi = key.partition("-")
+        try:
+            return int(lo) <= crown <= int(hi)
+        except ValueError:
+            return False
+    try:
+        return int(key) == crown
+    except ValueError:
+        return False
+
+
+def _table_target(character: str, crown: int) -> str:
+    """RL_HOME/target_table.json: {"version": 1, "table": {character: {"0-3": t, "4-7": t}}}."""
+    from cursed_words_solver.rl.targets import FREE, canonical
+
+    try:
+        data = json.loads(_target_table_path().read_text(encoding="utf-8"))
+        row = (data.get("table") or {}).get(character) or {}
+        for key, t in row.items():
+            if _crown_matches(key, int(crown)):
+                return canonical(str(t)) if t and str(t).lower() != "free" else FREE
+    except Exception:
+        pass
+    return FREE
+
+
+def choose_target(character: str, crown: int) -> str:
+    """The target build for a new run: CWS_AI_TARGET, else the target table, else FREE."""
+    t = _env_target()
+    return t if t is not None else _table_target(character, crown)
+
+
+def _progress(game) -> tuple[int, float]:
+    """(stage, node rank) in play order: the Meg shop (node 9) comes between the boss draft (6)
+    and the boss fight (7), so it ranks 6.5."""
+    from cursed_words_solver.sim.game.player import Node
+
+    run = game.player.run
+    node = run.node
+    return int(run.stage), (6.5 if node == Node.MEG_SHOP else int(node))
+
+
+def run_target(game) -> str:
+    """The live run's target build: an explicit CWS_AI_TARGET always wins; otherwise the choice
+    persisted for this run, or a new choice when a new run is detected (character / crown
+    changed, or progress went backwards). Never raises."""
+    import time
+
+    from cursed_words_solver.rl.targets import FREE, canonical
+
+    env_t = _env_target()
+    if env_t is not None:
+        return env_t
+    try:
+        if getattr(game.player.run, "challenge", None) is not None:
+            return FREE   # quest runs: the quest fixes the plan; PPO trains them FREE only
+        character, crown = game.player.character, int(game.player.run.ascension)
+        prog = _progress(game)
+    except Exception:
+        return FREE
+    path = _run_target_path()
+    try:
+        st = json.loads(path.read_text(encoding="utf-8"))
+        same = (st.get("character") == character and int(st.get("crown")) == crown
+                and tuple(float(x) for x in st.get("progress", (0, 0))) <= prog)
+        if same:
+            t = canonical(str(st.get("target") or ""))
+            if tuple(float(x) for x in st.get("progress")) != prog:
+                st["progress"] = list(prog)
+                _write_json(path, st)
+            return t
+    except Exception:
+        pass
+    t = choose_target(character, crown)
+    _write_json(path, {"character": character, "crown": crown, "target": t, "progress": list(prog),
+                       "started": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    return t
+
+
+def _write_json(path: Path, data: dict) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        import threading
+
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        os.replace(tmp, path)
+    except Exception:
+        pass
 
 
 @dataclass
@@ -81,10 +217,35 @@ class Advice:
     p_michael: float = 0.0
     exp_outcome: float = 0.0
     context: list[str] = field(default_factory=list)    # stage plan, frozen items, warnings
+    target: str | None = None    # the run's target build ("" = Free); None: the policy takes no target
+    character: str = ""          # in-game character name (for the target line)
+
+    def target_line(self) -> str:
+        """"Target build: Cards" ("" when the policy is not build-conditioned)."""
+        if self.target is None:
+            return ""
+        from cursed_words_solver.rl.targets import display as tdisplay
+
+        who = f" for {self.character}" if self.character else ""
+        return f"Target build{who}: {tdisplay(self.target)}" + ("  (AI chooses)" if not self.target else "")
+
+    def as_dict(self, top: int = 6) -> dict[str, Any]:
+        """JSON-able summary for the app."""
+        from cursed_words_solver.rl.targets import display as tdisplay
+
+        return {"phase": self.phase, "p_win": self.p_win, "p_michael": self.p_michael,
+                "exp_outcome": self.exp_outcome, "context": list(self.context), "plan": list(self.plan),
+                "target": self.target, "target_display": tdisplay(self.target) if self.target is not None else None,
+                "pick": label(self.pick.action) if self.pick is not None else None,
+                "pick_note": self.pick.note if self.pick is not None else "",
+                "options": [{"label": label(o.action), "prob": o.prob, "p_win": o.p_win,
+                             "exp_outcome": o.exp_outcome, "note": o.note} for o in self.options[:top]]}
 
     def text(self, top: int = 6) -> str:
         lines = [f"[{self.phase}]  P(win run) {self.p_win:.0%}  P(beat Michael) {self.p_michael:.0%}  "
                  f"expected outcome {self.exp_outcome:.1f}"]
+        if self.target is not None:
+            lines.append(f"  {self.target_line()}")
         lines += [f"  {c}" for c in self.context]
         if self.plan:
             lines.append("  Plan:")
@@ -104,6 +265,8 @@ class Advice:
         import html as H
 
         rows = [f"<b>AI ({H.escape(self.phase)})</b> &nbsp; win {self.p_win:.0%} &middot; Michael {self.p_michael:.0%}"]
+        if self.target is not None:
+            rows.append(f"<b style='color:#fc6'>{H.escape(self.target_line())}</b>")
         rows += [f"<span style='color:#9ab'>{H.escape(c)}</span>" for c in self.context]
         if self.plan:
             rows.append("<b>Plan:</b> " + " &rarr; ".join(H.escape(s) for s in self.plan))
@@ -116,7 +279,34 @@ class Advice:
 
 
 def label(a: Action) -> str:
-    return a.label or f"{a.kind} {a.args}"
+    return display(a.label or f"{a.kind} {a.args}")
+
+
+_FIXED_NAMES = {"Pinata": "Piñata"}   # the export's name is mis-encoded ("Pi¤ata")
+
+
+@lru_cache(maxsize=1)
+def _display_pattern():
+    """Item class -> in-game name, where they differ (26 differ beyond spacing, some swapped: the class
+    ``EruptingVolcano`` is Disco Ball, ``PiggyBank`` is Coin Purse, ``MirrorBall`` is Banana)."""
+    import re
+
+    from cursed_words_solver.sim.game.items import catalog_rows
+
+    names = {}
+    for cls, row in catalog_rows().items():
+        name = _FIXED_NAMES.get(cls) or row.get("name") or cls
+        if name != cls:   # "JackOLantern" -> "Jack-o'-Lantern" as well as the swapped ones
+            names[cls] = name
+    if not names:
+        return None, names
+    return re.compile(r"\b(" + "|".join(sorted(map(re.escape, names), key=len, reverse=True)) + r")\b"), names
+
+
+def display(text: str) -> str:
+    """``text`` with item class names replaced by the names the game shows."""
+    pat, names = _display_pattern()
+    return pat.sub(lambda m: names[m.group(1)], text) if pat else text
 
 
 def _evaluate(actor, env: CWEnv):
@@ -164,7 +354,7 @@ def _context(game) -> list[str]:
         pass
     frozen = [o for o in list(p.frozen_stickers) + list(p.frozen_stamps) if o is not None]
     if frozen:
-        out.append("Frozen: " + ", ".join(f"{o.item.game_class} (${getattr(o, 'cost', '?')})" for o in frozen))
+        out.append("Frozen: " + display(", ".join(f"{o.item.game_class} (${getattr(o, 'cost', '?')})" for o in frozen)))
     if run.ascension >= 1:
         if not p.has_faced_uncursed_boss:
             out.append(f"Michael route: {len(run.cursed_bosses_defeated)}/5 cursed bosses beaten")
@@ -174,15 +364,27 @@ def _context(game) -> list[str]:
 
 
 def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps: int = 12,
-                search: bool = True) -> Advice:
+                search: bool = True, target: str | None = None) -> Advice:
+    """``target``: the run's target build; None = ``run_target`` (env / persisted / table) when
+    the policy was trained with targets, else FREE. It is set on ``game`` before any env is
+    attached, so every sub-env (look-ahead, after-states, shop plan) sees it via clones."""
     from cursed_words_solver.rl.model import Actor
+    from cursed_words_solver.rl.targets import FREE, canonical, set_target
     from cursed_words_solver.sim.game.agent import Candidates
 
     cands = cands or Candidates(time_budget=2.0)
     path = model_path or policy_path()
     if path is None:
         raise FileNotFoundError("no trained policy yet (rl/bc/best.pt or rl/ppo*/champion.pt)")
-    actor = Actor(_load(Path(path)), greedy=True)
+    model, cond = _model_entry(Path(path))
+    actor = Actor(model, greedy=True)
+    if not cond:
+        tgt = FREE
+    elif target is not None:
+        tgt = canonical(target) if target else FREE
+    else:
+        tgt = run_target(game)
+    set_target(game, tgt)
     env = CWEnv(cands)
     env.attach(game)
     st, probs, v, aux = _evaluate(actor, env)
@@ -190,7 +392,8 @@ def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps:
     if ph == "encounter" and game.encounter is not None and game.encounter.michael_draft is not None:
         ph = "michael_draft"
     adv = Advice(phase=ph, p_win=float(aux[0]), p_michael=float(aux[1]), exp_outcome=potential(game) + 8.0 * v,
-                 context=_context(game))
+                 context=_context(game), target=tgt if cond else None,
+                 character=str(getattr(game.player, "character_name", "") or ""))
     order = np.argsort(-probs)
     adv.options = [Option(st.cands[i].action, float(probs[i])) for i in order]
     if not adv.options:
@@ -437,9 +640,12 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="AI run assistant for the live game state")
     ap.add_argument("--file", default=str(Path.home() / ".cursed_words_solver" / "run_state.json"))
     ap.add_argument("--policy", default="")
+    ap.add_argument("--target", default=None, help="target build (\"Cards\", \"Red+Blue\", \"free\"); "
+                    "default: CWS_AI_TARGET / this run's persisted choice / rl/target_table.json")
     args = ap.parse_args(argv)
     data = json.loads(Path(args.file).read_text(encoding="utf-8"))
-    adv = advise(data, model_path=Path(args.policy).expanduser() if args.policy else None)
+    tgt = None if args.target is None else ("" if args.target.lower() == "free" else args.target.replace("-", "+"))
+    adv = advise(data, model_path=Path(args.policy).expanduser() if args.policy else None, target=tgt)
     print(adv.text())
     return 0
 

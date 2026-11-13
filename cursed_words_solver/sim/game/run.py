@@ -51,6 +51,9 @@ class RunConfig:
     # Characters already unlocked: secret bosses only appear for locked ones.
     unlocked_characters: frozenset[str] = DEFAULT_UNLOCKED
     wordlist: Path | None = None
+    # Target build for build-conditioned AI ("" = none, "Red" or "Red+Blue"; ``rl/targets.py``).
+    # An AI input only: the simulation never reads it.
+    target_build: str = ""
 
 
 @dataclass

@@ -10,6 +10,14 @@ the BC init.pt); coefficient ``--kl-coef`` * 0.5 ** (update / ``--kl-halflife``)
 Curriculum: characters and quests are sampled inversely to their recent training win rate
 (``curriculum_weights``), written to ``curriculum.json`` each update for the rl.exit collector.
 
+Build targets (``rl/targets.py``): ``--targets-mix p_free,p_theme,p_any`` gives each non-quest
+training run a target build (FREE / one of the character's THEMES / any plan; default 1,0,0 =
+always FREE, the unconditioned run), drawn from its own RNG so the character / crown / quest /
+seed draws are unchanged; ``--shaping`` adds that much potential per owned on-target item.
+``--gate-targets`` adds ``evaluate.themed_gate_jobs`` (144 themed runs) to the gate; promotion
+is decided over all gate rows, paired by key (target included). ``--compare-dir`` (e.g. ppo1)
+logs ``vs_ppo1`` on the FREE gate rows against that dir's champion eval rows.
+
 Pause / resume: rerun the same command (``command.txt``). State is checkpointed after every
 update (model, optimiser, counters, RNG); episodes in flight at a kill are simply replayed
 with new seeds. ``STOP`` file in the dir = checkpoint and exit.
@@ -38,7 +46,7 @@ from cursed_words_solver.rl.bc import VALUE_SCALE
 from cursed_words_solver.rl.evaluate import GATE_PER, GATE_PER_QUEST
 from cursed_words_solver.rl.obs import OBS_VERSION
 from cursed_words_solver.rl.model import (Policy, ModelConfig, collate, load_policy, save_policy,
-                                          upgrade_optimizer_state)
+                                          upgrade_checkpoint, upgrade_optimizer_state)
 from cursed_words_solver.rl.teacher import CHARS
 
 TRAIN_SEED0 = 50_000_000
@@ -48,9 +56,28 @@ CURR_QUEST_WINDOW = 1500    # recent quest episodes behind the quest weights (~6
 CURR_PRIOR = 10             # pseudo-episodes at the mean win rate (few-sample slices stay near 1)
 
 
+def target_rng(n: int) -> random.Random:
+    """The build-target draw of job ``n``: its own stream, so the job's other draws don't move."""
+    return random.Random(f"target|{n}")
+
+
+def parse_mix(text: str | None) -> tuple[float, float, float] | None:
+    """``"p_free,p_theme,p_any"`` -> tuple; None / "" -> None (no targets)."""
+    if not text:
+        return None
+    mix = tuple(float(x) for x in str(text).split(","))
+    if len(mix) != 3 or min(mix) < 0 or sum(mix) <= 0:
+        raise ValueError(f"targets mix needs 3 non-negative shares, got {text!r}")
+    return mix   # type: ignore[return-value]
+
+
 def sample_job(rng: random.Random, n: int, quest_share: float, crown_weights: list[float],
-               char_w: dict[str, float] | None = None, quest_w: dict[str, float] | None = None) -> dict[str, Any]:
-    """Training job; ``char_w`` / ``quest_w`` (curriculum) weight the draws, None = uniform (old draws)."""
+               char_w: dict[str, float] | None = None, quest_w: dict[str, float] | None = None,
+               targets_mix: tuple[float, float, float] | None = None, shaping: float = 0.0) -> dict[str, Any]:
+    """Training job; ``char_w`` / ``quest_w`` (curriculum) weight the draws, None = uniform (old draws).
+    ``targets_mix`` (p_free, p_theme, p_any): the run's build target (``targets.sample_target``
+    with ``target_rng(n)``; quest runs stay FREE: their quest fixes the plan); None = FREE."""
+    from cursed_words_solver.rl.targets import FREE, sample_target
     from cursed_words_solver.sim.game.challenges import QUESTS
 
     if char_w:
@@ -60,9 +87,21 @@ def sample_job(rng: random.Random, n: int, quest_share: float, crown_weights: li
     if rng.random() < quest_share:
         qs = sorted(QUESTS)
         q = rng.choices(qs, weights=[quest_w.get(x, 1.0) for x in qs])[0] if quest_w else qs[rng.randrange(len(qs))]
-        return {"character": ch, "crown": 0, "quest": q, "seed": TRAIN_SEED0 + n}
+        return {"character": ch, "crown": 0, "quest": q, "seed": TRAIN_SEED0 + n, "target": FREE, "shaping": shaping}
     cr = rng.choices(range(len(crown_weights)), weights=crown_weights)[0]
-    return {"character": ch, "crown": cr, "quest": None, "seed": TRAIN_SEED0 + n}
+    t = sample_target(target_rng(n), ch, targets_mix) if targets_mix and targets_mix[0] < sum(targets_mix) else FREE
+    return {"character": ch, "crown": cr, "quest": None, "seed": TRAIN_SEED0 + n, "target": t, "shaping": shaping}
+
+
+def by_target(rows) -> dict[str, dict]:
+    """Rolling training stats per build target ("free" for FREE): n, win rate, mean on-plan items."""
+    from cursed_words_solver.rl.targets import file_tag
+
+    g: dict[str, list[dict]] = {}
+    for r in rows:
+        g.setdefault(file_tag(r.get("target") or ""), []).append(r)
+    return {t: {"n": len(v), "win": round(sum(bool(r["won"]) for r in v) / len(v), 4),
+                "on_plan": round(sum(r.get("on_plan", 0) for r in v) / len(v), 2)} for t, v in sorted(g.items())}
 
 
 def curriculum_weights(rows, keys, lo: float = 0.5, hi: float = 2.0) -> tuple[dict[str, float], dict[str, float]]:
@@ -169,13 +208,15 @@ class DistillBuffer:
         v = int(np.asarray(v).reshape(-1)[0]) if v is not None else LEGACY_OBS_VERSION
         G, Ft, Fa = self._widths()
         if v != self.version:
-            # v1 shards (pre-2026-11-11 labels) are kept: collate / forward zero-pad their
-            # narrower columns, i.e. they read as "new features unknown"
+            # older shards (v1: pre-2026-11-11 labels; v2: before target builds) are kept:
+            # collate / forward zero-pad their narrower columns, i.e. they read as "new features
+            # unknown" (for v3 target columns: FREE)
             from cursed_words_solver.rl.obs import LEGACY_GLOBAL, LEGACY_TOKEN
 
-            if v != LEGACY_OBS_VERSION or self.version != LEGACY_OBS_VERSION + 1:
+            if self.version != OBS_VERSION or not LEGACY_OBS_VERSION <= v < OBS_VERSION \
+                    or v - LEGACY_OBS_VERSION >= min(len(LEGACY_GLOBAL), len(LEGACY_TOKEN)):
                 return False
-            G, Ft = LEGACY_GLOBAL[0], LEGACY_TOKEN[0]
+            G, Ft = LEGACY_GLOBAL[v - LEGACY_OBS_VERSION], LEGACY_TOKEN[v - LEGACY_OBS_VERSION]
         g, tf, af = ep.get("glob"), ep.get("tok_feat"), ep.get("act_feat")
         if g is None or af is None or g.ndim != 2 or g.shape[1] != G or af.ndim != 2 or af.shape[1] != Fa:
             return False
@@ -352,7 +393,14 @@ def episode_items(res: dict, lam: float) -> list[dict]:
         return []
     rew = np.asarray(tr["reward"], np.float32)
     val = np.asarray(tr["value"], np.float32) * VALUE_SCALE
-    adv, ret = gae(rew, val, lam)
+    # build-target shaping: the value head predicts the UNSHAPED return-to-go (what search /
+    # assistant add to the plain potential); the shaped one is that minus the step's shaping
+    # bonus (shaping * on-target items), so GAE runs on shaped values and the target adds it back
+    bonus = np.asarray(tr.get("bonus") if tr.get("bonus") is not None else (), np.float32).reshape(-1)
+    if len(bonus) != len(rew):
+        bonus = np.zeros(len(rew), np.float32)
+    adv, ret = gae(rew, val - bonus, lam)
+    ret = ret + bonus
     items = []
     for i, st in enumerate(tr["steps"]):
         if len(st["act_type"]) <= 1:
@@ -410,7 +458,16 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--distill-soft-mix", type=float, default=0.5, help="share of softmax(Q / TEMP) in the soft target")
     ap.add_argument("--crown-weights", default="1,1,1,1,1,1,1,1",
                     help="sampling weight of crowns 0-7 for training runs (comma list; 7 = top playable)")
+    ap.add_argument("--targets-mix", default="1,0,0", metavar="P_FREE,P_THEME,P_ANY",
+                    help="build target of non-quest training runs: FREE / a character theme / any plan "
+                         "(1,0,0 = always FREE, the unconditioned training)")
+    ap.add_argument("--shaping", type=float, default=0.0, help="potential per owned on-target item (targeted runs)")
+    ap.add_argument("--gate-targets", action="store_true", help="add the themed gate block (evaluate.themed_gate_jobs)")
+    ap.add_argument("--compare-dir", default="", help="another PPO dir (e.g. ppo1): log vs its champion on FREE gate rows")
     args = ap.parse_args(argv)
+    targets_mix = parse_mix(args.targets_mix)
+    if targets_mix and targets_mix[0] >= sum(targets_mix):
+        targets_mix = None   # all FREE: the old jobs
     if args.eval_per is not None:
         args.gate_per = args.eval_per
     out = Path(args.dir).expanduser()
@@ -419,7 +476,7 @@ def main(argv: list[str] | None = None) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ck_path = out / "ckpt.pt"
     if ck_path.is_file():
-        ck = torch.load(ck_path, map_location="cpu", weights_only=False)
+        ck = upgrade_checkpoint(torch.load(ck_path, map_location="cpu", weights_only=False))   # old obs widths -> zero-padded
         model = Policy(ModelConfig(**ck["config"])).to(device)
         model.load_state_dict(ck["state"])
         opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.0)
@@ -455,12 +512,15 @@ def main(argv: list[str] | None = None) -> None:
         c = model.cfg
         distill = DistillBuffer(Path(args.distill_dir).expanduser(), cap=args.distill_cap, same_w=args.distill_same_w,
                                 widths=(c.n_global, c.n_tok_feat, c.n_act_feat))
-    from cursed_words_solver.rl.evaluate import gate_jobs as make_gate_jobs, paired, promote_ok, run_arm, summarize
+    from cursed_words_solver.rl.evaluate import (champion_eval_path, gate_jobs as make_gate_jobs, paired, promote_ok,
+                                                 run_arm, summarize, themed_gate_jobs)
     from cursed_words_solver.rl.play import init_worker, play
     from cursed_words_solver.sim.game.agent import spawn_pool
 
     pool = spawn_pool(args.workers, init_worker, ())
     gate_jobs = make_gate_jobs(args.gate_per, args.gate_per_quest)
+    if args.gate_targets:
+        gate_jobs = gate_jobs + themed_gate_jobs()
     eval_dir = out / "eval"
     # finish a promotion a crash interrupted (state is saved before the files are copied)
     cu = state["champion_update"]
@@ -502,13 +562,14 @@ def main(argv: list[str] | None = None) -> None:
             cw["char"], cw["quest"] = w["char"], w["quest"]
         store.atomic_write_json(out / "curriculum.json", {
             "update": state["update"], "enabled": not args.no_curriculum, "quest_share": args.quest_share,
-            "crown_weights": crown_w, **w})
+            "crown_weights": crown_w, "targets_mix": list(targets_mix) if targets_mix else None, **w})
         return w
 
     set_curriculum()
 
     def submit() -> None:
-        j = sample_job(rng, state["episodes_started"], args.quest_share, crown_w, cw["char"], cw["quest"])
+        j = sample_job(rng, state["episodes_started"], args.quest_share, crown_w, cw["char"], cw["quest"],
+                       targets_mix, args.shaping)
         state["episodes_started"] += 1
         in_flight.append(pool.apply_async(play, ({**j, "policy": str(weights), "record": True,
                                                    "temperature": args.temperature},)))
@@ -529,6 +590,20 @@ def main(argv: list[str] | None = None) -> None:
                 "rule": "win_diff>0 & outcome_diff>0 & max(t, win_z)>=1", "gate_n": len(gate_jobs),
                 "champion_update": state["champion_update"],
                 "vs_teacher": paired(rows, teacher) if teacher else None}
+        if args.gate_targets:
+            free = [r for r in rows if not r.get("target")]
+            themed = [r for r in rows if r.get("target")]
+            grow["eval_free"], grow["eval_themed"] = summarize(free), summarize(themed)
+            grow["vs_champion_free"], grow["vs_champion_themed"] = paired(free, champ), paired(themed, champ)
+            p1 = eval_dir / "ppo1_champion.jsonl"   # pipeline baseline2: the ppo1 champion on this gate
+            if p1.is_file():
+                grow["vs_ppo1_all"] = paired(rows, [r for r in store.read_jsonl(p1) if not r.get("error")])
+        if args.compare_dir:
+            cp = champion_eval_path(Path(args.compare_dir).expanduser())
+            if cp is not None:
+                other = [r for r in store.read_jsonl(cp) if not r.get("error")]
+                grow["vs_ppo1"] = paired([r for r in rows if not r.get("target")], other)
+                grow["vs_ppo1_src"] = str(cp)
         print("GATE", grow, flush=True)
         store.append_jsonl(out / "gates.jsonl", grow)
         state["pending_gate"] = 0
@@ -610,6 +685,8 @@ def main(argv: list[str] | None = None) -> None:
                    "kl_coef": round(args.kl_coef_now, 4), "kl_ref_src": args.kl_ref,
                    "ent_coef": round(ent_coef, 5), "ent_coef_next": round(state["ent_coef"], 5),
                    "curr_char_w": {k: v for k, v in w["char"].items() if v != 1.0}, **st}
+            if targets_mix:
+                row["train_by_target"] = by_target(recent)
             print(row, flush=True)
             due = state["update"] % args.eval_every == 0
             if due:

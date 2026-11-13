@@ -500,8 +500,23 @@ class EnginePlan:
         for it in inventory_all:
             if it.cls in ("Flamingo", "RedEnvelope", "SpicyPepper", "Automobile"):
                 inventory_colours.setdefault(it.cls, []).extend(it.colours)
+        playing_favourites = inventory_items is not all_items
+        classes_all = classes
+        if playing_favourites:
+            # GetUnpackedItemsOfType / GetAllItems (forItemComparison=false) are the
+            # restricted list too: Hourglass parity, Martini, Cable Car, Kokeshi, Hungry Snake,
+            # King of the Bridge, Full Moon and IsDisplayingAsVariableLetter only see favourites.
+            unpacked = list(inventory_all)
+            classes = {i.cls for i in inventory_items}
+            for it in inventory_items:
+                if it.cls in ("RandomAccessMemory", "Snapshot", "Frankenstein"):
+                    classes.update(n.cls for n in it.nested)
+            colour_lists = {}
+            for it in inventory_items + [n for it in inventory_items if it.cls in ("RandomAccessMemory", "Snapshot") for n in it.nested]:
+                if it.cls in ("Flamingo", "RedEnvelope", "SpicyPepper", "Automobile"):
+                    colour_lists.setdefault(it.cls, []).extend(it.colours)
 
-        if "GlobeTrotter" in classes:
+        if "GlobeTrotter" in classes_all:
             # GlobeTrotter: corner tiles become currency with ValueModifier +10;
             # legacy exports clamp the void version (-10) to 0.
             w, h = grid.width, grid.height
@@ -525,7 +540,7 @@ class EnginePlan:
             boss_mods.append((name, int(mod)))
 
         hourglasses = sum(1 for i in unpacked if i.cls == "Hourglass")
-        if hourglasses == 0:
+        if hourglasses == 0 and not playing_favourites:
             hourglasses = _extra_int(extras, "hourglass_count") or 0
 
         prev_words = _historic_words(extras)
@@ -560,7 +575,7 @@ class EnginePlan:
             cable_cars=sum(1 for i in unpacked if i.cls == "CableCar"),
             favourite_stamps=favourite,
             overhand=overhand,
-            martini_all="Martini" in {i.cls for i in all_items},
+            martini_all="Martini" in {i.cls for i in inventory_items},
             martini_unpacked=any(i.cls == "Martini" for i in unpacked),
             hungry_snake=any(i.cls == "HungrySnake" for i in unpacked),
             king_of_bridge="KingOfTheBridge" in classes,

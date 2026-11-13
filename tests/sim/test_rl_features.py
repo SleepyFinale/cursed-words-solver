@@ -77,7 +77,7 @@ def _truncated(pk):
 
 
 def test_layout_appends_v2_columns():
-    assert O.OBS_VERSION == 2
+    assert O.OBS_VERSION >= 2   # v3 appends target-build columns after these
     assert len(O.global_columns()) == len(set(O.global_columns())) and len(O.token_columns()) == len(set(O.token_columns()))
     assert {"str_next", "str_boss", "last_mean_over", "q_no_stickers", "q_banned_now"} <= set(V2_GLOBAL)
     assert {"inst_changed", "boss_strength", "boss_known"} <= set(V2_TOKEN)

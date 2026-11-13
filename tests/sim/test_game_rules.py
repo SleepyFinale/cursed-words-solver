@@ -712,7 +712,7 @@ def test_v4_features_see_order_growth_crown_route_and_shared_descriptors():
     assert x[col["pos:Candle"]] == 0.2 and x[col["pos:Zebra"]] == 1.0
     apply(g, Action("move", ("sticker", 0, 4)))
     y = encode(g)
-    assert y[col["pos:Candle"]] == 1.0 and y[col["pos:Zebra"]] == 0.2  # reorders are visible
+    assert y[col["pos:Candle"]] == 1.0 and y[col["pos:Zebra"]] == 0.8  # reorders are visible (a drag shifts)
     rows, D = item_descriptors()
     desc = [col[n] for n in names if n.startswith("desc:")]
     want = sum(D[rows[c]] for c in ("Candle", "GamePad", "Backpack", "Ruler", "Zebra"))
@@ -875,6 +875,7 @@ def _plan_shop(plan: str, money: int = 60, **cfg):
     s = _shop_at(g, Node.SHOP_ONE, money)
     s.stickers[:] = [None] * len(s.stickers)
     s.stamps[:] = [None] * len(s.stamps)
+    s.free_item_active = False  # a free item may be taken off-plan (keep_free_item)
     return g, s, FastAdvicePolicy(_NoSearch(), PowerConfig(build_plan=plan, **cfg))
 
 
@@ -889,6 +890,26 @@ def test_build_plan_buys_its_generators_first_and_refuses_other_builds():
     assert not pol._offer_ok(g, "Beefeater") and pol._offer_ok(g, "Broom") and pol._offer_ok(g, "Avocado")
     _, _, off = _plan_shop("")
     assert off._build_plan_step(g) is None and off._offer_ok(g, "Beefeater")
+
+
+def test_cash_plan_skips_shop_helpers_and_keeps_money_for_its_payoffs():
+    from cursed_words_solver.sim.game.agent import Action
+    from cursed_words_solver.sim.game.policy import plan_class
+    from cursed_words_solver.sim.game.shop import ItemInStock
+
+    assert plan_class("Cash", "FriedShrimp") == "neutral" and plan_class("Cash", "Ogre") == "neutral"
+    assert plan_class("Cash", "CreditCard") == "fits" and plan_class("Cash", "Candle") == "generator"
+    g, s, pol = _plan_shop("Cash", money=40)
+    s.stickers[0] = ItemInStock(make_item("Candle"), 20)
+    buy = Action("buy", ("sticker", 0))
+    assert pol._hoard(g, buy) is buy  # no payoff owned yet: spend as usual
+    g.player.stickers[0] = make_item("CreditCard")
+    assert pol._hoard(g, buy).kind == "leave"  # $40 - $20 < $30 with Credit Card owned
+    s.stickers[1] = ItemInStock(make_item("Sunflower"), 20)
+    payoff = Action("buy", ("sticker", 1))
+    assert pol._hoard(g, payoff) is payoff  # another payoff is always bought
+    _, _, curse = _plan_shop("Curse", money=40)
+    assert curse._hoard(g, buy) is buy  # other plans never hoard
 
 
 def test_generator_reserve_keeps_money_for_a_generator_and_holds_one_it_cannot_buy():

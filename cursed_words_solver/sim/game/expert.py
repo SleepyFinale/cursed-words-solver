@@ -200,7 +200,7 @@ def full_shop_candidates(game, suggestion: Action, cap: int = SHOP_CANDIDATES) -
     p, s = game.player, game.shop
     for kind, owned, stock in (("sticker", p.stickers, s.stickers), ("stamp", p.stamps, s.stamps)):
         for j, o in enumerate(stock):
-            if o is None or s.can_buy(kind, j):
+            if o is None or s.can_buy(kind, j) or s.slots_hidden(kind):
                 continue
             for i, it in enumerate(owned):
                 if (it is None or it.game_class == o.item.game_class or not can_sell(p, it)
@@ -208,11 +208,11 @@ def full_shop_candidates(game, suggestion: Action, cap: int = SHOP_CANDIDATES) -
                     continue
                 groups["sell_buy"].append(Action("sell_buy", (kind, i, j), f"sell {it.game_class}, buy {o.item.game_class}"))
         n = sum(it is not None for it in owned)
-        for a_ in range(5):
-            for b_ in range(a_ + 1, 5):
-                if n >= 2 and (owned[a_] is not None or owned[b_] is not None):
-                    src, dst = (a_, b_) if owned[a_] is not None else (b_, a_)
-                    groups["move"].append(Action("move", (kind, src, dst), f"swap {kind}s {src}<->{dst}"))
+        if n >= 2:  # a drag re-inserts the item (shift), so both directions differ
+            for src in range(5):
+                for dst in range(5):
+                    if src != dst and owned[src] is not None:
+                        groups["move"].append(Action("move", (kind, src, dst), f"move {kind} {src}->{dst}"))
     pending = [list(groups[g]) for g in SHOP_GROUPS]
     while len(out) < cap and any(pending):
         for q in pending:
@@ -257,7 +257,8 @@ class NetPolicy(FastAdvicePolicy):
     def __init__(self, cands: Candidates, model=None, *, seed: int = 0, threshold: float | None = None,
                  boss_risk: str = "", boss_model: str | None = None, char_tuning: str = "",
                  action_space: str = "full", explore: float = 0.0, randomise: float = 0.0,
-                 control: float = 0.25, trial_kinds: frozenset[str] | None = None) -> None:
+                 control: float = 0.25, trial_kinds: frozenset[str] | None = None,
+                 build_plan: str | None = None, build_plan_chars: dict | None = None) -> None:
         if boss_model is None:  # build-aware boss risk (on 2026-10-30); only used with a boss_risk table
             from cursed_words_solver.sim.game.bossmodel import DEFAULT_PATH
 
@@ -266,7 +267,8 @@ class NetPolicy(FastAdvicePolicy):
                           fast_placement=True, placement_targets=8, advice_fallback=True, sort_items=True, spend_over=20,
                           power_override=0.1, swap_sell=True, tile_buy_chars=("Spike",),
                           sort_stamps_chars=("SockHead",), route_value=True,
-                          build_plan=DEFAULT_PLAN, build_plan_chars=dict(DEFAULT_PLAN_CHARS))
+                          build_plan=DEFAULT_PLAN if build_plan is None else build_plan,
+                          build_plan_chars=dict(DEFAULT_PLAN_CHARS if build_plan_chars is None else build_plan_chars))
         if char_tuning:  # chartune.py's per-character settings
             cfg.char_overrides = load_char_tuning(Path(char_tuning))
         super().__init__(cands, cfg, seed=seed)
@@ -293,6 +295,8 @@ class NetPolicy(FastAdvicePolicy):
                 cands = shop_candidates(game, self._advice_shop(game))
             if self.cfg.build_plan:  # the model may not buy what the plan refuses
                 cands = cands[:1] + [a for a in cands[1:] if self._offer_ok(game, offer_class(game, a)) and self._reserve_ok(game, a)]
+            if game.player.run.challenge_is("TwoWrongs"):  # nor what adds positive score there
+                cands = cands[:1] + [a for a in cands[1:] if not self.harmful(game, a)]
             return cands
         if ph == "boss_draft":
             fb = FastAdvicePolicy._boss(self, game)
@@ -485,7 +489,7 @@ class NetPolicy(FastAdvicePolicy):
         return self._leave()
 
     def act(self, game) -> Action:
-        return self.decide(game)[0]
+        return self._hoard(game, self.decide(game)[0])
 
 
 # ---------------------------------------------------------------------------- paired rollouts

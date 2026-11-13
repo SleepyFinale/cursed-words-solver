@@ -17,6 +17,17 @@ Gate = ``evaluate.gate_jobs(--gate-per, --gate-per-quest)``: 4 x 11 characters x
 quests = 404 runs (the old 202-run gate, per 2 / 1, is its prefix, so cached rows are reused).
 
 Stages run as child processes; output goes to ``rl/pipeline.log`` and each stage's dir.
+
+``--v2``: build-conditioned training on top of a finished ppo1 (``rl/targets.py``); the v1 stages
+are not run. Stages (skipped when complete; ``--dry-run`` prints the plan):
+
+1. ``teacher2``  — themed teacher data (``teacher --themed --dir teacher2 --runs --teacher2-runs``)
+2. ``bc2``       — BC on it from the ppo1 champion, KL-anchored to it (``bc --init/--anchor``)
+3. ``baseline2`` — the ppo1 champion (frozen copy ppo2/ppo1_champion.pt) on the ppo2 gate incl. the
+                   themed block, as ppo2/eval/ppo1_champion.jsonl; FREE rows are copied from
+                   ppo1's champion eval cache when keys match
+4. ``ppo2``      — PPO from bc2/best.pt with targets (``--targets-mix 0.3,0.4,0.3 --shaping 0.15
+                   --gate-targets --compare-dir ppo1``), with an exit2 look-ahead collector
 """
 
 from __future__ import annotations
@@ -32,9 +43,11 @@ from pathlib import Path
 from cursed_words_solver.rl import store
 
 HOME = store.RL_HOME
+V1_DIRS = ("teacher", "bc", "ppo1", "exit")
+V2_DIRS = ("teacher2", "bc2", "ppo2", "exit2")
 
 
-def _run(args: list[str], log: Path) -> int:
+def _run(args: list[str], log: Path, dirs: tuple[str, ...] = V1_DIRS) -> int:
     with open(log, "a", encoding="utf-8") as f:
         f.write(f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} {' '.join(args)}\n")
         f.flush()
@@ -44,7 +57,7 @@ def _run(args: list[str], log: Path) -> int:
             while p.poll() is None:
                 if (HOME / "STOP").exists():
                     # forward the pause to the stage (each stage checks its own STOP file)
-                    for d in ("teacher", "bc", "ppo1", "exit"):
+                    for d in dirs:
                         (HOME / d).mkdir(parents=True, exist_ok=True)
                         (HOME / d / "STOP").touch()
                 time.sleep(2)
@@ -54,11 +67,11 @@ def _run(args: list[str], log: Path) -> int:
         return p.returncode
 
 
-def _exit_status() -> dict:
-    p = HOME / "exit" / "state.json"
+def _exit_status(name: str = "exit") -> dict:
+    p = HOME / name / "state.json"
     if not p.is_file():
         return {}
-    rows = [r for r in store.read_jsonl(HOME / "exit" / "runs.jsonl")[-200:]
+    rows = [r for r in store.read_jsonl(HOME / name / "runs.jsonl")[-200:]
             if not r.get("error") and r.get("crown", 0) <= 7]
     st = json.loads(p.read_text())
     if rows:
@@ -100,7 +113,147 @@ def status(args) -> dict:
            "curriculum": {k: curr.get(k) for k in ("update", "char", "quest", "n_char", "n_quest")} if curr else None,
            "exit": _exit_status(),
            "paused": (HOME / "STOP").exists()}
+    if getattr(args, "v2", False) or any((HOME / d).is_dir() for d in V2_DIRS):
+        out["v2"] = v2_status(args)
     return out
+
+
+# ------------------------------------------------------------------ v2: build-conditioned
+
+def _n_shards(d: Path) -> int:
+    return len(list((d / "shards").glob("*.npz"))) if (d / "shards").is_dir() else 0
+
+
+def v2_gate_jobs(args) -> list[dict]:
+    from cursed_words_solver.rl.evaluate import gate_jobs, themed_gate_jobs
+
+    return gate_jobs(args.gate_per, args.gate_per_quest) + themed_gate_jobs()
+
+
+def v2_ppo_args(args) -> list[str]:
+    ppo_w = str(max(1, args.workers - args.exit_workers + 1)) if args.exit_workers else str(args.workers)
+    return ["cursed_words_solver.rl.ppo", "--dir", str(HOME / "ppo2"), "--init", str(HOME / "bc2" / "best.pt"),
+            "--workers", ppo_w, "--updates", str(args.ppo_updates),
+            "--gate-per", str(args.gate_per), "--gate-per-quest", str(args.gate_per_quest),
+            "--crown-weights", args.crown_weights, "--quest-share", str(args.quest_share),
+            "--episodes", str(args.episodes), "--ent-target", str(args.ent_target), "--kl-ref", "champion",
+            "--distill-coef", str(args.distill_coef), "--distill-same-w", str(args.distill_same_w),
+            "--distill-cap", str(args.distill_cap),
+            "--targets-mix", args.targets_mix, "--shaping", str(args.shaping), "--gate-targets",
+            "--compare-dir", str(HOME / "ppo1"),
+            *(["--distill-dir", str(HOME / "exit2")] if args.exit_workers else [])]
+
+
+def v2_exit_args(args) -> list[str]:
+    return ["cursed_words_solver.rl.exit", "--dir", str(HOME / "exit2"),
+            "--policy", str(HOME / "ppo2" / "weights.pt"), "--workers", str(args.exit_workers),
+            "--crown-weights", args.crown_weights, "--quest-share", str(args.quest_share),
+            "--curriculum", str(HOME / "ppo2" / "curriculum.json"), "--targets-mix", args.targets_mix]
+
+
+def v2_stages(args) -> list[dict]:
+    """The v2 stage plan: name, done (output complete -> skipped), module args of the stage."""
+    from cursed_words_solver.rl.evaluate import key
+
+    have = {key(r) for r in store.read_jsonl(HOME / "ppo2" / "eval" / "ppo1_champion.jsonl") if not r.get("error")}
+    return [
+        {"name": "teacher2", "done": _n_shards(HOME / "teacher2") >= args.teacher2_runs,
+         "cmd": ["cursed_words_solver.rl.teacher", "--themed", "--dir", str(HOME / "teacher2"),
+                 "--runs", str(args.teacher2_runs), "--workers", str(args.workers)]},
+        {"name": "bc2", "done": len(store.read_jsonl(HOME / "bc2" / "history.jsonl")) >= args.bc2_epochs,
+         "cmd": ["cursed_words_solver.rl.bc", "--data", str(HOME / "teacher2"), "--dir", str(HOME / "bc2"),
+                 "--init", str(HOME / "ppo1" / "champion.pt"), "--anchor", str(HOME / "ppo1" / "champion.pt"),
+                 "--anchor-coef", str(getattr(args, "bc2_anchor_coef", 5.0)), "--lr", str(getattr(args, "bc2_lr", 1e-4)),
+                 "--epochs", str(args.bc2_epochs)]},
+        {"name": "baseline2", "done": all(key(j) in have for j in v2_gate_jobs(args)), "cmd": None},
+        {"name": "ppo2", "done": len(store.read_jsonl(HOME / "ppo2" / "history.jsonl")) >= args.ppo_updates,
+         "cmd": v2_ppo_args(args), "exit": v2_exit_args(args) if args.exit_workers > 0 else None},
+    ]
+
+
+def seed_baseline2() -> int:
+    """Copy the ppo1 champion's FREE gate rows (ppo1/eval/champion_u*.jsonl; greedy and the same
+    weights, so the same runs) into ppo2/eval/ppo1_champion.jsonl where that lacks them; and freeze
+    the ppo1 champion as ppo2/ppo1_champion.pt. Returns rows copied."""
+    import shutil
+
+    from cursed_words_solver.rl.evaluate import champion_eval_path, key
+
+    (HOME / "ppo2" / "eval").mkdir(parents=True, exist_ok=True)
+    frozen = HOME / "ppo2" / "ppo1_champion.pt"
+    if not frozen.is_file():
+        shutil.copyfile(HOME / "ppo1" / "champion.pt", frozen)
+    src = champion_eval_path(HOME / "ppo1")
+    if src is None:
+        return 0
+    dst = HOME / "ppo2" / "eval" / "ppo1_champion.jsonl"
+    have = {key(r) for r in store.read_jsonl(dst) if not r.get("error")}
+    n = 0
+    for r in store.read_jsonl(src):
+        if not r.get("error") and not r.get("target") and key(r) not in have:
+            store.append_jsonl(dst, r)
+            have.add(key(r))
+            n += 1
+    return n
+
+
+def v2_status(args) -> dict:
+    out = {}
+    for st in v2_stages(args):
+        out[st["name"]] = "done" if st["done"] else "todo"
+    out["teacher2_shards"] = f"{_n_shards(HOME / 'teacher2')}/{args.teacher2_runs}"
+    out["bc2_epochs"] = f"{len(store.read_jsonl(HOME / 'bc2' / 'history.jsonl'))}/{args.bc2_epochs}"
+    hist = store.read_jsonl(HOME / "ppo2" / "history.jsonl")
+    out["ppo2_last"] = {k: hist[-1].get(k) for k in ("update", "episodes", "recent_win", "recent_outcome",
+                                                       "train_by_target")} if hist else {}
+    gates = store.read_jsonl(HOME / "ppo2" / "gates.jsonl")
+    out["ppo2_last_gate"] = gates[-1] if gates else None
+    out["exit2"] = _exit_status("exit2")
+    return out
+
+
+def run_v2(args, log: Path) -> int:
+    if not (HOME / "ppo1" / "champion.pt").is_file():
+        print("--v2 needs a ppo1 champion (rl/ppo1/champion.pt)", flush=True)
+        return 1
+    for st in v2_stages(args):
+        if (HOME / "STOP").exists():
+            return 0
+        if st["done"]:
+            continue
+        if st["name"] == "baseline2":
+            seed_baseline2()
+            code = ("from cursed_words_solver.rl.evaluate import gate_jobs, run_arm, themed_gate_jobs; "
+                    "from pathlib import Path; "
+                    f"run_arm('ppo1_champion', r'{HOME / 'ppo2' / 'ppo1_champion.pt'}', "
+                    f"gate_jobs({args.gate_per}, {args.gate_per_quest}) + themed_gate_jobs(), {args.workers}, "
+                    f"out_dir=Path(r'{HOME / 'ppo2' / 'eval'}'))")
+            with open(log, "a", encoding="utf-8") as f:
+                f.write("\n=== ppo1 champion baseline on the ppo2 gate\n")
+                f.flush()
+                subprocess.call([sys.executable, "-u", "-c", code], stdout=f, stderr=subprocess.STDOUT,
+                                cwd=str(Path(__file__).resolve().parents[2]))
+            continue
+        if st["name"] != "ppo2":
+            _run(st["cmd"], log, V1_DIRS + V2_DIRS)
+            continue
+        exit_proc = None
+        if st.get("exit"):
+            (HOME / "ppo2").mkdir(parents=True, exist_ok=True)
+            ex_log = open(HOME / "exit2.log", "a", encoding="utf-8")
+            exit_proc = subprocess.Popen([sys.executable, "-u", "-m", *st["exit"]], stdout=ex_log,
+                                         stderr=subprocess.STDOUT, cwd=str(Path(__file__).resolve().parents[2]))
+        try:
+            _run(st["cmd"], log, V1_DIRS + V2_DIRS)
+        finally:
+            if exit_proc is not None:
+                (HOME / "exit2").mkdir(parents=True, exist_ok=True)
+                (HOME / "exit2" / "STOP").touch()
+                try:
+                    exit_proc.wait(timeout=600)
+                except subprocess.TimeoutExpired:
+                    exit_proc.terminate()
+    return 0
 
 
 def _single_instance():
@@ -144,10 +297,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ent-target", type=float, default=0.2)
     ap.add_argument("--kl-ref", choices=("champion", "init"), default="champion")
     ap.add_argument("--status", action="store_true")
+    ap.add_argument("--v2", action="store_true", help="build-conditioned stages: teacher2, bc2, baseline2, ppo2 + exit2")
+    ap.add_argument("--teacher2-runs", type=int, default=2400)
+    ap.add_argument("--bc2-epochs", type=int, default=12)
+    # a smoke run drifted FREE play far from the ppo1 champion at coef 1 (anchor KL 0 -> 1.7 in 4 steps):
+    # the champion's CE on themed teacher picks is ~17 nats; watch val_anchor_kl (stop if > ~0.1)
+    ap.add_argument("--bc2-anchor-coef", type=float, default=5.0, help="bc2 KL anchor to the ppo1 champion (FREE play)")
+    ap.add_argument("--bc2-lr", type=float, default=1e-4)
+    ap.add_argument("--targets-mix", default="0.3,0.4,0.3", help="ppo2 / exit2 build-target mix (p_free,p_theme,p_any)")
+    ap.add_argument("--shaping", type=float, default=0.15, help="ppo2 potential per owned on-target item")
+    ap.add_argument("--dry-run", action="store_true", help="--v2: print the stage plan and exit")
     args = ap.parse_args(argv)
     HOME.mkdir(parents=True, exist_ok=True)
     if args.status:
         print(json.dumps(status(args), indent=1, default=str))
+        return 0
+    if args.v2 and args.dry_run:
+        for st in v2_stages(args):
+            print(f"{st['name']:10s} {'done' if st['done'] else 'todo'}  {' '.join(st['cmd'] or ['(run_arm)'])}")
+            if st.get("exit"):
+                print(f"{'':10s} beside: {' '.join(st['exit'])}")
         return 0
     log = HOME / "pipeline.log"
     lock = _single_instance()
@@ -155,9 +324,11 @@ def main(argv: list[str] | None = None) -> int:
         print("another pipeline is still running (or still shutting down after STOP); try again when it exits",
               flush=True)
         return 1
-    for d in ("teacher", "bc", "ppo1", "exit"):
+    for d in V1_DIRS + (V2_DIRS if args.v2 else ()):
         (HOME / d / "STOP").unlink(missing_ok=True)
     (HOME / "command.txt").write_text(f"python -m cursed_words_solver.rl.pipeline {' '.join(argv or sys.argv[1:])}\n")
+    if args.v2:
+        return run_v2(args, log)
     W = str(args.workers)
     shards = HOME / "teacher" / "shards"
     if not shards.is_dir() or len(list(shards.glob("*.npz"))) < args.teacher_runs:

@@ -33,9 +33,14 @@ class WordOption:
     word: str
     words: list[str]
     path: list[tuple[int, int]]
-    score: int
+    score: int  # progress toward the target (Two Wrongs: the negated engine score, as SubmitResult)
     placements: list[tuple[int, int, int]] = field(default_factory=list)  # (rack_idx, x, y)
+    raw: int | None = None  # engine score when it differs from ``score`` (Two Wrongs)
+    grants_item: str | None = None  # Microphone: the item class this word's name adds
+    money: int | None = None  # money_words: what the word earns in-grid (it does not clear)
 
+
+_BULLSEYE_EXACT_SCALE = 4
 
 # Engine search limits scaled by ``Candidates.effort`` (deterministic, load-independent).
 _EFFORT_ATTRS = {
@@ -79,18 +84,30 @@ class Candidates:
                           cheap_floor=self.cheap_floor if cheap_floor is None else cheap_floor)
 
     def _find(self, board, loadout, top_n: int):
+        return self._search(board, loadout, top_n, None)
+
+    def _search(self, board, loadout, top_n: int, searcher=None):
+        """``_find`` with another searcher (Microphone item names); ``None`` = the dictionary."""
+        if searcher is None:
+            searcher = self.searcher
         if not self.effort:
-            return self.searcher.find_best_words(board, loadout, top_n=top_n)
+            return searcher.find_best_words(board, loadout, top_n=top_n)
         from cursed_words_solver.engine.search import ExactSearch
 
         saved = {k: getattr(ExactSearch, k) for k in _EFFORT_ATTRS}
+        # Bullseye wants an exact hit, often a low-value path of a word the value shortlist
+        # already holds once: score more paths exactly.
+        bullseye = str((loadout.extras or {}).get("challenge_game_class") or "") == "Bullseye"
         try:
             for k, floor in _EFFORT_ATTRS.items():
                 scale = 2 * self.effort if k == "beam_fixed_width" else self.effort
                 if k == "max_exact_paths" and self.cheap_floor:  # exact scoring dominates cheap searches
                     floor = max(500, int(floor * min(1.0, self.effort / 0.05)))
-                setattr(ExactSearch, k, max(floor, int(saved[k] * scale)))
-            return self.searcher.find_best_words(board, loadout, top_n=top_n)
+                value = max(floor, int(saved[k] * scale))
+                if k == "max_exact_paths" and bullseye:
+                    value *= _BULLSEYE_EXACT_SCALE
+                setattr(ExactSearch, k, value)
+            return searcher.find_best_words(board, loadout, top_n=top_n)
         finally:
             for k, v in saved.items():
                 setattr(ExactSearch, k, v)
@@ -100,20 +117,196 @@ class Candidates:
         if enc is None:
             return []
         board, loadout = board_and_loadout(enc)
-        results = self._find(board, loadout, top_n)
+        bullseye = game.player.run.challenge_is("Bullseye")
+        results = self._find(board, loadout, max(80, 12 * top_n) if bullseye else top_n)
         out = []
         for r in results:
-            out.append(WordOption(
-                word=r.word,
-                words=r.word.split(),
-                path=[index_to_coords(enc, i) for i in r.path],
-                score=int(round(r.score)),
-            ))
+            out.append(_option(game, r.word, [index_to_coords(enc, i) for i in r.path], r.score))
+        if bullseye and out:
+            out = self._bullseye_spread(game, board, loadout, out, top_n)
         if not out:
             out = self.placement_words(game, top_n)
+        else:
+            out = self._with_rack_words(game, out, top_n)
+        out += self.item_name_words(game, board, loadout, out)
+        out += self.money_words(game, board, loadout, out)
         return out
 
-    def placement_words(self, game: Game, top_n: int = 5) -> list[WordOption]:
+    def _with_rack_words(self, game: Game, out: list[WordOption], top_n: int, k: int = 3) -> list[WordOption]:
+        """Board words exist, but rack tiles placed first often make a far better word (Red
+        Letter Day's consonant grids, Chromaphobia's coloured squares made usable by a Normal
+        tile). Add the best ``k`` rack words that beat the best board word; board words stay
+        so the policy can save the rack."""
+        if not any(t is not None for t in game.player.consumables):
+            return out
+        if game.player.run.challenge_is("Bullseye"):
+            return out
+        best = out[0].score
+        extra = [o for o in self.placement_words(game, k) if o.score > best][:k]
+        if not extra:
+            return out
+        return sorted(out + extra, key=lambda o: -o.score)
+
+    def money_words(self, game: Game, board, loadout, have: list[WordOption], k: int = 2) -> list[WordOption]:
+        """When the best word clears and grids remain, a word that does not clear but picks up
+        currency tiles earns money on this grid and leaves the next one to clear (Do Not Pass
+        Go pays nothing for clearing or unused grids). The top words all clear, so offer the
+        ``k`` non-clearing words that earn the most (exact engine money)."""
+        enc = game.encounter
+        run = game.player.run
+        if (not have or enc is None or enc.remaining_grids < 1 or run.challenge_is("Bullseye")
+                or not clears(game, have[0].score)):
+            return []
+        from cursed_words_solver.sim.game.core import G_CURRENCY
+
+        cash = {(t.x, t.y) for t in enc.grid.available() if t.get_glyph() == G_CURRENCY}
+        if not cash:
+            return []
+        seen = {(o.word, tuple(o.path)) for o in have}
+        pool = []
+        for r in self._find(board, loadout, 48):
+            o = _option(game, r.word, [index_to_coords(enc, i) for i in r.path], r.score)
+            n = sum(xy in cash for xy in o.path)
+            if n and o.score > 0 and not clears(game, o.score) and (o.word, tuple(o.path)) not in seen:
+                pool.append((n, o))
+        if not pool:
+            return []
+        pool.sort(key=lambda t: (-t[0], -t[1].score))
+        from cursed_words_solver.engine.calc import EnginePlan
+        from cursed_words_solver.sim.game.bridge import coords_to_index
+
+        plan = EnginePlan.build(board, loadout)
+        earned = []
+        for _n, o in pool[:6]:
+            try:
+                res = plan.score([coords_to_index(enc, x, y) for x, y in o.path], " ".join(o.words),
+                                 words=[w.lower() for w in o.words])
+                m = int(res.steps[-1].money - res.steps[0].money)
+            except Exception:
+                continue
+            if m > 0:
+                o.money = m
+                earned.append(o)
+        earned.sort(key=lambda o: (-o.money, -o.score))
+        return earned[:k]
+
+    def _names_searcher(self, names: frozenset):
+        """Engine searcher over item names only (Microphone), cached per name set."""
+        cache = self.__dict__.setdefault("_name_searchers", {})
+        hit = cache.get(names)
+        if hit is None:
+            from cursed_words_solver.search import WordSearcher
+
+            if len(cache) > 64:
+                cache.clear()
+            hit = cache[names] = WordSearcher(_NameDictionary(names), time_budget=0 if self.effort else 1.0)
+        return hit
+
+    def item_name_words(self, game: Game, board, loadout, have: list[WordOption], k: int = 3) -> list[WordOption]:
+        """Microphone (``GetAccumulatorWords`` / ``ApplyWordBonus``): spelling an un-owned
+        single-word item's name adds the item. Names are short and score low, so they never
+        make the top words; offer the best ``k`` on the board, plus the best that needs rack
+        tiles placed (the only item source in In The Beginning)."""
+        p = game.player
+        if not p.unpacked_of("Microphone"):
+            return []
+        from cursed_words_solver.sim.game.encounter import microphone_tables
+
+        single, pairs = microphone_tables(p)
+        enc = game.encounter
+        for o in have:  # a name already among the top words (two-word names via Honeypot)
+            if o.grants_item is None:
+                o.grants_item = single.get(o.word) if len(o.words) == 1 else pairs.get(" ".join(o.words)) if len(o.words) == 2 else None
+        out_pairs = self._pair_name_words(game, board, loadout, pairs, have) if p.unpacked_of("Honeypot") else []
+        names = frozenset(n for n in single if n.isalpha())
+        if not names:
+            return out_pairs
+        searcher = self._names_searcher(names)
+        seen = {(o.word, tuple(o.path)) for o in have}
+        got = {o.word for o in have}
+        out: list[WordOption] = []
+        for r in self._search(board, loadout, 4 * k, searcher):
+            if r.word not in names or r.word in got:
+                continue
+            o = _option(game, r.word, [index_to_coords(enc, i) for i in r.path], r.score)
+            if (o.word, tuple(o.path)) in seen:
+                continue
+            o.grants_item = single[r.word]
+            out.append(o)
+            got.add(r.word)
+            if len(out) >= k:
+                break
+        if any(t is not None for t in p.consumables):
+            for o in self.placement_words(game, 4, searcher):
+                if o.word in names and o.word not in got:
+                    o.grants_item = single[o.word]
+                    out.append(o)
+                    got.add(o.word)
+                    if len(out) >= k + 2:
+                        break
+        return out + out_pairs
+
+    def _pair_name_words(self, game: Game, board, loadout, pairs: dict[str, str], have, k: int = 2) -> list[WordOption]:
+        """Honeypot + Microphone: a two-word item name (``GetAccumulatorPairs``) submitted as
+        two words adds the item. ``GetConcatenatedValidWordsFromTiles`` tries the pairs first,
+        each half matched only against the pair's own word; for a repeated first word only the
+        first pair's second half is tried (``IndexOf``). Search the joined names, then score the
+        path as the two words."""
+        firsts: dict[str, str] = {}
+        for name in pairs:  # pool order, as Microphone builds the lists
+            a, b = name.split(" ")
+            firsts.setdefault(a, b)
+        joined = {a + b: (a, b) for a, b in firsts.items() if a.isalpha() and b.isalpha()}
+        if not joined:
+            return []
+        from cursed_words_solver.engine.calc import EnginePlan
+        from cursed_words_solver.sim.game.bridge import coords_to_index
+
+        enc = game.encounter
+        got = {o.word for o in have}
+        plan = None
+        out: list[WordOption] = []
+        for r in self._search(board, loadout, 4 * k, self._names_searcher(frozenset(joined))):
+            halves = joined.get(r.word)
+            if halves is None or " ".join(halves) in got:
+                continue
+            path = [index_to_coords(enc, i) for i in r.path]
+            plan = plan or EnginePlan.build(board, loadout)
+            try:
+                res = plan.score([coords_to_index(enc, x, y) for x, y in path], " ".join(halves), words=list(halves))
+            except Exception:
+                continue
+            o = _option(game, " ".join(halves), path, res.int_score)
+            o.grants_item = pairs[" ".join(halves)]
+            out.append(o)
+            got.add(o.word)
+            if len(out) >= k:
+                break
+        return out
+
+    def _bullseye_spread(self, game: Game, board, loadout, out: list[WordOption], top_n: int) -> list[WordOption]:
+        """Bullseye (``newRemainingTarget = |remaining - score|``, only 0 wins): the closest
+        words alone are often one score repeated, leaving a remainder no word can hit. Keep one
+        word per score, add words aimed at ``remaining + floor`` (an overshoot that leaves a
+        remainder some word reaches), and rank exact hits, then reachable remainders, by distance."""
+        rem = int(game.encounter.remaining_target)
+        pos = [o.score for o in out if o.score > 0]
+        floor = min(pos) if pos else 0
+        if floor and rem > 0:
+            import copy as _copy
+
+            lo = _copy.copy(loadout)
+            lo.extras = dict(loadout.extras or {})
+            lo.extras["encounter_remaining_target"] = str(rem + floor)
+            enc = game.encounter
+            for r in self._find(board, lo, max(40, 6 * top_n)):
+                out.append(_option(game, r.word, [index_to_coords(enc, i) for i in r.path], r.score))
+        by_score: dict[int, WordOption] = {}
+        for o in out:
+            by_score.setdefault(o.score, o)
+        return sorted(by_score.values(), key=lambda o: bullseye_key(rem, o.score, floor))[:top_n]
+
+    def placement_words(self, game: Game, top_n: int = 5, searcher=None) -> list[WordOption]:
         """Words that need rack tiles placed first (board-only search found none).
 
         Empty Grid boards hold no letters and Advent Calendar boards are numbers that
@@ -154,34 +347,129 @@ class Candidates:
             cells = [c for c in snake if c in allowed][:n]
             if cells and cells not in cells_by_anchor:
                 cells_by_anchor.append(cells)
+        layouts = [list(zip([ri for ri, _ in rack], cells)) for cells in cells_by_anchor]
+        layouts += _colour_quest_layouts(game, rack, allowed)
         best: dict[tuple, WordOption] = {}
-        for cells in cells_by_anchor:
+        for layout in layouts:
             g = clone(game, light=True)
             placed: dict[tuple[int, int], int] = {}
-            for (ri, _t), (x, y) in zip(rack, cells):
+            for ri, (x, y) in layout:
                 if g.encounter.place_consumable(ri, x, y):
                     placed[(x, y)] = ri
             if not placed:
                 continue
             board, loadout = board_and_loadout(g.encounter)
-            for r in self._find(board, loadout, top_n):
+            found = self._find(board, loadout, top_n) if searcher is None else self._search(board, loadout, top_n, searcher)
+            for r in found:
                 path = [index_to_coords(g.encounter, i) for i in r.path]
                 used = [(placed[xy], xy[0], xy[1]) for xy in path if xy in placed]
                 if not used:
                     continue
-                opt = WordOption(word=r.word, words=r.word.split(), path=path,
-                                 score=int(round(r.score)), placements=used)
+                opt = _option(game, r.word, path, r.score, used)
                 # the same word at another anchor is the same play (centre anchor kept)
                 key = (r.word, opt.score, len(used))
                 if key not in best:
                     best[key] = opt
         # fewest rack tiles spent breaks score ties
+        if game.player.run.challenge_is("Bullseye"):
+            rem = int(enc.remaining_target)
+            return sorted(best.values(), key=lambda o: (bullseye_key(rem, o.score), len(o.placements)))[:top_n]
         return sorted(best.values(), key=lambda o: (-o.score, len(o.placements)))[:top_n]
+
+
+def _colour_quest_layouts(game: Game, rack, allowed: set, squares: int = 4) -> list[list]:
+    """Single-tile placements that make a banned square usable: under Chromaphobia a Normal
+    rack tile on a coloured square (``ApplyConsumableTile`` copies the rack tile's type),
+    under Chromaphilia a coloured one on a Normal square. Squares with the most usable
+    neighbours first."""
+    from cursed_words_solver.sim.game import core as C
+
+    run = game.player.run
+    phobia, philia = run.challenge_is("Chromaphobia"), run.challenge_is("Chromaphilia")
+    if not (phobia or philia):
+        return []
+
+    def usable(t) -> bool:
+        return (t.tile_type == C.NORMAL) == phobia
+
+    tiles = {(t.x, t.y): t for t in game.encounter.grid.available()}
+    good_rack = [(ri, t) for ri, t in rack if usable(t)]
+    seen: set = set()
+    picks = []
+    for ri, t in good_rack:
+        k = (t.srep(), t.tile_type)
+        if k not in seen:
+            seen.add(k)
+            picks.append(ri)
+    picks = picks[:2]
+    if not picks:
+        return []
+    banned = [xy for xy, t in tiles.items() if xy in allowed and not usable(t)]
+
+    def nbrs(xy) -> int:
+        x, y = xy
+        return sum(1 for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                   if (dx or dy) and (x + dx, y + dy) in tiles and usable(tiles[(x + dx, y + dy)]))
+
+    banned.sort(key=lambda xy: (-nbrs(xy), xy))
+    return [[(ri, xy)] for ri in picks for xy in banned[:squares]]
 
 
 # Block anchors for ``Candidates.placement_words``: centre first (most neighbours), then
 # two corners so board tiles on either side can extend a placed word.
 _ANCHORS = (("mid", "mid"), ("lo", "lo"), ("hi", "hi"))
+
+
+def _option(game: Game, word: str, path, raw: float, placements=None) -> WordOption:
+    """``WordOption`` whose ``score`` counts toward the target: Two Wrongs negates the engine
+    score (``EncounterController``: ``scoreFromScoreCalcInfo *= -1``), so only negative words help."""
+    raw_i = int(round(raw))
+    neg = game.player.run.challenge_is("TwoWrongs")
+    return WordOption(word=word, words=word.split(), path=path, score=-raw_i if neg else raw_i,
+                      placements=list(placements or []), raw=raw_i if neg else None)
+
+
+class _NameDictionary:
+    """``WordDictionary`` stand-in over a fixed set of words (item names)."""
+
+    path = None
+
+    def __init__(self, words) -> None:
+        self.words = set(words)
+
+    @property
+    def trie(self):
+        from cursed_words_solver.engine.solver import trie_for
+
+        return trie_for(self)
+
+    def contains(self, word: str) -> bool:
+        return word.lower() in self.words
+
+    def is_valid_word(self, word: str, min_len: int = 1) -> bool:
+        return len(word) >= min_len and word.lower() in self.words
+
+    def has_prefix(self, prefix: str) -> bool:
+        return self.trie.walk(0, prefix.lower()) >= 0
+
+    def __len__(self) -> int:
+        return len(self.words)
+
+
+def clears(game: Game, score: int) -> bool:
+    """Does a word scoring ``score`` (target progress) win the encounter? Bullseye needs an
+    exact hit (``|remaining - score| <= 0``); otherwise reaching the target is enough."""
+    rem = game.encounter.remaining_target
+    if game.player.run.challenge_is("Bullseye"):
+        return int(score) == int(rem)
+    return score >= rem
+
+
+def bullseye_key(rem: int, score: int, floor: int = 0) -> tuple:
+    """Sort key under Bullseye: exact hit first, then remainders a word can still reach
+    (at least the grid's lowest word score), then the rest; closer first within each."""
+    left = abs(rem - score)
+    return (left != 0, not (left == 0 or (floor and left >= floor)), left)
 
 
 def _rack_order_key(t) -> tuple:
@@ -200,9 +488,8 @@ def submit_action(o: WordOption, label: str | None = None) -> Action:
     if o.placements:
         args += (tuple(tuple(pl) for pl in o.placements),)
     if label is None:
-        label = f"{o.word} ({o.score})"
-        if o.placements:
-            label = f"{o.word} [+{len(o.placements)} rack] ({o.score})"
+        tags = ([f"+{len(o.placements)} rack"] if o.placements else []) + ([f"raw {o.raw}"] if o.raw is not None else [])             + ([f"adds {o.grants_item}"] if o.grants_item else []) + ([f"+${o.money}, no clear"] if o.money else [])
+        label = f"{o.word}{' [' + ', '.join(tags) + ']' if tags else ''} ({o.score})"
     return Action("submit", args, label)
 
 
@@ -376,12 +663,12 @@ def legal_actions(game: Game, cands: Candidates | None = None, *, top_n: int = 5
                 out.append(Action("buy", ("sticker", k), f"buy {o.item.game_class} ${s.offer_cost(o)}"))
                 if p.unpacked_of("HungryHippo"):
                     out.append(Action("hippo", ("sticker", k), f"feed {o.item.game_class} to Hungry Hippo"))
-            if o is not None:
+            if o is not None and not s.slots_hidden("sticker"):
                 out.append(Action("freeze", ("sticker", k), f"{'unfreeze' if o.frozen else 'freeze'} {o.item.game_class}"))
         for k, o in enumerate(s.stamps):
             if o is not None and s.can_buy("stamp", k):
                 out.append(Action("buy", ("stamp", k), f"buy {o.item.game_class} ${s.offer_cost(o)}"))
-            if o is not None:
+            if o is not None and not s.slots_hidden("stamp"):
                 out.append(Action("freeze", ("stamp", k), f"{'unfreeze' if o.frozen else 'freeze'} {o.item.game_class}"))
         for k, o in enumerate(s.tiles):
             if s.can_buy_tile(k):

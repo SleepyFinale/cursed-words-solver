@@ -4,6 +4,10 @@ Reward is the increase of a potential Φ (encounters cleared + share of the curr
 encounter's target reached), so the episode return telescopes to the run's ``outcome``
 (win 16, Michael win 24; a loss scores how far it got). Dense, and it doesn't change which
 policy is optimal.
+
+Build-conditioned runs (``reset(target=...)``, ``rl/targets.py``): with ``shaping`` > 0, Φ
+also counts ``shaping`` per owned item on the target build (generator / fits) until the run
+ends; at "done" Φ is exactly ``outcome``, so the return still telescopes to it.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ import numpy as np
 
 from cursed_words_solver.rl.actions import ANYTIME, CandidateBuilder, Cand, Limits
 from cursed_words_solver.rl.obs import Obs, observe
+from cursed_words_solver.rl.targets import FREE, get_target, off_plan_count, on_plan_count
 from cursed_words_solver.sim.game.agent import Action, apply
 from cursed_words_solver.sim.game.features import outcome, progress
 
@@ -25,13 +30,15 @@ if TYPE_CHECKING:  # pragma: no cover
 MAX_STEPS = 1500
 
 
-def potential(game: "Game") -> float:
+def potential(game: "Game", *, target: str = FREE, shaping: float = 0.0) -> float:
     if game.phase == "done":
         return outcome(game)
     base = progress(game)
     enc = game.encounter
     if enc is not None and enc.total_target > 0 and enc.michael_draft is None:
         base += max(0.0, min(1.0, 1.0 - enc.remaining_target / enc.total_target))
+    if shaping and target != FREE:
+        base += shaping * on_plan_count(game, target)
     return base
 
 
@@ -63,8 +70,10 @@ def pack(step: Step) -> dict[str, np.ndarray]:
 
 
 class CWEnv:
-    def __init__(self, cands: "Candidates", limits: Limits | None = None) -> None:
+    def __init__(self, cands: "Candidates", limits: Limits | None = None, shaping: float = 0.0) -> None:
         self.builder = CandidateBuilder(cands, limits)
+        self.shaping = float(shaping)   # Φ per owned on-target item (build-conditioned runs)
+        self.target = FREE
         self.game: "Game | None" = None
         self.point_anytime = 0
         self.shop_actions = 0
@@ -72,22 +81,29 @@ class CWEnv:
         self._shop_id = None
         self.phi = 0.0
 
-    def reset(self, *, character: str, crown: int, seed: int, quest: str | None = None, wordlist=None) -> Step:
+    def reset(self, *, character: str, crown: int, seed: int, quest: str | None = None, wordlist=None,
+              target: str = FREE) -> Step:
+        from cursed_words_solver.rl.targets import canonical
         from cursed_words_solver.sim.game.run import Game, RunConfig
 
         self.game = Game(RunConfig(character=character, ascension=crown, challenge=quest, seed=seed,
-                                   wordlist=wordlist or self.builder.cands.wordlist))
+                                   wordlist=wordlist or self.builder.cands.wordlist,
+                                   target_build=canonical(target) if target else FREE))
         return self.attach(self.game)
 
     def attach(self, game: "Game") -> Step:
         """Start from an existing game (live advice, imported captures)."""
         self.game = game
+        self.target = get_target(game)
         self.point_anytime = 0
         self.shop_actions = 0
         self.steps = 0
         self._shop_id = id(game.shop) if game.shop is not None else None
-        self.phi = potential(game)
+        self.phi = self.potential(game)
         return self.current()
+
+    def potential(self, game: "Game") -> float:
+        return potential(game, target=self.target, shaping=self.shaping)
 
     def current(self) -> Step:
         g = self.game
@@ -122,7 +138,7 @@ class CWEnv:
         else:
             self._shop_id = None
             self.shop_actions = 0
-        phi = potential(g)
+        phi = self.potential(g)
         r = phi - self.phi
         self.phi = phi
         done = self.done
@@ -135,4 +151,6 @@ class CWEnv:
         g = self.game
         return {"won": bool(g.won), "reason": g.end_reason, "outcome": round(outcome(g), 4),
                 "stage": g.player.run.stage, "steps": self.steps,
-                "michael": g.end_reason == "michael", "cursed": len(g.player.run.cursed_bosses_defeated)}
+                "michael": g.end_reason == "michael", "cursed": len(g.player.run.cursed_bosses_defeated),
+                "target": self.target, "on_plan": on_plan_count(g, self.target),
+                "off_plan": off_plan_count(g, self.target)}

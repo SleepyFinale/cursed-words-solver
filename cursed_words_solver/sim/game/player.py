@@ -736,11 +736,13 @@ class Player:
         self.refresh_favourite_sticker()
 
     def move_item(self, kind: str, src: int, dst: int) -> bool:
-        """Drag to reorder (``ItemReorderController``): swap two slots."""
+        """Drag to reorder (``ItemReorderController.OnItemBeginHoverCallback``): the dragged
+        item is removed and re-inserted at ``dst``, shifting the slots in between (not a swap)."""
         arr = self.stickers if kind == "sticker" else self.stamps
         if not (0 <= src < 5 and 0 <= dst < 5) or src == dst or arr[src] is None:
             return False
-        arr[src], arr[dst] = arr[dst], arr[src]
+        it = arr.pop(src)
+        arr.insert(dst, it)
         if kind == "sticker":
             self.refresh_favourite_sticker()
         self.refresh_underhand_target()

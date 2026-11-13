@@ -15,6 +15,11 @@ only by stage / node, greedy words, the build as shown; what ``policy.PowerPolic
 by) at shops, boss drafts and pin rewards, per boss option at the draft; the previous
 encounter's scores; quest rules shared across quests; per-instance colours / tags of items
 where they differ from the catalog (Colour Swap, Can of Beans, upgraded pins).
+
+v3 columns (build-conditioned RL, ``rl/targets.py``) are appended after the v2 ones: the run's
+target build (``target_set`` and a multi-hot ``target:{plan}`` over ``targets.PLANS``) and per
+item token its place in that target (``pc:generator`` / ``pc:fits`` / ``pc:off`` /
+``pc:neutral``). FREE (no target) leaves them all zero, so v2 rows read as FREE.
 """
 
 from __future__ import annotations
@@ -34,9 +39,13 @@ from cursed_words_solver.sim.game.features import _counter, _vocab, item_descrip
 if TYPE_CHECKING:  # pragma: no cover
     from cursed_words_solver.sim.game.run import Game
 
-OBS_VERSION = 2
-LEGACY_GLOBAL = (208,)   # n_global_features() of older layouts (v1), for model.upgrade_config
-LEGACY_TOKEN = (146,)    # n_token_features() of v1
+OBS_VERSION = 3
+LEGACY_GLOBAL = (208, 241)   # n_global_features() of older layouts (v1, v2), for model.upgrade_config
+LEGACY_TOKEN = (146, 206)    # n_token_features() of v1, v2
+
+PLAN_CLASSES = ("generator", "fits", "off", "neutral")   # v3 token columns pc:*
+V3_GLOBAL = LEGACY_GLOBAL[1] + 1 + 14   # v3 global width: v2 + target_set + target:{14 targets.PLANS}
+V3_TOKEN = LEGACY_TOKEN[1] + len(PLAN_CLASSES)
 
 # token types (0 = padding)
 TOK_PAD, TOK_STICKER, TOK_STAMP, TOK_PIN, TOK_RACK, TOK_SHOP_STICKER, TOK_SHOP_STAMP, TOK_SHOP_TILE, \
@@ -137,6 +146,8 @@ def token_columns() -> dict[str, int]:
     names += ["inst_changed"] + [f"icol:{t}" for t in v["types"]] + [f"itag:{t}" for t in v["tags"]]
     names += [f"idep:{t}" for t in _dep_vocab()]
     names += ["boss_known", "boss_strength", "boss_log_strength", "boss_target_rel"]
+    # v3: the item's place in the run's target build (all zero when FREE)
+    names += [f"pc:{c}" for c in PLAN_CLASSES]
     return {n: i for i, n in enumerate(names)}
 
 
@@ -175,6 +186,10 @@ def global_columns() -> dict[str, int]:
     names += ["last_known", "last_mean_over", "last_max_over", "last_grids_unused", "last_cleared", "last_words",
               "best_word_log", "best_word_over_now"]
     names += list(QUEST_RULES) + ["q_elite", "q_forced_char", "q_start_items", "q_banned_now", "q_banned_any"]
+    # v3: target build (all zero when FREE)
+    from cursed_words_solver.rl.targets import PLANS
+
+    names += ["target_set"] + [f"target:{p}" for p in PLANS]
     return {n: i for i, n in enumerate(names)}
 
 
@@ -240,7 +255,7 @@ class Prober:
             if not opts:
                 enc.skip()
                 continue
-            pts += abs(enc.submit(opts[0].path, opts[0].words).score)   # TwoWrongs scores negative
+            pts += max(0, enc.submit(opts[0].path, opts[0].words).score)   # SubmitResult is sign-corrected (Two Wrongs)
         return pts / max(1, k)
 
     def rate(self, game: "Game", sig, stage: int, node) -> tuple[float, int]:
@@ -347,6 +362,7 @@ class _Tokens:
         self.refs: dict = {}
         self.col = token_columns()
         self.F = len(self.col)
+        self.target = ""   # v3: the run's target build (``targets.get_target``)
 
     def add(self, ttype: int, cls_name: str, ref=None) -> np.ndarray | None:
         if len(self.types) >= MAX_TOKENS:
@@ -437,6 +453,12 @@ def _item_token(tk: _Tokens, ttype: int, it, p, ref, *, slot: int = -1, cost: fl
         _instance(tk, f, it)
     except Exception:
         pass
+    if tk.target and ttype != TOK_NESTED:   # v3
+        from cursed_words_solver.rl.targets import item_class
+
+        pc = item_class(tk.target, it.game_class)
+        if pc is not None:
+            put(f, f"pc:{pc}", 1.0)
 
 
 def _tile_token(tk: _Tokens, ttype: int, t, p, ref, price: float | None = None) -> None:
@@ -482,6 +504,7 @@ def build_tokens(game: "Game", probe: dict | None = None) -> _Tokens:
     p = game.player
     run = p.run
     tk = _Tokens()
+    tk.target = _target(game)
     for k, it in enumerate(p.stickers):
         if it is not None:
             _item_token(tk, TOK_STICKER, it, p, ("sticker", k), slot=k)
@@ -508,10 +531,10 @@ def build_tokens(game: "Game", probe: dict | None = None) -> _Tokens:
     s = game.shop if game.phase == "shop" else None
     if s is not None:
         for k, o in enumerate(s.stickers):
-            if o is not None:
+            if o is not None and not s.slots_hidden("sticker"):  # hidden slots aren't visible
                 _item_token(tk, TOK_SHOP_STICKER, o.item, p, ("shop_sticker", k), cost=s.offer_cost(o), stock=o)
         for k, o in enumerate(s.stamps):
-            if o is not None:
+            if o is not None and not s.slots_hidden("stamp"):
                 _item_token(tk, TOK_SHOP_STAMP, o.item, p, ("shop_stamp", k), cost=s.offer_cost(o), stock=o)
         for k, o in enumerate(s.tiles):
             if o is not None and not o.bought:
@@ -546,7 +569,7 @@ def _last_encounter(game: "Game") -> dict | None:
     words = list(run.stats.words_submitted)
     if not words:
         return None
-    best = max(abs(w.score) for w in words)
+    best = max(max(0, w.score) for w in words)  # HistoricWord scores are sign-corrected
     enc = game.encounter
     if enc is not None:
         cur = sum(1 for w in enc.previous_words if not w.skipped)
@@ -565,7 +588,7 @@ def _last_encounter(game: "Game") -> dict | None:
         return out
     nominal = GRIDS_PER_ROUND - (1 if run.asc(7) else 0)
     per = target / nominal
-    scores = [abs(w.score) for w in grp]
+    scores = [max(0, w.score) for w in grp]
     out.update(mean=sum(scores) / len(scores) / per, max=max(scores) / per,
                unused=max(0, nominal - grp[-1].submitted_round), cleared=grp[-1].remainder <= 0, n=len(grp))
     return out
@@ -744,7 +767,21 @@ def build_global(game: "Game", *, best: float = 0.0, second: float = 0.0, n_word
         put("q_start_items", len(ch.starting_items) / 3.0)
         put("q_banned_now", len(ch.banned_bosses.get(stage - 1, ())) / 5.0)
         put("q_banned_any", float(bool(ch.banned_bosses)))
+    # ---- v3
+    target = _target(game)
+    if target:
+        from cursed_words_solver.rl.targets import parse
+
+        put("target_set", 1.0)
+        for plan in parse(target):
+            put(f"target:{plan}", 1.0)
     return x
+
+
+def _target(game: "Game") -> str:
+    from cursed_words_solver.rl.targets import get_target
+
+    return get_target(game)
 
 
 def observe(game: "Game", *, probe: bool = True, **kw) -> Obs:

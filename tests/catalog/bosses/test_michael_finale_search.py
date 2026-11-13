@@ -243,3 +243,24 @@ def test_20260708_card_grid_search_within_budget(card_finale_board_loadout) -> N
         results[0].path == expected_path
         or results[0].word.lower() == CARD_KNOWN_WORD
     )
+
+
+@pytest.mark.parametrize("challenge", ["Cursophobia", "Chromaphobia", "Chromaphilia"])
+def test_finale_ignores_challenge_word_rules(finale_board_loadout, challenge) -> None:
+    """PopulateValidityAndScore: on Michael's finale grid only the all-wildcard rule applies;
+    challenge restrictions sit in the else branch and never block the finale."""
+    import copy
+
+    from cursed_words_solver.engine.calc import EnginePlan
+    from cursed_words_solver.engine.search import ExactSearch
+    from cursed_words_solver.engine.trie import CsrTrie
+
+    board, loadout = finale_board_loadout
+    lo = copy.deepcopy(loadout)
+    lo.extras = dict(lo.extras or {})
+    lo.extras["michael_summoned_bosses_defeated"] = "true"
+    lo.extras["challenge_game_class"] = challenge
+    s = ExactSearch(EnginePlan.build(board, lo), CsrTrie.from_words(()))
+    assert s.finale
+    assert s.allowed_tile == list(s.clickable)
+    assert s.path_allowed(tuple(KNOWN_PATH))

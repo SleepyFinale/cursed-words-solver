@@ -235,8 +235,9 @@ class Shop:
         bias_idx = -1
         if run.node == Node.SHOP_ONE and run.stage == 1 and starter_idx == -1 and not is_reroll:
             bias_idx = rng.range(0, 4)
-        if is_reroll and player.unpacked_of("Eraser"):
-            for o in self.stickers + self.stamps:
+        if is_reroll and player.unpacked_of("Eraser"):  # only shown slots (IsShown)
+            shown = ([] if self.slots_hidden("sticker") else self.stickers) + ([] if self.slots_hidden("stamp") else self.stamps)
+            for o in shown:
                 if o is not None and not o.frozen:
                     run.embargoed.add(o.item.game_class)
         for k in range(4):
@@ -418,9 +419,18 @@ class Shop:
                 return True
         return False
 
+    def slots_hidden(self, kind: str) -> bool:
+        """``ShopController``: Masochist / In The Beginning hide the sticker slots and
+        Antiphilatelist / In The Beginning the stamp slots (an offer generated there, such as
+        the first-shop character starter sticker, can't be clicked)."""
+        run = self.player.run
+        if kind == "sticker":
+            return run.challenge_is("Masochist") or run.challenge_is("InTheBeginning")
+        return run.challenge_is("Antiphilatelist") or run.challenge_is("InTheBeginning")
+
     def can_buy(self, kind: str, index: int) -> bool:
         stock = self.stickers if kind == "sticker" else self.stamps
-        if not (0 <= index < len(stock)) or stock[index] is None:
+        if not (0 <= index < len(stock)) or stock[index] is None or self.slots_hidden(kind):
             return False
         offer = stock[index]
         player = self.player
@@ -565,7 +575,7 @@ class Shop:
     def toggle_freeze(self, kind: str, index: int) -> bool:
         stock = self.stickers if kind == "sticker" else self.stamps
         frozen = self.player.frozen_stickers if kind == "sticker" else self.player.frozen_stamps
-        if not (0 <= index < len(stock)) or stock[index] is None:
+        if not (0 <= index < len(stock)) or stock[index] is None or self.slots_hidden(kind):
             return False
         offer = stock[index]
         offer.frozen = not offer.frozen

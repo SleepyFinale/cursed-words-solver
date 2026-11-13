@@ -11,6 +11,9 @@ new seed. ``STOP`` file in the dir = finish nothing more and exit. Output: ``sha
 ``runs.jsonl``. With a halving search (``--search '{"mode": "halving"}'``) shards also hold
 soft targets ``q_idx`` / ``q_val`` / ``q_n`` / ``q_se`` (see ``soft_targets``; PPO ``--distill-soft``).
 Jobs follow PPO's curriculum (``--curriculum``, ppo1/curriculum.json, re-read as it changes): the same character / quest weights, so the labels cover the slices PPO is weak on.
+Build targets: ``--targets-mix`` (as rl.ppo; default: the ``targets_mix`` PPO writes to its
+curriculum.json, none = FREE) gives runs a target build, which the shards' obs carry
+(``obs_version`` 3). A second collector runs beside a second PPO with its own ``--dir`` (exit2).
 """
 
 from __future__ import annotations
@@ -57,6 +60,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--quest-share", type=float, default=0.25)
     ap.add_argument("--crown-weights", default="1,1,1,1,1,1,1,1")   # crowns 0-7
     ap.add_argument("--curriculum", default="", help="PPO curriculum.json (default: next to --policy; '-' = off)")
+    ap.add_argument("--targets-mix", default="", metavar="P_FREE,P_THEME,P_ANY",
+                    help="build targets of non-quest runs (rl.ppo); default: PPO's curriculum.json targets_mix, else FREE")
     args = ap.parse_args(argv)
     out = Path(args.dir).expanduser()
     (out / "shards").mkdir(parents=True, exist_ok=True)
@@ -65,7 +70,7 @@ def main(argv: list[str] | None = None) -> None:
     search = json.loads(args.search)
     policy = str(Path(args.policy).expanduser())
     curr_path = None if args.curriculum == "-" else Path(args.curriculum or Path(policy).parent / "curriculum.json").expanduser()
-    curr = {"mtime": None, "char": None, "quest": None}
+    curr = {"mtime": None, "char": None, "quest": None, "mix": None}
 
     def weights() -> tuple[dict | None, dict | None]:
         """Character / quest weights from PPO's curriculum.json (cached by mtime; missing = uniform)."""
@@ -74,14 +79,18 @@ def main(argv: list[str] | None = None) -> None:
             if mt is not None and mt != curr["mtime"]:
                 c = json.loads(curr_path.read_text())
                 on = c.get("enabled", True)
-                curr.update(mtime=mt, char=c.get("char") if on else None, quest=c.get("quest") if on else None)
+                mix = c.get("targets_mix")
+                curr.update(mtime=mt, char=c.get("char") if on else None, quest=c.get("quest") if on else None,
+                            mix=tuple(float(x) for x in mix) if mix else None)
         except (OSError, ValueError):
             pass   # being replaced: keep the last weights
         return curr["char"], curr["quest"]
 
     from cursed_words_solver.rl.obs import OBS_VERSION
     from cursed_words_solver.rl.play import init_worker, play
-    from cursed_words_solver.rl.ppo import sample_job
+    from cursed_words_solver.rl.ppo import parse_mix, sample_job
+
+    own_mix = parse_mix(args.targets_mix)
     from cursed_words_solver.sim.game.agent import spawn_pool
 
     # a fresh pipeline starts this before PPO has written its first weights
@@ -97,7 +106,9 @@ def main(argv: list[str] | None = None) -> None:
             return
         n = state["started"]
         rng = random.Random(n * 104729 + 7)
-        j = sample_job(rng, n, args.quest_share, [float(x) for x in args.crown_weights.split(",")], *weights())
+        cw, qw = weights()
+        j = sample_job(rng, n, args.quest_share, [float(x) for x in args.crown_weights.split(",")], cw, qw,
+                       own_mix or curr["mix"])
         j["seed"] = EXIT_SEED0 + n
         state["started"] += 1
         store.atomic_write_json(st_path, state)

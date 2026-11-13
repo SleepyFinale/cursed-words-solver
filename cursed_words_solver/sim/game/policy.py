@@ -15,7 +15,7 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cursed_words_solver.sim.game.agent import Action, Candidates, WordOption, apply, clone, determinize, legal_actions, submit_action
+from cursed_words_solver.sim.game.agent import Action, Candidates, WordOption, apply, clone, determinize, clears, legal_actions, submit_action
 from cursed_words_solver.sim.game.core import Rng
 from cursed_words_solver.sim.game.encounter import Encounter
 from cursed_words_solver.sim.game.player import ENCOUNTER_NODES, GRIDS_PER_ROUND, NUMBER_OF_STAGES, Node
@@ -162,6 +162,16 @@ class PowerConfig:
     plan_samples: int = 2
     plan_level_value: float = 3.0  # $ per item level gained (Bar Chart, Fountain Pen, ...)
     plan_tile_value: float = 2.0  # $ per consumable tile still on the rack
+    # ``rack_floor``: on quests whose board spells nothing (Advent Calendar's numbers, Empty
+    # Grid's blanks) every word needs rack tiles, so the shop keeps this many on the rack
+    # before anything else (0 = off). Off by default: a 12-seed A/B per quest (2026-11-12) won
+    # 8/24 off vs 5 at 3, 1 at 4, 2 at 6 -- tile buys crowd out the items that carry the run.
+    rack_floor: int = 0
+    # ``keep_free_item``: no restock while the stage-1 free item is on offer (a restock loses
+    # it), and a committed build plan may take it off-plan. ``spare_rack``: of the words that
+    # clear, submit the one placing the fewest rack tiles.
+    keep_free_item: bool = True
+    spare_rack: bool = True
     # S2 whole-run build plan: one of ``BUILD_PLANS`` followed from the first shop (AdvicePolicy
     # ``_build_plan_step``). Off-plan items are never bought; a plan offer goes first, replaces a
     # non-plan item when slots are full, and is restocked for, keeping ``build_plan_reserve``.
@@ -182,6 +192,10 @@ class PowerConfig:
     # generator offer is frozen for later (0 = off). Losing Curse runs spent their money on
     # payoff items before a generator showed up (docs: Curse shop diagnosis).
     build_plan_gen_reserve: int = 0
+    # ``build_plan_hoard``: once a plan in ``_HOARD_PAYOFFS`` owns one of its payoff items, no shop
+    # move but a payoff buy may leave less money than this (0 = off). Cash payoffs score on money
+    # held (Credit Card, Sunflower) or saved (Piggy Bank, Dragon); spent down to $5 they did nothing.
+    build_plan_hoard: int = 30
     # ``char_overrides``: settings that differ by character (L3; ``chartune.py`` searches them),
     # {"Spike": {"buy_threshold": 0.06}, "Spike@3-7": {...}}. A "Character@lo-hi" entry applies
     # at those crowns, after the character's own; any field but this one may be overridden.
@@ -201,6 +215,16 @@ BUILD_PLANS: dict[str, tuple[str, tuple[str, ...]]] = {
         "Red", "Blue", "Void", "Shiny", "Blank", "Rainbow", "Numbers", "Chess", "Cards", "Curse", "Consumable")},
     "Cash": ("CashBuild", ("CashGenerator", "CurrencyGenerator")),
     "ScatteredItems": ("ScatteredItemsBuild", ("ItemScatterer",)),
+    "Colourless": ("ColourlessBuild", ("ColourlessBuild",)),
+}
+# Quests the default plan fits badly (2026-11-12 traces + 8-seed A/Bs): Curse items cannot score
+# in Cursophobia and add positive score in Two Wrongs; under Playing Favourites the plan's buys
+# land in inactive slots; with hidden slots (Masochist, In The Beginning) it refuses most offers.
+# Chromaphilia wants colours (Rainbow), Chromaphobia colourless tiles; Advent Calendar is a
+# numbers board. Applied in ``_tune`` only when a plan is on (the rules player keeps "").
+QUEST_PLANS: dict[str, str] = {
+    "Cursophobia": "", "TwoWrongs": "", "PlayingFavourites": "", "Masochist": "", "InTheBeginning": "",
+    "Chromaphilia": "Rainbow", "Chromaphobia": "Colourless", "Sudoku": "Numbers",
 }
 
 
@@ -208,12 +232,67 @@ BUILD_PLANS: dict[str, tuple[str, tuple[str, ...]]] = {
 # level 1, 0 for the other six). These characters already have what Curse items need.
 _CURSED_TILE_PINS = frozenset({"Abacus", "Bicycle", "Bucket", "SuperEight", "WadOfCash"})
 
+# Items a plan's tag claims but that add nothing to it, so "neutral": the Cash shop helpers
+# (Fried Shrimp, Efficient Recycler, Ogre, Golden Scales, Blessing Of The Shopkeeper, Receipt,
+# Kokeshi Dolls, Angel Investment) filled Cash slots without scoring.
+_PLAN_NEUTRAL: dict[str, frozenset[str]] = {
+    "Cash": frozenset({"FriedShrimp", "EfficientRecycler", "Ogre", "GoldenScales", "BlessingOfTheShopkeeper",
+                       "Receipt", "KokeshiDolls", "FutureFunds"}),
+}
+# Plan -> its payoff items that score on money kept (``build_plan_hoard``). CoinPurse = Piggy Bank.
+# Cretaceous Meg, Cash plan, 48 paired seeds (2026-11-12): both changes 10 wins vs 2 (p 0.008);
+# the default plan (Curse) still wins 34.
+_HOARD_PAYOFFS: dict[str, frozenset[str]] = {
+    "Cash": frozenset({"CreditCard", "Sunflower", "CoinPurse", "Dragon"}),
+}
+
+
+_RACK_QUESTS = ("Sudoku", "EmptyGrid")
+_VOWELS = frozenset("aeiou")
+_CONSONANTS = "srtlndcpmhgbfykwvxzjq"  # most to least useful in short words
+
+
+def rack_quest(game: "Game") -> bool:
+    """Advent Calendar (numbers, each a wildcard only at its own word position) and Empty
+    Grid (blanks): every word is spelled with rack tiles."""
+    return any(game.player.run.challenge_is(q) for q in _RACK_QUESTS)
+
+
+def rack_tile_rank(tile, letters: list[str]) -> float | None:
+    """Worth of a rack tile on a rack quest (None: skip). Wildcards (joker, chess, blank,
+    arrow) fit any word; a letter is worth more the rarer it is on the rack, vowels until
+    they are about 40% of its letters; a number only fits its own word position."""
+    from cursed_words_solver.sim.game.core import G_ARROW, G_BLANK, G_CHESS, G_LETTER, SUIT_JOKER
+
+    if tile.glyph in (G_BLANK, G_CHESS, G_ARROW) or tile.suit == SUIT_JOKER:
+        return 100.0
+    if tile.glyph != G_LETTER:
+        return 1.0 if tile.is_number() and 1 <= (tile.number or 0) <= 5 else None
+    c = tile.srep()
+    if len(c) != 1 or not c.isalpha():
+        return 5.0  # multi-letter tokens (qu, ...)
+    vowels = sum(ch in _VOWELS for ch in letters)
+    want_vowel = vowels < 0.4 * (len(letters) + 1)
+    have = letters.count(c)
+    if c in _VOWELS:
+        return (50.0 if want_vowel else 10.0) - 15.0 * have
+    pos = _CONSONANTS.find(c)
+    return (10.0 if want_vowel else 40.0) - pos - 15.0 * have if pos >= 0 else 2.0
+
+
+_PLAN_CLASS_RANK = {"generator": 0, "fits": 1, "neutral": 2, "off": 3}   # combo plans: best part wins
+
 
 def plan_class(plan: str, game_class: str) -> str:
     """An item's place in a build plan: "generator" or "fits" (the plan's), "off" (only another
-    build's) or "neutral" (no build, or generic points that help any build)."""
+    build's) or "neutral" (no build, or generic points that help any build). A combo plan
+    "A+B" takes the best over its parts: generator > fits > neutral > off."""
     from cursed_words_solver.sim.game.items import catalog_rows
 
+    if "+" in plan:
+        return min((plan_class(p, game_class) for p in plan.split("+")), key=_PLAN_CLASS_RANK.__getitem__)
+    if game_class in _PLAN_NEUTRAL.get(plan, ()):
+        return "neutral"
     row = catalog_rows().get(game_class) or {}
     tags, deps = row.get("tags") or (), row.get("dependency_tags") or ()
     build, generators = BUILD_PLANS[plan]
@@ -313,13 +392,18 @@ class PowerPolicy(Policy):
     def _tune(self, game: "Game") -> None:
         """Switch to this character's / crown's settings (``char_overrides``) at a new run."""
         p = game.player
-        key = (p.character, p.run.ascension)
+        ch = p.run.challenge
+        quest = ch.game_class if ch is not None else None
+        key = (p.character, p.run.ascension, quest)
         if key == getattr(self, "_tune_key", None):
             return
         base = getattr(self, "_base_cfg", None) or self.cfg
         self._base_cfg, self._tune_key = base, key
-        kv = char_settings(base.char_overrides, *key) if base.char_overrides else {}
+        kv = char_settings(base.char_overrides, *key[:2]) if base.char_overrides else {}
         cfg = with_overrides(base, kv) if kv else base
+        if cfg.build_plan and quest in QUEST_PLANS:
+            self.cfg = replace(cfg, build_plan=QUEST_PLANS[quest])
+            return
         plan = cfg.build_plan and cfg.build_plan_chars.get(p.character)
         self.cfg = replace(cfg, build_plan=plan) if plan else cfg
 
@@ -475,8 +559,17 @@ class PowerPolicy(Policy):
         need = enc.remaining_target
         grids_left = enc.remaining_grids + 1
         per_grid = need / max(1, grids_left)
-        if best is not None and best.score >= need:
+        if best is not None and clears(game, best.score):
+            # rack tiles are the only letters on some quests: keep the ones a smaller clear spares
+            spare = min((o for o in opts if clears(game, o.score)), key=lambda o: (len(o.placements), -o.score))
+            if cfg.spare_rack and len(spare.placements) < len(best.placements):
+                return submit_action(spare, spare.word)
             return submit_action(best, best.word)
+        # Microphone: an item name that adds an item beats a grid's worth of points
+        # (In The Beginning has no other item source).
+        named = self._best_name(game, opts)
+        if named is not None:
+            return submit_action(named)
         # Consumables: when behind pace, try placing rack tiles where they lift the best word most.
         if game.player.tiles() and (best is None or best.score < per_grid):
             place = self._best_placement(game, best.score if best else 0)
@@ -489,6 +582,36 @@ class PowerPolicy(Policy):
         if best is None:
             return Action("skip")
         return submit_action(best, best.word)
+
+    def _best_name(self, game: "Game", opts: list[WordOption]) -> WordOption | None:
+        """The Microphone name to submit: of the names whose item does not lower the best
+        word's score (Oden x0 without curse types, ...), the one leaving it highest."""
+        from cursed_words_solver.sim.game.items import make_item
+
+        names = [o for o in opts if o.grants_item]
+        if not names:
+            return None
+        ref = next((o for o in opts if not o.grants_item and not o.placements), None)
+        if ref is None:
+            return names[0]
+        neg = game.player.run.challenge_is("TwoWrongs")
+        try:
+            before = game.encounter.score_preview(ref.path, ref.words).int_score
+        except Exception:
+            return names[0]
+        best, best_v = None, -math.inf
+        for o in names:
+            g = clone(game)
+            if not g.player.add_item(make_item(o.grants_item), g.rng):
+                continue
+            try:
+                v = g.encounter.score_preview(ref.path, ref.words).int_score
+            except Exception:
+                continue
+            gain = (before - v) if neg else (v - before)
+            if gain >= 0 and gain > best_v:
+                best, best_v = o, gain
+        return best
 
     def _best_placement(self, game: "Game", base: int) -> Action | None:
         enc = game.encounter
@@ -623,7 +746,24 @@ class AdvicePolicy(PowerPolicy):
         self._n += 1
         if self._n > self.max_shop_actions_advice:
             return self._leave()
-        return self._advice_shop(game)
+        return self._hoard(game, self._advice_shop(game))
+
+    def _hoard(self, game: "Game", a: Action) -> Action:
+        """``a``, or leaving the shop when it would spend below ``build_plan_hoard`` while the
+        plan owns a payoff item that scores on money kept (a payoff buy always goes)."""
+        payoffs = _HOARD_PAYOFFS.get(self.cfg.build_plan)
+        if (not payoffs or not self.cfg.build_plan_hoard or game.phase != "shop"
+                or a.kind not in ("buy", "reroll_shop")):
+            return a
+        p = game.player
+        if not any(it is not None and it.game_class in payoffs for it in (*p.stickers, *p.stamps)):
+            return a
+        if a.kind == "buy" and a.args[0] in ("sticker", "stamp") and offer_class(game, a) in payoffs:
+            return a
+        g = clone(game)
+        if apply(g, a) and g.player.money < self.cfg.build_plan_hoard:
+            return Action("leave", (), f"plan {self.cfg.build_plan}: keep ${self.cfg.build_plan_hoard}")
+        return a
 
     def _reserve_ok(self, game: "Game", a: Action) -> bool:
         """``a`` keeps the money ``_gen_reserve`` asks for (plan moves and swap buys always do)."""
@@ -662,7 +802,7 @@ class AdvicePolicy(PowerPolicy):
         s = game.shop
         for kind, stock in (("sticker", s.stickers), ("stamp", s.stamps)):
             for j, o in enumerate(stock):
-                if (o is not None and not o.frozen and (kind, j) not in self._frozen_this_shop
+                if (o is not None and not o.frozen and (kind, j) not in self._frozen_this_shop and not s.slots_hidden(kind)
                         and plan_class(self.cfg.build_plan, o.item.game_class) == "generator" and not s.can_buy(kind, j)):
                     self._frozen_this_shop.add((kind, j))
                     return Action("freeze", (kind, j), f"plan: hold {o.item.game_class}")
@@ -698,6 +838,9 @@ class AdvicePolicy(PowerPolicy):
         ogre = self._ogre_buy(game)
         if ogre is not None:
             return ogre
+        stock = self._rack_stock(game)
+        if stock is not None:
+            return stock
         step = self._build_plan_step(game)
         if step is not None:
             return step
@@ -719,6 +862,8 @@ class AdvicePolicy(PowerPolicy):
                     continue
                 if (adv.should_buy or adv.should_upgrade) and s.can_buy(kind, it.index):
                     pick = Action("buy", (kind, it.index), f"advice: buy {it.name}")
+                    if self.harmful(game, pick):
+                        continue
                     if self.cfg.power_override:
                         pick = self._power_check(game, pick)
                     stock = s.stickers if pick.args[0] == "sticker" else s.stamps
@@ -736,7 +881,7 @@ class AdvicePolicy(PowerPolicy):
                 if key not in self._frozen_this_shop and 0 <= it.index < len(stock) and stock[it.index] is not None and not stock[it.index].frozen:
                     self._frozen_this_shop.add(key)
                     return Action("freeze", key, f"advice: freeze {it.name}")
-        if adv.should_restock and s.can_reroll():
+        if adv.should_restock and s.can_reroll() and not (self.cfg.keep_free_item and s.free_item_active):
             return Action("reroll_shop", (), "advice: restock")
         if self.cfg.advice_fallback and not adv.recommended_items and not adv.recommended_tiles:
             buy = self._fallback_buy(game)
@@ -766,6 +911,25 @@ class AdvicePolicy(PowerPolicy):
                 self._moves_this_shop += 1
                 return move
         return self._leave()
+
+    def _rack_stock(self, game: "Game") -> Action | None:
+        """Quests whose board spells nothing (``rack_quest``): buy rack tiles up to
+        ``rack_floor`` — wildcards first (no letter needed), then the letter the rack is
+        shortest of (vowels to about 40%, then common consonants)."""
+        if not self.cfg.rack_floor or not rack_quest(game):
+            return None
+        s, p = game.shop, game.player
+        if len(p.tiles()) >= self.cfg.rack_floor:
+            return None
+        letters = [t.srep() for t in p.tiles() if t.glyph == "letter"]
+        best, best_a = None, None
+        for k, o in enumerate(s.tiles):
+            if o is None or not s.can_buy_tile(k):
+                continue
+            key = (rack_tile_rank(o.tile, letters), -o.get_price(p))
+            if key[0] is not None and (best is None or key > best):
+                best, best_a = key, Action("buy", ("tile", k), f"rack quest: tile {o.tile.srep()}")
+        return best_a
 
     def _plan_phase(self, game: "Game") -> str:
         """Where the ``build_plan`` stands: "" (not acting), "seek" (only after generators) or
@@ -825,6 +989,7 @@ class AdvicePolicy(PowerPolicy):
                         self._pending_buy, self._sold_this_shop = (kind, j), True
                         return Action("sell", (kind, i), f"plan {plan}: sell {owned[i].game_class} for {o.item.game_class}")
         if (not buys and self._plan_restocks < self.cfg.build_plan_restocks and s.can_reroll()
+                and not (self.cfg.keep_free_item and s.free_item_active)
                 and p.money - s.reroll_cost >= self.cfg.build_plan_reserve):
             self._plan_restocks += 1
             return Action("reroll_shop", (), f"plan {plan}: restock")
@@ -902,17 +1067,16 @@ class AdvicePolicy(PowerPolicy):
         base = max(1.0, self.power(game))
         best, best_a = self.cfg.buy_threshold, None
         for kind, arr in kinds:
-            for a in range(5):
-                for b in range(a + 1, 5):
-                    if arr[a] is None and arr[b] is None:
-                        continue
-                    src, dst = (a, b) if arr[a] is not None else (b, a)
+            for src in range(5):
+                for dst in range(5):
+                    if src == dst or arr[src] is None:
+                        continue  # a drag re-inserts the item (shift), so both directions differ
                     g = clone(game)
                     if not g.move(kind, src, dst):
                         continue
                     gain = (self.power(g) - base) / base
                     if gain > best:
-                        best, best_a = gain, Action("move", (kind, src, dst), f"swap {kind}s {src}<->{dst}")
+                        best, best_a = gain, Action("move", (kind, src, dst), f"move {kind} {src}->{dst}")
         if best_a is None:
             self._sorted_sig = sig
         return best_a
@@ -959,6 +1123,19 @@ class AdvicePolicy(PowerPolicy):
             if apply(g, a):
                 out.append((self._horizon(game, cls, (self.power(g) - base) / base) + self._item_bonus(game, cls), a))
         return out
+
+    def harmful(self, game: "Game", a: Action) -> bool:
+        """Two Wrongs negates every score, so an item adding positive score makes every word
+        lose ground: a buy (or sell-and-buy) dropping probe power over 5% is refused there."""
+        if a.kind not in ("buy", "sell_buy", "hippo") or not game.player.run.challenge_is("TwoWrongs"):
+            return False
+        if a.kind == "buy" and a.args[0] == "tile":
+            return False
+        g = clone(game)
+        if not apply(g, a):
+            return False
+        base = max(1.0, self.power(game))
+        return (self.power(g) - base) / base < -0.05
 
     def _power_check(self, game: "Game", pick: Action) -> Action:
         """Advice's purchase unless another affordable sticker / stamp adds more than
@@ -1023,6 +1200,8 @@ class AdvicePolicy(PowerPolicy):
         ``build_plan``, nothing off the plan is bought."""
         if self.cfg.ogre and game_class == "Ogre":
             return False
+        if self.cfg.keep_free_item and game.phase == "shop" and game.shop.free_item_active:
+            return True  # the stage-1 free item costs nothing and sells later; the plan replaces it
         return not (game_class and self._plan_phase(game) == "commit" and plan_class(self.cfg.build_plan, game_class) == "off")
 
     def _ogre_buy(self, game: "Game") -> Action | None:
@@ -1149,7 +1328,7 @@ class FastAdvicePolicy(AdvicePolicy):
         if getattr(self, "_inner", None) is None:
             self._inner = FastAdvicePolicy(self.probe_cands, PowerConfig(reroll_ratio=self.cfg.reroll_ratio))
         LOSS = -1000.0
-        best_clears = opts[0].score >= enc.remaining_target
+        best_clears = clears(game, opts[0].score)
         cands: list[tuple[Action, Any]] = []
         for o in opts:
             a = submit_action(o)
@@ -1164,6 +1343,7 @@ class FastAdvicePolicy(AdvicePolicy):
         if len(cands) == 1:
             return [(0.0, 1.0, cands[0][0])]
         money0 = game.player.money
+        grid_pay = 0 if game.player.run.challenge_is("DoNotPassGo") else 2  # unused-grid payout
         scored: list[tuple[float, int, float, Action]] = []
         pre_key = f"plan|pre|{game.player.run.stage}|{game.player.run.node}|{len(enc.previous_words)}|{enc.rerolls}"
         for rank, (a, o) in enumerate(cands):
@@ -1174,7 +1354,7 @@ class FastAdvicePolicy(AdvicePolicy):
                 ok = bool(e.won or e.finale)
                 scored.append((self._terminal_value(g) if ok else LOSS, -rank, float(ok), a))
                 continue
-            if best_clears and a.kind == "submit" and g.player.money - money0 <= 2:
+            if best_clears and a.kind == "submit" and g.player.money - money0 <= grid_pay:
                 continue  # not clearing when we could, and the grid earns no more than its payout
             tot, wins = 0.0, 0
             for s in range(samples):
@@ -1278,13 +1458,27 @@ class FastAdvicePolicy(AdvicePolicy):
         from cursed_words_solver.sim.game.shop import can_sell
 
         p = game.player
-        cands = [(it.level(0) if it.components else 1, kind, i)
-                 for kind, arr in (("sticker", p.stickers), ("stamp", p.stamps))
+        cands = [(kind, i, it) for kind, arr in (("sticker", p.stickers), ("stamp", p.stamps))
                  for i, it in enumerate(arr) if it is not None and can_sell(p, it)]
+        enc = game.encounter
+        hyena = enc.boss("ForcedSell") if enc is not None else None
+        if hyena is not None and hyena.floor_mod != 1 and any(it.components for _, _, it in cands):
+            cands = [c for c in cands if c[2].components]  # only a sticker clears the level-2 sell
         if not cands:
             return None
-        _, kind, i = min(cands)
-        return Action("sell", (kind, i))
+        if len(cands) == 1:
+            return Action("sell", cands[0][:2])
+        # the sale keeping the most probe power (was: lowest level with stamps first, which
+        # could sell the build's generator); ties to the lower sell value
+        best, best_a = None, None
+        for kind, i, it in cands:
+            g = clone(game)
+            if not apply(g, Action("sell", (kind, i))):
+                continue
+            key = (self.power(g), -it.sell_value(p))
+            if best is None or key > best:
+                best, best_a = key, Action("sell", (kind, i))
+        return best_a or Action("sell", cands[0][:2])
 
     def michael_pick(self, game: "Game") -> int:
         """Michael's draft: the boss effect the risk table rates least run-ending (first

@@ -59,6 +59,25 @@ def upgrade_config(cfg: ModelConfig) -> ModelConfig:
     return replace(cfg, **kw) if kw else cfg
 
 
+def conditioned(cfg: "ModelConfig | dict", state: dict | None = None) -> bool:
+    """Whether a config is at least obs-v3 wide (has the target-build columns).
+
+    ``Policy`` widens v1 / v2 configs on load (zero weight on the new columns, i.e. acts as
+    FREE), so to ask whether a checkpoint was TRAINED with targets pass its saved config
+    (``torch.load(path)["config"]``), not ``Policy.cfg``. A widened checkpoint saved again
+    (e.g. a resumed v2 run's champion) is v3 wide but still has all-zero weight on the target
+    columns: pass its ``state`` too, and it then also needs nonzero weight there."""
+    from cursed_words_solver.rl.obs import LEGACY_GLOBAL, V3_GLOBAL
+
+    n = cfg["n_global"] if isinstance(cfg, dict) else cfg.n_global
+    if int(n) < V3_GLOBAL:
+        return False
+    w = (state or {}).get("glob_in.0.weight")
+    if w is None:
+        return True
+    return bool(w[:, LEGACY_GLOBAL[-1]:V3_GLOBAL].abs().sum() > 0)
+
+
 # input layers whose weight columns are feature columns: (state key, config field)
 _INPUT_WEIGHTS = (("glob_in.0.weight", "n_global"), ("tok_in.weight", "n_tok_feat"), ("act_in.weight", "n_act_feat"))
 

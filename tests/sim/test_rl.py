@@ -557,3 +557,19 @@ def test_halving_extends_and_tests_the_round1_challenger(monkeypatch):
     assert sr.choose(None, _fake_step(3), {}, "dec") == 1
     L = sr.last
     assert L["challenger"] == 1 and L["n"] == {0: 12, 1: 12, 2: 4}
+
+
+def test_assistant_shows_in_game_item_names():
+    """Advice text uses the names the game shows: some classes differ (EruptingVolcano is Disco
+    Ball, PiggyBank / CoinPurse are swapped), and words played stay as they are."""
+    from cursed_words_solver.rl.assistant import display, label
+    from cursed_words_solver.sim.game.agent import Action
+
+    assert display("buy EruptingVolcano $14") == "buy Disco Ball $14"
+    assert display("buy NewEruptingVolcano $9") == "buy Erupting Volcano $9"
+    assert display("sell PiggyBank") == "sell Coin Purse"
+    assert display("sell CoinPurse") == "sell Piggy Bank"
+    assert display("buy Pinata $7") == "buy Piñata $7"
+    assert display("buy CursedVHS $9") == "buy Cursed VHS $9"
+    assert display("submit BONE (120)") == "submit BONE (120)"
+    assert label(Action("buy", ("stamp", 0), "buy MirrorBall $4")) == "buy Banana $4"
