@@ -338,6 +338,38 @@ def loadout_after_consumable_placements(loadout: Loadout, num_placed: int) -> Lo
     return replace(loadout, extras=new_extras)
 
 
+def piece_of_cake_placement_outcomes(
+    loadout: Loadout, num_placed: int
+) -> list[tuple[Loadout, float]]:
+    """Post-placement loadouts weighted by how many placed consumables Piece of Cake kept.
+
+    Piece of Cake gives each placed rack tile a 50% chance to stay on the rack
+    (``ItemReorderController`` rolls ``safe_from_destruction`` on pickup), so the
+    rack count Hi Vis Jacket sees at submit is ``rack - consumed`` with
+    ``consumed ~ Binomial(num_placed, 0.5)``. Without the stamp (or nothing
+    placed) this is the single deterministic outcome.
+    """
+    from dataclasses import replace
+    from math import comb
+
+    from cursed_words_solver.rules.scoring_conditions import consumable_rack_count
+    from cursed_words_solver.rules.stamp_behaviors import loadout_has_stamp
+
+    placed = loadout_after_consumable_placements(loadout, num_placed)
+    if num_placed <= 0 or not loadout_has_stamp(loadout, "piece_of_cake"):
+        return [(placed, 1.0)]
+    rack = consumable_rack_count(loadout)
+    total = float(2**num_placed)
+    outcomes: list[tuple[Loadout, float]] = []
+    for kept in range(num_placed + 1):
+        # Placement-count effects (Tile Ninja) still see every placement; only
+        # the rack count differs, since a kept tile never left the rack.
+        extras = dict(placed.extras or {})
+        extras["consumable_rack_count"] = max(0, rack - (num_placed - kept))
+        outcomes.append((replace(placed, extras=extras), comb(num_placed, kept) / total))
+    return outcomes
+
+
 def _bump_item_state_tile_ninja(extras: dict[str, Any], num_placed: int) -> None:
     """Exact melmod ``item_states`` win over legacy extras in the engine: add the
     simulated placements to each Tile Ninja's ``ConsumableTilesUsed`` there too."""

@@ -124,6 +124,7 @@ from cursed_words_solver.consumable_placement import (
     last_placement_search_stats,
     loadout_after_consumable_placements,
     multi_consumable_placement_beneficial,
+    piece_of_cake_placement_outcomes,
     under_construction_active,
     rack_placement_search_active,
     mandatory_consumable_indices,
@@ -2274,9 +2275,30 @@ class SolverApp:
                         score_loadout,
                     )
                 )
+                cake_outcomes = piece_of_cake_placement_outcomes(f8_loadout, num_placed)
+                if len(cake_outcomes) > 1:
+                    pred_score, pred_bd, capybara_stats, cake_range = (
+                        self._merge_piece_of_cake_outcomes(
+                            search_board,
+                            top,
+                            score_word,
+                            cake_outcomes,
+                            pred_score,
+                            pred_bd,
+                            capybara_stats,
+                        )
+                    )
+                    if cake_range is not None:
+                        lo, hi = cake_range
+                        print(
+                            f"  Piece of Cake may keep placed tile(s) on the rack: "
+                            f"score {lo}–{hi} (EV {int(round(pred_score))})",
+                            flush=True,
+                        )
                 if (
                     capybara_stats is not None
                     and int(capybara_stats.min_score) != int(capybara_stats.max_score)
+                    and not pred_bd.get("piece_of_cake_range")
                 ):
                     print(
                         f"  Capybara score range: "
@@ -2752,6 +2774,58 @@ class SolverApp:
                 perm_count=n, exhaustive=exhaustive,
             )
         return score, breakdown, res.trace(), stats
+
+    def _merge_piece_of_cake_outcomes(
+        self,
+        board: Board,
+        top: WordResult,
+        score_word: str,
+        outcomes: list,
+        base_score: float,
+        base_breakdown: dict,
+        base_stats: object | None,
+    ) -> tuple[float, dict, object | None, tuple[int, int] | None]:
+        """Fold Piece of Cake keep/consume outcomes into one EV and score range.
+
+        ``outcomes[0]`` is the every-tile-consumed case already scored as
+        ``base_*``; the rest are rescored. Returns stats shaped like Capybara's so
+        the companion treats an actual score inside ``[min, max]`` as a match.
+        ``None`` range means every outcome scored the same (nothing rack-sensitive).
+        """
+        from cursed_words_solver.rules.capybara_scoring import CapybaraScoreStats
+
+        def _parts(score: float, stats) -> tuple[float, float, float]:
+            if stats is None:
+                return score, score, score
+            return float(stats.ev), float(stats.min_score), float(stats.max_score)
+
+        ev_base, lo, hi = _parts(base_score, base_stats)
+        ev = ev_base * outcomes[0][1]
+        perm_count = base_stats.perm_count if base_stats is not None else 1
+        exhaustive = base_stats.exhaustive if base_stats is not None else True
+        for loadout, weight in outcomes[1:]:
+            score, _bd, _trace, stats = self._score_top_with_capybara(
+                board, top, score_word, loadout
+            )
+            o_ev, o_lo, o_hi = _parts(score, stats)
+            ev += o_ev * weight
+            lo, hi = min(lo, o_lo), max(hi, o_hi)
+        if int(lo) == int(hi) and base_stats is None:
+            return base_score, base_breakdown, None, None
+        breakdown = dict(base_breakdown or {})
+        breakdown.update(
+            {
+                "nondeterministic": True,
+                "score_min": int(lo),
+                "score_max": int(hi),
+                "piece_of_cake_range": True,
+            }
+        )
+        stats = CapybaraScoreStats(
+            ev=float(ev), min_score=float(lo), max_score=float(hi),
+            perm_count=perm_count, exhaustive=exhaustive,
+        )
+        return float(ev), breakdown, stats, (int(lo), int(hi))
 
     def _overlay_warnings(
         self,

@@ -176,8 +176,9 @@ def test_path_geometry_bat_3x3_uses_remapped_cell_centers():
     }
     for step, idx in zip(steps, path, strict=True):
         ex, ey = expected[idx]
-        assert abs(step.x - ex) < 1.0, f"idx {idx} x"
-        assert abs(step.y - ey) < 1.0, f"idx {idx} y"
+        # Centers are straightened onto a fitted grid (removes tile wobble).
+        assert abs(step.x - ex) < 5.0, f"idx {idx} x"
+        assert abs(step.y - ey) < 5.0, f"idx {idx} y"
 
 
 def test_path_geometry_uses_melmod_cell_centers():
@@ -339,3 +340,28 @@ def test_hungry_snake_wrap_steps_are_marked():
     assert [s.wrap for s in plain] == [0] * len(path)
     steps = path_geometry(region, path, wrapping=True)
     assert [s.wrap for s in steps] == [0, 0, 1, 0, 0, -1]
+
+
+def test_board_cell_pitch_uses_exported_neighbours():
+    from cursed_words_solver.config import Region
+    from cursed_words_solver.ui.board_geometry import board_cell_pitch
+
+    centers = {i: (100.0 + 140 * (i % 5), 50.0 + 140 * (i // 5)) for i in range(25)}
+    assert board_cell_pitch(Region(0, 0, 900, 900), None, centers) == 140.0
+    assert board_cell_pitch(Region(0, 0, 500, 500), None, None) == 100.0
+
+
+def test_trim_segment_stops_at_rings():
+    from cursed_words_solver.ui.board_geometry import trim_segment
+
+    seg = trim_segment((0.0, 0.0), (100.0, 0.0), 30.0, 30.0)
+    assert seg == ((30.0, 0.0), (70.0, 0.0))
+    assert trim_segment((0.0, 0.0), (50.0, 0.0), 30.0, 30.0) is None
+
+
+def test_path_step_hue_runs_green_to_blue():
+    from cursed_words_solver.ui.board_geometry import path_step_hue
+
+    assert path_step_hue(0, 10) == 135.0
+    assert path_step_hue(9, 10) == 225.0
+    assert path_step_hue(0, 1) == 135.0

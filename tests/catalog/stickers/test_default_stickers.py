@@ -847,6 +847,42 @@ def test_hi_vis_uses_post_placement_consumable_count():
     assert bd_post["multiplier"] < bd_pre["multiplier"]
 
 
+def test_hi_vis_piece_of_cake_keeps_placed_consumable_half_the_time():
+    """Piece of Cake: a placed consumable stays on the rack 50% of the time.
+
+    Live mismatch 'trottoirs' (Sandy, rack 5, one placed): solver assumed x1.8
+    (4 left) and predicted 167; the game kept the tile and applied x2.0 -> 186.
+    Both rack counts must be possible outcomes, weighted evenly.
+    """
+    from cursed_words_solver.consumable_placement import (
+        piece_of_cake_placement_outcomes,
+    )
+    from cursed_words_solver.rules.scoring_conditions import consumable_rack_count
+
+    board = _empty_board()
+    board.tiles[0][0] = _tile(0, 0, "C", 2)
+    board.tiles[0][1] = _tile(0, 1, "A", 2)
+    board.tiles[0][2] = _tile(0, 2, "T", 2)
+    pipeline = EngineScorer()
+    stickers = [LoadoutItem(id="hi_vis_jacket", name="Hi Vis Jacket", level=1)]
+    cake = Loadout(
+        stickers=stickers,
+        stamps=[LoadoutItem(id="piece_of_cake", name="Piece of Cake", level=1)],
+        extras={"consumable_rack_count": 5},
+    )
+    outcomes = piece_of_cake_placement_outcomes(cake, 1)
+    assert [(consumable_rack_count(lo), w) for lo, w in outcomes] == [(4, 0.5), (5, 0.5)]
+    consumed, kept = (pipeline.score(board, [0, 1, 2], "cat", lo)[0] for lo, _ in outcomes)
+    assert kept > consumed
+
+    no_cake = Loadout(stickers=stickers, extras={"consumable_rack_count": 5})
+    only = piece_of_cake_placement_outcomes(no_cake, 1)
+    assert [(consumable_rack_count(lo), w) for lo, w in only] == [(4, 1.0)]
+
+    two = piece_of_cake_placement_outcomes(cake, 2)
+    assert [(consumable_rack_count(lo), w) for lo, w in two] == [(3, 0.25), (4, 0.5), (5, 0.25)]
+
+
 def test_hi_vis_defers_word_bonus_before_stilton_blueberries_stack():
     """Hi-Vis before Stilton queues ×WORD; finalize stacks with Blueberries (affidation).
 

@@ -24,6 +24,11 @@ _RACK_SLOT_Y_TOLERANCE = 60
 _MIN_RACK_SLOT_SPAN = 100
 _MIN_RACK_BLOCK_WIDTH = 100
 _RACK_SLOT_COUNT = 5
+# Stadium's second rack row sits ~70px (1080p) below the first. Half a tile of
+# separation between the row medians is enough to call them distinct bands.
+_RACK_ROW_SPLIT_MIN = 30
+# Second-row pitch relative to horizontal slot pitch (1080p export: 71 / 58).
+_RACK_ROW_PITCH_RATIO = 1.22
 
 
 @dataclass(frozen=True)
@@ -147,6 +152,43 @@ def _remap_layout_cell_centers_to_storage(
     return remapped
 
 
+# Reject the straightened grid if any tile sits further than this fraction of a
+# cell pitch from the fit (non-grid layout — keep raw centers instead).
+_GRID_FIT_MAX_RESIDUAL_FRACTION = 0.2
+
+
+def _straighten_cell_centers(
+    centers: dict[int, tuple[float, float]] | None,
+    cols: int,
+) -> dict[int, tuple[float, float]] | None:
+    """Snap exported tile centers onto a fitted straight grid.
+
+    The game bobs tiles slightly, so a snapshot of their centers is a few
+    pixels off a straight line and the drawn path looks crooked. A least-squares
+    affine fit (x, y = origin + col * col_vec + row * row_vec) keeps the board's
+    real position, pitch and tilt while removing the per-tile wobble.
+    """
+    if not centers or len(centers) < 4 or cols <= 0:
+        return centers
+    import numpy as np
+
+    idxs = sorted(centers)
+    rc = [divmod(i, cols) for i in idxs]
+    if len({r for r, _ in rc}) < 2 or len({c for _, c in rc}) < 2:
+        return centers
+    a = np.array([[1.0, c, r] for r, c in rc], dtype=float)
+    xy = np.array([centers[i] for i in idxs], dtype=float)
+    coef, *_ = np.linalg.lstsq(a, xy, rcond=None)
+    fitted = a @ coef
+    pitch = float(min(np.hypot(*coef[1]), np.hypot(*coef[2])))
+    if pitch <= 1.0:
+        return centers
+    worst = float(np.max(np.hypot(*(xy - fitted).T)))
+    if worst > pitch * _GRID_FIT_MAX_RESIDUAL_FRACTION:
+        return centers
+    return {i: (float(x), float(y)) for i, (x, y) in zip(idxs, fitted)}
+
+
 def _consumable_count_from_run_state(run_state: dict[str, Any] | None) -> int | None:
     if not run_state:
         return None
@@ -171,6 +213,94 @@ def _rack_slot_vertical_span(centers: dict[int, tuple[float, float]]) -> float:
     return max(ys) - min(ys)
 
 
+def _rack_rows_are_distinct(centers: dict[int, tuple[float, float]]) -> bool:
+    """True when slots 5–9 sit on their own Y band (Stadium second row)."""
+    first = [y for idx, (_, y) in centers.items() if idx < _RACK_SLOT_COUNT]
+    second = [y for idx, (_, y) in centers.items() if idx >= _RACK_SLOT_COUNT]
+    if not first or not second:
+        return False
+    return abs(statistics.median(second) - statistics.median(first)) >= _RACK_ROW_SPLIT_MIN
+
+
+def _consumable_rack_indices(run_state: dict[str, Any] | None) -> set[int]:
+    if not run_state:
+        return set()
+    extras = run_state.get("extras")
+    if not isinstance(extras, dict):
+        return set()
+    raw = extras.get("consumable_rack")
+    if not isinstance(raw, str) or not raw.strip():
+        return set()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return set()
+    if not isinstance(data, list):
+        return set()
+    out: set[int] = set()
+    for entry in data:
+        if isinstance(entry, dict):
+            try:
+                out.add(int(entry["rack_index"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+    return out
+
+
+def _fill_missing_second_row_centers(
+    centers: dict[int, tuple[float, float]] | None,
+    run_state: dict[str, Any] | None,
+) -> tuple[dict[int, tuple[float, float]] | None, bool]:
+    """Synthesize Stadium row-2 centers when consumables occupy slots 5–9 but
+    the export only produced the first row (collapsed / missing second row).
+
+    Uses the known first-row center above each slot and the known second-row
+    Y when any second-row slot was exported; otherwise estimates the row pitch.
+    """
+    if not centers:
+        return centers, False
+    needed = {
+        idx
+        for idx in _consumable_rack_indices(run_state)
+        if _RACK_SLOT_COUNT <= idx < 2 * _RACK_SLOT_COUNT and idx not in centers
+    }
+    if not needed:
+        return centers, False
+    first_row = {i: xy for i, xy in centers.items() if i < _RACK_SLOT_COUNT}
+    if not first_row:
+        return centers, False
+    second_ys = [y for i, (_, y) in centers.items() if i >= _RACK_SLOT_COUNT]
+    first_y = float(statistics.median(y for _, y in first_row.values()))
+    if second_ys and _rack_rows_are_distinct(centers):
+        row_y = float(statistics.median(second_ys))
+    else:
+        # Horizontal slot pitch, normalized by index gap (export may skip slots).
+        idxs = sorted(first_row)
+        per_slot = [
+            (first_row[b][0] - first_row[a][0]) / (b - a)
+            for a, b in zip(idxs, idxs[1:])
+        ]
+        per_slot = [p for p in per_slot if p > 1.0]
+        if not per_slot:
+            return centers, False
+        pitch = float(statistics.median(per_slot))
+        row_y = first_y + pitch * _RACK_ROW_PITCH_RATIO
+    out = dict(centers)
+    idxs = sorted(first_row)
+    for idx in needed:
+        col = idx - _RACK_SLOT_COUNT
+        if col in first_row:
+            x = first_row[col][0]
+        elif len(idxs) >= 2:
+            a, b = idxs[0], idxs[-1]
+            per = (first_row[b][0] - first_row[a][0]) / float(b - a)
+            x = first_row[a][0] + (col - a) * per
+        else:
+            continue
+        out[idx] = (x, row_y)
+    return out, len(out) != len(centers)
+
+
 def _filter_rack_slot_centers(
     block: Any,
     centers: dict[int, tuple[float, float]],
@@ -192,7 +322,7 @@ def _filter_rack_slot_centers(
     if slot_count <= 5:
         return centers
     # Real Stadium layout: two Y bands — keep every exported slot center.
-    if _rack_slot_vertical_span(centers) > 80:
+    if _rack_rows_are_distinct(centers):
         return centers
     consumable_count = _consumable_count_from_run_state(run_state)
     if consumable_count is not None and consumable_count <= 5:
@@ -382,7 +512,7 @@ def _sanitize_rack_slot_centers(
     ys = [y for _, y in centers.values()]
     median_y = float(statistics.median(ys))
     corrected = False
-    two_row = _rack_slot_vertical_span(centers) > _RACK_SLOT_Y_TOLERANCE
+    two_row = _rack_rows_are_distinct(centers)
 
     if rack_rect is not None and rack_rect.is_valid():
         rack_center_y = rack_rect.y + rack_rect.height / 2.0
@@ -602,6 +732,11 @@ def parse_ui_layout(
         )
         if y_corrected:
             rack_slot_corrected = True
+    rack_slot_centers, filled = _fill_missing_second_row_centers(
+        rack_slot_centers, run_state
+    )
+    if filled:
+        rack_slot_corrected = True
 
     rack_slot_sizes = _parse_rack_slot_sizes(
         rack_block, run_state, slot_centers=rack_slot_centers
@@ -613,6 +748,9 @@ def parse_ui_layout(
     board_cell_centers = _parse_cell_centers(board_block)
     board_cell_centers = _remap_layout_cell_centers_to_storage(
         board_block, board_cell_centers, run_state
+    )
+    board_cell_centers = _straighten_cell_centers(
+        board_cell_centers, _storage_size_from_run_state(run_state)
     )
     board, board_region_repaired = _repair_board_region_from_cells(
         board, board_cell_centers
