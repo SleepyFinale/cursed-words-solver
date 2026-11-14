@@ -77,7 +77,10 @@ def _load(path: Path):
 # --- target build (build-conditioned policies) ------------------------------------------------
 # The live game is rebuilt from the export on every call, so the run's target is chosen once
 # and persisted in RL_HOME/assistant_run_target.json until a new run is detected.
-TARGET_ENV = "CWS_AI_TARGET"   # a plan ("Cards", "Red+Blue"), "free", or "auto" (default: the table)
+TARGET_ENV = "CWS_AI_TARGET"   # a plan ("Cards", "Red+Blue"), "free", "pivot" / "pivot:S", or "auto" (default: the table)
+# Pivot mode ("pivot:S", from the env or a target_table.json band): the run starts FREE and,
+# from stage S, at each shop entry the plan becomes the build the owned items lean to
+# (``targets.pivot_update``, as the PPO pivot runs); the current plan persists with the run.
 
 
 def _target_table_path() -> Path:
@@ -89,14 +92,18 @@ def _run_target_path() -> Path:
 
 
 def _env_target() -> str | None:
-    """CWS_AI_TARGET: None = auto (not set / "auto" / invalid), else the target ("" = FREE)."""
-    from cursed_words_solver.rl.targets import FREE, canonical
+    """CWS_AI_TARGET: None = auto (not set / "auto" / invalid), else the target ("" = FREE) or a
+    pivot mode "pivot:S" ("pivot" = "pivot:2")."""
+    from cursed_words_solver.rl.targets import FREE, canonical, parse_pivot_label, pivot_label
 
     raw = os.environ.get(TARGET_ENV, "").strip()
     if not raw or raw.lower() == "auto":
         return None
     if raw.lower() in ("free", "none"):
         return FREE
+    ps = parse_pivot_label(raw)
+    if ps is not None:
+        return pivot_label(ps)
     try:
         return canonical(raw.replace("-", "+"))
     except ValueError:
@@ -119,14 +126,18 @@ def _crown_matches(key: str, crown: int) -> bool:
 
 
 def _table_target(character: str, crown: int) -> str:
-    """RL_HOME/target_table.json: {"version": 1, "table": {character: {"0-3": t, "4-7": t}}}."""
-    from cursed_words_solver.rl.targets import FREE, canonical
+    """RL_HOME/target_table.json: {"version": 1, "table": {character: {"0-3": t, "4-7": t}}};
+    t may be a plan, "free" / "", or a pivot mode "pivot:S"."""
+    from cursed_words_solver.rl.targets import FREE, canonical, parse_pivot_label, pivot_label
 
     try:
         data = json.loads(_target_table_path().read_text(encoding="utf-8"))
         row = (data.get("table") or {}).get(character) or {}
         for key, t in row.items():
             if _crown_matches(key, int(crown)):
+                ps = parse_pivot_label(str(t)) if t else None
+                if ps is not None:
+                    return pivot_label(ps)
                 return canonical(str(t)) if t and str(t).lower() != "free" else FREE
     except Exception:
         pass
@@ -134,7 +145,8 @@ def _table_target(character: str, crown: int) -> str:
 
 
 def choose_target(character: str, crown: int) -> str:
-    """The target build for a new run: CWS_AI_TARGET, else the target table, else FREE."""
+    """The target build (or pivot mode "pivot:S") for a new run: CWS_AI_TARGET, else the target
+    table, else FREE."""
     t = _env_target()
     return t if t is not None else _table_target(character, crown)
 
@@ -150,40 +162,89 @@ def _progress(game) -> tuple[int, float]:
 
 
 def run_target(game) -> str:
-    """The live run's target build: an explicit CWS_AI_TARGET always wins; otherwise the choice
-    persisted for this run, or a new choice when a new run is detected (character / crown
-    changed, or progress went backwards). Never raises."""
+    """The live run's target build (``run_target_info``)."""
+    return run_target_info(game)[0]
+
+
+def _pivot_step(game, st: dict) -> bool:
+    """Pivot mode: at the first call of a new shop visit re-read the plan into ``st``
+    (target / last_shop / since_stage / first_stage / switches). True if ``st`` changed."""
+    from cursed_words_solver.rl.targets import pivot_update
+
+    if getattr(game, "phase", None) != "shop":
+        return False
+    k = [int(game.player.run.stage), int(game.player.run.node)]
+    if st.get("last_shop") == k:
+        return False
+    st["last_shop"] = k
+    cur = str(st.get("target") or "")
+    t = pivot_update(game, int(st["pivot_stage"]), cur)
+    if t != cur:
+        st["target"] = t
+        st["since_stage"] = k[0]
+        st["switches"] = int(st.get("switches", 0)) + 1
+        if t and st.get("first_stage") is None:
+            st["first_stage"] = k[0]
+    return True
+
+
+def _pivot_info(st: dict) -> dict:
+    return {"pivot_stage": int(st["pivot_stage"]), "since_stage": st.get("since_stage"),
+            "first_stage": st.get("first_stage"), "switches": int(st.get("switches", 0))}
+
+
+def run_target_info(game, mode: str | None = None) -> tuple[str, dict | None]:
+    """The live run's target build and, in pivot mode, the pivot state ({pivot_stage,
+    since_stage, first_stage, switches}; else None). An explicit CWS_AI_TARGET plan always
+    wins; otherwise the choice persisted for this run, or a new choice when a new run is
+    detected (character / crown / mode changed, or progress went backwards). ``mode``: force a
+    choice ("pivot:S" / a plan) as if it came from CWS_AI_TARGET. Pivot runs persist the
+    current plan and re-read it at shop entries from their stage. Never raises."""
     import time
 
-    from cursed_words_solver.rl.targets import FREE, canonical
+    from cursed_words_solver.rl.targets import FREE, canonical, parse_pivot_label
 
-    env_t = _env_target()
-    if env_t is not None:
-        return env_t
+    env_t = mode if mode is not None else _env_target()
+    if env_t is not None and parse_pivot_label(env_t) is None:
+        return env_t, None
     try:
         if getattr(game.player.run, "challenge", None) is not None:
-            return FREE   # quest runs: the quest fixes the plan; PPO trains them FREE only
+            return FREE, None   # quest runs: the quest fixes the plan; PPO trains them FREE only
         character, crown = game.player.character, int(game.player.run.ascension)
         prog = _progress(game)
     except Exception:
-        return FREE
+        return FREE, None
     path = _run_target_path()
     try:
         st = json.loads(path.read_text(encoding="utf-8"))
         same = (st.get("character") == character and int(st.get("crown")) == crown
-                and tuple(float(x) for x in st.get("progress", (0, 0))) <= prog)
+                and tuple(float(x) for x in st.get("progress", (0, 0))) <= prog
+                and (env_t is None or st.get("mode") == env_t))
         if same:
+            changed = tuple(float(x) for x in st.get("progress")) != prog
+            st["progress"] = list(prog)
+            pivot = None
+            if parse_pivot_label(st.get("mode") or "") is not None:
+                changed = _pivot_step(game, st) or changed
+                pivot = _pivot_info(st)
             t = canonical(str(st.get("target") or ""))
-            if tuple(float(x) for x in st.get("progress")) != prog:
-                st["progress"] = list(prog)
+            if changed:
                 _write_json(path, st)
-            return t
+            return t, pivot
     except Exception:
         pass
-    t = choose_target(character, crown)
-    _write_json(path, {"character": character, "crown": crown, "target": t, "progress": list(prog),
-                       "started": time.strftime("%Y-%m-%dT%H:%M:%S")})
-    return t
+    choice = env_t if env_t is not None else choose_target(character, crown)
+    st = {"character": character, "crown": crown, "target": choice, "progress": list(prog),
+          "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    pivot = None
+    ps = parse_pivot_label(choice) if choice else None
+    if ps is not None:
+        st.update(mode=choice, target=FREE, pivot_stage=ps, last_shop=None, since_stage=None, first_stage=None,
+                  switches=0)
+        _pivot_step(game, st)
+        pivot = _pivot_info(st)
+    _write_json(path, st)
+    return str(st["target"]), pivot
 
 
 def _write_json(path: Path, data: dict) -> None:
@@ -219,6 +280,8 @@ class Advice:
     context: list[str] = field(default_factory=list)    # stage plan, frozen items, warnings
     target: str | None = None    # the run's target build ("" = Free); None: the policy takes no target
     character: str = ""          # in-game character name (for the target line)
+    pivot: dict | None = None    # pivot mode state (run_target_info); None: a fixed target
+    on_plan: int = 0             # owned items on the target build (pivot line)
 
     def target_line(self) -> str:
         """"Target build: Cards" ("" when the policy is not build-conditioned)."""
@@ -227,6 +290,13 @@ class Advice:
         from cursed_words_solver.rl.targets import display as tdisplay
 
         who = f" for {self.character}" if self.character else ""
+        if self.pivot:
+            if not self.target:
+                return f"Plan{who}: Free (pivot from stage {self.pivot['pivot_stage']})"
+            name = tdisplay(self.target)
+            at = self.pivot.get("since_stage") or self.pivot.get("first_stage")
+            return (f"Plan{who}: {name} (pivoted at stage {at} - you own {self.on_plan} {name} "
+                    f"item{'s' if self.on_plan != 1 else ''})")
         return f"Target build{who}: {tdisplay(self.target)}" + ("  (AI chooses)" if not self.target else "")
 
     def as_dict(self, top: int = 6) -> dict[str, Any]:
@@ -236,6 +306,7 @@ class Advice:
         return {"phase": self.phase, "p_win": self.p_win, "p_michael": self.p_michael,
                 "exp_outcome": self.exp_outcome, "context": list(self.context), "plan": list(self.plan),
                 "target": self.target, "target_display": tdisplay(self.target) if self.target is not None else None,
+                "pivot": dict(self.pivot) if self.pivot else None, "target_line": self.target_line(),
                 "pick": label(self.pick.action) if self.pick is not None else None,
                 "pick_note": self.pick.note if self.pick is not None else "",
                 "options": [{"label": label(o.action), "prob": o.prob, "p_win": o.p_win,
@@ -365,11 +436,11 @@ def _context(game) -> list[str]:
 
 def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps: int = 12,
                 search: bool = True, target: str | None = None) -> Advice:
-    """``target``: the run's target build; None = ``run_target`` (env / persisted / table) when
-    the policy was trained with targets, else FREE. It is set on ``game`` before any env is
+    """``target``: the run's target build ("pivot:S" = pivot mode); None = ``run_target_info``
+    (env / persisted / table) when the policy was trained with targets, else FREE. It is set on ``game`` before any env is
     attached, so every sub-env (look-ahead, after-states, shop plan) sees it via clones."""
     from cursed_words_solver.rl.model import Actor
-    from cursed_words_solver.rl.targets import FREE, canonical, set_target
+    from cursed_words_solver.rl.targets import FREE, canonical, on_plan_count, parse_pivot_label, set_target
     from cursed_words_solver.sim.game.agent import Candidates
 
     cands = cands or Candidates(time_budget=2.0)
@@ -378,12 +449,15 @@ def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps:
         raise FileNotFoundError("no trained policy yet (rl/bc/best.pt or rl/ppo*/champion.pt)")
     model, cond = _model_entry(Path(path))
     actor = Actor(model, greedy=True)
+    pivot = None
     if not cond:
         tgt = FREE
+    elif target is not None and parse_pivot_label(target) is not None:
+        tgt, pivot = run_target_info(game, mode=f"pivot:{parse_pivot_label(target)}")
     elif target is not None:
         tgt = canonical(target) if target else FREE
     else:
-        tgt = run_target(game)
+        tgt, pivot = run_target_info(game)
     set_target(game, tgt)
     env = CWEnv(cands)
     env.attach(game)
@@ -393,7 +467,8 @@ def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps:
         ph = "michael_draft"
     adv = Advice(phase=ph, p_win=float(aux[0]), p_michael=float(aux[1]), exp_outcome=potential(game) + 8.0 * v,
                  context=_context(game), target=tgt if cond else None,
-                 character=str(getattr(game.player, "character_name", "") or ""))
+                 character=str(getattr(game.player, "character_name", "") or ""),
+                 pivot=pivot if cond else None, on_plan=on_plan_count(game, tgt) if cond else 0)
     order = np.argsort(-probs)
     adv.options = [Option(st.cands[i].action, float(probs[i])) for i in order]
     if not adv.options:
@@ -640,11 +715,13 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="AI run assistant for the live game state")
     ap.add_argument("--file", default=str(Path.home() / ".cursed_words_solver" / "run_state.json"))
     ap.add_argument("--policy", default="")
-    ap.add_argument("--target", default=None, help="target build (\"Cards\", \"Red+Blue\", \"free\"); "
+    ap.add_argument("--target", default=None, help="target build (\"Cards\", \"Red+Blue\", \"free\", \"pivot:2\"); "
                     "default: CWS_AI_TARGET / this run's persisted choice / rl/target_table.json")
     args = ap.parse_args(argv)
     data = json.loads(Path(args.file).read_text(encoding="utf-8"))
-    tgt = None if args.target is None else ("" if args.target.lower() == "free" else args.target.replace("-", "+"))
+    tgt = None if args.target is None else ("" if args.target.lower() == "free" else
+                                            args.target if args.target.lower().startswith("pivot") else
+                                            args.target.replace("-", "+"))
     adv = advise(data, model_path=Path(args.policy).expanduser() if args.policy else None, target=tgt)
     print(adv.text())
     return 0

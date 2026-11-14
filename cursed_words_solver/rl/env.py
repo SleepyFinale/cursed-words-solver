@@ -8,6 +8,11 @@ policy is optimal.
 Build-conditioned runs (``reset(target=...)``, ``rl/targets.py``): with ``shaping`` > 0, Φ
 also counts ``shaping`` per owned item on the target build (generator / fits) until the run
 ends; at "done" Φ is exactly ``outcome``, so the return still telescopes to it.
+
+Michael bonus (training only): ``CWEnv(michael_bonus=b)`` scores a Michael win at done as
+``train_outcome`` = 16 + b instead of the game's 16 + ``MICHAEL_BONUS`` (8), so the return
+telescopes to that. ``result()["outcome"]`` stays the true game outcome (16 / 24); a b other than
+8 is reported as ``result()["michael_bonus"]`` (rl.ppo uses it to know what the rewards carry).
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ from cursed_words_solver.rl.actions import ANYTIME, CandidateBuilder, Cand, Limi
 from cursed_words_solver.rl.obs import Obs, observe
 from cursed_words_solver.rl.targets import FREE, get_target, off_plan_count, on_plan_count
 from cursed_words_solver.sim.game.agent import Action, apply
-from cursed_words_solver.sim.game.features import outcome, progress
+from cursed_words_solver.sim.game.features import MICHAEL_BONUS, outcome, progress
 
 if TYPE_CHECKING:  # pragma: no cover
     from cursed_words_solver.sim.game.agent import Candidates
@@ -30,9 +35,22 @@ if TYPE_CHECKING:  # pragma: no cover
 MAX_STEPS = 1500
 
 
-def potential(game: "Game", *, target: str = FREE, shaping: float = 0.0) -> float:
+def is_michael_win(game: "Game") -> bool:
+    return bool(game.won) and game.end_reason == "michael"
+
+
+def train_outcome(game: "Game", michael_bonus: float = MICHAEL_BONUS) -> float:
+    """``outcome`` with a Michael win worth 16 + ``michael_bonus`` (the game's is 16 + MICHAEL_BONUS)."""
+    o = outcome(game)
+    if michael_bonus != MICHAEL_BONUS and is_michael_win(game):
+        o -= MICHAEL_BONUS - float(michael_bonus)
+    return o
+
+
+def potential(game: "Game", *, target: str = FREE, shaping: float = 0.0,
+              michael_bonus: float = MICHAEL_BONUS) -> float:
     if game.phase == "done":
-        return outcome(game)
+        return train_outcome(game, michael_bonus)
     base = progress(game)
     enc = game.encounter
     if enc is not None and enc.total_target > 0 and enc.michael_draft is None:
@@ -70,9 +88,11 @@ def pack(step: Step) -> dict[str, np.ndarray]:
 
 
 class CWEnv:
-    def __init__(self, cands: "Candidates", limits: Limits | None = None, shaping: float = 0.0) -> None:
+    def __init__(self, cands: "Candidates", limits: Limits | None = None, shaping: float = 0.0,
+                 michael_bonus: float = MICHAEL_BONUS) -> None:
         self.builder = CandidateBuilder(cands, limits)
         self.shaping = float(shaping)   # Φ per owned on-target item (build-conditioned runs)
+        self.michael_bonus = float(michael_bonus)   # training value of beating Michael (on top of 16)
         self.target = FREE
         self.game: "Game | None" = None
         self.point_anytime = 0
@@ -103,7 +123,7 @@ class CWEnv:
         return self.current()
 
     def potential(self, game: "Game") -> float:
-        return potential(game, target=self.target, shaping=self.shaping)
+        return potential(game, target=self.target, shaping=self.shaping, michael_bonus=self.michael_bonus)
 
     def current(self) -> Step:
         g = self.game
@@ -149,7 +169,8 @@ class CWEnv:
 
     def result(self) -> dict[str, Any]:
         g = self.game
-        return {"won": bool(g.won), "reason": g.end_reason, "outcome": round(outcome(g), 4),
+        extra = {"michael_bonus": self.michael_bonus} if self.michael_bonus != MICHAEL_BONUS else {}
+        return {**extra, "won": bool(g.won), "reason": g.end_reason, "outcome": round(outcome(g), 4),
                 "stage": g.player.run.stage, "steps": self.steps,
                 "michael": g.end_reason == "michael", "cursed": len(g.player.run.cursed_bosses_defeated),
                 "target": self.target, "on_plan": on_plan_count(g, self.target),

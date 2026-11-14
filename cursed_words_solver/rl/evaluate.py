@@ -11,6 +11,10 @@ compared paired (same character / crown / quest / seed) against another arm.
 
 ARM is a name in rl/eval (``<arm>.jsonl``) or a path to a .jsonl of eval rows. Rows carry a
 build ``target`` ("" = FREE); ``key`` includes it, so rows from before targets match FREE jobs.
+Pivot runs (``--targets free,pivot:2,pivot:3``: start FREE, from stage S re-read the build at
+each shop entry, ``targets.pivot_update``) carry ``pivot_stage``; their row ``target`` is the
+FINAL target, so ``key`` uses (FREE, pivot_stage) for them and reports group them as the arm
+"pivot:S" (``arm_of``), paired vs the FREE row of the same seed.
 
 Seed sets: ``main`` = 11 characters Ã— crowns 0-7 Ã— ``--per`` seeds (block 40,000,000) plus
 26 quests Ã— ``--per-quest``. ``fresh<K>`` = a different block for confirmation.
@@ -38,7 +42,8 @@ CROWNS = range(8)
 
 def eval_jobs(per: int = 3, per_quest: int = 1, block: int = 0, crowns=CROWNS, targets=None) -> list[dict[str, Any]]:
     """``targets``: None = no target key (FREE, the old job list); "own" = every job once FREE and
-    once per ``targets.THEMES`` build of its character; a list = every job once per listed target.
+    once per ``targets.THEMES`` build of its character; a list = every job once per listed target
+    ("pivot:S" = a pivot run from stage S).
     Crossed jobs keep their seed, so the targets of one seed are paired with each other."""
     from cursed_words_solver.sim.game.challenges import QUESTS
 
@@ -56,14 +61,20 @@ def eval_jobs(per: int = 3, per_quest: int = 1, block: int = 0, crowns=CROWNS, t
 
 
 def cross_targets(jobs: list[dict], targets) -> list[dict[str, Any]]:
-    """Each job once per target (``"own"`` = FREE + the character's THEMES), same seed."""
-    from cursed_words_solver.rl.targets import FREE, THEMES, canonical
+    """Each job once per target (``"own"`` = FREE + the character's THEMES; "pivot:S" = FREE
+    start + ``pivot_stage`` S; pivot runs only for non-quest jobs), same seed."""
+    from cursed_words_solver.rl.targets import FREE, THEMES, canonical, parse_pivot_label
 
     out = []
     for j in jobs:
         ts = (FREE, *THEMES.get(j["character"], ())) if targets == "own" else targets
         for t in ts:
-            out.append({**j, "target": canonical(t) if t else FREE})
+            ps = parse_pivot_label(t) if t else None
+            if ps is not None:
+                if not j.get("quest"):
+                    out.append({**j, "target": FREE, "pivot_stage": ps})
+            else:
+                out.append({**j, "target": canonical(t) if t else FREE})
     return out
 
 
@@ -77,8 +88,27 @@ def themed_gate_jobs() -> list[dict[str, Any]]:
 
 
 def key(r: dict) -> tuple:
-    """Pairing key: character, crown, quest, seed, build target ("" = FREE; old rows lack it)."""
-    return (r["character"], r["crown"], r.get("quest") or "", r["seed"], r.get("target") or "")
+    """Pairing key: character, crown, quest, seed, build target ("" = FREE; old rows lack it),
+    pivot stage (0 = not a pivot run; a pivot run's key target is FREE, its start)."""
+    ps = int(r.get("pivot_stage") or 0)
+    return (r["character"], r["crown"], r.get("quest") or "", r["seed"], "" if ps else (r.get("target") or ""), ps)
+
+
+def arm_of(r: dict) -> str:
+    """The row's target arm for reports / the target table: its target ("" = FREE), or
+    "pivot:S" for a pivot run."""
+    from cursed_words_solver.rl.targets import pivot_label
+
+    ps = int(r.get("pivot_stage") or 0)
+    return pivot_label(ps) if ps else (r.get("target") or "")
+
+
+def arm_display(arm: str) -> str:
+    """"Free", "Red + Blue", "Pivot from stage 2"."""
+    from cursed_words_solver.rl.targets import display, parse_pivot_label
+
+    ps = parse_pivot_label(arm) if arm else None
+    return f"Pivot from stage {ps}" if ps is not None else display(arm)
 
 
 def run_arm(arm: str, policy: str, jobs: list[dict], workers: int = 7, *, greedy: bool = True, search=None,
@@ -109,22 +139,44 @@ def run_arm(arm: str, policy: str, jobs: list[dict], workers: int = 7, *, greedy
     return [done[key(j)] for j in jobs if key(j) in done]
 
 
-def summarize(rows: list[dict]) -> dict:
+# the game's Michael bonus (sim.game.features.MICHAEL_BONUS): eval rows' "outcome" carries it (win 16,
+# Michael win 24); a PPO trained with another bonus (rl.ppo --michael-bonus) compares by row_outcome
+from cursed_words_solver.sim.game.features import MICHAEL_BONUS  # noqa: E402
+
+
+def row_outcome(r: dict, michael_bonus: float = MICHAEL_BONUS) -> float:
+    """The row's outcome with a Michael win worth 16 + ``michael_bonus`` instead of the recorded
+    16 + MICHAEL_BONUS (= ``r["outcome"]`` when ``michael_bonus`` is MICHAEL_BONUS)."""
+    o = float(r["outcome"])
+    if michael_bonus != MICHAEL_BONUS and r.get("won") and r.get("reason") == "michael":
+        o -= MICHAEL_BONUS - float(michael_bonus)
+    return o
+
+
+def summarize(rows: list[dict], michael_bonus: float = MICHAEL_BONUS) -> dict:
+    """``michael_bonus`` other than MICHAEL_BONUS adds ``train_outcome`` (mean ``row_outcome``);
+    ``outcome`` stays the true game outcome."""
     n = len(rows)
     if not n:
         return {"n": 0}
     wins = sum(bool(r["won"]) for r in rows)
     mich = sum(r.get("reason") == "michael" for r in rows)
     out = sum(r["outcome"] for r in rows) / n
-    return {"n": n, "wins": wins, "win_rate": round(wins / n, 4), "michael_wins": mich, "outcome": round(out, 3)}
+    res = {"n": n, "wins": wins, "win_rate": round(wins / n, 4), "michael_wins": mich, "outcome": round(out, 3)}
+    if michael_bonus != MICHAEL_BONUS:
+        res["train_outcome"] = round(sum(row_outcome(r, michael_bonus) for r in rows) / n, 3)
+    return res
 
 
-def paired(a: list[dict], b: list[dict]) -> dict:
+def paired(a: list[dict], b: list[dict], michael_bonus: float = MICHAEL_BONUS) -> dict:
+    """Paired a - b by ``key``. ``outcome_diff`` / ``t`` compare ``row_outcome(r, michael_bonus)``
+    (the default: the recorded outcome); a ``michael_bonus`` other than MICHAEL_BONUS is echoed
+    in the result."""
     bk = {key(r): r for r in b}
     pairs = [(r, bk[key(r)]) for r in a if key(r) in bk]
     if not pairs:
         return {"n": 0}
-    d = [x["outcome"] - y["outcome"] for x, y in pairs]
+    d = [row_outcome(x, michael_bonus) - row_outcome(y, michael_bonus) for x, y in pairs]
     n = len(d)
     mean = sum(d) / n
     sd = math.sqrt(sum((v - mean) ** 2 for v in d) / max(1, n - 1))
@@ -135,10 +187,13 @@ def paired(a: list[dict], b: list[dict]) -> dict:
     disc = only_a + only_b
     # win-rate difference with McNemar-style SE
     se_w = math.sqrt(max(1, disc)) / n
-    return {"n": n, "wins_a": wa, "wins_b": wb, "win_diff": round((wa - wb) / n, 4),
-            "win_diff_lb90": round((wa - wb) / n - 1.645 * se_w, 4), "only_a": only_a, "only_b": only_b,
-            "win_z": round((only_a - only_b) / math.sqrt(disc), 2) if disc else 0.0,
-            "outcome_diff": round(mean, 3), "t": round(mean / (sd / math.sqrt(n)) if sd > 0 else 0.0, 2)}
+    res = {"n": n, "wins_a": wa, "wins_b": wb, "win_diff": round((wa - wb) / n, 4),
+           "win_diff_lb90": round((wa - wb) / n - 1.645 * se_w, 4), "only_a": only_a, "only_b": only_b,
+           "win_z": round((only_a - only_b) / math.sqrt(disc), 2) if disc else 0.0,
+           "outcome_diff": round(mean, 3), "t": round(mean / (sd / math.sqrt(n)) if sd > 0 else 0.0, 2)}
+    if michael_bonus != MICHAEL_BONUS:
+        res["michael_bonus"] = float(michael_bonus)
+    return res
 
 
 # PPO gate: block 1, 4 seeds per character x crown + 2 per quest = 404 runs. eval_jobs seeds are
@@ -152,7 +207,9 @@ def gate_jobs(per: int = GATE_PER, per_quest: int = GATE_PER_QUEST) -> list[dict
 
 def promote_ok(cmp: dict, min_z: float = 1.0) -> bool:
     """Candidate beats the champion paired: more wins and more outcome, and at least one of the
-    two differences is >= ``min_z`` standard errors (outcome t, or win z = win_diff / (sqrt(disc) / n))."""
+    two differences is >= ``min_z`` standard errors (outcome t, or win z = win_diff / (sqrt(disc) / n)).
+    The outcome is whatever ``paired`` compared: rl.ppo passes its training ``michael_bonus``, so a
+    Michael win counts what training values it at (unchanged at the game's 8)."""
     if not cmp.get("n"):
         return False
     return cmp["win_diff"] > 0 and cmp["outcome_diff"] > 0 and max(cmp["t"], cmp.get("win_z", 0.0)) >= min_z
@@ -162,7 +219,7 @@ def _field(r: dict, by: str):
     if by == "quest":
         return r.get("quest") or "-"
     if by == "target":
-        return r.get("target") or ""
+        return arm_of(r)
     if by == "band":
         return crown_band(r["crown"])
     return r[by]
@@ -191,15 +248,16 @@ def vs_free(rows: list[dict], by=()) -> dict:
     """``paired`` per (group..., target) for every non-FREE target: a = the target's rows, b = the
     FREE rows of the same character / crown / quest / seed. ``by``: fields to split on (``table``)."""
     by = tuple(by) if isinstance(by, (tuple, list)) else (by,)
-    free = {key(r)[:4]: r for r in rows if not r.get("target")}
+    free = {key(r)[:4]: r for r in rows if not arm_of(r)}
     groups: dict = {}
     for r in rows:
-        t = r.get("target") or ""
+        t = arm_of(r)
         if t and key(r)[:4] in free:
             groups.setdefault((*(_field(r, b) for b in by), t), []).append(r)
     out = {}
     for k, rs in sorted(groups.items(), key=lambda kv: str(kv[0])):
-        out[k] = paired(rs, [{**free[key(r)[:4]], "target": r["target"]} for r in rs])
+        out[k] = paired(rs, [{**free[key(r)[:4]], "target": r.get("target"), "pivot_stage": r.get("pivot_stage", 0)}
+                             for r in rs])
     return out
 
 
@@ -214,7 +272,8 @@ def _best(cmps: dict, min_z: float) -> str | None:
 
 
 def pick_table(rows: list[dict], min_z: float = 1.0) -> dict[str, dict[str, str]]:
-    """Per character (non-quest rows): the target t != FREE with the largest paired win_diff vs
+    """Per character (non-quest rows): the target arm t != FREE (a plan, or "pivot:S" when pivot
+    rows are present) with the largest paired win_diff vs
     FREE among those passing ``pick_ok``, else FREE (""). Each crown band (0-3, 4-7) gets the
     pick on its own rows if one passes; otherwise the all-crowns pick, but only if it does not
     lose to FREE on that band's rows (win_diff >= 0 and outcome_diff >= 0), else FREE. Every
@@ -276,8 +335,7 @@ def _fmt_d(c: dict) -> str:
 
 
 def print_targets(rows: list[dict]) -> None:
-    from cursed_words_solver.rl.targets import display
-
+    display = arm_display
     print("== by target")
     d = vs_free(rows)
     for t, s in table(rows, "target").items():
@@ -287,6 +345,23 @@ def print_targets(rows: list[dict]) -> None:
         d = vs_free(rows, by)
         for k, s in table(rows, (by, "target")).items():
             print(f"  {str(k[0]) + ' | ' + display(k[1]):40s} {_fmt(s)}  {_fmt_d(d.get(k, {}))}")
+
+
+def pivot_report(rows: list[dict]) -> list[str]:
+    """Lines per pivot arm: final-target shares and mean switches."""
+    from cursed_words_solver.rl.targets import display
+
+    out = []
+    for arm in sorted({arm_of(r) for r in rows if r.get("pivot_stage")}):
+        rs = [r for r in rows if arm_of(r) == arm]
+        groups: dict[str, list[dict]] = {}
+        for r in rs:
+            groups.setdefault(r.get("target") or "", []).append(r)
+        sw = sum(r.get("pivot_switches", len(r.get("targets_seen") or ())) for r in rs) / len(rs)
+        out.append(f"{arm_display(arm)}: n={len(rs)} mean switches {sw:.2f}")
+        for t, v in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+            out.append(f"   ends {display(t):20s} {_fmt(summarize(v))}")
+    return out
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -302,7 +377,8 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--sample", action="store_true", help="sample actions instead of greedy")
     r.add_argument("--search", default="", help="decision-time look-ahead: JSON SearchConfig, e.g. '{}' or '{\"sims\": 2}'")
     r.add_argument("--targets", default="", help="build targets per job: 'own' (FREE + the character's themes) "
-                   "or a comma list ('free,Cards,Red+Blue'); default: FREE only")
+                   "or a comma list ('free,Cards,Red+Blue,pivot:2'; pivot:S = start FREE, pivot from stage S); "
+                   "default: FREE only")
     r.add_argument("--out-dir", default=str(EVAL_HOME), help="where <arm>.jsonl is cached")
     c = sub.add_parser("compare")
     c.add_argument("a")
@@ -330,6 +406,11 @@ def main(argv: list[str] | None = None) -> None:
         print(summarize(rows))
     elif args.cmd == "targets":
         print_targets(load_rows(args.arm))
+        pv = pivot_report(load_rows(args.arm))
+        if pv:
+            print("== pivot runs: final target")
+            for line in pv:
+                print("  " + line)
     elif args.cmd == "pick":
         tab = pick_table(load_rows(args.arm), args.min_z)
         store.atomic_write_json(Path(args.out).expanduser(), {"version": 1, "source": args.arm, "table": tab})

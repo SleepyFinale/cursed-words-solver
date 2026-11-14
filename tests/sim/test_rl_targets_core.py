@@ -123,12 +123,12 @@ def test_get_set_target_and_clone():
 
 
 def test_obs_v3_widths_and_column_order():
-    assert O.OBS_VERSION == 3
+    assert O.OBS_VERSION >= 3   # v4 appends token columns after these (test_rl_obs_hands)
     assert O.n_global_features() == O.V3_GLOBAL == V2_G + 1 + len(T.PLANS)
-    assert O.n_token_features() == O.V3_TOKEN == V2_T + 4
+    assert O.n_token_features() - len(O.V4_TOKEN_COLS) == O.V3_TOKEN == V2_T + 4
     g = list(O.global_columns())
     assert g[V2_G:] == ["target_set"] + [f"target:{p}" for p in T.PLANS]
-    assert list(O.token_columns())[V2_T:] == ["pc:generator", "pc:fits", "pc:off", "pc:neutral"]
+    assert list(O.token_columns())[V2_T:O.V3_TOKEN] == ["pc:generator", "pc:fits", "pc:off", "pc:neutral"]
 
 
 def test_free_obs_matches_prefix_and_is_zero_beyond():

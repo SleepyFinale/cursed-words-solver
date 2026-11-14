@@ -75,7 +75,7 @@ def conditioned(cfg: "ModelConfig | dict", state: dict | None = None) -> bool:
     w = (state or {}).get("glob_in.0.weight")
     if w is None:
         return True
-    return bool(w[:, LEGACY_GLOBAL[-1]:V3_GLOBAL].abs().sum() > 0)
+    return bool(w[:, LEGACY_GLOBAL[1]:V3_GLOBAL].abs().sum() > 0)   # the v2 -> v3 columns
 
 
 # input layers whose weight columns are feature columns: (state key, config field)

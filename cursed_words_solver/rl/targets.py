@@ -77,17 +77,20 @@ def item_class(target: str, game_class: str) -> str | None:
     return _policy.plan_class("+".join(parts), game_class)
 
 
-def sample_target(rng: random.Random, character: str, mix: tuple[float, float, float] = (0.34, 0.33, 0.33)) -> str:
+def sample_target(rng: random.Random, character: str, mix: tuple[float, float, float] = (0.34, 0.33, 0.33),
+                  weights: dict[str, float] | None = None) -> str:
     """FREE / one of the character's themes / any sampleable plan, by the shares in ``mix``
-    (normalised). One ``rng.random()`` then (unless FREE) one ``rng.choice``."""
+    (normalised). One ``rng.random()`` then (unless FREE) one ``rng.choice`` (``rng.choices``
+    by ``weights`` {plan: weight} when given: the PPO target curriculum)."""
     p_free, p_theme, p_any = (max(0.0, float(x)) for x in mix)
     tot = p_free + p_theme + p_any
     u = rng.random() * (tot if tot > 0 else 1.0)
     if tot <= 0 or u < p_free:
         return FREE
-    if u < p_free + p_theme:
-        return rng.choice(THEMES.get(character) or SAMPLE_PLANS)
-    return rng.choice(SAMPLE_PLANS)
+    pool = (THEMES.get(character) or SAMPLE_PLANS) if u < p_free + p_theme else SAMPLE_PLANS
+    if weights:
+        return rng.choices(pool, weights=[max(1e-6, float(weights.get(x, 1.0))) for x in pool])[0]
+    return rng.choice(pool)
 
 
 def teacher_plan(target: str, character: str, quest: str | None) -> str:
@@ -149,3 +152,62 @@ def off_plan_count(game: "Game", target: str) -> int:
     if not target:
         return 0
     return sum(item_class(target, it.game_class) == "off" for it in _owned(game))
+
+
+# ------------------------------------------------------------------ pivot targets
+# A good player does not fix a build at run start: they watch what the shops offer and what
+# they own, then commit to the build that has become viable. A PIVOT run starts FREE and, from
+# ``pivot_stage`` on, re-reads the build its owned items lean to at every shop entry
+# (``pivot_update``; hysteresis keeps a chosen build until another clearly leads).
+
+LEAN_WEIGHTS = {"generator": 1.5, "fits": 1.0}
+LEAN_MIN_SCORE = 2.0
+LEAN_MARGIN = 2.0
+
+
+def lean_scores(game: "Game") -> dict[str, float]:
+    """{plan: score} over ``SAMPLE_PLANS``: per owned sticker / stamp (not the pin) 1.5 if it is
+    one of the plan's generators, 1.0 if it fits it, else 0. Visible state only."""
+    owned = [it.game_class for it in _owned(game)]
+    return {p: sum(LEAN_WEIGHTS.get(item_class(p, c) or "", 0.0) for c in owned) for p in SAMPLE_PLANS}
+
+
+def lean(game: "Game", current: str = FREE, min_score: float = LEAN_MIN_SCORE,
+         margin: float = LEAN_MARGIN) -> str:
+    """The plan the owned items lean to: the best ``lean_scores`` plan (ties: ``current`` if it is
+    among the best, else the first in ``PLANS`` order); FREE if the best scores < ``min_score``;
+    a non-FREE ``current`` is kept while its score >= best - ``margin`` (hysteresis)."""
+    sc = lean_scores(game)
+    best = max(sc.values()) if sc else 0.0
+    cur = canonical(current) if current else FREE
+    if best < min_score:
+        return FREE
+    if cur and cur in sc and sc[cur] >= best - margin:
+        return cur
+    return next(p for p in PLANS if p in sc and sc[p] == best)
+
+
+def pivot_update(game: "Game", pivot_stage: int, current: str = FREE) -> str:
+    """A pivot run's target at a shop entry: FREE before stage ``pivot_stage``, else ``lean``."""
+    if int(game.player.run.stage) < int(pivot_stage):
+        return FREE
+    return lean(game, current)
+
+
+def pivot_label(pivot_stage: int) -> str:
+    """Eval / target-table arm name of a pivot run: "pivot:2"."""
+    return f"pivot:{int(pivot_stage)}"
+
+
+def parse_pivot_label(text: str) -> int | None:
+    """"pivot:2" -> 2; "pivot" -> 2 (default stage); anything else -> None."""
+    t = str(text or "").strip().lower()
+    if t == "pivot":
+        return 2
+    if t.startswith("pivot:"):
+        try:
+            s = int(t.split(":", 1)[1])
+        except ValueError:
+            return None
+        return s if s > 0 else None
+    return None

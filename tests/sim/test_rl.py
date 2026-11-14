@@ -312,7 +312,7 @@ def test_curriculum_weights_clamp_and_determinism():
     cw = c.weights()
     assert cw["n_char"] == 100 and cw["n_quest"] == 50
     assert cw["char"][CHARS[0]] < 1 < cw["char"][CHARS[1]]
-    assert Curriculum(c.state()["chars"], c.state()["quests"]).weights() == cw   # resumes from the checkpoint
+    assert Curriculum(c.state()["chars"], c.state()["quests"], c.state()["targets"]).weights() == cw   # resumes from the checkpoint
     crowns = [0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 2.0]
     jobs = [[sample_job(random.Random(n), n, 0.25, crowns, cw["char"], cw["quest"]) for n in range(300)] for _ in range(2)]
     assert jobs[0] == jobs[1]

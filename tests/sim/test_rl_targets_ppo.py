@@ -302,7 +302,7 @@ def test_pipeline_v2_stage_plan(home, capsys):
         assert bc2[bc2.index(flag) + 1] == val
     ppo = st[3]["cmd"]
     for flag, val in (("--dir", str(home / "ppo2")), ("--init", str(home / "bc2" / "best.pt")),
-                      ("--kl-ref", "champion"), ("--targets-mix", "0.3,0.4,0.3"), ("--shaping", "0.15"),
+                      ("--kl-ref", "champion"), ("--targets-mix", "0.3,0.1,0.1"), ("--pivot", "0.5,2,4"), ("--shaping", "0.15"),
                       ("--compare-dir", str(home / "ppo1")), ("--distill-dir", str(home / "exit2"))):
         assert ppo[ppo.index(flag) + 1] == val
     assert "--gate-targets" in ppo
@@ -386,3 +386,41 @@ def test_targeted_teacher_plan(monkeypatch):
     assert pol.cfg.build_plan == "Red+Blue" and pol.cfg.build_plan_chars == {}
     pol = PL.targeted_teacher(_NoWords(), 3, "Cards", "BonesTheDog", "Chromaphobia")
     assert pol.cfg.build_plan == TG.teacher_plan("Cards", "BonesTheDog", "Chromaphobia")
+
+
+def test_target_curriculum_weights_follow_win_rate_vs_free():
+    from cursed_words_solver.rl import ppo
+    from cursed_words_solver.rl.targets import SAMPLE_PLANS
+
+    rows = ([("BonesTheDog", "", 1)] * 60 + [("BonesTheDog", "", 0)] * 40
+            + [("BonesTheDog", "Cards", 1)] * 55 + [("BonesTheDog", "Cards", 0)] * 45
+            + [("BonesTheDog", "Cash", 0)] * 100)
+    w = ppo.target_weights(rows)["BonesTheDog"]
+    assert set(w) == set(SAMPLE_PLANS)
+    assert w["Cards"] > 0.8 and w["Cash"] == ppo.TARGET_W_LO
+    assert ppo.TARGET_W_LO < w["Void"] < w["Cards"]  # unseen: shrunk toward half the FREE rate
+
+
+def test_sample_job_target_weights_only_change_the_target():
+    import random
+
+    from cursed_words_solver.rl import ppo
+
+    mix = (0.3, 0.4, 0.3)
+    tw = {c: {"Curse": 100.0} for c in ppo.CHARS}
+    for n in range(40):
+        a = ppo.sample_job(random.Random(n), n, 0.25, [1.0] * 8, None, None, mix, 0.1)
+        b = ppo.sample_job(random.Random(n), n, 0.25, [1.0] * 8, None, None, mix, 0.1, tw)
+        assert {k: a[k] for k in ("character", "crown", "quest", "seed")} == {k: b[k] for k in ("character", "crown", "quest", "seed")}
+        assert (a["target"] == "") == (b["target"] == "")
+
+
+def test_curriculum_state_round_trips_target_rows():
+    from cursed_words_solver.rl.ppo import Curriculum
+
+    c = Curriculum()
+    c.add({"character": "Octacles", "crown": 3, "quest": None, "won": True, "target": "Curse"})
+    c2 = Curriculum(**{"char_rows": c.state()["chars"], "quest_rows": c.state()["quests"],
+                       "target_rows": c.state()["targets"]})
+    assert list(c2.targets) == [("Octacles", "Curse", 1)]
+    assert "target" in c2.weights()

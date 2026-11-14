@@ -20,6 +20,11 @@ v3 columns (build-conditioned RL, ``rl/targets.py``) are appended after the v2 o
 target build (``target_set`` and a multi-hot ``target:{plan}`` over ``targets.PLANS``) and per
 item token its place in that target (``pc:generator`` / ``pc:fits`` / ``pc:off`` /
 ``pc:neutral``). FREE (no target) leaves them all zero, so v2 rows read as FREE.
+
+v4 appends two token columns (global width unchanged): ``hb_fav_stamp`` (the owned stamp
+right of Human Boy's Right Hand, which gets the extra triggers; ``hb_fav`` already marks the
+Left Hand's sticker) and ``sell_cost`` (log1p of what selling costs, padlocks only: their
+``sell_value`` is 0). v3 rows read as "no favourite stamp, nothing costs money to sell".
 """
 
 from __future__ import annotations
@@ -39,13 +44,15 @@ from cursed_words_solver.sim.game.features import _counter, _vocab, item_descrip
 if TYPE_CHECKING:  # pragma: no cover
     from cursed_words_solver.sim.game.run import Game
 
-OBS_VERSION = 3
-LEGACY_GLOBAL = (208, 241)   # n_global_features() of older layouts (v1, v2), for model.upgrade_config
-LEGACY_TOKEN = (146, 206)    # n_token_features() of v1, v2
+OBS_VERSION = 4
+LEGACY_GLOBAL = (208, 241, 256)   # n_global_features() of older layouts (v1, v2, v3), for model.upgrade_config
+LEGACY_TOKEN = (146, 206, 210)    # n_token_features() of v1, v2, v3
 
 PLAN_CLASSES = ("generator", "fits", "off", "neutral")   # v3 token columns pc:*
 V3_GLOBAL = LEGACY_GLOBAL[1] + 1 + 14   # v3 global width: v2 + target_set + target:{14 targets.PLANS}
 V3_TOKEN = LEGACY_TOKEN[1] + len(PLAN_CLASSES)
+V4_TOKEN_COLS = ("hb_fav_stamp", "sell_cost")   # v4: Human Boy favourite stamp, padlock sell cost
+V4_TOKEN = V3_TOKEN + len(V4_TOKEN_COLS)
 
 # token types (0 = padding)
 TOK_PAD, TOK_STICKER, TOK_STAMP, TOK_PIN, TOK_RACK, TOK_SHOP_STICKER, TOK_SHOP_STAMP, TOK_SHOP_TILE, \
@@ -148,6 +155,9 @@ def token_columns() -> dict[str, int]:
     names += ["boss_known", "boss_strength", "boss_log_strength", "boss_target_rel"]
     # v3: the item's place in the run's target build (all zero when FREE)
     names += [f"pc:{c}" for c in PLAN_CLASSES]
+    # v4: the stamp right of the Right Hand (Human Hands extra trigger); what selling costs
+    # (padlocks: sell_value is 0 but selling takes ``sell_cost`` dollars)
+    names += list(V4_TOKEN_COLS)
     return {n: i for i, n in enumerate(names)}
 
 
@@ -440,6 +450,13 @@ def _item_token(tk: _Tokens, ttype: int, it, p, ref, *, slot: int = -1, cost: fl
     put(f, "times_upgraded", it.times_upgraded / 3.0)
     put(f, "hb_fav", float(it.is_hb_favourite_sticker))
     put(f, "no_sell", float(it.selling_prevented))
+    if ttype == TOK_STAMP:   # v4
+        try:
+            put(f, "hb_fav_stamp", float(p.is_hb_favourite_stamp(it)))
+        except Exception:
+            pass
+    if it.costs_money_to_sell:
+        put(f, "sell_cost", _lg(it.sell_cost))
     if it.rarity in RARITIES:
         put(f, f"rarity:{it.rarity}", 1.0)
     if cost is not None:

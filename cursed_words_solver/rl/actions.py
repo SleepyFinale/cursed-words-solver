@@ -34,7 +34,9 @@ ACTION_TYPES = ("submit", "skip", "reroll_grid", "place", "discard", "sell", "mo
 ATYPE = {k: i for i, k in enumerate(ACTION_TYPES)}
 N_ACTION_TYPES = len(ACTION_TYPES)
 ANYTIME = ("sell", "move", "discard")
-LEGACY_ACTION = ()   # n_action_features() of older layouts (none yet), for model.upgrade_config
+LEGACY_ACTION = (38,)   # n_action_features() of older layouts (obs v1-v3), for model.upgrade_config
+LEGACY_ACTION_BY_OBS = {1: 38, 2: 38, 3: 38}   # action width rl.exit / teacher shards of each obs version have
+HH_SIDES = ("l", "r")
 
 
 @lru_cache(maxsize=1)
@@ -48,6 +50,13 @@ def action_columns() -> dict[str, int]:
              "pin_left", "pin_right", "pin_both", "pin_side_level",
              "is_tile_buy", "frozen_now", "boss_cursed",
              "pl_x", "pl_y", "pl_adj_best", "pl_in_top", "pl_free_nbrs"]
+    # v4 (obs v4): a move's afterstate in its own columns (the d_* columns of moves stay 0, so
+    # v3 checkpoints score moves exactly as before) and what it does to Human Boy's favourites
+    names += ["mv_d_levels", "mv_d_counters", "mv_d_sell_value", "mv_d_valid",
+              "mv_fav_sticker_change", "mv_fav_stamp_change", "mv_fav_padlock", "mv_fav_level"]
+    # v4: Human Hands pin upgrade: the favourite on that side (Left Hand -> the sticker left of
+    # it, Right Hand -> the stamp right of it): exists / is a padlock / its level / its slot
+    names += [f"hh_{s}_{k}" for s in HH_SIDES for k in ("exists", "padlock", "level", "slot")]
     return {n: i for i, n in enumerate(names)}
 
 
@@ -75,6 +84,7 @@ class Limits:
     draft_anytime: bool = False    # sells / moves / discards at boss drafts and pin rewards too
     sell_buy: bool = False         # shop swaps (sell an owned item for an offer when that row is full)
     probes: bool = True            # probe-strength observation features (obs.set_probe_cands)
+    move_afterstates: str = "all"  # mv_* afterstate of moves: "all", "hands" (Human Hands runs only), "none"
 
 
 def _lg(x: float) -> float:
@@ -98,6 +108,49 @@ def summary(game: "Game") -> np.ndarray:
     rack = sum(t is not None for t in p.consumables)
     free = sum(s is None for s in p.stickers) + sum(s is None for s in p.stamps)
     return np.array([p.money, levels, math.log1p(ctr), len(owned), rack, sv, free], dtype=np.float64)
+
+
+def hb_favourites(p) -> tuple:
+    """Human Boy's favourites: (sticker left of the Left Hand, its slot, stamp right of the
+    Right Hand, its slot); None / -1 where there is none."""
+    st, si, sp, pi = None, -1, None, -1
+    for i, it in enumerate(p.stickers):
+        if it is not None and it.game_class == "LeftHumanHand":
+            if i > 0 and p.stickers[i - 1] is not None:
+                st, si = p.stickers[i - 1], i - 1
+            break
+    for i, it in enumerate(p.stamps):
+        if it is not None and it.game_class == "RightHumanHand":
+            if i + 1 < len(p.stamps) and p.stamps[i + 1] is not None:
+                sp, pi = p.stamps[i + 1], i + 1
+            break
+    return st, si, sp, pi
+
+
+def has_hands(p) -> bool:
+    return (any(it is not None and it.game_class == "LeftHumanHand" for it in p.stickers)
+            or any(it is not None and it.game_class == "RightHumanHand" for it in p.stamps))
+
+
+def _fav_level(it) -> float:
+    return float(it.level(0)) if it is not None and it.components else 0.0
+
+
+def hh_pin_feat(p, ch: str, f: np.ndarray, col: dict) -> None:
+    """Pin reward on Human Hands: the favourite each upgraded side feeds."""
+    pin = p.pin
+    if pin is None or pin.game_class != "HumanHands":
+        return
+    st, si, sp, pi = hb_favourites(p)
+    for side, it, slot in (("l", st, si), ("r", sp, pi)):
+        if ch != "both" and ch != {"l": "left", "r": "right"}[side]:
+            continue
+        if it is None:
+            continue
+        f[col[f"hh_{side}_exists"]] = 1.0
+        f[col[f"hh_{side}_padlock"]] = float(bool(it.costs_money_to_sell))
+        f[col[f"hh_{side}_level"]] = _fav_level(it) / 5.0
+        f[col[f"hh_{side}_slot"]] = (slot + 1) / 5.0
 
 
 def _delta(before: np.ndarray, after: np.ndarray, f: np.ndarray, col: dict) -> None:
@@ -128,6 +181,36 @@ class CandidateBuilder:
 
     def _new(self, a: Action, kind: str, ref1=None, ref2=None) -> Cand:
         return Cand(a, ATYPE[kind], ref1, ref2, np.zeros(len(self.col), dtype=np.float32))
+
+    def move_after(self, game: "Game", c: Cand, base: np.ndarray) -> None:
+        """A move's afterstate (``Limits.move_afterstates``) into the mv_* columns."""
+        mode = self.lim.move_afterstates
+        if not self.lim.afterstates or mode == "none":
+            return
+        p = game.player
+        if mode == "hands" and not has_hands(p):
+            return
+        try:
+            g = clone(game, light=True)   # a reorder draws no randomness: no determinize needed
+            if apply(g, c.action) is False:
+                return
+        except Exception:
+            return
+        col = self.col
+        f = c.feat
+        d = summary(g) - base
+        f[col["mv_d_levels"]] = d[1]
+        f[col["mv_d_counters"]] = d[2]
+        f[col["mv_d_sell_value"]] = _slg(d[5])
+        f[col["mv_d_valid"]] = 1.0
+        b, a = hb_favourites(p), hb_favourites(g.player)
+        f[col["mv_fav_sticker_change"]] = float(b[1] != a[1] or (b[0] is None) != (a[0] is None)
+                                                or (b[0] is not None and b[0].game_class != a[0].game_class))
+        f[col["mv_fav_stamp_change"]] = float(b[3] != a[3] or (b[2] is None) != (a[2] is None)
+                                              or (b[2] is not None and b[2].game_class != a[2].game_class))
+        lock = lambda it: float(it is not None and bool(it.costs_money_to_sell))   # noqa: E731
+        f[col["mv_fav_padlock"]] = lock(a[0]) + lock(a[2]) - lock(b[0]) - lock(b[2])
+        f[col["mv_fav_level"]] = (_fav_level(a[2]) - _fav_level(b[2])) / 5.0
 
     def _after(self, game: "Game", c: Cand, base: np.ndarray, *, light: bool, key: str) -> Any:
         if not self.lim.afterstates:
@@ -293,6 +376,7 @@ class CandidateBuilder:
             pin = p.pin
             if pin is not None and len(pin.components) == 2 and ch in ("left", "right"):
                 f[col["pin_side_level"]] = pin.level(0 if ch == "left" else 1) / 5.0
+            hh_pin_feat(p, ch, f, col)
 
     # ------------------------------------------------------------------ anytime
 
@@ -317,6 +401,7 @@ class CandidateBuilder:
                         c = self._new(Action("move", (kind, s, d), f"move {kind} {s}->{d}"), "move", (kind, s),
                                       (kind, d) if arr[d] is not None else None)
                         self.static_feat(game, c)
+                        self.move_after(game, c, base)
                         out.append(c)
         seen: set = set()
         for i, t in enumerate(p.consumables):
@@ -444,6 +529,7 @@ class CandidateBuilder:
                     c.feat[col[f"pin_{ch}"]] = 1.0
                 if pin is not None and len(pin.components) == 2 and ch in ("left", "right"):
                     c.feat[col["pin_side_level"]] = pin.level(0 if ch == "left" else 1) / 5.0
+                hh_pin_feat(game.player, ch, c.feat, col)
                 out.append(c)
             if self.lim.draft_anytime:
                 self._anytime(game, out, base, key, point_anytime)
@@ -500,6 +586,8 @@ def cand_for(builder: "CandidateBuilder", game: "Game", a: Action, key: str = "a
         pass
     if a.kind in ("submit", "buy", "sell", "sell_buy", "hippo"):  # the kinds the builder measures
         builder._after(game, c, summary(game), light=a.kind != "submit", key=key)
+    elif a.kind == "move":
+        builder.move_after(game, c, summary(game))
     return c
 
 

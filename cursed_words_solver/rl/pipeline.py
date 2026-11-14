@@ -26,8 +26,17 @@ are not run. Stages (skipped when complete; ``--dry-run`` prints the plan):
 3. ``baseline2`` — the ppo1 champion (frozen copy ppo2/ppo1_champion.pt) on the ppo2 gate incl. the
                    themed block, as ppo2/eval/ppo1_champion.jsonl; FREE rows are copied from
                    ppo1's champion eval cache when keys match
-4. ``ppo2``      — PPO from bc2/best.pt with targets (``--targets-mix 0.3,0.4,0.3 --shaping 0.15
-                   --gate-targets --compare-dir ppo1``), with an exit2 look-ahead collector
+4. ``ppo2``      — PPO from bc2/best.pt with targets (``--pivot 0.5,2,4 --targets-mix 0.3,0.1,0.1
+                   --shaping 0.15 --target-curriculum --gate-targets --compare-dir ppo1``: 50% pivot
+                   runs, 30% FREE, 10% theme, 10% any plan, on a fresh ppo2; a ppo2 that already has a
+                   curriculum.json resumes with the mix / pivot it ran with unless the flags are given),
+                   with an exit2 look-ahead collector (pivot share inherited from ppo2/curriculum.json).
+                   ``--michael-bonus`` (default 2; rl.ppo --michael-bonus) is the training value of a Michael
+                   win on top of a run win (the game's 8 made ppo2 chase the cursed route and die at
+                   stage 5); eval rows keep the true outcome, the gate compares with it.
+                   exit2 has its own job settings (2026-11-14): ``--exit-search`` (sims 2: as good as 4 at
+                   1/3 the cost), ``--exit-crown-weights`` (crowns 5-7 heavy), ``--exit-quest-share`` 0.1,
+                   ``--exit-targets-mix`` 1,0,0 (all FREE; '' = ppo2's mix), ``--exit-pivot`` ('' = ppo2's)
 """
 
 from __future__ import annotations
@@ -130,7 +139,38 @@ def v2_gate_jobs(args) -> list[dict]:
     return gate_jobs(args.gate_per, args.gate_per_quest) + themed_gate_jobs()
 
 
+V2_TARGETS_MIX, V2_PIVOT = "0.3,0.1,0.1", "0.5,2,4"   # a fresh ppo2: 50% pivot, 30% FREE, 10% theme, 10% any
+V2_MICHAEL_BONUS = 2.0   # ppo2 training value of beating Michael (game: 8); win rate first (2026-11-14)
+# exit2 (look-ahead labels) job settings, separate from ppo2's: the FREE crown 5-7 slice is where the
+# search helps most (+5.7 points with sims 2, about sims 4's gain at 1/3 the cost)
+EXIT2_SEARCH = '{"sims": 2}'
+EXIT2_CROWN_WEIGHTS = "0.2,0.2,0.3,0.5,1.0,2.0,2.5,1.5"
+EXIT2_QUEST_SHARE = 0.1
+EXIT2_TARGETS_MIX = "1,0,0"
+
+
+def v2_target_args(args) -> tuple[str, str]:
+    """(targets_mix, pivot) for ppo2 / exit2. Explicit flags win. Unset: a ppo2 that already has a
+    curriculum.json resumes with the mix / pivot it was running (a run started before pivot targets keeps
+    its old mix and no pivot); a fresh ppo2 gets V2_TARGETS_MIX / V2_PIVOT."""
+    mix, pivot = getattr(args, "targets_mix", None), getattr(args, "pivot", None)
+    if mix is None or pivot is None:
+        try:
+            c = json.loads((HOME / "ppo2" / "curriculum.json").read_text())
+        except (OSError, ValueError):
+            c = None
+        if c is not None:
+            old_mix = ",".join(f"{float(x):g}" for x in c["targets_mix"]) if c.get("targets_mix") else ""
+            old_pivot = ",".join(f"{x:g}" if isinstance(x, float) else str(x) for x in c["pivot"]) if c.get("pivot") else ""
+        else:
+            old_mix, old_pivot = V2_TARGETS_MIX, V2_PIVOT
+        mix = old_mix if mix is None else mix
+        pivot = old_pivot if pivot is None else pivot
+    return mix, pivot
+
+
 def v2_ppo_args(args) -> list[str]:
+    mix, pivot = v2_target_args(args)
     ppo_w = str(max(1, args.workers - args.exit_workers + 1)) if args.exit_workers else str(args.workers)
     return ["cursed_words_solver.rl.ppo", "--dir", str(HOME / "ppo2"), "--init", str(HOME / "bc2" / "best.pt"),
             "--workers", ppo_w, "--updates", str(args.ppo_updates),
@@ -139,16 +179,27 @@ def v2_ppo_args(args) -> list[str]:
             "--episodes", str(args.episodes), "--ent-target", str(args.ent_target), "--kl-ref", "champion",
             "--distill-coef", str(args.distill_coef), "--distill-same-w", str(args.distill_same_w),
             "--distill-cap", str(args.distill_cap),
-            "--targets-mix", args.targets_mix, "--shaping", str(args.shaping), "--gate-targets",
+            *(["--targets-mix", mix] if mix else []), *(["--pivot", pivot] if pivot else []), "--shaping", str(args.shaping), "--target-curriculum", "--gate-targets",
             "--compare-dir", str(HOME / "ppo1"),
+            "--michael-bonus", f"{float(getattr(args, 'michael_bonus', V2_MICHAEL_BONUS)):g}",
             *(["--distill-dir", str(HOME / "exit2")] if args.exit_workers else [])]
 
 
 def v2_exit_args(args) -> list[str]:
+    """rl.exit for exit2: its own search / crown weights / quest share / targets mix (``--exit-*``);
+    an empty ``--exit-targets-mix`` / ``--exit-pivot`` falls back to ppo2's (``v2_target_args`` mix; the
+    collector reads the pivot from ppo2/curriculum.json)."""
+    mix = getattr(args, "exit_targets_mix", EXIT2_TARGETS_MIX)
+    if not mix:
+        mix = v2_target_args(args)[0]
+    pivot = getattr(args, "exit_pivot", "") or ""
     return ["cursed_words_solver.rl.exit", "--dir", str(HOME / "exit2"),
             "--policy", str(HOME / "ppo2" / "weights.pt"), "--workers", str(args.exit_workers),
-            "--crown-weights", args.crown_weights, "--quest-share", str(args.quest_share),
-            "--curriculum", str(HOME / "ppo2" / "curriculum.json"), "--targets-mix", args.targets_mix]
+            "--search", getattr(args, "exit_search", EXIT2_SEARCH),
+            "--crown-weights", getattr(args, "exit_crown_weights", EXIT2_CROWN_WEIGHTS),
+            "--quest-share", str(getattr(args, "exit_quest_share", EXIT2_QUEST_SHARE)),
+            "--curriculum", str(HOME / "ppo2" / "curriculum.json"),
+            *(["--targets-mix", mix] if mix else []), *(["--pivot", pivot] if pivot else [])]
 
 
 def v2_stages(args) -> list[dict]:
@@ -205,7 +256,13 @@ def v2_status(args) -> dict:
     out["bc2_epochs"] = f"{len(store.read_jsonl(HOME / 'bc2' / 'history.jsonl'))}/{args.bc2_epochs}"
     hist = store.read_jsonl(HOME / "ppo2" / "history.jsonl")
     out["ppo2_last"] = {k: hist[-1].get(k) for k in ("update", "episodes", "recent_win", "recent_outcome",
-                                                       "train_by_target")} if hist else {}
+                                                       "recent_train_outcome", "train_by_target")} if hist else {}
+    try:
+        c = json.loads((HOME / "ppo2" / "curriculum.json").read_text())
+    except (OSError, ValueError):
+        c = {}
+    # what ppo2 is training with (None: a ppo2 from before the flag, i.e. the game's 8)
+    out["ppo2_michael_bonus"] = c.get("michael_bonus") if isinstance(c, dict) else None
     gates = store.read_jsonl(HOME / "ppo2" / "gates.jsonl")
     out["ppo2_last_gate"] = gates[-1] if gates else None
     out["exit2"] = _exit_status("exit2")
@@ -304,8 +361,23 @@ def main(argv: list[str] | None = None) -> int:
     # the champion's CE on themed teacher picks is ~17 nats; watch val_anchor_kl (stop if > ~0.1)
     ap.add_argument("--bc2-anchor-coef", type=float, default=5.0, help="bc2 KL anchor to the ppo1 champion (FREE play)")
     ap.add_argument("--bc2-lr", type=float, default=1e-4)
-    ap.add_argument("--targets-mix", default="0.3,0.4,0.3", help="ppo2 / exit2 build-target mix (p_free,p_theme,p_any)")
+    ap.add_argument("--targets-mix", default=None,
+                    help="ppo2 / exit2 build-target mix of the non-pivot runs (p_free,p_theme,p_any; normalised); "
+                         "default: what ppo2/curriculum.json ran with when resuming, else " + V2_TARGETS_MIX)
+    ap.add_argument("--pivot", default=None,
+                    help="ppo2 pivot runs p,lo,hi (rl.ppo --pivot; '' = off); default: what ppo2/curriculum.json "
+                         "ran with when resuming (none = off), else " + V2_PIVOT)
     ap.add_argument("--shaping", type=float, default=0.15, help="ppo2 potential per owned on-target item")
+    ap.add_argument("--michael-bonus", type=float, default=V2_MICHAEL_BONUS,
+                    help="ppo2 training value of beating Michael on top of a run win (rl.ppo --michael-bonus; "
+                         "the game's is 8; eval rows keep the true outcome)")
+    ap.add_argument("--exit-search", default=EXIT2_SEARCH, help="exit2 look-ahead SearchConfig JSON (rl.exit --search)")
+    ap.add_argument("--exit-crown-weights", default=EXIT2_CROWN_WEIGHTS, help="exit2 crown 0-7 weights (rl.exit --crown-weights)")
+    ap.add_argument("--exit-quest-share", type=float, default=EXIT2_QUEST_SHARE, help="exit2 quest share (rl.exit --quest-share)")
+    ap.add_argument("--exit-targets-mix", default=EXIT2_TARGETS_MIX,
+                    help="exit2 build-target mix of its non-pivot runs (rl.exit --targets-mix; 1,0,0 = all FREE; "
+                         "'' = ppo2's mix; pivot runs follow --exit-pivot)")
+    ap.add_argument("--exit-pivot", default="off", help="exit2 pivot runs (rl.exit --pivot; 'off' = none; '' = ppo2's)")
     ap.add_argument("--dry-run", action="store_true", help="--v2: print the stage plan and exit")
     args = ap.parse_args(argv)
     HOME.mkdir(parents=True, exist_ok=True)

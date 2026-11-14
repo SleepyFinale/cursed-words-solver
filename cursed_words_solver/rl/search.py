@@ -33,7 +33,7 @@ import numpy as np
 from cursed_words_solver.rl.env import CWEnv, Step, pack, potential
 from cursed_words_solver.rl.ppo import VALUE_SCALE
 from cursed_words_solver.sim.game.agent import clone, determinize
-from cursed_words_solver.sim.game.features import progress
+from cursed_words_solver.sim.game.features import MICHAEL_BONUS, progress
 
 if TYPE_CHECKING:  # pragma: no cover
     from cursed_words_solver.rl.model import Actor
@@ -53,6 +53,10 @@ class SearchConfig:
     sims0: int = 4          # round 1: futures per candidate
     sims1: int = 4          # round 2: extra futures for the argmax and the round-1 challenger
     switch_t: float = 1.0   # paired t vs the policy argmax needed to override it
+    # value of a Michael win over a plain win in a finished rollout (env.potential): the game's
+    # MICHAEL_BONUS by default; set it to the bonus PPO trains with (rl.ppo --michael-bonus) so
+    # the look-ahead's labels value the Michael route as training does
+    michael_bonus: float = MICHAEL_BONUS
 
 
 ALWAYS = ("boss_draft", "pin_reward")
@@ -83,26 +87,39 @@ def _sub_env(env: CWEnv, game) -> CWEnv:
     return e
 
 
-def rollout_value(env: CWEnv, cand_action, actor: "Actor", key: str, cfg: SearchConfig) -> float:
+def rollout_value(env: CWEnv, cand_action, actor: "Actor", key: str, cfg: SearchConfig,
+                  pivot_stage: int = 0) -> float:
+    """``pivot_stage`` > 0 (a pivot run): the rollout re-reads the target at each new shop visit
+    like the real run (play.PivotTracker; the shop the real run is in was already read)."""
     g = determinize(clone(env.game), key)
     e = _sub_env(env, g)
+    pv = None
+    if pivot_stage > 0:
+        from cursed_words_solver.rl.play import PivotTracker
+
+        pv = PivotTracker(pivot_stage, e)
+        if g.phase == "shop":
+            pv.last_shop = (int(g.player.run.stage), int(g.player.run.node))
     p0 = progress(g)
     e.step(cand_action)
     n = 0
     while not e.done and n < cfg.max_steps and progress(e.game) < p0 + cfg.horizon:
+        if pv is not None:
+            pv.observe()
         st = e.current()
         if not st.cands:
             break
         i, _, _ = actor.choose(pack(st))
         e.step(st.cands[i].action)
         n += 1
+    mb = float(cfg.michael_bonus)
     if e.game.phase == "done":
-        return float(potential(e.game))
+        return float(potential(e.game, michael_bonus=mb))
     st = e.current()
     if not st.cands:
-        return float(potential(e.game))
+        return float(potential(e.game, michael_bonus=mb))
     _, v, _ = actor.evaluate(pack(st))
-    return float(potential(e.game)) + v * VALUE_SCALE
+    return float(potential(e.game, michael_bonus=mb)) + v * VALUE_SCALE
 
 
 def _key_seed(key: str) -> int:
@@ -150,6 +167,7 @@ class Searcher:
         self.cfg = cfg or SearchConfig()
         self.stats = {"nodes": 0, "searched": 0, "changed": 0, "single": 0, "rollouts": 0}
         self.last: dict | None = None   # the last choose(): {"scores", "pick", "policy", "margin", ...} when it searched
+        self.pivot_stage = 0   # > 0: rollouts re-read pivot targets at shop entries (rollout_value)
 
     def candidates(self, probs: np.ndarray, key: str = "") -> list[int]:
         """topk: top ``cfg.top`` by policy probability that pass ``min_prob`` (the argmax always does).
@@ -161,7 +179,8 @@ class Searcher:
 
     def _roll(self, env, st, i: int, key: str, s: int) -> float:
         self.stats["rollouts"] = self.stats.get("rollouts", 0) + 1
-        return rollout_value(env, st.cands[i].action, self.actor, f"{key}|{s}", self.cfg)
+        extra = (self.pivot_stage,) if self.pivot_stage else ()   # pivot off: the old 5-argument call
+        return rollout_value(env, st.cands[i].action, self.actor, f"{key}|{s}", self.cfg, *extra)
 
     def scores(self, env: CWEnv, st: Step, probs: np.ndarray, key: str) -> dict[int, float]:
         """Mean rollout value per candidate (halving mode: the round-robin means of ``halving``)."""

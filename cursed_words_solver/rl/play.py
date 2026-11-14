@@ -81,18 +81,74 @@ def targeted_teacher(cands, seed: int, target: str, character: str, quest: str |
                      build_plan=teacher_plan(target, character, quest), build_plan_chars={})
 
 
+def shaping_bonus(env) -> float:
+    """The shaping part of the potential the env's next reward subtracts: ``env.phi`` (Φ as
+    stored at the last step, under the target in force then) minus the plain Φ of the state.
+    PPO adds it to the shaped return-to-go to get the UNSHAPED one, also across pivot switches."""
+    from cursed_words_solver.rl.env import potential
+
+    return float(env.phi - potential(env.game)) if env.shaping else 0.0
+
+
+class PivotTracker:
+    """Pivot targets for one env (``targets.pivot_update``): call ``observe()`` before each
+    decision; at the first decision of a new shop visit (phase "shop", (stage, node) not the last
+    shop seen) it re-reads the target and, if it changed, sets it on the game and the env. The
+    env's stored Φ is left as is, so the next step's reward carries the potential jump and the
+    return still telescopes to the outcome."""
+
+    def __init__(self, pivot_stage: int, env) -> None:
+        self.pivot_stage = int(pivot_stage)
+        self.env = env
+        self.last_shop = None
+        self.seen: list[str] = []
+        self.first_stage: int | None = None
+        self.switches = 0
+        self.changes: list[tuple[int, str]] = []   # (env.steps, new target)
+
+    def observe(self) -> bool:
+        from cursed_words_solver.rl.targets import pivot_update, set_target
+
+        g = self.env.game
+        if g is None or g.phase != "shop":
+            return False
+        k = (int(g.player.run.stage), int(g.player.run.node))
+        if k == self.last_shop:
+            return False
+        self.last_shop = k
+        t = pivot_update(g, self.pivot_stage, self.env.target)
+        if t == self.env.target:
+            return False
+        set_target(g, t)
+        self.env.target = t
+        self.switches += 1
+        self.changes.append((self.env.steps, t))
+        if t not in self.seen:
+            self.seen.append(t)
+        if t and self.first_stage is None:
+            self.first_stage = k[0]
+        return True
+
+    def result(self) -> dict[str, Any]:
+        return {"pivot_stage": self.pivot_stage, "target": self.env.target, "targets_seen": list(self.seen),
+                "pivot_first_stage": self.first_stage, "pivot_switches": self.switches}
+
+
 def play(job: dict[str, Any]) -> dict[str, Any]:
     """``job``: character, crown, seed, quest, policy ('teacher' or a .pt path), greedy,
     record (return the trajectory), temperature, target (build target, default FREE; an obs
     input for a net, the rules player's ``build_plan`` for the teacher), shaping (CWEnv
-    potential per on-target item)."""
-    from cursed_words_solver.rl.env import CWEnv, pack, potential
+    potential per on-target item), pivot_stage (0 / absent = off; nets only: the run starts
+    FREE and from that stage on the target is re-read at each shop entry, ``PivotTracker``)."""
+    from cursed_words_solver.rl.env import CWEnv, pack
     from cursed_words_solver.rl.model import Actor
 
     from cursed_words_solver.rl.targets import FREE
 
     t0 = time.time()
     target = job.get("target") or FREE
+    pivot_stage = int(job.get("pivot_stage") or 0)
+    pivot = None
     env = CWEnv(_CANDS, shaping=float(job.get("shaping") or 0.0))
     rec = bool(job.get("record"))
     traj: dict[str, list] = {"steps": [], "chosen": [], "logp": [], "value": [], "reward": []}
@@ -128,7 +184,11 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
 
                 searcher = Searcher(Actor(actor.model, greedy=True, seed=job["seed"]),
                                     SearchConfig(**(job["search"] if isinstance(job["search"], dict) else {})))
+                searcher.pivot_stage = pivot_stage
+            pivot = PivotTracker(pivot_stage, env) if pivot_stage > 0 else None
             while not env.done:
+                if pivot is not None:
+                    pivot.observe()
                 st = env.current()
                 if not st.cands:
                     raise RuntimeError(f"no candidates in phase {env.game.phase}")
@@ -151,7 +211,9 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                         traj.setdefault("search_q_se", []).append(qs)
                 # shaping part of the potential before the step (ppo trains the value head on
                 # the UNSHAPED return-to-go, so search / assistant can add the plain potential)
-                bonus = env.potential(env.game) - potential(env.game) if env.shaping else 0.0
+                # (env.phi, not env.potential(game): after a pivot switch env.phi still holds the
+                # old target's Φ, which is what the shaped return-to-go from here subtracts)
+                bonus = shaping_bonus(env)
                 r, _ = env.step(st.cands[i].action)
                 if rec:
                     traj["steps"].append(pk)
@@ -164,9 +226,13 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                "secs": round(time.time() - t0, 1), "error": ""}
         if job["policy"] != "teacher" and job.get("search") is not None:
             res["search"] = dict(searcher.stats)
+        if pivot is not None:
+            res.update(pivot.result())
+        elif pivot_stage > 0:   # teacher: plays its fixed plan; the row still keys as the pivot job
+            res["pivot_stage"] = pivot_stage
     except Exception as exc:
         res = {**{k: job.get(k) for k in ("character", "crown", "seed")}, "quest": job.get("quest"),
-               "target": target, "won": False, "outcome": 0.0, "error": f"{type(exc).__name__}: {exc}",
+               "target": target, **({"pivot_stage": pivot_stage} if pivot_stage > 0 else {}), "won": False, "outcome": 0.0, "error": f"{type(exc).__name__}: {exc}",
                "trace": traceback.format_exc()[-1200:], "secs": round(time.time() - t0, 1)}
         traj = {"steps": [], "chosen": [], "logp": [], "value": [], "reward": []}
     if rec or job.get("record_search"):
