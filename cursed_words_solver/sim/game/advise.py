@@ -47,7 +47,9 @@ def load_game(run_state: dict[str, Any], *, seed: int = 0):
         raise ValueError("no game_state in run_state (melmod 1.4+ required)")
     g = game_from_game_state(gs, seed=seed)
     node = g.player.run.node
-    if node in (Node.SHOP_ZERO, Node.SHOP_ONE, Node.SHOP_TWO, Node.MEG_SHOP) or "grid" not in gs:
+    # Michael's draft screen comes before the first grid exists: keep that encounter
+    michael_draft = g.encounter is not None and g.encounter.michael_draft is not None
+    if node in (Node.SHOP_ZERO, Node.SHOP_ONE, Node.SHOP_TWO, Node.MEG_SHOP) or ("grid" not in gs and not michael_draft):
         g.encounter = None
         shop = run_state.get("shop")
         if isinstance(shop, dict) and node in (Node.SHOP_ZERO, Node.SHOP_ONE, Node.SHOP_TWO, Node.MEG_SHOP):

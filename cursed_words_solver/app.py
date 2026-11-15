@@ -1072,8 +1072,11 @@ class SolverApp:
         html = self._with_ai_html(run_state_data, "")
         if not html:
             from cursed_words_solver.rl.assistant import unavailable_reason
-            why = unavailable_reason() or "no game_state in run_state.json (melmod too old?)"
-            print(f"AI assistant unavailable: {why}", flush=True)
+            why = unavailable_reason()
+            if why is None and isinstance(run_state_data, dict) and "game_state" not in run_state_data:
+                why = "no game_state in run_state.json (melmod too old?)"
+            if why is not None:  # otherwise app_advice already printed the error
+                print(f"AI assistant unavailable: {why}", flush=True)
             return
         placeholder = Tile(row=0, col=0, char=".", letter=".", base_score=0, color=TileColor.COLORLESS,
                            curse=CurseType.LETTER)
