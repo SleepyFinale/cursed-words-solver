@@ -680,12 +680,21 @@ def decision_of(run_state: dict[str, Any] | None) -> str:
     return {"BossDraft": "boss_draft", "BossReward": "pin_reward"}.get(node, "none")
 
 
-def available() -> bool:
+def unavailable_reason() -> str | None:
+    """Why the assistant can't run in this interpreter (None when it can)."""
     try:
         import torch  # noqa: F401
-    except Exception:
-        return False
-    return policy_path() is not None
+    except Exception as exc:
+        import sys
+        return (f"torch not importable in {sys.executable} ({type(exc).__name__}: {exc}); "
+                f"install it into this environment")
+    if policy_path() is None:
+        return "no trained policy yet (train one: python -m cursed_words_solver.rl.bc)"
+    return None
+
+
+def available() -> bool:
+    return unavailable_reason() is None
 
 
 def app_advice(run_state: dict[str, Any], *, budget: float = 1.5, search: bool = False) -> Advice | None:

@@ -317,7 +317,11 @@ def game_from_game_state(gs: dict[str, Any], *, seed: int | str = 0, wordlist=No
         enc.michael = m
         if m.drafted:
             enc.bosses = list(m.drafted)
+        # the export is authoritative: Encounter.setup() may have opened a draft from
+        # len(drafted) < floor_mod, which is stale mid-encounter (awaiting_draft false)
         if mrow.get("awaiting_draft") and len(m.drafts) > len(m.drafted):
             enc.michael_draft = list(m.drafts[len(m.drafted)])
+        else:
+            enc.michael_draft = None
     g.encounter = enc
     return g

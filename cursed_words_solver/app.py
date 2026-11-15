@@ -1071,7 +1071,9 @@ class SolverApp:
         """Boss draft / pin reward / Michael draft: the trained AI's ranked options."""
         html = self._with_ai_html(run_state_data, "")
         if not html:
-            print("No AI policy yet (train one: python -m cursed_words_solver.rl.bc), or melmod too old.", flush=True)
+            from cursed_words_solver.rl.assistant import unavailable_reason
+            why = unavailable_reason() or "no game_state in run_state.json (melmod too old?)"
+            print(f"AI assistant unavailable: {why}", flush=True)
             return
         placeholder = Tile(row=0, col=0, char=".", letter=".", base_score=0, color=TileColor.COLORLESS,
                            curse=CurseType.LETTER)
