@@ -59,6 +59,27 @@ class Rng:
     def setstate(self, state) -> None:
         self._r.setstate(state)
 
+    def mark(self, *where: object) -> None:
+        """A point of the run where a new random source starts (node entry, a grid, a shop
+        stock). No-op for the game's own stream: real runs draw exactly as the game does."""
+
+
+class KeyedRng(Rng):
+    """A sampled-future stream (``agent.determinize``): every ``mark(*where)`` restarts it from
+    ``(key, *where)``, so each source is keyed by its position in the run, not by how much
+    randomness earlier choices happened to consume. Two branches of one decision that reach
+    the same shop / grid / node see the same stock / tiles (common random numbers that stay
+    paired past the first divergent draw)."""
+
+    __slots__ = ("key",)
+
+    def __init__(self, key: str) -> None:
+        super().__init__(f"{key}|start")
+        self.key = key
+
+    def mark(self, *where: object) -> None:
+        self._r.seed("|".join([self.key, *map(str, where)]))
+
 
 # ---------------------------------------------------------------------------- enums
 

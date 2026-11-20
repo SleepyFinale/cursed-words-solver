@@ -159,7 +159,9 @@ class Game:
 
     def _advance(self) -> None:
         run = self.player.run
+        self.rng.mark("leave", run.stage, run.node.name)   # no-op unless determinized (KeyedRng)
         node = run.advance(self.player, self.rng, set(self.config.unlocked_characters))
+        self.rng.mark("node", run.stage, node.name)
         self.events.append(Event("node", {"stage": run.stage, "node": node.name}))
         self.encounter = None
         self.shop = None

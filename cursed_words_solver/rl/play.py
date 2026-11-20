@@ -90,6 +90,21 @@ def shaping_bonus(env) -> float:
     return float(env.phi - potential(env.game)) if env.shaping else 0.0
 
 
+def step_label(game) -> tuple[int, str]:
+    """(stage, phase) of the decision about to be made: the game's phase, with a Michael draft
+    pick (an encounter-phase decision) labelled "michael_pick". Recorded in the traj next to
+    ``bonus`` (``ppo.episode_items`` copies them onto the items)."""
+    try:
+        stage = int(game.player.run.stage)
+    except Exception:
+        stage = 0
+    ph = str(getattr(game, "phase", "") or "")
+    enc = getattr(game, "encounter", None)
+    if ph == "encounter" and enc is not None and getattr(enc, "michael_draft", None) is not None:
+        ph = "michael_pick"
+    return stage, ph
+
+
 class PivotTracker:
     """Pivot targets for one env (``targets.pivot_update``): call ``observe()`` before each
     decision; at the first decision of a new shop visit (phase "shop", (stage, node) not the last
@@ -139,7 +154,10 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
     record (return the trajectory), temperature, target (build target, default FREE; an obs
     input for a net, the rules player's ``build_plan`` for the teacher), shaping (CWEnv
     potential per on-target item), pivot_stage (0 / absent = off; nets only: the run starts
-    FREE and from that stage on the target is re-read at each shop entry, ``PivotTracker``)."""
+    FREE and from that stage on the target is re-read at each shop entry, ``PivotTracker``),
+    boss_rule (crown N, 0 / absent = off: at crown >= N a cursed boss pick becomes an uncursed
+    option, ``rules.uncursed_boss_override``, after the policy and search picks; the row then
+    carries boss_rule and boss_overrides)."""
     from cursed_words_solver.rl.env import CWEnv, pack
     from cursed_words_solver.rl.model import Actor
 
@@ -149,6 +167,10 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
     target = job.get("target") or FREE
     pivot_stage = int(job.get("pivot_stage") or 0)
     pivot = None
+    from cursed_words_solver.rl.rules import boss_rule_action, boss_rule_index, parse_boss_rule
+
+    boss_rule = parse_boss_rule(job.get("boss_rule"))
+    overrides = 0
     env = CWEnv(_CANDS, shaping=float(job.get("shaping") or 0.0))
     rec = bool(job.get("record"))
     traj: dict[str, list] = {"steps": [], "chosen": [], "logp": [], "value": [], "reward": []}
@@ -174,7 +196,12 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
             else:
                 pol = teacher_policy(_CANDS, job["seed"])
             while not env.done:
-                env.step(pol.act(env.game))
+                a = pol.act(env.game)
+                if boss_rule:
+                    b = boss_rule_action(env.game, a, boss_rule)
+                    overrides += b is not a
+                    a = b
+                env.step(a)
         else:
             actor = Actor(_model(job["policy"]), greedy=bool(job.get("greedy")),
                           temperature=float(job.get("temperature", 1.0)), seed=job["seed"])
@@ -198,6 +225,13 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                     logp, v = 0.0, 0.0
                 else:
                     i, logp, v = actor.choose(pk)
+                if boss_rule:
+                    j = boss_rule_index(env.game, st.cands, i, boss_rule)
+                    if j != i:
+                        overrides += 1
+                        if rec:   # the log-prob of the action actually taken
+                            logp = float(np.log(max(1e-12, float(actor.evaluate(pk)[0][j]))))
+                        i = j
                 if searcher is not None and searcher.last is not None and job.get("record_search"):
                     traj.setdefault("search_steps", []).append(pk)
                     traj.setdefault("search_pick", []).append(i)
@@ -214,6 +248,7 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                 # (env.phi, not env.potential(game): after a pivot switch env.phi still holds the
                 # old target's Φ, which is what the shaped return-to-go from here subtracts)
                 bonus = shaping_bonus(env)
+                stage, phase = step_label(env.game) if rec else (0, "")
                 r, _ = env.step(st.cands[i].action)
                 if rec:
                     traj["steps"].append(pk)
@@ -222,17 +257,23 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                     traj["value"].append(v)
                     traj["reward"].append(r)
                     traj.setdefault("bonus", []).append(float(bonus))
+                    traj.setdefault("stage", []).append(stage)
+                    traj.setdefault("phase", []).append(phase)
         res = {**{k: job[k] for k in ("character", "crown", "seed") }, "quest": job.get("quest"), **env.result(),
                "secs": round(time.time() - t0, 1), "error": ""}
         if job["policy"] != "teacher" and job.get("search") is not None:
             res["search"] = dict(searcher.stats)
+        if boss_rule:
+            res["boss_rule"] = boss_rule
+            res["boss_overrides"] = overrides
         if pivot is not None:
             res.update(pivot.result())
         elif pivot_stage > 0:   # teacher: plays its fixed plan; the row still keys as the pivot job
             res["pivot_stage"] = pivot_stage
     except Exception as exc:
         res = {**{k: job.get(k) for k in ("character", "crown", "seed")}, "quest": job.get("quest"),
-               "target": target, **({"pivot_stage": pivot_stage} if pivot_stage > 0 else {}), "won": False, "outcome": 0.0, "error": f"{type(exc).__name__}: {exc}",
+               "target": target, **({"pivot_stage": pivot_stage} if pivot_stage > 0 else {}),
+               **({"boss_rule": boss_rule} if boss_rule else {}), "won": False, "outcome": 0.0, "error": f"{type(exc).__name__}: {exc}",
                "trace": traceback.format_exc()[-1200:], "secs": round(time.time() - t0, 1)}
         traj = {"steps": [], "chosen": [], "logp": [], "value": [], "reward": []}
     if rec or job.get("record_search"):

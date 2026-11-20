@@ -224,6 +224,9 @@ class Encounter:
         if not is_reroll:
             self.remaining_grids -= 1
         w, h = self.grid_dims()
+        run = self.player.run
+        self.rng.mark("grid", run.stage, run.node.name, len(self.michael.drafted) if self.michael is not None else 0,
+                      self.grids_generated, self.reroll_tracker if is_reroll else 0)   # no-op unless determinized
         g = GenCtx(
             player=self.player,
             rng=self.rng,

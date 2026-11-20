@@ -229,6 +229,9 @@ class Shop:
     def _generate(self, first_shop: bool, *, is_reroll: bool, free: bool) -> None:
         """``GenerateGoodsInStock``."""
         player, run, rng = self.player, self.player.run, self.rng
+        # determinized futures: the k-th stock of this shop comes from its own keyed stream
+        self._stocks = getattr(self, "_stocks", 0) + 1
+        rng.mark("shop", run.stage, run.node.name, self._stocks)   # no-op on the game's own Rng
         starter_idx = -1
         if first_shop and not is_reroll and self.character_never_won:
             starter_idx = rng.range(0, 4)

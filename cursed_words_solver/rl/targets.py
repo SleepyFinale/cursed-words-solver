@@ -211,3 +211,40 @@ def parse_pivot_label(text: str) -> int | None:
             return None
         return s if s > 0 else None
     return None
+
+
+# ------------------------------------------------------------------ target table
+# RL_HOME/target_table.json (written by ``evaluate pick`` / ``evaluate table``, read by the live
+# assistant and ``evaluate run --target-table``):
+#     {"version": 1, "source": "...", "table": {character class: {crown key: target}}}
+# A crown key is a band "lo-hi" (inclusive; ``pick`` writes "0-3" / "4-7") or one crown "5";
+# the FIRST key (file order) that matches the crown wins; no match / no row -> FREE. A target is
+# a plan ("Curse", "Red+Blue"), "" / "free" (FREE) or a pivot mode "pivot:S".
+
+
+def crown_matches(key: str, crown: int) -> bool:
+    """Target-table crown key ("4-7" inclusive, or "5") matches ``crown``."""
+    key = str(key).strip()
+    if "-" in key:
+        lo, _, hi = key.partition("-")
+        try:
+            return int(lo) <= crown <= int(hi)
+        except ValueError:
+            return False
+    try:
+        return int(key) == crown
+    except ValueError:
+        return False
+
+
+def table_target(data: dict, character: str, crown: int) -> str:
+    """The target (or "pivot:S") a loaded target table gives ``character`` at ``crown``; FREE
+    when it has no entry. Raises on a malformed table / unknown plan (callers decide)."""
+    row = ((data or {}).get("table") or {}).get(character) or {}
+    for k, t in row.items():
+        if crown_matches(k, int(crown)):
+            ps = parse_pivot_label(str(t)) if t else None
+            if ps is not None:
+                return pivot_label(ps)
+            return canonical(str(t)) if t and str(t).lower() != "free" else FREE
+    return FREE

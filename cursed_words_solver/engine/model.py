@@ -220,6 +220,10 @@ class ItemInst:
     # Containers (RAM pin memory, Frankenstein stitches, Snapshot copy).
     nested: list["ItemInst"] = field(default_factory=list)
     is_scattered: bool = False
+    # Board tile index a scattered instance came from (-1 = not scattered). The game
+    # compares ``tile.ScatteredItem != this`` by reference, so "other" scattered
+    # items of the same class still count — only this tile is skipped.
+    scatter_idx: int = -1
 
     @property
     def cls(self) -> str:
@@ -254,6 +258,7 @@ class ItemInst:
             state=state,
             nested=[n.clone() for n in self.nested],
             is_scattered=self.is_scattered,
+            scatter_idx=self.scatter_idx,
         )
 
     def upgrade(self, i: int = 0) -> None:

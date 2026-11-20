@@ -112,36 +112,21 @@ def _env_target() -> str | None:
 
 
 def _crown_matches(key: str, crown: int) -> bool:
-    key = str(key).strip()
-    if "-" in key:
-        lo, _, hi = key.partition("-")
-        try:
-            return int(lo) <= crown <= int(hi)
-        except ValueError:
-            return False
-    try:
-        return int(key) == crown
-    except ValueError:
-        return False
+    from cursed_words_solver.rl.targets import crown_matches
+
+    return crown_matches(key, crown)
 
 
 def _table_target(character: str, crown: int) -> str:
     """RL_HOME/target_table.json: {"version": 1, "table": {character: {"0-3": t, "4-7": t}}};
-    t may be a plan, "free" / "", or a pivot mode "pivot:S"."""
-    from cursed_words_solver.rl.targets import FREE, canonical, parse_pivot_label, pivot_label
+    t may be a plan, "free" / "", or a pivot mode "pivot:S" (``targets.table_target``; any
+    error -> FREE)."""
+    from cursed_words_solver.rl.targets import FREE, table_target
 
     try:
-        data = json.loads(_target_table_path().read_text(encoding="utf-8"))
-        row = (data.get("table") or {}).get(character) or {}
-        for key, t in row.items():
-            if _crown_matches(key, int(crown)):
-                ps = parse_pivot_label(str(t)) if t else None
-                if ps is not None:
-                    return pivot_label(ps)
-                return canonical(str(t)) if t and str(t).lower() != "free" else FREE
+        return table_target(json.loads(_target_table_path().read_text(encoding="utf-8")), character, crown)
     except Exception:
-        pass
-    return FREE
+        return FREE
 
 
 def choose_target(character: str, crown: int) -> str:
@@ -435,10 +420,12 @@ def _context(game) -> list[str]:
 
 
 def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps: int = 12,
-                search: bool = True, target: str | None = None) -> Advice:
+                search: bool = True, target: str | None = None, boss_rule: int | None = None) -> Advice:
     """``target``: the run's target build ("pivot:S" = pivot mode); None = ``run_target_info``
     (env / persisted / table) when the policy was trained with targets, else FREE. It is set on ``game`` before any env is
-    attached, so every sub-env (look-ahead, after-states, shop plan) sees it via clones."""
+    attached, so every sub-env (look-ahead, after-states, shop plan) sees it via clones.
+    ``boss_rule``: crown threshold of the uncursed-boss rule (``rules``; 0 = off; None =
+    env CWS_AI_BOSS_RULE, default off); it overrides the boss-draft pick shown."""
     from cursed_words_solver.rl.model import Actor
     from cursed_words_solver.rl.targets import FREE, canonical, on_plan_count, parse_pivot_label, set_target
     from cursed_words_solver.sim.game.agent import Candidates
@@ -476,6 +463,7 @@ def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps:
     adv.pick = adv.options[0]
     if ph == "boss_draft":
         _boss_rule(adv, actor, game, cands)
+        _deploy_boss_rule(adv, game, boss_rule)
     elif ph in ("pin_reward", "michael_draft"):
         for o in adv.options:
             if o.action.kind not in ("pin", "michael_pick"):
@@ -587,6 +575,26 @@ def _boss_rule(adv: Advice, actor, game, cands) -> None:
             pick = c
             c.note = "cursed: fairy for Blessing of the Fairies"
     adv.pick = pick
+
+
+def _deploy_boss_rule(adv: Advice, game, boss_rule: int | None) -> None:
+    """The deployment boss rule (``rules.uncursed_boss_override``) on the advice's pick."""
+    from cursed_words_solver.rl.rules import env_boss_rule, parse_boss_rule, uncursed_boss_override
+
+    n = env_boss_rule() if boss_rule is None else parse_boss_rule(boss_rule)
+    if not n or adv.pick is None:
+        return
+    try:
+        alt = uncursed_boss_override(game, adv.pick.action, [o.action for o in adv.options], n)
+    except Exception:
+        return
+    if alt is None:
+        return
+    o = next(o for o in adv.options if o.action is alt)
+    o.note = (o.note + f" uncursed: boss rule (crown >= {n}) overrides "
+              f"{label(adv.pick.action)}").strip()
+    adv.pick = o
+    adv.context.append(f"Boss rule: at crown {n}+ take an uncursed boss over a cursed one")
 
 
 def _shop_plan(actor, game, cands, steps: int, first: Action | None = None) -> list[str]:

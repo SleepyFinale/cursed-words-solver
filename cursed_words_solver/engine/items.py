@@ -606,7 +606,8 @@ def _broom(inst, step, ctx):
 def _burrito(inst, step, ctx):
     total = sum(s.level(0) for s in ctx.stickers if s is not None and s is not inst and s.levels)
     for t, item in _scattered_on_path(ctx):
-        if item is not None and item.levels and item.slug != inst.slug:
+        # Game: ``tile.ScatteredItem != this`` — other Burritos on the path count.
+        if item is not None and item.levels and t.idx != inst.scatter_idx:
             total += item.level(0)
     if total > 0:
         _mult(step, 100 + inst.var() * total)
@@ -1112,7 +1113,7 @@ def _shaved_ice(inst, step, ctx):
 def _silly_puppy(inst, step, ctx):
     n = sum(1 for i in ctx.all_items() if i is not inst and i.info and i.info.animal)
     for t, item in _scattered_on_path(ctx):
-        if item is not None and item.info and item.info.animal and item.slug != inst.slug:
+        if item is not None and item.info and item.info.animal and t.idx != inst.scatter_idx:
             n += 1
     if n >= 1:
         _mult(step, 100 + n * 25)

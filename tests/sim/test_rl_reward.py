@@ -191,7 +191,7 @@ def test_pipeline_v2_exit2_settings(home):
     assert _val(ex, "--crown-weights") == "0.2,0.2,0.3,0.5,1.0,2.0,2.5,1.5"
     assert _val(ex, "--quest-share") == "0.1"
     assert _val(ex, "--targets-mix") == "1,0,0"
-    assert "--pivot" not in ex
+    assert _val(ex, "--pivot") == "off"   # exit2 stays FREE-only even if ppo2 gets a pivot
     # ppo2 keeps its own job settings
     ppo = pipeline.v2_ppo_args(_pargs(["--v2"]))
     assert _val(ppo, "--crown-weights") == "0.4,0.6,0.8,1,1.2,1.4,1.6,2.0" and _val(ppo, "--quest-share") == "0.25"

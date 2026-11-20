@@ -8,6 +8,9 @@ compared paired (same character / crown / quest / seed) against another arm.
     python -m cursed_words_solver.rl.evaluate targets cond                 # win tables by build target
     python -m cursed_words_solver.rl.evaluate pick cond --out ~/.cursed_words_solver/rl/target_table.json
     (or a ppo gate cache: pick ~/.cursed_words_solver/rl/ppo2/eval/champion_u<N>.jsonl, see champion_eval_path)
+    python -m cursed_words_solver.rl.evaluate run --arm champ_br6 --policy ~/.cursed_words_solver/rl/ppo2/champion.pt --boss-rule 6
+    python -m cursed_words_solver.rl.evaluate table --set SockHead:5-7=Curse --set SamGambit:5-7=Curse --out deploy.json
+    python -m cursed_words_solver.rl.evaluate run --arm champ_deploy --policy ~/.cursed_words_solver/rl/ppo2/champion.pt --target-table deploy.json --boss-rule 6
 
 ARM is a name in rl/eval (``<arm>.jsonl``) or a path to a .jsonl of eval rows. Rows carry a
 build ``target`` ("" = FREE); ``key`` includes it, so rows from before targets match FREE jobs.
@@ -15,6 +18,13 @@ Pivot runs (``--targets free,pivot:2,pivot:3``: start FREE, from stage S re-read
 each shop entry, ``targets.pivot_update``) carry ``pivot_stage``; their row ``target`` is the
 FINAL target, so ``key`` uses (FREE, pivot_stage) for them and reports group them as the arm
 "pivot:S" (``arm_of``), paired vs the FREE row of the same seed.
+
+``--boss-rule N`` (``rules``: at crown >= N a cursed boss pick becomes an uncursed option) is
+stored in the rows (``boss_rule``) and is part of the run cache key (``cache_key``) but not of
+the pairing ``key``, so a boss-rule arm pairs with a plain arm on the same seeds. Use a separate
+arm name per setting (``compare`` / ``targets`` read every row of the file).
+``--target-table PATH`` gives every job the target the live assistant would choose from that
+table (``targets.table_target``; quest runs FREE, as the assistant); format: ``targets``.
 
 Seed sets: ``main`` = 11 characters Ã— crowns 0-7 Ã— ``--per`` seeds (block 40,000,000) plus
 26 quests Ã— ``--per-quest``. ``fresh<K>`` = a different block for confirmation.
@@ -94,6 +104,80 @@ def key(r: dict) -> tuple:
     return (r["character"], r["crown"], r.get("quest") or "", r["seed"], "" if ps else (r.get("target") or ""), ps)
 
 
+def cache_key(r: dict) -> tuple:
+    """``run_arm`` cache key: ``key`` plus the boss rule (0 = off), so rows played with another
+    boss rule are not reused."""
+    from cursed_words_solver.rl.rules import parse_boss_rule
+
+    return (*key(r), parse_boss_rule(r.get("boss_rule")))
+
+
+def load_table(path) -> dict:
+    """A target table file (``targets`` documents the format)."""
+    data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or not isinstance(data.get("table", {}), dict):
+        raise ValueError(f"{path}: not a target table ({{'version': 1, 'table': {{character: {{band: target}}}}}})")
+    return data
+
+
+def table_jobs(jobs: list[dict], data: dict) -> list[dict[str, Any]]:
+    """Each job with the target the assistant picks from target table ``data``
+    (``targets.table_target``): a plan, FREE, or a pivot run ("pivot:S" -> FREE start +
+    ``pivot_stage``). Quest jobs are FREE (the assistant plays quests FREE)."""
+    from cursed_words_solver.rl.targets import FREE, parse_pivot_label, table_target
+
+    out = []
+    for j in jobs:
+        j = {k: v for k, v in j.items() if k not in ("target", "pivot_stage")}
+        t = FREE if j.get("quest") else table_target(data, j["character"], j["crown"])
+        ps = parse_pivot_label(t) if t else None
+        out.append({**j, "target": FREE, "pivot_stage": ps} if ps is not None else {**j, "target": t})
+    return out
+
+
+def parse_set(spec: str) -> tuple[str, str, str]:
+    """``"SockHead:4-7=Curse"`` -> (character, crown key, target); the crown key may be "lo-hi",
+    one crown "5", or "all" (= "0-7"); the target a plan ("Red+Blue" / "Red-Blue"), "free", or
+    "pivot:S". Validated."""
+    from cursed_words_solver.rl.targets import canonical, parse_pivot_label, pivot_label
+
+    try:
+        left, target = spec.split("=", 1)
+        ch, band = left.split(":", 1)
+    except ValueError:
+        raise ValueError(f"--set {spec!r}: expected CHARACTER:CROWNS=TARGET, e.g. SockHead:4-7=Curse") from None
+    ch, band, target = ch.strip(), band.strip().lower(), target.strip()
+    if ch not in CHARS:
+        raise ValueError(f"--set {spec!r}: unknown character {ch!r}; known: {', '.join(CHARS)}")
+    band = "0-7" if band == "all" else band
+    lo, sep, hi = band.partition("-")
+    if not (lo.isdigit() and (not sep or hi.isdigit())) or (sep and int(lo) > int(hi)):
+        raise ValueError(f"--set {spec!r}: crowns must be 'lo-hi', one crown or 'all'")
+    if target.lower() in ("", "free", "none"):
+        return ch, band, ""
+    ps = parse_pivot_label(target)
+    if ps is not None:
+        return ch, band, pivot_label(ps)
+    try:
+        return ch, band, canonical(target.replace("-", "+"))
+    except ValueError as exc:
+        raise ValueError(f"--set {spec!r}: {exc}") from None
+
+
+def make_table(sets: list[str], base: dict | None = None, source: str = "rules") -> dict:
+    """A target table (``targets`` format) from ``--set`` rules, on top of ``base`` (a loaded
+    table) if given. The assistant takes the FIRST key matching the crown, so each rule's key
+    is (re)inserted at the front of its character's row: a rule wins over the base table's
+    overlapping bands (e.g. --set SockHead:5-7=Curse over a 'pick' "4-7"), and a later rule
+    wins over an earlier one where they overlap."""
+    tab = {ch: dict(row) for ch, row in ((base or {}).get("table") or {}).items()}
+    for spec in sets:
+        ch, band, t = parse_set(spec)
+        row = tab.get(ch) or {}
+        tab[ch] = {band: t, **{k: v for k, v in row.items() if k != band}}
+    return {"version": 1, "source": source, "table": tab}
+
+
 def arm_of(r: dict) -> str:
     """The row's target arm for reports / the target table: its target ("" = FREE), or
     "pivot:S" for a pivot run."""
@@ -112,10 +196,18 @@ def arm_display(arm: str) -> str:
 
 
 def run_arm(arm: str, policy: str, jobs: list[dict], workers: int = 7, *, greedy: bool = True, search=None,
-            out_dir: Path = EVAL_HOME, pool=None, verbose: bool = True) -> list[dict]:
+            out_dir: Path = EVAL_HOME, pool=None, verbose: bool = True, boss_rule: int = 0) -> list[dict]:
+    """Play the jobs not cached in ``<out_dir>/<arm>.jsonl`` (by ``cache_key``) and return the
+    rows of ``jobs``. ``boss_rule``: crown threshold of the uncursed-boss rule (0 = off; a
+    job's own "boss_rule" wins)."""
+    from cursed_words_solver.rl.rules import parse_boss_rule
+
+    br = parse_boss_rule(boss_rule)
+    if br:
+        jobs = [j if "boss_rule" in j else {**j, "boss_rule": br} for j in jobs]
     path = Path(out_dir) / f"{arm}.jsonl"
-    done = {key(r): r for r in store.read_jsonl(path) if not r.get("error")}
-    todo = [j for j in jobs if key(j) not in done]
+    done = {cache_key(r): r for r in store.read_jsonl(path) if not r.get("error")}
+    todo = [j for j in jobs if cache_key(j) not in done]
     if todo:
         from cursed_words_solver.rl.play import init_worker, play
         from cursed_words_solver.sim.game.agent import spawn_pool
@@ -128,7 +220,7 @@ def run_arm(arm: str, policy: str, jobs: list[dict], workers: int = 7, *, greedy
                 r.pop("traj", None)
                 store.append_jsonl(path, r)
                 if not r.get("error"):
-                    done[key(r)] = r
+                    done[cache_key(r)] = r
                 elif verbose:
                     print("ERROR", r["error"], r.get("trace", "")[-300:], flush=True)
                 if verbose and n % 25 == 0:
@@ -136,7 +228,7 @@ def run_arm(arm: str, policy: str, jobs: list[dict], workers: int = 7, *, greedy
         finally:
             if own:
                 pool.terminate()
-    return [done[key(j)] for j in jobs if key(j) in done]
+    return [done[cache_key(j)] for j in jobs if cache_key(j) in done]
 
 
 # the game's Michael bonus (sim.game.features.MICHAEL_BONUS): eval rows' "outcome" carries it (win 16,
@@ -379,6 +471,10 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--targets", default="", help="build targets per job: 'own' (FREE + the character's themes) "
                    "or a comma list ('free,Cards,Red+Blue,pivot:2'; pivot:S = start FREE, pivot from stage S); "
                    "default: FREE only")
+    r.add_argument("--target-table", default="", help="per job the target the live assistant would pick from this "
+                   "target_table.json (FREE where it has no entry; quests FREE); replaces --targets")
+    r.add_argument("--boss-rule", type=int, default=0, help="crown N: at crown >= N take an uncursed boss over a "
+                   "cursed pick (after policy / search); 0 = off")
     r.add_argument("--out-dir", default=str(EVAL_HOME), help="where <arm>.jsonl is cached")
     c = sub.add_parser("compare")
     c.add_argument("a")
@@ -391,6 +487,11 @@ def main(argv: list[str] | None = None) -> None:
     pk.add_argument("arm")
     pk.add_argument("--out", default=str(store.RL_HOME / "target_table.json"))
     pk.add_argument("--min-z", type=float, default=1.0)
+    tb = sub.add_parser("table", help="write a target table from rules (the format the assistant reads)")
+    tb.add_argument("--set", action="append", default=[], metavar="CHAR:CROWNS=TARGET",
+                    help="e.g. SockHead:4-7=Curse, SamGambit:5-7=Curse, NinaNix:all=pivot:2, Spike:6=free (repeatable)")
+    tb.add_argument("--base", default="", help="start from this table (e.g. a 'pick' output) instead of empty")
+    tb.add_argument("--out", required=True)
     args = ap.parse_args(argv)
     EVAL_HOME.mkdir(parents=True, exist_ok=True)
     if args.cmd == "run":
@@ -401,8 +502,14 @@ def main(argv: list[str] | None = None) -> None:
                 ["" if t.strip().lower() == "free" else t.strip() for t in args.targets.split(",")]
         out_dir = Path(args.out_dir).expanduser()
         out_dir.mkdir(parents=True, exist_ok=True)
-        rows = run_arm(args.arm, pol, eval_jobs(args.per, args.per_quest, args.block, targets=tg), args.workers,
-                       greedy=not args.sample, search=json.loads(args.search) if args.search else None, out_dir=out_dir)
+        if args.target_table and tg is not None:
+            ap.error("--target-table and --targets are exclusive")
+        jobs = eval_jobs(args.per, args.per_quest, args.block, targets=tg)
+        if args.target_table:
+            jobs = table_jobs(jobs, load_table(args.target_table))
+        rows = run_arm(args.arm, pol, jobs, args.workers, greedy=not args.sample,
+                       search=json.loads(args.search) if args.search else None, out_dir=out_dir,
+                       boss_rule=args.boss_rule)
         print(summarize(rows))
     elif args.cmd == "targets":
         print_targets(load_rows(args.arm))
@@ -415,6 +522,14 @@ def main(argv: list[str] | None = None) -> None:
         tab = pick_table(load_rows(args.arm), args.min_z)
         store.atomic_write_json(Path(args.out).expanduser(), {"version": 1, "source": args.arm, "table": tab})
         print(json.dumps(tab, indent=1))
+    elif args.cmd == "table":
+        try:
+            data = make_table(args.set, load_table(args.base) if args.base else None,
+                              source=" ".join(f"--set {x}" for x in args.set) or "rules")
+        except ValueError as exc:
+            ap.error(str(exc))
+        store.atomic_write_json(Path(args.out).expanduser(), data)
+        print(json.dumps(data, indent=1))
     elif args.cmd == "compare":
         a = store.read_jsonl(EVAL_HOME / f"{args.a}.jsonl")
         b = store.read_jsonl(EVAL_HOME / f"{args.b}.jsonl")

@@ -839,6 +839,7 @@ class EnginePlan:
             state = (self.grid.board.tiles[t.row][t.col].metadata or {}).get("scattered_item_state")
             inst = inst_from_state(state) if isinstance(state, dict) else make_item(t.item, self._scatter_level(t))
             inst.is_scattered = True
+            inst.scatter_idx = t.idx
             for _ in range(self.cable_cars):
                 if inst.is_sticker:
                     inst.upgrade(0)
@@ -1280,6 +1281,7 @@ def _scattered(plan: EnginePlan, pc: _PlanCache, t: ETile) -> ItemInst:
         state = (plan.grid.board.tiles[t.row][t.col].metadata or {}).get("scattered_item_state")
         tmpl = inst_from_state(state) if isinstance(state, dict) else make_item(t.item, plan._scatter_level(t))
         tmpl.is_scattered = True
+        tmpl.scatter_idx = t.idx
         for _ in range(plan.cable_cars):
             if tmpl.is_sticker:
                 tmpl.upgrade(0)

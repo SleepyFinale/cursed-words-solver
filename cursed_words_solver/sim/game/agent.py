@@ -573,27 +573,39 @@ def determinize(game: Game, key: str) -> Game:
 
     Search, rollouts and advice play clones forward; a plain clone carries the real RNG
     stream (next grid, next shop stock, item rolls) and the pre-rolled boss drafts of later
-    floors — information a human doesn't have. This rebinds one fresh ``Rng(key)`` for the
-    game, shop and encounter and re-rolls the drafts of floors after the current one (the
+    floors — information a human doesn't have. This rebinds one fresh ``KeyedRng(key)`` for
+    the game, shop and encounter and re-rolls the drafts of floors after the current one (the
     current stage's draft is shown to the player, so it is kept). Use the same ``key`` for
     every candidate of one decision so they face the same sampled future (common random
-    numbers)."""
-    from cursed_words_solver.sim.game.core import Rng
+    numbers).
+
+    The stream is keyed by position: every node entry, grid (and grid reroll) and shop stock
+    (and restock) restarts it from ``(key, where)`` (``core.KeyedRng.mark``), so branches that
+    consumed different amounts of randomness (an extra restock, a buy's item rolls, a
+    different word's procs) still see the same later shops and grids. Within one source the
+    draws run in order (a shop's restocks are its 2nd, 3rd... stock). Each sampled source
+    starts from its own sub-key, so nothing depends on the real stream's state."""
+    from cursed_words_solver.sim.game.core import KeyedRng
     from cursed_words_solver.sim.game.player import NUMBER_OF_STAGES
 
-    game.rng = Rng(key)
+    rng = KeyedRng(key)
+    game.rng = rng
     if game.shop is not None:
-        game.shop.rng = game.rng
+        game.shop.rng = rng
     if game.encounter is not None:
-        game.encounter.rng = game.rng
+        game.encounter.rng = rng
     run = game.player.run
     start = max(run.stage, 1)
     if start < NUMBER_OF_STAGES and len(run.boss_drafts) >= start:
-        run.generate_boss_drafts(game.rng, game.player, start_floor=start)
+        rng.mark("boss_drafts", start)
+        run.generate_boss_drafts(rng, game.player, start_floor=start)
     enc = game.encounter
     m = getattr(enc, "michael", None) if enc is not None else None
     if m is not None and getattr(m, "drafts", None):
-        _resample_michael_drafts(m, enc, game.rng)
+        rng.mark("michael_drafts", len(m.drafted))
+        _resample_michael_drafts(m, enc, rng)
+    # the rest of the current node (item rolls, this grid's / this shop's procs) draws from here
+    rng.mark("now", run.stage, run.node.name)
     return game
 
 

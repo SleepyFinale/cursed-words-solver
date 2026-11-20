@@ -124,6 +124,8 @@ def status(args) -> dict:
            "paused": (HOME / "STOP").exists()}
     if getattr(args, "v2", False) or any((HOME / d).is_dir() for d in V2_DIRS):
         out["v2"] = v2_status(args)
+    if getattr(args, "v3", False) or (HOME / "ppo3").is_dir():
+        out["v3"] = v3_status(args)
     return out
 
 
@@ -149,30 +151,41 @@ EXIT2_QUEST_SHARE = 0.1
 EXIT2_TARGETS_MIX = "1,0,0"
 
 
-def v2_target_args(args) -> tuple[str, str]:
+def _curriculum_target_args(runs: tuple[str, ...]) -> tuple[str, str] | None:
+    """(mix, pivot) of the first of ``runs`` (rl dir names) with a curriculum.json, else None."""
+    for run in runs:
+        try:
+            c = json.loads((HOME / run / "curriculum.json").read_text())
+        except (OSError, ValueError):
+            continue
+        if not isinstance(c, dict):
+            continue
+        mix = ",".join(f"{float(x):g}" for x in c["targets_mix"]) if c.get("targets_mix") else ""
+        pivot = ",".join(f"{x:g}" if isinstance(x, float) else str(x) for x in c["pivot"]) if c.get("pivot") else ""
+        return mix, pivot
+    return None
+
+
+def v2_target_args(args, runs: tuple[str, ...] = ("ppo2",)) -> tuple[str, str]:
     """(targets_mix, pivot) for ppo2 / exit2. Explicit flags win. Unset: a ppo2 that already has a
     curriculum.json resumes with the mix / pivot it was running (a run started before pivot targets keeps
-    its old mix and no pivot); a fresh ppo2 gets V2_TARGETS_MIX / V2_PIVOT."""
+    its old mix and no pivot); a fresh ppo2 gets V2_TARGETS_MIX / V2_PIVOT. ``runs``: the dirs whose
+    curriculum.json is read, first found wins (v3: ppo3, then ppo2)."""
     mix, pivot = getattr(args, "targets_mix", None), getattr(args, "pivot", None)
     if mix is None or pivot is None:
-        try:
-            c = json.loads((HOME / "ppo2" / "curriculum.json").read_text())
-        except (OSError, ValueError):
-            c = None
-        if c is not None:
-            old_mix = ",".join(f"{float(x):g}" for x in c["targets_mix"]) if c.get("targets_mix") else ""
-            old_pivot = ",".join(f"{x:g}" if isinstance(x, float) else str(x) for x in c["pivot"]) if c.get("pivot") else ""
-        else:
-            old_mix, old_pivot = V2_TARGETS_MIX, V2_PIVOT
+        old_mix, old_pivot = _curriculum_target_args(runs) or (V2_TARGETS_MIX, V2_PIVOT)
         mix = old_mix if mix is None else mix
         pivot = old_pivot if pivot is None else pivot
     return mix, pivot
 
 
-def v2_ppo_args(args) -> list[str]:
-    mix, pivot = v2_target_args(args)
+def v2_ppo_args(args, run: str = "ppo2", init: Path | None = None,
+                target_runs: tuple[str, ...] = ("ppo2",)) -> list[str]:
+    """rl.ppo for ppo2 (``run`` / ``init`` / ``target_runs``: the v3 fork reuses it for ppo3)."""
+    mix, pivot = v2_target_args(args, target_runs)
     ppo_w = str(max(1, args.workers - args.exit_workers + 1)) if args.exit_workers else str(args.workers)
-    return ["cursed_words_solver.rl.ppo", "--dir", str(HOME / "ppo2"), "--init", str(HOME / "bc2" / "best.pt"),
+    init = HOME / "bc2" / "best.pt" if init is None else init
+    return ["cursed_words_solver.rl.ppo", "--dir", str(HOME / run), "--init", str(init),
             "--workers", ppo_w, "--updates", str(args.ppo_updates),
             "--gate-per", str(args.gate_per), "--gate-per-quest", str(args.gate_per_quest),
             "--crown-weights", args.crown_weights, "--quest-share", str(args.quest_share),
@@ -185,20 +198,21 @@ def v2_ppo_args(args) -> list[str]:
             *(["--distill-dir", str(HOME / "exit2")] if args.exit_workers else [])]
 
 
-def v2_exit_args(args) -> list[str]:
+def v2_exit_args(args, run: str = "ppo2", target_runs: tuple[str, ...] = ("ppo2",)) -> list[str]:
     """rl.exit for exit2: its own search / crown weights / quest share / targets mix (``--exit-*``);
     an empty ``--exit-targets-mix`` / ``--exit-pivot`` falls back to ppo2's (``v2_target_args`` mix; the
-    collector reads the pivot from ppo2/curriculum.json)."""
+    collector reads the pivot from ppo2/curriculum.json). ``run``: the PPO dir it follows (policy
+    weights.pt, curriculum.json; v3: ppo3)."""
     mix = getattr(args, "exit_targets_mix", EXIT2_TARGETS_MIX)
     if not mix:
-        mix = v2_target_args(args)[0]
+        mix = v2_target_args(args, target_runs)[0]
     pivot = getattr(args, "exit_pivot", "") or ""
     return ["cursed_words_solver.rl.exit", "--dir", str(HOME / "exit2"),
-            "--policy", str(HOME / "ppo2" / "weights.pt"), "--workers", str(args.exit_workers),
+            "--policy", str(HOME / run / "weights.pt"), "--workers", str(args.exit_workers),
             "--search", getattr(args, "exit_search", EXIT2_SEARCH),
             "--crown-weights", getattr(args, "exit_crown_weights", EXIT2_CROWN_WEIGHTS),
             "--quest-share", str(getattr(args, "exit_quest_share", EXIT2_QUEST_SHARE)),
-            "--curriculum", str(HOME / "ppo2" / "curriculum.json"),
+            "--curriculum", str(HOME / run / "curriculum.json"),
             *(["--targets-mix", mix] if mix else []), *(["--pivot", pivot] if pivot else [])]
 
 
@@ -294,22 +308,244 @@ def run_v2(args, log: Path) -> int:
         if st["name"] != "ppo2":
             _run(st["cmd"], log, V1_DIRS + V2_DIRS)
             continue
-        exit_proc = None
-        if st.get("exit"):
-            (HOME / "ppo2").mkdir(parents=True, exist_ok=True)
-            ex_log = open(HOME / "exit2.log", "a", encoding="utf-8")
-            exit_proc = subprocess.Popen([sys.executable, "-u", "-m", *st["exit"]], stdout=ex_log,
-                                         stderr=subprocess.STDOUT, cwd=str(Path(__file__).resolve().parents[2]))
+        _run_with_exit(st["cmd"], st.get("exit"), "ppo2", "exit2", log, V1_DIRS + V2_DIRS)
+    return 0
+
+
+def _run_with_exit(cmd: list[str], exit_cmd: list[str] | None, run: str, exit_name: str, log: Path,
+                   dirs: tuple[str, ...]) -> None:
+    """The PPO stage ``cmd`` (STOP forwarded to ``dirs``) with the rl.exit collector ``exit_cmd``
+    beside it (log rl/<exit_name>.log); the collector is stopped when PPO exits."""
+    exit_proc = None
+    if exit_cmd:
+        (HOME / run).mkdir(parents=True, exist_ok=True)
+        ex_log = open(HOME / f"{exit_name}.log", "a", encoding="utf-8")
+        exit_proc = subprocess.Popen([sys.executable, "-u", "-m", *exit_cmd], stdout=ex_log,
+                                     stderr=subprocess.STDOUT, cwd=str(Path(__file__).resolve().parents[2]))
+    try:
+        _run(cmd, log, dirs)
+    finally:
+        if exit_proc is not None:
+            (HOME / exit_name).mkdir(parents=True, exist_ok=True)
+            (HOME / exit_name / "STOP").touch()
+            try:
+                exit_proc.wait(timeout=600)
+            except subprocess.TimeoutExpired:
+                exit_proc.terminate()
+
+
+# ------------------------------------------------------------------ v3: ppo2 champion + value fixes
+
+V3_DIRS = ("ppo3", "exit2")   # the dirs a v3 run writes (STOP forwarding / clearing); ppo2 is only read
+V3_AUX_COEF = 0.2      # rl.ppo --aux-coef: BCE on (won, Michael win); the aux head was never trained in PPO
+V3_VF_LAM = 1.0        # rl.ppo --vf-lam: Monte Carlo value target (explained more stage-3 variance offline)
+V3_VF_EPOCHS = 2       # rl.ppo --vf-epochs: value(+aux)-only passes, policy held by KL to the snapshot
+V3_LAM_BUILD = None    # rl.ppo --lam-build: off
+V3_INIT = "ppo2_champion.pt"        # frozen copy of ppo2/champion.pt inside ppo3: the init, and the
+                                    # weights the seeded champion_u0 rows were played with
+V3_INHERIT = "v3_inherit.json"      # ppo2's KL / entropy coefficients at the fork (written once)
+
+
+def _policy_update(path: Path) -> int | None:
+    """The ``update`` save_policy stamped into a policy file (a promoted champion.pt keeps its
+    candidate's), else None."""
+    try:
+        import torch
+
+        ck = torch.load(path, map_location="cpu", weights_only=False)
+        u = (ck.get("extra") or {}).get("update")
+        return None if u is None else int(u)
+    except Exception:   # noqa: BLE001 - unreadable / foreign file: no stamp
+        return None
+
+
+def v3_seed_plan() -> dict:
+    """Read-only: where ppo3's starting-champion gate rows come from. rl.ppo starts a fresh dir at
+    champion_update 0 and caches the init's gate rows as eval/champion_u0.jsonl (``run_arm`` plays only
+    the jobs missing by ``evaluate.cache_key``); the ppo2 champion's rows are
+    ``evaluate.champion_eval_path(ppo2)`` = eval/champion_u{cu}.jsonl. They are reused only when the
+    policy stamp of the init (ppo3/ppo2_champion.pt, else ppo2/champion.pt) is that cu."""
+    from cursed_words_solver.rl.evaluate import champion_eval_path
+
+    frozen = HOME / "ppo3" / V3_INIT
+    pol = frozen if frozen.is_file() else HOME / "ppo2" / "champion.pt"
+    src = champion_eval_path(HOME / "ppo2") if (HOME / "ppo2").is_dir() else None
+    cu = None
+    if src is not None:
         try:
-            _run(st["cmd"], log, V1_DIRS + V2_DIRS)
-        finally:
-            if exit_proc is not None:
-                (HOME / "exit2").mkdir(parents=True, exist_ok=True)
-                (HOME / "exit2" / "STOP").touch()
-                try:
-                    exit_proc.wait(timeout=600)
-                except subprocess.TimeoutExpired:
-                    exit_proc.terminate()
+            cu = int(src.stem[len("champion_u"):])
+        except ValueError:
+            cu = None
+    stamp = _policy_update(pol) if pol.is_file() else None
+    ok = src is not None and cu is not None and stamp == cu
+    why = ("" if ok else "no ppo2 champion eval rows" if src is None else
+           f"init stamp {stamp} != champion rows u{cu}")
+    return {"policy": str(pol), "stamp": stamp, "src": str(src) if src else None, "champion_update": cu,
+            "ok": ok, "why": why, "dst": str(HOME / "ppo3" / "eval" / "champion_u0.jsonl")}
+
+
+def v3_inherit(args) -> dict:
+    """ppo2's annealed KL-anchor coefficient and adapted entropy coefficient at the fork (its last
+    history row), so ppo3 continues with ppo2's effective settings instead of rl.ppo's update-0 ones
+    (kl 0.1 halving every 300 updates from update 0, ent 0.003). Frozen in ppo3/v3_inherit.json by the
+    seeding so a resume passes the same flags; ``--v3-kl-coef`` / ``--v3-ent-coef`` win."""
+    p = HOME / "ppo3" / V3_INHERIT
+    try:
+        got = json.loads(p.read_text())
+    except (OSError, ValueError):
+        got = None
+    if not isinstance(got, dict):
+        hist = store.read_jsonl(HOME / "ppo2" / "history.jsonl")
+        last = hist[-1] if hist else {}
+        got = {"kl_coef": last.get("kl_coef"), "ent_coef": last.get("ent_coef_next", last.get("ent_coef")),
+               "ppo2_update": last.get("update")}
+    out = dict(got)
+    if getattr(args, "v3_kl_coef", None) is not None:
+        out["kl_coef"] = args.v3_kl_coef
+    if getattr(args, "v3_ent_coef", None) is not None:
+        out["ent_coef"] = args.v3_ent_coef
+    return out
+
+
+def v3_ppo_args(args) -> list[str]:
+    """ppo3 = ppo2's rl.ppo settings (``v2_ppo_args``: crowns, quests, targets mix / pivot as ppo2's
+    curriculum has them, compare ppo1, Michael bonus, exit2 distillation) from the frozen ppo2 champion,
+    plus the value / aux fixes and ppo2's KL / entropy coefficients (``v3_inherit``)."""
+    cmd = v2_ppo_args(args, run="ppo3", init=HOME / "ppo3" / V3_INIT, target_runs=("ppo3", "ppo2"))
+    inh = v3_inherit(args)
+    lam_build = getattr(args, "v3_lam_build", V3_LAM_BUILD)
+    cmd += ["--aux-coef", f"{float(getattr(args, 'v3_aux_coef', V3_AUX_COEF)):g}",
+            "--vf-lam", f"{float(getattr(args, 'v3_vf_lam', V3_VF_LAM)):g}",
+            "--vf-epochs", str(int(getattr(args, "v3_vf_epochs", V3_VF_EPOCHS))),
+            *(["--lam-build", f"{float(lam_build):g}"] if lam_build is not None else []),
+            *(["--kl-coef", f"{float(inh['kl_coef']):g}"] if inh.get("kl_coef") is not None else []),
+            *(["--ent-coef", f"{float(inh['ent_coef']):g}"] if inh.get("ent_coef") is not None else [])]
+    return cmd
+
+
+def v3_exit_args(args) -> list[str]:
+    """exit2 (same dir: its shards are ppo3's distillation data) following ppo3's weights / curriculum."""
+    return v2_exit_args(args, run="ppo3", target_runs=("ppo3", "ppo2"))
+
+
+def _v3_started() -> bool:
+    return (HOME / "ppo3" / "ckpt.pt").is_file()
+
+
+def v3_stages(args) -> list[dict]:
+    """The v3 plan: ``seed3`` (``seed_ppo3``; done once ppo3 started or its champion rows are complete),
+    then ``ppo3`` with exit2 beside it."""
+    from cursed_words_solver.rl.evaluate import cache_key
+
+    have = {cache_key(r) for r in store.read_jsonl(HOME / "ppo3" / "eval" / "champion_u0.jsonl") if not r.get("error")}
+    seeded = _v3_started() or ((HOME / "ppo3" / V3_INIT).is_file() and (HOME / "ppo3" / V3_INHERIT).is_file()
+                               and all(cache_key(j) in have for j in v2_gate_jobs(args)))
+    return [
+        {"name": "seed3", "done": seeded, "cmd": None},
+        {"name": "ppo3", "done": len(store.read_jsonl(HOME / "ppo3" / "history.jsonl")) >= args.ppo_updates,
+         "cmd": v3_ppo_args(args), "exit": v3_exit_args(args) if args.exit_workers > 0 else None},
+    ]
+
+
+def _copy_rows(src: Path, dst: Path) -> int:
+    """Append ``src``'s non-error rows missing from ``dst`` (by ``evaluate.cache_key``); ``src`` is only read."""
+    from cursed_words_solver.rl.evaluate import cache_key
+
+    have = {cache_key(r) for r in store.read_jsonl(dst) if not r.get("error")}
+    n = 0
+    for r in store.read_jsonl(src):
+        if not r.get("error") and cache_key(r) not in have:
+            store.append_jsonl(dst, r)
+            have.add(cache_key(r))
+            n += 1
+    return n
+
+
+def seed_ppo3(args) -> dict:
+    """Prepare a fresh ppo3 from ppo2 (copies only; nothing under ppo2 is written):
+
+    - ppo3/ppo2_champion.pt: frozen copy of ppo2/champion.pt (the rl.ppo --init; rl.ppo copies it to
+      init.pt / champion.pt itself);
+    - ppo3/eval/champion_u0.jsonl: the ppo2 champion's gate rows (``v3_seed_plan``), so the starting
+      champion is not re-played (a fresh rl.ppo champion is update 0);
+    - ppo3/eval/ppo1_champion.jsonl (+ teacher.jsonl if ppo2 has one): the gate's vs_ppo1_all rows,
+      and ppo3/ppo1_champion.pt (the frozen ppo1 champion) beside them;
+    - ppo3/v3_inherit.json: ``v3_inherit`` frozen.
+
+    A started ppo3 (ckpt.pt) is left alone. Returns what was done."""
+    import shutil
+
+    if _v3_started():
+        return {"skipped": "ppo3 already started"}
+    done: dict = {}
+    ev = HOME / "ppo3" / "eval"
+    ev.mkdir(parents=True, exist_ok=True)
+    frozen = HOME / "ppo3" / V3_INIT
+    if not frozen.is_file():
+        tmp = frozen.with_name(frozen.name + ".tmp")
+        shutil.copyfile(HOME / "ppo2" / "champion.pt", tmp)
+        os.replace(tmp, frozen)
+        done["init"] = str(frozen)
+    plan = v3_seed_plan()
+    done["plan"] = plan
+    if plan["ok"]:
+        done["champion_rows"] = _copy_rows(Path(plan["src"]), ev / "champion_u0.jsonl")
+    for name in ("ppo1_champion.jsonl", "teacher.jsonl"):
+        if (HOME / "ppo2" / "eval" / name).is_file():
+            done[name] = _copy_rows(HOME / "ppo2" / "eval" / name, ev / name)
+    if (HOME / "ppo2" / "ppo1_champion.pt").is_file() and not (HOME / "ppo3" / "ppo1_champion.pt").is_file():
+        shutil.copyfile(HOME / "ppo2" / "ppo1_champion.pt", HOME / "ppo3" / "ppo1_champion.pt")
+    if not (HOME / "ppo3" / V3_INHERIT).is_file():
+        inh = v3_inherit(argparse.Namespace())
+        store.atomic_write_json(HOME / "ppo3" / V3_INHERIT, inh)
+        done["inherit"] = inh
+    return done
+
+
+def v3_status(args) -> dict:
+    from cursed_words_solver.rl.evaluate import cache_key, champion_eval_path, summarize
+
+    out = {st["name"]: "done" if st["done"] else "todo" for st in v3_stages(args)}
+    hist = store.read_jsonl(HOME / "ppo3" / "history.jsonl")
+    out["ppo3_last"] = {k: hist[-1].get(k) for k in ("update", "episodes", "recent_win", "recent_outcome",
+                                                       "recent_train_outcome", "kl_coef", "ent_coef", "ppofix",
+                                                       "epochs_run")} if hist else {}
+    gates = store.read_jsonl(HOME / "ppo3" / "gates.jsonl")
+    out["ppo3_gates"] = len(gates)
+    out["ppo3_last_gate"] = gates[-1] if gates else None
+    out["ppo3_promotions"] = [g["update"] for g in gates if g.get("promoted")]
+    cp = champion_eval_path(HOME / "ppo3") if (HOME / "ppo3").is_dir() else None
+    keys = {cache_key(j) for j in v2_gate_jobs(args)}
+    rows = [r for r in store.read_jsonl(cp) if not r.get("error") and cache_key(r) in keys] if cp else []
+    out["ppo3_champion"] = {"rows": str(cp) if cp else None, "n": f"{len(rows)}/{len(keys)}",
+                            **({"eval": summarize(rows)} if rows else {})}
+    out["seed"] = v3_seed_plan()
+    try:
+        out["inherit"] = json.loads((HOME / "ppo3" / V3_INHERIT).read_text())
+    except (OSError, ValueError):
+        out["inherit"] = None
+    out["exit2"] = _exit_status("exit2")
+    out["paused"] = (HOME / "STOP").exists()
+    return out
+
+
+def run_v3(args, log: Path) -> int:
+    if not (HOME / "ppo2" / "champion.pt").is_file():
+        print("--v3 needs a ppo2 champion (rl/ppo2/champion.pt)", flush=True)
+        return 1
+    for st in v3_stages(args):
+        if (HOME / "STOP").exists():
+            return 0
+        if st["name"] == "seed3":
+            info = seed_ppo3(args)
+            with open(log, "a", encoding="utf-8") as f:
+                f.write(f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} v3 seed {json.dumps(info, default=str)}\n")
+            continue
+        if st["done"]:
+            continue
+        # rebuilt after seeding: the inherited coefficients come back from ppo3/v3_inherit.json
+        _run_with_exit(v3_ppo_args(args), v3_exit_args(args) if args.exit_workers > 0 else None,
+                       "ppo3", "exit2", log, V3_DIRS)
     return 0
 
 
@@ -378,8 +614,20 @@ def main(argv: list[str] | None = None) -> int:
                     help="exit2 build-target mix of its non-pivot runs (rl.exit --targets-mix; 1,0,0 = all FREE; "
                          "'' = ppo2's mix; pivot runs follow --exit-pivot)")
     ap.add_argument("--exit-pivot", default="off", help="exit2 pivot runs (rl.exit --pivot; 'off' = none; '' = ppo2's)")
-    ap.add_argument("--dry-run", action="store_true", help="--v2: print the stage plan and exit")
+    ap.add_argument("--v3", action="store_true",
+                    help="ppo3: rl.ppo with ppo2's settings from the ppo2 champion + value / aux fixes, exit2 beside it")
+    ap.add_argument("--v3-aux-coef", type=float, default=V3_AUX_COEF, help="ppo3 rl.ppo --aux-coef")
+    ap.add_argument("--v3-vf-lam", type=float, default=V3_VF_LAM, help="ppo3 rl.ppo --vf-lam")
+    ap.add_argument("--v3-vf-epochs", type=int, default=V3_VF_EPOCHS, help="ppo3 rl.ppo --vf-epochs")
+    ap.add_argument("--v3-lam-build", type=float, default=V3_LAM_BUILD, help="ppo3 rl.ppo --lam-build (default off)")
+    ap.add_argument("--v3-kl-coef", type=float, default=None,
+                    help="ppo3 rl.ppo --kl-coef; default: ppo2's annealed coefficient at the fork (ppo3/v3_inherit.json)")
+    ap.add_argument("--v3-ent-coef", type=float, default=None,
+                    help="ppo3 starting rl.ppo --ent-coef; default: ppo2's adapted coefficient at the fork")
+    ap.add_argument("--dry-run", action="store_true", help="--v2 / --v3: print the stage plan and exit")
     args = ap.parse_args(argv)
+    if args.v2 and args.v3:
+        ap.error("--v2 and --v3 are separate runs; pick one")
     HOME.mkdir(parents=True, exist_ok=True)
     if args.status:
         print(json.dumps(status(args), indent=1, default=str))
@@ -390,15 +638,31 @@ def main(argv: list[str] | None = None) -> int:
             if st.get("exit"):
                 print(f"{'':10s} beside: {' '.join(st['exit'])}")
         return 0
+    if args.v3 and args.dry_run:
+        if not (HOME / "ppo2" / "champion.pt").is_file():
+            print("--v3 needs a ppo2 champion (rl/ppo2/champion.pt)", flush=True)
+            return 1
+        plan = v3_seed_plan()
+        print(f"seed      {'ok' if plan['ok'] else 'NOT seeded (' + plan['why'] + '): the champion is re-played'}"
+              f"  {plan['src']} (policy stamp u{plan['stamp']}) -> {plan['dst']}")
+        print(f"inherit   {json.dumps(v3_inherit(args))}")
+        for st in v3_stages(args):
+            print(f"{st['name']:10s} {'done' if st['done'] else 'todo'}  {' '.join(st['cmd'] or ['(copy from ppo2)'])}")
+            if st.get("exit"):
+                print(f"{'':10s} beside: {' '.join(st['exit'])}")
+        return 0
     log = HOME / "pipeline.log"
     lock = _single_instance()
     if lock is None:
         print("another pipeline is still running (or still shutting down after STOP); try again when it exits",
               flush=True)
         return 1
-    for d in V1_DIRS + (V2_DIRS if args.v2 else ()):
+    # --v3 clears only its own dirs: ppo2's (paused) run is never touched
+    for d in V3_DIRS if args.v3 else V1_DIRS + (V2_DIRS if args.v2 else ()):
         (HOME / d / "STOP").unlink(missing_ok=True)
     (HOME / "command.txt").write_text(f"python -m cursed_words_solver.rl.pipeline {' '.join(argv or sys.argv[1:])}\n")
+    if args.v3:
+        return run_v3(args, log)
     if args.v2:
         return run_v2(args, log)
     W = str(args.workers)

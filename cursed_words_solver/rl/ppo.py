@@ -28,6 +28,14 @@ the gate compares wins and ``evaluate.row_outcome(r, b)`` (``paired(..., michael
 promotion follows what training values. b is saved in the checkpoint, curriculum.json and
 command.txt: a resume without the flag keeps it (an explicit flag wins; old runs = 8).
 
+Value / representation fixes (2026-11-18, all default off): ``--aux-coef`` (BCE of the aux head
+on the run's won / Michael flags), ``--lam-build`` (GAE lambda of the build decisions' advantages:
+shop / skip / pin / boss_draft / michael_pick steps), ``--vf-lam`` (lambda of the value target),
+``--vf-epochs`` (value(+aux)-only passes after the policy epochs, KL(snapshot || policy) on the
+logits * ``--vf-kl-coef``). Every update logs ``epochs_run`` and the explained variance of the
+value targets (``ev*``: by the actors' values; ``ev_fit*``: by the learner's in the last pass;
+``_shop`` / ``_word`` = shop / encounter steps) in history.jsonl.
+
 Pause / resume: rerun the same command (``command.txt``). State is checkpointed after every
 update (model, optimiser, counters, RNG); episodes in flight at a kill are simply replayed
 with new seeds. ``STOP`` file in the dir = checkpoint and exit.
@@ -265,7 +273,20 @@ def adapt_ent_coef(coef: float, ent: float, target: float, lr: float, lo: float 
     return float(min(hi, max(lo, coef * math.exp(step))))
 
 
-def gae(rew: np.ndarray, val: np.ndarray, lam: float, gamma: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
+def gae(rew: np.ndarray, val: np.ndarray, lam, gamma: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
+    """GAE advantages and lambda-returns. ``lam`` is a float or a per-step array (len(rew)):
+    step t's advantage is sum_k (gamma * lam[t]) ** k * delta[t + k], i.e. each decision uses its
+    OWN lambda over the whole remaining horizon (a step's advantage does not depend on the other
+    steps' lambdas; a constant array == the float)."""
+    if np.ndim(lam):
+        lam_t = np.asarray(lam, np.float64).reshape(-1)
+        if len(lam_t) != len(rew):
+            raise ValueError(f"per-step lambda has {len(lam_t)} entries for {len(rew)} steps")
+        adv = np.zeros(len(rew), np.float32)
+        for lv in np.unique(lam_t):
+            m = lam_t == lv
+            adv[m] = gae(rew, val, float(lv), gamma)[0][m]
+        return adv, adv + val
     n = len(rew)
     adv = np.zeros(n, np.float32)
     last = 0.0
@@ -275,6 +296,56 @@ def gae(rew: np.ndarray, val: np.ndarray, lam: float, gamma: float = 1.0) -> tup
         last = delta + gamma * lam * last
         adv[t] = last
     return adv, adv + val
+
+
+# build decisions (``--lam-build``): steps in these phases, or whose chosen action is of these kinds
+BUILD_PHASES = frozenset({"shop", "boss_draft", "pin_reward", "michael_pick"})
+BUILD_KINDS = frozenset({"skip", "pin", "boss", "michael_pick"})
+_SHOP_KINDS = frozenset({"buy", "hippo", "freeze", "reroll_shop", "leave", "sell_buy"})
+_WORD_KINDS = frozenset({"submit", "skip", "reroll_grid", "place", "finale"})
+
+
+def step_phase(st: dict, phase: str | None = None) -> str:
+    """The decision's phase: the recorded one (play.py traj ``phase``), else inferred from the
+    candidate action kinds ('shop', 'boss_draft', 'pin_reward', 'michael_pick', 'encounter';
+    '' when only anytime actions are on offer)."""
+    if phase:
+        return str(phase)
+    from cursed_words_solver.rl.actions import ACTION_TYPES
+
+    kinds = {ACTION_TYPES[int(k)] for k in np.asarray(st["act_type"]).reshape(-1) if 0 <= int(k) < len(ACTION_TYPES)}
+    if kinds & _SHOP_KINDS:
+        return "shop"
+    if "michael_pick" in kinds:
+        return "michael_pick"
+    if "boss" in kinds:
+        return "boss_draft"
+    if "pin" in kinds:
+        return "pin_reward"
+    if kinds & _WORD_KINDS:
+        return "encounter"
+    return ""
+
+
+def is_build_step(st: dict, chosen: int, phase: str | None = None) -> bool:
+    """A shop / skip / pin / boss_draft / michael_pick decision (``--lam-build`` steps)."""
+    from cursed_words_solver.rl.actions import ACTION_TYPES
+
+    if step_phase(st, phase) in BUILD_PHASES:
+        return True
+    at = np.asarray(st["act_type"]).reshape(-1)
+    k = int(at[chosen]) if 0 <= int(chosen) < len(at) else -1
+    return 0 <= k < len(ACTION_TYPES) and ACTION_TYPES[k] in BUILD_KINDS
+
+
+def explained_variance(pred, target) -> float:
+    """1 - Var(target - pred) / Var(target); nan with < 2 points or a constant target."""
+    y = np.asarray(target, np.float64)
+    p = np.asarray(pred, np.float64)
+    if len(y) < 2:
+        return float("nan")
+    vy = float(y.var())
+    return float(1.0 - (y - p).var() / vy) if vy > 1e-12 else float("nan")
 
 
 class DistillBuffer:
@@ -429,13 +500,58 @@ def distill_loss(logits: torch.Tensor, items: list[dict], temp: float = 0.0, mix
     return (dw * ce).sum() / dw.sum().clamp_min(1e-9)
 
 
+def aux_loss(out: dict, items: list[dict], device) -> torch.Tensor:
+    """BCE of the aux head (win, Michael-win logits) against the items' run flags."""
+    y = torch.tensor([[float(it.get("won", 0.0)), float(it.get("michael", 0.0))] for it in items],
+                     device=device, dtype=out["aux"].dtype)
+    return F.binary_cross_entropy_with_logits(out["aux"], y)
+
+
+def _ev_stats(batch: list[dict], pred_key: str, prefix: str, pred=None) -> dict[str, float]:
+    """Explained variance of ``ret`` by ``pred`` (or each item's ``pred_key``): overall, shop
+    steps, word (encounter) steps. Keys ``{prefix}``, ``{prefix}_shop``, ``{prefix}_word``; nan
+    groups are left out."""
+    if pred is None:
+        if not batch or any(pred_key not in it for it in batch):
+            return {}
+        pred = [it[pred_key] for it in batch]
+    pred = np.asarray(pred, np.float64)
+    ret = np.asarray([it["ret"] for it in batch], np.float64)
+    ph = [step_phase(it, it.get("phase")) for it in batch]
+    out = {}
+    for name, m in ((prefix, np.ones(len(batch), bool)),
+                    (prefix + "_shop", np.asarray([p == "shop" for p in ph], bool)),
+                    (prefix + "_word", np.asarray([p == "encounter" for p in ph], bool))):
+        ev = explained_variance(pred[m], ret[m]) if m.any() else float("nan")
+        if math.isfinite(ev):
+            out[name] = round(ev, 4)
+    return out
+
+
+def _masked_kl(p_logp: torch.Tensor, q_logp: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """mean over rows of KL(p || q) on the legal actions (log-probs; mask 1 = legal)."""
+    return (p_logp.exp() * (p_logp - q_logp).masked_fill(mask == 0, 0)).sum(-1).mean()
+
+
 def ppo_update(model: Policy, ref: Policy | None, opt, batch: list[dict], args, device,
                distill: DistillBuffer | None = None) -> dict:
+    """PPO epochs (early stop at ``target_kl``), then ``vf_epochs`` value(+aux)-only passes.
+    Optional args (missing = off): ``aux_coef`` (BCE of the aux head on the run's won / michael
+    flags, in the policy epochs and the value passes), ``vf_epochs`` / ``vf_kl_coef`` (default 1.0:
+    KL(snapshot || model) on the logits, snapshot = the model after the policy epochs).
+    Returns the mean losses plus ``epochs_run`` (policy epochs started), ``ev`` / ``ev_shop`` /
+    ``ev_word`` (explained variance of the targets by the actors' values, ``vpred``) and
+    ``ev_fit*`` (by the learner's values in the last pass over the batch)."""
     model.train()
     idx = np.arange(len(batch))
     stats: dict[str, list[float]] = {}
     beta = args.kl_coef
+    aux_coef = float(getattr(args, "aux_coef", 0.0) or 0.0)
+    vf_epochs = int(getattr(args, "vf_epochs", 0) or 0)
+    epochs_run = 0
+    fit_pred = np.zeros(len(batch), np.float64)
     for _ in range(args.epochs):
+        epochs_run += 1
         np.random.shuffle(idx)
         ep_kl: list[float] = []
         for s in range(0, len(idx), args.mb):
@@ -455,6 +571,11 @@ def ppo_update(model: Policy, ref: Policy | None, opt, batch: list[dict], args, 
             p = logp_all.exp() * b["act_mask"]
             ent = -(p * logp_all.masked_fill(b["act_mask"] == 0, 0)).sum(-1).mean()
             loss = pg + args.vf_coef * vloss - args.ent_coef * ent
+            fit_pred[idx[s:s + args.mb]] = out["value"].detach().double().cpu().numpy() * VALUE_SCALE
+            if aux_coef > 0:
+                aux = aux_loss(out, items, device)
+                loss = loss + aux_coef * aux
+                stats.setdefault("aux", []).append(aux.item())
             kl_ref = torch.zeros((), device=device)
             if ref is not None and beta > 0:
                 with torch.no_grad():
@@ -490,7 +611,57 @@ def ppo_update(model: Policy, ref: Policy | None, opt, batch: list[dict], args, 
                 stats.setdefault(k, []).append(v)
         if ep_kl and np.mean(ep_kl) > args.target_kl:   # this epoch moved the policy enough
             break
-    return {k: round(float(np.mean(v)), 4) for k, v in stats.items()}
+    if vf_epochs > 0 and batch:
+        import copy
+
+        kl_c = float(getattr(args, "vf_kl_coef", 1.0))
+        snap = copy.deepcopy(model)
+        snap.eval()
+        for p_ in snap.parameters():
+            p_.requires_grad_(False)
+        # the shared optimiser's first moments still hold the policy epochs' gradients: left in,
+        # they would keep pushing the policy along the PPO direction for ~1/(1-beta1) value steps
+        # (past the target_kl early stop) before the KL term pulls back. Zero them for the value
+        # passes and restore the optimiser state afterwards (the next update's policy epochs see
+        # the momentum as if the value passes had not run).
+        opt_saved = copy.deepcopy(opt.state_dict())
+        for st_ in opt.state.values():
+            if "exp_avg" in st_:
+                st_["exp_avg"].zero_()
+            if "momentum_buffer" in st_ and st_["momentum_buffer"] is not None:
+                st_["momentum_buffer"].zero_()
+        for _ in range(vf_epochs):
+            np.random.shuffle(idx)
+            for s in range(0, len(idx), args.mb):
+                items = [batch[i] for i in idx[s:s + args.mb]]
+                b = collate(items, device)
+                ret = torch.tensor([it["ret"] for it in items], device=device)
+                out = model(b)
+                vloss = F.smooth_l1_loss(out["value"], ret / VALUE_SCALE)
+                with torch.no_grad():
+                    snap_lp = F.log_softmax(snap(b)["logits"] / args.temperature, -1)
+                kl = _masked_kl(snap_lp, F.log_softmax(out["logits"] / args.temperature, -1), b["act_mask"])
+                loss = args.vf_coef * vloss + kl_c * kl
+                if aux_coef > 0:
+                    aux = aux_loss(out, items, device)
+                    loss = loss + aux_coef * aux
+                    stats.setdefault("vf_aux", []).append(aux.item())
+                fit_pred[idx[s:s + args.mb]] = out["value"].detach().double().cpu().numpy() * VALUE_SCALE
+                opt.zero_grad(set_to_none=True)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad)
+                opt.step()
+                stats.setdefault("vf_v", []).append(vloss.item())
+                stats.setdefault("vf_kl", []).append(kl.item())
+        opt.load_state_dict(opt_saved)
+    res ={k: round(float(np.mean(v)), 4) for k, v in stats.items()}
+    res["epochs_run"] = epochs_run
+    if vf_epochs > 0:
+        res["vf_epochs_run"] = vf_epochs
+    if batch:
+        res.update(_ev_stats(batch, "vpred", "ev"))
+        res.update(_ev_stats(batch, "", "ev_fit", pred=fit_pred))
+    return res
 
 
 def michael_reward_delta(res: dict, michael_bonus: float = MICHAEL_BONUS) -> float:
@@ -528,7 +699,19 @@ def command_argv(argv, flag: float | None, michael_bonus: float) -> list[str]:
     return out
 
 
-def episode_items(res: dict, lam: float, michael_bonus: float = MICHAEL_BONUS) -> list[dict]:
+def _per_step(tr: dict, key: str, n: int, fill):
+    """traj list ``key`` when it has one entry per step, else ``fill`` per step (old trajs)."""
+    v = tr.get(key)
+    return list(v) if v is not None and len(v) == n else [fill] * n
+
+
+def episode_items(res: dict, lam: float, michael_bonus: float = MICHAEL_BONUS, lam_build: float | None = None,
+                  vf_lam: float | None = None) -> list[dict]:
+    """PPO items of one recorded run. ``lam_build`` (None = ``lam``): GAE lambda of the build
+    decisions' advantages (``is_build_step``); ``vf_lam`` (None = ``lam``): constant lambda of the
+    value target ``ret``. With both None (or == lam) the items' adv / ret are the plain-GAE ones.
+    Items also carry ``stage`` / ``phase`` (play.py traj; None / '' when not recorded), ``build``,
+    ``vpred`` (the actor's value, outcome units, unshaped) and the run's ``won`` / ``michael``."""
     tr = res["traj"]
     if not tr["steps"]:
         return []
@@ -542,13 +725,27 @@ def episode_items(res: dict, lam: float, michael_bonus: float = MICHAEL_BONUS) -
     bonus = np.asarray(tr.get("bonus") if tr.get("bonus") is not None else (), np.float32).reshape(-1)
     if len(bonus) != len(rew):
         bonus = np.zeros(len(rew), np.float32)
-    adv, ret = gae(rew, val - bonus, lam)
+    n = len(tr["steps"])
+    stages = _per_step(tr, "stage", n, None)
+    phases = _per_step(tr, "phase", n, "")
+    phases = [step_phase(st, ph) for st, ph in zip(tr["steps"], phases)]
+    build = [is_build_step(st, int(tr["chosen"][i]), phases[i]) for i, st in enumerate(tr["steps"])]
+    if (lam_build is None or lam_build == lam) and (vf_lam is None or vf_lam == lam):
+        adv, ret = gae(rew, val - bonus, lam)
+    else:
+        lb = lam if lam_build is None else float(lam_build)
+        adv, _ = gae(rew, val - bonus, np.where(np.asarray(build, bool), lb, lam).astype(np.float64))
+        _, ret = gae(rew, val - bonus, lam if vf_lam is None else float(vf_lam))
     ret = ret + bonus
+    won = float(bool(res.get("won")))
+    michael = float(bool(res.get("won")) and (res.get("reason") == "michael" or bool(res.get("michael"))))
     items = []
     for i, st in enumerate(tr["steps"]):
         if len(st["act_type"]) <= 1:
             continue  # forced move: no gradient
-        items.append({**st, "chosen": tr["chosen"][i], "logp": tr["logp"][i], "adv": float(adv[i]), "ret": float(ret[i])})
+        items.append({**st, "chosen": tr["chosen"][i], "logp": tr["logp"][i], "adv": float(adv[i]), "ret": float(ret[i]),
+                      "vpred": float(val[i]), "stage": stages[i], "phase": phases[i], "build": bool(build[i]),
+                      "won": won, "michael": michael})
     return items
 
 
@@ -616,6 +813,16 @@ def main(argv: list[str] | None = None) -> None:
                     help=f"training value of beating Michael on top of a win (16); returns / value targets and the "
                          f"gate's outcome use it, eval rows keep the game's {MICHAEL_BONUS:g}. Default: what the run "
                          f"was saved with, else {MICHAEL_BONUS:g}")
+    ap.add_argument("--aux-coef", type=float, default=0.0,
+                    help="weight of the aux head's BCE on the run's (won, Michael win) in the PPO loss; 0 = off")
+    ap.add_argument("--lam-build", type=float, default=None,
+                    help="GAE lambda of the advantages at build decisions (shop / skip / pin / boss_draft / "
+                         "michael_pick steps); default = --lam")
+    ap.add_argument("--vf-lam", type=float, default=None, help="GAE lambda of the value target; default = --lam")
+    ap.add_argument("--vf-epochs", type=int, default=0,
+                    help="value(+aux)-only passes after the policy epochs, with KL(snapshot || policy) on the "
+                         "logits (--vf-kl-coef) so the policy stays put; 0 = off")
+    ap.add_argument("--vf-kl-coef", type=float, default=1.0, help="KL-to-snapshot coefficient of the --vf-epochs passes")
     args = ap.parse_args(argv)
     targets_mix = parse_mix(args.targets_mix)
     pivot = parse_pivot(args.pivot)
@@ -817,7 +1024,7 @@ def main(argv: list[str] | None = None) -> None:
                     if res.get("error"):
                         print("episode error:", res["error"], res.get("trace", "")[-400:], flush=True)
                         continue
-                    buf_items.extend(episode_items(res, args.lam, mb))
+                    buf_items.extend(episode_items(res, args.lam, mb, lam_build=args.lam_build, vf_lam=args.vf_lam))
                     res.pop("traj", None)
                     buf_eps.append(res)
                     recent.append(res)
@@ -858,6 +1065,10 @@ def main(argv: list[str] | None = None) -> None:
                    "kl_coef": round(args.kl_coef_now, 4), "kl_ref_src": args.kl_ref,
                    "ent_coef": round(ent_coef, 5), "ent_coef_next": round(state["ent_coef"], 5),
                    "curr_char_w": {k: v for k, v in w["char"].items() if v != 1.0}, **st}
+            fix = {k: v for k, v in (("aux_coef", args.aux_coef), ("lam_build", args.lam_build), ("vf_lam", args.vf_lam),
+                                     ("vf_epochs", args.vf_epochs)) if v}
+            if fix:
+                row["ppofix"] = fix
             if targets_mix or pivot:
                 row["train_by_target"] = by_target(recent)
             if pivot:
