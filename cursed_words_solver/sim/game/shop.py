@@ -159,6 +159,7 @@ class Shop:
         for skate in player.unpacked_of("RollerSkate"):
             skate.fields["PreviousShopRestockCount"] = 0
         player._shop_listener = self._on_item_event
+        self._stocks = 0   # stocks generated so far (keys determinized restocks, see _generate)
         self._generate(self.free_item_active, is_reroll=False, free=self.angel_available())
         self.left = False
 
@@ -183,6 +184,7 @@ class Shop:
         self.used_angel = bool(player.unpacked_of("FutureFunds")) and not snap.get("angel_investment_available")
         self.free_item_active = bool(snap.get("free_item_available"))
         self.left = False
+        self._stocks = 1   # the snapshot's stock is the first; a restock is the 2nd
         for o in snap.get("offers") or ():
             slot, idx = o.get("slot"), int(o.get("index", 0))
             if slot in ("sticker", "stamp"):
@@ -230,6 +232,7 @@ class Shop:
         """``GenerateGoodsInStock``."""
         player, run, rng = self.player, self.player.run, self.rng
         # determinized futures: the k-th stock of this shop comes from its own keyed stream
+        # (getattr: shops pickled before the counter existed)
         self._stocks = getattr(self, "_stocks", 0) + 1
         rng.mark("shop", run.stage, run.node.name, self._stocks)   # no-op on the game's own Rng
         starter_idx = -1

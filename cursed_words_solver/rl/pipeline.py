@@ -37,6 +37,29 @@ are not run. Stages (skipped when complete; ``--dry-run`` prints the plan):
                    exit2 has its own job settings (2026-11-14): ``--exit-search`` (sims 2: as good as 4 at
                    1/3 the cost), ``--exit-crown-weights`` (crowns 5-7 heavy), ``--exit-quest-share`` 0.1,
                    ``--exit-targets-mix`` 1,0,0 (all FREE; '' = ppo2's mix), ``--exit-pivot`` ('' = ppo2's)
+
+``--v3`` (2026-11-20): a fresh ``rl/ppo3`` forked from the ppo2 champion (ppo2 plateaued: champion u425,
+no promotion through u669). Needs ``rl/ppo2/champion.pt``; nothing under ppo2 is written (STOP is
+forwarded to / cleared in ppo3 and exit2 only). Stages (``--dry-run`` prints the plan):
+
+1. ``seed3`` — copies only: ppo2/champion.pt -> ppo3/ppo2_champion.pt (frozen; the rl.ppo ``--init``);
+               the ppo2 champion's gate rows (``evaluate.champion_eval_path(ppo2)``, e.g.
+               eval/champion_u425.jsonl) -> ppo3/eval/champion_u0.jsonl, the name a fresh rl.ppo looks
+               up (it starts at champion_update 0 and ``run_arm`` plays only rows missing by
+               ``cache_key``), so the first gate does not replay the 548 champion games; copied only when
+               the frozen policy's update stamp equals that champion's update. Gate eval is greedy with
+               no search, but the policy's after-state features play determinized clones
+               (``actions._after``), so the 2026-11-20 keyed futures (``core.KeyedRng``) replay a few rows
+               differently (1 of 162 sampled: same result, other step count); ``--v3-replay-champion``
+               re-plays the champion with the current code instead (548 runs, ~20 min). Also
+               ppo2/eval/ppo1_champion.jsonl (the gate's vs_ppo1_all rows) and ppo3/v3_inherit.json
+               (ppo2's annealed KL-anchor and adapted entropy coefficients at the fork, ``v3_inherit``).
+2. ``ppo3``  — ``v2_ppo_args`` for dir ppo3 (crowns, quests, targets mix / pivot from ppo2's
+               curriculum.json, ``--compare-dir ppo1``, ``--michael-bonus``, gate sizes, distill from
+               exit2) plus the value / aux fixes ``--v3-aux-coef`` (0.2), ``--v3-vf-lam`` (1.0, Monte
+               Carlo value target), ``--v3-vf-epochs`` (2), ``--v3-lam-build`` (off) and the inherited
+               ``--kl-coef`` / ``--ent-coef`` (``--v3-kl-coef`` / ``--v3-ent-coef`` override); the exit2
+               collector beside it follows ppo3/weights.pt and ppo3/curriculum.json, still writing exit2.
 """
 
 from __future__ import annotations
@@ -438,8 +461,9 @@ def v3_stages(args) -> list[dict]:
     from cursed_words_solver.rl.evaluate import cache_key
 
     have = {cache_key(r) for r in store.read_jsonl(HOME / "ppo3" / "eval" / "champion_u0.jsonl") if not r.get("error")}
+    rows_ok = getattr(args, "v3_replay_champion", False) or all(cache_key(j) in have for j in v2_gate_jobs(args))
     seeded = _v3_started() or ((HOME / "ppo3" / V3_INIT).is_file() and (HOME / "ppo3" / V3_INHERIT).is_file()
-                               and all(cache_key(j) in have for j in v2_gate_jobs(args)))
+                               and rows_ok)
     return [
         {"name": "seed3", "done": seeded, "cmd": None},
         {"name": "ppo3", "done": len(store.read_jsonl(HOME / "ppo3" / "history.jsonl")) >= args.ppo_updates,
@@ -488,7 +512,9 @@ def seed_ppo3(args) -> dict:
         done["init"] = str(frozen)
     plan = v3_seed_plan()
     done["plan"] = plan
-    if plan["ok"]:
+    if getattr(args, "v3_replay_champion", False):
+        done["champion_rows"] = "replay"   # rl.ppo plays the starting champion on the gate itself
+    elif plan["ok"]:
         done["champion_rows"] = _copy_rows(Path(plan["src"]), ev / "champion_u0.jsonl")
     for name in ("ppo1_champion.jsonl", "teacher.jsonl"):
         if (HOME / "ppo2" / "eval" / name).is_file():
@@ -624,6 +650,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="ppo3 rl.ppo --kl-coef; default: ppo2's annealed coefficient at the fork (ppo3/v3_inherit.json)")
     ap.add_argument("--v3-ent-coef", type=float, default=None,
                     help="ppo3 starting rl.ppo --ent-coef; default: ppo2's adapted coefficient at the fork")
+    ap.add_argument("--v3-replay-champion", action="store_true",
+                    help="ppo3: do not copy ppo2's champion gate rows; rl.ppo re-plays the starting champion "
+                         "(548 runs) with the current code (the copied rows predate the keyed futures)")
     ap.add_argument("--dry-run", action="store_true", help="--v2 / --v3: print the stage plan and exit")
     args = ap.parse_args(argv)
     if args.v2 and args.v3:
@@ -643,7 +672,9 @@ def main(argv: list[str] | None = None) -> int:
             print("--v3 needs a ppo2 champion (rl/ppo2/champion.pt)", flush=True)
             return 1
         plan = v3_seed_plan()
-        print(f"seed      {'ok' if plan['ok'] else 'NOT seeded (' + plan['why'] + '): the champion is re-played'}"
+        seed = ("replay (--v3-replay-champion): the champion is re-played" if args.v3_replay_champion else
+                "ok" if plan["ok"] else "NOT seeded (" + plan["why"] + "): the champion is re-played")
+        print(f"seed      {seed}"
               f"  {plan['src']} (policy stamp u{plan['stamp']}) -> {plan['dst']}")
         print(f"inherit   {json.dumps(v3_inherit(args))}")
         for st in v3_stages(args):

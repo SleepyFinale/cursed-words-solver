@@ -579,8 +579,9 @@ def determinize(game: Game, key: str) -> Game:
     every candidate of one decision so they face the same sampled future (common random
     numbers).
 
-    The stream is keyed by position: every node entry, grid (and grid reroll) and shop stock
-    (and restock) restarts it from ``(key, where)`` (``core.KeyedRng.mark``), so branches that
+    The stream is keyed by position: every node entry, encounter (and Michael phase) setup,
+    grid (and the k-th reroll of that grid) and shop stock (and restock) restarts it from
+    ``(key, where)`` (``core.KeyedRng.mark``; a no-op on the game's own ``Rng``), so branches that
     consumed different amounts of randomness (an extra restock, a buy's item rolls, a
     different word's procs) still see the same later shops and grids. Within one source the
     draws run in order (a shop's restocks are its 2nd, 3rd... stock). Each sampled source

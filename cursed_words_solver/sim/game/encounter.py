@@ -95,6 +95,7 @@ class Encounter:
         self.remaining_grids = GRIDS_PER_ROUND
         self.rerolls = 1
         self.reroll_tracker = 0
+        self._grid_rerolls = 0   # rerolls of the current grid (keys determinized rerolls)
         self.twinkle_available = False
         self.awaiting_forced_sell = False
         self.entered_with_no_money = False
@@ -187,6 +188,9 @@ class Encounter:
 
     def _setup_rest(self) -> None:
         player, run, rng = self.player, self.player.run, self.rng
+        # determinized futures: start-of-encounter rolls (and a Michael phase's, after its
+        # pick) come from their own keyed stream; no-op on the game's own Rng
+        rng.mark("setup", run.stage, run.node.name, len(self.michael.drafted) if self.michael is not None else 0)
         if run.node == Node.BOSS and (not player.active_bosses or player.active_bosses[0].game_class != "MichaelBoss"):
             self.bosses = list(player.active_bosses)
             player.bosses_faced.extend(b.game_class for b in self.bosses)
@@ -225,8 +229,13 @@ class Encounter:
             self.remaining_grids -= 1
         w, h = self.grid_dims()
         run = self.player.run
+        # determinized futures: the n-th grid (and its k-th reroll) of this encounter comes from
+        # its own keyed stream, however much randomness earlier words / rerolls consumed.
+        # No-op on the game's own Rng. (getattr: encounters pickled before the counter existed)
+        k = getattr(self, "_grid_rerolls", 0) + 1 if is_reroll else 0
+        self._grid_rerolls = k
         self.rng.mark("grid", run.stage, run.node.name, len(self.michael.drafted) if self.michael is not None else 0,
-                      self.grids_generated, self.reroll_tracker if is_reroll else 0)   # no-op unless determinized
+                      self.grids_generated, k)
         g = GenCtx(
             player=self.player,
             rng=self.rng,
