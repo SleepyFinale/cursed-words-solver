@@ -35,7 +35,30 @@ from cursed_words_solver.rl.env import CWEnv, pack, potential
 from cursed_words_solver.sim.game.agent import Action, apply, clone, determinize
 
 CURSED_MARGIN = 0.05   # take the cursed boss unless its P(win) is this much lower
+# CWS_AI_CURSED_MARGIN=0 turns the cursed-boss preference (CURSED_MARGIN) off for A/B tests: the
+# boss pick is then the look-ahead's (search on) or the best after-state P(win) (search off).
+# Default "1" = on (the old behaviour).
+CURSED_MARGIN_ENV = "CWS_AI_CURSED_MARGIN"
 _MODEL_CACHE: dict[str, tuple[float, Any]] = {}
+_WARNED_FALLBACK: set[str] = set()
+
+
+def cursed_margin_on() -> bool:
+    return os.environ.get(CURSED_MARGIN_ENV, "1").strip().lower() not in ("0", "off", "false", "no")
+
+
+def _warn_fallback(path: Path) -> None:
+    """Once per path: no pinned assistant policy, so the newest champion by mtime is used."""
+    if str(path) in _WARNED_FALLBACK:
+        return
+    _WARNED_FALLBACK.add(str(path))
+    import sys
+
+    try:   # (a windowed app may have no usable stderr: never let the warning break policy_path)
+        print(f"  AI assistant: no {store.RL_HOME / 'assistant_policy.pt'}; falling back to the newest "
+              f"champion by mtime ({path})", file=sys.stderr, flush=True)
+    except Exception:
+        pass
 
 
 def policy_path() -> Path | None:
@@ -46,6 +69,7 @@ def policy_path() -> Path | None:
         return pinned
     found = sorted(store.RL_HOME.glob("ppo*/champion.pt"), key=lambda p: p.stat().st_mtime)
     if found:
+        _warn_fallback(found[-1])
         return found[-1]
     bc = store.RL_HOME / "bc" / "best.pt"
     return bc if bc.is_file() else None
@@ -420,12 +444,17 @@ def _context(game) -> list[str]:
 
 
 def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps: int = 12,
-                search: bool = True, target: str | None = None, boss_rule: int | None = None) -> Advice:
+                search: bool = True, target: str | None = None, boss_rule: int | None = None,
+                arrange: bool | None = None) -> Advice:
     """``target``: the run's target build ("pivot:S" = pivot mode); None = ``run_target_info``
     (env / persisted / table) when the policy was trained with targets, else FREE. It is set on ``game`` before any env is
     attached, so every sub-env (look-ahead, after-states, shop plan) sees it via clones.
     ``boss_rule``: crown threshold of the uncursed-boss rule (``rules``; 0 = off; None =
-    env CWS_AI_BOSS_RULE, default off); it overrides the boss-draft pick shown."""
+    env CWS_AI_BOSS_RULE, default off); it overrides the boss-draft pick shown.
+    ``arrange``: auto-arrange (``rules.best_arrangement``; None = env CWS_AI_ARRANGE, default
+    ON, 0 turns it off): in an encounter / shop, when dragging Human Boy's hands (or Overhand / Underhand)
+    scores more, the advice opens with "rearrange: move X to ... slot N" steps and every word /
+    action is evaluated under the arranged order (on a copy: ``game`` is not changed)."""
     from cursed_words_solver.rl.model import Actor
     from cursed_words_solver.rl.targets import FREE, canonical, on_plan_count, parse_pivot_label, set_target
     from cursed_words_solver.sim.game.agent import Candidates
@@ -446,9 +475,19 @@ def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps:
     else:
         tgt, pivot = run_target_info(game)
     set_target(game, tgt)
-    env = CWEnv(cands)
+    from cursed_words_solver.rl.rules import describe_drags, env_arrange, has_positional, parse_arrange
+
+    arr = bool((env_arrange() if arrange is None else parse_arrange(arrange))
+               and game.phase in ("shop", "encounter") and has_positional(game.player))
+    shown = game
+    if arr:
+        game = clone(game)   # the drags are advice: evaluate on a copy
+    env = CWEnv(cands, arrange=arr)
     env.attach(game)
+    if arr and game.phase == "shop":
+        env.auto_arrange()   # probe-encounter order (encounters arrange in env.current())
     st, probs, v, aux = _evaluate(actor, env)
+    steps = [display(s) for s in describe_drags(shown, env.arrange_log)] if arr and env.arrange_log else []
     ph = game.phase
     if ph == "encounter" and game.encounter is not None and game.encounter.michael_draft is not None:
         ph = "michael_draft"
@@ -456,13 +495,27 @@ def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps:
                  context=_context(game), target=tgt if cond else None,
                  character=str(getattr(game.player, "character_name", "") or ""),
                  pivot=pivot if cond else None, on_plan=on_plan_count(game, tgt) if cond else 0)
+    if steps:
+        adv.context[:0] = steps   # first: the human drags these before anything else
     order = np.argsort(-probs)
     adv.options = [Option(st.cands[i].action, float(probs[i])) for i in order]
     if not adv.options:
         return adv
     adv.pick = adv.options[0]
+    # search on: the pick is the eval's Searcher decision (play.py: Searcher.choose with the run's
+    # pivot stage), keyed per decision; after-state P(win) values stay for display only
+    skey = decision_key(game, ph)
+    pstage = int(pivot["pivot_stage"]) if pivot and cond else 0
     if ph == "boss_draft":
         _boss_rule(adv, actor, game, cands)
+        if search and not cursed_margin_on():
+            ruled = adv.pick
+            adv.pick = adv.options[0]   # the Searcher's pick (the policy argmax unless the look-ahead overrides)
+            try:
+                _look_ahead(adv, actor, env, st, probs, cands, key=skey, pivot_stage=pstage, set_values=False)
+            except Exception as exc:  # advisory: keep the after-state pick
+                adv.pick = ruled
+                adv.context.append(f"look-ahead failed: {type(exc).__name__}: {exc}")
         _deploy_boss_rule(adv, game, boss_rule)
     elif ph in ("pin_reward", "michael_draft"):
         for o in adv.options:
@@ -471,12 +524,17 @@ def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps:
             r = _value_after(actor, game, o.action, _fast(cands), "assist|after")
             if r is not None:
                 o.p_win, _, o.exp_outcome = r
+        if search:
+            try:
+                _look_ahead(adv, actor, env, st, probs, cands, key=skey, pivot_stage=pstage, set_values=False)
+            except Exception as exc:  # advisory: keep the plain policy pick
+                adv.context.append(f"look-ahead failed: {type(exc).__name__}: {exc}")
     elif ph in ("shop", "encounter"):
         if ph == "encounter":
             _encounter_notes(adv, game)
         if search:
             try:
-                _look_ahead(adv, actor, env, st, probs, cands)
+                _look_ahead(adv, actor, env, st, probs, cands, key=skey, pivot_stage=pstage)
             except Exception as exc:  # advisory: keep the plain policy pick
                 adv.context.append(f"look-ahead failed: {type(exc).__name__}: {exc}")
         if ph == "shop":
@@ -496,24 +554,62 @@ SEARCH_DEFAULT = dict({"fast": SEARCH_FAST, "halving": SEARCH_HALVING}.get(os.en
                                                                          SEARCH_DEEP))
 
 
-def _look_ahead(adv: Advice, actor, env, st, probs, cands) -> None:
-    """Close shop / grid calls: play the top candidates forward on resampled futures (rl.search)."""
+def decision_key(game, phase: str | None = None) -> str:
+    """Search key of the live decision: 'assist|' + blake2b(character, crown, stage, node, phase,
+    gold, sorted owned item classes, rerolls of the current grid; in an encounter its grid number
+    and target left, in a shop its stock count), all human-visible, so every decision gets its own
+    determinized futures (the same state always gets the same ones)."""
+    import hashlib
+
+    try:
+        p = game.player
+        run = p.run
+        enc = getattr(game, "encounter", None)
+        items = sorted(str(it.game_class) for it in list(p.stickers) + list(p.stamps) if it is not None)
+        parts = [str(p.character), int(run.ascension), int(run.stage), int(run.node),
+                 str(phase if phase is not None else game.phase), int(p.money), items,
+                 int(getattr(enc, "_grid_rerolls", 0) or 0) if enc is not None else 0]
+        # visible progress inside one node (grid number, target left, shop restocks), so the
+        # decisions of one encounter / shop do not all share one key (only appended when set)
+        more = []
+        if enc is not None:
+            more += [int(enc.grids_generated), int(getattr(enc, "remaining_target", 0) or 0),
+                     int(getattr(enc, "rerolls", 0) or 0)]
+        shop = getattr(game, "shop", None)
+        if shop is not None:
+            more.append(int(getattr(shop, "_stocks", 0) or 0))
+        if more:
+            parts.append(more)
+    except Exception:
+        return "assist|search"
+    h = hashlib.blake2b(json.dumps(parts).encode(), digest_size=8).hexdigest()
+    return f"assist|{h}"
+
+
+def _look_ahead(adv: Advice, actor, env, st, probs, cands, key: str = "assist|search", pivot_stage: int = 0,
+                set_values: bool = True) -> None:
+    """Play the top candidates forward on resampled futures (rl.search) and pick as
+    ``Searcher.choose`` does with ``probs`` = the policy's (same gate, candidates, key and rule).
+    ``pivot_stage`` > 0: rollouts re-read pivot targets (play.py's ``searcher.pivot_stage``).
+    ``set_values`` False (drafts): keep the after-state values; the look-ahead goes in the notes."""
     from cursed_words_solver.rl.search import SearchConfig, Searcher, wants_search
 
     cfg = SearchConfig(**SEARCH_DEFAULT)
     if not wants_search(env, st, probs, cfg):
         return
-    sub = CWEnv(_fast(cands))
-    sub.attach(env.game)
     sr = Searcher(actor, cfg)
+    sr.pivot_stage = int(pivot_stage or 0)
+    if len(sr.candidates(probs, key)) < 2:
+        return   # nothing to compare: the policy pick stands (Searcher.choose: "single")
+    # rollouts arrange like the eval Searcher (play.py: _sub_env passes env.arrange on); off = unchanged
+    sub = CWEnv(_fast(cands), arrange=getattr(env, "arrange", False))
+    sub.attach(env.game)
     info = None
     if cfg.mode == "halving":
-        if len(sr.candidates(probs, "assist|search")) < 2:
-            return   # nothing to compare: the policy pick stands
-        info = sr.halving(sub, st, probs, "assist|search")
+        info = sr.halving(sub, st, probs, key)
         sc = info["scores"]
     else:
-        sc = sr.scores(sub, st, probs, "assist|search")
+        sc = sr.scores(sub, st, probs, key)
     if not sc:
         return
     by_action = {id(st.cands[i].action): i for i in sc}
@@ -522,7 +618,8 @@ def _look_ahead(adv: Advice, actor, env, st, probs, cands) -> None:
         if i is None:
             continue
         v = sc[i]
-        o.exp_outcome = v
+        if set_values:
+            o.exp_outcome = v
         if info is not None:
             se = info["se"].get(i, 0.0)
             if i == info["policy"]:
@@ -534,9 +631,9 @@ def _look_ahead(adv: Advice, actor, env, st, probs, cands) -> None:
             o.note = (o.note + f" look-ahead {v:.1f}").strip()
     best = info["pick"] if info is not None else max(sc, key=lambda i: (sc[i], probs[i]))
     pick = next(o for o in adv.options if o.action is st.cands[best].action)
-    if pick is not adv.pick:
+    if pick.action is not st.cands[int(np.argmax(probs))].action:
         pick.note = (pick.note + " (look-ahead overrides the policy)").strip()
-        adv.pick = pick
+    adv.pick = pick
 
 
 def _fast(cands):
@@ -565,7 +662,7 @@ def _boss_rule(adv: Advice, actor, game, cands) -> None:
     best = max(bosses, key=lambda o: o.p_win)
     cursed = [o for o in bosses if o.note == "cursed"]
     pick = best
-    if cursed:
+    if cursed and cursed_margin_on():
         c = max(cursed, key=lambda o: o.p_win)
         if route and c.p_win >= best.p_win - CURSED_MARGIN:
             pick = c

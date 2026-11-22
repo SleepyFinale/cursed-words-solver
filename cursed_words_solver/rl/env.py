@@ -13,6 +13,12 @@ Michael bonus (training only): ``CWEnv(michael_bonus=b)`` scores a Michael win a
 ``train_outcome`` = 16 + b instead of the game's 16 + ``MICHAEL_BONUS`` (8), so the return
 telescopes to that. ``result()["outcome"]`` stays the true game outcome (16 / 24); a b other than
 8 is reported as ``result()["michael_bonus"]`` (rl.ppo uses it to know what the rewards carry).
+
+Auto-arrange (``CWEnv(arrange=True)``, default off; ``rules.best_arrangement``): before each
+encounter decision whose candidates include submits, and before a shop "leave", the env drags
+positional items (Human Boy's hands, Overhand / Underhand) into the order that scores best with
+the game's own move (no env step, no reward: the order is a free human action), then lists the
+candidates under that order. ``result()`` then carries arrange, arrange_drags, arrange_calls.
 """
 
 from __future__ import annotations
@@ -89,8 +95,13 @@ def pack(step: Step) -> dict[str, np.ndarray]:
 
 class CWEnv:
     def __init__(self, cands: "Candidates", limits: Limits | None = None, shaping: float = 0.0,
-                 michael_bonus: float = MICHAEL_BONUS) -> None:
+                 michael_bonus: float = MICHAEL_BONUS, arrange: bool = False) -> None:
         self.builder = CandidateBuilder(cands, limits)
+        self.arrange = bool(arrange)   # auto-arrange positional items before submits / shop leave
+        self.arrange_drags = 0
+        self.arrange_calls = 0
+        self.arrange_secs = 0.0
+        self.arrange_log: list = []    # drags made since the last attach (kind, src, dst)
         self.shaping = float(shaping)   # Φ per owned on-target item (build-conditioned runs)
         self.michael_bonus = float(michael_bonus)   # training value of beating Michael (on top of 16)
         self.target = FREE
@@ -102,18 +113,21 @@ class CWEnv:
         self.phi = 0.0
 
     def reset(self, *, character: str, crown: int, seed: int, quest: str | None = None, wordlist=None,
-              target: str = FREE) -> Step:
+              target: str = FREE, keyed: bool = False) -> Step:
+        """``keyed``: the game draws from a position-keyed RNG (``RunConfig.keyed_rng``)."""
         from cursed_words_solver.rl.targets import canonical
         from cursed_words_solver.sim.game.run import Game, RunConfig
 
         self.game = Game(RunConfig(character=character, ascension=crown, challenge=quest, seed=seed,
                                    wordlist=wordlist or self.builder.cands.wordlist,
-                                   target_build=canonical(target) if target else FREE))
+                                   target_build=canonical(target) if target else FREE,
+                                   keyed_rng=bool(keyed)))
         return self.attach(self.game)
 
     def attach(self, game: "Game") -> Step:
         """Start from an existing game (live advice, imported captures)."""
         self.game = game
+        self.arrange_log = []
         self.target = get_target(game)
         self.point_anytime = 0
         self.shop_actions = 0
@@ -129,6 +143,9 @@ class CWEnv:
         g = self.game
         key = f"after|{g.player.run.stage}|{g.player.run.node}|{self.steps}"
         cs = self.builder.build(g, point_anytime=self.point_anytime, shop_actions=self.shop_actions, key=key)
+        if (self.arrange and g.phase == "encounter" and self.builder.last_words
+                and self.auto_arrange(words=self.builder.last_words)):
+            cs = self.builder.build(g, point_anytime=self.point_anytime, shop_actions=self.shop_actions, key=key)
         words = self.builder.last_words if g.phase == "encounter" else []
         best = words[0].score if words else 0.0
         second = words[1].score if len(words) > 1 else 0.0
@@ -141,8 +158,34 @@ class CWEnv:
     def done(self) -> bool:
         return self.game is None or self.game.phase == "done" or self.steps >= MAX_STEPS
 
+    def auto_arrange(self, words=None) -> int:
+        """Drag positional items into the best order (``rules.best_arrangement``; ``words``: the
+        decision's submit candidates, None = found here) with the game's own move. Returns the
+        number of drags made (0 when off / nothing gains)."""
+        if not self.arrange or self.game is None:
+            return 0
+        import time
+
+        from cursed_words_solver.rl.rules import apply_arrangement, best_arrangement, has_positional
+
+        g = self.game
+        if not has_positional(g.player):
+            return 0
+        t0 = time.perf_counter()
+        self.arrange_calls += 1
+        try:
+            drags = best_arrangement(g, words, cands=self.builder.cands)
+            n = apply_arrangement(g, drags) if drags else 0
+        finally:
+            self.arrange_secs += time.perf_counter() - t0
+        self.arrange_drags += n
+        self.arrange_log.extend(drags[:n])
+        return n
+
     def step(self, action: Action) -> tuple[float, bool]:
         g = self.game
+        if self.arrange and action.kind == "leave" and g.phase == "shop":
+            self.auto_arrange()
         ok = apply(g, action)
         self.steps += 1
         if action.kind in ANYTIME:
@@ -170,6 +213,9 @@ class CWEnv:
     def result(self) -> dict[str, Any]:
         g = self.game
         extra = {"michael_bonus": self.michael_bonus} if self.michael_bonus != MICHAEL_BONUS else {}
+        if self.arrange:
+            extra.update(arrange=True, arrange_drags=self.arrange_drags, arrange_calls=self.arrange_calls,
+                         arrange_secs=round(self.arrange_secs, 3))
         return {**extra, "won": bool(g.won), "reason": g.end_reason, "outcome": round(outcome(g), 4),
                 "stage": g.player.run.stage, "steps": self.steps,
                 "michael": g.end_reason == "michael", "cursed": len(g.player.run.cursed_bosses_defeated),

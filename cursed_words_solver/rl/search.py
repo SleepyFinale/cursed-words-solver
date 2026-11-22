@@ -17,6 +17,13 @@ Two modes (``SearchConfig.mode``):
   each; round 2: ``sims1`` more for the argmax and the best challenger. The policy argmax is kept
   unless the best challenger's paired mean difference vs the argmax is > 0 with
   t >= ``switch_t``, so close calls inside the noise do not flip the policy's pick.
+* ``"race"`` (opt-in, exit3 labels; ``Searcher.race``): the top ``k`` candidates by policy
+  probability (deterministic), ``race_n0`` paired futures each (key ``{key}|{s}`` shared by every
+  candidate); after each round a candidate whose paired t vs the current leader is below
+  ``race_drop_t`` is dropped, the survivors get ``race_step`` more futures, up to ``race_n_max`` or
+  until the top two are separated (|t| >= ``race_stop_t``). Rollouts run to the end of the next
+  stage's boss (``race_horizon`` 0: progress ``3 * stage + 6``) with ``race_max_steps`` steps. The
+  leader is the pick only when ``confident`` (|t(top 2)| >= ``race_stop_t`` or one survivor).
 
 Only information a human has is used: the clones are resampled before any rollout.
 """
@@ -46,13 +53,27 @@ class SearchConfig:
     horizon: float = 2.0    # rollout until progress grows by this many nodes (or the run ends)
     min_prob: float = 0.04  # don't search candidates the policy all but rules out
     margin: float = 0.35    # shop/encounter: search only when top-2 probabilities are this close
-    max_steps: int = 120    # per rollout
+    max_steps: int = 120    # per rollout (kept: not shown that the horizon always stops a rollout first)
+    # stage gates (0 = off, the default: behaviour unchanged)
+    max_stage: int = 0          # > 0: never search margin-gated shop / encounter calls at stage > max_stage
+                                # (boss / pin / Michael drafts are still searched)
+    shop_margin_stage: int = 0  # > 0: shop calls at stage <= N skip the margin test (margin treated as 1.0)
     # "halving" mode (mode="topk" ignores these)
     mode: str = "topk"      # "topk" | "halving"
     k: int = 3              # Gumbel-top-k candidates
     sims0: int = 4          # round 1: futures per candidate
     sims1: int = 4          # round 2: extra futures for the argmax and the round-1 challenger
     switch_t: float = 1.0   # paired t vs the policy argmax needed to override it
+    # "race" mode (exit3; other modes ignore these): top-k candidates (k above) raced on paired futures
+    race_n0: int = 8            # futures per candidate in round 1
+    race_step: int = 4          # extra futures per surviving candidate per round
+    race_n_max: int = 32        # futures cap per candidate
+    race_drop_t: float = -2.5   # drop a candidate whose paired t vs the leader is below this
+    race_switch_t: float = 2.5  # a leader that is not the policy pick must also beat it by this paired t
+                                # (review 2026-11-21: -2 / no switch bar gave ~10% confident switches on ties)
+    race_stop_t: float = 2.5    # stop (confident) once |t| of the runner-up vs the leader reaches this
+    race_horizon: float = 0.0   # > 0: rollout nodes; 0 = through the next stage's boss (progress 3 * stage + 6)
+    race_max_steps: int = 400   # per rollout in race mode (max_steps stays for the other modes)
     # value of a Michael win over a plain win in a finished rollout (env.potential): the game's
     # MICHAEL_BONUS by default; set it to the bonus PPO trains with (rl.ppo --michael-bonus) so
     # the look-ahead's labels value the Michael route as training does
@@ -71,15 +92,28 @@ def wants_search(env: CWEnv, st: Step, probs: np.ndarray, cfg: SearchConfig) -> 
         return True
     if g.phase == "encounter" and g.encounter is not None and g.encounter.michael_draft is not None:
         return True
+    stage = _stage(g)
+    if cfg.max_stage > 0 and g.phase in ("shop", "encounter") and stage > cfg.max_stage:
+        return False
+    margin = cfg.margin
+    if cfg.shop_margin_stage > 0 and g.phase == "shop" and stage <= cfg.shop_margin_stage:
+        margin = 1.0
     order = np.argsort(-probs)
     a, b = st.cands[order[0]], st.cands[order[1]]
-    if probs[order[0]] - probs[order[1]] > cfg.margin:
+    if probs[order[0]] - probs[order[1]] > margin:
         return False
     return a.action.kind in CLOSE_KINDS or b.action.kind in CLOSE_KINDS
 
 
+def _stage(game) -> int:
+    try:
+        return int(game.player.run.stage)
+    except Exception:
+        return 0
+
+
 def _sub_env(env: CWEnv, game) -> CWEnv:
-    e = CWEnv(env.builder.cands, env.builder.lim)
+    e = CWEnv(env.builder.cands, env.builder.lim, arrange=getattr(env, "arrange", False))
     e.attach(game)
     e.point_anytime = env.point_anytime
     e.shop_actions = env.shop_actions
@@ -120,6 +154,23 @@ def rollout_value(env: CWEnv, cand_action, actor: "Actor", key: str, cfg: Search
         return float(potential(e.game, michael_bonus=mb))
     _, v, _ = actor.evaluate(pack(st))
     return float(potential(e.game, michael_bonus=mb)) + v * VALUE_SCALE
+
+
+def race_horizon(game, cfg: SearchConfig) -> float:
+    """Race-mode rollout horizon in progress nodes: ``race_horizon`` if > 0, else through the end of
+    the next stage's boss, ``3 * stage + 6 - progress`` (as the deep-label driver; >= 1)."""
+    if cfg.race_horizon > 0:
+        return float(cfg.race_horizon)
+    return max(1.0, 3.0 * _stage(game) + 6.0 - float(progress(game)))
+
+
+def race_candidates(probs: np.ndarray, k: int, min_prob: float) -> list[int]:
+    """Top ``k`` by probability among those >= ``min_prob`` (the argmax first, always in; ties:
+    lower index). Deterministic: no key."""
+    best = int(np.argmax(probs))
+    order = sorted(range(len(probs)), key=lambda i: (-float(probs[i]), i))
+    rest = [int(i) for i in order if i != best and probs[i] >= min_prob]
+    return [best] + rest[: max(0, int(k) - 1)]
 
 
 def _key_seed(key: str) -> int:
@@ -175,12 +226,78 @@ class Searcher:
         cfg = self.cfg
         if cfg.mode == "halving":
             return gumbel_candidates(probs, key, cfg.k, cfg.min_prob)
+        if cfg.mode == "race":
+            return race_candidates(probs, cfg.k, cfg.min_prob)
         return [int(i) for i in np.argsort(-probs)[: cfg.top] if probs[i] >= cfg.min_prob or i == np.argmax(probs)]
 
-    def _roll(self, env, st, i: int, key: str, s: int) -> float:
+    def _roll(self, env, st, i: int, key: str, s: int, cfg: SearchConfig | None = None) -> float:
         self.stats["rollouts"] = self.stats.get("rollouts", 0) + 1
         extra = (self.pivot_stage,) if self.pivot_stage else ()   # pivot off: the old 5-argument call
-        return rollout_value(env, st.cands[i].action, self.actor, f"{key}|{s}", self.cfg, *extra)
+        return rollout_value(env, st.cands[i].action, self.actor, f"{key}|{s}", cfg or self.cfg, *extra)
+
+    def race(self, env: CWEnv, st: Step, probs: np.ndarray, key: str) -> dict:
+        """Race the top ``k`` candidates on paired futures (module doc). Future ``s`` of every
+        candidate uses determinize key ``{key}|{s}`` (common random numbers). Returns ``cands``
+        (argmax first), ``vals`` (rollout values per candidate, future s at index s), ``q`` / ``n``,
+        ``diff`` / ``se`` / ``t`` (paired vs the final leader; the leader's 0), ``alive`` (survivors),
+        ``leader`` (best mean survivor; ties: higher probability), ``runner_up`` (best other survivor,
+        None if none), ``t2`` (its t vs the leader; 0 without one), ``confident``, ``pick`` (leader if
+        confident, else the policy argmax), ``policy``, ``diff_pol`` / ``t_pol`` (leader vs the argmax),
+        ``margin`` (leader - runner-up mean), ``scores`` (= q), ``horizon``, ``rounds``."""
+        import dataclasses
+
+        cfg = self.cfg
+        H = race_horizon(env.game, cfg)
+        rcfg = dataclasses.replace(cfg, horizon=H, max_steps=int(cfg.race_max_steps))
+        cands = race_candidates(probs, cfg.k, cfg.min_prob)
+        policy = int(cands[0])
+        vals: dict[int, list[float]] = {i: [] for i in cands}
+
+        def mean_key(i: int):
+            return (float(np.mean(vals[i])), float(probs[i]), -i)
+
+        alive = list(cands)
+        n_cur = max(1, min(int(cfg.race_n0), int(cfg.race_n_max)))
+        rounds = 0
+        while True:
+            rounds += 1
+            for i in alive:
+                for s in range(len(vals[i]), n_cur):
+                    vals[i].append(self._roll(env, st, i, key, s, rcfg))
+            if len(alive) < 2:
+                break
+            ld = max(alive, key=mean_key)
+            tv = {i: paired_stats(vals[i], vals[ld])[2] for i in alive if i != ld}
+            alive = [i for i in alive if i == ld or tv[i] >= cfg.race_drop_t]
+            if len(alive) < 2:
+                break
+            ru = max((i for i in alive if i != ld), key=mean_key)
+            if abs(tv[ru]) >= cfg.race_stop_t or n_cur >= cfg.race_n_max:
+                break
+            n_cur = min(n_cur + max(1, int(cfg.race_step)), int(cfg.race_n_max))
+        ld = max(alive, key=mean_key)
+        q = {i: float(np.mean(v)) for i, v in vals.items()}
+        n = {i: len(v) for i, v in vals.items()}
+        diff, se, t = {ld: 0.0}, {ld: 0.0}, {ld: 0.0}
+        for i in cands:
+            if i != ld:
+                diff[i], se[i], t[i], _ = paired_stats(vals[i], vals[ld])
+        others = [i for i in alive if i != ld]
+        ru = max(others, key=mean_key) if others else None
+        t2 = float(t[ru]) if ru is not None else 0.0
+        confident = ru is None or abs(t2) >= cfg.race_stop_t
+        diff_pol, t_pol = (0.0, 0.0) if ld == policy else tuple(paired_stats(vals[ld], vals[policy])[i] for i in (0, 2))
+        if ld != policy:
+            # a switch label must beat the policy pick itself (finite t: a constant tiny gap gives inf)
+            beats = (math.isfinite(t_pol) and t_pol >= cfg.race_switch_t) or (math.isinf(t_pol) and diff_pol > 0.5)
+            confident = bool(confident and beats)
+        rest = [q[i] for i in (others or [i for i in cands if i != ld])]
+        margin = q[ld] - max(rest) if rest else 0.0
+        return {"cands": list(cands), "vals": {i: list(v) for i, v in vals.items()}, "q": q, "scores": q, "n": n,
+                "diff": diff, "se": se, "t": t, "alive": alive, "leader": ld, "runner_up": ru, "t2": t2,
+                "confident": bool(confident), "pick": ld if confident else policy, "policy": policy,
+                "diff_pol": float(diff_pol), "t_pol": float(t_pol), "margin": float(margin), "horizon": H,
+                "rounds": rounds}
 
     def scores(self, env: CWEnv, st: Step, probs: np.ndarray, key: str) -> dict[int, float]:
         """Mean rollout value per candidate (halving mode: the round-robin means of ``halving``)."""
@@ -237,6 +354,13 @@ class Searcher:
             self.stats["single"] = self.stats.get("single", 0) + 1
             return best
         self.stats["searched"] += 1
+        if self.cfg.mode == "race":
+            info = self.race(env, st, probs, key)
+            pick = int(info["pick"])
+            if pick != best:
+                self.stats["changed"] += 1
+            self.last = info
+            return pick
         if self.cfg.mode == "halving":
             info = self.halving(env, st, probs, key)
             pick = int(info["pick"])

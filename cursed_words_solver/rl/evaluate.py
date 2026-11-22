@@ -23,6 +23,16 @@ FINAL target, so ``key`` uses (FREE, pivot_stage) for them and reports group the
 stored in the rows (``boss_rule``) and is part of the run cache key (``cache_key``) but not of
 the pairing ``key``, so a boss-rule arm pairs with a plain arm on the same seeds. Use a separate
 arm name per setting (``compare`` / ``targets`` read every row of the file).
+``--keyed`` plays every job with a position-keyed game RNG (``RunConfig.keyed_rng``: two arms on
+one seed see the same grid / shop wherever they reach the same position, so paired differences
+are less noisy). Rows carry ``keyed``; it is in ``cache_key`` (only when on, so plain cache keys
+are unchanged) but not in the pairing ``key``: use a separate arm name for keyed runs.
+``--arrange`` auto-arranges positional items (Human Boy's hands, Overhand / Underhand) with real
+drags before each submit decision and at shop leave (``rules.best_arrangement``). Rows carry
+``arrange``; like ``keyed`` it is in ``cache_key`` only when on and not in ``key``.
+``--reps R`` (``rep_jobs``) plays each job R times with distinct policy sampling seeds
+(``actor_seed``; meaningful with ``--sample`` or search); rows carry ``rep`` and it is in ``key``
+(only when present), so rep r of one arm pairs with rep r of the other.
 ``--target-table PATH`` gives every job the target the live assistant would choose from that
 table (``targets.table_target``; quest runs FREE, as the assistant); format: ``targets``.
 
@@ -101,15 +111,53 @@ def key(r: dict) -> tuple:
     """Pairing key: character, crown, quest, seed, build target ("" = FREE; old rows lack it),
     pivot stage (0 = not a pivot run; a pivot run's key target is FREE, its start)."""
     ps = int(r.get("pivot_stage") or 0)
-    return (r["character"], r["crown"], r.get("quest") or "", r["seed"], "" if ps else (r.get("target") or ""), ps)
+    k = (r["character"], r["crown"], r.get("quest") or "", r["seed"], "" if ps else (r.get("target") or ""), ps)
+    # sampled repetitions (``rep_jobs``): only rows / jobs that carry a rep get the extra field
+    return k if r.get("rep") is None else (*k, ("rep", int(r["rep"])))
 
 
 def cache_key(r: dict) -> tuple:
     """``run_arm`` cache key: ``key`` plus the boss rule (0 = off), so rows played with another
-    boss rule are not reused."""
+    boss rule are not reused; plus ("keyed",) for keyed-RNG rows and the actor seed when the
+    row / job sets one (both only when present, so older keys are unchanged)."""
     from cursed_words_solver.rl.rules import parse_boss_rule
 
-    return (*key(r), parse_boss_rule(r.get("boss_rule")))
+    k = (*key(r), parse_boss_rule(r.get("boss_rule")))
+    if r.get("keyed"):
+        k = (*k, ("keyed",))
+    if r.get("arrange"):
+        k = (*k, ("arrange",))
+    if r.get("actor_seed") is not None:
+        k = (*k, ("actor_seed", int(r["actor_seed"])))
+    return k
+
+
+def rep_actor_seed(seed: int, rep: int) -> int:
+    """Policy sampling seed of repetition ``rep`` of a job: rep 0 = the job's own seed (what an
+    unrepeated job uses), later reps a stable hash in [1e9, 2e9) (below 2**31, clear of the eval
+    seed blocks)."""
+    import zlib
+
+    if int(rep) == 0:
+        return int(seed)
+    return 1_000_000_000 + zlib.crc32(f"{seed}|rep|{int(rep)}".encode()) % 1_000_000_000
+
+
+def rep_jobs(jobs: list[dict], reps: int) -> list[dict[str, Any]]:
+    """Each job ``reps`` times (same game seed, ``rep`` 0..reps-1, distinct ``actor_seed``):
+    R sampled repetitions per seed. ``reps`` <= 0 returns the jobs unchanged."""
+    if reps <= 0:
+        return list(jobs)
+    out = []
+    for j in jobs:
+        seen: set[int] = set()
+        for r in range(int(reps)):
+            s = rep_actor_seed(j["seed"], r)
+            while s in seen:   # (a hash collision: keep the reps distinct)
+                s += 1
+            seen.add(s)
+            out.append({**j, "rep": r, "actor_seed": s})
+    return out
 
 
 def load_table(path) -> dict:
@@ -196,15 +244,21 @@ def arm_display(arm: str) -> str:
 
 
 def run_arm(arm: str, policy: str, jobs: list[dict], workers: int = 7, *, greedy: bool = True, search=None,
-            out_dir: Path = EVAL_HOME, pool=None, verbose: bool = True, boss_rule: int = 0) -> list[dict]:
+            out_dir: Path = EVAL_HOME, pool=None, verbose: bool = True, boss_rule: int = 0,
+            keyed: bool = False, arrange: bool = False) -> list[dict]:
     """Play the jobs not cached in ``<out_dir>/<arm>.jsonl`` (by ``cache_key``) and return the
     rows of ``jobs``. ``boss_rule``: crown threshold of the uncursed-boss rule (0 = off; a
-    job's own "boss_rule" wins)."""
+    job's own "boss_rule" wins). ``keyed``: play with the position-keyed game RNG (a job's own
+    "keyed" wins). ``arrange``: auto-arrange positional items (a job's own "arrange" wins)."""
     from cursed_words_solver.rl.rules import parse_boss_rule
 
     br = parse_boss_rule(boss_rule)
     if br:
         jobs = [j if "boss_rule" in j else {**j, "boss_rule": br} for j in jobs]
+    if keyed:
+        jobs = [j if "keyed" in j else {**j, "keyed": True} for j in jobs]
+    if arrange:
+        jobs = [j if "arrange" in j else {**j, "arrange": True} for j in jobs]
     path = Path(out_dir) / f"{arm}.jsonl"
     done = {cache_key(r): r for r in store.read_jsonl(path) if not r.get("error")}
     todo = [j for j in jobs if cache_key(j) not in done]
@@ -271,7 +325,13 @@ def paired(a: list[dict], b: list[dict], michael_bonus: float = MICHAEL_BONUS) -
     d = [row_outcome(x, michael_bonus) - row_outcome(y, michael_bonus) for x, y in pairs]
     n = len(d)
     mean = sum(d) / n
-    sd = math.sqrt(sum((v - mean) ** 2 for v in d) / max(1, n - 1))
+    # reps of one job share the game seed: t uses one cluster (mean diff) per job, not per row
+    cl: dict = {}
+    for (x, _), v in zip(pairs, d):
+        cl.setdefault(tuple(e for e in key(x) if not (isinstance(e, tuple) and e and e[0] == "rep")), []).append(v)
+    cd = [sum(v) / len(v) for v in cl.values()]
+    nc = len(cd)
+    sd = math.sqrt(sum((v - mean) ** 2 for v in cd) / max(1, nc - 1))
     only_a = sum(bool(x["won"]) and not bool(y["won"]) for x, y in pairs)
     only_b = sum(bool(y["won"]) and not bool(x["won"]) for x, y in pairs)
     wa = sum(bool(x["won"]) for x, _ in pairs)
@@ -282,7 +342,9 @@ def paired(a: list[dict], b: list[dict], michael_bonus: float = MICHAEL_BONUS) -
     res = {"n": n, "wins_a": wa, "wins_b": wb, "win_diff": round((wa - wb) / n, 4),
            "win_diff_lb90": round((wa - wb) / n - 1.645 * se_w, 4), "only_a": only_a, "only_b": only_b,
            "win_z": round((only_a - only_b) / math.sqrt(disc), 2) if disc else 0.0,
-           "outcome_diff": round(mean, 3), "t": round(mean / (sd / math.sqrt(n)) if sd > 0 else 0.0, 2)}
+           "outcome_diff": round(mean, 3), "t": round(mean / (sd / math.sqrt(nc)) if sd > 0 else 0.0, 2)}
+    if nc != n:
+        res["clusters"] = nc
     if michael_bonus != MICHAEL_BONUS:
         res["michael_bonus"] = float(michael_bonus)
     return res
@@ -340,15 +402,18 @@ def vs_free(rows: list[dict], by=()) -> dict:
     """``paired`` per (group..., target) for every non-FREE target: a = the target's rows, b = the
     FREE rows of the same character / crown / quest / seed. ``by``: fields to split on (``table``)."""
     by = tuple(by) if isinstance(by, (tuple, list)) else (by,)
-    free = {key(r)[:4]: r for r in rows if not arm_of(r)}
+    def fk(r: dict) -> tuple:   # (character, crown, quest, seed) + the rep of sampled repetitions
+        return key(r)[:4] if r.get("rep") is None else (*key(r)[:4], int(r["rep"]))
+
+    free = {fk(r): r for r in rows if not arm_of(r)}
     groups: dict = {}
     for r in rows:
         t = arm_of(r)
-        if t and key(r)[:4] in free:
+        if t and fk(r) in free:
             groups.setdefault((*(_field(r, b) for b in by), t), []).append(r)
     out = {}
     for k, rs in sorted(groups.items(), key=lambda kv: str(kv[0])):
-        out[k] = paired(rs, [{**free[key(r)[:4]], "target": r.get("target"), "pivot_stage": r.get("pivot_stage", 0)}
+        out[k] = paired(rs, [{**free[fk(r)], "target": r.get("target"), "pivot_stage": r.get("pivot_stage", 0)}
                              for r in rs])
     return out
 
@@ -475,6 +540,12 @@ def main(argv: list[str] | None = None) -> None:
                    "target_table.json (FREE where it has no entry; quests FREE); replaces --targets")
     r.add_argument("--boss-rule", type=int, default=0, help="crown N: at crown >= N take an uncursed boss over a "
                    "cursed pick (after policy / search); 0 = off")
+    r.add_argument("--keyed", action="store_true", help="position-keyed game RNG (common random numbers between "
+                   "arms past their first different action); use its own arm name")
+    r.add_argument("--arrange", action="store_true", help="auto-arrange positional items (Human Boy's hands, "
+                   "Overhand / Underhand) with real drags before submits and at shop leave")
+    r.add_argument("--reps", type=int, default=0, help="R > 0: play each job R times with distinct policy sampling "
+                   "seeds (rows carry rep; use with --sample or --search)")
     r.add_argument("--out-dir", default=str(EVAL_HOME), help="where <arm>.jsonl is cached")
     c = sub.add_parser("compare")
     c.add_argument("a")
@@ -507,9 +578,12 @@ def main(argv: list[str] | None = None) -> None:
         jobs = eval_jobs(args.per, args.per_quest, args.block, targets=tg)
         if args.target_table:
             jobs = table_jobs(jobs, load_table(args.target_table))
+        if args.reps > 0 and not args.sample and not args.search.strip() and args.policy != "teacher":
+            r.error("--reps needs --sample, --search or the teacher (a greedy policy replays the same game)")
+        jobs = rep_jobs(jobs, args.reps)
         rows = run_arm(args.arm, pol, jobs, args.workers, greedy=not args.sample,
                        search=json.loads(args.search) if args.search else None, out_dir=out_dir,
-                       boss_rule=args.boss_rule)
+                       boss_rule=args.boss_rule, keyed=args.keyed, arrange=args.arrange)
         print(summarize(rows))
     elif args.cmd == "targets":
         print_targets(load_rows(args.arm))

@@ -157,7 +157,12 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
     FREE and from that stage on the target is re-read at each shop entry, ``PivotTracker``),
     boss_rule (crown N, 0 / absent = off: at crown >= N a cursed boss pick becomes an uncursed
     option, ``rules.uncursed_boss_override``, after the policy and search picks; the row then
-    carries boss_rule and boss_overrides)."""
+    carries boss_rule and boss_overrides), keyed (bool, absent = off: the game draws from a
+    position-keyed RNG, ``RunConfig.keyed_rng``; the row then carries keyed), actor_seed (the
+    policy's sampling seed, default ``seed``; rows carry it, and rep, only when the job has them),
+    arrange (bool, absent = off: auto-arrange positional items with real drags before each submit
+    decision and at shop leave, ``CWEnv(arrange=True)`` / ``rules.best_arrangement``; the row then
+    carries arrange, arrange_drags, arrange_calls)."""
     from cursed_words_solver.rl.env import CWEnv, pack
     from cursed_words_solver.rl.model import Actor
 
@@ -171,12 +176,20 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
 
     boss_rule = parse_boss_rule(job.get("boss_rule"))
     overrides = 0
-    env = CWEnv(_CANDS, shaping=float(job.get("shaping") or 0.0))
+    from cursed_words_solver.rl.rules import parse_arrange
+
+    arrange = parse_arrange(job.get("arrange"))
+    env = CWEnv(_CANDS, shaping=float(job.get("shaping") or 0.0), arrange=arrange)
     rec = bool(job.get("record"))
+    keyed = bool(job.get("keyed"))
+    # optional fields go into the row only when the job sets them (plain rows unchanged)
+    extra = {**({"keyed": True} if keyed else {}), **({"arrange": True} if arrange else {}),
+             **{k: job[k] for k in ("actor_seed", "rep") if job.get(k) is not None}}
     traj: dict[str, list] = {"steps": [], "chosen": [], "logp": [], "value": [], "reward": []}
     try:
+        actor_seed = int(job["seed"] if job.get("actor_seed") is None else job["actor_seed"])
         env.reset(character=job["character"], crown=job["crown"], seed=job["seed"], quest=job.get("quest"),
-                  target=target)
+                  target=target, keyed=keyed)
         if job["policy"] == "teacher":
             from cursed_words_solver.rl.teacher import _init_worker, teacher_policy
             import cursed_words_solver.rl.teacher as T
@@ -192,10 +205,12 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                 except Exception:
                     T._TEACHER_MODEL = None
             if target:
-                pol = targeted_teacher(_CANDS, job["seed"], target, job["character"], job.get("quest"))
+                pol = targeted_teacher(_CANDS, actor_seed, target, job["character"], job.get("quest"))
             else:
-                pol = teacher_policy(_CANDS, job["seed"])
+                pol = teacher_policy(_CANDS, actor_seed)
             while not env.done:
+                if arrange and env.game.phase == "encounter":
+                    env.auto_arrange()   # the teacher lists its own words: arrange first
                 a = pol.act(env.game)
                 if boss_rule:
                     b = boss_rule_action(env.game, a, boss_rule)
@@ -204,12 +219,12 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                 env.step(a)
         else:
             actor = Actor(_model(job["policy"]), greedy=bool(job.get("greedy")),
-                          temperature=float(job.get("temperature", 1.0)), seed=job["seed"])
+                          temperature=float(job.get("temperature", 1.0)), seed=actor_seed)
             searcher = None
             if job.get("search") is not None:
                 from cursed_words_solver.rl.search import SearchConfig, Searcher
 
-                searcher = Searcher(Actor(actor.model, greedy=True, seed=job["seed"]),
+                searcher = Searcher(Actor(actor.model, greedy=True, seed=actor_seed),
                                     SearchConfig(**(job["search"] if isinstance(job["search"], dict) else {})))
                 searcher.pivot_stage = pivot_stage
             pivot = PivotTracker(pivot_stage, env) if pivot_stage > 0 else None
@@ -221,7 +236,7 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                     raise RuntimeError(f"no candidates in phase {env.game.phase}")
                 pk = pack(st)
                 if searcher is not None:
-                    i = searcher.choose(env, st, pk, key=f"search|{job['seed']}|{env.steps}")
+                    i = searcher.choose(env, st, pk, key=f"search|{actor_seed}|{env.steps}")
                     logp, v = 0.0, 0.0
                 else:
                     i, logp, v = actor.choose(pk)
@@ -260,7 +275,7 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
                     traj.setdefault("stage", []).append(stage)
                     traj.setdefault("phase", []).append(phase)
         res = {**{k: job[k] for k in ("character", "crown", "seed") }, "quest": job.get("quest"), **env.result(),
-               "secs": round(time.time() - t0, 1), "error": ""}
+               "secs": round(time.time() - t0, 1), "error": "", **extra}
         if job["policy"] != "teacher" and job.get("search") is not None:
             res["search"] = dict(searcher.stats)
         if boss_rule:
@@ -274,7 +289,7 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
         res = {**{k: job.get(k) for k in ("character", "crown", "seed")}, "quest": job.get("quest"),
                "target": target, **({"pivot_stage": pivot_stage} if pivot_stage > 0 else {}),
                **({"boss_rule": boss_rule} if boss_rule else {}), "won": False, "outcome": 0.0, "error": f"{type(exc).__name__}: {exc}",
-               "trace": traceback.format_exc()[-1200:], "secs": round(time.time() - t0, 1)}
+               "trace": traceback.format_exc()[-1200:], "secs": round(time.time() - t0, 1), **extra}
         traj = {"steps": [], "chosen": [], "logp": [], "value": [], "reward": []}
     if rec or job.get("record_search"):
         res["traj"] = traj

@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from cursed_words_solver.sim.game.challenges import ChallengeRun, make_challenge
-from cursed_words_solver.sim.game.core import Rng, Tile
+from cursed_words_solver.sim.game.core import KeyedRng, Rng, Tile
 from cursed_words_solver.sim.game.encounter import Encounter, SubmitResult
 from cursed_words_solver.sim.game.items import Item, make_item
 from cursed_words_solver.sim.game.player import (
@@ -54,6 +54,13 @@ class RunConfig:
     # Target build for build-conditioned AI ("" = none, "Red" or "Red+Blue"; ``rl/targets.py``).
     # An AI input only: the simulation never reads it.
     target_build: str = ""
+    # Keyed RNG (evals): the real game draws from ``core.KeyedRng(f"run|{seed}")`` instead of
+    # ``Rng(seed)``, so every node entry / encounter setup / grid (and reroll) / shop stock (and
+    # restock) / boss-draft and Michael-draft roll restarts from a sub-key of its position in the
+    # run. Two policies on one keyed seed then see the same grid / shop wherever they reach the
+    # same position (common random numbers past their first different action). Off = the game's
+    # own single stream, bit-identical to before.
+    keyed_rng: bool = False
 
 
 @dataclass
@@ -97,7 +104,7 @@ class Game:
     def __init__(self, config: RunConfig | None = None, **kw: Any) -> None:
         self.config = config or RunConfig(**kw)
         cfg = self.config
-        self.rng = Rng(cfg.seed)
+        self.rng = KeyedRng(f"run|{cfg.seed}") if cfg.keyed_rng else Rng(cfg.seed)
         challenge: ChallengeRun | None = make_challenge(cfg.challenge)
         character = challenge.character if challenge is not None and challenge.character else cfg.character
         ascension = 0 if challenge is not None else int(cfg.ascension)
@@ -115,8 +122,14 @@ class Game:
     def _init_run(self) -> None:
         """``GameStatics.InitialisePlayerForNewRun`` + ``GoToNextNodeAndGetSceneName``."""
         p, rng, run = self.player, self.rng, self.player.run
+        # marks: no-ops on the game's own Rng; a keyed run (``RunConfig.keyed_rng``) pre-rolls
+        # the starting items, every floor's boss draft (sub-key ("boss_drafts", 0); determinize
+        # re-rolls under its own search key) and the challenge / crown setup from their own sub-keys
+        rng.mark("run_setup", "items")
         p.set_character_items(rng)
+        rng.mark("boss_drafts", 0)
         run.generate_boss_drafts(rng, p)
+        rng.mark("run_setup", "challenge")
         ch = run.challenge
         if ch is not None:
             for t in ch.starting_tiles():

@@ -60,6 +60,17 @@ forwarded to / cleared in ppo3 and exit2 only). Stages (``--dry-run`` prints the
                Carlo value target), ``--v3-vf-epochs`` (2), ``--v3-lam-build`` (off) and the inherited
                ``--kl-coef`` / ``--ent-coef`` (``--v3-kl-coef`` / ``--v3-ent-coef`` override); the exit2
                collector beside it follows ppo3/weights.pt and ppo3/curriculum.json, still writing exit2.
+
+``--v3 --exit-mode early`` (= ``--v4``; off by default): as --v3, plus the exit3 collector
+(``rl.exit --mode early``: race-search labels of stage 1-3 decisions, ``--exit3-*`` settings) into
+rl/exit3 beside ppo3 (log rl/exit3.log, ``--exit3-workers``), and ppo3 gets
+``--distill2-dir rl/exit3 --distill2-coef --distill2-coef``. exit2 keeps running as before.
+
+``--v3-arrange`` (off by default): ppo3, exit2 and exit3 get ``--arrange`` (auto-arrange of Human Boy's
+hands in training, gate and collector runs). Gate rows are then keyed with arrange, so ppo2's
+non-arrange champion rows are not copied into champion_u0 (``seed3`` counts as done without them) and
+rl.ppo re-plays the champion on the arrange gate once. A ppo3 whose curriculum.json records arrange
+keeps it (and the collectors' flag) on a resume without the flag.
 """
 
 from __future__ import annotations
@@ -336,25 +347,29 @@ def run_v2(args, log: Path) -> int:
 
 
 def _run_with_exit(cmd: list[str], exit_cmd: list[str] | None, run: str, exit_name: str, log: Path,
-                   dirs: tuple[str, ...]) -> None:
+                   dirs: tuple[str, ...], extra: tuple[tuple[list[str], str], ...] = ()) -> None:
     """The PPO stage ``cmd`` (STOP forwarded to ``dirs``) with the rl.exit collector ``exit_cmd``
-    beside it (log rl/<exit_name>.log); the collector is stopped when PPO exits."""
-    exit_proc = None
-    if exit_cmd:
+    beside it (log rl/<exit_name>.log) and any ``extra`` (cmd, name) collectors; the collectors are
+    stopped when PPO exits."""
+    procs: list[tuple[subprocess.Popen, str]] = []
+    for ecmd, name in ((exit_cmd, exit_name), *extra):
+        if not ecmd:
+            continue
         (HOME / run).mkdir(parents=True, exist_ok=True)
-        ex_log = open(HOME / f"{exit_name}.log", "a", encoding="utf-8")
-        exit_proc = subprocess.Popen([sys.executable, "-u", "-m", *exit_cmd], stdout=ex_log,
-                                     stderr=subprocess.STDOUT, cwd=str(Path(__file__).resolve().parents[2]))
+        ex_log = open(HOME / f"{name}.log", "a", encoding="utf-8")
+        procs.append((subprocess.Popen([sys.executable, "-u", "-m", *ecmd], stdout=ex_log,
+                                       stderr=subprocess.STDOUT, cwd=str(Path(__file__).resolve().parents[2])), name))
     try:
         _run(cmd, log, dirs)
     finally:
-        if exit_proc is not None:
-            (HOME / exit_name).mkdir(parents=True, exist_ok=True)
-            (HOME / exit_name / "STOP").touch()
+        for _, name in procs:
+            (HOME / name).mkdir(parents=True, exist_ok=True)
+            (HOME / name / "STOP").touch()
+        for proc, _ in procs:
             try:
-                exit_proc.wait(timeout=600)
+                proc.wait(timeout=600)
             except subprocess.TimeoutExpired:
-                exit_proc.terminate()
+                proc.terminate()
 
 
 # ------------------------------------------------------------------ v3: ppo2 champion + value fixes
@@ -367,6 +382,55 @@ V3_LAM_BUILD = None    # rl.ppo --lam-build: off
 V3_INIT = "ppo2_champion.pt"        # frozen copy of ppo2/champion.pt inside ppo3: the init, and the
                                     # weights the seeded champion_u0 rows were played with
 V3_INHERIT = "v3_inherit.json"      # ppo2's KL / entropy coefficients at the fork (written once)
+# --exit-mode early (exit3 beside ppo3; off by default)
+EXIT3_CHAR_WEIGHTS = "SockHead=3,WetDennis=3,NathaServo=3,NinaNix=3,SamGambit=3"   # weak characters up-weighted
+EXIT3_CROWN_WEIGHTS = "0.2,0.2,0.3,0.5,1.0,2.0,2.5,1.5"
+EXIT3_WORKERS = 2
+DISTILL2_COEF = 0.15
+
+
+def _early(args) -> bool:
+    return getattr(args, "exit_mode", "") == "early"
+
+
+def v3_arrange(args) -> bool:
+    """--v3-arrange, or a ppo3 already running with arrange (its curriculum.json ``arrange``), so a
+    resume without the flag keeps the collectors in step with rl.ppo (which keeps it from its checkpoint)."""
+    if getattr(args, "v3_arrange", False):
+        return True
+    try:
+        c = json.loads((HOME / "ppo3" / "curriculum.json").read_text())
+    except (OSError, ValueError):
+        return False
+    return bool(isinstance(c, dict) and c.get("arrange"))
+
+
+def v3_gate_jobs(args) -> list[dict]:
+    """ppo3's gate jobs as rl.ppo builds them (``ppo.arrange_jobs``: ``arrange`` set with v3_arrange)."""
+    from cursed_words_solver.rl.ppo import arrange_jobs
+
+    return arrange_jobs(v2_gate_jobs(args), v3_arrange(args))
+
+
+def v3_dirs(args) -> tuple[str, ...]:
+    """The dirs a v3 run writes: V3_DIRS, + exit3 with --exit-mode early."""
+    return V3_DIRS + (("exit3",) if _early(args) else ())
+
+
+def v3_exit3_args(args) -> list[str] | None:
+    """rl.exit --mode early into rl/exit3 following ppo3 (None: --exit-mode not early or 0 workers)."""
+    w = int(getattr(args, "exit3_workers", EXIT3_WORKERS))
+    if not _early(args) or w <= 0:
+        return None
+    return ["cursed_words_solver.rl.exit", "--mode", "early", "--dir", str(HOME / "exit3"),
+            "--policy", str(HOME / "ppo3" / "weights.pt"), "--workers", str(w),
+            "--curriculum", str(HOME / "ppo3" / "curriculum.json"),
+            "--crown-weights", getattr(args, "exit3_crown_weights", EXIT3_CROWN_WEIGHTS),
+            "--char-weights", getattr(args, "exit3_char_weights", EXIT3_CHAR_WEIGHTS),
+            "--quest-share", "0", "--targets-mix", "free", "--pivot", "off",
+            *(["--search", args.exit3_search] if getattr(args, "exit3_search", "") else []),
+            *(["--keyed"] if getattr(args, "exit3_keyed", False) else []),
+            *(["--arrange"] if v3_arrange(args) else [])]
 
 
 def _policy_update(path: Path) -> int | None:
@@ -443,12 +507,17 @@ def v3_ppo_args(args) -> list[str]:
             *(["--lam-build", f"{float(lam_build):g}"] if lam_build is not None else []),
             *(["--kl-coef", f"{float(inh['kl_coef']):g}"] if inh.get("kl_coef") is not None else []),
             *(["--ent-coef", f"{float(inh['ent_coef']):g}"] if inh.get("ent_coef") is not None else [])]
+    if v3_exit3_args(args) is not None:
+        cmd += ["--distill2-dir", str(HOME / "exit3"),
+                "--distill2-coef", f"{float(getattr(args, 'distill2_coef', DISTILL2_COEF)):g}"]
+    if v3_arrange(args):
+        cmd += ["--arrange"]
     return cmd
 
 
 def v3_exit_args(args) -> list[str]:
     """exit2 (same dir: its shards are ppo3's distillation data) following ppo3's weights / curriculum."""
-    return v2_exit_args(args, run="ppo3", target_runs=("ppo3", "ppo2"))
+    return v2_exit_args(args, run="ppo3", target_runs=("ppo3", "ppo2")) + (["--arrange"] if v3_arrange(args) else [])
 
 
 def _v3_started() -> bool:
@@ -461,13 +530,16 @@ def v3_stages(args) -> list[dict]:
     from cursed_words_solver.rl.evaluate import cache_key
 
     have = {cache_key(r) for r in store.read_jsonl(HOME / "ppo3" / "eval" / "champion_u0.jsonl") if not r.get("error")}
-    rows_ok = getattr(args, "v3_replay_champion", False) or all(cache_key(j) in have for j in v2_gate_jobs(args))
+    # arrange: ppo2's rows are non-arrange (never copied), rl.ppo plays the champion on the arrange gate
+    rows_ok = (getattr(args, "v3_replay_champion", False) or v3_arrange(args)
+               or all(cache_key(j) in have for j in v2_gate_jobs(args)))
     seeded = _v3_started() or ((HOME / "ppo3" / V3_INIT).is_file() and (HOME / "ppo3" / V3_INHERIT).is_file()
                                and rows_ok)
     return [
         {"name": "seed3", "done": seeded, "cmd": None},
         {"name": "ppo3", "done": len(store.read_jsonl(HOME / "ppo3" / "history.jsonl")) >= args.ppo_updates,
-         "cmd": v3_ppo_args(args), "exit": v3_exit_args(args) if args.exit_workers > 0 else None},
+         "cmd": v3_ppo_args(args), "exit": v3_exit_args(args) if args.exit_workers > 0 else None,
+         **({"exit3": v3_exit3_args(args)} if v3_exit3_args(args) is not None else {})},
     ]
 
 
@@ -514,6 +586,8 @@ def seed_ppo3(args) -> dict:
     done["plan"] = plan
     if getattr(args, "v3_replay_champion", False):
         done["champion_rows"] = "replay"   # rl.ppo plays the starting champion on the gate itself
+    elif v3_arrange(args):
+        done["champion_rows"] = "replay (arrange)"   # ppo2's non-arrange rows never seed an arrange gate
     elif plan["ok"]:
         done["champion_rows"] = _copy_rows(Path(plan["src"]), ev / "champion_u0.jsonl")
     for name in ("ppo1_champion.jsonl", "teacher.jsonl"):
@@ -541,16 +615,20 @@ def v3_status(args) -> dict:
     out["ppo3_last_gate"] = gates[-1] if gates else None
     out["ppo3_promotions"] = [g["update"] for g in gates if g.get("promoted")]
     cp = champion_eval_path(HOME / "ppo3") if (HOME / "ppo3").is_dir() else None
-    keys = {cache_key(j) for j in v2_gate_jobs(args)}
+    keys = {cache_key(j) for j in v3_gate_jobs(args)}
     rows = [r for r in store.read_jsonl(cp) if not r.get("error") and cache_key(r) in keys] if cp else []
     out["ppo3_champion"] = {"rows": str(cp) if cp else None, "n": f"{len(rows)}/{len(keys)}",
                             **({"eval": summarize(rows)} if rows else {})}
     out["seed"] = v3_seed_plan()
+    if v3_arrange(args):
+        out["arrange"] = True
     try:
         out["inherit"] = json.loads((HOME / "ppo3" / V3_INHERIT).read_text())
     except (OSError, ValueError):
         out["inherit"] = None
     out["exit2"] = _exit_status("exit2")
+    if _early(args) or (HOME / "exit3").is_dir():
+        out["exit3"] = _exit_status("exit3")
     out["paused"] = (HOME / "STOP").exists()
     return out
 
@@ -570,8 +648,9 @@ def run_v3(args, log: Path) -> int:
         if st["done"]:
             continue
         # rebuilt after seeding: the inherited coefficients come back from ppo3/v3_inherit.json
+        e3 = v3_exit3_args(args)
         _run_with_exit(v3_ppo_args(args), v3_exit_args(args) if args.exit_workers > 0 else None,
-                       "ppo3", "exit2", log, V3_DIRS)
+                       "ppo3", "exit2", log, v3_dirs(args), *((((e3, "exit3"),),) if e3 else ()))
     return 0
 
 
@@ -653,8 +732,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--v3-replay-champion", action="store_true",
                     help="ppo3: do not copy ppo2's champion gate rows; rl.ppo re-plays the starting champion "
                          "(548 runs) with the current code (the copied rows predate the keyed futures)")
+    ap.add_argument("--v3-arrange", action="store_true",
+                    help="ppo3 + exit2 (+ exit3): auto-arrange positional items (rl.ppo / rl.exit --arrange); "
+                         "gate rows are keyed with arrange, so the champion is re-played once; default: off "
+                         "(a ppo3 whose curriculum.json has arrange keeps it)")
+    ap.add_argument("--exit-mode", default="", choices=("", "early"),
+                    help="--v3: 'early' also runs the exit3 collector (rl.exit --mode early) into rl/exit3 and "
+                         "distils it into ppo3 (--distill2-dir); default: off")
+    ap.add_argument("--v4", action="store_true", help="= --v3 --exit-mode early")
+    ap.add_argument("--exit3-workers", type=int, default=EXIT3_WORKERS, help="exit3 collector workers")
+    ap.add_argument("--exit3-search", default="", help="exit3 race SearchConfig JSON (rl.exit --search, early mode)")
+    ap.add_argument("--exit3-crown-weights", default=EXIT3_CROWN_WEIGHTS, help="exit3 crown 0-7 weights")
+    ap.add_argument("--exit3-char-weights", default=EXIT3_CHAR_WEIGHTS, help="exit3 character weights NAME=W,...")
+    ap.add_argument("--exit3-keyed", action="store_true", help="exit3: position-keyed real games")
+    ap.add_argument("--distill2-coef", type=float, default=DISTILL2_COEF, help="ppo3 rl.ppo --distill2-coef (exit3 labels)")
     ap.add_argument("--dry-run", action="store_true", help="--v2 / --v3: print the stage plan and exit")
     args = ap.parse_args(argv)
+    if args.v4:
+        args.v3, args.exit_mode = True, "early"
+    if args.exit_mode and not args.v3:
+        ap.error("--exit-mode early needs --v3")
     if args.v2 and args.v3:
         ap.error("--v2 and --v3 are separate runs; pick one")
     HOME.mkdir(parents=True, exist_ok=True)
@@ -673,14 +770,20 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         plan = v3_seed_plan()
         seed = ("replay (--v3-replay-champion): the champion is re-played" if args.v3_replay_champion else
+                "replay (arrange): non-arrange rows are not copied, the champion is re-played with arrange"
+                if v3_arrange(args) else
                 "ok" if plan["ok"] else "NOT seeded (" + plan["why"] + "): the champion is re-played")
         print(f"seed      {seed}"
               f"  {plan['src']} (policy stamp u{plan['stamp']}) -> {plan['dst']}")
         print(f"inherit   {json.dumps(v3_inherit(args))}")
+        if v3_arrange(args):
+            print("arrange   on: rl.ppo / rl.exit --arrange (gate rows keyed with arrange)")
         for st in v3_stages(args):
             print(f"{st['name']:10s} {'done' if st['done'] else 'todo'}  {' '.join(st['cmd'] or ['(copy from ppo2)'])}")
             if st.get("exit"):
                 print(f"{'':10s} beside: {' '.join(st['exit'])}")
+            if st.get("exit3"):
+                print(f"{'':10s} beside: {' '.join(st['exit3'])}")
         return 0
     log = HOME / "pipeline.log"
     lock = _single_instance()
@@ -689,7 +792,7 @@ def main(argv: list[str] | None = None) -> int:
               flush=True)
         return 1
     # --v3 clears only its own dirs: ppo2's (paused) run is never touched
-    for d in V3_DIRS if args.v3 else V1_DIRS + (V2_DIRS if args.v2 else ()):
+    for d in v3_dirs(args) if args.v3 else V1_DIRS + (V2_DIRS if args.v2 else ()):
         (HOME / d / "STOP").unlink(missing_ok=True)
     (HOME / "command.txt").write_text(f"python -m cursed_words_solver.rl.pipeline {' '.join(argv or sys.argv[1:])}\n")
     if args.v3:

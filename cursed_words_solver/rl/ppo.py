@@ -28,6 +28,15 @@ the gate compares wins and ``evaluate.row_outcome(r, b)`` (``paired(..., michael
 promotion follows what training values. b is saved in the checkpoint, curriculum.json and
 command.txt: a resume without the flag keeps it (an explicit flag wins; old runs = 8).
 
+Auto-arrange (``--arrange``, default off; ``rules.best_arrangement``, ``CWEnv(arrange=True)``):
+actor episodes and the gate (champion and candidate rows) play with Human Boy's hands dragged into
+the best order before submits and at shop leave. Gate jobs carry ``arrange`` so their
+``evaluate.cache_key`` differs: a champion's non-arrange rows are never reused for an arrange gate
+(the champion is re-played once when it is first enabled). Logged baselines (teacher, ppo1, the
+``--compare-dir`` champion) pair only rows of the same arrange setting; with arrange on, their
+non-arrange rows give ``*_noarrange`` comparisons instead. Saved in the checkpoint, curriculum.json
+and command.txt (``resolve_arrange``): a resume without the flag keeps it, ``--no-arrange`` turns it off.
+
 Value / representation fixes (2026-11-18, all default off): ``--aux-coef`` (BCE of the aux head
 on the run's won / Michael flags), ``--lam-build`` (GAE lambda of the build decisions' advantages:
 shop / skip / pin / boss_draft / michael_pick steps), ``--vf-lam`` (lambda of the value target),
@@ -355,10 +364,12 @@ class DistillBuffer:
     whose obs version or feature widths differ from the model's are skipped."""
 
     def __init__(self, root: Path, cap: int = 20_000, same_w: float = 0.1,
-                 widths: tuple[int, int, int] | None = None, version: int = OBS_VERSION) -> None:
+                 widths: tuple[int, int, int] | None = None, version: int = OBS_VERSION,
+                 changed_margin: float = 0.0) -> None:
         self.dir = Path(root) / "shards"
         self.cap = cap
         self.same_w = same_w
+        self.changed_margin = float(changed_margin)   # > 0: drop changed labels with a score margin below it
         self.widths = widths      # (global, token, action) feature widths; None = current obs / actions
         self.version = version
         self.seen: set[str] = set()
@@ -409,7 +420,10 @@ class DistillBuffer:
         for i in range(len(ep["chosen"])):
             if margin is not None and float(margin[i]) == 0.0:
                 continue
-            w = 1.0 if changed is not None and bool(changed[i]) else self.same_w
+            ch = changed is not None and bool(changed[i])
+            if ch and self.changed_margin > 0 and margin is not None and float(margin[i]) < self.changed_margin:
+                continue   # a switch inside the noise (--distill-changed-margin)
+            w = 1.0 if ch else self.same_w
             if w <= 0:
                 continue
             st = store.unpack_step(ep, i)
@@ -465,6 +479,46 @@ class DistillBuffer:
     def sample(self, n: int) -> list[dict]:
         k = len(self.items)
         return [self.items[i] for i in np.random.randint(0, k, size=min(n, k))] if k else []
+
+
+class RaceDistillBuffer(DistillBuffer):
+    """exit3 (``rl.exit --mode early``, race search) labels: per-label weight ``changed_w`` where the
+    race was confident and changed the policy's pick, ``agree_w`` where confident and agreed,
+    ``unconf_w`` (default 0 = dropped) where not confident. Shards without ``conf`` / ``changed``
+    columns (e.g. exit2's) are skipped as format errors; same obs-format check as DistillBuffer."""
+
+    def __init__(self, root: Path, cap: int = 20_000, widths: tuple[int, int, int] | None = None,
+                 version: int = OBS_VERSION, changed_w: float = 1.0, agree_w: float = 0.3,
+                 unconf_w: float = 0.0) -> None:
+        super().__init__(root, cap=cap, same_w=agree_w, widths=widths, version=version)
+        self.changed_w, self.agree_w, self.unconf_w = float(changed_w), float(agree_w), float(unconf_w)
+
+    def format_ok(self, ep: dict) -> bool:
+        conf, changed, chosen = ep.get("conf"), ep.get("changed"), ep.get("chosen")
+        if conf is None or changed is None or chosen is None or not len(conf) == len(changed) == len(chosen):
+            return False
+        return super().format_ok(ep)
+
+    def weight(self, conf: bool, changed: bool) -> float:
+        if not conf:
+            return self.unconf_w
+        return self.changed_w if changed else self.agree_w
+
+    def _items(self, ep: dict) -> list[dict]:
+        out = []
+        for i in range(len(ep["chosen"])):
+            w = self.weight(bool(ep["conf"][i]), bool(ep["changed"][i]))
+            if w <= 0:
+                continue
+            st = store.unpack_step(ep, i)
+            if len(st["act_type"]) <= 1 or not 0 <= int(ep["chosen"][i]) < len(st["act_type"]):
+                continue
+            out.append({**st, "chosen": int(ep["chosen"][i]), "w": float(w)})
+        return out
+
+    @property
+    def n_changed(self) -> int:
+        return sum(it["w"] >= self.changed_w for it in self.items)
 
 
 def soft_distill_targets(items: list[dict], width: int, temp: float, mix: float) -> np.ndarray:
@@ -534,7 +588,7 @@ def _masked_kl(p_logp: torch.Tensor, q_logp: torch.Tensor, mask: torch.Tensor) -
 
 
 def ppo_update(model: Policy, ref: Policy | None, opt, batch: list[dict], args, device,
-               distill: DistillBuffer | None = None) -> dict:
+               distill: DistillBuffer | None = None, distill2: DistillBuffer | None = None) -> dict:
     """PPO epochs (early stop at ``target_kl``), then ``vf_epochs`` value(+aux)-only passes.
     Optional args (missing = off): ``aux_coef`` (BCE of the aux head on the run's won / michael
     flags, in the policy epochs and the value passes), ``vf_epochs`` / ``vf_kl_coef`` (default 1.0:
@@ -596,6 +650,13 @@ def ppo_update(model: Policy, ref: Policy | None, opt, batch: list[dict], args, 
                         ce = F.cross_entropy(model(db)["logits"], dch, reduction="none")
                         dist = (dw * ce).sum() / dw.sum().clamp_min(1e-9)
                     loss = loss + args.distill_coef * dist
+            dist2 = None   # exit3 labels (--distill2-dir / --distill2-coef; off by default)
+            d2coef = float(getattr(args, "distill2_coef", 0.0) or 0.0)
+            if distill2 is not None and d2coef > 0:
+                d2items = distill2.sample(int(getattr(args, "distill_mb", 128)))
+                if d2items:
+                    dist2 = distill_loss(model(collate(d2items, device))["logits"], d2items)
+                    loss = loss + d2coef * dist2
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad)
@@ -609,6 +670,8 @@ def ppo_update(model: Policy, ref: Policy | None, opt, batch: list[dict], args, 
             for k, v in (("pg", pg.item()), ("v", vloss.item()), ("ent", ent.item()), ("kl_ref", kl_ref.item()), ("distill", dist.item()),
                          ("approx_kl", approx_kl), ("clipfrac", clipfrac)):
                 stats.setdefault(k, []).append(v)
+            if dist2 is not None:
+                stats.setdefault("distill2", []).append(dist2.item())
         if ep_kl and np.mean(ep_kl) > args.target_kl:   # this epoch moved the policy enough
             break
     if vf_epochs > 0 and batch:
@@ -690,13 +753,41 @@ def resolve_michael_bonus(flag: float | None, ck_state: dict | None, out: Path) 
     return MICHAEL_BONUS
 
 
-def command_argv(argv, flag: float | None, michael_bonus: float) -> list[str]:
+def resolve_arrange(flag: bool | None, ck_state: dict | None, out: Path) -> bool:
+    """--arrange / --no-arrange when given; else what the run was saved with (checkpoint, then
+    curriculum.json); else off (runs from before the flag)."""
+    if flag is not None:
+        return bool(flag)
+    if ck_state and ck_state.get("arrange") is not None:
+        return bool(ck_state["arrange"])
+    try:
+        c = json.loads((Path(out) / "curriculum.json").read_text())
+    except (OSError, ValueError):
+        c = None
+    return bool(isinstance(c, dict) and c.get("arrange"))
+
+
+def command_argv(argv, flag: float | None, michael_bonus: float, arrange_flag: bool | None = None,
+                 arrange: bool = False) -> list[str]:
     """command.txt's arguments: ``argv``, plus ``--michael-bonus`` (the resolved value) when it was not
-    given, so rerunning command.txt keeps the run's bonus."""
+    given, so rerunning command.txt keeps the run's bonus; plus ``--arrange`` when it was resolved on
+    without the flag (off adds nothing)."""
     out = list(argv)
     if flag is None:
         out += ["--michael-bonus", f"{float(michael_bonus):g}"]
+    if arrange_flag is None and arrange:
+        out += ["--arrange"]
     return out
+
+
+def arrange_jobs(jobs: list[dict], arrange: bool) -> list[dict]:
+    """Gate / eval jobs with ``arrange`` set when on (so ``evaluate.cache_key`` separates them); off = unchanged."""
+    return [{**j, "arrange": True} for j in jobs] if arrange else list(jobs)
+
+
+def same_arrange(rows, arrange: bool) -> list[dict]:
+    """Rows played with the given arrange setting (rows without the field = off)."""
+    return [r for r in rows if bool(r.get("arrange")) == bool(arrange)]
 
 
 def _per_step(tr: dict, key: str, n: int, fill):
@@ -796,6 +887,15 @@ def main(argv: list[str] | None = None) -> None:
                          "(1 - mix) * onehot(pick) + mix * softmax(Q / TEMP) over the searched candidates "
                          "(Q in outcome points); 0 = hard cross-entropy on the pick")
     ap.add_argument("--distill-soft-mix", type=float, default=0.5, help="share of softmax(Q / TEMP) in the soft target")
+    ap.add_argument("--distill-changed-margin", type=float, default=0.0,
+                    help="> 0: drop --distill-dir labels that changed the pick with a score margin below this (0 = off)")
+    ap.add_argument("--distill2-dir", default="",
+                    help="rl.exit --mode early (exit3, race search) dir: a second distillation set, weighted per label "
+                         "(confident & changed --distill2-changed-w, confident & agreed --distill2-agree-w, unconfident 0)")
+    ap.add_argument("--distill2-coef", type=float, default=0.0, help="weight of the exit3 distillation loss (0 = off)")
+    ap.add_argument("--distill2-cap", type=int, default=20000, help="newest exit3 decisions kept")
+    ap.add_argument("--distill2-changed-w", type=float, default=1.0, help="exit3 label weight: confident and changed")
+    ap.add_argument("--distill2-agree-w", type=float, default=0.3, help="exit3 label weight: confident and agreed")
     ap.add_argument("--crown-weights", default="1,1,1,1,1,1,1,1",
                     help="sampling weight of crowns 0-7 for training runs (comma list; 7 = top playable)")
     ap.add_argument("--targets-mix", default="1,0,0", metavar="P_FREE,P_THEME,P_ANY",
@@ -823,6 +923,10 @@ def main(argv: list[str] | None = None) -> None:
                     help="value(+aux)-only passes after the policy epochs, with KL(snapshot || policy) on the "
                          "logits (--vf-kl-coef) so the policy stays put; 0 = off")
     ap.add_argument("--vf-kl-coef", type=float, default=1.0, help="KL-to-snapshot coefficient of the --vf-epochs passes")
+    ap.add_argument("--arrange", dest="arrange", action="store_true", default=None,
+                    help="auto-arrange positional items (Human Boy's hands) in actor episodes and the gate; "
+                         "default: what the run was saved with, else off")
+    ap.add_argument("--no-arrange", dest="arrange", action="store_false", help="turn --arrange off on a resume")
     args = ap.parse_args(argv)
     targets_mix = parse_mix(args.targets_mix)
     pivot = parse_pivot(args.pivot)
@@ -844,6 +948,8 @@ def main(argv: list[str] | None = None) -> None:
         state["pending_gate"] = ck.get("pending_gate", 0)
         state["ent_coef"] = float(ck.get("ent_coef", args.ent_coef))
         state["michael_bonus"] = resolve_michael_bonus(args.michael_bonus, ck, out)
+        if resolve_arrange(args.arrange, ck, out):
+            state["arrange"] = True
         if "curriculum" in ck:
             state["curriculum"] = ck["curriculum"]
         random.setstate(ck["py_rng"])
@@ -857,6 +963,8 @@ def main(argv: list[str] | None = None) -> None:
         state = {"update": 0, "episodes_started": 0, "episodes_done": 0, "champion_update": 0, "init": init,
                  "pending_gate": 0, "ent_coef": args.ent_coef,
                  "michael_bonus": resolve_michael_bonus(args.michael_bonus, None, out)}
+        if resolve_arrange(args.arrange, None, out):
+            state["arrange"] = True
         shutil.copyfile(init, out / "init.pt")
         shutil.copyfile(init, out / "champion.pt")
         random.seed(1)
@@ -864,7 +972,11 @@ def main(argv: list[str] | None = None) -> None:
     mb = float(state["michael_bonus"])
     if mb != MICHAEL_BONUS:
         print(f"michael bonus {mb:g} (training returns / gate outcome; eval rows keep {MICHAEL_BONUS:g})", flush=True)
-    cmd_argv = command_argv(argv if argv is not None else __import__("sys").argv[1:], args.michael_bonus, mb)
+    arrange = bool(state.get("arrange"))
+    if arrange:
+        print("auto-arrange on (actor episodes and gate; gate rows keyed with arrange)", flush=True)
+    cmd_argv = command_argv(argv if argv is not None else __import__("sys").argv[1:], args.michael_bonus, mb,
+                            args.arrange, arrange)
     (out / "command.txt").write_text("python -m cursed_words_solver.rl.ppo " + " ".join(cmd_argv) + "\n")
     # rolling win tallies (from episodes.jsonl the first time a checkpoint lacks them)
     if "curriculum" in state:
@@ -880,7 +992,14 @@ def main(argv: list[str] | None = None) -> None:
     if args.distill_dir:
         c = model.cfg
         distill = DistillBuffer(Path(args.distill_dir).expanduser(), cap=args.distill_cap, same_w=args.distill_same_w,
-                                widths=(c.n_global, c.n_tok_feat, c.n_act_feat))
+                                widths=(c.n_global, c.n_tok_feat, c.n_act_feat),
+                                changed_margin=args.distill_changed_margin)
+    distill2 = None
+    if args.distill2_dir and args.distill2_coef > 0:
+        c = model.cfg
+        distill2 = RaceDistillBuffer(Path(args.distill2_dir).expanduser(), cap=args.distill2_cap,
+                                     widths=(c.n_global, c.n_tok_feat, c.n_act_feat),
+                                     changed_w=args.distill2_changed_w, agree_w=args.distill2_agree_w)
     from cursed_words_solver.rl.evaluate import (champion_eval_path, gate_jobs as make_gate_jobs, paired, promote_ok,
                                                  row_outcome, run_arm, summarize, themed_gate_jobs)
     from cursed_words_solver.rl.play import init_worker, play
@@ -890,6 +1009,7 @@ def main(argv: list[str] | None = None) -> None:
     gate_jobs = make_gate_jobs(args.gate_per, args.gate_per_quest)
     if args.gate_targets:
         gate_jobs = gate_jobs + themed_gate_jobs()
+    gate_jobs = arrange_jobs(gate_jobs, arrange)
     eval_dir = out / "eval"
     # finish a promotion a crash interrupted (state is saved before the files are copied)
     cu = state["champion_update"]
@@ -918,6 +1038,11 @@ def main(argv: list[str] | None = None) -> None:
     if state["update"] == 0 or not (eval_dir / f"champion_u{state['champion_update']}.jsonl").is_file():
         print("evaluating the starting champion on the gate set...", flush=True)
         champion_rows()
+    elif arrange:
+        # e.g. arrange enabled on a resume: the champion's non-arrange rows do not match the arrange
+        # gate's cache keys, so it is re-played once here (run_arm plays only the missing rows)
+        print("auto-arrange: evaluating the champion on the arrange gate (missing rows only)...", flush=True)
+        champion_rows()
     rng = random.Random(state["episodes_started"] * 7919 + 13)
     crown_w = [float(x) for x in args.crown_weights.split(",")]
     assert len(crown_w) == 8, "--crown-weights needs 8 values (crowns 0-7)"
@@ -935,7 +1060,7 @@ def main(argv: list[str] | None = None) -> None:
             "update": state["update"], "enabled": not args.no_curriculum, "quest_share": args.quest_share,
             "crown_weights": crown_w, "targets_mix": list(targets_mix) if targets_mix else None,
             "target_curriculum": bool(args.target_curriculum), **({"pivot": list(pivot)} if pivot else {}),
-            "michael_bonus": mb, **w})
+            "michael_bonus": mb, **({"arrange": True} if arrange else {}), **w})
         return w
 
     set_curriculum()
@@ -945,7 +1070,8 @@ def main(argv: list[str] | None = None) -> None:
                        targets_mix, args.shaping, cw["target"], pivot)
         state["episodes_started"] += 1
         in_flight.append(pool.apply_async(play, ({**j, "policy": str(weights), "record": True,
-                                                   "temperature": args.temperature, "michael_bonus": mb},)))
+                                                   "temperature": args.temperature, "michael_bonus": mb,
+                                                   **({"arrange": True} if arrange else {})},)))
 
     def ckpt() -> None:
         save_ckpt(ck_path, model, opt, {**state, "curriculum": curr.state()})
@@ -958,7 +1084,8 @@ def main(argv: list[str] | None = None) -> None:
         rows = run_arm(arm, str(cand), gate_jobs, out_dir=eval_dir, pool=pool, verbose=False)
         cmp = paired(rows, champ, michael_bonus=mb)   # outcome with the training Michael bonus
         promote = promote_ok(cmp)
-        teacher = [r for r in store.read_jsonl(eval_dir / "teacher.jsonl") if not r.get("error")]
+        teacher_all = [r for r in store.read_jsonl(eval_dir / "teacher.jsonl") if not r.get("error")]
+        teacher = same_arrange(teacher_all, arrange)
         grow = {"update": u, "eval": summarize(rows, mb), "vs_champion": cmp, "promoted": promote,
                 "rule": "win_diff>0 & outcome_diff>0 & max(t, win_z)>=1"
                         + (f" (outcome: Michael win = 16+{mb:g})" if mb != MICHAEL_BONUS else ""),
@@ -973,13 +1100,23 @@ def main(argv: list[str] | None = None) -> None:
             grow["vs_champion_themed"] = paired(themed, champ, michael_bonus=mb)
             p1 = eval_dir / "ppo1_champion.jsonl"   # pipeline baseline2: the ppo1 champion on this gate
             if p1.is_file():
-                grow["vs_ppo1_all"] = paired(rows, [r for r in store.read_jsonl(p1) if not r.get("error")])
+                p1_rows = [r for r in store.read_jsonl(p1) if not r.get("error")]
+                grow["vs_ppo1_all"] = paired(rows, same_arrange(p1_rows, arrange))
+                if arrange:
+                    grow["vs_ppo1_all_noarrange"] = paired(rows, same_arrange(p1_rows, False))
         if args.compare_dir:
             cp = champion_eval_path(Path(args.compare_dir).expanduser())
             if cp is not None:
                 other = [r for r in store.read_jsonl(cp) if not r.get("error")]
-                grow["vs_ppo1"] = paired([r for r in rows if not r.get("target")], other)
+                free_rows = [r for r in rows if not r.get("target")]
+                grow["vs_ppo1"] = paired(free_rows, same_arrange(other, arrange))
                 grow["vs_ppo1_src"] = str(cp)
+                if arrange:
+                    grow["vs_ppo1_noarrange"] = paired(free_rows, same_arrange(other, False))
+        if arrange:
+            grow["arrange"] = True
+            if teacher_all:
+                grow["vs_teacher_noarrange"] = paired(rows, same_arrange(teacher_all, False))
         if mb != MICHAEL_BONUS:
             grow["michael_bonus"] = mb
         print("GATE", grow, flush=True)
@@ -1040,10 +1177,15 @@ def main(argv: list[str] | None = None) -> None:
                     it["adv"] = (it["adv"] - mu) / sd
                 if distill is not None:
                     distill.refresh()
-                st = ppo_update(model, ref, opt, buf_items, a2, device, distill)
+                if distill2 is not None:
+                    distill2.refresh()
+                st = ppo_update(model, ref, opt, buf_items, a2, device, distill, distill2)
                 if distill is not None:
                     st["distill_n"] = len(distill.items)
                     st["distill_changed"] = distill.n_changed
+                if distill2 is not None:
+                    st["distill2_n"] = len(distill2.items)
+                    st["distill2_changed"] = distill2.n_changed
                 if args.ent_target > 0 and "ent" in st:
                     state["ent_coef"] = adapt_ent_coef(ent_coef, st["ent"], args.ent_target, args.ent_lr)
             else:
