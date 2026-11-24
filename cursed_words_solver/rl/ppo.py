@@ -45,9 +45,26 @@ logits * ``--vf-kl-coef``). Every update logs ``epochs_run`` and the explained v
 value targets (``ev*``: by the actors' values; ``ev_fit*``: by the learner's in the last pass;
 ``_shop`` / ``_word`` = shop / encounter steps) in history.jsonl.
 
+Keyed group rollouts (``--group K``, default 1 = off; ``--group-mix BETA``, default 1): each
+sampled training job is played K times (``group_jobs``: same seed / character / crown / quest /
+target, ``keyed`` game RNG so the copies meet the same luck, distinct ``actor_seed`` =
+``evaluate.rep_actor_seed``). Results are buffered per group (``GroupBuffer``) until all K are back;
+only complete groups enter an update (partial ones carry over to the next update). A complete group
+with >= 2 valid episodes gets the leave-one-out advantage A_i = R_i - mean(R_j, j != i)
+(``group_advantages``) on the episode's UNSHAPED training return R_i (``episode_return``: sum of the
+rewards incl. the Michael-bonus delta plus the step-0 shaping bonus, i.e. train_outcome - unshaped
+phi(s0)); each step's advantage = (1 - BETA) * GAE adv + BETA * A_i, before the batch normalisation,
+which centres only the GAE part (``normalize_advantages``: the per-episode group term is zero-sum
+over episodes, not steps, so step-mean centring would push all-equal groups / short episodes)
+(value targets / vpred unchanged). Groups with < 2 valid episodes keep plain GAE. A group takes
+K consecutive ``episodes_started`` indices (its seed is the first one's). Saved in the checkpoint
+and command.txt (``resolve_group``): a resume without the flags keeps them.
+
 Pause / resume: rerun the same command (``command.txt``). State is checkpointed after every
 update (model, optimiser, counters, RNG); episodes in flight at a kill are simply replayed
-with new seeds. ``STOP`` file in the dir = checkpoint and exit.
+with new seeds (they are dropped and fresh jobs are drawn from ``episodes_started`` on; with
+``--group`` the in-flight and partially buffered groups are dropped whole the same way).
+``STOP`` file in the dir = checkpoint and exit.
 
     python -m cursed_words_solver.rl.ppo --dir ~/.cursed_words_solver/rl/ppo1 --init ~/.cursed_words_solver/rl/bc/best.pt
 """
@@ -797,12 +814,15 @@ def _per_step(tr: dict, key: str, n: int, fill):
 
 
 def episode_items(res: dict, lam: float, michael_bonus: float = MICHAEL_BONUS, lam_build: float | None = None,
-                  vf_lam: float | None = None) -> list[dict]:
+                  vf_lam: float | None = None, group_adv: float | None = None,
+                  group_mix: float = 1.0) -> list[dict]:
     """PPO items of one recorded run. ``lam_build`` (None = ``lam``): GAE lambda of the build
     decisions' advantages (``is_build_step``); ``vf_lam`` (None = ``lam``): constant lambda of the
     value target ``ret``. With both None (or == lam) the items' adv / ret are the plain-GAE ones.
     Items also carry ``stage`` / ``phase`` (play.py traj; None / '' when not recorded), ``build``,
-    ``vpred`` (the actor's value, outcome units, unshaped) and the run's ``won`` / ``michael``."""
+    ``vpred`` (the actor's value, outcome units, unshaped) and the run's ``won`` / ``michael``.
+    ``group_adv`` (None = off, ``--group``): the episode's leave-one-out group advantage; each
+    step's adv becomes (1 - group_mix) * GAE adv + group_mix * group_adv (ret unchanged)."""
     tr = res["traj"]
     if not tr["steps"]:
         return []
@@ -828,6 +848,11 @@ def episode_items(res: dict, lam: float, michael_bonus: float = MICHAEL_BONUS, l
         adv, _ = gae(rew, val - bonus, np.where(np.asarray(build, bool), lb, lam).astype(np.float64))
         _, ret = gae(rew, val - bonus, lam if vf_lam is None else float(vf_lam))
     ret = ret + bonus
+    gpart = None
+    if group_adv is not None:
+        beta = float(group_mix)
+        gpart = beta * float(group_adv)
+        adv = (1.0 - beta) * np.asarray(adv, np.float64) + gpart
     won = float(bool(res.get("won")))
     michael = float(bool(res.get("won")) and (res.get("reason") == "michael" or bool(res.get("michael"))))
     items = []
@@ -837,7 +862,146 @@ def episode_items(res: dict, lam: float, michael_bonus: float = MICHAEL_BONUS, l
         items.append({**st, "chosen": tr["chosen"][i], "logp": tr["logp"][i], "adv": float(adv[i]), "ret": float(ret[i]),
                       "vpred": float(val[i]), "stage": stages[i], "phase": phases[i], "build": bool(build[i]),
                       "won": won, "michael": michael})
+        if gpart is not None:
+            items[-1]["adv_grp"] = gpart   # group part of adv (normalize_advantages leaves it uncentred)
     return items
+
+
+def normalize_advantages(items: list[dict]) -> None:
+    """In-place batch normalisation of the items' ``adv``. Without group items (no ``adv_grp``,
+    the default path) it is the plain (adv - mean) / (std + 1e-6) over all steps. With ``--group``
+    items the group part ``adv_grp`` (a per-episode constant, zero-sum over each group's EPISODES
+    but not over its steps: longer episodes carry more steps, and longer runs tend to be the winners)
+    is NOT centred, so an all-equal group (A = 0) or a short episode gets no spurious -mean/sd push;
+    only the GAE part (adv - adv_grp) is centred by its step mean, and the whole is scaled by its RMS
+    about that centre."""
+    if not items:
+        return
+    if not any("adv_grp" in it for it in items):
+        advs = np.asarray([it["adv"] for it in items], np.float32)
+        mu, sd = float(advs.mean()), float(advs.std() + 1e-6)
+        for it in items:
+            it["adv"] = (it["adv"] - mu) / sd
+        return
+    adv = np.asarray([it["adv"] for it in items], np.float64)
+    grp = np.asarray([float(it.get("adv_grp", 0.0)) for it in items], np.float64)
+    mu = float((adv - grp).mean())
+    c = adv - mu
+    sd = float(np.sqrt(np.mean(c * c)) + 1e-6)
+    for it, v in zip(items, c):
+        it["adv"] = float(v / sd)
+
+
+def episode_return(res: dict, michael_bonus: float = MICHAEL_BONUS) -> float:
+    """The episode's UNSHAPED training return (``--group``): the sum of its rewards with the
+    Michael-bonus delta (as ``episode_items``), plus the step-0 shaping bonus. The rewards telescope
+    to phi(done) - phi(s0) with phi(done) = train_outcome and the shaped phi(s0) = unshaped phi(s0) +
+    bonus[0], so this is train_outcome - unshaped phi(s0): no shaping left in it (bonus 0 / absent =
+    the plain sum)."""
+    tr = res.get("traj") or {}
+    rew = [float(x) for x in (tr.get("reward") or ())]
+    if not rew:
+        return 0.0
+    bonus = tr.get("bonus")
+    b0 = float(bonus[0]) if bonus is not None and len(bonus) == len(rew) else 0.0
+    return float(sum(rew)) + michael_reward_delta(res, michael_bonus) + b0
+
+
+def group_advantages(returns) -> list[float]:
+    """Leave-one-out advantages of one group: A_i = R_i - mean(R_j, j != i). One member = [0.0]
+    (no baseline: the caller keeps plain GAE for it), none = []."""
+    r = [float(x) for x in returns]
+    n = len(r)
+    if n < 2:
+        return [0.0] * n
+    tot = sum(r)
+    return [x - (tot - x) / (n - 1) for x in r]
+
+
+def group_jobs(job: dict, k: int, gid: int) -> list[dict]:
+    """``k`` copies of a training job (``--group``): same game seed / character / crown / quest /
+    target, ``keyed`` game RNG, distinct ``actor_seed`` (``evaluate.rep_jobs``: rep 0 = the seed),
+    each tagged with ``group`` = gid."""
+    from cursed_words_solver.rl.evaluate import rep_jobs
+
+    return [{**j, "keyed": True, "group": int(gid)} for j in rep_jobs([job], int(k))]
+
+
+class GroupBuffer:
+    """Results of in-flight groups (``--group``) until all their members are back. ``open(gid, k)``
+    registers a group; ``add(gid, res)`` returns the group's results (arrival order) once all k
+    arrived, else None. Groups not complete at an update stay here (carry over)."""
+
+    def __init__(self) -> None:
+        self.size: dict[int, int] = {}
+        self.got: dict[int, list[dict]] = {}
+
+    def open(self, gid: int, k: int) -> None:
+        self.size[int(gid)] = int(k)
+        self.got[int(gid)] = []
+
+    def add(self, gid: int, res: dict) -> list[dict] | None:
+        g = self.got[int(gid)]
+        g.append(res)
+        if len(g) < self.size[int(gid)]:
+            return None
+        del self.size[int(gid)], self.got[int(gid)]
+        return g
+
+    def __len__(self) -> int:
+        return len(self.got)
+
+
+def group_items(results: list[dict], lam: float, michael_bonus: float = MICHAEL_BONUS, group_mix: float = 1.0,
+                lam_build: float | None = None, vf_lam: float | None = None) -> tuple[list[dict], list[dict], dict]:
+    """PPO items of one complete group: (items, valid results, stats). Errored members drop out;
+    with >= 2 valid members each gets ``group_advantages`` of their ``episode_return`` mixed into its
+    GAE advantages (``episode_items(group_adv=...)``), else plain GAE. stats: valid, zero (all R
+    equal; None with < 2 valid), abs_adv (list of |A_i|)."""
+    valid = [r for r in results if not r.get("error")]
+    items: list[dict] = []
+    stats: dict = {"valid": len(valid), "zero": None, "abs_adv": []}
+    if len(valid) >= 2:
+        rets = [episode_return(r, michael_bonus) for r in valid]
+        advs = group_advantages(rets)
+        stats["zero"] = bool(max(rets) - min(rets) < 1e-9)
+        stats["abs_adv"] = [abs(a) for a in advs]
+        for r, a in zip(valid, advs):
+            items.extend(episode_items(r, lam, michael_bonus, lam_build=lam_build, vf_lam=vf_lam,
+                                       group_adv=a, group_mix=group_mix))
+    else:
+        for r in valid:
+            items.extend(episode_items(r, lam, michael_bonus, lam_build=lam_build, vf_lam=vf_lam))
+    return items, valid, stats
+
+
+def group_row_stats(stats: list[dict]) -> dict:
+    """History fields of one update's complete groups: group_n, group_fallback (< 2 valid members),
+    group_zero (share of the >= 2-valid groups whose members all had equal R), group_abs_adv (mean |A_i|)."""
+    full = [s for s in stats if s["zero"] is not None]
+    aa = [a for s in full for a in s["abs_adv"]]
+    return {"group_n": len(stats), "group_fallback": len(stats) - len(full),
+            "group_zero": round(float(np.mean([s["zero"] for s in full])), 4) if full else None,
+            "group_abs_adv": round(float(np.mean(aa)), 4) if aa else None}
+
+
+def resolve_group(flag_k: int | None, flag_mix: float | None, ck_state: dict | None) -> tuple[int, float]:
+    """(K, BETA) of ``--group`` / ``--group-mix``: a given flag wins (a mismatch with the checkpoint is
+    printed), else what the checkpoint was saved with, else (1, 1.0) = off."""
+    saved_k = int(ck_state.get("group") or 1) if ck_state else 1
+    saved_mix = float(ck_state.get("group_mix", 1.0)) if ck_state else 1.0
+    k = saved_k if flag_k is None else int(flag_k)
+    mix = saved_mix if flag_mix is None else float(flag_mix)
+    if ck_state is not None and flag_k is not None and int(flag_k) != saved_k:
+        print(f"WARNING: --group {int(flag_k)} differs from the checkpoint's {saved_k}; using {k}", flush=True)
+    if ck_state is not None and flag_mix is not None and float(flag_mix) != saved_mix and saved_k > 1:
+        print(f"WARNING: --group-mix {float(flag_mix):g} differs from the checkpoint's {saved_mix:g}; using {mix:g}",
+              flush=True)
+    if k < 1:
+        raise ValueError("--group must be >= 1")
+    if not 0.0 <= mix <= 1.0:
+        raise ValueError("--group-mix must be in [0, 1]")
+    return k, mix
 
 
 def save_ckpt(path: Path, model, opt, state: dict) -> None:
@@ -927,6 +1091,12 @@ def main(argv: list[str] | None = None) -> None:
                     help="auto-arrange positional items (Human Boy's hands) in actor episodes and the gate; "
                          "default: what the run was saved with, else off")
     ap.add_argument("--no-arrange", dest="arrange", action="store_false", help="turn --arrange off on a resume")
+    ap.add_argument("--group", type=int, default=None, metavar="K",
+                    help="keyed group rollouts: play each training job K times (keyed RNG, distinct actor seeds) "
+                         "and add leave-one-out group advantages; default: what the run was saved with, else 1 = off")
+    ap.add_argument("--group-mix", type=float, default=None, metavar="BETA",
+                    help="share of the group advantage in each step's advantage (1 - BETA = GAE); "
+                         "default: what the run was saved with, else 1.0")
     args = ap.parse_args(argv)
     targets_mix = parse_mix(args.targets_mix)
     pivot = parse_pivot(args.pivot)
@@ -950,6 +1120,9 @@ def main(argv: list[str] | None = None) -> None:
         state["michael_bonus"] = resolve_michael_bonus(args.michael_bonus, ck, out)
         if resolve_arrange(args.arrange, ck, out):
             state["arrange"] = True
+        gk, gmix = resolve_group(args.group, args.group_mix, ck)
+        if gk > 1:
+            state["group"], state["group_mix"] = gk, gmix
         if "curriculum" in ck:
             state["curriculum"] = ck["curriculum"]
         random.setstate(ck["py_rng"])
@@ -965,6 +1138,9 @@ def main(argv: list[str] | None = None) -> None:
                  "michael_bonus": resolve_michael_bonus(args.michael_bonus, None, out)}
         if resolve_arrange(args.arrange, None, out):
             state["arrange"] = True
+        gk, gmix = resolve_group(args.group, args.group_mix, None)
+        if gk > 1:
+            state["group"], state["group_mix"] = gk, gmix
         shutil.copyfile(init, out / "init.pt")
         shutil.copyfile(init, out / "champion.pt")
         random.seed(1)
@@ -975,8 +1151,17 @@ def main(argv: list[str] | None = None) -> None:
     arrange = bool(state.get("arrange"))
     if arrange:
         print("auto-arrange on (actor episodes and gate; gate rows keyed with arrange)", flush=True)
+    group_k = int(state.get("group") or 1)
+    group_mix = float(state.get("group_mix", 1.0))
+    if group_k > 1:
+        print(f"keyed group rollouts: K={group_k}, mix={group_mix:g}", flush=True)
     cmd_argv = command_argv(argv if argv is not None else __import__("sys").argv[1:], args.michael_bonus, mb,
                             args.arrange, arrange)
+    if group_k > 1:   # rerunning command.txt keeps the group settings
+        if args.group is None:
+            cmd_argv += ["--group", str(group_k)]
+        if args.group_mix is None:
+            cmd_argv += ["--group-mix", f"{group_mix:g}"]
     (out / "command.txt").write_text("python -m cursed_words_solver.rl.ppo " + " ".join(cmd_argv) + "\n")
     # rolling win tallies (from episodes.jsonl the first time a checkpoint lacks them)
     if "curriculum" in state:
@@ -1065,9 +1250,24 @@ def main(argv: list[str] | None = None) -> None:
 
     set_curriculum()
 
+    groups = GroupBuffer()
+    group_of: dict = {}   # AsyncResult -> group id (--group)
+
     def submit() -> None:
         j = sample_job(rng, state["episodes_started"], args.quest_share, crown_w, cw["char"], cw["quest"],
                        targets_mix, args.shaping, cw["target"], pivot)
+        if group_k > 1:
+            # one group = K consecutive job indices (seed / target / pivot draws of the first)
+            gid = state["episodes_started"]
+            state["episodes_started"] += group_k
+            groups.open(gid, group_k)
+            for gj in group_jobs(j, group_k, gid):
+                a = pool.apply_async(play, ({**gj, "policy": str(weights), "record": True,
+                                             "temperature": args.temperature, "michael_bonus": mb,
+                                             **({"arrange": True} if arrange else {})},))
+                group_of[a] = gid
+                in_flight.append(a)
+            return
         state["episodes_started"] += 1
         in_flight.append(pool.apply_async(play, ({**j, "policy": str(weights), "record": True,
                                                    "temperature": args.temperature, "michael_bonus": mb,
@@ -1141,10 +1341,16 @@ def main(argv: list[str] | None = None) -> None:
         else:
             state["pending_gate"] = 0
 
-    for _ in range(args.workers * 2):
-        submit()
+    n_flight = args.workers * 2
+    if group_k > 1:
+        while len(in_flight) < n_flight:
+            submit()
+    else:
+        for _ in range(n_flight):
+            submit()
     buf_items: list[dict] = []
     buf_eps: list[dict] = []
+    buf_groups: list[dict] = []   # per complete group stats (--group)
     t_last = time.time()
     try:
         while state["update"] < args.updates:
@@ -1157,6 +1363,26 @@ def main(argv: list[str] | None = None) -> None:
                 for a in ready:
                     in_flight.remove(a)
                     res = a.get()
+                    if group_k > 1:
+                        gid = group_of.pop(a)
+                        while len(in_flight) < n_flight:
+                            submit()
+                        if res.get("error"):
+                            print("episode error:", res["error"], res.get("trace", "")[-400:], flush=True)
+                        done = groups.add(gid, res)
+                        if done is None:
+                            continue   # wait for the rest of the group (may carry over to the next update)
+                        items, valid, gst = group_items(done, args.lam, mb, group_mix, lam_build=args.lam_build,
+                                                        vf_lam=args.vf_lam)
+                        buf_items.extend(items)
+                        buf_groups.append(gst)
+                        for r in valid:
+                            r.pop("traj", None)
+                            r["group"] = gid
+                            buf_eps.append(r)
+                            recent.append(r)
+                            state["episodes_done"] += 1
+                        continue
                     submit()
                     if res.get("error"):
                         print("episode error:", res["error"], res.get("trace", "")[-400:], flush=True)
@@ -1171,10 +1397,7 @@ def main(argv: list[str] | None = None) -> None:
             ent_coef = state["ent_coef"]
             a2 = argparse.Namespace(**{**vars(args), "kl_coef": args.kl_coef_now, "ent_coef": ent_coef})
             if buf_items:
-                advs = np.asarray([it["adv"] for it in buf_items], np.float32)
-                mu, sd = float(advs.mean()), float(advs.std() + 1e-6)
-                for it in buf_items:
-                    it["adv"] = (it["adv"] - mu) / sd
+                normalize_advantages(buf_items)
                 if distill is not None:
                     distill.refresh()
                 if distill2 is not None:
@@ -1211,6 +1434,9 @@ def main(argv: list[str] | None = None) -> None:
                                      ("vf_epochs", args.vf_epochs)) if v}
             if fix:
                 row["ppofix"] = fix
+            if group_k > 1:
+                row.update(group_row_stats(buf_groups))
+                row["group_k"], row["group_mix"] = group_k, group_mix
             if targets_mix or pivot:
                 row["train_by_target"] = by_target(recent)
             if pivot:
@@ -1225,7 +1451,7 @@ def main(argv: list[str] | None = None) -> None:
             store.append_jsonl(out / "history.jsonl", row)
             for r in buf_eps:
                 store.append_jsonl(out / "episodes.jsonl", r)
-            buf_items, buf_eps = [], []
+            buf_items, buf_eps, buf_groups = [], [], []
             if due:
                 gate(state["update"])
             if store.stop_requested(out):

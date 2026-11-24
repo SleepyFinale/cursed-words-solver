@@ -13,6 +13,7 @@ each path is scored once.
 from __future__ import annotations
 
 import os
+import sys
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field, fields, replace
@@ -73,8 +74,12 @@ def _jit():
     if not _JIT_MOD:
         try:
             from cursed_words_solver.engine import _jit as mod
-        except Exception:  # numba missing or broken: Python fallback
+        except Exception as exc:  # numba missing or broken: Python fallback (same results, ~3x slower)
             mod = None
+            # loud once per process: a reinstall that drops numba (2026-11-21) went unnoticed for days
+            print(f"engine JIT unavailable ({type(exc).__name__}: {exc}); using the ~3x slower Python "
+                  "search. Install it: pip install --no-deps numba==0.68.1 llvmlite==0.50.0",
+                  file=sys.stderr, flush=True)
         _JIT_MOD.append(mod)
     return _JIT_MOD[0]
 
