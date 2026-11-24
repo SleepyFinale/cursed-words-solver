@@ -120,20 +120,38 @@ ARRANGE_K = 8               # submit candidates scored per arrangement
 POSITIONAL = {"LeftHumanHand": "sticker", "Overhand": "sticker", "RightHumanHand": "stamp", "Underhand": "stamp"}
 
 
-def parse_arrange(value: Any) -> bool:
-    """Job / env value as a flag: True, 1, "1", "on", "yes", "true" -> True; else False."""
+ARRANGE_GRID = "grid"
+
+
+def parse_arrange_mode(value: Any) -> str:
+    """Job / env value as an arrange mode: "" (off), "score" (True, 1, "1", "on", "yes", "true":
+    drag for the next submit's score) or "grid" ("grid": also drag for the grid about to be
+    built, at shop leave and before a grid reroll, ``grid_arrangement``)."""
     if isinstance(value, bool):
-        return value
+        return "score" if value else ""
     if value is None:
-        return False
-    return str(value).strip().lower() in ("1", "on", "yes", "true")
+        return ""
+    s = str(value).strip().lower()
+    if s == ARRANGE_GRID:
+        return ARRANGE_GRID
+    return "score" if s in ("1", "on", "yes", "true", "score") else ""
+
+
+def parse_arrange(value: Any) -> bool:
+    """Job / env value as a flag: True, 1, "1", "on", "yes", "true", "grid" -> True; else False."""
+    return bool(parse_arrange_mode(value))
+
+
+def env_arrange_mode() -> str:
+    """``CWS_AI_ARRANGE`` as a mode (``parse_arrange_mode``; unset = "score")."""
+    return parse_arrange_mode(os.environ.get(ARRANGE_ENV, "1"))
 
 
 def env_arrange() -> bool:
     """``CWS_AI_ARRANGE`` for the live assistant: default ON since 2026-11-21 (Human Boy, 240 paired
     fresh seeds: 61.7% vs 43.8% wins, z 5.7); set it to 0 to turn it off. Sim play / env / eval
     stay off unless asked (``CWEnv(arrange=True)``, ``evaluate run --arrange``)."""
-    return parse_arrange(os.environ.get(ARRANGE_ENV, "1"))
+    return bool(env_arrange_mode())
 
 
 def has_positional(p) -> bool:
@@ -170,6 +188,17 @@ def _relations(st: tuple, sp: tuple, cls: dict) -> tuple:
         elif c == "Underhand":
             out.append(("U", o, st[i]))
     return tuple(out)
+
+
+# which row each relation's target sits in (``_relations``: L / U point at stickers, R / O at stamps)
+_TARGET_ROW = {"L": "sticker", "U": "sticker", "R": "stamp", "O": "stamp"}
+
+
+def _rel(st: tuple, sp: tuple, cls: dict, relevant: frozenset | None) -> tuple:
+    rel = _relations(st, sp, cls)
+    if relevant is None:
+        return rel
+    return tuple((t, o, x if x is not None and (_TARGET_ROW[t], x) in relevant else None) for t, o, x in rel)
 
 
 def _drag(order: tuple, src: int, dst: int) -> tuple:
@@ -210,6 +239,15 @@ def _applicable(game) -> bool:
 
 
 def _search(game, opts: Sequence, rounds: int, min_gain: float, info: dict | None) -> list[tuple[str, int, int]]:
+    return _search_fn(game, lambda g: _objective(g, opts), rounds, min_gain, info)
+
+
+def _search_fn(game, value, rounds: int, min_gain: float, info: dict | None,
+               relevant: frozenset | None = None, abs_gain: float = 0.0) -> list[tuple[str, int, int]]:
+    """Greedy drag search (best single relation-changing drag per round) maximising ``value(g)``
+    over light clones ``g`` of ``game`` with the drags made. ``relevant``: (row, slot) of the items
+    whose relations count (others are treated as nothing: drags that only change what a hand
+    points at among them are skipped); None = all."""
     from cursed_words_solver.sim.game.agent import clone
 
     p = game.player
@@ -218,7 +256,7 @@ def _search(game, opts: Sequence, rounds: int, min_gain: float, info: dict | Non
     sp0 = tuple(i if it is not None else None for i, it in enumerate(p.stamps))
     cls = {(k, i): it.game_class for k, arr in (("sticker", p.stickers), ("stamp", p.stamps))
            for i, it in enumerate(arr) if it is not None}
-    base = _objective(game, opts)
+    base = value(game)
     evals = 1
     if base == float("-inf"):
         return []
@@ -226,7 +264,7 @@ def _search(game, opts: Sequence, rounds: int, min_gain: float, info: dict | Non
     drags: list[tuple[str, int, int]] = []
     seen = {cur}
     for _ in range(max(0, int(rounds))):
-        rel = _relations(*cur, cls)
+        rel = _rel(*cur, cls, relevant)
         best = None
         for kind in rows:
             order = cur[0] if kind == "sticker" else cur[1]
@@ -238,13 +276,13 @@ def _search(game, opts: Sequence, rounds: int, min_gain: float, info: dict | Non
                         continue
                     o2 = _drag(order, src, dst)
                     nxt = (o2, cur[1]) if kind == "sticker" else (cur[0], o2)
-                    if nxt in seen or _relations(*nxt, cls) == rel:
+                    if nxt in seen or _rel(*nxt, cls, relevant) == rel:
                         continue
                     seen.add(nxt)
                     g = clone(cur_g, light=True)   # a reorder draws no randomness
                     if not g.move(kind, src, dst):
                         continue
-                    v = _objective(g, opts)
+                    v = value(g)
                     evals += 1
                     if best is None or v > best[0] + 1e-9:
                         best = (v, (kind, src, dst), g, nxt)
@@ -254,7 +292,7 @@ def _search(game, opts: Sequence, rounds: int, min_gain: float, info: dict | Non
         drags.append(best[1])
     if info is not None:
         info.update(base=base, best=cur_obj, evals=evals)
-    if not drags or cur_obj - base <= min_gain * max(abs(base), 1.0):
+    if not drags or cur_obj - base <= min_gain * max(abs(base), 1.0) or cur_obj - base <= abs_gain:
         return []
     return drags
 
@@ -311,6 +349,177 @@ def best_arrangement(game, words: Sequence | None = None, k: int = ARRANGE_K, *,
             words = cands.words(game, k)
         opts = sorted((o for o in words if not getattr(o, "placements", None)), key=lambda o: -o.score)[:k]
         return _search(game, opts, rounds, min_gain, info) if opts else []
+    except Exception:
+        return []
+
+
+# ------------------------------------------------------------- grid-aware arrange ("grid" mode)
+#
+# Human Boy's hands also act when a grid is BUILT: the Right Hand re-triggers its favourite stamp's
+# grid-generation effect (gridgen ``is_hb_favourite_stamp``) and its encounter-start effect (Diya:
+# extra grids, encounter._setup_rest), the Left Hand's favourite sticker is upgraded, Overhand /
+# Underhand repeat theirs. The game lets the player drag items in a shop at any time and in an
+# encounter only while it waits for a word (``ItemObject.BeginDrag``: EncounterThreadStage
+# WaitingForWordSubmission), i.e. after a grid appears and before the submit / skip / reroll that
+# builds the next one. So the best play is two orders: one for the grid about to be built (at shop
+# leave, before a grid reroll or skip), then the scoring order once it exists (the per-submit
+# ``best_arrangement``). Every candidate order builds its grid on sampled futures (a keyed probe /
+# ``determinize``: no real-RNG peeking, the same samples for every order) and is valued with the
+# scoring order dragged in afterwards, as the next submit decision does.
+# Sub-envs (look-ahead rollouts) keep the cheaper score mode: a grid search per rollout shop is
+# too slow for the search budget.
+
+GRID_ROUNDS = 2            # drag rounds for the grid order
+GRID_SAMPLES = 4           # sampled grids per candidate order (common to all orders)
+GRID_MIN_GAIN_SHOP = 0.1   # spare grids at or below which the shop order is left alone
+GRID_MIN_GAIN_GRID = 0.05  # relative best-score gain at or below which a reroll / skip order is left alone
+GRID_EFFORT = 0.05         # deterministic word search for the valuation (load-independent)
+# item hooks that run when a grid is built / an encounter is set up
+_GRID_HOOKS = ("start_of_grid", "final_start_of_grid")
+_SETUP_HOOKS = ("start_of_encounter",)
+_NESTING = frozenset({"RandomAccessMemory", "Frankenstein"})
+# hooks that only redraw a number / set a flag: repeating them does not change the grid
+_GRID_INERT = frozenset({"LuckyDice", "Dartboard", "EightBall", "TwinkleToes", "Wheel"})
+
+
+def _grid_items(p, *, setup: bool) -> frozenset:
+    """(row, slot) of owned items with a grid-build effect (``setup``: also encounter-start
+    effects, Diya included: they run only when an encounter starts, not on a reroll / skip)."""
+    from cursed_words_solver.sim.game.items import Item
+
+    hooks = _GRID_HOOKS + (_SETUP_HOOKS if setup else ())
+    out = set()
+    for kind, arr in (("sticker", p.stickers), ("stamp", p.stamps)):
+        for i, it in enumerate(arr):
+            if it is None or it.game_class in POSITIONAL or it.game_class in _GRID_INERT:
+                continue
+            cl = type(it)
+            if (it.game_class in _NESTING or (setup and it.game_class == "Diya")
+                    or any(getattr(cl, h, None) is not getattr(Item, h, None) for h in hooks)):
+                out.add((kind, i))
+    return frozenset(out)
+
+
+def _det(c):
+    """Deterministic, load-independent word search for valuation (effort mode)."""
+    if c is not None and not getattr(c, "effort", None) and hasattr(c, "with_effort"):
+        return c.with_effort(GRID_EFFORT)
+    return c
+
+
+def _best_on_grid(g, cands, k: int) -> float:
+    """Best target-capped score on ``g``'s current grid under the scoring order the next submit
+    decision would drag in (``best_arrangement``'s rounds and acceptance rule)."""
+    if not _applicable(g):
+        return float("-inf")
+    opts = sorted((o for o in cands.words(g, k) if not o.placements), key=lambda o: -o.score)[:k]
+    if not opts:
+        return float("-inf")
+    info: dict = {}
+    drags = _search(g, opts, 3, ARRANGE_MIN_GAIN, info)
+    return float(info["best"]) if drags else float(info.get("base", _objective(g, opts)))
+
+
+def _grid_probe(game, stage: int, node, s: int):
+    """``PowerPolicy._probe_game`` with a position-keyed probe RNG, so orders that consume
+    different amounts of randomness at encounter setup still get the same letters per grid."""
+    from cursed_words_solver.sim.game.agent import clone
+    from cursed_words_solver.sim.game.core import KeyedRng
+    from cursed_words_solver.sim.game.encounter import Encounter
+    from cursed_words_solver.sim.game.player import Node
+
+    g = clone(game)
+    g.rng = KeyedRng(f"arrange|probe|{stage}|{node.name}|{s}")
+    run = g.player.run
+    run.stage, run.node = stage, (Node.ENCOUNTER_SECOND if node == Node.BOSS else node)
+    g.shop = None
+    g.player._shop_listener = None
+    enc = Encounter(g)
+    g.player.active_bosses = []
+    g.encounter = enc
+    enc._setup_rest()
+    enc.awaiting_forced_sell = False
+    enc.remaining_target = 10**15
+    return g
+
+
+def _shop_grid_value(gs, cands, k: int) -> float:
+    """Spare grids of the next encounter under ``gs``'s order: the grids it starts with (Diya
+    and the like count) minus target / best first-grid score, averaged over ``GRID_SAMPLES``."""
+    from cursed_words_solver.sim.game.policy import next_encounter_node
+
+    stage, node = next_encounter_node(gs)
+    vals = []
+    for s in range(GRID_SAMPLES):
+        pg = _grid_probe(gs, stage, node, s)
+        best = _best_on_grid(pg, cands, k)
+        if best == float("-inf"):
+            return best
+        target = float(pg.player.run.current_encounter_target(pg.player))
+        vals.append(pg.encounter.remaining_grids + 1 - target / max(best, 1.0))
+    return sum(vals) / len(vals)
+
+
+def _next_key(game, via: str) -> str:
+    run, enc = game.player.run, game.encounter
+    return f"arrange|{via}|{run.stage}|{run.node.name}|{enc.grids_generated}|{getattr(enc, 'reroll_tracker', 0)}"
+
+
+def _next_grid_value(gr, cands, k: int, key: str, via: str) -> float:
+    """Mean best score on the grid a reroll / skip builds under ``gr``'s order (sampled futures,
+    the same for every order)."""
+    from cursed_words_solver.sim.game.agent import clone, determinize
+
+    vals = []
+    for s in range(GRID_SAMPLES):
+        h = determinize(clone(gr), f"{key}|{s}")
+        if via == "skip":
+            h.skip()
+            if h.encounter is None or h.phase != "encounter" or h.encounter.grid is None:
+                return float("-inf")
+        elif not h.reroll_grid():
+            return float("-inf")
+        best = _best_on_grid(h, cands, k)
+        if best == float("-inf"):
+            return best
+        vals.append(best)
+    return sum(vals) / len(vals)
+
+
+def grid_arrangement(game, cands=None, k: int = ARRANGE_K, *, via: str = "reroll", rounds: int = GRID_ROUNDS,
+                     info: dict | None = None) -> list[tuple[str, int, int]]:
+    """Drags ``(kind, src, dst)`` for the grid about to be built: in a shop (before leaving) the
+    order that gives the next encounter the most spare grids; in an encounter before a grid
+    reroll (``via`` "reroll") or a skip ("skip") the order whose next grid scores best; both valued
+    with the scoring order dragged in afterwards. [] when no positional item is owned, no hand can
+    point at a grid-build item, nothing gains by more than the gate, or it is not applicable.
+    Deterministic; the real game is not changed and its RNG is not read."""
+    p = game.player
+    if not has_positional(p) or cands is None:
+        return []
+    cands = _det(cands)
+    try:
+        if game.encounter is None:
+            if getattr(game, "phase", None) != "shop":
+                return []
+            rel = _grid_items(p, setup=True)
+            if not rel:
+                return []
+            return _search_fn(game, lambda g: _shop_grid_value(g, cands, k), rounds, 0.0, info, rel,
+                              abs_gain=GRID_MIN_GAIN_SHOP)
+        enc = game.encounter
+        if not _applicable(game):
+            return []
+        if via == "reroll" and not enc.can_reroll():
+            return []
+        if via == "skip" and enc.remaining_grids <= 0:
+            return []   # a skip with no grid left ends the encounter: no grid is built
+        rel = _grid_items(p, setup=False)
+        if not rel:
+            return []
+        key = _next_key(game, via)
+        return _search_fn(game, lambda g: _next_grid_value(g, cands, k, key, via), rounds, GRID_MIN_GAIN_GRID,
+                          info, rel)
     except Exception:
         return []
 

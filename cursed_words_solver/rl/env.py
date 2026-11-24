@@ -95,9 +95,15 @@ def pack(step: Step) -> dict[str, np.ndarray]:
 
 class CWEnv:
     def __init__(self, cands: "Candidates", limits: Limits | None = None, shaping: float = 0.0,
-                 michael_bonus: float = MICHAEL_BONUS, arrange: bool = False) -> None:
+                 michael_bonus: float = MICHAEL_BONUS, arrange: bool | str = False) -> None:
+        from cursed_words_solver.rl.rules import ARRANGE_GRID, parse_arrange_mode
+
         self.builder = CandidateBuilder(cands, limits)
-        self.arrange = bool(arrange)   # auto-arrange positional items before submits / shop leave
+        # auto-arrange positional items before submits / shop leave; mode "grid" also arranges for
+        # the grid about to be built (shop leave, grid reroll: rules.grid_arrangement)
+        self.arrange_mode = parse_arrange_mode(arrange)
+        self.arrange = bool(self.arrange_mode)
+        self.arrange_grid = self.arrange_mode == ARRANGE_GRID
         self.arrange_drags = 0
         self.arrange_calls = 0
         self.arrange_secs = 0.0
@@ -158,23 +164,32 @@ class CWEnv:
     def done(self) -> bool:
         return self.game is None or self.game.phase == "done" or self.steps >= MAX_STEPS
 
-    def auto_arrange(self, words=None) -> int:
+    def auto_arrange(self, words=None, *, grid: bool = False, via: str = "reroll") -> int:
         """Drag positional items into the best order (``rules.best_arrangement``; ``words``: the
-        decision's submit candidates, None = found here) with the game's own move. Returns the
-        number of drags made (0 when off / nothing gains)."""
+        decision's submit candidates, None = found here) with the game's own move. ``grid`` (mode
+        "grid" only): order for the grid about to be built instead (``rules.grid_arrangement``; in a
+        shop that is always the case). Returns the number of drags made (0 when off / nothing gains)."""
         if not self.arrange or self.game is None:
             return 0
         import time
 
-        from cursed_words_solver.rl.rules import apply_arrangement, best_arrangement, has_positional
+        from cursed_words_solver.rl.rules import apply_arrangement, best_arrangement, grid_arrangement, has_positional
 
         g = self.game
         if not has_positional(g.player):
             return 0
+        use_grid = self.arrange_grid and (grid or g.phase == "shop")
+        if grid and not use_grid:
+            return 0
         t0 = time.perf_counter()
         self.arrange_calls += 1
         try:
-            drags = best_arrangement(g, words, cands=self.builder.cands)
+            if use_grid:
+                drags = grid_arrangement(g, self.builder.cands, via=via)
+                if not drags and g.phase == "shop":   # nothing for the grid: the score-mode shop order
+                    drags = best_arrangement(g, words, cands=self.builder.cands)
+            else:
+                drags = best_arrangement(g, words, cands=self.builder.cands)
             n = apply_arrangement(g, drags) if drags else 0
         finally:
             self.arrange_secs += time.perf_counter() - t0
@@ -186,6 +201,9 @@ class CWEnv:
         g = self.game
         if self.arrange and action.kind == "leave" and g.phase == "shop":
             self.auto_arrange()
+        elif self.arrange_grid and action.kind in ("reroll_grid", "skip") and g.phase == "encounter":
+            # order for the grid the reroll / skip builds (the scoring order: next current())
+            self.auto_arrange(grid=True, via="skip" if action.kind == "skip" else "reroll")
         ok = apply(g, action)
         self.steps += 1
         if action.kind in ANYTIME:
@@ -214,7 +232,7 @@ class CWEnv:
         g = self.game
         extra = {"michael_bonus": self.michael_bonus} if self.michael_bonus != MICHAEL_BONUS else {}
         if self.arrange:
-            extra.update(arrange=True, arrange_drags=self.arrange_drags, arrange_calls=self.arrange_calls,
+            extra.update(arrange="grid" if self.arrange_grid else True, arrange_drags=self.arrange_drags, arrange_calls=self.arrange_calls,
                          arrange_secs=round(self.arrange_secs, 3))
         return {**extra, "won": bool(g.won), "reason": g.end_reason, "outcome": round(outcome(g), 4),
                 "stage": g.player.run.stage, "steps": self.steps,

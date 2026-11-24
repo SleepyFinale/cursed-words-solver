@@ -475,19 +475,25 @@ def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps:
     else:
         tgt, pivot = run_target_info(game)
     set_target(game, tgt)
-    from cursed_words_solver.rl.rules import describe_drags, env_arrange, has_positional, parse_arrange
+    from cursed_words_solver.rl.rules import (ARRANGE_GRID, describe_drags, env_arrange_mode, grid_arrangement,
+                                              has_positional, parse_arrange_mode)
 
-    arr = bool((env_arrange() if arrange is None else parse_arrange(arrange))
-               and game.phase in ("shop", "encounter") and has_positional(game.player))
+    mode = env_arrange_mode() if arrange is None else parse_arrange_mode(arrange)
+    arr = bool(mode and game.phase in ("shop", "encounter") and has_positional(game.player))
+    grid_mode = arr and mode == ARRANGE_GRID
     shown = game
     if arr:
         game = clone(game)   # the drags are advice: evaluate on a copy
-    env = CWEnv(cands, arrange=arr)
+    env = CWEnv(cands, arrange=mode if arr else False)
     env.attach(game)
     if arr and game.phase == "shop":
-        env.auto_arrange()   # probe-encounter order (encounters arrange in env.current())
+        # probe-encounter order (encounters arrange in env.current()); grid mode: the order for the
+        # first grid of the next encounter (grid-build effects), re-arranged for scoring once it exists
+        env.auto_arrange()
     st, probs, v, aux = _evaluate(actor, env)
     steps = [display(s) for s in describe_drags(shown, env.arrange_log)] if arr and env.arrange_log else []
+    if grid_mode and game.phase == "shop":
+        steps = []   # grid mode: the drags go into the shop plan right before "leave" (after its buys)
     ph = game.phase
     if ph == "encounter" and game.encounter is not None and game.encounter.michael_draft is not None:
         ph = "michael_draft"
@@ -538,7 +544,18 @@ def advise_game(game, *, cands=None, model_path: Path | None = None, plan_steps:
             except Exception as exc:  # advisory: keep the plain policy pick
                 adv.context.append(f"look-ahead failed: {type(exc).__name__}: {exc}")
         if ph == "shop":
-            adv.plan = _shop_plan(actor, game, cands, plan_steps, first=adv.pick.action if adv.pick else None)
+            adv.plan = _shop_plan(actor, shown if grid_mode else game, cands, plan_steps,
+                                  first=adv.pick.action if adv.pick else None, grid=grid_mode)
+        elif grid_mode and adv.pick is not None and adv.pick.action.kind in ("reroll_grid", "skip"):
+            # a reroll / skip builds a grid: the hands are set for its grid-build effects, never for
+            # scoring (rules.grid_arrangement, from the player's real order)
+            via = "skip" if adv.pick.action.kind == "skip" else "reroll"
+            verb = "skipping" if via == "skip" else "rerolling"
+            del adv.context[:len(steps)]   # the scoring drags do not apply before a reroll / skip
+            drags = grid_arrangement(clone(shown), cands, via=via)
+            if drags:
+                adv.context[:0] = ([f"before {verb}, {display(s)}" for s in describe_drags(shown, drags)]
+                                   + [f"(then {via}; once the new grid appears, ask again for the scoring order)"])
     return adv
 
 
@@ -694,9 +711,12 @@ def _deploy_boss_rule(adv: Advice, game, boss_rule: int | None) -> None:
     adv.context.append(f"Boss rule: at crown {n}+ take an uncursed boss over a cursed one")
 
 
-def _shop_plan(actor, game, cands, steps: int, first: Action | None = None) -> list[str]:
+def _shop_plan(actor, game, cands, steps: int, first: Action | None = None, grid: bool = False) -> list[str]:
     """Greedy policy plan for this shop; starts with ``first`` (the advice's pick, which the
-    look-ahead may have changed) so the plan and the pick agree."""
+    look-ahead may have changed) so the plan and the pick agree. ``grid`` (arrange mode "grid"):
+    before "leave", the drags that set the hands for the next encounter's first grid
+    (``rules.grid_arrangement`` on the inventory after the planned buys / sells; falls back to the
+    score-mode shop order as ``CWEnv.auto_arrange`` does)."""
     g = determinize(clone(game), "assist|shop")
     env = CWEnv(_fast(cands))
     env.attach(g)
@@ -708,6 +728,13 @@ def _shop_plan(actor, game, cands, steps: int, first: Action | None = None) -> l
         a = st.cands[int(np.argmax(probs))].action
         if n == 0 and first is not None:
             a = next((c.action for c in st.cands if label(c.action) == label(first)), a)
+        if grid and a.kind == "leave":
+            from cursed_words_solver.rl.rules import best_arrangement, describe_drags, grid_arrangement
+
+            drags = grid_arrangement(clone(g), cands) or best_arrangement(clone(g), None, cands=cands)
+            if drags:
+                out.extend(display(s) for s in describe_drags(g, drags))
+                out.append("(that order is for building the first grid: once it appears, ask again for the scoring order)")
         out.append(label(a))
         if a.kind in ("leave", "reroll_shop"):
             if a.kind == "reroll_shop":

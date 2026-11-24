@@ -126,7 +126,7 @@ def cache_key(r: dict) -> tuple:
     if r.get("keyed"):
         k = (*k, ("keyed",))
     if r.get("arrange"):
-        k = (*k, ("arrange",))
+        k = (*k, ("arrange", "grid") if r.get("arrange") == "grid" else ("arrange",))
     if r.get("actor_seed") is not None:
         k = (*k, ("actor_seed", int(r["actor_seed"])))
     return k
@@ -245,7 +245,7 @@ def arm_display(arm: str) -> str:
 
 def run_arm(arm: str, policy: str, jobs: list[dict], workers: int = 7, *, greedy: bool = True, search=None,
             out_dir: Path = EVAL_HOME, pool=None, verbose: bool = True, boss_rule: int = 0,
-            keyed: bool = False, arrange: bool = False) -> list[dict]:
+            keyed: bool = False, arrange: bool | str = False) -> list[dict]:
     """Play the jobs not cached in ``<out_dir>/<arm>.jsonl`` (by ``cache_key``) and return the
     rows of ``jobs``. ``boss_rule``: crown threshold of the uncursed-boss rule (0 = off; a
     job's own "boss_rule" wins). ``keyed``: play with the position-keyed game RNG (a job's own
@@ -258,7 +258,8 @@ def run_arm(arm: str, policy: str, jobs: list[dict], workers: int = 7, *, greedy
     if keyed:
         jobs = [j if "keyed" in j else {**j, "keyed": True} for j in jobs]
     if arrange:
-        jobs = [j if "arrange" in j else {**j, "arrange": True} for j in jobs]
+        val = "grid" if arrange == "grid" else True   # "grid": rules.grid_arrangement too
+        jobs = [j if "arrange" in j else {**j, "arrange": val} for j in jobs]
     path = Path(out_dir) / f"{arm}.jsonl"
     done = {cache_key(r): r for r in store.read_jsonl(path) if not r.get("error")}
     todo = [j for j in jobs if cache_key(j) not in done]
@@ -544,6 +545,8 @@ def main(argv: list[str] | None = None) -> None:
                    "arms past their first different action); use its own arm name")
     r.add_argument("--arrange", action="store_true", help="auto-arrange positional items (Human Boy's hands, "
                    "Overhand / Underhand) with real drags before submits and at shop leave")
+    r.add_argument("--arrange-grid", action="store_true", help="--arrange, plus order for the grid about to be "
+                   "built at shop leave / before a grid reroll (rules.grid_arrangement; rows carry arrange 'grid')")
     r.add_argument("--reps", type=int, default=0, help="R > 0: play each job R times with distinct policy sampling "
                    "seeds (rows carry rep; use with --sample or --search)")
     r.add_argument("--out-dir", default=str(EVAL_HOME), help="where <arm>.jsonl is cached")
@@ -583,7 +586,8 @@ def main(argv: list[str] | None = None) -> None:
         jobs = rep_jobs(jobs, args.reps)
         rows = run_arm(args.arm, pol, jobs, args.workers, greedy=not args.sample,
                        search=json.loads(args.search) if args.search else None, out_dir=out_dir,
-                       boss_rule=args.boss_rule, keyed=args.keyed, arrange=args.arrange)
+                       boss_rule=args.boss_rule, keyed=args.keyed,
+                       arrange="grid" if args.arrange_grid else args.arrange)
         print(summarize(rows))
     elif args.cmd == "targets":
         print_targets(load_rows(args.arm))

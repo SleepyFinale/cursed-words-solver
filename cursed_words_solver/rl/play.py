@@ -176,14 +176,15 @@ def play(job: dict[str, Any]) -> dict[str, Any]:
 
     boss_rule = parse_boss_rule(job.get("boss_rule"))
     overrides = 0
-    from cursed_words_solver.rl.rules import parse_arrange
+    from cursed_words_solver.rl.rules import ARRANGE_GRID, parse_arrange_mode
 
-    arrange = parse_arrange(job.get("arrange"))
-    env = CWEnv(_CANDS, shaping=float(job.get("shaping") or 0.0), arrange=arrange)
+    arrange_mode = parse_arrange_mode(job.get("arrange"))   # "" / "score" / "grid"
+    arrange = bool(arrange_mode)
+    env = CWEnv(_CANDS, shaping=float(job.get("shaping") or 0.0), arrange=arrange_mode)
     rec = bool(job.get("record"))
     keyed = bool(job.get("keyed"))
     # optional fields go into the row only when the job sets them (plain rows unchanged)
-    extra = {**({"keyed": True} if keyed else {}), **({"arrange": True} if arrange else {}),
+    extra = {**({"keyed": True} if keyed else {}), **({"arrange": ARRANGE_GRID if arrange_mode == ARRANGE_GRID else True} if arrange else {}),
              **{k: job[k] for k in ("actor_seed", "rep") if job.get(k) is not None}}
     traj: dict[str, list] = {"steps": [], "chosen": [], "logp": [], "value": [], "reward": []}
     try:
