@@ -280,7 +280,7 @@ namespace CursedWordsSolverCompanion
                 var progress = player.CurrentRunProgress;
                 if (progress == null)
                     return null;
-                return progress.Challenge;
+                return progress.ActiveChallenges != null && progress.ActiveChallenges.Count > 0 ? progress.ActiveChallenges[0] : null;
             }
             catch
             {

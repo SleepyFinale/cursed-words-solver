@@ -147,8 +147,8 @@ def test_ambulance_negative_base_multiplier():
     score, bd = pipeline.score(board, [0], "z", loadout)
     base, _ = pipeline.score(board, [0], "z", Loadout())
     assert bd["base_total"] < 0
-    assert bd["multiplier"] == 1.5
-    assert score == base * 1.5
+    assert bd["multiplier"] == 2
+    assert score == base * 2
 
 
 def test_magic_8_ball_target_knight():

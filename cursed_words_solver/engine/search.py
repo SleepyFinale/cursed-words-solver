@@ -280,24 +280,31 @@ class ExactSearch:
         # Item accumulator words (Bar Chart numbers, Microphone item names, ...).
         self.acc_trie = CsrTrie.from_words(plan.accumulator_words) if plan.accumulator_words else None
         self.challenge = plan.challenge
+        self.challenges = plan.challenges
         # Michael's 25-tile finale grid: validity is "all wildcards", not the dictionary.
         self.finale = str(extras.get("michael_summoned_bosses_defeated") or "").lower() == "true"
         self.up_and_up_center = _extra_int(extras, "up_and_up_center_index")
         self.stats = SearchStats()
         # Tiles a word may never contain under the active challenge (static prune). Michael's
         # finale grid skips every challenge rule (PopulateValidityAndScore's if / else).
-        ch = "" if self.finale else self.challenge
+        chs = frozenset() if self.finale else self.challenges
         allowed = []
         for t in grid.tiles:
             ok = self.clickable[t.idx]
-            if ch == "Chromaphobia" and t.tile_type != NORMAL:
+            if "Chromaphobia" in chs and t.tile_type != NORMAL:
                 ok = False
-            elif ch == "Chromaphilia" and t.tile_type == NORMAL:
+            elif "Chromaphilia" in chs and t.tile_type == NORMAL:
                 ok = False
-            elif ch == "Cursophobia" and plan.is_cursed(t):
+            elif "Cursophobia" in chs and plan.is_cursed(t):
                 ok = False
             allowed.append(ok)
         self.allowed_tile = allowed
+        # DLC mechanics (wires / dominoes / zodiac / lowercase / new letter items): the
+        # path-dependent DFS in dlc_search replaces the legacy enumeration.
+        from cursed_words_solver.engine.dlc_search import needs_dlc_search
+
+        self.dlc_mode = not self.finale and needs_dlc_search(plan)
+        self._word_rules = None
         self._available_allowed = sorted((t.idx for t in grid.available if allowed[t.idx]), key=lambda j: -grid.tiles[j].value)
 
     # ------------------------------------------------------------------ inventory
@@ -343,7 +350,7 @@ class ExactSearch:
             portal[i] = t.tile_type == WHITE
             if inv.full_moon:
                 moon[i] = [j for j in groups[(t.srep, t.glyph)] if j != i and self.clickable[j]]
-            if self.challenge == "SicilianDefense":
+            if "SicilianDefense" in self.challenges:
                 lst = list(self._knight_moves(t, inv, sicilian=True))
                 if inv.television and t.glyph == G_CHESS and t.piece in ("king", "pawn"):
                     lst += [a.idx for a in self.grid.available if a.glyph == G_ITEM]
@@ -383,7 +390,7 @@ class ExactSearch:
             for t in self.grid.available:
                 if t.srep == rep and t.glyph == cur.glyph:
                     add(t.idx)
-        if self.challenge == "SicilianDefense":
+        if "SicilianDefense" in self.challenges:
             for i in self._knight_moves(cur, inv, sicilian=True):
                 add(i)
             if inv.television and cur.glyph == G_CHESS and cur.piece in ("king", "pawn"):
@@ -662,6 +669,9 @@ class ExactSearch:
         """
         if self.finale:
             return FINALE_WORD if self.finale_valid(path) else None
+        if self.dlc_mode:
+            sub = self.dlc().validate(tuple(path))
+            return sub.text() if sub is not None else None
         inv = self.inventory_for(path)
         if self.acc_trie is not None:
             # TryGetAccumulatorWordFromTiles runs before the dictionary.
@@ -706,20 +716,55 @@ class ExactSearch:
             return None
         return _np_spell(arrays, int(words.min()))
 
+    def dlc(self):
+        """The ``DlcSearch`` helper for this board (built on first use)."""
+        ds = self.__dict__.get("_dlc_search")
+        if ds is None or ds.min_len != self.min_len or ds.rules.max_len != self.max_len:
+            from cursed_words_solver.engine.dlc_search import DlcSearch
+
+            ds = self.__dict__["_dlc_search"] = DlcSearch(self)
+        return ds
+
+    def dlc_moves_ok(self, path) -> bool:
+        """Every step is a ``GetValidNextTiles`` move under DLC movement (selection state)."""
+        from cursed_words_solver.engine.dlc_search import Sel
+
+        ds = self.dlc()
+        path = list(path)
+        sels = [Sel(path[0])]
+        for k in range(len(path) - 1):
+            nxt = next((m for m in ds.moves(path[: k + 1], sels) if m.idx == path[k + 1]), None)
+            if nxt is None:
+                return False
+            sels.append(nxt)
+        return True
+
+    def _score_split(self, path: tuple[int, ...], word: str):
+        """Honeypot two-word submit: score with its SubmittedWords groups (per-word
+        ApplyWordBonus steps)."""
+        from cursed_words_solver.engine.dlc_rules import WordRules
+
+        if self._word_rules is None:
+            self._word_rules = WordRules(self.plan, self.trie, self.plan.accumulator_words, self.min_len, self.max_len)
+        sub = self._word_rules.concatenated(list(path), self.part_max_len)
+        if sub is None or len(sub.all_groups()) < 2:
+            return self.plan.score(list(path), word)
+        return self.plan.score(list(path), word, words=sub.all_words(), groups=sub.all_groups())
+
     def path_allowed(self, path: tuple[int, ...]) -> bool:
         """Challenge / boss word restrictions (TileSelectionManager.PopulateValidityAndScore);
         none apply on Michael's finale grid."""
         if self.finale:
             return True
-        ch = self.challenge
-        if ch == "UpAndUp" and self.up_and_up_center is not None and self.up_and_up_center not in path:
+        chs = self.challenges
+        if "UpAndUp" in chs and self.up_and_up_center is not None and self.up_and_up_center not in path:
             return False
         tiles = [self.tiles[i] for i in path]
-        if ch == "Chromaphobia" and any(t.tile_type != NORMAL for t in tiles):
+        if "Chromaphobia" in chs and any(t.tile_type != NORMAL for t in tiles):
             return False
-        if ch == "Chromaphilia" and any(t.tile_type == NORMAL for t in tiles):
+        if "Chromaphilia" in chs and any(t.tile_type == NORMAL for t in tiles):
             return False
-        if ch == "Cursophobia" and any(self.plan.is_cursed(t) for t in tiles):
+        if "Cursophobia" in chs and any(self.plan.is_cursed(t) for t in tiles):
             return False
         return True
 
@@ -1182,7 +1227,7 @@ class ExactSearch:
         rel = _MOVE_CLASSES | _LETTER_CLASSES
         inv = tuple((frozenset(i.classes & rel), tuple(tuple(i.colours.get(c, ())) for c in _COLOUR_CLASSES))
                     for i in (self.base_inv, self.super_inv))
-        cursed = tuple(self.plan.is_cursed(t) for t in self.tiles) if self.challenge == "Cursophobia" else None
+        cursed = tuple(self.plan.is_cursed(t) for t in self.tiles) if "Cursophobia" in self.challenges else None
         return (self.trie, tuple(self.plan.accumulator_words or ()), self.grid.width, self.grid.height,
                 tuple(tuple(getattr(t, f) for f in _TILE_FIELDS) for t in self.tiles), inv, self.challenge, cursed,
                 self.min_len, self.max_len, self.part_max_len, self.honeypot, self.finale, self.up_and_up_center,
@@ -1300,7 +1345,7 @@ class ExactSearch:
                 best_per_word[w] = p
         per_word = [(p, w) for w, p in best_per_word.items()]
         groups = [ranked[: self.max_exact_paths // 2], per_word]
-        if self.challenge == "TwoWrongs":
+        if "TwoWrongs" in self.challenges:
             # The most negative word wins: Void tiles have negative values, so the lowest
             # proxies matter; Cartwheeler's sign flip keeps the highest ones in play too.
             q = self.max_exact_paths // 4
@@ -1460,6 +1505,8 @@ class ExactSearch:
         boards), a score-guided beam (``beam_search``) uses the remaining time and
         its exactly scored finds join the results.
         """
+        if self.dlc_mode:
+            return self.dlc().run(top_n=top_n, deadline=deadline, cancel_check=cancel_check, rank=rank, starts=starts)
         t0 = time.perf_counter()
         enum_deadline = deadline
         if deadline is not None:
@@ -1534,7 +1581,10 @@ class ExactSearch:
                     continue
             if not self.path_allowed(p):
                 continue
-            res = plan.score(list(p), word)
+            if " " in word:
+                res = self._score_split(p, word)
+            else:
+                res = plan.score(list(p), word)
             scored.append(Candidate(p, word, res.score, res.nondeterministic))
         if n_scored < len(items):
             self.stats.extra["shortlisted"] = n_scored

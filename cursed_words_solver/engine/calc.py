@@ -31,8 +31,18 @@ from typing import Any
 from cursed_words_solver.engine import items as _items
 from cursed_words_solver.engine import packet as P
 from cursed_words_solver.engine.item_data import CLASS_TO_SLUG, ITEMS, POOLS
-from cursed_words_solver.engine.items import LOCAL_TILE_HOOKS, TILE_HOOKS, WORD_HOOKS, scissors_steps
+from cursed_words_solver.engine import dlc_rules as _dlc
+from cursed_words_solver.engine.items import (
+    LOCAL_TILE_HOOKS,
+    SUBMISSION_HOOKS,
+    TILE_HOOKS,
+    WORD_HOOKS,
+    scissors_steps,
+)
+from cursed_words_solver.engine.model import G_BRACKET  # noqa: E402
+from cursed_words_solver.engine import dlc_items as _dlc_items  # noqa: F401  (registers DLC hooks)
 from cursed_words_solver.engine.model import (
+    DLC_GLYPHS,
     G_ARROW,
     G_BLANK,
     G_CARD,
@@ -197,8 +207,8 @@ def _seed_state(inst: ItemInst, extras: dict[str, Any]) -> None:
         used = _extra_int(extras, "tile_ninja_consumables_used")
         if used is None:
             pct = _extra_int(extras, "tile_ninja_word_bonus_percent")
-            if pct is not None and pct >= 120:
-                used = (pct - 120) // 2
+            if pct is not None and pct >= 100:
+                used = (pct - 100) // 5
         if used is not None:
             inst.state["used"] = used
     elif cls == "ShavedIce":
@@ -295,6 +305,8 @@ def _apply_item_state(inst: ItemInst, fields: dict[str, Any] | None) -> None:
     """Map raw game field values (melmod ``state`` export) onto engine counters."""
     if not isinstance(fields, dict):
         return
+    # Raw game fields, read by the DLC item ports (dlc_rules.item_field); never mutated.
+    inst.state["_fields"] = fields
     mapping = _ITEM_STATE_FIELDS
     for key, value in fields.items():
         target = mapping.get(key)
@@ -332,6 +344,8 @@ def inst_from_state(d: dict[str, Any]) -> ItemInst:
     if isinstance(colours, list) and colours:
         inst.colours = [_tile_type_name(c) for c in colours]
     _apply_item_state(inst, d.get("fields"))
+    if d.get("foil"):
+        inst.state["_foil"] = True
     for nested in d.get("nested") or ():
         if isinstance(nested, dict):
             inst.nested.append(inst_from_state(nested))
@@ -378,6 +392,20 @@ class EnginePlan:
     # rules (InventoryCache, GetValidNextTiles); narrower under Playing Favourites.
     inventory_classes: set[str] | None = None
     inventory_colours: dict[str, list[str]] | None = None
+    # DLC: every active challenge (RunProgress.ActiveChallenges).
+    challenges: frozenset = frozenset()
+    # Player.GetAllItems() (top level) and with RAM / Snapshot / Frankenstein / Ice Cube contents.
+    inventory_top: list[ItemInst] = field(default_factory=list)
+    inventory_insts: list[ItemInst] = field(default_factory=list)
+    # Prismatic Crystal pin: Player.ColourCash wallet (tile types, lowercase).
+    colour_cash: list[str] = field(default_factory=list)
+    prismatic: bool = False
+    # Item accumulator pairs (Honeypot two-word item names).
+    accumulator_pairs: list[tuple[str, str]] = field(default_factory=list)
+    # Score with the reference port only (DLC items / tiles the fast path does not model).
+    dlc_ref: bool = False
+    # DLC dice rolls: random.Random to sample each roll; None = expected value.
+    rng: Any = None
 
     # ------------------------------------------------------------------ build
 
@@ -386,6 +414,11 @@ class EnginePlan:
         extras = dict(loadout.extras or {})
         grid = EGrid(board)
         money = int(loadout.money if loadout.money is not None else board.money)
+        primary_challenge = str(_extra(extras, "challenge_game_class") or "")
+        listed = _extra_json(extras, "challenge_classes")
+        challenges = frozenset(
+            ([str(c) for c in listed if c] if isinstance(listed, list) else []) + ([primary_challenge] if primary_challenge else [])
+        )
 
         item_states = _extra_json(extras, "item_states") or {}
 
@@ -462,14 +495,14 @@ class EnginePlan:
         all_items = ([character_item] if character_item else []) + [i for i in stickers + stamps if i]
         unpacked = list(all_items)
         for it in all_items:
-            if it.cls in ("RandomAccessMemory", "Snapshot", "Frankenstein"):
+            if it.cls in ("RandomAccessMemory", "Snapshot", "Frankenstein", "IceCube"):
                 unpacked.extend(it.nested)
         classes = {i.cls for i in all_items}
         for it in all_items:
-            if it.cls in ("RandomAccessMemory", "Snapshot"):
+            if it.cls in ("RandomAccessMemory", "Snapshot", "IceCube"):
                 classes.update(n.cls for n in it.nested)
         colour_lists: dict[str, list[str]] = {}
-        for it in all_items + [n for it in all_items if it.cls in ("RandomAccessMemory", "Snapshot") for n in it.nested]:
+        for it in all_items + [n for it in all_items if it.cls in ("RandomAccessMemory", "Snapshot", "IceCube") for n in it.nested]:
             if it.cls in ("Flamingo", "RedEnvelope", "SpicyPepper", "Automobile"):
                 colour_lists.setdefault(it.cls, []).extend(it.colours)
         for it in all_items:
@@ -480,7 +513,7 @@ class EnginePlan:
         # Favourites limits to the pin, the favourite sticker, Left / Right Hand and
         # the stamp after Right Hand (plus RAM memory / Snapshot copy / stitches).
         inventory_items = all_items
-        if str(_extra(extras, "challenge_game_class") or "") == "PlayingFavourites":
+        if "PlayingFavourites" in challenges:
             fav: list[ItemInst] = [character_item] if character_item else []
             for i, st in enumerate(stickers):
                 if st is not None and i + 1 < len(stickers) and stickers[i + 1] is not None and stickers[i + 1].cls == "LeftHumanHand":
@@ -493,12 +526,12 @@ class EnginePlan:
             inventory_items = fav
         inventory_all = list(inventory_items)
         for it in inventory_items:
-            if it.cls in ("RandomAccessMemory", "Snapshot", "Frankenstein"):
+            if it.cls in ("RandomAccessMemory", "Snapshot", "Frankenstein", "IceCube"):
                 inventory_all.extend(it.nested)
         inventory_classes = {i.cls for i in inventory_all}
         inventory_colours: dict[str, list[str]] = {}
         for it in inventory_all:
-            if it.cls in ("Flamingo", "RedEnvelope", "SpicyPepper", "Automobile"):
+            if it.cls in ("Flamingo", "RedEnvelope", "SpicyPepper", "Automobile", "CreepyCrawly"):
                 inventory_colours.setdefault(it.cls, []).extend(it.colours)
         playing_favourites = inventory_items is not all_items
         classes_all = classes
@@ -509,10 +542,10 @@ class EnginePlan:
             unpacked = list(inventory_all)
             classes = {i.cls for i in inventory_items}
             for it in inventory_items:
-                if it.cls in ("RandomAccessMemory", "Snapshot", "Frankenstein"):
+                if it.cls in ("RandomAccessMemory", "Snapshot", "Frankenstein", "IceCube"):
                     classes.update(n.cls for n in it.nested)
             colour_lists = {}
-            for it in inventory_items + [n for it in inventory_items if it.cls in ("RandomAccessMemory", "Snapshot") for n in it.nested]:
+            for it in inventory_items + [n for it in inventory_items if it.cls in ("RandomAccessMemory", "Snapshot", "IceCube") for n in it.nested]:
                 if it.cls in ("Flamingo", "RedEnvelope", "SpicyPepper", "Automobile"):
                     colour_lists.setdefault(it.cls, []).extend(it.colours)
 
@@ -557,10 +590,37 @@ class EnginePlan:
             if st is not None and st.cls == "Overhand" and idx < len(stamps) and stamps[idx] is not None:
                 overhand[idx] = st.var() or (_extra_int(extras, "overhand_level") or 1)
 
+        # Handbag (IsTileType): a tile of colour[0] also counts as colours[1] and [2].
+        for bag in unpacked:
+            if bag.cls == "Handbag" and len(bag.colours) >= 3:
+                c0, extra = bag.colours[0], frozenset(bag.colours[1:3])
+                for t in grid.tiles:
+                    if t.tile_type == c0:
+                        t.extra_types = t.extra_types | extra
+
+        cash = _extra_json(extras, "colour_cash")
+        prismatic = character_item is not None and character_item.cls == "PrismaticCrystal"
+        board_classes = {ITEMS[t.item].cls for t in grid.tiles if t.glyph == G_ITEM and t.item in ITEMS}
+        every_class = classes_all | inventory_classes | board_classes | {n.cls for i in unpacked for n in i.nested}
+        dlc_ref = bool(
+            (every_class & _dlc_ref_classes())
+            or prismatic
+            or any(t.glyph in DLC_GLYPHS or t.lowercase for t in grid.tiles)
+            or any(t.extra_types for t in grid.tiles)
+            or len(challenges) > 1
+        )
+
         return cls(
             grid=grid,
             extras=extras,
             money=money,
+            challenges=challenges,
+            inventory_top=list(inventory_items),
+            inventory_insts=inventory_all,
+            colour_cash=[str(c).lower() for c in cash] if isinstance(cash, list) else [],
+            prismatic=prismatic,
+            accumulator_pairs=_accumulator_pairs(extras),
+            dlc_ref=dlc_ref,
             stickers=stickers,
             stamps=stamps,
             character_item=character_item,
@@ -569,7 +629,7 @@ class EnginePlan:
             colour_lists=colour_lists,
             boss_mods=boss_mods,
             hourglass_odd=hourglasses % 2 == 1,
-            challenge=str(_extra(extras, "challenge_game_class") or ""),
+            challenge=primary_challenge,
             prev_words=prev_words,
             grid_number=_extra_int(extras, "grid_number_exact") or _extra_int(extras, "grid_number") or 1,
             cable_cars=sum(1 for i in unpacked if i.cls == "CableCar"),
@@ -582,7 +642,7 @@ class EnginePlan:
             full_moon="FullMoon" in classes,
             kokeshi=any(i.cls == "KokeshiDolls" for i in unpacked),
             cursed_bosses_defeated=_extra_int(extras, "cursed_bosses_defeated_count") or 0,
-            sicilian=str(_extra(extras, "challenge_game_class") or "") == "SicilianDefense",
+            sicilian="SicilianDefense" in challenges,
             accumulator_words=_accumulator_words(extras, inventory_items),
             inventory_classes=inventory_classes,
             inventory_colours=inventory_colours,
@@ -599,73 +659,63 @@ class EnginePlan:
             count = len(rack) if isinstance(rack, list) else 0
         return max(0, min(10, count))
 
-    def variable_letter(self, t: ETile, extra_classes: set[str] = frozenset()) -> bool:
-        """``Tile.IsDisplayingAsVariableLetter`` (extra_classes = path scattered items)."""
-        if t.glyph in (G_BLANK, G_CHESS, G_ARROW, G_ITEM) or t.suit == SUIT_JOKER:
-            return False
-        classes = self.item_classes | extra_classes if extra_classes else self.item_classes
-        rep = t.srep
-        cl = self.colour_lists
-        if extra_classes:
-            cl = dict(cl)
-            for cls_name in extra_classes:
-                if cls_name in ("Flamingo", "RedEnvelope", "SpicyPepper", "Automobile"):
-                    slug = CLASS_TO_SLUG.get(cls_name)
-                    cl[cls_name] = list(cl.get(cls_name, [])) + list(ITEMS[slug].colours if slug else ())
-        if "RedEnvelope" in classes and any(t.is_type(c) for c in cl.get("RedEnvelope", ())):
-            if (t.glyph != G_LETTER or rep != "e") and (t.glyph != G_CURRENCY or t.symbol != "€"):
-                return True
-        if "SpicyPepper" in classes and any(t.is_type(c) for c in cl.get("SpicyPepper", ())):
-            if (t.glyph != G_LETTER or rep != "s") and (t.glyph != G_CURRENCY or t.symbol != "$"):
-                return True
-        if "Automobile" in classes and any(t.is_type(c) for c in cl.get("Automobile", ())) and t.glyph == G_LETTER:
-            return True
-        if "SluggishZombie" in classes and t.glyph == G_LETTER and rep == "z":
-            return True
-        if "Jellyfish" in classes and t.glyph == G_LETTER and rep == "j":
-            return True
-        if "CardShark" in classes:
-            suit = t.suit
-            if suit == "clubs" and rep != "c":
-                return True
-            if suit == "diamonds" and rep != "d":
-                return True
-            if suit == "hearts" and rep != "h":
-                return True
-            if suit == "spades" and rep != "s" and t.symbol != "$":
-                return True
-            return False
-        if "Queen" in classes and t.glyph == G_LETTER and rep == "q":
-            return True
-        if "Flamingo" in classes and any(t.is_type(c) for c in cl.get("Flamingo", ())):
-            if t.glyph not in (G_NUMBER, G_FRACTION):
-                return True
-            if t.glyph == G_NUMBER and t.number != 1:
-                return True
-            if t.glyph == G_FRACTION and 1 not in (t.fraction or ()):
-                return True
-            return False
-        if "TestTube" in classes and t.is_number():
-            return True
-        if "Microscope" in classes and t.value > 0:
-            if t.glyph not in (G_NUMBER, G_FRACTION):
-                return True
-            if t.glyph == G_NUMBER and t.number != t.value:
-                return True
-            if t.glyph == G_FRACTION and t.value not in (t.fraction or ()):
-                return True
-            return False
-        if "NumbersBunchOfGrapes" in classes and t.glyph == G_NUMBER and t.number in (1, 5, 10):
-            return True
-        return False
+    def scattered_inst(self, t: ETile) -> ItemInst:
+        """The tile's live ``ScatteredItem`` (exact exported state when present). Shared and
+        read-only: scoring builds its own per-submit copies."""
+        cache = self.__dict__.setdefault("_scatter_insts", {})
+        inst = cache.get(t.idx)
+        if inst is None:
+            state = (self.grid.board.tiles[t.row][t.col].metadata or {}).get("scattered_item_state")
+            inst = inst_from_state(state) if isinstance(state, dict) else make_item(t.item, self._scatter_level(t))
+            cache[t.idx] = inst
+        return inst
 
-    def _is_cursed_ref(self, t: ETile) -> bool:
-        """``Tile.IsCursed()``."""
+    def inventory_insts_for(self, tiles: list[ETile]) -> list[ItemInst]:
+        """``InventoryCache(currentWordTiles)`` items: GetAllItems, the word's scattered
+        items, then RAM memory / Snapshot copy / Frankenstein stitches / Ice Cube contents."""
+        items = list(self.inventory_top) + [self.scattered_inst(t) for t in tiles if t.glyph == G_ITEM and t.item]
+        out = list(items)
+        for it in items:
+            if it.cls in _dlc.CONTAINERS:
+                out.extend(it.nested)
+        return out
+
+    def variable_letter(self, t: ETile, lst: list[ETile] = (), sel: list[ETile] = (), manager: bool = False) -> bool:
+        """``Tile.IsDisplayingAsVariableLetter`` (see ``dlc_rules.variable_letter``).
+
+        ``lst`` = the word tiles the call passes (or the passed manager's selection),
+        ``sel`` = the live selection, ``manager`` = a TileSelectionManager was passed.
+        """
+        pathdep = self.__dict__.get("_vl_pathdep")
+        if pathdep is None:
+            board = {ITEMS[x.item].cls for x in self.grid.tiles if x.glyph == G_ITEM and x.item in ITEMS}
+            pathdep = self.__dict__["_vl_pathdep"] = bool(
+                ({i.cls for i in self.inventory_insts} | board) & {"EvilMonkey", "Bagel", "MolluscShell"}
+            )
+        if pathdep:
+            return _dlc.variable_letter(self, t, list(lst), list(sel), manager)
+        key = (
+            t.idx,
+            tuple(x.idx for x in lst if x.glyph == G_ITEM and x.item),
+            tuple(x.idx for x in sel if x.glyph == G_ITEM and x.item) if manager else (),
+        )
+        cache = self.__dict__.setdefault("_vl_cache", {})
+        hit = cache.get(key)
+        if hit is None:
+            hit = cache[key] = _dlc.variable_letter(self, t, list(lst), list(sel), manager)
+        return hit
+
+    def is_cursed_in(self, t: ETile, lst: list[ETile] = (), sel: list[ETile] = ()) -> bool:
+        """``Tile.IsCursed(wordTiles)``."""
         if t.glyph != G_LETTER:
             return True
         if t.suit != SUIT_NONE:
             return True
-        return self.variable_letter(t)
+        return self.variable_letter(t, lst, sel, False)
+
+    def _is_cursed_ref(self, t: ETile) -> bool:
+        """``Tile.IsCursed(new List<Tile>())`` (no live selection)."""
+        return self.is_cursed_in(t)
 
     def _game_y(self, t: ETile) -> int:
         return self.grid.height - 1 - t.y
@@ -674,7 +724,7 @@ class EnginePlan:
         """Rebuild ``TileSelection`` methods along a path (GetValidNextTiles)."""
         sels: list[Selection] = []
         for i, cur in enumerate(tiles):
-            sel = Selection(wobbly=self.variable_letter(cur, path_classes))
+            sel = Selection(wobbly=self.variable_letter(cur, tiles, tiles, True))
             if i > 0:
                 prev = tiles[i - 1]
                 if prev.glyph == G_CHESS:
@@ -761,12 +811,16 @@ class EnginePlan:
         """Drop the fast-path cache; call after mutating anything ``score`` reads (see ``_PlanCache``)."""
         self.__dict__.pop("_fastcalc", None)
 
-    def _score_ref(self, path: list[int], word: str = "", *, words: list[str] | None = None) -> EngineResult:
+    def _score_ref(self, path: list[int], word: str = "", *, words: list[str] | None = None,
+                   groups: list[list[int]] | None = None, sels_in: list[Selection] | None = None) -> EngineResult:
+        """``groups``: SubmittedWords word tiles (uppercase words, then lowercase words) as
+        grid indices; default one word = the whole path. ``sels_in``: the path's
+        TileSelections when the caller already rebuilt them (DLC movement)."""
         grid = self.grid
         tiles = [grid.tiles[i] for i in path]
         path_items = [t for t in tiles if t.glyph == G_ITEM and t.item]
         path_classes = {ITEMS[t.item].cls for t in path_items if t.item in ITEMS}
-        sels = self.selections(tiles, path_classes)
+        sels = self.selections(tiles, path_classes) if sels_in is None else list(sels_in)
         # Honeypot submits are two words, passed space-separated.
         word_list = words if words is not None else (word.lower().split() if word else [])
 
@@ -795,8 +849,21 @@ class EnginePlan:
             ctx.grid_data_number = 0
         else:
             ctx.grid_data_number = self.grid_number
-        ctx.variable_letter = [self.variable_letter(t) for t in tiles]
+        ctx.variable_letter = [self.variable_letter(t, (), tiles) for t in tiles]
         ctx.cursed = [self._is_cursed_ref(t) for t in tiles]
+        # Word groups (SubmittedWords.WordTiles then LowercaseWordTiles), as path positions.
+        pos_of = {gi: k for k, gi in enumerate(path)}
+        if not groups:
+            groups = self._default_groups(path, tiles, word_list)
+        if groups:
+            ctx.groups = [[pos_of[g] for g in grp if g in pos_of] for grp in groups]
+            # Each group's TileSelections are the path's, kept in path order.
+            ctx.groups = [sorted(grp) for grp in ctx.groups]
+        else:
+            ctx.groups = [list(range(len(tiles)))]
+        ctx.plan = self
+        ctx.challenges = self.challenges
+        ctx.rng = self.rng
 
         steps: list[Step] = []
         if any(t.tile_type == GLITCH for t in tiles):
@@ -809,7 +876,7 @@ class EnginePlan:
             for name, mod in self.boss_mods:
                 steps.append(self._boss_step(steps[-1], name, mod, tiles))
 
-        if self.challenge == "TheBonesRound" and any(t.suit != SUIT_NONE for t in tiles):
+        if "TheBonesRound" in self.challenges and any(t.suit != SUIT_NONE for t in tiles):
             from cursed_words_solver.engine.poker import HAND_POINTS, poker_hand
 
             step = steps[-1].next()
@@ -846,7 +913,7 @@ class EnginePlan:
             order.append((inst, "scattered", -1))
         if character_item is not None:
             order.append((character_item, "pin", -1))
-        if self.challenge == "PlayingFavourites":
+        if "PlayingFavourites" in self.challenges:
             # Player.GetAllItems under Playing Favourites: pin, favourite stickers,
             # Left Hand, Right Hand, and the stamp after Right Hand.
             fav = [
@@ -880,6 +947,20 @@ class EnginePlan:
                 for part in inst.nested:
                     self._apply(part, steps, ctx)
                 continue
+            if inst.cls == "IceCube":
+                # Ice Cube scores its frozen item: Overhand repeats first, then the item,
+                # then the Human Boy favourite-stamp repeats.
+                frozen = inst.nested[0] if inst.nested else None
+                if kind == "stamp" and slot in self.overhand and frozen is not None:
+                    for _ in range(self.overhand[slot]):
+                        self._apply(frozen, steps, ctx)
+                if frozen is None:
+                    continue
+                self._apply(frozen, steps, ctx)
+                if kind == "stamp" and slot in self.favourite_stamps:
+                    for _ in range(human_boy_repeats):
+                        self._apply(frozen, steps, ctx)
+                continue
             self._apply(inst, steps, ctx)
             if kind == "stamp" and slot in self.favourite_stamps:
                 for _ in range(human_boy_repeats):
@@ -892,17 +973,18 @@ class EnginePlan:
             for name, mod in reversed(self.boss_mods):
                 steps.append(self._boss_step(steps[-1], name, mod, tiles))
 
-        if self.challenge == "Lexographer":
+        if "Lexographer" in self.challenges:
             step = steps[-1].next()
             for i, t in enumerate(tiles):
                 if sels[i].wobbly or ctx.cursed[i]:
                     step.ts[i] = 0
             steps.append(step)
 
+        factor = self.poison_factor
         for prev in self.prev_words:
             if prev.green_count > 0:
                 step = steps[-1].next()
-                step.wb = WordBonus(P.mul(prev.green_count, P.scale(prev.score, 0.1)), False, True)
+                step.wb = WordBonus(P.mul(prev.green_count, P.scale(prev.score, factor)), False, True)
                 step.note = "poison"
                 steps.append(step)
 
@@ -954,21 +1036,90 @@ class EnginePlan:
             target = inst.nested[0]
         tile_hook = TILE_HOOKS.get(target.cls)
         word_hook = WORD_HOOKS.get(target.cls)
-        if tile_hook is None and word_hook is None:
+        sub_hook = SUBMISSION_HOOKS.get(target.cls)
+        if tile_hook is None and word_hook is None and sub_hook is None:
             return
-        step = steps[-1].next()
-        if tile_hook is not None:
-            for i in range(len(ctx.tiles)):
-                tile_hook(target, step, i, ctx)
-        if word_hook is not None:
-            word_hook(target, step, ctx)
-        step.item = inst.slug if target is inst else f"{inst.slug}>{target.slug}"
-        steps.append(step)
+        label = inst.slug if target is inst else f"{inst.slug}>{target.slug}"
+        groups = getattr(ctx, "groups", None) or [list(range(len(ctx.tiles)))]
+        if len(groups) == 1 and groups[0] == list(range(len(ctx.tiles))) and sub_hook is None:
+            # One word = the whole path: tile and word bonus on consecutive steps, which
+            # score exactly like the pre-DLC single step.
+            step = steps[-1].next()
+            if tile_hook is not None:
+                for i in range(len(ctx.tiles)):
+                    tile_hook(target, step, i, ctx)
+            if word_hook is not None:
+                word_hook(target, step, ctx)
+            step.item = label
+            steps.append(step)
+            return
+        with ctx.view_all():
+            full = ctx.saved
+            # Item.ApplyItemToScore: ApplyTileBonus over every group's tiles concatenated
+            # (list4) while TileScores stay in path order -- index i reads list4[i] and
+            # writes TileScores[i].
+            cat = [k for grp in groups for k in grp]
+            step = steps[-1].next()
+            if tile_hook is not None:
+                ctx.set_view(full, cat)
+                for i in range(len(cat)):
+                    tile_hook(target, step, i, ctx)
+            step.item = label
+            steps.append(step)
+            if word_hook is not None:
+                for grp in groups:
+                    if not grp:
+                        continue
+                    step = steps[-1].next()
+                    ctx.set_view(full, grp, all_positions=cat)
+                    word_hook(target, step, ctx)
+                    step.item = label
+                    steps.append(step)
+            if sub_hook is not None:
+                step = steps[-1].next()
+                ctx.set_view(full, list(range(len(full[0]))), all_positions=cat)
+                sub_hook(target, step, ctx)
+                step.item = label
+                steps.append(step)
+
+    def _default_groups(self, path: list[int], tiles: list[ETile], word_list: list[str]) -> list[list[int]] | None:
+        """SubmittedWords groups when the caller passed only the word text: lowercase
+        letters form the lowercase word (GetValidUpperAndLowerCaseWordsFromTiles);
+        a Honeypot "a b" splits where the first word's letters run out."""
+        if len(word_list) < 2:
+            return None
+        lower = [i for i, t in zip(path, tiles) if t.is_lowercase_letter()]
+        if lower and not ("Honeypot" in (self.item_classes or set())):
+            upper = [i for i, t in zip(path, tiles) if not t.is_lowercase_letter()]
+            return [g for g in (upper, lower) if g]
+        need = len(word_list[0])
+        got = 0
+        for k, t in enumerate(tiles):
+            if got >= need:
+                return [list(path[:k]), list(path[k:])]
+            got += max(len(_dlc.word_srep(t)), 0 if t.glyph == G_BRACKET else 1)
+        return None
+
+    @property
+    def poison_factor(self) -> float:
+        """``ApplyPoisonEffect``: 0.1f + (Matcha VariableValue / 2) * 0.05f per Matcha (float32)."""
+        import numpy as np
+
+        f = np.float32(0.1)
+        for it in self.unpacked:
+            if it.cls == "Matcha":
+                f = np.float32(f + np.float32(np.float32(it.var(0) // 2) * np.float32(0.05)))
+        return float(f)
 
     def _boss_step(self, prev: Step, name: str, mod: int, tiles: list[ETile]) -> Step:
         step = prev.next()
         if name == "ReducedLetterValue":
             step.ts = [P.sub(v, mod) for v in step.ts]
+        elif self.prismatic:
+            # Prismatic Crystal: Fox takes a wallet colour (no money); Robo Monkey scales
+            # with the colour-cash count.
+            if name == "NegativeMoney" and self.colour_cash:
+                step.wb = WordBonus(-mod * len(self.colour_cash), False)
         elif name == "StealsMoney" and step.money > 0:
             step.money = max(step.money - mod, 0)
         elif name == "NegativeMoney" and self.money > 0:
@@ -981,6 +1132,9 @@ class EnginePlan:
 _STATEFUL = frozenset({
     "Bicycle", "BirthdayCake", "MovieCamera", "Neapolitan", "MichaelsBook",
     "MutatingDNA", "Ruler", "ErrorItem", "MushroomUpgrade", "NestEgg",
+    # DLC (dlc_items): counters kept in inst.state["f:<Field>"].
+    "Owl", "Gloves", "MagicBeans", "Basket", "FrostBite", "InfiniteLoop", "Stopwatch",
+    "LifeBelt", "LucrativeInvestment", "Horoscope", "DeadBattery",
 })
 
 
@@ -1042,6 +1196,21 @@ def _accumulator_words(extras: dict[str, Any], items: list[ItemInst]) -> list[st
             if inst.cls == "MichaelsBook" and inst.state.get("current_word"):
                 words.add(str(inst.state["current_word"]).lower())
     return sorted(words)
+
+
+def _dlc_ref_classes() -> frozenset[str]:
+    return _dlc.NEW_ITEM_CLASSES
+
+
+def _accumulator_pairs(extras: dict[str, Any]) -> list[tuple[str, str]]:
+    """``InventoryCache.PertinentAccumulatorPairs`` (Honeypot two-word accumulator names)."""
+    raw = _extra_json(extras, "accumulator_pairs")
+    out: list[tuple[str, str]] = []
+    if isinstance(raw, list):
+        for p in raw:
+            if isinstance(p, list) and len(p) >= 2:
+                out.append((str(p[0]).lower(), str(p[1]).lower()))
+    return out
 
 
 def _historic_words(extras: dict[str, Any]) -> list[HistWord]:
@@ -1170,6 +1339,8 @@ def _hook_mask(plan: EnginePlan, pc: _PlanCache, target: ItemInst, hook) -> list
         ctx = Ctx(grid, [t], [rec.sel], [], plan.grid_number, plan.prev_words, [], [], None, [],
                   plan.hungry_snake, plan.martini_all, 0, plan.challenge)
         ctx.cursed = [rec.cursed]
+        ctx.challenges = plan.challenges
+        ctx.plan = plan
         ctx.variable_letter = [rec.vl]
         acts = False
         for probe in (7, -3, 1000003):
@@ -1198,6 +1369,8 @@ def _resolve(plan: EnginePlan, pc: _PlanCache, inst: ItemInst):
     tcls = target.cls
     th = TILE_HOOKS.get(tcls)
     wh = WORD_HOOKS.get(tcls)
+    if tcls in SUBMISSION_HOOKS:
+        return "dyn"
     if th is None and wh is None:
         return None
     label = inst.slug if target is inst else f"{inst.slug}>{target.slug}"
@@ -1213,7 +1386,7 @@ def _order_template(plan: EnginePlan) -> list[tuple[str, int]]:
     out: list[tuple[str, int]] = []
     if plan.character_item is not None:
         out.append(("pin", -1))
-    if plan.challenge == "PlayingFavourites":
+    if "PlayingFavourites" in plan.challenges:
         out += [("sticker", i) for i, s in enumerate(stickers)
                 if s is not None and i + 1 < len(stickers) and stickers[i + 1] is not None
                 and stickers[i + 1].cls == "LeftHumanHand"]
@@ -1264,7 +1437,9 @@ def _orders(plan: EnginePlan, pc: _PlanCache):
             entries.append((kind, slot, reps, None))
             continue
         r = _resolve(plan, pc, inst)
-        if r is not None:
+        if r == "dyn":
+            entries.append((kind, slot, reps, None))
+        elif r is not None:
             entries.append((kind, slot, reps, r))
     val = (clone_st, clone_sp, clone_ch, entries)
     if len(pc.orders) >= _ORDERS_MAX:
@@ -1336,20 +1511,32 @@ def _apply_dyn(inst: ItemInst, steps: list[Step], ctx: Ctx, n: int) -> None:
         target = inst.nested[0]
     th = TILE_HOOKS.get(target.cls)
     wh = WORD_HOOKS.get(target.cls)
-    if th is None and wh is None:
+    sh = SUBMISSION_HOOKS.get(target.cls)
+    if th is None and wh is None and sh is None:
         return
-    prev = steps[-1]
-    step = Step(list(prev.ts), prev.money, prev.consumables)
-    if th is not None:
-        for i in range(n):
-            th(target, step, i, ctx)
-    if wh is not None:
-        wh(target, step, ctx)
-    step.item = inst.slug if target is inst else f"{inst.slug}>{target.slug}"
-    steps.append(step)
+    label = inst.slug if target is inst else f"{inst.slug}>{target.slug}"
+    if th is not None or wh is not None:
+        prev = steps[-1]
+        step = Step(list(prev.ts), prev.money, prev.consumables)
+        if th is not None:
+            for i in range(n):
+                th(target, step, i, ctx)
+        if wh is not None:
+            wh(target, step, ctx)
+        step.item = label
+        steps.append(step)
+    if sh is not None:
+        prev = steps[-1]
+        step = Step(list(prev.ts), prev.money, prev.consumables)
+        sh(target, step, ctx)
+        step.item = label
+        steps.append(step)
 
 
-def _score_fast(self: EnginePlan, path: list[int], word: str = "", *, words: list[str] | None = None) -> EngineResult:
+def _score_fast(self: EnginePlan, path: list[int], word: str = "", *, words: list[str] | None = None,
+                groups: list[list[int]] | None = None, sels_in=None) -> EngineResult:
+    if self.dlc_ref or groups is not None or sels_in is not None or (words is not None and len(words) > 1) or " " in word.strip():
+        return self._score_ref(path, word, words=words, groups=groups, sels_in=sels_in)
     pc = self.__dict__.get("_fastcalc") or _plan_cache(self)
     grid = self.grid
     gt = grid.tiles
@@ -1385,7 +1572,7 @@ def _score_fast(self: EnginePlan, path: list[int], word: str = "", *, words: lis
                 vk = (cur.idx, wkey)
                 wob = pc.vlx.get(vk)
                 if wob is None:
-                    wob = pc.vlx[vk] = self.variable_letter(cur, path_classes)
+                    wob = pc.vlx[vk] = self.variable_letter(cur, tiles, tiles, True)
             elif prev is None or prev.glyph != G_CHESS:
                 sels.append(trecs[i].sel)
                 prev = cur
@@ -1424,6 +1611,8 @@ def _score_fast(self: EnginePlan, path: list[int], word: str = "", *, words: lis
               character_item, self.unpacked, self.hungry_snake, self.martini_all,
               self.cursed_bosses_defeated, self.challenge)
     ctx.grid_data_number = pc.gdn
+    ctx.challenges = self.challenges
+    ctx.plan = self
     ctx.variable_letter = [r.vl for r in trecs]
     ctx.cursed = [r.cursed for r in trecs]
     if bits & _B_GLITCH:
@@ -1436,7 +1625,7 @@ def _score_fast(self: EnginePlan, path: list[int], word: str = "", *, words: lis
         for name, mod in self.boss_mods:
             steps.append(self._boss_step(steps[-1], name, mod, tiles))
 
-    if self.challenge == "TheBonesRound" and any(t.suit != SUIT_NONE for t in tiles):
+    if "TheBonesRound" in self.challenges and any(t.suit != SUIT_NONE for t in tiles):
         from cursed_words_solver.engine.poker import HAND_POINTS, poker_hand
 
         step = steps[-1].next()
@@ -1504,7 +1693,7 @@ def _score_fast(self: EnginePlan, path: list[int], word: str = "", *, words: lis
         for name, mod in reversed(self.boss_mods):
             steps.append(self._boss_step(steps[-1], name, mod, tiles))
 
-    if self.challenge == "Lexographer":
+    if "Lexographer" in self.challenges:
         step = steps[-1].next()
         for i in range(n):
             if sels[i].wobbly or ctx.cursed[i]:

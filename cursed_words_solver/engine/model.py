@@ -40,6 +40,14 @@ G_CURRENCY = "currency"
 G_ARROW = "arrow"
 G_ITEM = "scattered_item"
 G_NONE = "none"
+# DLC glyphs (GlyphType.Wire / Dice / HyperCurse / Domino / Zodiac / Bracket).
+G_WIRE = "wire"
+G_DICE = "dice"
+G_HYPER = "hyper_curse"
+G_DOMINO = "domino"
+G_ZODIAC = "zodiac"
+G_BRACKET = "bracket"
+DLC_GLYPHS = frozenset({G_WIRE, G_DICE, G_HYPER, G_DOMINO, G_ZODIAC, G_BRACKET})
 
 SUIT_NONE = "none"
 SUIT_JOKER = "joker"
@@ -59,6 +67,65 @@ C_WOBBLY = "Wobbly"
 C_CURRENCY = "Currency"
 C_ARROW = "Arrow"
 C_ITEM = "ScatteredItem"
+C_WIRE = "Wire"
+C_DICE = "Dice"
+C_HYPER = "Hyper"
+C_DOMINO = "Domino"
+C_BRACKET = "Bracket"
+C_ZODIAC = "Zodiac"
+
+# Dice.DiceCharacters
+DICE_CHARS = {1: "⚀", 2: "⚁", 3: "⚂", 4: "⚃", 5: "⚄", 6: "⚅"}
+DICE_NUMBER = {v: k for k, v in DICE_CHARS.items()}
+# Wires.WireConnections (game offsets: +y is up).
+WIRE_CONNECTIONS = {
+    "╚": ((0, 1), (1, 0)),  # L
+    "║": ((0, 1), (0, -1)),  # I
+    "╦": ((0, -1), (-1, 0), (1, 0)),  # T
+}
+# Zodiac.OrderedZodiacSymbols / ZodiacElements (each symbol carries U+FE0E).
+ZODIAC_ORDER = tuple(chr(0x2648 + i) + "︎" for i in range(12))
+ZODIAC_ELEMENTS = {
+    "water": (chr(0x2653) + "︎", chr(0x264F) + "︎", chr(0x264B) + "︎"),
+    "fire": (chr(0x2648) + "︎", chr(0x264C) + "︎", chr(0x2650) + "︎"),
+    "air": (chr(0x264E) + "︎", chr(0x2652) + "︎", chr(0x264A) + "︎"),
+    "earth": (chr(0x2649) + "︎", chr(0x264D) + "︎", chr(0x2651) + "︎"),
+}
+ZODIAC_ANIMALS = tuple(ZODIAC_ORDER[i] for i in (0, 1, 3, 4, 7, 9, 11))
+# Zodiac.ElementDirections -> DirectionOffsets (game offsets).
+ZODIAC_DIRECTION = {"air": "up", "fire": "right", "earth": "down", "water": "left"}
+DIRECTION_OFFSETS = {
+    "up": ((-1, 1), (0, 1), (1, 1)),
+    "right": ((1, -1), (1, 0), (1, 1)),
+    "left": ((-1, -1), (-1, 0), (-1, 1)),
+    "down": ((-1, -1), (0, -1), (1, -1)),
+}
+
+
+def zodiac_element(symbol: str) -> str:
+    """``Zodiac.GetElementFromSymbol`` ("" = Element.None)."""
+    for element, symbols in ZODIAC_ELEMENTS.items():
+        if symbol in symbols:
+            return element
+    return ""
+
+
+def zodiac_position(symbol: str) -> int:
+    """``Zodiac.GetPositionFromSymbol`` (1..12, 0 when unknown)."""
+    return ZODIAC_ORDER.index(symbol) + 1 if symbol in ZODIAC_ORDER else 0
+
+
+def domino_values(symbol: str) -> tuple[int, int]:
+    """``Dominoes.GetValuesForDomino`` as (low, high); (-1, -1) if not a domino."""
+    if not symbol:
+        return (-1, -1)
+    cp = ord(symbol[0])
+    for base in (0x1F031, 0x1F063):  # horizontal / vertical domino blocks
+        k = cp - base
+        if 0 <= k < 49:
+            a, b = divmod(k, 7)
+            return (a, b) if a <= b else (b, a)
+    return (-1, -1)
 
 CHESS_VALUES = {"none": 0, "pawn": 1, "knight": 3, "bishop": 3, "rook": 5, "queen": 9, "king": 15}
 
@@ -122,12 +189,61 @@ class ETile:
     crossed_out: bool = False  # IsCrossedOut: cannot be clicked
     row: int = 0  # storage row / col (Board.tiles)
     col: int = 0
+    # DLC tile facts.
+    lowercase: bool = False  # Tile.IsLowerCase (IsLowerCaseLetter also needs glyph Letter)
+    forever: bool = False  # IsForeverTile
+    custom_bag: bool = False  # IsCustomBagTile
+    colour_cash: bool = False  # IsColourCash
+    required: bool = False  # IsRequiredTile (Human Boy DLC challenge)
+    rotation: int = 0  # wire Rotation
+    # Handbag: extra TileTypes this tile counts as (IsTileType); set by EnginePlan.build.
+    extra_types: frozenset = frozenset()
 
     def is_type(self, tt: str) -> bool:
-        """``Tile.IsTileType`` — purple counts as red and blue."""
+        """``Tile.IsTileType`` — purple counts as red and blue; Handbag adds its colours."""
         if self.tile_type == PURPLE and tt in (RED, BLUE):
             return True
+        if self.extra_types and tt in self.extra_types:
+            return True
         return self.tile_type == tt
+
+    def is_lowercase_letter(self) -> bool:
+        """``Tile.IsLowerCaseLetter``."""
+        return self.lowercase and self.glyph == G_LETTER
+
+    # --- DLC glyph faces (``symbol`` holds the game's Tile.Letter) ---
+    def dice_number(self) -> int:
+        """``GetDiceNumber`` (-1 when not a die)."""
+        if self.glyph != G_DICE:
+            return -1
+        return DICE_NUMBER.get(self.symbol, 0)
+
+    def domino(self) -> tuple[int, int]:
+        return domino_values(self.symbol) if self.glyph == G_DOMINO else (-1, -1)
+
+    def element(self) -> str:
+        """``Zodiac.GetTileElement``."""
+        return zodiac_element(self.symbol) if self.glyph == G_ZODIAC else ""
+
+    def brackets(self) -> list[str]:
+        """``GetBrackets``: one entry per character of a bracket tile."""
+        return list(self.symbol) if self.glyph == G_BRACKET else []
+
+    def domino_link_values(self) -> set[int]:
+        """``GetDominoLinkValues``."""
+        out = {int(self.value)}
+        g = self.glyph
+        if g == G_NUMBER:
+            out.add(int(self.number or 0))
+        elif g == G_FRACTION and self.fraction:
+            out.update(self.fraction)
+        elif g == G_DICE:
+            out.add(self.dice_number())
+        elif g == G_ITEM:
+            info = ITEMS.get(self.item)
+            if info is not None and len(info.components) == 1 and (self.item_level or 1) > 1:
+                out.add(int(self.item_level or 1))
+        return out
 
     def is_number(self) -> bool:
         return self.glyph in (G_NUMBER, G_FRACTION)
@@ -145,7 +261,22 @@ class ETile:
         if g == G_CARD and self.suit == SUIT_JOKER:
             return "<joker>"
         if g == G_LETTER:
+            if self.lowercase and self.letter == "l":
+                return "<lower:l>"  # font-tagged in game, so it differs from an uppercase L
             return self.letter
+        if g == G_WIRE:
+            return f"<wire:{self.symbol}>"
+        if g == G_DICE:
+            return f"<dice:{self.dice_number()}>"
+        if g == G_DOMINO:
+            a, b = self.domino()
+            return f"<domino:{a}-{b}>"
+        if g == G_ZODIAC:
+            return f"<zodiac:{self.symbol}>"
+        if g == G_HYPER:
+            return f"<hyper:{self.symbol}>"
+        if g == G_BRACKET:
+            return self.symbol
         if g == G_CURRENCY:
             return f"<cur:{self.symbol}>"
         if g == G_ARROW:
@@ -192,6 +323,18 @@ class ETile:
             out.append(C_BLANK)
         elif g == G_ITEM:
             out.append(C_ITEM)
+        elif g == G_DICE:
+            out.append(C_DICE)
+        elif g == G_WIRE:
+            out.append(C_WIRE)
+        elif g == G_ZODIAC:
+            out.append(C_ZODIAC)
+        elif g == G_BRACKET:
+            out.append(C_BRACKET)
+        elif g == G_DOMINO:
+            out.append(C_DOMINO)
+        elif g == G_HYPER:
+            out.append(C_HYPER)
         if wobbly_letter:
             out.append(C_WOBBLY)
         return out
@@ -205,6 +348,11 @@ class Selection:
     en_passant: ETile | None = None
     move_distance: int = 0
     wobbly: bool = False
+    # DLC: DirectionFromPreviousTile (game offsets), domino entry data, terminus flip.
+    direction: tuple[int, int] = (0, 0)
+    domino_p1: tuple[int, bool, bool] | None = None  # (PreviousPath, IsFlipped, IsPriorDominoTerminusFlipped)
+    domino_p2: tuple[int, bool, bool] | None = None
+    prior_terminus_flipped: bool = False
 
 
 @dataclass
@@ -302,6 +450,8 @@ _GAME_GLYPH = {
     "Blank": G_BLANK, "Letter": G_LETTER, "Number": G_NUMBER, "Fraction": G_FRACTION,
     "Chess": G_CHESS, "BespokeCard": G_CARD, "Currency": G_CURRENCY, "Arrow": G_ARROW,
     "ScatteredItem": G_ITEM, "None": G_NONE,
+    "Wire": G_WIRE, "Dice": G_DICE, "HyperCurse": G_HYPER, "Domino": G_DOMINO,
+    "Zodiac": G_ZODIAC, "Bracket": G_BRACKET,
 }
 _GAME_TYPE = {
     "Normal": NORMAL, "Red": RED, "Blue": BLUE, "Shiny": SHINY, "Void": VOID, "Cactus": CACTUS,
@@ -337,6 +487,9 @@ def etile_from_game(raw: dict[str, Any], idx: int, x: int, y: int, *, active: bo
 
         symbol = str(raw.get("letter") or "")
         letter = CURRENCY_MAP.get(symbol, symbol).lower()
+    elif glyph in DLC_GLYPHS:
+        symbol = str(raw.get("letter") or "")
+        letter = ""
     elif glyph not in (G_LETTER, G_ARROW):
         letter = ""
     fraction = raw.get("fraction")
@@ -370,6 +523,12 @@ def etile_from_game(raw: dict[str, Any], idx: int, x: int, y: int, *, active: bo
         crossed_out="crossed_out" in flags,
         row=y,
         col=x,
+        lowercase="lowercase" in flags,
+        forever="forever" in flags,
+        custom_bag="custom_bag" in flags,
+        colour_cash="colour_cash" in flags,
+        required="required" in flags,
+        rotation=_game_int(raw.get("rotation")),
     )
 
 

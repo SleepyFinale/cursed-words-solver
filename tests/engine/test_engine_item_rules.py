@@ -116,7 +116,7 @@ def test_postbox_needs_no_cursed_tile() -> None:
 
 def test_ambulance_only_when_tile_values_sum_negative() -> None:
     b = _board(ROWS, {(0, 0): TileColor.VOID, (0, 1): TileColor.VOID})
-    assert score(b, [0, 1], _loadout(["ambulance"])) == _word_mult(score(b, [0, 1]), var("ambulance"))
+    assert score(b, [0, 1], _loadout(["ambulance"])) == _word_mult(score(b, [0, 1]), var("ambulance") * 100)
     plain = _board(ROWS)
     assert score(plain, [0, 1], _loadout(["ambulance"])) == score(plain, [0, 1])
 
@@ -143,7 +143,7 @@ def test_silly_puppy_counts_other_animal_items() -> None:
 def test_piggy_bank_coin_purse_uses_its_count() -> None:
     b = _board(ROWS)
     purse = _state("piggy_bank", Count=40)
-    assert score(b, [0, 1, 2], _loadout([purse])) == _word_mult(score(b, [0, 1, 2]), 140)
+    assert score(b, [0, 1, 2], _loadout([purse])) == _word_mult(score(b, [0, 1, 2]), 220)
     assert score(b, [0, 1, 2], _loadout(["piggy_bank"])) == score(b, [0, 1, 2])
 
 

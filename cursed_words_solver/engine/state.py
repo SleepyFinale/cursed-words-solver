@@ -72,6 +72,57 @@ class Ctx:
     # Per-tile IsDisplayingAsVariableLetter() used by GetCurseTypes on raw tiles.
     variable_letter: list[bool] = field(default_factory=list)
     nondeterministic: bool = False
+    # DLC: SubmittedWords groups (path positions; uppercase words then lowercase words).
+    groups: list[list[int]] | None = None
+    plan: Any = None  # the EnginePlan (DLC hooks read grid / inventory helpers)
+    # View bookkeeping (see view_all / set_view): full path lists while a group view is on.
+    saved: tuple | None = None
+    view_positions: list[int] | None = None
+    _all_tiles: list[ETile] | None = None
+    challenges: frozenset = frozenset()
+    # DLC dice items: a random.Random samples each roll; None = expected value.
+    rng: Any = None
+
+    @property
+    def all_tiles(self) -> list[ETile]:
+        """``allTiles`` of ApplyWordBonus: every group's tiles concatenated (list4)."""
+        return self._all_tiles if self._all_tiles is not None else self.tiles
+
+    @property
+    def path_tiles(self) -> list[ETile]:
+        """The submitted path in selection order (whatever view is on)."""
+        return self.saved[0] if self.saved is not None else self.tiles
+
+    @property
+    def path_sels(self) -> list[Selection]:
+        return self.saved[1] if self.saved is not None else self.sels
+
+    def view_all(self):
+        """Context manager: remember the full-path lists and restore them afterwards."""
+        ctx = self
+
+        class _View:
+            def __enter__(self_inner):
+                ctx.saved = (ctx.tiles, ctx.sels, ctx.cursed, ctx.variable_letter)
+                return ctx
+
+            def __exit__(self_inner, *exc):
+                ctx.tiles, ctx.sels, ctx.cursed, ctx.variable_letter = ctx.saved
+                ctx.saved = None
+                ctx.view_positions = None
+                ctx._all_tiles = None
+                return False
+
+        return _View()
+
+    def set_view(self, full: tuple, positions: list[int], all_positions: list[int] | None = None) -> None:
+        tiles, sels, cursed, vl = full
+        self.tiles = [tiles[k] for k in positions]
+        self.sels = [sels[k] for k in positions]
+        self.cursed = [cursed[k] for k in positions]
+        self.variable_letter = [vl[k] for k in positions]
+        self.view_positions = positions
+        self._all_tiles = [tiles[k] for k in (all_positions if all_positions is not None else positions)]
 
     def all_items(self) -> list[ItemInst]:
         """``Player.GetAllItems()``: character item, stickers, stamps (non-null).
@@ -82,7 +133,7 @@ class Ctx:
         out: list[ItemInst] = []
         if self.character_item is not None:
             out.append(self.character_item)
-        if self.challenge == "PlayingFavourites":
+        if "PlayingFavourites" in self.challenges:
             st, sp = self.stickers, self.stamps
             for i, item in enumerate(st):
                 if item is not None and i + 1 < len(st) and st[i + 1] is not None and st[i + 1].cls == "LeftHumanHand":

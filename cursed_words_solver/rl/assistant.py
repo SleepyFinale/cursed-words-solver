@@ -812,8 +812,18 @@ def decision_of(run_state: dict[str, Any] | None) -> str:
     return {"BossDraft": "boss_draft", "BossReward": "pin_reward"}.get(node, "none")
 
 
+# The policy was trained before the DLC (new pins, stickers, stamps, quests, glyphs and
+# movement it has never seen), so its advice is off until it is retrained on the
+# updated simulator. CWS_AI_ASSISTANT=1 turns it back on.
+DISABLED_REASON = "disabled: the AI was trained before the DLC (set CWS_AI_ASSISTANT=1 to force it on)"
+
+
 def unavailable_reason() -> str | None:
     """Why the assistant can't run in this interpreter (None when it can)."""
+    import os
+
+    if os.environ.get("CWS_AI_ASSISTANT", "").strip() != "1":
+        return DISABLED_REASON
     try:
         import torch  # noqa: F401
     except Exception as exc:

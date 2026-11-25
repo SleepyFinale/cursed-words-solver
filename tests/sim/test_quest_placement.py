@@ -380,7 +380,7 @@ def test_two_wrongs_shortlist_keeps_most_negative_paths():
     items = [((i,), f"w{i}") for i in range(40)] + [((i, i), f"w{i}") for i in range(40)]
 
     def short(challenge):
-        fake = SimpleNamespace(tiles=tiles, max_exact_paths=8, challenge=challenge)
+        fake = SimpleNamespace(tiles=tiles, max_exact_paths=8, challenge=challenge, challenges=frozenset({challenge} if challenge else ()))
         return {p for p, _ in ExactSearch._shortlist(fake, items)}
 
     assert (0, 0) not in short("")  # value -40: dropped normally

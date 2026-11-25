@@ -117,14 +117,21 @@ namespace CursedWordsSolverCompanion
             Try(() => d["white"] = tile.IsWhitePiece);
             Try(() => d["value"] = Packet(tile.GetValue()));
             Try(() => d["value_modifier"] = Packet(tile.ValueModifier));
-            Try(() => d["cactus_growth"] = Packet(tile.CactusGrowth));
+            Try(() => d["cactus_bonus"] = tile.HasCactusBonus ? (object)tile.CactusBonus : null);
             Try(() => d["srep"] = tile.GetStringRepresentation());
             Try(() => d["srep_word"] = tile.GetStringRepresentation(true));
-            Try(() => d["cursed"] = tile.IsCursed());
+            Try(() => d["cursed"] = tile.IsCursed(new List<Tile> { tile }));
+            Try(() => d["rotation"] = tile.Rotation);
             Try(() =>
             {
                 var flags = new List<string>();
                 if (tile.IsEmptyTile) flags.Add("empty");
+                if (tile.IsLowerCase) flags.Add("lowercase");
+                if (tile.IsForeverTile) flags.Add("forever");
+                if (tile.IsCustomBagTile) flags.Add("custom_bag");
+                if (tile.IsColourCash) flags.Add("colour_cash");
+                if (tile.IsRequiredTile) flags.Add("required");
+                if (tile.IsNumberGoUpMiddleTile) flags.Add("number_go_up_middle");
                 if (tile.WasConsumable) flags.Add("was_consumable");
                 if (tile.HasBeenDestroyed) flags.Add("destroyed");
                 if (tile.IsCrossedOut) flags.Add("crossed_out");
@@ -241,7 +248,16 @@ namespace CursedWordsSolverCompanion
                     methods.Add(sel?.SelectionMethod.ToString() ?? "");
                 d["methods"] = methods;
             });
-            Try(() => d["wobbly"] = word.Wobbly != null ? word.Wobbly.ToList() : null);
+            Try(() => d["wobbly"] = (word.TileSelections ?? new List<TileSelection>()).Select(s => s != null && s.IsWobbly).ToList());
+            Try(() =>
+            {
+                var sw = word.SubmittedWords;
+                if (sw != null)
+                {
+                    d["upper_words"] = sw.Words?.ToList();
+                    d["lower_words"] = sw.LowercaseWords?.ToList();
+                }
+            });
             return d;
         }
 
@@ -253,6 +269,7 @@ namespace CursedWordsSolverCompanion
                 return null;
             var d = new Dictionary<string, object>();
             Try(() => d["money"] = player.Money);
+            Try(() => d["colour_cash"] = player.ColourCash?.Select(c => c.ToString()).ToList());
             Try(() => d["character"] = player.MyCharacter?.GetType().Name);
             Try(() =>
             {
@@ -275,7 +292,7 @@ namespace CursedWordsSolverCompanion
             Try(() =>
             {
                 // InventoryCache: words Vocabulary accepts before the dictionary.
-                var cache = new InventoryCache(new List<Tile>());
+                var cache = new InventoryCache(new List<Tile>(), UnityEngine.Object.FindAnyObjectByType<EncounterController>()?.GetGridData());
                 d["accumulator_words"] = cache.PertinentAccumulatorWords?.ToList() ?? new List<string>();
                 d["accumulator_pairs"] = cache.PertinentAccumulatorPairs?.Select(p => (object)p.ToList()).ToList()
                     ?? new List<object>();
@@ -315,8 +332,12 @@ namespace CursedWordsSolverCompanion
             Try(() => d["embargoed_items"] = progress.EmbargoedItemTypes?.Select(t => t.Name).ToList());
             Try(() =>
             {
-                if (progress.Challenge != null)
-                    d["challenge"] = DescribeObject(progress.Challenge, typeof(ChallengeRun));
+                var active = progress.ActiveChallenges;
+                if (active != null && active.Count > 0)
+                {
+                    d["challenge"] = DescribeObject(active[0], typeof(ChallengeRun));
+                    d["challenges"] = active.Select(c => (object)DescribeObject(c, typeof(ChallengeRun))).ToList();
+                }
             });
             Try(() =>
             {
@@ -333,7 +354,6 @@ namespace CursedWordsSolverCompanion
                 }
             });
             Try(() => d["has_faced_uncursed_boss"] = player.HasFacedUncursedBoss);
-            Try(() => d["piggy_bank_saved"] = SaveManager.MoneyInPiggyBank());
             return d;
         }
 

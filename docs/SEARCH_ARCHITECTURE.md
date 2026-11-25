@@ -45,3 +45,29 @@ proxy misses on dense boards.
 python scripts/engine_replay.py                    # scoring + path validity vs real captures
 python scripts/search_benchmark.py --latest 30     # re-solve recent rounds vs what was played
 ```
+
+## DLC (2026-11)
+
+Ported from the DLC decompile (`docs/game-research/_decompiled/dlc`, regenerate item data with
+`python scripts/generate_engine_item_data.py docs/game-research/_decompiled/dlc`).
+
+- **Scoring** (`engine/calc.py`): `Item.ApplyItemToScore` now runs one tile step over every
+  word group's tiles, one `ApplyWordBonus` step per group (uppercase words, then the lowercase
+  word), then one `ApplySubmissionBonus` step over the whole path. `EnginePlan.score(path, word,
+  words=, groups=)` takes the groups; without them `_default_groups` derives them (lowercase
+  letters, or a Honeypot "a b" split). Boards / loadouts with DLC content (`plan.dlc_ref`) and
+  multi-word submits use `_score_ref`; the cached fast path is legacy-only.
+- **Items**: `engine/dlc_items.py` (113 new scoring items, wire / zodiac / domino / dice
+  helpers) plus the changed old items in `engine/items.py` (Ambulance, Birthday Cake, Coin
+  Purse, Dartboard, Golden Record, Lucky Dice, Tile Ninja, `IsCursed(wordTiles)` users).
+  Dice items roll during scoring: by default the hook applies the roll's expected effect and
+  flags the result nondeterministic; set `plan.rng = random.Random(seed)` to sample rolls.
+- **Validity** (`engine/dlc_rules.py`): `WordRules` ports `GetValidUpperAndLowerCaseWordsFromTiles`,
+  `GetConcatenatedValidWordsFromTiles` (Honeypot), brackets and the new letter / wildcard items
+  (`IsDisplayingAsVariableLetter`, `IsWildcard`, `IsTileMatchingChar`).
+- **Search** (`engine/dlc_search.py`): `ExactSearch.dlc_mode` (`needs_dlc_search`) switches to a
+  path-dependent DFS with wire / domino / zodiac / Strong Signal / Goose / Astronaut / Helicopter
+  movement and two trie frontiers (uppercase and lowercase word). Its per-tile matcher is a
+  superset; every candidate is validated exactly by `WordRules` and scored with its groups.
+  `engine_valid_word` / `engine_path_movement_ok` use the same rules in DLC mode.
+- The Human Boy DLC challenge (`DLCHumanBoyUnlock`) requires every available required tile.

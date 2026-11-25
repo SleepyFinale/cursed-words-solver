@@ -51,6 +51,8 @@ def _moves_ok(search: ExactSearch, path) -> bool:
     n = len(search.tiles)
     if not path or any(not (0 <= i < n) or not search.clickable[i] for i in path) or len(set(path)) != len(path):
         return False
+    if search.dlc_mode:
+        return search.dlc_moves_ok(path)
     for k in range(len(path) - 1):
         prefix = tuple(path[: k + 1])
         if path[k + 1] not in search.next_tiles(prefix, set(prefix), search.inventory_for(prefix)):

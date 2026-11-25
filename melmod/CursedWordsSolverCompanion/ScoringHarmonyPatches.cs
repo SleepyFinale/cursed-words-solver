@@ -7,12 +7,13 @@ namespace CursedWordsSolverCompanion
     public static class EncounterSubmitWordPatch
     {
         [HarmonyPrefix]
-        public static void Prefix(List<TileSelection> tiles, List<string> words)
+        public static void Prefix(List<TileSelection> tiles, SubmittedWords submittedWords)
         {
             ScoringCaptureSession.BeginSubmit(
                 "EncounterController.SubmitWord",
                 tiles,
-                words
+                submittedWords?.GetAllSubmittedWords(),
+                submittedWords
             );
         }
 

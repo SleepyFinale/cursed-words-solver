@@ -1272,9 +1272,8 @@ namespace CursedWordsSolverCompanion
             {
                 try
                 {
-                    var growth = tile.CactusGrowth;
-                    if (growth != null)
-                        snap.cactus_growth = (int)Math.Max(0, growth.Score);
+                    if (tile.HasCactusBonus)
+                        snap.cactus_growth = Math.Max(0, tile.CactusBonus);
                 }
                 catch
                 {

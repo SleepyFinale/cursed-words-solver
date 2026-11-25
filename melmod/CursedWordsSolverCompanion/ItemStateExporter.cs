@@ -113,6 +113,11 @@ namespace CursedWordsSolverCompanion
                 {
                     nested.Add(Describe(snap.SnapshottedItem, depth + 1));
                 }
+                else if (item is IceCube ice && ice.FrozenItem != null)
+                {
+                    // DLC: Ice Cube scores (and is repeated like) the item frozen inside it.
+                    nested.Add(Describe(ice.FrozenItem, depth + 1));
+                }
                 if (nested.Count > 0)
                     d["nested"] = nested;
             }

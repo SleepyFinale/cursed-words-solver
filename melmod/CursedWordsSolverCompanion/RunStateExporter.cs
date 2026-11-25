@@ -75,7 +75,7 @@ namespace CursedWordsSolverCompanion
 
         public static bool TryExport(bool logSuccess, string triggerOverride = null)
         {
-            var sw = Stopwatch.StartNew();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             var trigger = triggerOverride ?? (logSuccess ? "f7" : "auto");
             ExportDiagnostics.ClearMergeErrors();
             try
@@ -5069,7 +5069,7 @@ namespace CursedWordsSolverCompanion
             try
             {
                 var progress = player.CurrentRunProgress;
-                var challenge = progress?.Challenge;
+                var challenge = progress?.ActiveChallenges != null && progress.ActiveChallenges.Count > 0 ? progress.ActiveChallenges[0] : null;
                 if (challenge == null)
                 {
                     sb.Append("-");

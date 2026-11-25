@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using MelonLoader;
 
 namespace CursedWordsSolverCompanion
@@ -82,7 +83,8 @@ namespace CursedWordsSolverCompanion
         public static void BeginSubmit(
             string submitMethod,
             List<TileSelection> selections,
-            List<string> words
+            List<string> words,
+            SubmittedWords submittedWords = null
         )
         {
             _active = false;
@@ -103,6 +105,19 @@ namespace CursedWordsSolverCompanion
             _preSubmitState = null;
             _scoringCall = null;
             _submission = DescribeSubmission(submitMethod, selections, words);
+            try
+            {
+                if (submittedWords != null && _submission != null)
+                {
+                    // DLC: lowercase tiles form their own word(s) next to the uppercase ones.
+                    _submission["upper_words"] = submittedWords.Words?.ToList() ?? new List<string>();
+                    _submission["lower_words"] = submittedWords.LowercaseWords?.ToList() ?? new List<string>();
+                }
+            }
+            catch
+            {
+                // optional
+            }
             try
             {
                 _preSubmitState = GameStateSerializer.Capture("pre_submit");

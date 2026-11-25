@@ -24,6 +24,7 @@ from cursed_words_solver.engine.model import (
     G_CARD,
     G_CHESS,
     G_CURRENCY,
+    G_DICE,
     G_FRACTION,
     G_ITEM,
     G_LETTER,
@@ -57,6 +58,17 @@ WordHook = Callable[[ItemInst, Step, Ctx], None]
 
 TILE_HOOKS: dict[str, TileHook] = {}
 WORD_HOOKS: dict[str, WordHook] = {}
+# DLC: ``Item.ApplySubmissionBonus`` (one step per submit over the whole path, after the
+# per-word ``ApplyWordBonus`` steps).
+SUBMISSION_HOOKS: dict[str, WordHook] = {}
+
+
+def submission(cls: str):
+    def deco(fn: WordHook) -> WordHook:
+        SUBMISSION_HOOKS[cls] = fn
+        return fn
+
+    return deco
 
 
 def tile(cls: str):
@@ -131,6 +143,15 @@ _selection_curse_types = (
 )
 
 
+def _cursed(ctx: Ctx, i: int, lst: list[ETile]) -> bool:
+    """``tiles[i].IsCursed(lst)``: the engine's per-tile cache unless the plan has
+    path-dependent variable letters (Evil Monkey, Bagel, Mollusc Shell)."""
+    plan = ctx.plan
+    if plan is not None and plan.__dict__.get("_vl_pathdep"):
+        return plan.is_cursed_in(ctx.tiles[i], lst, ())
+    return ctx.cursed[i]
+
+
 def _scattered_on_path(ctx: Ctx) -> list[tuple[ETile, ItemInst | None]]:
     from cursed_words_solver.engine.model import make_item
 
@@ -160,13 +181,15 @@ def _alembic(inst, step, i, ctx):
         _tadd(step, i, inst.var())
 
 
-@tile("Ambulance")
-def _ambulance(inst, step, i, ctx):
+@word("Ambulance")
+def _ambulance(inst, step, ctx):
+    if not ctx.tiles:
+        return
     total = 0
     for t in ctx.tiles:
         total = P.add(total, t.value)
     if not total >= 0:
-        _mult(step, inst.var())
+        _mult(step, inst.var() * 100)
 
 
 @tile("ArtistsPalette")
@@ -206,8 +229,10 @@ def _cocktail(inst, step, i, ctx):
             _tmul(step, i, inst.var())
 
 
-@tile("Dartboard")
-def _dartboard(inst, step, i, ctx):
+@word("Dartboard")
+def _dartboard(inst, step, ctx):
+    if not ctx.tiles:
+        return
     total = 0
     for t in ctx.tiles:
         total = P.add(total, t.value)
@@ -305,7 +330,7 @@ def _maple(inst, step, i, ctx):
 
 @tile("Moai")
 def _moai(inst, step, i, ctx):
-    if ctx.cursed[i] and ctx.tiles[i].is_type(NORMAL):
+    if _cursed(ctx, i, ctx.tiles) and ctx.tiles[i].is_type(NORMAL):
         _tadd(step, i, inst.var())
 
 
@@ -328,7 +353,7 @@ def _dna(inst, step, i, ctx):
 
 @tile("MysteriousAmulet")
 def _amulet(inst, step, i, ctx):
-    if ctx.cursed[i]:
+    if _cursed(ctx, i, ctx.tiles):
         _tadd(step, i, inst.var())
 
 
@@ -538,16 +563,18 @@ def _bicycle(inst, step, ctx):
 def _birthday_cake(inst, step, ctx):
     if not ctx.tiles:
         return
-    best = np.float32(0.0)
+    best = np.float32(-1000.0)
     for t in ctx.tiles:
         if not t.is_number():
             continue
         val = np.float32(t.fraction_float()) if t.glyph == G_FRACTION else np.float32(t.number or 0)
         if val > best:
             best = val
-    bonus = np.float32(inst.state.get("bonus", 0.0)) + best * np.float32(inst.var())
+    bonus = np.float32(inst.state.get("bonus", 0.0))
+    if best != np.float32(-1000.0):
+        bonus = bonus + best * np.float32(inst.var())
     inst.state["bonus"] = float(bonus)
-    if bonus > 0:
+    if bonus != 0:
         _add(step, P.round_to_int(float(bonus)))
 
 
@@ -672,7 +699,7 @@ def _clapper(inst, step, ctx):
 def _piggy(inst, step, ctx):
     count = inst.state.get("count", 0)
     if ctx.tiles and count:
-        _mult(step, 100 + count)
+        _mult(step, 100 + count * 3)
 
 
 @word("ConfettiItem")
@@ -800,7 +827,7 @@ def _slide(inst, step, ctx):
         _add(step, inst.var())
 
 
-@word("GoldenRecord")
+@submission("GoldenRecord")
 def _golden_record(inst, step, ctx):
     if ctx.tiles:
         step.consumables = min(10, step.consumables + 1)
@@ -873,7 +900,7 @@ def _hippo(inst, step, ctx):
 
 @word("JackOLantern")
 def _jack(inst, step, ctx):
-    if any(ctx.cursed[i] for i in range(len(ctx.tiles))):
+    if any(_cursed(ctx, i, ctx.all_tiles) for i in range(len(ctx.tiles))):
         step.money += inst.var()
 
 
@@ -928,6 +955,10 @@ def _lucky_dice(inst, step, ctx):
     for t in ctx.tiles:
         if t.glyph == G_NUMBER and t.number == target:
             _add(step, inst.var())
+            return
+    for t in ctx.tiles:
+        if t.glyph == G_DICE and t.dice_number() == target:
+            _add(step, inst.var())
             break
 
 
@@ -963,7 +994,7 @@ def _banana(inst, step, ctx):
 
 @word("MischievousImp")
 def _imp(inst, step, ctx):
-    if ctx.tiles and all(ctx.cursed[i] for i in range(len(ctx.tiles))):
+    if ctx.tiles and all(_cursed(ctx, i, ctx.all_tiles) for i in range(len(ctx.tiles))):
         _mult(step, 100 * inst.var())
 
 
@@ -1081,7 +1112,7 @@ def _pocket_money(inst, step, ctx):
 
 @word("Postbox")
 def _postbox(inst, step, ctx):
-    if ctx.tiles and not any(ctx.cursed[i] for i in range(len(ctx.tiles))):
+    if ctx.tiles and not any(_cursed(ctx, i, ctx.tiles) for i in range(len(ctx.tiles))):
         _mult(step, 100 * inst.var())
 
 
@@ -1154,7 +1185,7 @@ def _super_8(inst, step, ctx):
 
 @word("TileNinja")
 def _tile_ninja(inst, step, ctx):
-    _mult(step, 120 + inst.state.get("used", 0) * 2)
+    _mult(step, 100 + inst.state.get("used", 0) * 5)
 
 
 @word("UnderConstruction")

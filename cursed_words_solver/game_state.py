@@ -150,7 +150,7 @@ def _tile_from_game(raw: dict[str, Any], row: int, col: int) -> Tile:
     if "crossed_out" in flags:
         meta["is_crossed_out"] = True
     meta["value_modifier"] = _int(raw.get("value_modifier"), 0)
-    meta["cactus_growth"] = _int(raw.get("cactus_growth"), 0)
+    meta["cactus_growth"] = _int(raw.get("cactus_growth", raw.get("cactus_bonus")), 0)
     tile = Tile(
         row=row,
         col=col,
@@ -223,6 +223,11 @@ def _historic_rows(gs: dict[str, Any]) -> list[dict[str, Any]]:
                 "first_srep": first,
                 "red_tile_count": sum(1 for t in types if t in ("red", "purple")),
                 "green_tile_count": sum(1 for t in types if t == "green"),
+                # DLC items read the previous words' tiles (Ghost: cursed tiles, ...).
+                "tiles": tiles,
+                "methods": list(word.get("methods") or ()),
+                "upper_words": list(word.get("upper_words") or ()),
+                "lower_words": list(word.get("lower_words") or ()),
             }
         )
     return rows
@@ -244,6 +249,8 @@ def extras_from_game_state(gs: dict[str, Any]) -> dict[str, str]:
         out["item_levels_exact"] = "true"
     if "accumulator_words" in player:
         out["accumulator_words"] = json.dumps(list(player.get("accumulator_words") or []))
+    if "accumulator_pairs" in player:
+        out["accumulator_pairs"] = json.dumps([list(p) for p in player.get("accumulator_pairs") or () if isinstance(p, list)])
     consumables = player.get("consumables")
     if isinstance(consumables, list):
         out["consumable_rack_count"] = str(sum(1 for t in consumables if t))
@@ -285,6 +292,12 @@ def extras_from_game_state(gs: dict[str, Any]) -> dict[str, str]:
 
     challenge = run.get("challenge") if isinstance(run.get("challenge"), dict) else None
     out["challenge_game_class"] = str(challenge.get("class") or "") if challenge else ""
+    # DLC: RunProgress.ActiveChallenges (several can be active at once).
+    challenges = [c for c in run.get("challenges") or () if isinstance(c, dict)]
+    if challenges:
+        out["challenge_classes"] = json.dumps([str(c.get("class") or "") for c in challenges])
+    if isinstance(player.get("colour_cash"), list):
+        out["colour_cash"] = json.dumps([str(c).lower() for c in player["colour_cash"]])
     if challenge and challenge.get("class") == "UpAndUp":
         width = _int(grid.get("width"), 5)
         height = _int(grid.get("height"), 5)

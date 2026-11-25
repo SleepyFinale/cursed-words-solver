@@ -89,3 +89,18 @@ tests/test_stale_suggestion.py::test_seemelesse_grid2_underexport_stale_f8_fixtu
 tests/test_stale_suggestion.py::test_workflow_stale_reason_string
 
 # Pass with the real game wordlist; fail on CI (no game_words.txt, ENABLE1 lacks "poetcraft").
+
+# Pre-DLC captures (2026-11): the DLC changed Tile Ninja (x(100+5/used), was 120+2/used)
+# and Golden Record (now a submission bonus; rolls a random tile). These captures were
+# scored by the old game and no longer match current rules.
+tests/engine/test_capture_fixtures.py::test_capture_replays_to_game_score[20261024_234103_754_oases.json]
+tests/engine/test_capture_fixtures.py::test_capture_replays_to_game_score[20261024_234240_725_jails.json]
+tests/engine/test_engine_captures.py::test_engine_matches_game_score[round_logs/20260629_235326_weber_tile_ninja_stale.json]
+tests/engine/test_engine_captures.py::test_engine_matches_game_score[round_logs/20260629_235550_wielder_tile_ninja_stale.json]
+tests/engine/test_engine_captures.py::test_engine_matches_game_score[round_logs/20260629_235748_write_tile_ninja_stale.json]
+tests/engine/test_engine_captures.py::test_engine_matches_game_score[mismatches/20260630_001426.json]
+tests/engine/test_engine_captures.py::test_engine_matches_game_score[mismatches/20260630_001719.json]
+tests/sim/test_game_sim.py::test_capture_replays_exactly_through_sim_state[20261024_234103_754_oases]
+tests/sim/test_game_sim.py::test_capture_replays_exactly_through_sim_state[20261024_234240_725_jails]
+tests/test_consumable_placement.py::test_consumables_placed_for_scoring_uses_placement_records
+tests/test_f8_embed_replay.py::test_f8_embed_replay_tile_ninja_counter_reaches_game_state
