@@ -23,6 +23,7 @@ from typing import Callable
 import numpy as np
 
 from cursed_words_solver.engine import dlc_rules as R
+from cursed_words_solver.engine import packet as P
 from cursed_words_solver.engine.item_data import ITEMS
 from cursed_words_solver.engine.model import (
     DIRECTION_OFFSETS,
@@ -155,8 +156,15 @@ class DlcSearch:
         inv = self.inv
         g = t.glyph
         wild = g in (G_BLANK, G_CHESS, G_ARROW, G_ITEM, G_WIRE, G_DICE, G_ZODIAC, G_DOMINO) or t.suit == SUIT_JOKER
+        if g == G_BRACKET and not inv.queen:
+            # A bracket's word string is "": standing for a trie letter (as a satisfied
+            # bracket wildcard, or Bagel's "a") makes the word one letter longer than
+            # TriesByLength[length] allows, and only a "qu" tile could pay that back.
+            out = (False, [""], set())
+            self._match_cache[key] = out
+            return out
         if not wild and g == G_BRACKET:
-            wild = True  # wildcard once the submit's brackets are satisfied
+            wild = True  # wildcard once the submit's brackets are satisfied (Queen: "qu")
         if not wild and inv.evil_monkey and 6 - inv.evil_monkey_level <= i < 6:
             wild = True
         if not wild and inv.number_go_up and t.is_number():
@@ -484,6 +492,158 @@ class DlcSearch:
             return self.rules.concatenated(list(path), self.es.part_max_len)
         return self.rules.upper_lower(list(path))
 
+    # ------------------------------------------------------------------ beam
+
+    beam_start_width = 64
+    beam_max_width = 4096
+    beam_fixed_width = 256
+
+    def beam(self, trie_arrays, deadline: float | None, cancel_check, rank, starts=None,
+             width: int | None = None) -> dict[tuple[int, ...], float]:
+        """Score-guided beam for boards the exhaustive walk can't finish (wildcard /
+        bracket / dice boards): each depth extends every kept path by one legal move
+        whose letters still lead somewhere in the trie, scores the extensions exactly
+        (``EnginePlan.score``, a word-independent proxy) and keeps the ``width`` best.
+        Restarts twice as wide while time remains. Returns path -> proxy score of every
+        extension that could spell a word (validated exactly afterwards)."""
+        key = rank or (lambda v: v)
+        plan = self.plan
+        tiles = self.tiles
+        allowed = self.es.allowed_tile
+        lo, max_len = self.min_len, self.max_len
+        found: dict[tuple[int, ...], float] = {}
+        start_idx = [t.idx for t in self.grid.available if allowed[t.idx] and self.es.clickable[t.idx]]
+        if starts is not None:
+            keep = set(starts)
+            start_idx = [i for i in start_idx if i in keep]
+        widths = [width or self.beam_fixed_width] if deadline is None else []
+        w = self.beam_start_width
+        while deadline is not None and w <= self.beam_max_width:
+            widths.append(w)
+            w *= 2
+
+        def out_of_time() -> bool:
+            return (deadline is not None and time.perf_counter() > deadline) or (
+                cancel_check is not None and cancel_check()
+            )
+
+        def lens_ok(nu: int, nl: int) -> bool:
+            return (nu == 0 or lo <= nu <= max_len) and (nl == 0 or lo <= nl <= max_len)
+
+        def proxy(path) -> float:
+            try:
+                return float(key(P.to_int(plan.score(list(path), "").score)))
+            except Exception:  # pragma: no cover - a bad partial path never blocks the beam
+                return float("-inf")
+
+        intern: dict[tuple, dict] = {}
+        memo: dict = {}
+
+        def advance(front, t, i):
+            wild, texts, codes = self._matcher(t, i)
+            mk = (id(front), wild, tuple(texts), tuple(sorted(codes)))
+            hit = memo.get(mk)
+            if hit is not None:
+                return hit
+            nxt = _step(trie_arrays, front, wild, texts, codes)
+            if nxt:
+                ik = tuple((ld, arr.size, int(arr[0]), int(arr[-1]), hash(arr.tobytes()))
+                           for ld, arr in sorted(nxt.items()))
+                nxt = intern.setdefault(ik, nxt)
+            memo[mk] = nxt
+            return nxt
+
+        for width_now in widths:
+            beam: list[tuple] = []
+            for st in start_idx:
+                t = tiles[st]
+                fu, fl, nu, nl = _START, _START, 0, 0
+                if t.is_lowercase_letter():
+                    fl, nl = advance(_START, t, 0), 1
+                    if not fl:
+                        continue
+                else:
+                    fu, nu = advance(_START, t, 0), 1
+                    if not fu:
+                        continue
+                sc = proxy((st,))
+                if lens_ok(nu, nl) and (nu == 0 or _has_word(trie_arrays, fu)) and (
+                    nl == 0 or _has_word(trie_arrays, fl)
+                ):
+                    found[(st,)] = sc
+                beam.append((sc, [st], [Sel(st)], fu, fl, nu, nl))
+            stopped = False
+            seen: set[tuple[int, ...]] = set()
+            for _depth in range(1, 2 * max_len):
+                nxt_beam: list[tuple] = []
+                for _sc, path, sels, fu, fl, nu, nl in beam:
+                    if out_of_time():
+                        stopped = True
+                        break
+                    i = len(path)
+                    for sel in self.moves(path, sels):
+                        if not allowed[sel.idx]:
+                            continue
+                        q = tuple(path) + (sel.idx,)
+                        if q in seen:
+                            continue
+                        seen.add(q)
+                        t = tiles[sel.idx]
+                        if t.is_lowercase_letter():
+                            fl2 = advance(fl, t, i)
+                            if not fl2:
+                                continue
+                            fu2, nu2, nl2 = fu, nu, nl + 1
+                        else:
+                            fu2 = advance(fu, t, i)
+                            if not fu2:
+                                continue
+                            fl2, nu2, nl2 = fl, nu + 1, nl
+                        if nu2 > max_len or nl2 > max_len:
+                            continue
+                        sc2 = proxy(q)
+                        if lens_ok(nu2, nl2) and (nu2 == 0 or _has_word(trie_arrays, fu2)) and (
+                            nl2 == 0 or _has_word(trie_arrays, fl2)
+                        ):
+                            found[q] = sc2
+                        nxt_beam.append((sc2, list(q), sels + [sel], fu2, fl2, nu2, nl2))
+                if stopped or not nxt_beam:
+                    break
+                beam = self._diverse(nxt_beam, width_now)
+            self.es.stats.extra["beam_width"] = width_now
+            if stopped:
+                break
+        self.es.stats.extra["beam_found"] = len(found)
+        return found
+
+    def _diverse(self, states: list[tuple], width: int) -> list[tuple]:
+        """Best ``width`` states by score, with half the slots shared out by how many
+        letter tiles (non-bracket) each path has: closing brackets lifts the score of
+        bracket-heavy paths, which would otherwise crowd out paths long enough for a
+        good word."""
+        states.sort(key=lambda e: e[0], reverse=True)
+        if len(states) <= width:
+            return states
+        tiles = self.tiles
+        buckets: dict[int, list[tuple]] = {}
+        for e in states:
+            n = sum(1 for i in e[1] if tiles[i].glyph != G_BRACKET)
+            buckets.setdefault(n, []).append(e)
+        per = max(1, (width // 2) // max(1, len(buckets)))
+        keep: list[tuple] = []
+        chosen: set[int] = set()
+        for group in buckets.values():
+            for e in group[:per]:
+                keep.append(e)
+                chosen.add(id(e))
+        for e in states:
+            if len(keep) >= width:
+                break
+            if id(e) not in chosen:
+                keep.append(e)
+        keep.sort(key=lambda e: e[0], reverse=True)
+        return keep
+
     def run(self, *, top_n: int, deadline: float | None, cancel_check, rank, starts=None):
         from cursed_words_solver.engine.search import Candidate, _numpy_trie
 
@@ -493,29 +653,46 @@ class DlcSearch:
         budget = es.exhaustive_node_budget
         enum_deadline = None
         if deadline is not None:
-            enum_deadline = t0 + max(0.0, deadline - t0) * 0.7
+            # Exhaustive walk first; when it can't finish, the beam gets the next share.
+            enum_deadline = t0 + max(0.0, deadline - t0) * 0.35
         found, exhaustive = self.enumerate(_numpy_trie(es.trie), enum_deadline, cancel_check, budget, starts)
         if self.rules.acc_trie is not None:
             more, ex2 = self.enumerate(_numpy_trie(self.rules.acc_trie), enum_deadline, cancel_check, budget, starts)
             found.update(more)
             exhaustive = exhaustive and ex2
+        beam_found: dict[tuple[int, ...], float] = {}
+        if not exhaustive and not (cancel_check is not None and cancel_check()):
+            beam_deadline = None if deadline is None else t0 + max(0.0, deadline - t0) * 0.75
+            beam_found = self.beam(_numpy_trie(es.trie), beam_deadline, cancel_check, rank, starts)
         t1 = time.perf_counter()
         es.stats.enum_sec = t1 - t0
         es.stats.nodes = self.stats_nodes
-        es.stats.paths = len(found)
+        es.stats.paths = len(found) + len(beam_found)
         es.stats.extra["exhaustive"] = exhaustive
         es.stats.extra["dlc_search"] = True
         es.stats.timed_out = not exhaustive
         values = [t.value for t in self.tiles]
-        order = sorted(found, key=lambda p: (sum(values[i] for i in p), len(p)), reverse=True)
-        if len(order) > es.max_exact_paths:
-            order = order[: es.max_exact_paths]
+        rest = [p for p in found if p not in beam_found]
+        rest.sort(key=lambda p: (sum(values[i] for i in p), len(p)), reverse=True)
+        if len(rest) > es.max_exact_paths:
+            rest = rest[: es.max_exact_paths]
+        # Beam finds (by their exact word-independent score) and DFS finds (by tile value)
+        # take turns, so neither shortlist starves the other when time runs out.
+        beam_order = sorted(beam_found, key=lambda p: beam_found[p], reverse=True)
+        order = [p for pair in zip(beam_order, rest) for p in pair]
+        k = min(len(beam_order), len(rest))
+        order += beam_order[k:] + rest[k:]
         scored = []
         plan = self.plan
         es.last_found = {}
+        # Past the deadline: stop once the usual minimum is scored, and in any case a
+        # little later (10% of the budget, >= 2 s) so slow validations can't overrun F8.
+        hard_stop = None if deadline is None else deadline + max(2.0, 0.1 * max(0.0, deadline - t0))
         for n, p in enumerate(order, 1):
-            if deadline is not None and n > es.min_scored_before_deadline and n % 32 == 0 and time.perf_counter() > deadline:
-                break
+            if deadline is not None and n % 8 == 0:
+                now = time.perf_counter()
+                if now > deadline and (n > es.min_scored_before_deadline or (scored and now > hard_stop)):
+                    break
             sub = self.validate(p)
             if sub is None or not es.path_allowed(p):
                 continue

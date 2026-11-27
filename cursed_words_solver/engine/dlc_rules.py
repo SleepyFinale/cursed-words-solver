@@ -456,12 +456,96 @@ def _np_text(arrays, nodes, text: str):
     return nodes
 
 
+_LEN_MATS: dict[int, tuple] = {}
+
+
+def length_matrices(trie: CsrTrie) -> dict[int, "object"]:
+    """Every word of the trie as a (words x L) uint8 letter matrix per length L, rows in
+    trie-node order (BFS ids, children by letter: alphabetical within a length)."""
+    import numpy as np
+
+    hit = _LEN_MATS.get(id(trie))
+    if hit is not None and hit[0] is trie:
+        return hit[1]
+    starts, counts, childs, _keys, is_word, parent, letter = _np_arrays(trie)
+    n = len(starts)
+    mats: dict[int, np.ndarray] = {}
+    lo, hi, depth = 0, 1, 0
+    while lo < hi and hi <= n:
+        if depth > 0:
+            nodes = np.nonzero(is_word[lo:hi])[0] + lo
+            if nodes.size:
+                m = np.empty((nodes.size, depth), dtype=np.uint8)
+                cur = nodes.astype(np.int64)
+                for col in range(depth - 1, -1, -1):
+                    m[:, col] = letter[cur]
+                    cur = parent[cur]
+                mats[depth] = m
+        # BFS ids: the next level is the contiguous block of this level's children.
+        last = hi - 1
+        end = int(starts[last] + counts[last])
+        first_edge = int(starts[lo])
+        if end <= first_edge:
+            nxt_hi = hi
+            for k in range(hi - 1, lo - 1, -1):
+                if counts[k]:
+                    nxt_hi = int(childs[starts[k] + counts[k] - 1]) + 1
+                    break
+        else:
+            nxt_hi = int(childs[end - 1]) + 1
+        lo, hi, depth = hi, max(nxt_hi, hi), depth + 1
+        if nxt_hi <= lo:
+            break
+    _LEN_MATS[id(trie)] = (trie, mats)
+    return mats
+
+
+def _match_by_length(trie: CsrTrie, wild: list[bool], texts: list[list[str]], codes: list[set[str]]) -> str | None:
+    """``match_tiles`` when every tile has one string of at most one letter: tiles with ""
+    (brackets) can only pass through (a consumed character can never be paid back), so
+    the word has exactly one letter per remaining tile, filtered column by column."""
+    import numpy as np
+
+    cols: list[set[str] | None] = []
+    for i, opts in enumerate(texts):
+        s = opts[0]
+        if s == "":
+            continue
+        if wild[i]:
+            cols.append(None)
+        else:
+            allowed = set(codes[i])
+            if "a" <= s <= "z":
+                allowed.add(s)
+            cols.append(allowed)
+    mats = length_matrices(trie)
+    m = mats.get(len(cols))
+    if m is None or not len(cols):
+        return None
+    mask = None
+    for k, allowed in enumerate(cols):
+        if allowed is None:
+            continue
+        if not allowed:
+            return None
+        lut = np.zeros(256, dtype=bool)
+        lut[[ord(c) for c in allowed]] = True
+        hit = lut[m[:, k]]
+        mask = hit if mask is None else (mask & hit)
+        if not mask.any():
+            return None
+    row = 0 if mask is None else int(np.argmax(mask))
+    return bytes(m[row]).decode("ascii")
+
+
 def match_tiles(trie: CsrTrie, tiles: list[ETile], wild: list[bool], texts: list[list[str]], codes: list[set[str]]) -> str | None:
     """``WordTrie.TryMatchTiles`` over every permutation; the matched word or None."""
     import numpy as np
 
     from cursed_words_solver.engine.search import _np_spell
 
+    if all(len(o) == 1 and len(o[0]) <= 1 for o in texts):
+        return _match_by_length(trie, wild, texts, codes)
     arrays = _np_arrays(trie)
     # frontier: ldiff (permutation letters - trie depth) -> node array
     frontier: dict[int, np.ndarray] = {0: np.zeros(1, dtype=np.int32)}

@@ -365,6 +365,15 @@ def active_boss_ids(loadout: Loadout) -> list[str]:
         rows: list[Any]
         if isinstance(raw, list):
             rows = raw
+        elif isinstance(raw, str) and raw.strip().startswith("["):
+            # melmod / apply_game_state write a JSON list ("[]", '["capybara"]').
+            import json
+
+            try:
+                parsed = json.loads(raw)
+            except ValueError:
+                parsed = []
+            rows = parsed if isinstance(parsed, list) else []
         elif isinstance(raw, str):
             rows = [s.strip() for s in raw.split(",") if s.strip()]
         else:

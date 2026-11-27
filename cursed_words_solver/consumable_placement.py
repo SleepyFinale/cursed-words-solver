@@ -154,7 +154,37 @@ def _parse_consumable_rack_raw(loadout: Loadout) -> list[dict[str, Any]]:
     return [entry for entry in rows if isinstance(entry, dict)]
 
 
+_CHESS_LABELS = {
+    "pawn": ("♙", "♟"), "knight": ("♘", "♞"), "bishop": ("♗", "♝"),
+    "rook": ("♖", "♜"), "queen": ("♕", "♛"), "king": ("♔", "♚"),
+}
+
+
+def _game_tile_label(raw: dict[str, Any]) -> str | None:
+    """Placement label from the raw game tile: chess pieces show as their piece (the
+    chess font's letter would read as a plain letter), other glyphs as their face."""
+    glyph = str(raw.get("glyph") or "")
+    letter = str(raw.get("letter") or "")
+    if glyph == "Chess":
+        piece = str(raw.get("piece") or "").lower()
+        white, black = _CHESS_LABELS.get(piece, ("?", "?"))
+        return f"{white if raw.get('white') else black} ({'white' if raw.get('white') else 'black'} {piece})"
+    if glyph == "Letter":
+        flags = raw.get("flags") or ()
+        return letter.lower() if "lowercase" in flags else letter.upper()
+    if glyph == "Blank":
+        return "?"
+    if glyph in ("Number",) and raw.get("number") not in (None, -1000):
+        return str(raw.get("number"))
+    return letter or None
+
+
 def _placement_letter_for_tile(tile: Tile) -> str:
+    raw = (tile.metadata or {}).get("game_tile")
+    if isinstance(raw, dict) and raw.get("glyph") != "Fraction":
+        label = _game_tile_label(raw)
+        if label:
+            return label
     if tile.curse == CurseType.FRACTION:
         return format_fraction_tile(tile)
     letter = (tile.letter or "").strip()
@@ -270,16 +300,46 @@ def rack_tile_from_entry(entry: dict[str, Any]) -> Tile | None:
     return tile
 
 
+def _rack_game_tiles(loadout: Loadout) -> list[Any]:
+    """``game_state.player.consumables`` (raw tiles by rack slot), when exported."""
+    raw = (loadout.extras or {}).get("consumable_rack_game_tiles")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+    return raw if isinstance(raw, list) else []
+
+
+def _attach_rack_game_tile(tile: Tile, game_tiles: list[Any]) -> None:
+    """Give a rack tile its raw game tile so a simulated placement keeps the exact glyph,
+    type and value (the display-character rack export can't express DLC glyphs)."""
+    idx = tile.metadata.get("rack_index")
+    if not isinstance(idx, int) or not (0 <= idx < len(game_tiles)):
+        return
+    raw = game_tiles[idx]
+    if not isinstance(raw, dict):
+        return
+    placed = dict(raw)
+    flags = [f for f in (raw.get("flags") or []) if f != "on_rack"]
+    if "was_consumable" not in flags:
+        flags.append("was_consumable")
+    placed["flags"] = flags
+    tile.metadata["game_tile"] = placed
+
+
 def consumable_rack_tiles(
     loadout: Loadout,
     *,
     cactus_only: bool = False,
 ) -> list[Tile]:
     out: list[Tile] = []
+    game_tiles = _rack_game_tiles(loadout)
     for entry in _parse_consumable_rack_raw(loadout):
         tile = rack_tile_from_entry(entry)
         if tile is None:
             continue
+        _attach_rack_game_tile(tile, game_tiles)
         if cactus_only and tile.color != TileColor.CACTUS:
             continue
         out.append(tile)

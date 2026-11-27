@@ -39,7 +39,7 @@ from cursed_words_solver.engine.items import (
     WORD_HOOKS,
     scissors_steps,
 )
-from cursed_words_solver.engine.model import G_BRACKET  # noqa: E402
+from cursed_words_solver.engine.model import DICE_NUMBER, G_BRACKET, domino_values  # noqa: E402
 from cursed_words_solver.engine import dlc_items as _dlc_items  # noqa: F401  (registers DLC hooks)
 from cursed_words_solver.engine.model import (
     DLC_GLYPHS,
@@ -275,6 +275,165 @@ _FRACTION_GLYPHS = {  # Alphabet.FractionNumbers
     "⅚": (5, 6), "⅛": (1, 8), "⅜": (3, 8), "⅝": (5, 8), "⅞": (7, 8),
     "⅐": (1, 7), "⅑": (1, 9), "⅒": (1, 10),
 }
+# ScatteredItemPools.ScatteredItemEmojis (dlc decompile): emoji -> item slug.
+SCATTER_EMOJI_SLUGS: dict[str, str] = {
+    '\U0001f309': 'suspension_bridge',
+    '\U0001f4a5': 'big_bang',
+    '\U0001f352': 'cherries',
+    '\U0001f967': 'cherry_pie',
+    '\U0001f3b8': 'electric_guitar',
+    '\U0001f39f\ufe0f': 'family_ticket',
+    '\U0001f9ef': 'fire_extinguisher',
+    '\u2764\ufe0f': 'heart_on_fire',
+    '\U0001f9e3': 'lucky_scarf',
+    '\U0001f341': 'maple_leaf',
+    '\U0001f3ee': 'paper_lantern',
+    '\U0001f9e7': 'red_envelope',
+    '\U0001f336\ufe0f': 'spicy_pepper',
+    '\U0001f460': 'stiletto',
+    '\U0001f52d': 'telescope',
+    '\U0001fad0': 'blueberries',
+    '\U0001f458': 'kimono',
+    '\U0001f9e6': 'pair_of_socks',
+    '\U0001f9c0': 'stilton',
+    '\U0001fa9f': 'window',
+    '\u26b0\ufe0f': 'dusty_coffin',
+    '\U0001f419': 'deep_sea_horror',
+    '\U0001f30f': 'down_under',
+    '\U0001faa6': 'tombstone',
+    '\U0001f365': 'fish_cake',
+    '\U0001f9a9': 'flamingo',
+    '\U0001f3a8': 'artist_s_palette',
+    '\U0001f3aa': 'circus_tent',
+    '\U0001f379': 'cocktail',
+    '\U0001f361': 'dango',
+    '\U0001f3a1': 'ferris_wheel',
+    '\U0001fa87': 'maracas',
+    '\U0001f5dd\ufe0f': 'ornate_key',
+    '\U0001f9c1': 'rainbow_sprinkles',
+    '\u2697\ufe0f': 'alembic_flask',
+    '\U0001fa83': 'boomerang',
+    '\U0001f9e0': 'brain',
+    '\U0001f97c': 'lab_coat',
+    '\U0001f3b2': 'lucky_dice',
+    '\U0001f4c8': 'number_go_up',
+    '\U0001f992': 'giraffe',
+    '\U0001f9ea': 'test_tube',
+    '\U0001f3ac': 'clapper_board',
+    '\U0001f5e1\ufe0f': 'dagger',
+    '\U0001f54a\ufe0f': 'dove',
+    '\U0001f463': 'footprints',
+    '\U0001f3f4': 'jolly_roger',
+    '\U0001f998': 'kangaroo',
+    '\U0001f993': 'zebra',
+    '\U0001f315': 'full_moon',
+    '\U0001f4c0': 'golden_record',
+    '\U0001f40d': 'hungry_snake',
+    '\U0001f52c': 'microscope',
+    '\U0001f451': 'queenie',
+    '\U0001f9df': 'sluggish_zombie',
+    '\U0001fabc': 'jellyfish',
+    '\U0001f9b4': 'bone',
+    '\U0001f359': 'onigiri',
+    '\U0001f99c': 'parrot',
+    '\U0001f363': 'sushi',
+    '\U0001f5de\ufe0f': 'newspaper',
+    '\U0001f5ff': 'moai',
+    '\U0001fad9': 'empty_jar',
+    '\U0001f942': 'yellow_glasses',
+    '\U0001f35f': 'chips',
+    '\U0001fab4': 'limnophila',
+    '\U0001f371': 'bento_box',
+    '\U0001f373': 'egg',
+    '\U0001f98a': 'wheezy_vixen',
+    '\U0001fab1': 'wriggly_worm',
+    '\U0001f32f': 'burrito',
+    '\U0001f393': 'graduation_cap',
+    '\U0001f988': 'card_shark',
+    '\U0001fa90': 'celestial_body',
+    '\U0001f3b4': 'hanafuda',
+    '\U0001f38d': 'kadomatsu',
+    '\U0001f306': 'las_vegas',
+    '\U0001f378': 'martini',
+    '\U0001f99a': 'peacock',
+    '\U0001f350': 'pear',
+    '\U0001fadb': 'peas_of_a_pod',
+    '\U0001f93c': 'wrestlers',
+    '\U0001f9f9': 'broom',
+    '\U0001fa91': 'creaky_chair',
+    '\U0001f47b': 'ghost',
+    '\U0001f383': 'jack_o_lantern',
+    '\U0001f608': 'mischievous_imp',
+    '\U0001f9ff': 'mysterious_amulet',
+    '\U0001f362': 'oden',
+    '\u26a0\ufe0f': 'error',
+    '\U0001f938\U0001f3fb\u200d\u2642\ufe0f': 'cartwheeler',
+    '\U0001f987': 'bat',
+    '\U0001f6ac': 'cigarette',
+    '\u26f8\ufe0f': 'ice_skate',
+    '\U0001f428': 'koala',
+    '\U0001faa0': 'plunger',
+    '\U0001f9a5': 'sloth',
+    '\U0001f951': 'avocado',
+    '\U0001f413': 'chicken_foot',
+    '\U0001faa2': 'figure_eight_knot',
+    '\U0001f682': 'mexican_train',
+    '\U0001f681': 'helicopter',
+    '\U0001f689': 'platform_6',
+    '\U0001f3e4': 'post_office',
+    '\U0001f6e4\ufe0f': 'railway_track',
+    '\U0001f34a': 'tangerine',
+    '\U0001f695': 'taxi',
+    '\U0001f69c': 'tractor',
+    '\U0001f349': 'watermelon_slice',
+    '\U0001f3f8': 'badminton_racket',
+    '\U0001f3ab': 'betting_slip',
+    '\U0001f51e': 'casino',
+    '\U0001f3cf': 'cricket_bat',
+    '\U0001f440': 'eyes',
+    '\U0001f94f': 'frisbee',
+    '\u26f3': 'hole_in_one',
+    '\u2638\ufe0f': 'wheel_of_fortune',
+    '\u26d3\ufe0f': 'chains',
+    '\U0001f9c4': 'garlic',
+    '\u2620\ufe0f': 'skull_and_crossbones',
+    '\U0001f9a8': 'skunk',
+    '\U0001f578\ufe0f': 'spider_web',
+    '\U0001f9d1\u200d\U0001f3ed': 'electrician',
+    '\U0001f526': 'flashlight',
+    '\u26fd': 'fuel_pump',
+    '\U0001f4e2': 'megaphone',
+    '\U0001f529': 'nut_and_bolt',
+    '\U0001f680': 'rocket',
+    '\U0001f97d': 'safety_goggles',
+    '\U0001fa9a': 'saw',
+    '\U0001f933\U0001f3fe': 'selfie',
+    '\U0001f4f6': 'strong_signal',
+    '\u26a1': 'zap',
+    '\U0001f9d1\u200d\U0001f680': 'astronaut',
+    '\u2604\ufe0f': 'comet',
+    '\U0001f3dd\ufe0f': 'desert_island',
+    '\U0001f3c5': 'medallion',
+    '\U0001f4ff': 'prayer_beads',
+    '\U0001f4a0': 'quatrefoil',
+    '\U0001f305': 'sunrise',
+    '\U0001f304': 'sunset',
+    '\U0001f531': 'trident',
+    '\u2b50': 'gold_star',
+    '\U0001fabb': 'hyacinth',
+    '\U0001f9d9': 'witch',
+    '\U0001f96f': 'bagel',
+    '\U0001f32d': 'hot_dog',
+    '\U0001fa9c': 'ladder',
+    '\U0001f9a7': 'orangutan',
+    '\U0001f37f': 'popcorn',
+    '\U0001f968': 'pretzel',
+    '\U0001f32e': 'taco',
+    '\U0001fab5': 'tree_rings',
+    '\U0001f3cb\ufe0f': 'weightlifter',
+}
+
+
 _FONT_TAG = re.compile(r"^(?:<rotate=180>)?<font=([^>]+)>(.*?)</font>(?:</rotate>)?$", re.S)
 
 
@@ -298,6 +457,19 @@ def game_srep_to_engine(rep: str) -> str:
         return f"<chess:{piece}:{'w' if white else 'b'}>"
     if font.startswith("NotoEmoji"):
         return "<joker>"
+    if font == "NotoSansJPBold SDF":  # lowercase l, or a wire
+        return "<lower:l>" if body == "l" else f"<wire:{body}>"
+    if font == "NotoSansSymbols2-Regular SDF" and body in DICE_NUMBER:
+        return f"<dice:{DICE_NUMBER[body]}>"
+    if font == "NotoSansSymbols2-Regular Dominoes SDF" and body:
+        a, b = domino_values(body)
+        return f"<domino:{a}-{b}>"
+    if font == "NotoSansSymbols-VariableFont_wght SDF":
+        return f"<zodiac:{body}>"
+    if font == "NotoSansCuneiform":
+        return f"<hyper:{body}>"
+    if font == "TwemojiMozillaAll" and body in SCATTER_EMOJI_SLUGS:
+        return f"<item:{SCATTER_EMOJI_SLUGS[body]}>"
     return rep
 
 
@@ -1029,6 +1201,9 @@ class EnginePlan:
         if cls == "Scissors":
             steps.extend(scissors_steps(inst, steps[-1], ctx))
             return
+        if cls == "LiterarySaga":
+            steps.extend(_dlc_items.literary_saga_steps(inst, steps[-1], ctx))
+            return
         target = inst
         if cls == "Snapshot":
             if not inst.nested:
@@ -1361,6 +1536,8 @@ def _resolve(plan: EnginePlan, pc: _PlanCache, inst: ItemInst):
     hook, label, mask | None); target None = Scissors; None = ``_apply`` is a no-op."""
     if inst.cls == "Scissors":
         return (inst, None, None, None, None, None)
+    if inst.cls == "LiterarySaga":
+        return None  # the fast path scores one word; Literary Saga needs two or more
     target = inst
     if inst.cls == "Snapshot":
         if not inst.nested:
@@ -1503,6 +1680,9 @@ def _apply_dyn(inst: ItemInst, steps: list[Step], ctx: Ctx, n: int) -> None:
     cls = inst.cls
     if cls == "Scissors":
         steps.extend(scissors_steps(inst, steps[-1], ctx))
+        return
+    if cls == "LiterarySaga":
+        steps.extend(_dlc_items.literary_saga_steps(inst, steps[-1], ctx))
         return
     target = inst
     if cls == "Snapshot":

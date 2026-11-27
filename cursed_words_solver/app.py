@@ -489,7 +489,7 @@ class SolverApp:
             print(msg, flush=True)
         if unmapped:
             print(
-                f"  Unmapped (no wiki rule): {', '.join(unmapped[:8])}"
+                f"  Unmapped (not in engine): {', '.join(unmapped[:8])}"
                 + (" ..." if len(unmapped) > 8 else ""),
                 flush=True,
             )
@@ -2306,7 +2306,7 @@ class SolverApp:
                     and not pred_bd.get("piece_of_cake_range")
                 ):
                     print(
-                        f"  Capybara score range: "
+                        f"  Score range (random outcomes): "
                         f"{int(capybara_stats.min_score)}–"
                         f"{int(capybara_stats.max_score)} "
                         f"(EV {int(round(capybara_stats.ev))})",
@@ -2778,6 +2778,26 @@ class SolverApp:
                 ev=float(ev), min_score=float(lo), max_score=float(hi),
                 perm_count=n, exhaustive=exhaustive,
             )
+        elif res.nondeterministic:
+            # Dice contests (Betting Slip, Cricket Bat, ...): the score is the expected
+            # value; sample the rolls (EnginePlan.rng) for the range the game can land in,
+            # so the companion accepts any real roll inside it.
+            import random
+
+            samples = []
+            try:
+                for seed in range(200):
+                    plan.rng = random.Random(seed)
+                    samples.append(plan.score(list(top.path), score_word).int_score)
+            finally:
+                plan.rng = None
+            if samples and min(samples) != max(samples):
+                lo, hi = min(samples + [res.int_score]), max(samples + [res.int_score])
+                breakdown.update({"score_min": lo, "score_max": hi})
+                stats = CapybaraScoreStats(
+                    ev=score, min_score=float(lo), max_score=float(hi),
+                    perm_count=len(samples), exhaustive=False,
+                )
         return score, breakdown, res.trace(), stats
 
     def _merge_piece_of_cake_outcomes(

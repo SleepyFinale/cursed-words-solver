@@ -2851,6 +2851,29 @@ def neapolitan_extras_stale_warning(loadout: Loadout | None) -> str | None:
     )
 
 
+_SUPERSCRIPT = str.maketrans("0123456789+-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻")
+
+
+def plain_rich_text(text: str) -> str:
+    """A game display string (TextMeshPro rich text) as plain text for the console.
+
+    DLC characters' names are rich text: ``B<font=...>⚀</font>n...`` (Bones The
+    Dog with dice glyphs), ``Human Boy<sup>3</sup>``, ``<lowercase>rodman</lowercase>``,
+    per-letter ``<color>`` (Beans). Glyphs are kept, tags dropped, ``<sup>`` digits
+    raised and ``<lowercase>``/``<uppercase>`` applied, so it reads as the game shows it.
+    """
+    import re
+
+    s = str(text or "")
+    if "<" not in s:
+        return s
+    s = re.sub(r"<sup>(.*?)</sup>", lambda m: m.group(1).translate(_SUPERSCRIPT), s, flags=re.S | re.I)
+    s = re.sub(r"<lowercase>(.*?)</lowercase>", lambda m: m.group(1).lower(), s, flags=re.S | re.I)
+    s = re.sub(r"<(?:uppercase|allcaps)>(.*?)</(?:uppercase|allcaps)>", lambda m: m.group(1).upper(), s, flags=re.S | re.I)
+    s = re.sub(r"</?[a-zA-Z][^<>]*>", "", s)
+    return s.replace("︎", "").replace("️", "")
+
+
 def format_loadout_summary(loadout: Loadout | None) -> str:
     """Short human-readable loadout line for console/overlay."""
     if loadout is None:
@@ -2860,7 +2883,7 @@ def format_loadout_summary(loadout: Loadout | None) -> str:
         )
     parts = []
     if loadout.character:
-        parts.append(loadout.character)
+        parts.append(plain_rich_text(loadout.character))
     if loadout.stickers:
         parts.append(f"{len(loadout.stickers)} sticker(s)")
     if loadout.stamps:

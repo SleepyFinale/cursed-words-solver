@@ -1246,7 +1246,15 @@ def scissors_steps(inst: ItemInst, prev: Step, ctx: Ctx) -> list[Step]:
     return out
 
 
-SCORING_CLASSES = frozenset(TILE_HOOKS) | frozenset(WORD_HOOKS) | {"Scissors", "Snapshot"}
+_EXTRA_SCORING = frozenset({"Scissors", "Snapshot", "LiterarySaga"})
+
+
+def engine_scoring_classes() -> frozenset[str]:
+    """Item classes the engine scores (tile / word hooks plus the ApplyItemToScore
+    specials). Computed live: ``dlc_items`` registers its hooks after this module."""
+    import cursed_words_solver.engine.calc  # noqa: F401  (registers every hook)
+
+    return frozenset(TILE_HOOKS) | frozenset(WORD_HOOKS) | _EXTRA_SCORING
 
 # Tile hooks whose effect on tile i depends only on ctx.tiles[i], ctx.cursed[i] and the
 # item's own (never mutated) levels / variables / colours / state, and which touch only

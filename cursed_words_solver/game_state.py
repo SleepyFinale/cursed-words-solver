@@ -254,6 +254,9 @@ def extras_from_game_state(gs: dict[str, Any]) -> dict[str, str]:
     consumables = player.get("consumables")
     if isinstance(consumables, list):
         out["consumable_rack_count"] = str(sum(1 for t in consumables if t))
+        # Raw rack tiles by slot (PlayerConsumableTiles): placement simulation gives a
+        # placed tile its exact glyph (dice, domino, chess, wire...) from these.
+        out["consumable_rack_game_tiles"] = json.dumps(consumables)
 
     bosses = [b for b in encounter.get("bosses") or () if isinstance(b, dict)]
     ids: list[str] = []

@@ -60,12 +60,71 @@ class EngineScorer:
         return score, breakdown, list(breakdown.get("trace") or [])
 
     def loadout_mapping_summary(self, loadout: Loadout | None) -> tuple[int, int, int, list[str]]:
-        """(scoring-active items, total items, grid-only items, unmapped labels) for the F8 log."""
-        from cursed_words_solver.rules.rule_lookup import collect_unmapped_items, count_scoring_items
+        """(scoring-active items, total items, grid-only items, unmapped labels) for the F8 log.
+
+        Items (pin, stickers, stamps) are judged by what the engine models: an item is
+        mapped when its slug is in ``item_data.ITEMS`` and affects score when the engine
+        has a scoring hook for its class. Bosses still come from the rules catalog."""
+        from cursed_words_solver.rules.rule_lookup import (
+            _catalog_boss_slugs,
+            _count_boss_catalog,
+            resolve_rule_id,
+        )
+
+        from cursed_words_solver.engine.calc import _slug
+        from cursed_words_solver.engine.item_data import ITEMS
+        from cursed_words_solver.engine.items import engine_scoring_classes
 
         loadout = loadout or Loadout()
-        scoring, total, grid_only = count_scoring_items(self.rules, loadout)
-        return scoring, total, grid_only, collect_unmapped_items(self.rules, loadout)
+        scoring_cls = engine_scoring_classes()
+        scoring = grid_only = total = 0
+        missing: list[str] = []
+        rows = _loadout_item_rows(loadout)
+        for kind, raw in rows:
+            total += 1
+            info = ITEMS.get(_slug(raw))
+            if info is None:
+                missing.append(f"{kind}:{raw}")
+            elif info.cls in scoring_cls:
+                scoring += 1
+            else:
+                grid_only += 1
+        boss_slugs = _catalog_boss_slugs(loadout)
+        total += len(boss_slugs)
+        _mapped, boss_scoring, boss_grid = _count_boss_catalog(self.rules, loadout)
+        scoring += boss_scoring
+        grid_only += boss_grid
+        missing += [f"boss:{b}" for b in boss_slugs if resolve_rule_id(self.rules, "bosses", b, b) is None]
+        return scoring, total, grid_only, missing
+
+
+def _loadout_item_rows(loadout: Loadout) -> list[tuple[str, str]]:
+    """(kind, id) for the pin, stickers and stamps the engine will build -- from the
+    exact ``item_states`` when melmod sent them (as ``EnginePlan.build`` does), else
+    from the loadout lists and ``pin_effect``."""
+    import json
+
+    extras = loadout.extras if isinstance(loadout.extras, dict) else {}
+    states = extras.get("item_states")
+    if isinstance(states, str):
+        try:
+            states = json.loads(states)
+        except ValueError:
+            states = None
+    if isinstance(states, dict) and "stickers" in states:
+        rows: list[tuple[str, str]] = []
+        pin = states.get("pin")
+        if isinstance(pin, dict) and pin.get("id"):
+            rows.append(("pin", str(pin["id"])))
+        for kind in ("sticker", "stamp"):
+            for row in states.get(kind + "s") or ():
+                if isinstance(row, dict) and row.get("id"):
+                    rows.append((kind, str(row["id"])))
+        return rows
+    pin = str(extras.get("pin_effect", "") or "")
+    return ([("pin", pin)] if pin else []) + [("sticker", s.id or s.name) for s in loadout.stickers] + [
+        ("stamp", s.id or s.name) for s in loadout.stamps
+    ]
 
 
 def summarize_steps(steps: list) -> dict[str, Any]:

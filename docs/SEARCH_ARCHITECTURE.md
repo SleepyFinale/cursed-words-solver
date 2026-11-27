@@ -71,3 +71,22 @@ Ported from the DLC decompile (`docs/game-research/_decompiled/dlc`, regenerate 
   superset; every candidate is validated exactly by `WordRules` and scored with its groups.
   `engine_valid_word` / `engine_path_movement_ok` use the same rules in DLC mode.
 - The Human Boy DLC challenge (`DLCHumanBoyUnlock`) requires every available required tile.
+- **DLC search budget**: the exhaustive DFS gets 35% of the deadline; when it can't finish
+  (bracket / wildcard / dice boards) `DlcSearch.beam` runs to 75%: paths grow one legal move at
+  a time, are scored exactly with `plan.score(path, "")` (a word-independent proxy) and the best
+  `width` are kept (64 doubling to 4096; half the slots shared across non-bracket tile counts so
+  short and long words both survive). Beam finds are validated first, by proxy score, then the
+  DFS finds by tile-value sum. Validation stops at the deadline once 256 paths are tried, and at
+  the deadline + max(2 s, 10%) in any case.
+- **Word validation** (`dlc_rules.match_tiles`): when every tile has one string of at most one
+  letter it uses per-length letter matrices built from the CsrTrie's BFS levels
+  (`length_matrices`), not the permutation walk. A bracket's string is "" (it never stands for a
+  letter, as a satisfied-bracket wildcard or Bagel's "a") unless Queen ("qu") can pay it back.
+- **Rack tiles** keep their raw game tile (`game_state.player.consumables` ->
+  extras `consumable_rack_game_tiles`), so a simulated placement keeps its DLC glyph (domino,
+  chess piece, wire) and its movement.
+- **LetterUseCounts keys** are `GetStringRepresentation()` strings; `calc.game_srep_to_engine`
+  maps each font tag (NotoSansJPBold wire / lowercase l, Symbols2 dice, Dominoes, zodiac,
+  Cuneiform hyper curse, TwemojiMozillaAll scattered-item emoji) to the engine token.
+- **v5.15** (2026-11-26 hotfix): only a token-condition label (Lexographer) and Turtle's rarity /
+  cost (rare, 16) changed; nothing in scoring, movement or validity.

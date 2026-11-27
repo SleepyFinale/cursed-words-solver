@@ -1218,3 +1218,15 @@ def _is_tetromino(tiles) -> bool:
     # Game coordinates are bottom-origin; a vertical flip keeps the shape set closed.
     coords = {(t.x, t.y) for t in tiles}
     return len(coords) == 4 and _normalize(coords) in _TETROMINOES
+
+
+def literary_saga_steps(inst: ItemInst, prev: Step, ctx: Ctx) -> list[Step]:
+    """``LiterarySaga.ApplyItemToScore``: one step ×(100 × submitted words) when more than
+    one word group (SubmittedWords WordTiles + LowercaseWordTiles) has tiles."""
+    num = sum(1 for g in (ctx.groups or [list(range(len(ctx.path_tiles)))]) if g)
+    if num <= 1:
+        return []
+    step = prev.next()
+    step.wb = WordBonus(100 * num, True)
+    step.item = inst.slug
+    return [step]

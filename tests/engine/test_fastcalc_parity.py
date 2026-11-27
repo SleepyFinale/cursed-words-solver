@@ -142,10 +142,11 @@ def _item_row(rng, pool, slug, depth=0):
 
 
 def _heavy(finds, seed: int, every: int):
-    from cursed_words_solver.engine.items import SCORING_CLASSES
+    from cursed_words_solver.engine.dlc_rules import NEW_ITEM_CLASSES
+    from cursed_words_solver.engine.items import engine_scoring_classes
 
     rng = random.Random(seed)
-    pool = sorted(s for s, i in ITEMS.items() if i.cls in SCORING_CLASSES or i.cls in _POOL_EXTRA)
+    pool = sorted(s for s, i in ITEMS.items() if (i.cls in engine_scoring_classes() and i.cls not in NEW_ITEM_CLASSES) or i.cls in _POOL_EXTRA)
     special = [s for s in _SPECIAL if s in ITEMS]
     out = []
     for board, loadout, top_n in finds[::every]:

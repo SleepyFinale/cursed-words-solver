@@ -509,7 +509,7 @@ ITEMS: dict[str, ItemInfo] = {
     'trusty_wrench': ItemInfo('TrustyWrench', 'common', 7, False, False, (), ()),
     'tsukimi': ItemInfo('Tsukimi', 'rare', 18, False, False, (), ()),
     'tube': ItemInfo('Tube', 'common', 14, False, False, ((1, 1, 2),), ('red',)),
-    'turtle': ItemInfo('Turtle', 'common', 15, False, True, ((1, 1, 1),), ()),
+    'turtle': ItemInfo('Turtle', 'rare', 16, False, True, ((1, 1, 1),), ()),
     'twinkle_toes': ItemInfo('TwinkleToes', 'rare', 14, False, False, (), ()),
     'twinsies': ItemInfo('Twinsies', 'common', 9, False, False, ((1, 50, 50),), ()),
     'under_construction': ItemInfo('UnderConstruction', 'rare', 14, False, False, ((1, 1, 2),), ()),
