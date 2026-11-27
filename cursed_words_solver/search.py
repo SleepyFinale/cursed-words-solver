@@ -30,6 +30,18 @@ class SearchTiming:
     parallel_workers: int = 1
     exhaustive: bool = True
 
+    def as_dict(self) -> dict:
+        """JSON-ready copy (``last_suggestion.json`` ``search`` / round logs ``solver.search``)."""
+        return {
+            "wall_sec": round(self.wall_sec, 2),
+            "enum_sec": round(self.enum_sec, 2),
+            "score_sec": round(self.score_sec, 2),
+            "paths": self.paths,
+            "scored": self.scored,
+            "workers": self.parallel_workers,
+            "exhaustive": self.exhaustive,
+        }
+
     def summary(self) -> str:
         coverage = "exhaustive" if self.exhaustive else "time-limited"
         workers = f", {self.parallel_workers} workers" if self.parallel_workers > 1 else ""

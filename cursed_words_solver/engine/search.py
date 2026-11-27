@@ -249,6 +249,107 @@ def _np_spell(arrays, node: int) -> str:
     return "".join(reversed(out))
 
 
+class NodeSet:
+    """An interned set of trie nodes: every dictionary prefix a tile path can spell.
+
+    A path's node set depends only on its parent's set and the tile's matcher, never on
+    which tiles produced it, so ``NodeSets.step`` memoises that transition: millions of
+    tile paths (wildcard boards) share a few thousand sets and each costs a dict lookup.
+    """
+
+    __slots__ = ("nodes", "tok", "word_node", "_word")
+
+    def __init__(self, nodes, tok: int, word_node: int) -> None:
+        self.nodes = nodes
+        self.tok = tok
+        self.word_node = word_node  # smallest word node (the spelling search reports), -1 if none
+        self._word: str | None = None
+
+    def word(self, arrays) -> str:
+        if self._word is None:
+            self._word = _np_spell(arrays, self.word_node)
+        return self._word
+
+
+class NodeSets:
+    """Per-trie memo of ``NodeSet`` transitions (shared by every search on that trie)."""
+
+    # Memory units held before the memo is reset: one per trie node (int32) plus
+    # ``SET_COST`` per interned set and ``TRANS_COST`` per memoised transition, so the
+    # Python overhead of many tiny sets counts too (~10 bytes a unit: a few hundred MB).
+    max_units = 16_000_000
+    SET_COST = 64
+    TRANS_COST = 16
+
+    def __init__(self, arrays) -> None:
+        import threading
+
+        import numpy as np
+
+        self.arrays = arrays
+        # The app's F8 solve and AI look-ahead threads share one trie (and memo).
+        self._lock = threading.Lock()
+        self._is_word = arrays[4]
+        self._trans: dict[tuple, NodeSet | None] = {}
+        self._intern: dict[tuple, list[NodeSet]] = {}
+        self._held = 0
+        self._next = 1
+        root = np.zeros(1, dtype=np.int32)
+        self.root = NodeSet(root, 0, 0 if len(self._is_word) and self._is_word[0] else -1)
+
+    def make(self, nodes) -> NodeSet | None:
+        """Intern a node array (equal sets from different parents share one token)."""
+        import numpy as np
+
+        if nodes is None or not nodes.size:
+            return None
+        key = (nodes.size, int(nodes[0]), int(nodes[-1]), hash(nodes.tobytes()))
+        bucket = self._intern.get(key)
+        if bucket:
+            for ns in bucket:
+                if np.array_equal(ns.nodes, nodes):
+                    return ns
+        if nodes.base is not None:
+            nodes = nodes.copy()  # a kernel slice would pin its whole scratch buffer
+        words = nodes[self._is_word[nodes]]
+        ns = NodeSet(nodes, self._next, int(words.min()) if words.size else -1)
+        self._next += 1
+        self._intern.setdefault(key, []).append(ns)
+        self._held += int(nodes.size) + self.SET_COST
+        return ns
+
+    def step(self, ns: NodeSet, matcher: tuple[bool, bytes, tuple[str, ...]]) -> NodeSet | None:
+        """The set reachable from ``ns`` through a tile with ``matcher`` (None if empty)."""
+        key = (ns.tok, matcher)
+        try:
+            return self._trans[key]
+        except KeyError:
+            pass
+        with self._lock:
+            hit = self._trans.get(key, False)
+            if hit is not False:
+                return hit
+            if self._held > self.max_units:
+                # Sets already handed out stay valid (tokens are never reused); only the
+                # memo is dropped.
+                self._trans.clear()
+                self._intern.clear()
+                self._held = 0
+            out = self.make(_np_advance(self.arrays, ns.nodes, *matcher))
+            self._trans[key] = out
+            self._held += self.TRANS_COST
+            return out
+
+
+def node_sets(trie: CsrTrie) -> NodeSets:
+    """The ``NodeSets`` memo cached on ``trie`` (like ``_numpy_trie``)."""
+    memo = getattr(trie, "_node_sets", None)
+    if memo is None:
+        memo = NodeSets(_numpy_trie(trie))
+        trie._node_sets = memo
+    return memo
+
+
 class ExactSearch:
     """Enumerate + score all valid words on one board for one loadout."""
 
@@ -270,6 +371,8 @@ class ExactSearch:
         self.super_inv = _Inventory(plan, board_item_classes & (_MOVE_CLASSES | _LETTER_CLASSES))
         self._inv_cache: dict[frozenset[str], _Inventory] = {frozenset(): self.base_inv}
         self._move_cache: dict[tuple, list[int]] = {}
+        self._item_mask = sum(1 << t.idx for t in grid.tiles if t.glyph == G_ITEM and t.item in ITEMS)
+        self._tables_by_mask: dict[int, tuple] = {}
         extras = plan.extras
         self.min_len = max(1, _extra_int(extras, "encounter_min_word_length") or _extra_int(extras, "cobra_min_length") or 1)
         self.max_len = _extra_int(extras, "wolf_max_length") or 999
@@ -320,6 +423,16 @@ class ExactSearch:
             inv = _Inventory(self.plan, classes)
             self._inv_cache[classes] = inv
         return inv
+
+    def _tables_for(self, visited: int):
+        """``move_tables`` for the inventory of a path whose tiles are ``visited`` (the
+        inventory only depends on which item tiles the path holds)."""
+        key = visited & self._item_mask
+        tables = self._tables_by_mask.get(key)
+        if tables is None:
+            held = tuple(i for i in range(len(self.tiles)) if (key >> i) & 1)
+            tables = self._tables_by_mask[key] = self.move_tables(self.inventory_for(held))
+        return tables
 
     # ------------------------------------------------------------------ movement
 
@@ -693,28 +806,24 @@ class ExactSearch:
     def _part_word(self, path: tuple[int, ...], inv: _Inventory, min_len: int, max_len: int, trie: CsrTrie | None = None) -> str | None:
         """One ``GetValidWordFromTiles`` call on ``path`` (inventory from the whole submit).
 
-        Steps the set of trie nodes consistent with each tile and spells the first
-        word node reached.
+        Steps the set of trie nodes consistent with each tile (memoised ``NodeSets``)
+        and spells the first word node reached.
         """
-        import numpy as np
-
         n = len(path)
         if n < min_len or n > max_len:
             return None
         tiles = [self.tiles[i] for i in path]
         nums = [t.number_float() for t in tiles if t.is_number()]
         ascending = all(nums[i] > nums[i - 1] for i in range(1, len(nums)))
-        arrays = _numpy_trie(trie or self.trie)
-        nodes = np.zeros(1, dtype=np.int32)
+        sets = node_sets(trie or self.trie)
+        ns = sets.root
         for i, t in enumerate(tiles):
-            wild, codes, tokens = self._matcher(t, i, inv, ascending)
-            nodes = _np_advance(arrays, nodes, wild, codes, tokens)
-            if nodes is None or not nodes.size:
+            ns = sets.step(ns, self._matcher(t, i, inv, ascending))
+            if ns is None:
                 return None
-        words = nodes[arrays[4][nodes]]
-        if not words.size:
+        if ns.word_node < 0:
             return None
-        return _np_spell(arrays, int(words.min()))
+        return ns.word(sets.arrays)
 
     def dlc(self):
         """The ``DlcSearch`` helper for this board (built on first use)."""
@@ -829,7 +938,7 @@ class ExactSearch:
 
         def moves(idx: int, visited: int) -> list[int]:
             if dynamic_inv:
-                portal, moon, primary, is_chess = self.move_tables(self.inventory_for(tuple(path)))
+                portal, moon, primary, is_chess = self._tables_for(visited)
             else:
                 portal, moon, primary, is_chess = base_tables
             out = [j for j in all_allowed if not (visited >> j) & 1] if portal[idx] else []
@@ -953,15 +1062,18 @@ class ExactSearch:
         starts: list[int] | None = None,
         path_budget: int | None = None,
     ) -> tuple[dict[tuple[int, ...], str], bool]:
-        """Tier 2: DFS over tile paths carrying numpy arrays of trie nodes.
+        """Tier 2: DFS over tile paths carrying interned trie-node sets (``NodeSets``).
 
-        Wildcards cost one vectorised child expansion instead of 26 recursive
-        branches, so wildcard-heavy boards whose *tile* paths are still limited
-        (Number Go Up tours, a few jokers) finish exhaustively. Runs until the
-        deadline (``subset_path_budget`` tile paths when there is none) and
-        returns ``(found, complete)``; partial results are kept.
+        A wildcard is one memoised set transition instead of 26 recursive branches,
+        so wildcard-heavy boards whose *tile* paths are still limited (Number Go Up
+        tours, a few jokers) finish exhaustively. Runs ``path_budget`` tile paths
+        (``subset_path_budget`` by default; the deadline only caps it) and returns
+        ``(found, complete)``; partial results are kept.
         """
         if deadline is None and cancel_check is None and (jit := _jit()) is not None:
+            # Deterministic searches (simulator / training, tests): the numba kernel is
+            # faster on ordinary boards whose node sets are tiny; the memoised walk below
+            # wins on wildcard-dense ones (F8 always has a deadline and runs it).
             try:
                 res = jit.subset_enum(self, inv or self.base_inv, require_pickup, starts, path_budget)
             except Exception as exc:  # pragma: no cover - numba runtime failure
@@ -969,10 +1081,8 @@ class ExactSearch:
                 res = None
             if res is not None:
                 return res
-        import numpy as np
-
-        arrays = _numpy_trie(self.trie)
-        is_word_np = arrays[4]
+        sets = node_sets(self.trie)
+        arrays = sets.arrays
         inv = inv or self.base_inv
         pickup_mask = sum(1 << i for i in require_pickup)
         tiles = self.tiles
@@ -990,14 +1100,13 @@ class ExactSearch:
                 match_cache[key] = m
             return m
 
-        def advance(nodes, i: int, d: int, asc: bool):
-            wild, codes, tokens = matcher(i, d, asc)
-            return _np_advance(arrays, nodes, wild, codes, tokens)
+        def advance(ns: NodeSet, i: int, d: int, asc: bool) -> NodeSet | None:
+            return sets.step(ns, matcher(i, d, asc))
 
         found: dict[tuple[int, ...], str] = {}
         path: list[int] = []
         if path_budget is None:
-            path_budget = self.subset_path_budget if deadline is None else 1 << 62
+            path_budget = self.subset_path_budget
         budget = [path_budget]
         stopped = [False]
         counter = [0]
@@ -1007,7 +1116,7 @@ class ExactSearch:
 
         def moves(idx: int, visited: int) -> list[int]:
             if dynamic_inv:
-                portal, moon, primary, is_chess = self.move_tables(self.inventory_for(tuple(path)))
+                portal, moon, primary, is_chess = self._tables_for(visited)
             else:
                 portal, moon, primary, is_chess = base_tables
             out = [j for j in all_allowed if not (visited >> j) & 1] if portal[idx] else []
@@ -1021,7 +1130,7 @@ class ExactSearch:
                 return out
             return [j for j in primary[idx] if not (visited >> j) & 1]
 
-        def dfs(idx: int, nodes, depth: int, visited: int, last_num, asc: bool) -> None:
+        def dfs(idx: int, ns: NodeSet, depth: int, visited: int, last_num, asc: bool) -> None:
             budget[0] -= 1
             counter[0] += 1
             if counter[0] >= 512:
@@ -1031,10 +1140,8 @@ class ExactSearch:
             if budget[0] < 0 or stopped[0]:
                 return
             length = depth + 1
-            if length >= min_len and (not pickup_mask or visited & pickup_mask):
-                words = nodes[is_word_np[nodes]]
-                if words.size:
-                    found.setdefault(tuple(path), _np_spell(arrays, int(words.min())))
+            if length >= min_len and ns.word_node >= 0 and (not pickup_mask or visited & pickup_mask):
+                found.setdefault(tuple(path), ns.word(arrays))
             if length >= max_len:
                 return
             for nxt in moves(idx, visited):
@@ -1043,8 +1150,8 @@ class ExactSearch:
                 if nv is not None:
                     n_asc = asc and (last_num is None or nv > last_num)
                     n_last = nv
-                nn = advance(nodes, nxt, length, n_asc)
-                if nn is None or not nn.size:
+                nn = advance(ns, nxt, length, n_asc)
+                if nn is None:
                     continue
                 path.append(nxt)
                 dfs(nxt, nn, length, visited | (1 << nxt), n_last, n_asc)
@@ -1052,13 +1159,12 @@ class ExactSearch:
                 if budget[0] < 0 or stopped[0]:
                     return
 
-        root = np.zeros(1, dtype=np.int32)
         for i in all_allowed if starts is None else starts:
-            nodes = advance(root, i, 0, True)
-            if nodes is None or not nodes.size:
+            ns0 = advance(sets.root, i, 0, True)
+            if ns0 is None:
                 continue
             path.append(i)
-            dfs(i, nodes, 0, 1 << i, num_value[i], True)
+            dfs(i, ns0, 0, 1 << i, num_value[i], True)
             path.pop()
             if budget[0] < 0 or stopped[0]:
                 break
@@ -1074,7 +1180,7 @@ class ExactSearch:
 
     def _path_moves(self, idx: int, visited: int, path: list[int]) -> list[int]:
         """``GetValidNextTiles`` from ``idx`` (precomputed tables, path-dependent inventory)."""
-        portal, moon, primary, is_chess = self.move_tables(self.inventory_for(tuple(path)))
+        portal, moon, primary, is_chess = self._tables_for(visited)
         out = [j for j in self._available_allowed if not (visited >> j) & 1] if portal[idx] else []
         for j in moon[idx]:
             if not (visited >> j) & 1 and j not in out:
@@ -1190,10 +1296,13 @@ class ExactSearch:
         found: dict[tuple[int, ...], str] = {}
         exhaustive = True
         per_start_nodes = max(self.min_start_node_budget, self.exhaustive_node_budget // max(1, len(order)))
-        # Without a deadline the subset tier's overall path budget is shared out too.
-        per_start_paths = None if deadline is not None else max(
-            self.min_start_node_budget, self.subset_path_budget // max(1, len(order))
-        )
+        # The subset tier's path budget is shared out the same way. Without a deadline each
+        # start gets a fixed share (deterministic). With one the larger
+        # ``deadline_subset_path_budget`` is shared and unused paths roll over to later
+        # starts like unused time; the deadline still caps it, and enumeration that runs
+        # out of budget early leaves the time to the beam.
+        paths_left = self.deadline_subset_path_budget
+        fixed_paths = max(self.min_start_node_budget, self.subset_path_budget // max(1, len(order)))
         for k, start in enumerate(order):
             if cancel_check is not None and cancel_check():
                 return found, False
@@ -1206,10 +1315,16 @@ class ExactSearch:
                 starts=[start], node_budget=per_start_nodes,
             )
             if not self.stats.extra.get("exhaustive", True):
+                if deadline is None:
+                    per_start_paths = fixed_paths
+                else:
+                    per_start_paths = max(self.min_start_node_budget, paths_left // (len(order) - k))
+                visited_before = self.stats.extra.get("subset_paths_visited", 0)
                 sub, complete = self.enumerate_subsets(
                     slice_end, cancel_check, inv=inv, require_pickup=require_pickup, starts=[start],
                     path_budget=per_start_paths,
                 )
+                paths_left -= self.stats.extra.get("subset_paths_visited", 0) - visited_before
                 for p, w in sub.items():
                     if not part.get(p):
                         part[p] = w
@@ -1315,6 +1430,9 @@ class ExactSearch:
     _enum_cache: OrderedDict = OrderedDict()
     # Tile-path DFS nodes allowed for the vectorised subset tier.
     subset_path_budget = 400_000
+    # Shared subset-tier budget for a deadline-bound search (F8): memoised node sets make
+    # a path ~1 us, so the deadline rarely binds before this does.
+    deadline_subset_path_budget = 3_200_000
     max_exact_paths = 25000
     # Node budget for the plain exhaustive pass; explosive boards then fall back
     # to widening per-(trie node, tile) expansion caps.
@@ -1363,9 +1481,12 @@ class ExactSearch:
 
     # ------------------------------------------------------------------ beam
 
-    # Beam passes widen from ``beam_start_width`` (x2 per pass) until the deadline.
+    # Beam passes widen from ``beam_start_width`` (x2 per pass) until the deadline, or
+    # until ``beam_patience`` passes in a row past ``beam_min_width`` find nothing better.
     beam_start_width = 64
-    beam_max_width = 2048
+    beam_max_width = 4096
+    beam_min_width = 512
+    beam_patience = 2
     # Width of the single beam pass when there is no deadline (deterministic tests).
     beam_fixed_width = 256
     # Share of a deadline-bound search given to enumeration before the beam may run.
@@ -1386,17 +1507,16 @@ class ExactSearch:
         whose letters still lead somewhere in the trie, scores the extensions
         exactly (``EnginePlan.score``) and keeps the ``width`` best by ``rank``.
         Every extension that spells a word is recorded. With a deadline the beam
-        restarts twice as wide while time remains; without one it runs a single
-        ``beam_fixed_width`` pass. Returns path -> scored candidate.
+        restarts twice as wide while time remains and the passes still improve the
+        best find (``beam_patience``); without one it runs a single ``beam_fixed_width``
+        pass. Scores are cached across passes. Returns path -> scored candidate.
         """
-        import numpy as np
-
         key = rank or (lambda s: s)
         found: dict[tuple[int, ...], Candidate] = {}
         if self.finale:
             return found
-        arrays = _numpy_trie(self.trie)
-        is_word = arrays[4]
+        sets = node_sets(self.trie)
+        arrays = sets.arrays
         inv = self.super_inv
         # A path that picks up a letter / movement item, or Number Go Up, needs the
         # exact (path-dependent) validity check; otherwise the node set is exact.
@@ -1419,64 +1539,66 @@ class ExactSearch:
                 cancel_check is not None and cancel_check()
             )
 
-        def record(path: tuple[int, ...], nodes, res) -> None:
-            if path in found or len(path) < self.min_len or not is_word[nodes].any():
+        # (score, nondeterministic) per path, kept across passes (not the full trace).
+        score_cache: dict[tuple[int, ...], tuple] = {}
+
+        def score(path: tuple[int, ...]) -> tuple:
+            res = score_cache.get(path)
+            if res is None:
+                r = plan.score(list(path), "")
+                res = score_cache[path] = (r.score, r.nondeterministic)
+            return res
+
+        def best_found() -> float:
+            return max((key(P.to_int(c.score)) for c in found.values()), default=float("-inf"))
+
+        def record(path: tuple[int, ...], ns: NodeSet, res: tuple) -> None:
+            if path in found or len(path) < self.min_len or ns.word_node < 0:
                 return
             if loose or pickup.intersection(path):
                 word = self.valid_word(path)
             else:
-                word = _np_spell(arrays, int(nodes[is_word[nodes]].min()))
+                word = ns.word(arrays)
             if word and self.path_allowed(path):
                 if word_scored:
-                    res = plan.score(list(path), word)  # Michael's Book reads the word
-                found[path] = Candidate(path, word, res.score, res.nondeterministic)
+                    r = plan.score(list(path), word)  # Michael's Book reads the word
+                    res = (r.score, r.nondeterministic)
+                found[path] = Candidate(path, word, res[0], res[1])
 
-        root = np.zeros(1, dtype=np.int32)
+        best_prev = float("-inf")
+        stale = 0
         for width_now in widths:
-            # Node sets shared between beam states at one depth (wildcard chains
-            # make many identical); cleared per depth to bound memory.
-            beam: list[tuple[float, tuple[int, ...], Any]] = []
+            # Node sets come from the trie's shared ``NodeSets`` memo (wildcard chains
+            # make many identical ones), so each distinct transition is computed once.
+            beam: list[tuple[float, tuple[int, ...], NodeSet]] = []
             for s in start_tiles:
-                nodes = _np_advance(arrays, root, *self._matcher(self.tiles[s], 0, inv, True))
-                if nodes is None or not nodes.size:
+                ns = sets.step(sets.root, self._matcher(self.tiles[s], 0, inv, True))
+                if ns is None:
                     continue
-                res = plan.score([s], "")
-                beam.append((key(P.to_int(res.score)), (s,), nodes))
-                record((s,), nodes, res)
+                res = score((s,))
+                beam.append((key(P.to_int(res[0])), (s,), ns))
+                record((s,), ns, res)
             seen: set[tuple[int, ...]] = set()
             stopped = False
             for depth in range(1, self.max_len):
-                interned: dict[tuple, Any] = {}
-                memo: dict[tuple, Any] = {}
-                nxt: list[tuple[float, tuple[int, ...], Any]] = []
-                for _, path, nodes in beam:
+                nxt: list[tuple[float, tuple[int, ...], NodeSet]] = []
+                for _, path, ns in beam:
                     if out_of_time():
                         stopped = True
                         break
                     visited = 0
                     for i in path:
                         visited |= 1 << i
-                    nid = id(nodes)
                     for j in self._path_moves(path[-1], visited, list(path)):
                         q = path + (j,)
                         if q in seen:
                             continue
                         seen.add(q)
-                        m = self._matcher(self.tiles[j], depth, inv, True)
-                        mk = (nid, m)
-                        nn = memo.get(mk, False)
-                        if nn is False:
-                            nn = _np_advance(arrays, nodes, *m)
-                            if nn is not None and nn.size:
-                                ik = (nn.size, int(nn[0]), int(nn[-1]), hash(nn.tobytes()))
-                                nn = interned.setdefault(ik, nn)
-                            else:
-                                nn = None
-                            memo[mk] = nn
+                        nn = sets.step(ns, self._matcher(self.tiles[j], depth, inv, True))
                         if nn is None:
                             continue
-                        res = plan.score(list(q), "")
-                        nxt.append((key(P.to_int(res.score)), q, nn))
+                        res = score(q)
+                        nxt.append((key(P.to_int(res[0])), q, nn))
                         record(q, nn, res)
                 if stopped or not nxt:
                     break
@@ -1485,6 +1607,14 @@ class ExactSearch:
             self.stats.extra["beam_width"] = width_now
             if stopped:
                 break
+            best = best_found()
+            if best > best_prev:
+                best_prev, stale = best, 0
+            elif width_now >= self.beam_min_width:
+                stale += 1
+                if stale >= self.beam_patience:
+                    self.stats.extra["beam_converged"] = True
+                    break
         self.stats.extra["beam_found"] = len(found)
         return found
 

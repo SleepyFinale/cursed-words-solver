@@ -16,8 +16,21 @@ _CACHE_VERSION = 2
 
 
 class CsrTrie:
-    # ``_np``: numpy views built on demand by ``engine.search._numpy_trie``.
-    __slots__ = ("starts", "counts", "chars", "childs", "is_word", "node_count", "word_depths", "_np")
+    # ``_np`` / ``_node_sets``: numpy views and the node-set memo built on demand by
+    # ``engine.search`` (``_numpy_trie`` / ``node_sets``); never pickled.
+    __slots__ = ("starts", "counts", "chars", "childs", "is_word", "node_count", "word_depths", "_np", "_node_sets")
+    _CACHES = ("_np", "_node_sets")
+
+    def __getstate__(self):
+        return {k: getattr(self, k) for k in self.__slots__ if k not in self._CACHES and hasattr(self, k)}
+
+    def __setstate__(self, state) -> None:
+        if isinstance(state, tuple):  # pickles written before __getstate__: (None, slots)
+            state = state[1] or {}
+        for k, v in state.items():
+            if k in self._CACHES:
+                continue
+            setattr(self, k, v)
 
     def __init__(self, starts: array, counts: array, chars: bytes, childs: array, is_word: bytes) -> None:
         self.starts = starts

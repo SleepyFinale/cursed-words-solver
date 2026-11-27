@@ -28,13 +28,19 @@ data/wiki/_*.json
 # Game decompile scratch (regenerate via scripts/extract_game_types.py)
 docs/game-research/_decompiled/
 
-# Agent / one-off debug scratch at repo root
+# Agent / one-off debug scratch at repo root (profiles, stray model weights)
 /_*.txt
 /t.txt
+/*.out
+/*.prof
+/*.pt
+tests/_tmp_*
 
-# MelonLoader companion mod (.NET)
+# .NET build output (companion mod, decompile helper)
 melmod/**/bin/
 melmod/**/obj/
+scripts/decompile_type/bin/
+scripts/decompile_type/obj/
 **/.vs/
 
 # Local solver data (normally lives in %USERPROFILE%\.cursed_words_solver\)

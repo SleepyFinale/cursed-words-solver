@@ -16,6 +16,7 @@ every branch except a domino's own exits (and never from a White tile).
 
 from __future__ import annotations
 
+import heapq
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -115,6 +116,80 @@ def _step(arrays, frontier: dict, wild: bool, texts: list[str], codes: set[str])
         if arr.size:
             out[ld] = arr
     return out
+
+
+class _Front(dict):
+    """An interned frontier (ldiff -> trie nodes); ``tok`` keys ``_FrontMemo`` transitions."""
+
+    __slots__ = ("tok",)
+
+
+class _FrontMemo:
+    """``_step`` memoised by (frontier token, matcher): a frontier depends only on its parent
+    and the tile's matcher, so wildcard boards reuse a few thousand of them across all paths."""
+
+    # Memory units before the memo is reset: trie nodes + per-front / per-transition overhead
+    # (same accounting as ``search.NodeSets``).
+    max_units = 24_000_000
+    FRONT_COST = 96
+    TRANS_COST = 16
+
+    def __init__(self, arrays) -> None:
+        import threading
+
+        self.arrays = arrays
+        self.lock = threading.Lock()
+        self.trans: dict[tuple, _Front | None] = {}
+        self.intern: dict[tuple, _Front] = {}
+        self.held = 0
+        self.next = 1
+        self.start = _Front(_START)
+        self.start.tok = 0
+
+    def step(self, front: _Front, wild: bool, texts: list[str], codes: set[str]) -> _Front | None:
+        key = (front.tok, wild, tuple(texts), tuple(sorted(codes)))
+        try:
+            return self.trans[key]
+        except KeyError:
+            pass
+        with self.lock:
+            return self._step_locked(key, front, wild, texts, codes)
+
+    def _step_locked(self, key, front, wild, texts, codes):
+        hit = self.trans.get(key, False)
+        if hit is not False:
+            return hit
+        if self.held > self.max_units:
+            self.trans.clear()
+            self.intern.clear()
+            self.held = 0
+        nxt = _step(self.arrays, front, wild, texts, codes)
+        out = None
+        if nxt:
+            ik = tuple((ld, arr.size, int(arr[0]), int(arr[-1]), hash(arr.tobytes())) for ld, arr in sorted(nxt.items()))
+            out = self.intern.get(ik)
+            if out is None or any(not np.array_equal(out[ld], arr) for ld, arr in nxt.items()):
+                out = _Front(nxt)
+                out.tok = self.next
+                self.next += 1
+                self.intern[ik] = out
+                self.held += sum(int(a.size) for a in nxt.values()) + self.FRONT_COST
+        self.trans[key] = out
+        self.held += self.TRANS_COST
+        return out
+
+
+_FRONT_MEMOS: dict[int, tuple] = {}
+
+
+def _front_memo(arrays) -> _FrontMemo:
+    """The memo for one trie's numpy arrays (identity-checked: freed ids get reused)."""
+    hit = _FRONT_MEMOS.get(id(arrays))
+    if hit is None or hit[0] is not arrays:
+        if len(_FRONT_MEMOS) > 8:
+            _FRONT_MEMOS.clear()
+        hit = _FRONT_MEMOS[id(arrays)] = (arrays, _FrontMemo(arrays))
+    return hit[1]
 
 
 def _has_word(arrays, frontier: dict) -> bool:
@@ -448,22 +523,23 @@ class DlcSearch:
         def lens_ok(nu: int, nl: int) -> bool:
             return (nu == 0 or lo <= nu <= max_len) and (nl == 0 or lo <= nl <= max_len)
 
+        memo = _front_memo(trie_arrays)
         stack: list[tuple] = []
         for s in start_idx:
             t = tiles[s]
-            stack.append(([s], [Sel(s)], _START, _START, 0, 0))
+            stack.append(([s], [Sel(s)], memo.start, memo.start, 0, 0))
         while stack:
             path, sels, fu, fl, nu, nl = stack.pop()
             t = tiles[path[-1]]
             i = len(path) - 1
             wild, texts, codes = self._matcher(t, i)
             if t.is_lowercase_letter():
-                fl = _step(trie_arrays, fl, wild, texts, codes)
+                fl = memo.step(fl, wild, texts, codes)
                 nl += 1
                 if not fl:
                     continue
             else:
-                fu = _step(trie_arrays, fu, wild, texts, codes)
+                fu = memo.step(fu, wild, texts, codes)
                 nu += 1
                 if not fu:
                     continue
@@ -497,6 +573,10 @@ class DlcSearch:
     beam_start_width = 64
     beam_max_width = 4096
     beam_fixed_width = 256
+    # Stop widening after ``beam_patience`` passes past ``beam_min_width`` find nothing better.
+    beam_min_width = 512
+    beam_patience = 2
+    beam_converge_top = 64  # proxy scores summed to decide whether a pass improved
 
     def beam(self, trie_arrays, deadline: float | None, cancel_check, rank, starts=None,
              width: int | None = None) -> dict[tuple[int, ...], float]:
@@ -504,7 +584,8 @@ class DlcSearch:
         bracket / dice boards): each depth extends every kept path by one legal move
         whose letters still lead somewhere in the trie, scores the extensions exactly
         (``EnginePlan.score``, a word-independent proxy) and keeps the ``width`` best.
-        Restarts twice as wide while time remains. Returns path -> proxy score of every
+        Restarts twice as wide while time remains and the passes still improve the best
+        find (``beam_patience``). Returns path -> proxy score of every
         extension that could spell a word (validated exactly afterwards)."""
         key = rank or (lambda v: v)
         plan = self.plan
@@ -536,37 +617,35 @@ class DlcSearch:
             except Exception:  # pragma: no cover - a bad partial path never blocks the beam
                 return float("-inf")
 
-        intern: dict[tuple, dict] = {}
-        memo: dict = {}
+        memo = _front_memo(trie_arrays)
+        start = memo.start
+        scores: dict[tuple[int, ...], float] = {}
 
         def advance(front, t, i):
-            wild, texts, codes = self._matcher(t, i)
-            mk = (id(front), wild, tuple(texts), tuple(sorted(codes)))
-            hit = memo.get(mk)
-            if hit is not None:
-                return hit
-            nxt = _step(trie_arrays, front, wild, texts, codes)
-            if nxt:
-                ik = tuple((ld, arr.size, int(arr[0]), int(arr[-1]), hash(arr.tobytes()))
-                           for ld, arr in sorted(nxt.items()))
-                nxt = intern.setdefault(ik, nxt)
-            memo[mk] = nxt
-            return nxt
+            return memo.step(front, *self._matcher(t, i))
 
+        def proxy_cached(path: tuple[int, ...]) -> float:
+            sc = scores.get(path)
+            if sc is None:
+                sc = scores[path] = proxy(path)
+            return sc
+
+        best_prev = float("-inf")
+        stale = 0
         for width_now in widths:
             beam: list[tuple] = []
             for st in start_idx:
                 t = tiles[st]
-                fu, fl, nu, nl = _START, _START, 0, 0
+                fu, fl, nu, nl = start, start, 0, 0
                 if t.is_lowercase_letter():
-                    fl, nl = advance(_START, t, 0), 1
+                    fl, nl = advance(start, t, 0), 1
                     if not fl:
                         continue
                 else:
-                    fu, nu = advance(_START, t, 0), 1
+                    fu, nu = advance(start, t, 0), 1
                     if not fu:
                         continue
-                sc = proxy((st,))
+                sc = proxy_cached((st,))
                 if lens_ok(nu, nl) and (nu == 0 or _has_word(trie_arrays, fu)) and (
                     nl == 0 or _has_word(trie_arrays, fl)
                 ):
@@ -601,7 +680,7 @@ class DlcSearch:
                             fl2, nu2, nl2 = fl, nu + 1, nl
                         if nu2 > max_len or nl2 > max_len:
                             continue
-                        sc2 = proxy(q)
+                        sc2 = proxy_cached(q)
                         if lens_ok(nu2, nl2) and (nu2 == 0 or _has_word(trie_arrays, fu2)) and (
                             nl2 == 0 or _has_word(trie_arrays, fl2)
                         ):
@@ -613,6 +692,16 @@ class DlcSearch:
             self.es.stats.extra["beam_width"] = width_now
             if stopped:
                 break
+            # Proxy scores ignore the word, so one max can come from a short path an early
+            # pass already found: track the top of the shortlist that gets validated.
+            best = sum(heapq.nlargest(self.beam_converge_top, found.values())) if found else float("-inf")
+            if best > best_prev:
+                best_prev, stale = best, 0
+            elif width_now >= self.beam_min_width:
+                stale += 1
+                if stale >= self.beam_patience:
+                    self.es.stats.extra["beam_converged"] = True
+                    break
         self.es.stats.extra["beam_found"] = len(found)
         return found
 

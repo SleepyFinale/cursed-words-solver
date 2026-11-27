@@ -1,6 +1,6 @@
 # MelonLoader companion (recommended)
 
-**Python solver setup:** see the [repository README](../README.md#python-solver) (`pip install -r requirements.txt`, `pip install -e .`, then `python -m cursed_words_solver.app`).
+**Python solver setup:** see the [repository README](../README.md#develop) (`pip install -e ".[dev,fast]"`, then `cursed-solver`).
 
 This MelonLoader mod writes files under `%USERPROFILE%\.cursed_words_solver\` while you play:
 
@@ -106,6 +106,8 @@ After **every** word submit (encounter or puzzle), the mod writes a structured r
 4. Append-only index: `round_logs/index.jsonl` (round id, file path, scores, words).
 
 Each log includes: full `run_state` at submit, solver block (when `last_suggestion.json` exists), actual word/path/score/trace, consumable rack before/after, and `consumables.placements_this_round` (board-diff detections between submits).
+
+Since v1.4.1 the solver block also carries `search` (copied from `last_suggestion.json`): `wall_sec`, `enum_sec`, `score_sec`, `paths`, `scored`, `workers`, `exhaustive` and `f8_sec` (search start through placement and dictionary resolve; the export wait and the score trace are not included). Use it to find slow solves.
 
 `actual.path` uses **melmod bottom-origin** indices (`path_index_space`: `melmod_bottom_origin`), matching `last_suggestion.json` / overlay. `actual.path_storage` lists solver storage indices (top-first row 0 = top) derived from the submit-time board snapshot — not cached across runs. `actual.path_faces` is a compact tile-face string in path order (e.g. `123EITE`). `actual.path_tiles` resolves each step via melmod→storage row/col conversion (not raw melmod index lookup).
 
@@ -395,7 +397,7 @@ Pure card glyphs export `curse: "card"`. Suited overlays only set `card_suit` / 
 
 1. Start a run in Cursed Words (mod auto-exports loadout and board).
 
-2. Run the Python solver: `python -m cursed_words_solver.app` (see [root README](../README.md#python-solver)).
+2. Run the Python solver: `cursed-solver` (see [root README](../README.md#develop)).
 
 3. Press **F7** in-game if you want to force an export before solving (also writes `game_words.txt`).
 

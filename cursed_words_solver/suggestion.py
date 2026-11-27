@@ -1856,6 +1856,7 @@ def save_last_suggestion(
     melmod_board_fingerprint: str | None = None,
     melmod_loadout_fingerprint: str | None = None,
     wordlist_signature: tuple[str, int, int] | str | None = None,
+    search_timing: dict[str, Any] | None = None,
 
 ) -> None:
 
@@ -1958,6 +1959,10 @@ def save_last_suggestion(
     if dict_word and dict_word != scoring_word.lower():
 
         payload["dictionary_word"] = dict_word
+
+    if search_timing:
+        # Copied into round logs (solver.search) so slow solves show up in captures.
+        payload["search"] = dict(search_timing)
 
     if run_state_snapshot is not None:
 

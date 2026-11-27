@@ -310,6 +310,8 @@ namespace CursedWordsSolverCompanion
                         block["f8_sequence"] = raw["f8_sequence"].ToString();
                     if (raw["created_at"] != null)
                         block["solver_created_at"] = raw["created_at"].ToString();
+                    if (raw["search"] is JObject search)
+                        block["search"] = search.DeepClone();
                 }
             }
             catch

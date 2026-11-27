@@ -2533,6 +2533,11 @@ class SolverApp:
                         capybara_exhaustive=(
                             capybara_stats.exhaustive if capybara_stats else None
                         ),
+                        search_timing=(
+                            {**timing.as_dict(), "f8_sec": round(search_elapsed, 2)}
+                            if timing is not None
+                            else None
+                        ),
                         melmod_board_fingerprint=melmod_board_fp,
                         melmod_loadout_fingerprint=melmod_loadout_fp,
                         wordlist_signature=self._wordlist_sig,

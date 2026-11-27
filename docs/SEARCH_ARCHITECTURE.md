@@ -27,10 +27,10 @@ start getting a fair share of the time left.
 
 | Stage | What it does | When |
 | --- | --- | --- |
-| Letter DFS (`enumerate`) | Trie-guided DFS over every legal path; superset letter matcher, Honeypot two-word branch | always |
-| Subset tier (`enumerate_subsets`) | Same walk with numpy sets of trie nodes, so wildcard chains cost one step instead of 26 | when the DFS exceeds its node budget |
+| Letter DFS (`enumerate`) | Trie-guided DFS over every legal path; superset letter matcher, Honeypot two-word branch | always, to `exhaustive_node_budget` |
+| Node-set DFS (`enumerate_subsets`) | Same walk carrying an interned set of trie nodes (`NodeSet`), so a wildcard costs one memoised step instead of 26 branches | when the letter DFS exceeds its node budget, to `subset_path_budget` |
 | Accumulator pass | DFS over a tiny trie of item words (Bar Chart numbers, Microphone item names, ...) | when items provide them |
-| Beam (`beam_search`) | Grows paths one legal move at a time, scores every extension exactly and keeps the best `width`; widens x2 while time remains | when enumeration cannot finish (chess / wildcard-dense boards) |
+| Beam (`beam_search`) | Grows paths one legal move at a time, scores every extension exactly and keeps the best `width`; widens x2 from 64 | when enumeration cannot finish (chess / wildcard-dense boards) |
 | Michael's finale (`enumerate_finale`) | All-wildcard 25-tile tours with per-tile position limits | finale grid only |
 
 Every path enumeration finds is validated exactly (`valid_word`: path-dependent
@@ -39,12 +39,58 @@ scored with `EnginePlan.score`. When there are more paths than can be scored
 in time, a value-proxy shortlist is scored first; the beam covers what the
 proxy misses on dense boards.
 
+## Node sets (why wildcard boards are fast)
+
+A tile path's set of reachable trie nodes depends only on its parent's set and the
+tile's matcher (`_matcher`: wildcard?, letter codes, multi-letter tokens), never on
+which tiles produced it. `NodeSets` (one per trie, `node_sets(trie)`) interns every
+set it builds and memoises `(set token, matcher) -> set`. On a wildcard board
+millions of tile paths share a few thousand sets, so each DFS step, beam extension
+and `valid_word` check is a dict lookup. Before this (2026-11-27) every path rebuilt
+its set with numpy, ~70 us per path; a 23-wildcard board spent all 60 s enumerating.
+The memo resets itself past `NodeSets.max_units` (trie nodes plus a per-set and
+per-transition overhead, about 150 MB); sets already handed out stay valid, and a
+lock guards misses because the app's F8 and AI look-ahead threads share a trie. The DLC search uses the same idea (`dlc_search._FrontMemo`).
+
+The move tables for a path's inventory are cached by the set of item tiles it holds
+(`_tables_for(visited)`), not rebuilt from the path each step.
+
+## Budgets and stopping
+
+Enumeration stops at work budgets shared across start tiles: `exhaustive_node_budget`
+for the letter DFS and, for the node-set DFS, `subset_path_budget` without a deadline
+(fixed per start, deterministic) or `deadline_subset_path_budget` (3.2M) with one, where
+paths a start does not use roll over to later starts. The deadline
+(`search_time_budget_sec`) caps both. The beam widens 64 -> 4096 and stops once
+`beam_patience` (2) passes at or past `beam_min_width` (512) find nothing better;
+its scores are cached across passes. A board that finishes early returns early, and
+the parallel pool moves on to the next start tile.
+
+## Native code and GPU (2026-11 review)
+
+- numba (`engine/_jit.py`, optional `fast` extra) compiles the letter DFS and the
+  node-set DFS for deterministic searches (no deadline: simulator / training, tests,
+  shop probes); results are bit-identical to the Python reference
+  (`tests/engine/test_jit_parity.py`). Deadline searches (F8) run the memoised Python
+  node-set walk instead: on wildcard-dense boards it is ~50x faster than the kernel,
+  while on ordinary simulator boards (tiny node sets) the kernel's lower per-path
+  cost wins (measured: training steps/s 12.0 without it vs 18.7 with it).
+- A C++ port was evaluated and not done. After the node-set fix, the remaining cost
+  is mostly exact scoring, an interpreter over hundreds of item hooks; porting it
+  would double the work on every game update and put capture parity at risk.
+- A GPU was evaluated and not used. The search is a branchy tree walk with tiny
+  per-node work and a Python-side scorer, which suits a GPU poorly.
+
 ## Measuring
 
 ```bash
 python scripts/engine_replay.py                    # scoring + path validity vs real captures
 python scripts/search_benchmark.py --latest 30     # re-solve recent rounds vs what was played
 ```
+
+Round logs (mod) copy the solver's `search` block from `last_suggestion.json`
+(`wall_sec`, `enum_sec`, `score_sec`, `paths`, `scored`, `workers`, `exhaustive`,
+`f8_sec`) into `solver.search`, so slow solves show up in captured data.
 
 ## DLC (2026-11)
 
@@ -74,8 +120,9 @@ Ported from the DLC decompile (`docs/game-research/_decompiled/dlc`, regenerate 
 - **DLC search budget**: the exhaustive DFS gets 35% of the deadline; when it can't finish
   (bracket / wildcard / dice boards) `DlcSearch.beam` runs to 75%: paths grow one legal move at
   a time, are scored exactly with `plan.score(path, "")` (a word-independent proxy) and the best
-  `width` are kept (64 doubling to 4096; half the slots shared across non-bracket tile counts so
-  short and long words both survive). Beam finds are validated first, by proxy score, then the
+  `width` are kept (64 doubling to 4096, stopping after two passes past 512 that find nothing
+  better; half the slots shared across non-bracket tile counts so short and long words both
+  survive). Both walks step trie frontiers through `_FrontMemo`. Beam finds are validated first, by proxy score, then the
   DFS finds by tile-value sum. Validation stops at the deadline once 256 paths are tried, and at
   the deadline + max(2 s, 10%) in any case.
 - **Word validation** (`dlc_rules.match_tiles`): when every tile has one string of at most one

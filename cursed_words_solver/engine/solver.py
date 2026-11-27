@@ -327,11 +327,16 @@ def _mp_exact_task(payload: dict) -> tuple[list[tuple], dict] | None:
     search = _WORKER_SEARCH[1]
     search.stats = SearchStats()
     end_wall = payload["end_wall"]
+    n = max(1, payload["n_starts"])
     if end_wall is None:
         # No deadline: this start gets its share of the whole-board work budgets.
-        n = max(1, payload["n_starts"])
         search.exhaustive_node_budget = max(search.min_start_node_budget, ExactSearch.exhaustive_node_budget // n)
         search.subset_path_budget = max(search.min_start_node_budget, ExactSearch.subset_path_budget // n)
+    else:
+        # Deadline: a fair share of the board's subset budget (the serial search rolls it over).
+        search.deadline_subset_path_budget = max(
+            search.min_start_node_budget, ExactSearch.deadline_subset_path_budget // n
+        )
     deadline = None if end_wall is None else time.perf_counter() + (end_wall - time.time())
     qt = payload["quest_target"]
 
