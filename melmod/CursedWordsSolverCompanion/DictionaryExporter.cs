@@ -28,6 +28,12 @@ namespace CursedWordsSolverCompanion
 
         private static string _lastFingerprint = "";
 
+        // The tries never change after LanguageVocabulary.TryInitializeVocabulary, so the
+        // full word walk (hundreds of thousands of words) only runs when the active
+        // vocabulary instance / language changes, or on F7 -- not on every auto-export.
+        private static LanguageVocabulary _lastVocab;
+        private static string _lastVocabLanguage = "";
+
         public static string WordsFilePath
         {
             get { return WordsPath; }
@@ -37,6 +43,18 @@ namespace CursedWordsSolverCompanion
         {
             try
             {
+                var current = Vocabulary.ActiveLanguageVocabulary;
+                if (
+                    !logSuccess
+                    && current != null
+                    && current.IsInitialized
+                    && ReferenceEquals(current, _lastVocab)
+                    && current.Language.ToString() == _lastVocabLanguage
+                    && File.Exists(WordsPath)
+                    && File.Exists(FairyCuratedWordsPath)
+                )
+                    return true;
+
                 var words = CollectWords();
                 if (words == null || words.Count == 0)
                     return false;
@@ -50,7 +68,11 @@ namespace CursedWordsSolverCompanion
                     && File.Exists(WordsPath)
                     && File.Exists(FairyCuratedWordsPath)
                 )
+                {
+                    _lastVocab = Vocabulary.ActiveLanguageVocabulary;
+                    _lastVocabLanguage = language;
                     return true;
+                }
 
                 WriteWords(words);
                 WriteMeta(words.Count, language);
@@ -60,6 +82,8 @@ namespace CursedWordsSolverCompanion
                     WriteFairyCuratedMeta(fairyWords.Count, language);
                 }
                 _lastFingerprint = fingerprint;
+                _lastVocab = Vocabulary.ActiveLanguageVocabulary;
+                _lastVocabLanguage = language;
 
                 if (logSuccess)
                     MelonLogger.Msg(

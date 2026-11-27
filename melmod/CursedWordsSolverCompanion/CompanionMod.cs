@@ -17,8 +17,17 @@ namespace CursedWordsSolverCompanion
     {
         private const float AutoExportIntervalSec = 0.5f;
 
+        // Export once the fingerprint has held still this long: a shop reroll (or any
+        // animation that changes state item by item) then writes one run_state instead of
+        // one per item. A state that keeps changing still exports every MaxSettleWaitSec.
+        private const float AutoExportSettleSec = 0.3f;
+        private const float MaxSettleWaitSec = 2.0f;
+
         private string _lastFingerprint = "";
         private float _lastExportTime = -999f;
+        private string _pendingFingerprint = "";
+        private float _pendingSince = -999f;
+        private float _firstUnexportedChange = -999f;
 
         public override void OnInitializeMelon()
         {
@@ -98,15 +107,34 @@ namespace CursedWordsSolverCompanion
 
             var fingerprint = RunStateExporter.ComputeFingerprint(player);
             if (fingerprint == _lastFingerprint)
+            {
+                _pendingFingerprint = "";
+                _firstUnexportedChange = -999f;
+                return;
+            }
+
+            var now = Time.unscaledTime;
+            if (_firstUnexportedChange < 0f)
+                _firstUnexportedChange = now;
+            if (fingerprint != _pendingFingerprint)
+            {
+                _pendingFingerprint = fingerprint;
+                _pendingSince = now;
+            }
+            var settled = now - _pendingSince >= AutoExportSettleSec;
+            var waitedTooLong = now - _firstUnexportedChange >= MaxSettleWaitSec;
+            if (!settled && !waitedTooLong)
                 return;
 
-            if (Time.unscaledTime - _lastExportTime < AutoExportIntervalSec)
+            if (now - _lastExportTime < AutoExportIntervalSec)
                 return;
 
             if (RunStateExporter.TryExport(false))
             {
                 _lastFingerprint = fingerprint;
-                _lastExportTime = Time.unscaledTime;
+                _lastExportTime = now;
+                _pendingFingerprint = "";
+                _firstUnexportedChange = -999f;
             }
         }
 
@@ -117,6 +145,8 @@ namespace CursedWordsSolverCompanion
                 ? RunStateExporter.ComputeFingerprint(player)
                 : "";
             _lastExportTime = Time.unscaledTime;
+            _pendingFingerprint = "";
+            _firstUnexportedChange = -999f;
         }
 
         private static Player GetPlayerSafe()

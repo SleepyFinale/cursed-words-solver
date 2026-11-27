@@ -407,7 +407,8 @@ class ResultOverlay(QWidget):
             self.hero_result.show()
 
         best_path = results[0].path if results else []
-        if board_bgr is not None and not on_game_highlight:
+        # No word: no board picture (nothing to highlight), just the message.
+        if results and board_bgr is not None and not on_game_highlight:
             annotated = self._draw_paths(board_bgr, results[:1], board)
             self._set_capture_preview(annotated)
         else:
