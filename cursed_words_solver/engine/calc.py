@@ -1450,6 +1450,13 @@ def _historic_words(extras: dict[str, Any]) -> list[HistWord]:
 # * ``items.LOCAL_TILE_HOOKS`` (see there): per (item, grid tile) we probe whether the
 #   hook can change the step at all and skip it where it cannot; where it can, the hook
 #   itself runs, so the arithmetic is still the game's.
+# * Each call's ``Ctx`` is a copy of a per-plan template dict (plan-only fields) with the
+#   per-call fields and fresh lists / flags set; the slot-order lookup first checks the
+#   last result by the ids of the pin and slot items (references kept alive); shared
+#   scattered templates are resolved once per tile like slot items (no-hook items add no
+#   step either way).
+# * ``items.FAST_HOOKS``: drop-in versions of hot hooks (same arithmetic) that precompute
+#   grid-tile facts per plan in ``_PlanCache.hk``; ``_score_ref`` runs the plain ports.
 
 
 class _TileRec:
@@ -1473,7 +1480,8 @@ _ORDERS_MAX = 512  # Capybara scores up to 20k orderings on one plan
 
 
 class _PlanCache:
-    __slots__ = ("recs", "rack", "gdn", "scat", "orders", "masks", "vlx", "chess")
+    __slots__ = ("recs", "rack", "gdn", "scat", "orders", "masks", "vlx", "chess", "ctx0", "last_order",
+                 "sel", "scr", "hk")
 
     def __init__(self, plan: EnginePlan) -> None:
         self.recs = [_TileRec(plan, t) for t in plan.grid.tiles]
@@ -1485,6 +1493,31 @@ class _PlanCache:
         self.masks: dict[int, tuple] = {}  # id(item) -> (item, per grid tile "hook can act")
         self.vlx: dict[tuple, bool] = {}  # (tile idx, path item classes) -> variable letter
         self.chess: dict[tuple, Selection] = {}  # (prev idx, cur idx, wobbly) -> selection
+        self.ctx0 = _ctx_template(plan, self.gdn)  # Ctx.__dict__ of the plan-only fields
+        # Last _orders result: (ids of pin + slot items, value, pin, sticker items, stamp items);
+        # the item references keep the keyed ids from being reused.
+        self.last_order: tuple | None = None
+        self.sel: dict[tuple, Selection] = {}  # (tile idx, wobbly) -> non-chess selection (path items)
+        self.scr: dict[int, Any] = {}  # tile idx -> resolved scattered item (_resolve) or _DYN
+        self.hk: dict = {}  # items.FAST_HOOKS per-plan precomputation
+
+
+def _ctx_template(plan: EnginePlan, gdn: int) -> dict[str, Any]:
+    """``Ctx.__dict__`` as ``_score_fast`` builds it, with placeholders for the per-call
+    fields (tiles, sels, words, slot lists, pin, plan, flags, cursed, variable_letter,
+    nondeterministic), which every call overwrites."""
+    c = Ctx(plan.grid, [], [], [], plan.grid_number, plan.prev_words, [], [], None, plan.unpacked,
+            plan.hungry_snake, plan.martini_all, plan.cursed_bosses_defeated, plan.challenge)
+    c.grid_data_number = gdn
+    c.challenges = plan.challenges
+    d = dict(c.__dict__)
+    d["plan"] = None  # set per call (no plan -> cache -> plan reference cycle)
+    return d
+
+
+_DYN = object()  # _PlanCache.scr: scattered item applied per call (_apply_dyn)
+_FAST_HOOKS = _items.FAST_HOOKS
+_new_ctx = Ctx.__new__
 
 
 def _plan_cache(plan: EnginePlan) -> _PlanCache:
@@ -1546,6 +1579,8 @@ def _resolve(plan: EnginePlan, pc: _PlanCache, inst: ItemInst):
     tcls = target.cls
     th = TILE_HOOKS.get(tcls)
     wh = WORD_HOOKS.get(tcls)
+    th = _FAST_HOOKS.get(th, th)
+    wh = _FAST_HOOKS.get(wh, wh)
     if tcls in SUBMISSION_HOOKS:
         return "dyn"
     if th is None and wh is None:
@@ -1694,6 +1729,8 @@ def _apply_dyn(inst: ItemInst, steps: list[Step], ctx: Ctx, n: int) -> None:
     sh = SUBMISSION_HOOKS.get(target.cls)
     if th is None and wh is None and sh is None:
         return
+    th = _FAST_HOOKS.get(th, th)
+    wh = _FAST_HOOKS.get(wh, wh)
     label = inst.slug if target is inst else f"{inst.slug}>{target.slug}"
     if th is not None or wh is not None:
         prev = steps[-1]
@@ -1770,33 +1807,51 @@ def _score_fast(self: EnginePlan, path: list[int], word: str = "", *, words: lis
                         sel = pc.chess[ck] = Selection(wobbly=wob)
                         _chess_selection(self, prev, cur, tiles, i, sel)
             else:
-                sel = Selection(wobbly=wob)
+                # Plain Selection(wobbly=wob): shared per (tile, wobbly) like rec.sel.
+                sk = (cur.idx, wob)
+                sel = pc.sel.get(sk)
+                if sel is None:
+                    sel = pc.sel[sk] = Selection(wobbly=wob)
             sels.append(sel)
             prev = cur
 
     word_list = words if words is not None else (word.lower().split() if word else [])
 
-    clone_st, clone_sp, clone_ch, entries = _orders(self, pc)
-    stickers = list(self.stickers)
+    st_items, sp_items, character_item = self.stickers, self.stamps, self.character_item
+    okey = (id(character_item), *map(id, st_items), -1, *map(id, sp_items))
+    lo = pc.last_order
+    if lo is not None and lo[0] == okey:
+        clone_st, clone_sp, clone_ch, entries = lo[1]
+    else:
+        val = _orders(self, pc)
+        pc.last_order = (okey, val, character_item, tuple(st_items), tuple(sp_items))
+        clone_st, clone_sp, clone_ch, entries = val
+    stickers = list(st_items)
     for i in clone_st:
         stickers[i] = stickers[i].clone()
-    stamps = list(self.stamps)
+    stamps = list(sp_items)
     for i in clone_sp:
         stamps[i] = stamps[i].clone()
-    character_item = self.character_item
     if clone_ch:
         character_item = character_item.clone()
 
-    ctx = Ctx(grid, tiles, sels, word_list, self.grid_number, self.prev_words, stickers, stamps,
-              character_item, self.unpacked, self.hungry_snake, self.martini_all,
-              self.cursed_bosses_defeated, self.challenge)
-    ctx.grid_data_number = pc.gdn
-    ctx.challenges = self.challenges
-    ctx.plan = self
-    ctx.variable_letter = [r.vl for r in trecs]
-    ctx.cursed = [r.cursed for r in trecs]
+    # Ctx from the per-plan template: same field values as Ctx(...) + the assignments of
+    # _score_ref, with fresh per-call lists / flags.
+    d = pc.ctx0.copy()
+    d["tiles"] = tiles
+    d["sels"] = sels
+    d["words"] = word_list
+    d["stickers"] = stickers
+    d["stamps"] = stamps
+    d["character_item"] = character_item
+    d["plan"] = self
+    d["flags"] = {}
+    d["variable_letter"] = [r.vl for r in trecs]
+    d["cursed"] = [r.cursed for r in trecs]
     if bits & _B_GLITCH:
-        ctx.nondeterministic = True
+        d["nondeterministic"] = True
+    ctx = _new_ctx(Ctx)
+    ctx.__dict__ = d
 
     steps: list[Step] = [Step([r.value for r in trecs], self.money, pc.rack)]
 
@@ -1829,7 +1884,28 @@ def _score_fast(self: EnginePlan, path: list[int], word: str = "", *, words: lis
         steps.append(step)
 
     # Item order: scattered path items, then GetAllItems(), as (resolved | None, inst, repeats).
-    order: list[tuple] = [(None, _scattered(self, pc, t), 1) for t in path_items]
+    order: list[tuple] = []
+    if path_items:
+        scr = pc.scr
+        for t in path_items:
+            r = scr.get(t.idx)
+            if r is None and t.idx not in scr:
+                # Shared (never cloned) templates resolve once like slot items; clones,
+                # containers and Literary Saga go through _apply_dyn every call.
+                tmpl = _scattered(self, pc, t)
+                if tmpl is pc.scat[t.idx] and tmpl.cls not in ("LiterarySaga", "RandomAccessMemory", "Frankenstein"):
+                    r = _resolve(self, pc, tmpl)
+                    if r == "dyn":
+                        r = _DYN
+                else:
+                    r = _DYN
+                scr[t.idx] = r
+            if r is None:
+                continue  # no scoring hook: _apply_dyn adds no step
+            if r is _DYN:
+                order.append((None, _scattered(self, pc, t), 1))
+            else:
+                order.append((r, None, 1))
     for kind, slot, reps, r in entries:
         if r is not None:
             order.append((r, None, reps))

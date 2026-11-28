@@ -364,3 +364,5 @@ round_logs/20260809_pouks_path_mismatch.json
 round_logs/20260816_232600_025_jade_path_mismatch.json
 round_logs/20261010_215626_bat_chess_abigails_blocked.json
 round_logs/20261011_001530_capybara_embed_replay.json
+round_logs/20260529_201741_042.json
+round_logs/20260529_204351_814.json

@@ -9,8 +9,10 @@ the score of the word actually played and with the F8 suggestion at the time.
   python scripts/search_benchmark.py --since 20261010 --budget 30 --workers 8
   python scripts/search_benchmark.py tests/fixtures/captures/*.json
 
-A row is a MISS when the played word scored more than the search found (the
-search should have found it); --fail-on-miss exits non-zero for CI-style use.
+A row is a MISS when the played word ranks above what the search found (the
+search should have found it). Ranking is the search's own: raw score, except
+Bullseye (closest to the remaining target) and inverted quests (lowest wins).
+--fail-on-miss exits non-zero for CI-style use.
 """
 
 from __future__ import annotations
@@ -29,6 +31,11 @@ if str(ROOT) not in sys.path:
 def main(argv: list[str] | None = None) -> int:
     from cursed_words_solver.config import GAME_WORDLIST_PATH, ROUND_LOG_DIR, ensure_wordlist
     from cursed_words_solver.dictionary import WordDictionary
+    from cursed_words_solver.rules.quest_scoring import (
+        bullseye_active,
+        encounter_remaining_from_loadout,
+        search_rank_function,
+    )
     from cursed_words_solver.search import WordSearcher
     from cursed_words_solver.search_parallel import resolve_search_workers, shutdown_search_pool, warmup_search_pool
     from cursed_words_solver.sim.replay import prepare_replay
@@ -81,11 +88,18 @@ def main(argv: list[str] | None = None) -> int:
             took = time.perf_counter() - t0
             best = int(results[0].score) if results else None
             best_word = results[0].word[:14] if results else "-"
+            # Compare the way the search ranks: Bullseye wants the remaining target, and
+            # inverted quests want the lowest score, so raw score can mislabel a pick.
+            target = None
+            if bullseye_active(prep.loadout):
+                remaining = encounter_remaining_from_loadout(prep.loadout)
+                target = float(remaining) if remaining > 0 else None
+            rank = search_rank_function(prep.loadout, quest_target=target)
             if prep.two_wrongs or best is None:
                 verdict = ""
-            elif best < played:
+            elif rank(best) < rank(played):
                 verdict, misses = "MISS", misses + 1
-            elif best > played:
+            elif rank(best) > rank(played):
                 verdict, better = "better", better + 1
             else:
                 verdict, equal = "same", equal + 1

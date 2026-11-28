@@ -565,3 +565,25 @@ def test_historic_metadata_ignores_tile_counts_missing_on_f8_row():
     assert not historic_metadata_matches_json(changed, full)
     no_score = json.dumps([{"word": "OWB", "green_tile_count": 1}])
     assert not historic_metadata_matches_json(no_score, full)
+
+
+def test_prune_historic_keeps_rows_when_scoring_cache_not_exported():
+    """20260529_204351_814: legacy export with no scoring_previous_words_count key.
+
+    A missing key is not an empty scoring cache: this grid's words must survive
+    (Telescope counts their red tiles). An exported "0" still clears them.
+    """
+    from cursed_words_solver.loadout import prune_historic_incompatible_with_board
+
+    board = _simple_board()
+    historic = json.dumps([{"word": "QQQQ", "score": 10, "path": [0, 1, 2, 3], "red_tile_count": 2}])
+    legacy = {"grid_number": "4", "historic_words": historic}
+    prune_historic_incompatible_with_board(board, legacy)
+    assert legacy["encounter_historic_source"] == "historic_metadata_only"
+    rows = json.loads(legacy["historic_words"])
+    assert [(r["word"], r["red_tile_count"]) for r in rows] == [("QQQQ", 2)]
+
+    exported = {"grid_number": "4", "historic_words": historic, "scoring_previous_words_count": "0"}
+    assert prune_historic_incompatible_with_board(board, exported) is True
+    assert "historic_words" not in exported
+    assert exported["encounter_historic_source"] == "grid_start_cleared"

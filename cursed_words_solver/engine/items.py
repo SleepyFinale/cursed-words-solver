@@ -1267,3 +1267,118 @@ LOCAL_TILE_HOOKS = frozenset({
     "FishCake", "GlassOfMilk", "LabCoat", "MahjongRedDragon", "Moai", "MysteriousAmulet", "Queen",
     "QueenOfSpades", "SequoiaSapling", "SlySpy", "Stilton", "WadOfCash",
 })
+
+
+# --- fast-path hook variants -------------------------------------------------------------
+# ``calc._score_fast`` runs these in place of the reference hooks (``FAST_HOOKS`` is keyed by
+# the reference function, so a re-registered / patched hook falls back to itself);
+# ``_score_ref`` always runs the straight ports above. Same arithmetic: they only precompute,
+# once per plan (``_PlanCache.hk``, dropped by ``invalidate_score_cache``), facts about grid
+# tiles, which are never mutated after ``EnginePlan.build`` (tile type, ``srep``,
+# ``grid.available``). Without the plan cache (or on a foreign grid) they defer to the port.
+
+
+def _fast_cache(ctx: Ctx) -> dict | None:
+    plan = ctx.plan
+    if plan is None:
+        return None
+    pc = plan.__dict__.get("_fastcalc")
+    if pc is None or ctx.grid is not plan.grid:
+        return None
+    return pc.hk
+
+
+def _grid_sreps(ctx: Ctx, hk: dict) -> list[str]:
+    sr = hk.get("srep")
+    if sr is None:
+        sr = hk["srep"] = [t.srep for t in ctx.grid.tiles]
+    return sr
+
+
+def _tile_srep(t: ETile, sr: list[str], gt: list[ETile]) -> str:
+    i = t.idx
+    return sr[i] if 0 <= i < len(gt) and gt[i] is t else t.srep
+
+
+def _avail_of_colour(ctx: Ctx, hk: dict, colour: str) -> tuple:
+    """(count, srep -> count, ids, tiles) of ``grid.available`` tiles with ``is_type(colour)``."""
+    key = ("avail", colour)
+    v = hk.get(key)
+    if v is None:
+        tiles = [t for t in ctx.grid.available if t.is_type(colour)]
+        counts: dict[str, int] = {}
+        for t in tiles:
+            counts[t.srep] = counts.get(t.srep, 0) + 1
+        v = hk[key] = (len(tiles), counts, frozenset(id(t) for t in tiles), tiles)  # tiles keep ids alive
+    return v
+
+
+def _dusty_coffin_fast(inst, step, ctx):
+    hk = _fast_cache(ctx)
+    if hk is None:
+        return _dusty_coffin(inst, step, ctx)
+    colour = inst.colours[0] if inst.colours else VOID
+    sr, gt = _grid_sreps(ctx, hk), ctx.grid.tiles
+    total, counts, _, _ = _avail_of_colour(ctx, hk, colour)
+    # sum(available of colour with srep not in reps) == total - sum(count[r] for distinct r in reps)
+    n = total
+    for r in {_tile_srep(t, sr, gt) for t in ctx.tiles}:
+        n -= counts.get(r, 0)
+    if n > 0:
+        _add(step, inst.var() * n)
+
+
+def _fire_ext_fast(inst, step, ctx):
+    hk = _fast_cache(ctx)
+    if hk is None:
+        return _fire_ext(inst, step, ctx)
+    colour = inst.colours[0] if inst.colours else RED
+    total, _, ids, _ = _avail_of_colour(ctx, hk, colour)
+    n = total - len({id(t) for t in ctx.tiles} & ids)
+    if n > 0:
+        _add(step, n * inst.var())
+
+
+def _yellow_glasses_fast(inst, step, ctx):
+    hk = _fast_cache(ctx)
+    if hk is None:
+        return _yellow_glasses(inst, step, ctx)
+    sr, gt = _grid_sreps(ctx, hk), ctx.grid.tiles
+    prev = None
+    for k, t in enumerate(ctx.tiles):
+        r = _tile_srep(t, sr, gt)
+        if k and r == prev:
+            _mult(step, inst.var())
+            return
+        prev = r
+
+
+def _maple_fast(inst, step, i, ctx):
+    limit = inst.var()
+    if limit < 1:
+        return
+    tiles = ctx.tiles
+    # The chosen tiles depend only on (inst, tiles, limit): computed once per tile sweep
+    # (one step), not once per tile.
+    m = ctx.__dict__.get("_maple_memo")
+    if m is None or m[0] is not inst or m[1] is not step or m[2] is not tiles or m[3] != limit:
+        colour = inst.colours[0] if inst.colours else RED
+        chosen: set[int] = set()
+        count = 0
+        for t in tiles:
+            if t.is_type(colour):
+                chosen.add(id(t))
+                count += 1
+                if count >= limit:
+                    break
+        m = ctx.__dict__["_maple_memo"] = (inst, step, tiles, limit, chosen)
+    if id(tiles[i]) in m[4]:
+        _tmul(step, i, 3)
+
+
+FAST_HOOKS: dict = {
+    _dusty_coffin: _dusty_coffin_fast,
+    _fire_ext: _fire_ext_fast,
+    _yellow_glasses: _yellow_glasses_fast,
+    _maple: _maple_fast,
+}

@@ -144,10 +144,18 @@ compiled numba kernel was only 2.3x faster than numpy at that, because the work 
 redundant. Interning those sets and memoising their transitions made that stage about 100x
 faster with identical results. The beam also stopped re-deriving words from the trie root.
 
-- **C++ rewrite: not worth it now.** What remains is mostly exact scoring, an interpreter over
-  hundreds of item hooks (about 4,000 lines including the DLC). A native port would double the
-  work on every game update and risk the parity the captures prove. The enumeration loops that
-  could move to native code are now a small share of the time.
+- **Scorer tuning (exact).** The fast scorer builds each call's context from a per-plan
+  template, resolves scattered items and selections once per plan, and uses tighter Dusty
+  Coffin, Fire Extinguisher, Yellow Glasses and Maple Leaf hooks with the same arithmetic.
+  That is about 30% less time per score and about 11% more training steps/s. It gives the
+  same result on all 196,728 recorded training score calls and every capture.
+- **C++ scorer: not worth it now.** Unprofiled, scoring is about 35% of a training step; the
+  rest is simulator bookkeeping, state clones and enumeration. So even an infinitely fast
+  native scorer caps out near 1.5x end to end. It would also need a C++ compiler on every dev
+  machine and a C++ copy of about 240 item hooks, re-ported on every game update. Bigger,
+  cheaper wins are in the simulator (reusing search results at submit, cheaper state clones).
+  If scoring is still the bottleneck after those, the next step is a numba batch scorer that
+  sends any plan it can't handle back to Python, not C++.
 - **GPU: not a fit.** The search is a branchy tree walk with tiny per-node work and a
   Python-side scorer. Kernel launch latency and divergence would cost more than they save,
   and CUDA would add gigabytes to the bundled solver.

@@ -75,9 +75,22 @@ the parallel pool moves on to the next start tile.
   node-set walk instead: on wildcard-dense boards it is ~50x faster than the kernel,
   while on ordinary simulator boards (tiny node sets) the kernel's lower per-path
   cost wins (measured: training steps/s 12.0 without it vs 18.7 with it).
-- A C++ port was evaluated and not done. After the node-set fix, the remaining cost
-  is mostly exact scoring, an interpreter over hundreds of item hooks; porting it
-  would double the work on every game update and put capture parity at risk.
+- Fast scorer (`calc._score_fast`): each `_PlanCache` holds a `Ctx` template, an
+  item-identity order key, resolved scattered items (`scr`), cached non-chess selections
+  (`sel`) and per-grid facts for the fast Dusty Coffin, Fire Extinguisher, Yellow Glasses and
+  Maple Leaf hooks (`items.FAST_HOOKS`, keyed by the reference hook so a patched hook falls
+  back). All of it assumes the plan's grid and scattered templates don't change after
+  `EnginePlan.build`; call `invalidate_score_cache()` after any such change.
+  `tests/engine/test_fastcalc_hooks_parity.py` checks the fast and reference versions against
+  each other.
+- A C++ scorer was evaluated (2026-11) and not built. Unprofiled, scoring is about 35% of a
+  training step, so even an infinitely fast native scorer caps out near 1.5x end to end. It
+  would cost a compiler toolchain and a C++ copy of about 240 hooks, re-ported on every update.
+  If scoring dominates again, the planned route is a numba batch "score program" per plan
+  that hands any unported item back to Python.
+- A plan-aware shortlist (rank paths by exact single-tile scores times a fitted per-length
+  ratio) was tried and dropped. With the gates needed to be never worse than the current
+  shortlist, it fell back on about 90% of large boards and gave about 1–2% training speed.
 - A GPU was evaluated and not used. The search is a branchy tree walk with tiny
   per-node work and a Python-side scorer, which suits a GPU poorly.
 

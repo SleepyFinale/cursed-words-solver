@@ -239,8 +239,6 @@ def _rewind_previous_word(
     restored = isinstance(diff.get("previous_word_first_letter"), dict) and diff[
         "previous_word_first_letter"
     ].get("f8") not in (None, "")
-    if restored:
-        return
     current = str(submission.word or "").strip().lower()
     raw = extras.get("historic_words")
     try:
@@ -270,7 +268,12 @@ def _rewind_previous_word(
         ):
             rows = rows[:-1]
         extras["historic_words"] = json.dumps(rows)
-    prior = [r for r in rows if isinstance(r, dict) and str(r.get("word") or "").strip()]
+    run_state.setdefault("extras", {})["historic_words"] = extras.get("historic_words", "")
+    if restored:
+        # The F8 previous_word_first_letter is already back in extras; only the
+        # current word's historic row needed trimming.
+        return
+    prior =[r for r in rows if isinstance(r, dict) and str(r.get("word") or "").strip()]
     if prior:
         letter = str(prior[-1]["word"]).strip()[0].lower()
         if not letter.isalpha():
@@ -280,8 +283,7 @@ def _rewind_previous_word(
         if current and letter == current[0]:
             letter = ""
     extras["previous_word_first_letter"] = letter
-    run_state.setdefault("extras", {})["previous_word_first_letter"] = letter
-    run_state["extras"]["historic_words"] = extras.get("historic_words", "")
+    run_state["extras"]["previous_word_first_letter"] = letter
 
 
 def _rewind_post_submit_accumulators(

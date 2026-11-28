@@ -1948,7 +1948,9 @@ def prune_historic_incompatible_with_board(
         extras.pop("previous_word_first_letter", None)
         extras["encounter_historic_source"] = "grid1_no_scoring_cache"
         return True
-    if grid >= 2 and spc == 0:
+    if grid >= 2 and spc == 0 and "scoring_previous_words_count" in extras:
+        # Only an exported empty scoring cache means a fresh grid. Older exports
+        # without the key still carry this grid's words (Telescope, Mirror, ...).
         extras.pop("historic_words", None)
         extras.pop("red_tiles_used_encounter", None)
         extras["encounter_historic_source"] = "grid_start_cleared"
